@@ -467,7 +467,10 @@ in
       };
       
       safe = {
-        directory = "/home/vpittamp/cdk8s-project";
+        directory = [
+          "/home/vpittamp/cdk8s-project"
+          "/etc/nixos"
+        ];
       };
     };
   };
