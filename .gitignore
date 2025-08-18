@@ -1,0 +1,20 @@
+# Hardware-specific configuration
+hardware-configuration.nix
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Build results
+result
+result-*
+
+# Secrets (if any)
+*.secret
+secrets/
+
+# OS generated files
+.DS_Store
+Thumbs.db
