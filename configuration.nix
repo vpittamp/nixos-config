@@ -6,15 +6,9 @@
 
   { config, lib, pkgs, ... }:
 
-  let
-    # Home Manager integration
-    home-manager = builtins.fetchTarball "https://github.com/nix-community/home-manager/archive/release-25.05.tar.gz";
-  in
   {
-    imports = [
-      <nixos-wsl/modules>
-      (import "${home-manager}/nixos")
-    ];
+    # WSL module is now imported via flake.nix
+    # Home Manager is now imported via flake.nix
 
     # WSL Configuration
     wsl = {
@@ -123,8 +117,6 @@
       hostName = "nixos-wsl";
     };
 
-    # Home Manager configuration for your user
-    home-manager.users.vpittamp = import ./home-vpittamp.nix;
 
     # Enable nix flakes
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
