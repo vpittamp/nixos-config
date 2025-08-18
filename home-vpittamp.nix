@@ -379,6 +379,15 @@ in
       gco = "git checkout";
       gb = "git branch";
       
+      # Docker alias to use the correct binary
+      docker = "/run/current-system/sw/bin/docker";
+      
+      # Docker shortcuts
+      d = "docker";
+      dc = "docker-compose";
+      dps = "docker ps";
+      di = "docker images";
+      
       # Tmux
       t = "tmux";
       ta = "tmux attach -t";
@@ -466,15 +475,9 @@ in
         helper = "/mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe";
       };
       
-      safe = {
-        directory = [
-          "/home/vpittamp/cdk8s-project"
-          "/etc/nixos"
-        ];
-      };
     };
   };
-
+      
   # Tmux configuration
   programs.tmux = {
     enable = true;

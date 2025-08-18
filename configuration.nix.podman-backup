@@ -25,25 +25,11 @@
 
         interop = {
           enabled = true;
-          appendWindowsPath = false;  # Changed to false for Docker Desktop
+          appendWindowsPath = true;
         };
 
-        network.generateHosts = false;  # Changed to false for Docker Desktop
+        network.generateHosts = true;
       };
-    
-    # Docker Desktop integration  
-    docker-desktop.enable = false;  # Keep false, enable from Windows side
-    
-    # Extra binaries needed for Docker Desktop wsl-distro-proxy
-    extraBin = with pkgs; [
-      { src = "${coreutils}/bin/mkdir"; }
-      { src = "${coreutils}/bin/cat"; }
-      { src = "${coreutils}/bin/whoami"; }
-      { src = "${coreutils}/bin/ls"; }
-      { src = "${busybox}/bin/addgroup"; }
-      { src = "${su}/bin/groupadd"; }
-      { src = "${su}/bin/usermod"; }
-    ];
     };
 
     # VS Code Remote Server Fix for WSL
@@ -124,21 +110,16 @@
       wslu
       nodejs_20
       claude-code
-      # Docker tools for Docker Desktop integration
-      docker-compose    # Docker Compose for multi-container apps
+      # Container tools (Nix-native approach)
+      podman            # Daemonless container runtime
+      buildah           # Build OCI containers
+      skopeo            # Work with container registries
+      podman-compose    # Compose for Podman (if needed)
     ];
 
-    # Enable Docker (native NixOS docker package)
-    virtualisation.docker = {
-      enable = true;
-      enableOnBoot = true;
-      autoPrune.enable = true;
-    };
-    
-    # Patch the docker-desktop-proxy script
-    systemd.services.docker-desktop-proxy.script = lib.mkForce ''
-      ${config.wsl.wslConf.automount.root}/wsl/docker-desktop/docker-desktop-user-distro proxy --docker-desktop-root ${config.wsl.wslConf.automount.root}/wsl/docker-desktop "C:\\Program Files\\Docker\\Docker\\resources"
-    '';
+    # Enable podman
+    virtualisation.podman.enable = true;
+    virtualisation.podman.dockerCompat = true;  # Alias docker to podman
 
     # Networking configuration
     networking = {
