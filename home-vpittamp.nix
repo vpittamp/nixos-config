@@ -1,6 +1,32 @@
 { config, pkgs, lib, ... }:
 
 let
+  # Custom package for idpbuilder
+  idpbuilder = pkgs.stdenv.mkDerivation rec {
+    pname = "idpbuilder";
+    version = "0.9.1";
+    
+    src = pkgs.fetchurl {
+      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
+      sha256 = "a4f16943ec20c6ad41664ed7ae2986282368daf7827356516f9d6687b830aa09";
+    };
+    
+    sourceRoot = ".";
+    
+    installPhase = ''
+      mkdir -p $out/bin
+      cp idpbuilder $out/bin/
+      chmod +x $out/bin/idpbuilder
+    '';
+    
+    meta = with lib; {
+      description = "Tool for building Internal Developer Platforms with Kubernetes";
+      homepage = "https://github.com/cnoe-io/idpbuilder";
+      license = licenses.asl20;
+      platforms = [ "x86_64-linux" ];
+    };
+  };
+  
   # Modern color palette inspired by Catppuccin Mocha
   colors = {
     # Base colors
@@ -74,6 +100,7 @@ in
     # Development tools
     gh
     kubectl
+    idpbuilder  # Custom package for IDP building
     direnv
     tree
     htop

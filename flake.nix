@@ -124,6 +124,233 @@
             WorkingDir = "/app";
           };
         };
+        
+        # Development container with Nix for applying configurations
+        nix-dev-container = pkgs.dockerTools.buildLayeredImage {
+          name = "nix-dev";
+          tag = "latest";
+          
+          contents = with pkgs; [
+            # Nix and flakes support
+            nix
+            
+            # Core utilities
+            bashInteractive
+            coreutils
+            cacert
+            gitMinimal
+            curl
+            wget
+            
+            # User management
+            shadow
+            su
+            sudo
+            
+            # Required for Home Manager
+            gnused
+            gnutar
+            gzip
+            xz
+            
+            # Create init script
+            (writeScriptBin "init-nix-env" ''
+              #!${bashInteractive}/bin/bash
+              set -e
+              
+              echo "🚀 Initializing Nix development environment..."
+              
+              # Create user if it doesn't exist
+              if ! id -u vpittamp >/dev/null 2>&1; then
+                echo "Creating user vpittamp..."
+                useradd -m -s /bin/bash vpittamp
+                echo "vpittamp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+              fi
+              
+              # Switch to user
+              su - vpittamp -c "
+                # Set up Nix channels
+                export USER=vpittamp
+                export HOME=/home/vpittamp
+                
+                # Clone configuration from GitHub
+                if [ ! -d ~/.nixos-config ]; then
+                  echo 'Cloning configuration from GitHub...'
+                  git clone https://github.com/vpittamp/nixos-config.git ~/.nixos-config
+                fi
+                
+                # Apply Home Manager configuration
+                echo 'Applying Home Manager configuration...'
+                cd ~/.nixos-config
+                nix develop --experimental-features 'nix-command flakes' -c echo 'Nix flakes enabled'
+                
+                # Install Home Manager
+                nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
+                nix-channel --update
+                
+                echo '✅ Environment ready! Run: home-manager switch --flake ~/.nixos-config#vpittamp'
+              "
+            '')
+          ];
+          
+          config = {
+            Env = [
+              "PATH=/bin:/usr/bin:/run/current-system/sw/bin"
+              "NIX_PATH=nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "USER=root"
+            ];
+            Cmd = [ "/bin/bash" ];
+            WorkingDir = "/";
+            Volumes = {
+              "/nix/store" = {};
+              "/nix/var" = {};
+              "/home" = {};
+            };
+          };
+        };
+        
+        # Full development container with all tools pre-installed
+        full-dev-container = 
+          let
+            # Extract packages from home configuration
+            homePackages = with pkgs; [
+              # Core utilities from home-vpittamp.nix
+              tmux
+              git
+              stow
+              fzf
+              ripgrep
+              fd
+              bat
+              eza
+              zoxide
+              sesh
+              
+              # Development tools
+              gh
+              kubectl
+              direnv
+              tree
+              htop
+              btop
+              ncdu
+              jq
+              yq
+              gum
+              
+              # System tools
+              xclip
+              file
+              which
+              curl
+              wget
+              
+              # Additional essentials
+              neovim
+              starship
+              nodejs_20
+            ];
+            
+            # Create a custom bashrc with your configurations
+            customBashrc = pkgs.writeText "bashrc" ''
+              # Basic environment
+              export EDITOR=nvim
+              export VISUAL=nvim
+              export PAGER=less
+              export LESS="-R"
+              export TERM=xterm-256color
+              
+              # Aliases from home-vpittamp.nix
+              alias ..="cd .."
+              alias ...="cd ../.."
+              alias ....="cd ../../.."
+              alias ls="eza --group-directories-first"
+              alias ll="eza -l --group-directories-first"
+              alias la="eza -la --group-directories-first"
+              alias lt="eza --tree"
+              alias cat="bat"
+              alias grep="rg"
+              
+              # Git aliases
+              alias g="git"
+              alias gs="git status"
+              alias ga="git add"
+              alias gc="git commit"
+              alias gp="git push"
+              alias gl="git log --oneline --graph --decorate"
+              alias gd="git diff"
+              alias gco="git checkout"
+              alias gb="git branch"
+              
+              # Kubernetes aliases
+              alias k="kubectl"
+              alias kgp="kubectl get pods"
+              alias kgs="kubectl get svc"
+              alias kgd="kubectl get deployment"
+              
+              # Initialize tools
+              eval "$(starship init bash)"
+              eval "$(zoxide init bash)"
+              eval "$(direnv hook bash)"
+              
+              # Welcome message
+              echo "🚀 Full development environment ready!"
+              echo "   User: vpittamp"
+              echo "   Tools: $(tmux -V), $(nvim --version | head -1), $(git --version)"
+              echo ""
+            '';
+          in
+          pkgs.dockerTools.buildLayeredImage {
+            name = "full-dev";
+            tag = "latest";
+            
+            contents = with pkgs; [
+              bashInteractive
+              coreutils
+              shadow
+              su
+              sudo
+              cacert
+            ] ++ homePackages ++ [
+              # Add initialization script
+              (writeScriptBin "init-dev" ''
+                #!${bashInteractive}/bin/bash
+                # Create user if needed
+                if ! id -u vpittamp >/dev/null 2>&1; then
+                  useradd -m -s /bin/bash vpittamp
+                  echo "vpittamp ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+                fi
+                
+                # Set up bash configuration
+                cp ${customBashrc} /home/vpittamp/.bashrc
+                chown vpittamp:vpittamp /home/vpittamp/.bashrc
+                
+                # Set up git config
+                su - vpittamp -c "
+                  git config --global user.name 'Vinod Pittampalli'
+                  git config --global user.email 'vinod@pittampalli.com'
+                "
+                
+                # Switch to user
+                exec su - vpittamp
+              '')
+            ];
+            
+            config = {
+              Env = [
+                "PATH=/bin:/usr/bin"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "LANG=en_US.UTF-8"
+                "USER=vpittamp"
+              ];
+              Cmd = [ "/bin/init-dev" ];
+              WorkingDir = "/home/vpittamp";
+              Volumes = {
+                "/home/vpittamp/workspace" = {};
+              };
+            };
+          };
       };
       
       # Development shells
