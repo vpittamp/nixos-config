@@ -380,6 +380,7 @@ in
       PAGER = "less";
       LESS = "-R";
       TERM = "xterm-256color";
+      DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
     };
     
     shellAliases = {
@@ -409,8 +410,8 @@ in
       gco = "git checkout";
       gb = "git branch";
       
-      # Docker alias to use the correct binary
-      docker = "/run/current-system/sw/bin/docker";
+      # Docker alias to use Docker Desktop via wrapper
+      docker = "/etc/nixos/docker-wrapper.sh";
       
       # Docker shortcuts
       d = "docker";
@@ -442,6 +443,9 @@ in
       # Fix terminal compatibility
       export TERM=xterm-256color
       export COLORTERM=truecolor
+      
+      # Add /usr/local/bin to PATH for Docker Desktop
+      export PATH="/usr/local/bin:$PATH"
       
       # Disable OSC sequences that might cause issues
       export STARSHIP_DISABLE_ANSI_INJECTION=1

@@ -129,15 +129,32 @@
     ];
 
     # Enable Docker (native NixOS docker package)
+    # Temporarily disabled to use Docker Desktop integration
     virtualisation.docker = {
-      enable = true;
-      enableOnBoot = true;
-      autoPrune.enable = true;
+      enable = false;  # Changed to false to use Docker Desktop
+      enableOnBoot = false;
+      autoPrune.enable = false;
     };
     
     # Patch the docker-desktop-proxy script
     systemd.services.docker-desktop-proxy.script = lib.mkForce ''
-      ${config.wsl.wslConf.automount.root}/wsl/docker-desktop/docker-desktop-user-distro proxy --docker-desktop-root ${config.wsl.wslConf.automount.root}/wsl/docker-desktop "C:\\Program Files\\Docker\\Docker\\resources"
+      ${config.wsl.wslConf.automount.root}/wsl/docker-desktop/docker-desktop-user-distro proxy --docker-desktop-root ${config.wsl.wslConf.automount.root}/wsl/docker-desktop "C:\Program Files\Docker\Docker\resources"
+    '';
+    
+    # Create Docker Desktop wrapper script and symlink
+    system.activationScripts.dockerDesktopIntegration = ''
+      # Create docker wrapper script
+      mkdir -p /etc/nixos
+      cat > /etc/nixos/docker-wrapper.sh << 'EOF'
+#!/bin/bash
+# Docker Desktop wrapper script for NixOS WSL2
+exec sudo DOCKER_HOST=unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock /mnt/wsl/docker-desktop/cli-tools/usr/bin/docker "$@"
+EOF
+      chmod +x /etc/nixos/docker-wrapper.sh
+      
+      # Create symlink for docker command
+      mkdir -p /usr/local/bin
+      ln -sf /etc/nixos/docker-wrapper.sh /usr/local/bin/docker
     '';
 
     # Networking configuration
