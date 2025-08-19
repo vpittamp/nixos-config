@@ -100,6 +100,9 @@ in
     # Development tools
     gh
     kubectl
+    kubernetes-helm  # Kubernetes package manager
+    kind             # Kubernetes in Docker
+    vcluster         # Virtual Kubernetes clusters
     idpbuilder  # Custom package for IDP building
     direnv
     tree
