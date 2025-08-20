@@ -19,18 +19,29 @@
     
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
+
+    # nix-darwin for macOS support
+    darwin = {
+      url = "github:lnl7/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixos-wsl, home-manager, flake-utils, darwin, ... }@inputs: 
     let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      # Define supported systems
+      linuxSystem = "x86_64-linux";
+      darwinSystem = "aarch64-darwin"; # change to "x86_64-darwin" on Intel Macs
+      
+      # Package sets for each system
+      linuxPkgs = nixpkgs.legacyPackages.${linuxSystem};
+      darwinPkgs = nixpkgs.legacyPackages.${darwinSystem};
     in
     {
       # NixOS configuration for WSL
       nixosConfigurations = {
         nixos-wsl = nixpkgs.lib.nixosSystem {
-          inherit system;
+          system = linuxSystem;
           
           modules = [
             # Include the WSL module
@@ -55,15 +66,38 @@
           ];
         };
       };
+
+      # macOS configuration via nix-darwin
+      darwinConfigurations = {
+        macbook = darwin.lib.darwinSystem {
+          system = darwinSystem;
+          modules = [
+            ./nix-darwin.nix
+            home-manager.darwinModules.home-manager
+            {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                # Use the macOS username for Home Manager
+                users.vinodpittampalli = {
+                  imports = [ ./home-vpittamp.nix ];
+                  # Explicit home directory to satisfy HM on Darwin
+                  home.homeDirectory = "/Users/vinodpittampalli";
+                };
+              };
+            }
+          ];
+        };
+      };
       
       # Container packages
-      packages.${system} = {
+      packages.${linuxSystem} = {
         # Example: Basic container with shell utilities
-        basic-container = pkgs.dockerTools.buildLayeredImage {
+        basic-container = linuxPkgs.dockerTools.buildLayeredImage {
           name = "nixos-basic";
           tag = "latest";
           
-          contents = with pkgs; [
+          contents = with linuxPkgs; [
             bashInteractive
             coreutils
             curl
@@ -79,11 +113,11 @@
         };
         
         # Example: Node.js application container
-        node-app-container = pkgs.dockerTools.buildLayeredImage {
+        node-app-container = linuxPkgs.dockerTools.buildLayeredImage {
           name = "node-app";
           tag = "latest";
           
-          contents = with pkgs; [
+          contents = with linuxPkgs; [
             nodejs_20
             bashInteractive
             coreutils
@@ -103,11 +137,11 @@
         };
         
         # Example: Python application container
-        python-app-container = pkgs.dockerTools.buildLayeredImage {
+        python-app-container = linuxPkgs.dockerTools.buildLayeredImage {
           name = "python-app";
           tag = "latest";
           
-          contents = with pkgs; [
+          contents = with linuxPkgs; [
             python3
             python3Packages.pip
             python3Packages.requests
@@ -126,11 +160,11 @@
         };
         
         # Development container with Nix for applying configurations
-        nix-dev-container = pkgs.dockerTools.buildLayeredImage {
+        nix-dev-container = linuxPkgs.dockerTools.buildLayeredImage {
           name = "nix-dev";
           tag = "latest";
           
-          contents = with pkgs; [
+          contents = with linuxPkgs; [
             # Nix and flakes support
             nix
             
@@ -154,7 +188,7 @@
             xz
             
             # Create init script
-            (writeScriptBin "init-nix-env" ''
+            (linuxPkgs.writeScriptBin "init-nix-env" ''
               #!${bashInteractive}/bin/bash
               set -e
               
@@ -197,7 +231,7 @@
             Env = [
               "PATH=/bin:/usr/bin:/run/current-system/sw/bin"
               "NIX_PATH=nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
-              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "SSL_CERT_FILE=${linuxPkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "USER=root"
             ];
             Cmd = [ "/bin/bash" ];
@@ -214,7 +248,7 @@
         full-dev-container = 
           let
             # Extract packages from home configuration
-            homePackages = with pkgs; [
+            homePackages = with linuxPkgs; [
               # Core utilities from home-vpittamp.nix
               tmux
               git
@@ -253,7 +287,7 @@
             ];
             
             # Create a custom bashrc with your configurations
-            customBashrc = pkgs.writeText "bashrc" ''
+            customBashrc = linuxPkgs.writeText "bashrc" ''
               # Basic environment
               export EDITOR=nvim
               export VISUAL=nvim
@@ -301,11 +335,11 @@
               echo ""
             '';
           in
-          pkgs.dockerTools.buildLayeredImage {
+          linuxPkgs.dockerTools.buildLayeredImage {
             name = "full-dev";
             tag = "latest";
             
-            contents = with pkgs; [
+            contents = with linuxPkgs; [
               bashInteractive
               coreutils
               shadow
@@ -314,7 +348,7 @@
               cacert
             ] ++ homePackages ++ [
               # Add initialization script
-              (writeScriptBin "init-dev" ''
+              (linuxPkgs.writeScriptBin "init-dev" ''
                 #!${bashInteractive}/bin/bash
                 # Create user if needed
                 if ! id -u vpittamp >/dev/null 2>&1; then
@@ -340,7 +374,7 @@
             config = {
               Env = [
                 "PATH=/bin:/usr/bin"
-                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "SSL_CERT_FILE=${linuxPkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "LANG=en_US.UTF-8"
                 "USER=vpittamp"
               ];
@@ -354,12 +388,12 @@
       };
       
       # Development shells
-      devShells.${system} = {
+      devShells.${linuxSystem} = {
         # Default development shell with container tools
-        default = pkgs.mkShell {
+        default = linuxPkgs.mkShell {
           name = "container-dev";
           
-          buildInputs = with pkgs; [
+          buildInputs = with linuxPkgs; [
             # Container tools
             docker-compose
             dive              # Inspect container layers
@@ -405,10 +439,10 @@
         };
         
         # Kubernetes-focused shell
-        k8s = pkgs.mkShell {
+        k8s = linuxPkgs.mkShell {
           name = "k8s-dev";
           
-          buildInputs = with pkgs; [
+          buildInputs = with linuxPkgs; [
             kubectl
             kubernetes-helm
             k9s
@@ -427,13 +461,13 @@
       };
       
       # Formatter for 'nix fmt'
-      formatter.${system} = pkgs.nixpkgs-fmt;
+      formatter.${linuxSystem} = linuxPkgs.nixpkgs-fmt;
       
       # Apps for easy container building
-      apps.${system} = {
+      apps.${linuxSystem} = {
         build-all-containers = {
           type = "app";
-          program = "${pkgs.writeShellScript "build-all-containers" ''
+          program = "${linuxPkgs.writeShellScript "build-all-containers" ''
             echo "Building all containers..."
             nix build .#basic-container
             echo "✅ basic-container built"

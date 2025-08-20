@@ -1,6 +1,9 @@
 { config, pkgs, lib, ... }:
 
 let
+  # Determine the host platform
+  isLinux  = pkgs.stdenv.isLinux;
+  isDarwin = pkgs.stdenv.isDarwin;
   # Custom package for idpbuilder
   idpbuilder = pkgs.stdenv.mkDerivation rec {
     pname = "idpbuilder";
@@ -79,47 +82,50 @@ let
 in
 {
   # Home Manager configuration
-  home.username = "vpittamp";
-  home.homeDirectory = "/home/vpittamp";
+  # Set username and home directory based on the platform
+  home.username = if isDarwin then "vinodpittampalli" else "vpittamp";
+  home.homeDirectory = if isDarwin then "/Users/vinodpittampalli" else "/home/vpittamp";
   home.stateVersion = "25.05";
 
-  # Core packages
-  home.packages = with pkgs; [
-    # Core utilities
-    tmux
-    git
-    stow
-    fzf
-    ripgrep
-    fd
-    bat  # Better cat with syntax highlighting
-    eza  # Better ls with icons
-    zoxide  # Smart cd
-    sesh # Smart tmux session manager
-    
-    # Development tools
-    gh
-    kubectl
-    kubernetes-helm  # Kubernetes package manager
-    kind             # Kubernetes in Docker
-    vcluster         # Virtual Kubernetes clusters
-    idpbuilder  # Custom package for IDP building
-    direnv
-    tree
-    htop
-    btop  # Better htop
-    ncdu
-    jq
-    yq
-    gum  # Charm's interactive shell script builder
-    
-    # System tools
-    xclip
-    file
-    which
-    curl
-    wget
-  ];
+  # Core packages (install idpbuilder only on Linux)
+  home.packages = with pkgs;
+    (
+      [
+        # Core utilities
+        tmux
+        git
+        stow
+        fzf
+        ripgrep
+        fd
+        bat  # Better cat with syntax highlighting
+        eza  # Better ls with icons
+        zoxide  # Smart cd
+        sesh # Smart tmux session manager
+
+        # Development tools
+        gh
+        kubectl
+        kubernetes-helm  # Kubernetes package manager
+        kind             # Kubernetes in Docker
+        vcluster         # Virtual Kubernetes clusters
+        direnv
+        tree
+        htop
+        btop  # Better htop
+        ncdu
+        jq
+        yq
+        gum  # Charm's interactive shell script builder
+
+        # System tools
+        xclip
+        file
+        which
+        curl
+        wget
+      ]
+    ) ++ (lib.optionals isLinux [ idpbuilder ]);
 
   # Modern shell prompt with Starship - Pure ASCII configuration
   programs.starship = {
@@ -380,8 +386,11 @@ in
       PAGER = "less";
       LESS = "-R";
       TERM = "xterm-256color";
+    }
+    // (lib.optionalAttrs isLinux {
+      # Only set the Docker socket on Linux/WSL
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
-    };
+    });
     
     shellAliases = {
       # Navigation
