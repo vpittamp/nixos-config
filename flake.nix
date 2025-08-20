@@ -78,6 +78,8 @@
               home-manager = {
                 useGlobalPkgs = true;
                 useUserPackages = true;
+                # Back up existing files instead of failing on clobber
+                backupFileExtension = "backup";
                 # Use the macOS username for Home Manager
                 users.vinodpittampalli = {
                   imports = [ ./home-vpittamp.nix ];
