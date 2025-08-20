@@ -76,6 +76,25 @@ let
       sha256 = "sha256-hlhBKC6UzkpUrCanJehs2FxK5SoYBoiGiioXdx6trC4=";
     };
   };
+  
+  # tmux-sessionx for session management with preview
+  tmux-sessionx = pkgs.tmuxPlugins.mkTmuxPlugin {
+    pluginName = "tmux-sessionx";
+    version = "unstable-2024-12-01";
+    rtpFilePath = "sessionx.tmux";
+    src = pkgs.fetchFromGitHub {
+      owner = "omerxx";
+      repo = "tmux-sessionx";
+      rev = "main";
+      sha256 = "0yfxinx6bdddila3svszpky9776afjprn26c8agj6sqh8glhiz3b";
+    };
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postInstall = ''
+      substituteInPlace $out/share/tmux-plugins/tmux-sessionx/sessionx.tmux \
+        --replace "fzf-tmux" "${pkgs.fzf}/bin/fzf-tmux" \
+        --replace "fzf " "${pkgs.fzf}/bin/fzf "
+    '';
+  };
 in
 {
   # Home Manager configuration
@@ -96,6 +115,7 @@ in
     eza  # Better ls with icons
     zoxide  # Smart cd
     sesh # Smart tmux session manager
+    yazi # Fast terminal file manager
     
     # Development tools
     gh
@@ -104,6 +124,8 @@ in
     kind             # Kubernetes in Docker
     vcluster         # Virtual Kubernetes clusters
     idpbuilder  # Custom package for IDP building
+    argocd           # ArgoCD CLI for GitOps
+    devspace         # DevSpace CLI for cloud-native development
     direnv
     tree
     htop
@@ -112,7 +134,7 @@ in
     jq
     yq
     gum  # Charm's interactive shell script builder
-    
+
     # System tools
     xclip
     file
@@ -384,7 +406,9 @@ in
     };
     
     shellAliases = {
-      # Navigation
+      # Navigation with zoxide
+      cd = "z";  # Use zoxide for cd command
+      cdd = "command cd";  # Original cd available as cdd
       ".." = "cd ..";
       "..." = "cd ../..";
       "...." = "cd ../../..";
@@ -435,8 +459,24 @@ in
       reload = "source ~/.bashrc";
       path = "echo $PATH | tr ':' '\n'";
       
+      # File management
+      y = "yazi";  # Quick file browser
+      
+      # Zoxide management
+      zl = "zoxide query -l";  # List all database entries
+      zr = "zoxide remove";     # Remove entry from database
+      zs = "zoxide query -s";   # Show database statistics
+      
       # WSL specific
       winhome = "cd /mnt/c/Users/VinodPittampalli/";
+      
+      # 1Password aliases
+      ops = "eval $(op signin --account my)";
+      opv = "op vault list";
+      opi = "op item list";
+      
+      # ArgoCD with 1Password
+      argo-login = "op plugin init argocd";
     };
     
     initExtra = ''
@@ -450,12 +490,14 @@ in
       # Disable OSC sequences that might cause issues
       export STARSHIP_DISABLE_ANSI_INJECTION=1
       
-      # Better cd with zoxide
-      eval "$(zoxide init bash)"
-      
       # Set up fzf key bindings
       if command -v fzf &> /dev/null; then
         eval "$(fzf --bash)"
+      fi
+      
+      # 1Password Shell Plugins
+      if [ -f ~/.config/op/plugins.sh ]; then
+        source ~/.config/op/plugins.sh
       fi
       
       # Enable direnv
@@ -473,6 +515,61 @@ in
       export LESS_TERMCAP_so=$'\e[01;33m'
       export LESS_TERMCAP_ue=$'\e[0m'
       export LESS_TERMCAP_us=$'\e[1;4;31m'
+      
+      # Sesh session manager keybinding - works both inside and outside tmux
+      sesh_connect() {
+        if [ -n "$TMUX" ]; then
+          # Inside tmux: use fzf-tmux for popup overlay
+          sesh connect "$(
+            sesh list --icons | fzf-tmux -p 80%,70% \
+              --no-sort \
+              --ansi \
+              --border-label ' sesh ' \
+              --prompt '⚡  ' \
+              --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' \
+              --bind 'tab:down,btab:up' \
+              --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
+              --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' \
+              --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' \
+              --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
+              --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+              --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
+              --preview-window 'right:55%' \
+              --preview 'sesh preview {}'
+          )"
+        else
+          # Outside tmux: use regular fzf
+          sesh connect "$(
+            sesh list --icons | fzf \
+              --no-sort \
+              --ansi \
+              --border-label ' sesh ' \
+              --prompt '⚡  ' \
+              --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' \
+              --bind 'tab:down,btab:up' \
+              --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
+              --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' \
+              --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' \
+              --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
+              --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+              --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
+              --preview-window 'right:55%' \
+              --preview 'sesh preview {}'
+          )"
+        fi
+      }
+      
+      # Bind sesh_connect to Ctrl+T (works both inside and outside tmux)
+      # Only bind if we're in an interactive shell with line editing enabled
+      if [[ $- == *i* ]] && [[ -t 0 ]]; then
+        bind -x '"\C-t": sesh_connect' 2>/dev/null || true
+      fi
+      
+      # Initialize zoxide at the very end to avoid configuration issues
+      eval "$(zoxide init bash)"
+      
+      # Disable zoxide doctor warnings since we've properly initialized it
+      export _ZO_DOCTOR=0
     '';
   };
 
@@ -511,6 +608,15 @@ in
       
     };
   };
+  
+  # SSH configuration with 1Password integration
+  programs.ssh = {
+    enable = true;
+    extraConfig = ''
+      Host *
+        IdentityAgent ~/.1password/agent.sock
+    '';
+  };
       
   # Tmux configuration
   programs.tmux = {
@@ -542,6 +648,24 @@ in
         '';
       }
       {
+        plugin = tmux-sessionx;
+        extraConfig = ''
+          # Sessionx configuration
+          set -g @sessionx-bind 'o'  # Prefix + o to open sessionx
+          set -g @sessionx-x-path '${pkgs.coreutils}/bin'  # Path to coreutils
+          set -g @sessionx-custom-paths '/etc/nixos'  # Add Nix config directory
+          set -g @sessionx-custom-paths-subdirectories 'false'
+          set -g @sessionx-filter-current 'false'  # Show current session in list
+          set -g @sessionx-preview-location 'right'
+          set -g @sessionx-preview-ratio '55%'
+          set -g @sessionx-window-height '90%'
+          set -g @sessionx-window-width '75%'
+          set -g @sessionx-tmuxinator-mode 'off'
+          set -g @sessionx-tree-mode 'off'
+          set -g @sessionx-preview-enabled 'true'
+        '';
+      }
+      {
         plugin = resurrect;
         extraConfig = ''
           set -g @resurrect-strategy-nvim 'session'
@@ -570,34 +694,30 @@ in
       set -g pane-base-index 1
       set -g renumber-windows on
       set -g pane-border-lines single
-      set -g pane-border-status off
-      set -g pane-border-format " #{?pane_active,#[fg=${colors.subtext0}],#[fg=${colors.surface1}]}#{pane_index} "
+      set -g pane-border-status top
       
-      # Automatic window renaming based on current directory
-      set -g automatic-rename on
-      set -g automatic-rename-format '#{b:pane_current_path}'
-      
-      # Status bar styling
-      set -g status-position bottom
+      # Status bar styling with enhanced contrast
+      set -g status-position top
       set -g status-justify left
-      set -g status-style "bg=${colors.base} fg=${colors.text}"
-      set -g status-left-length 40
-      set -g status-right-length 100
+      set -g status-style "bg=${colors.crust} fg=${colors.text}"
+      set -g status-left-length 80
+      set -g status-right-length 150
       
-      # Left status with mode indicator
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX ,#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY ,#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX }}#[fg=${colors.crust},bg=${colors.mauve},bold] #S #[fg=${colors.mauve},bg=${colors.base}] "
+      # Left status with powerline separators, session count and window count
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] ⚡ PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold]  COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] 🔍 ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] ◉ TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S \ue0b1 #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
       
-      # Right status (clean, no powerline)
-      set -g status-right "#[fg=${colors.text},bg=${colors.surface1}] %H:%M #[fg=${colors.text},bg=${colors.surface2}] %d-%b #[fg=${colors.crust},bg=${colors.blue},bold] #h "
+      # Right status with development info
+      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} #[fg=${colors.surface1},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface1}]  #(git branch --show-current 2>/dev/null || echo 'no-git') #[fg=${colors.surface2},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface2}] ☸ #(kubectl config current-context 2>/dev/null | cut -d'/' -f2 | cut -c1-10 || echo 'none') #[fg=${colors.blue},bg=${colors.surface2}]#[fg=${colors.crust},bg=${colors.blue},bold] 🐳 #(docker ps -q 2>/dev/null | wc -l || echo '0') "
       
-      # Window status (clean rectangles)
-      set -g window-status-format "#[fg=${colors.text},bg=${colors.surface0}] #I:#W "
-      set -g window-status-current-format "#[fg=${colors.crust},bg=${colors.blue},bold] #I:#W "
-      set -g window-status-separator " "
+      # Window status with powerline styling
+      set -g window-status-format "#[fg=${colors.crust},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface0}] #I:#W #[fg=${colors.surface0},bg=${colors.crust}]"
+      set -g window-status-current-format "#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}}]#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bold]#{?window_zoomed_flag, 🔍,} #I:#W[#{window_panes}] #[fg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bg=${colors.crust}]"
+      set -g window-status-separator ""
       
-      # Pane borders
+      # Pane borders and titles
       set -g pane-border-style "fg=${colors.surface0}"
       set -g pane-active-border-style "fg=${colors.blue},bold"
+      set -g pane-border-format " #[fg=${colors.text}]#{?pane_active,#[bg=${colors.surface1}],}[#P/#{window_panes}] #{pane_current_command} #{?window_zoomed_flag,#[fg=${colors.yellow}](ZOOMED) ,}#[default] "
       
       # Message styling
       set -g message-style "fg=${colors.crust} bg=${colors.yellow} bold"
@@ -616,6 +736,9 @@ in
       bind -n C-j select-pane -D
       bind -n C-k select-pane -U
       bind -n C-l select-pane -R
+      
+      # Sesh session picker with Ctrl+T (no prefix needed) - calls bash's sesh_connect function
+      bind -n C-t run-shell "bash -ic 'sesh_connect'"
       
       # Pane resizing
       bind -r H resize-pane -L 5
@@ -640,16 +763,13 @@ in
       # Sesh session management
       bind -N "last-session (via sesh)" L run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
-      
-      # Sesh with gum for quick session switching
-      bind-key "K" display-popup -E -w 40% "sesh connect \"\$(sesh list -i | gum filter --limit 1 --no-sort --fuzzy --placeholder 'Pick a sesh' --height 50 --prompt='⚡')\""
-      
       # Claude popup windows
       bind C display-popup -E -w 80% -h 80% "claude"
       bind R display-popup -E -w 80% -h 80% "claude --continue"
       
-      # Generic popup for running commands
-      bind p command-prompt -p "Command:" "display-popup -E -w 90% -h 90% '%%'"
+      # Blank terminal popup
+      bind p display-popup -E -w 80% -h 80%
+      
       
       # Copy mode
       bind Enter copy-mode
@@ -710,6 +830,12 @@ in
       telescope-nvim
       nvim-treesitter.withAllGrammars
       
+      # Telescope extensions and dependencies
+      telescope-fzy-native-nvim
+      telescope-live-grep-args-nvim
+      telescope-undo-nvim
+      nvim-neoclip-lua
+      
       # File tree
       nvim-tree-lua
       
@@ -727,6 +853,9 @@ in
       cmp-buffer
       cmp-path
       luasnip
+      
+      # AI assistance
+      claude-code-nvim
       
       # Quality of life
       comment-nvim
@@ -755,11 +884,112 @@ in
       -- Indent blankline
       require('ibl').setup()
       
-      -- Telescope
+      -- Claude Code AI assistant
+      require('claude-code').setup({
+        -- Use default settings for now
+        keymaps = {
+          toggle = {
+            normal = "<C-,>",       -- Normal mode keymap
+            terminal = "<C-,>",     -- Terminal mode keymap
+          },
+        },
+      })
+      
+      -- Telescope configuration
+      local telescope = require('telescope')
       local builtin = require('telescope.builtin')
-      vim.keymap.set('n', '<leader>ff', builtin.find_files, {})
-      vim.keymap.set('n', '<leader>fg', builtin.live_grep, {})
-      vim.keymap.set('n', '<leader>fb', builtin.buffers, {})
+      
+      telescope.setup({
+        defaults = {
+          border = true,
+          file_ignore_patterns = { '.git/', 'node_modules' },
+          layout_config = {
+            height = 0.9999999,
+            width = 0.99999999,
+            preview_cutoff = 0,
+            horizontal = { preview_width = 0.60 },
+            vertical = { width = 0.999, height = 0.9999, preview_cutoff = 0 },
+            prompt_position = 'top',
+          },
+          path_display = { 'smart' },
+          prompt_position = 'top',
+          prompt_prefix = ' ',
+          selection_caret = '👉',
+          sorting_strategy = 'ascending',
+          vimgrep_arguments = {
+            'rg',
+            '--color=never',
+            '--no-heading',
+            '--hidden',
+            '--with-filename',
+            '--line-number',
+            '--column',
+            '--smart-case',
+            '--trim',
+          },
+        },
+        pickers = {
+          buffers = {
+            prompt_prefix = '󰸩 ',
+          },
+          commands = {
+            prompt_prefix = ' ',
+            layout_config = {
+              height = 0.99,
+              width = 0.99,
+            },
+          },
+          command_history = {
+            prompt_prefix = ' ',
+            layout_config = {
+              height = 0.99,
+              width = 0.99,
+            },
+          },
+          git_files = {
+            prompt_prefix = '󰊢 ',
+            show_untracked = true,
+          },
+          find_files = {
+            prompt_prefix = ' ',
+            find_command = { 'fd', '-H' },
+            layout_config = {
+              height = 0.999,
+              width = 0.999,
+            },
+          },
+          live_grep = {
+            prompt_prefix = '󰱽 ',
+          },
+          grep_string = {
+            prompt_prefix = '󰱽 ',
+          },
+        },
+        extensions = {
+          smart_open = {
+            cwd_only = true,
+            filename_first = true,
+          },
+        },
+      })
+      
+      -- Load Telescope extensions
+      telescope.load_extension('live_grep_args')
+      telescope.load_extension('neoclip')
+      telescope.load_extension('undo')
+      telescope.load_extension('fzy_native')
+      
+      -- Telescope keybindings
+      vim.keymap.set('n', '<leader>ff', builtin.find_files, { desc = 'Find files' })
+      vim.keymap.set('n', '<leader>fg', builtin.live_grep, { desc = 'Live grep' })
+      vim.keymap.set('n', '<leader>fb', builtin.buffers, { desc = 'Buffers' })
+      vim.keymap.set('n', '<leader>*', builtin.grep_string, { desc = 'Grep word under cursor' })
+      vim.keymap.set('n', '<leader>.', builtin.resume, { desc = 'Resume Telescope' })
+      vim.keymap.set('n', '<leader>fh', builtin.help_tags, { desc = 'Help tags' })
+      vim.keymap.set('n', '<leader>fc', builtin.commands, { desc = 'Commands' })
+      vim.keymap.set('n', '<leader>fu', '<cmd>Telescope undo<cr>', { desc = 'Undo tree' })
+      vim.keymap.set('n', '<leader>fy', '<cmd>Telescope neoclip<cr>', { desc = 'Clipboard history' })
+      vim.keymap.set('n', '<leader>fl', '<cmd>Telescope live_grep_args live_grep_args<cr>', { desc = 'Live grep with args' })
       
       -- Nvim-tree
       require('nvim-tree').setup()
@@ -795,6 +1025,314 @@ in
       "--color=fg:${colors.text},header:${colors.red},info:${colors.mauve},pointer:${colors.rosewater}"
       "--color=marker:${colors.rosewater},fg+:${colors.text},prompt:${colors.mauve},hl+:${colors.red}"
     ];
+  };
+
+  # Sesh configuration file
+  xdg.configFile."sesh/sesh.toml".text = ''
+    # Sesh Configuration File
+    # Smart tmux session manager configuration
+
+    # Sort order for session types
+    sort_order = [
+        "tmux",        # Show existing tmux sessions first
+        "config",      # Then config sessions (Nix presets)
+        "tmuxinator",  # Then tmuxinator sessions
+        "zoxide"       # Finally zoxide directories
+    ]
+
+    # Default session configuration
+    [default_session]
+    # Open nvim with telescope on session start
+    startup_command = "nvim -c ':Telescope find_files'"
+    # Show directory contents with eza when previewing
+    preview_command = "eza --all --git --icons --color=always --group-directories-first --long {}"
+
+    # Nix Configuration Sessions
+    [[session]]
+    name = "nix-config 🔧"
+    path = "/etc/nixos"
+    startup_command = "nvim configuration.nix"
+    preview_command = "bat --color=always /etc/nixos/configuration.nix"
+
+    [[session]]
+    name = "nix-home 🏠"
+    path = "/etc/nixos"
+    startup_command = "nvim home-vpittamp.nix"
+    preview_command = "bat --color=always /etc/nixos/home-vpittamp.nix"
+
+    [[session]]
+    name = "nix-flake ❄️"
+    path = "/etc/nixos"
+    startup_command = "nvim flake.nix"
+    preview_command = "bat --color=always /etc/nixos/flake.nix"
+
+    # Quick edit session for all Nix configs
+    [[session]]
+    name = "nix-all 📦"
+    path = "/etc/nixos"
+    startup_command = "nvim -O configuration.nix home-vpittamp.nix flake.nix"
+    preview_command = "eza --all --git --icons --color=always --group-directories-first /etc/nixos"
+    windows = [ "git", "build" ]
+
+    # Window definitions for multi-window sessions
+    [[window]]
+    name = "git"
+    startup_command = "git status && git diff"
+
+    [[window]]
+    name = "build"
+    startup_command = "echo 'Ready to rebuild: sudo nixos-rebuild switch --flake /etc/nixos#nixos-wsl'"
+
+    # Development Sessions
+    [[session]]
+    name = "workspace 💻"
+    path = "~/workspace"
+    startup_command = "nvim"
+    preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
+
+    [[session]]
+    name = "dotfiles 📝"
+    path = "~/.config"
+    startup_command = "nvim"
+    preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
+
+    # Kubernetes/Container Sessions
+    [[session]]
+    name = "k8s-dev ☸️"
+    path = "~/k8s"
+    startup_command = "k9s"
+    preview_command = "kubectl get pods --all-namespaces 2>/dev/null || echo 'No cluster connected'"
+
+    # Blacklist - sessions to hide from results
+    # Uncomment to enable
+    # blacklist = ["scratch", "tmp"]
+  '';
+
+  # Yazi file manager configuration
+  programs.yazi = {
+    enable = true;
+    enableBashIntegration = true;
+    
+    settings = {
+      mgr = {
+        ratio = [1 1 4];
+        sort_by = "mtime";
+        sort_sensitive = true;
+        sort_reverse = true;
+        sort_dir_first = true;
+        linemode = "none";
+        show_hidden = true;
+        show_symlink = true;
+      };
+      
+      preview = {
+        tab_size = 2;
+        max_width = 2000;
+        max_height = 1200;
+        cache_dir = "";
+        ueberzug_scale = 1;
+        ueberzug_offset = [0 0 0 0];
+      };
+      
+      opener = {
+        edit = [
+          { run = "\${EDITOR:-nvim} \"$@\""; block = true; for = "unix"; }
+        ];
+        open = [
+          { run = "xdg-open \"$@\""; desc = "Open"; for = "linux"; }
+        ];
+        reveal = [
+          { run = "exiftool \"$1\"; echo \"Press enter to exit\"; read"; block = true; desc = "Show EXIF"; for = "unix"; }
+        ];
+        extract = [
+          { run = "unar \"$1\""; desc = "Extract here"; for = "unix"; }
+        ];
+        play = [
+          { run = "mpv \"$@\""; orphan = true; for = "unix"; }
+          { run = "mediainfo \"$1\"; echo \"Press enter to exit\"; read"; block = true; desc = "Show media info"; for = "unix"; }
+        ];
+      };
+      
+      open = {
+        rules = [
+          { name = "*/"; use = ["edit" "open" "reveal"]; }
+          { mime = "text/*"; use = ["edit" "reveal"]; }
+          { mime = "image/*"; use = ["open" "reveal"]; }
+          { mime = "video/*"; use = ["play" "reveal"]; }
+          { mime = "audio/*"; use = ["play" "reveal"]; }
+          { mime = "inode/empty"; use = ["edit" "reveal"]; }
+          { mime = "application/json"; use = ["edit" "reveal"]; }
+          { mime = "*/javascript"; use = ["edit" "reveal"]; }
+          { mime = "application/zip"; use = ["extract" "reveal"]; }
+          { mime = "application/gzip"; use = ["extract" "reveal"]; }
+          { mime = "application/tar"; use = ["extract" "reveal"]; }
+          { mime = "application/bzip"; use = ["extract" "reveal"]; }
+          { mime = "application/bzip2"; use = ["extract" "reveal"]; }
+          { mime = "application/7z-compressed"; use = ["extract" "reveal"]; }
+          { mime = "application/rar"; use = ["extract" "reveal"]; }
+          { mime = "*"; use = ["open" "reveal"]; }
+        ];
+      };
+      
+      tasks = {
+        micro_workers = 5;
+        macro_workers = 10;
+        bizarre_retry = 5;
+      };
+      
+      log = {
+        enabled = false;
+      };
+    };
+    
+    # VSCode Dark Modern theme configuration
+    theme = {
+      manager = {
+        cwd = { fg = "#569cd6"; };
+        
+        # Hovered
+        hovered = { fg = "#000000"; bg = "#b8d7f3"; };
+        preview_hovered = { underline = true; };
+        
+        # Find
+        find_keyword = { fg = "#f9826c"; italic = true; };
+        find_position = { fg = "#cccccc"; bg = "#3a3f4b"; italic = true; };
+        
+        # Marker
+        marker_selected = { fg = "#b8d7f3"; bg = "#3c5d80"; };
+        marker_copied = { fg = "#b8d7f3"; bg = "#487844"; };
+        marker_cut = { fg = "#b8d7f3"; bg = "#d47766"; };
+        
+        # Tab
+        tab_active = { fg = "#000000"; bg = "#569cd6"; };
+        tab_inactive = { fg = "#cccccc"; bg = "#3c3c3c"; };
+        tab_width = 1;
+        
+        # Border
+        border_symbol = "│";
+        border_style = { fg = "#3e3e3e"; };
+        
+        # Highlighting
+        syntect_theme = "";
+      };
+      
+      status = {
+        separator_style = { fg = "#4e4e4e"; bg = "#252526"; };
+        mode_normal = { fg = "#000000"; bg = "#569cd6"; bold = true; };
+        mode_select = { fg = "#000000"; bg = "#c586c0"; bold = true; };
+        mode_unset = { fg = "#000000"; bg = "#d7ba7d"; bold = true; };
+        
+        progress_label = { fg = "#ffffff"; bold = true; };
+        progress_normal = { fg = "#569cd6"; bg = "#252526"; };
+        progress_error = { fg = "#f44747"; bg = "#252526"; };
+        
+        permissions_t = { fg = "#569cd6"; };
+        permissions_r = { fg = "#d7ba7d"; };
+        permissions_w = { fg = "#f44747"; };
+        permissions_x = { fg = "#b5cea8"; };
+        permissions_s = { fg = "#c586c0"; };
+      };
+      
+      input = {
+        border = { fg = "#569cd6"; };
+        title = {};
+        value = {};
+        selected = { reversed = true; };
+      };
+      
+      select = {
+        border = { fg = "#569cd6"; };
+        active = { fg = "#c586c0"; };
+        inactive = {};
+      };
+      
+      tasks = {
+        border = { fg = "#569cd6"; };
+        title = {};
+        hovered = { underline = true; };
+      };
+      
+      which = {
+        mask = { bg = "#1e1e1e"; };
+        cand = { fg = "#9cdcfe"; };
+        rest = { fg = "#808080"; };
+        desc = { fg = "#c586c0"; };
+        separator = " ";
+        separator_style = { fg = "#4e4e4e"; };
+      };
+      
+      help = {
+        on = { fg = "#c586c0"; };
+        exec = { fg = "#9cdcfe"; };
+        desc = { fg = "#808080"; };
+        hovered = { bg = "#3c5d80"; bold = true; };
+        footer = { fg = "#252526"; bg = "#cccccc"; };
+      };
+      
+      filetype = {
+        rules = [
+          # Images
+          { mime = "image/*"; fg = "#c586c0"; }
+          
+          # Videos
+          { mime = "video/*"; fg = "#d7ba7d"; }
+          
+          # Audio
+          { mime = "audio/*"; fg = "#d7ba7d"; }
+          
+          # Archives
+          { mime = "application/zip"; fg = "#f14c4c"; }
+          { mime = "application/gzip"; fg = "#f14c4c"; }
+          { mime = "application/x-tar"; fg = "#f14c4c"; }
+          { mime = "application/x-bzip"; fg = "#f14c4c"; }
+          { mime = "application/x-bzip2"; fg = "#f14c4c"; }
+          { mime = "application/x-7z-compressed"; fg = "#f14c4c"; }
+          { mime = "application/x-rar"; fg = "#f14c4c"; }
+          
+          # Fallback
+          { name = "*"; fg = "#cccccc"; }
+          { name = "*/"; fg = "#569cd6"; }
+        ];
+      };
+      
+      icon = {
+        rules = [
+          # Programming
+          { name = "*.c"; text = ""; }
+          { name = "*.cpp"; text = ""; }
+          { name = "*.h"; text = ""; }
+          { name = "*.hpp"; text = ""; }
+          { name = "*.rs"; text = ""; }
+          { name = "*.go"; text = ""; }
+          { name = "*.py"; text = ""; }
+          { name = "*.js"; text = ""; }
+          { name = "*.jsx"; text = "⚛"; }
+          { name = "*.ts"; text = ""; }
+          { name = "*.tsx"; text = "⚛"; }
+          { name = "*.vue"; text = "﵂"; }
+          { name = "*.json"; text = ""; }
+          { name = "*.toml"; text = ""; }
+          { name = "*.yaml"; text = ""; }
+          { name = "*.yml"; text = ""; }
+          { name = "*.nix"; text = ""; }
+          
+          # Text
+          { name = "*.txt"; text = ""; }
+          { name = "*.md"; text = ""; }
+          
+          # Archives
+          { name = "*.zip"; text = ""; }
+          { name = "*.tar"; text = ""; }
+          { name = "*.gz"; text = ""; }
+          { name = "*.7z"; text = ""; }
+          { name = "*.bz2"; text = ""; }
+          
+          # Default
+          { name = "*"; text = ""; }
+          { name = "*/"; text = ""; }
+        ];
+      };
+    };
   };
 
   # Let Home Manager manage itself

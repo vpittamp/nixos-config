@@ -72,6 +72,13 @@
       };
     };
 
+    # 1Password configuration
+    programs._1password.enable = true;
+    programs._1password-gui = {
+      enable = true;
+      polkitPolicyOwners = [ "vpittamp" ];
+    };
+    
     # Alternative: Use programs.nix-ld for better compatibility
     programs.nix-ld = {
       enable = true;

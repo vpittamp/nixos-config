@@ -17,11 +17,17 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
+    # 1Password Shell Plugins
+    onepassword-shell-plugins = {
+      url = "github:1Password/shell-plugins";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, flake-utils, ... }@inputs: 
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -46,7 +52,10 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 users.vpittamp = {
-                  imports = [ ./home-vpittamp.nix ];
+                  imports = [ 
+                    ./home-vpittamp.nix
+                    onepassword-shell-plugins.hmModules.default
+                  ];
                   # Fix for version mismatch warning
                   home.enableNixpkgsReleaseCheck = false;
                 };
