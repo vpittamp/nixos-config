@@ -133,6 +133,12 @@
       claude-code
       # Docker tools for Docker Desktop integration
       docker-compose    # Docker Compose for multi-container apps
+      
+      # VSCode wrapper for WSL integration
+      (pkgs.writeShellScriptBin "code" ''
+        # Launch VSCode from WSL
+        /mnt/c/Users/VinodPittampalli/AppData/Local/Programs/Microsoft\ VS\ Code/bin/code "$@"
+      '')
     ];
 
     # Enable Docker (native NixOS docker package)
@@ -162,6 +168,15 @@ EOF
       # Create symlink for docker command
       mkdir -p /usr/local/bin
       ln -sf /etc/nixos/docker-wrapper.sh /usr/local/bin/docker
+    '';
+
+    # WSL2 clipboard integration (minimal)
+    system.activationScripts.wslClipboard = ''
+      # Only create clip.exe symlink for WSL2
+      if [ -f /mnt/c/Windows/System32/clip.exe ]; then
+        mkdir -p /usr/local/bin
+        ln -sf /mnt/c/Windows/System32/clip.exe /usr/local/bin/clip.exe
+      fi
     '';
 
     # Networking configuration

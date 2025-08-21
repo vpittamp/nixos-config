@@ -1,6 +1,9 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
 let
+  # Custom package for claude-manager
+  claude-manager = pkgs.callPackage ./packages/claude-manager-binary.nix {};
+  
   # Custom package for idpbuilder
   idpbuilder = pkgs.stdenv.mkDerivation rec {
     pname = "idpbuilder";
@@ -117,15 +120,20 @@ in
     sesh # Smart tmux session manager
     yazi # Fast terminal file manager
     
+    # Claude Session Manager (local package)
+    claude-manager
+    
     # Development tools
     gh
     kubectl
     kubernetes-helm  # Kubernetes package manager
+    k9s              # Terminal UI for Kubernetes
     kind             # Kubernetes in Docker
     vcluster         # Virtual Kubernetes clusters
     idpbuilder  # Custom package for IDP building
     argocd           # ArgoCD CLI for GitOps
     devspace         # DevSpace CLI for cloud-native development
+    deno             # Secure JavaScript/TypeScript runtime
     direnv
     tree
     htop
@@ -136,11 +144,12 @@ in
     gum  # Charm's interactive shell script builder
 
     # System tools
-    xclip
+    # xclip removed - using Windows clipboard via clip.exe in WSL
     file
     which
     curl
     wget
+    ncurses  # Terminal utilities (clear, tput, reset, etc.)
   ];
 
   # Modern shell prompt with Starship - Pure ASCII configuration
@@ -403,6 +412,8 @@ in
       LESS = "-R";
       TERM = "xterm-256color";
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
+      # WSL-specific: Use Windows clipboard
+      DISPLAY = ":0";
     };
     
     shellAliases = {
@@ -477,18 +488,44 @@ in
       
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
+      
+      # WSL clipboard helpers
+      clip = "/mnt/c/Windows/System32/clip.exe";
+      paste = "powershell.exe -command 'Get-Clipboard' | head -c -2";
     };
     
     initExtra = ''
-      # Fix terminal compatibility
-      export TERM=xterm-256color
-      export COLORTERM=truecolor
+      # Fix terminal compatibility - detect VSCode terminal
+      if [ "$TERM_PROGRAM" = "vscode" ]; then
+        # VSCode terminal specific settings
+        export TERM=xterm-256color
+        # Disable COLORTERM in VSCode to avoid OSC issues
+        unset COLORTERM
+        # Disable problematic OSC sequences
+        export STARSHIP_DISABLE_ANSI_INJECTION=1
+      else
+        # Regular terminal settings
+        export TERM=xterm-256color
+        export COLORTERM=truecolor
+      fi
       
       # Add /usr/local/bin to PATH for Docker Desktop
       export PATH="/usr/local/bin:$PATH"
       
-      # Disable OSC sequences that might cause issues
-      export STARSHIP_DISABLE_ANSI_INJECTION=1
+      # Fix terminal escape sequences in WSL
+      # Disable bracketed paste mode that can cause [O[I sequences
+      if [ "$TERM_PROGRAM" != "vscode" ]; then
+        printf "\e[?2004l"
+      fi
+      
+      # VSCode-specific: Suppress OSC sequences that cause visual artifacts
+      if [ "$TERM_PROGRAM" = "vscode" ]; then
+        # Disable OSC 10/11 (foreground/background color queries)
+        # These cause the rgb: output you're seeing
+        alias clear='printf "\033c"'
+        # Suppress specific terminal query sequences
+        stty -echoctl 2>/dev/null || true
+      fi
       
       # Set up fzf key bindings
       if command -v fzf &> /dev/null; then
@@ -686,7 +723,7 @@ in
       set -g default-terminal "screen-256color"
       set -ga terminal-overrides ",*256col*:Tc"
       set -sg escape-time 0
-      set -g focus-events on
+      set -g focus-events off  # Disable to prevent [O[I escape sequences in WSL
       set -g detach-on-destroy off  # don't exit from tmux when closing a session
       set -g repeat-time 1000
       
@@ -761,25 +798,46 @@ in
       bind S setw synchronize-panes \; display-message "Synchronize panes: #{?pane_synchronized,ON,OFF}"
       
       # Sesh session management
-      bind -N "last-session (via sesh)" L run-shell "sesh last"
+      bind -N "last-session (via sesh)" l run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
-      # Claude popup windows
+      # === Popup Windows ===
+      
+      # Ephemeral shell popup with full terminal features
+      bind e display-popup -E \
+        -w 80% -h 80% \
+        -d "#{pane_current_path}" \
+        -T " 🚀 Ephemeral Shell (ESC to close) " \
+        -e TERM=xterm-256color \
+        -e COLORTERM=truecolor \
+        "exec bash --login"
+      
+      # Claude session selector popup
+      bind c display-popup -E \
+        -w 90% -h 90% \
+        -T " 🤖 Claude Session Selector (ESC to close) " \
+        -d "#{pane_current_path}" \
+        -e TERM=xterm-256color \
+        -e COLORTERM=truecolor \
+        "/home/vpittamp/claude-popup-selector.sh"
+      
+      # Quick Claude commands
       bind C display-popup -E -w 80% -h 80% "claude"
       bind R display-popup -E -w 80% -h 80% "claude --continue"
-      
-      # Blank terminal popup
-      bind p display-popup -E -w 80% -h 80%
       
       
       # Copy mode
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel 'xclip -in -selection clipboard'
+      # Use full path to clip.exe for WSL clipboard integration
+      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel '/mnt/c/Windows/System32/clip.exe'
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'xclip -in -selection clipboard'
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/mnt/c/Windows/System32/clip.exe'
+      
+      # Paste from Windows clipboard (Prefix + p)
+      bind p run-shell 'powershell.exe -command "Get-Clipboard" | head -c -2 | tmux load-buffer - && tmux paste-buffer'
     '';
   };
 
@@ -866,6 +924,9 @@ in
     extraLuaConfig = ''
       -- Set colorscheme
       vim.cmd.colorscheme "tokyonight-night"
+      
+      -- Use system clipboard by default
+      vim.opt.clipboard = "unnamedplus"
       
       -- Lualine
       require('lualine').setup {
@@ -1070,7 +1131,7 @@ in
     [[session]]
     name = "nix-all 📦"
     path = "/etc/nixos"
-    startup_command = "nvim -O configuration.nix home-vpittamp.nix flake.nix"
+    startup_command = ""
     preview_command = "eza --all --git --icons --color=always --group-directories-first /etc/nixos"
     windows = [ "git", "build" ]
 
