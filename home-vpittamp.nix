@@ -1,8 +1,10 @@
 { config, pkgs, lib, inputs, ... }:
 
 let
-  # Custom package for claude-manager (portable version for containers)
-  claude-manager = pkgs.callPackage ./packages/claude-manager-portable.nix {};
+  # Custom package for claude-manager (multiplatform version)
+  claude-manager = pkgs.callPackage ./packages/claude-manager-multiplatform.nix { 
+    inherit (pkgs.stdenv.hostPlatform) system;
+  };
   
   # Custom package for idpbuilder
   idpbuilder = pkgs.stdenv.mkDerivation rec {
