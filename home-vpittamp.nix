@@ -1,8 +1,8 @@
 { config, pkgs, lib, inputs, ... }:
 
 let
-  # Custom package for claude-manager
-  claude-manager = pkgs.callPackage ./packages/claude-manager-binary.nix {};
+  # Custom package for claude-manager (portable version for containers)
+  claude-manager = pkgs.callPackage ./packages/claude-manager-portable.nix {};
   
   # Custom package for idpbuilder
   idpbuilder = pkgs.stdenv.mkDerivation rec {
