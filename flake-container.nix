@@ -1,11 +1,11 @@
 # Enhanced container configuration with home-manager integration
-{ pkgs, lib, config, ... }:
+{ pkgs, lib, config, inputs, ... }:
 
 let
   # Import the actual home-manager configuration to get packages
   # This ensures we have a single source of truth
   homeConfig = import ./home-vpittamp.nix { 
-    inherit config pkgs lib; 
+    inherit config pkgs lib inputs; 
   };
   
   # Extract packages from the home configuration

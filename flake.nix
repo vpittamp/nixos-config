@@ -75,7 +75,7 @@
       # Container packages
       packages.${system} = 
         (import ./flake-container.nix { 
-          inherit pkgs; 
+          inherit pkgs inputs; 
           lib = nixpkgs.lib;
           config = {}; 
         }) // (import ./containers { 

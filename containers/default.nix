@@ -10,9 +10,6 @@ let
   ];
 in
 {
-  # Basic container with shell utilities
-  basic-container = import ./basic.nix { inherit pkgs; };
-  
   # Node.js application container
   node-app-container = pkgs.dockerTools.buildLayeredImage {
     name = "node-app";

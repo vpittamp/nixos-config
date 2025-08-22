@@ -48,7 +48,7 @@ let
     kubectl  # Keep for apps that need K8s access
     
     # Custom packages
-    (pkgs.callPackage ../packages/claude-manager-multiplatform.nix { 
+    (pkgs.callPackage ../packages/claude-manager-fetchurl.nix { 
       inherit (pkgs.stdenv.hostPlatform) system;
     })
   ];
