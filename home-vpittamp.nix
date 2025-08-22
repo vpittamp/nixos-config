@@ -1,8 +1,8 @@
 { config, pkgs, lib, inputs, ... }:
 
 let
-  # Custom package for claude-manager (multiplatform version)
-  claude-manager = pkgs.callPackage ./packages/claude-manager-multiplatform.nix { 
+  # Custom package for claude-manager (fetchurl version for GitHub compatibility)
+  claude-manager = pkgs.callPackage ./packages/claude-manager-fetchurl.nix { 
     inherit (pkgs.stdenv.hostPlatform) system;
   };
   
@@ -500,14 +500,7 @@ in
     };
     
     initExtra = ''
-      # Clean terminal state on shell init to prevent escape sequence issues
-      if [[ $- == *i* ]]; then
-        # Disable bracketed paste mode
-        printf "\033[?2004l" 2>/dev/null || true
-        # Clear any pending OSC sequences
-        printf "\033]110;\007" 2>/dev/null || true
-        printf "\033]111;\007" 2>/dev/null || true
-      fi
+      # Terminal configuration moved to TERM settings below
       
       # Fix terminal compatibility - detect VSCode terminal
       if [ "$TERM_PROGRAM" = "vscode" ]; then
@@ -527,11 +520,7 @@ in
       # Add /usr/local/bin to PATH for Docker Desktop
       export PATH="/usr/local/bin:$PATH"
       
-      # Fix terminal escape sequences in WSL
-      # Disable bracketed paste mode that can cause [O[I sequences
-      if [ "$TERM_PROGRAM" != "vscode" ]; then
-        printf "\e[?2004l"
-      fi
+      # Terminal configuration handled by tmux settings
       
       # VSCode-specific: Suppress OSC sequences that cause visual artifacts
       if [ "$TERM_PROGRAM" = "vscode" ]; then
