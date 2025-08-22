@@ -1,36 +1,20 @@
 { config, pkgs, lib, inputs, ... }:
 
 let
-  # Custom package for claude-manager (fetchurl version for GitHub compatibility)
-  claude-manager = pkgs.callPackage ./packages/claude-manager-fetchurl.nix { 
-    inherit (pkgs.stdenv.hostPlatform) system;
-  };
-  
-  # Custom package for idpbuilder
-  idpbuilder = pkgs.stdenv.mkDerivation rec {
-    pname = "idpbuilder";
-    version = "0.9.1";
+  # Sesh configuration content (still needed for xdg.configFile)
+  seshConfigContent = ''
+    [[sessions]]
+    name = "backstage-cnoe"
+    path = "~/backstage-cnoe"
     
-    src = pkgs.fetchurl {
-      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
-      sha256 = "a4f16943ec20c6ad41664ed7ae2986282368daf7827356516f9d6687b830aa09";
-    };
+    [[sessions]]
+    name = "dotfiles"
+    path = "~/.config"
     
-    sourceRoot = ".";
-    
-    installPhase = ''
-      mkdir -p $out/bin
-      cp idpbuilder $out/bin/
-      chmod +x $out/bin/idpbuilder
-    '';
-    
-    meta = with lib; {
-      description = "Tool for building Internal Developer Platforms with Kubernetes";
-      homepage = "https://github.com/cnoe-io/idpbuilder";
-      license = licenses.asl20;
-      platforms = [ "x86_64-linux" ];
-    };
-  };
+    [[sessions]]
+    name = "nixos-config"
+    path = "/etc/nixos"
+  '';
   
   # Modern color palette inspired by Catppuccin Mocha
   colors = {
@@ -107,52 +91,16 @@ in
   home.homeDirectory = "/home/vpittamp";
   home.stateVersion = "25.05";
 
-  # Core packages
-  home.packages = with pkgs; [
-    # Core utilities
-    tmux
-    git
-    stow
-    fzf
-    ripgrep
-    fd
-    bat  # Better cat with syntax highlighting
-    eza  # Better ls with icons
-    zoxide  # Smart cd
-    sesh # Smart tmux session manager
-    yazi # Fast terminal file manager
-    
-    # Claude Session Manager (local package)
-    claude-manager
-    
-    # Development tools
-    gh
-    kubectl
-    kubernetes-helm  # Kubernetes package manager
-    k9s              # Terminal UI for Kubernetes
-    kind             # Kubernetes in Docker
-    vcluster         # Virtual Kubernetes clusters
-    idpbuilder  # Custom package for IDP building
-    argocd           # ArgoCD CLI for GitOps
-    devspace         # DevSpace CLI for cloud-native development
-    deno             # Secure JavaScript/TypeScript runtime
-    direnv
-    tree
-    htop
-    btop  # Better htop
-    ncdu
-    jq
-    yq
-    gum  # Charm's interactive shell script builder
-
-    # System tools
-    # xclip removed - using Windows clipboard via clip.exe in WSL
-    file
-    which
-    curl
-    wget
-    ncurses  # Terminal utilities (clear, tput, reset, etc.)
-  ];
+  # Core packages - using overlay system
+  # Control package selection with NIXOS_PACKAGES environment variable:
+  #   - "" or unset: essential packages only (default)
+  #   - "full": all packages  
+  #   - "essential,kubernetes": essential + kubernetes tools
+  #   - "essential,development": essential + development tools
+  home.packages = let
+    overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
+  in
+    overlayPackages.allPackages;
 
   # Modern shell prompt with Starship - Pure ASCII configuration
   programs.starship = {
