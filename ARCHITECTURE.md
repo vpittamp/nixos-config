@@ -120,7 +120,6 @@ graph TD
     subgraph "Main Configuration"
         FLAKE[flake.nix]
         MAIN[configuration.nix]
-        BASE[configuration-base.nix]
         CONT[container-profile.nix]
     end
     
@@ -136,11 +135,10 @@ graph TD
     OP --> FLAKE
     
     FLAKE --> |"WSL build"| MAIN
-    FLAKE --> |"Container build"| BASE
-    BASE --> CONT
+    FLAKE --> |"Container build"| MAIN
+    MAIN --> |"Override for containers"| CONT
     
     MAIN --> HOME_CONFIG
-    BASE --> HOME_CONFIG
     HOME_CONFIG --> PACKAGES
     PACKAGES --> CUSTOM
 ```
@@ -151,8 +149,7 @@ graph TD
 graph TD
     ROOT[/etc/nixos/]
     
-    ROOT --> CONFIG[configuration.nix<br/>WSL + conditionals]
-    ROOT --> BASE[configuration-base.nix<br/>Shared base config]
+    ROOT --> CONFIG[configuration.nix<br/>Main WSL configuration]
     ROOT --> CONTAINER[container-profile.nix<br/>Container overrides]
     ROOT --> HOME[home-vpittamp.nix<br/>User environment]
     ROOT --> FLAKE[flake.nix<br/>Build definitions]

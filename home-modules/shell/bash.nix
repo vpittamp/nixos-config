@@ -1,0 +1,223 @@
+{ config, pkgs, lib, ... }:
+{
+  programs.bash = {
+    enable = true;
+    historyControl = [ "ignoreboth" ];
+    historySize = 10000;
+    historyFileSize = 20000;
+    
+    shellOptions = [
+      "histappend"
+      "checkwinsize"
+      "extglob"
+      "globstar"
+      "checkjobs"
+    ];
+    
+    sessionVariables = {
+      EDITOR = "nvim";
+      VISUAL = "nvim";
+      PAGER = "less";
+      LESS = "-R";
+      # TERM is now set dynamically in bash initExtra to avoid conflicts
+      # TERM = "screen-256color";
+      DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
+      # WSL-specific: Use Windows clipboard
+      DISPLAY = ":0";
+      # Disable OSC color queries
+      NO_COLOR = "";  # Set to empty string so programs can check it exists
+    };
+    
+    shellAliases = {
+      # Navigation with zoxide
+      cd = "z";  # Use zoxide for cd command
+      cdd = "command cd";  # Original cd available as cdd
+      ".." = "cd ..";
+      "..." = "cd ../..";
+      "...." = "cd ../../..";
+      
+      # Better defaults
+      ls = "eza --group-directories-first";
+      ll = "eza -l --group-directories-first";
+      la = "eza -la --group-directories-first";
+      lt = "eza --tree";
+      cat = "bat";
+      grep = "rg";
+      egrep = "rg";
+      fgrep = "rg -F";
+      
+      # Git
+      g = "git";
+      gs = "git status";
+      ga = "git add";
+      gc = "git commit";
+      gp = "git push";
+      gl = "git log --oneline --graph --decorate";
+      gd = "git diff";
+      gco = "git checkout";
+      gb = "git branch";
+      
+      # Docker alias to use Docker Desktop via wrapper
+      docker = "/etc/nixos/docker-wrapper.sh";
+      
+      # Docker shortcuts
+      d = "docker";
+      dc = "docker-compose";
+      dps = "docker ps";
+      di = "docker images";
+      
+      # Tmux
+      t = "tmux";
+      ta = "tmux attach -t";
+      ts = "tmux new-session -s";
+      tl = "tmux list-sessions";
+      
+      # Kubernetes
+      k = "kubectl";
+      kgp = "kubectl get pods";
+      kgs = "kubectl get svc";
+      kgd = "kubectl get deployment";
+      
+      # System
+      reload = "source ~/.bashrc";
+      path = "echo $PATH | tr ':' '\n'";
+      
+      # File management
+      y = "yazi";  # Quick file browser
+      
+      # Zoxide management
+      zl = "zoxide query -l";  # List all database entries
+      zr = "zoxide remove";     # Remove entry from database
+      zs = "zoxide query -s";   # Show database statistics
+      
+      # WSL specific
+      winhome = "cd /mnt/c/Users/VinodPittampalli/";
+      
+      # 1Password aliases
+      ops = "eval $(op signin --account my)";
+      opv = "op vault list";
+      opi = "op item list";
+      
+      # ArgoCD with 1Password
+      argo-login = "op plugin init argocd";
+      
+      # WSL clipboard helpers
+      clip = "/mnt/c/Windows/System32/clip.exe";
+      paste = "powershell.exe -command 'Get-Clipboard' | head -c -2";
+    };
+    
+    initExtra = ''
+      # Terminal configuration moved to TERM settings below
+      
+      # Fix terminal compatibility - detect VSCode terminal
+      if [ "$TERM_PROGRAM" = "vscode" ]; then
+        # VSCode terminal specific settings
+        export TERM=xterm-256color
+        # Disable COLORTERM in VSCode to avoid OSC issues
+        unset COLORTERM
+        # Disable problematic OSC sequences
+        export STARSHIP_DISABLE_ANSI_INJECTION=1
+      else
+        # Regular terminal settings - use screen-256color to match tmux
+        export TERM=screen-256color
+        # Don't set COLORTERM to avoid OSC queries
+        unset COLORTERM
+      fi
+      
+      # Add /usr/local/bin to PATH for Docker Desktop
+      export PATH="/usr/local/bin:$PATH"
+      
+      # Terminal configuration handled by tmux settings
+      
+      # VSCode-specific: Suppress OSC sequences that cause visual artifacts
+      if [ "$TERM_PROGRAM" = "vscode" ]; then
+        # Disable OSC 10/11 (foreground/background color queries)
+        # These cause the rgb: output you're seeing
+        alias clear='printf "\033c"'
+        # Suppress specific terminal query sequences
+        stty -echoctl 2>/dev/null || true
+      fi
+      
+      # Set up fzf key bindings
+      if command -v fzf &> /dev/null; then
+        eval "$(fzf --bash)"
+      fi
+      
+      # 1Password Shell Plugins
+      if [ -f ~/.config/op/plugins.sh ]; then
+        source ~/.config/op/plugins.sh
+      fi
+      
+      # Enable direnv
+      eval "$(direnv hook bash)"
+      
+      # Better history search
+      bind '"\e[A": history-search-backward'
+      bind '"\e[B": history-search-forward'
+      
+      # Colored man pages
+      export LESS_TERMCAP_mb=$'\e[1;32m'
+      export LESS_TERMCAP_md=$'\e[1;32m'
+      export LESS_TERMCAP_me=$'\e[0m'
+      export LESS_TERMCAP_se=$'\e[0m'
+      export LESS_TERMCAP_so=$'\e[01;33m'
+      export LESS_TERMCAP_ue=$'\e[0m'
+      export LESS_TERMCAP_us=$'\e[1;4;31m'
+      
+      # Sesh session manager keybinding - works both inside and outside tmux
+      sesh_connect() {
+        if [ -n "$TMUX" ]; then
+          # Inside tmux: use fzf-tmux for popup overlay
+          sesh connect "$(
+            sesh list --icons | fzf-tmux -p 80%,70% \
+              --no-sort \
+              --ansi \
+              --border-label ' sesh ' \
+              --prompt '⚡  ' \
+              --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' \
+              --bind 'tab:down,btab:up' \
+              --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
+              --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' \
+              --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' \
+              --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
+              --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+              --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
+              --preview-window 'right:55%' \
+              --preview 'sesh preview {}'
+          )"
+        else
+          # Outside tmux: use regular fzf
+          sesh connect "$(
+            sesh list --icons | fzf \
+              --no-sort \
+              --ansi \
+              --border-label ' sesh ' \
+              --prompt '⚡  ' \
+              --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' \
+              --bind 'tab:down,btab:up' \
+              --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' \
+              --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' \
+              --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' \
+              --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' \
+              --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+              --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' \
+              --preview-window 'right:55%' \
+              --preview 'sesh preview {}'
+          )"
+        fi
+      }
+      
+      # Bind sesh_connect to Ctrl+T (works both inside and outside tmux)
+      # Only bind if we're in an interactive shell with line editing enabled
+      if [[ $- == *i* ]] && [[ -t 0 ]]; then
+        bind -x '"\C-t": sesh_connect' 2>/dev/null || true
+      fi
+      
+      # Initialize zoxide at the very end to avoid configuration issues
+      eval "$(zoxide init bash)"
+      
+      # Disable zoxide doctor warnings since we've properly initialized it
+      export _ZO_DOCTOR=0
+    '';
+  };
+}

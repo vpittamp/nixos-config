@@ -82,8 +82,10 @@
             inherit system;
             specialArgs = { inherit inputs; };
             modules = [
-              # Use base configuration instead of full WSL config
-              ./configuration-base.nix
+              # Include WSL module (will be disabled by container-profile)
+              nixos-wsl.nixosModules.wsl
+              # Start with main configuration
+              ./configuration.nix
               # Add home-manager
               home-manager.nixosModules.home-manager
               {
@@ -92,7 +94,7 @@
                 home-manager.users.vpittamp = import ./home-vpittamp.nix;
                 home-manager.extraSpecialArgs = { inherit inputs; };
               }
-              # Apply container-specific overrides
+              # Apply container-specific overrides last
               ./container-profile.nix
             ];
           };
@@ -170,28 +172,22 @@
         };
       };
       
-      # Development shells
-      devShells.${system} = import ./shells { inherit pkgs; };
-      
       # Formatter for 'nix fmt'
       formatter.${system} = pkgs.nixpkgs-fmt;
       
-      # Apps for easy container building
+      # Apps for container building
       apps.${system} = {
-        build-all-containers = {
+        build-container = {
           type = "app";
-          program = "${pkgs.writeShellScript "build-all-containers" ''
-            echo "Building all containers..."
-            nix build .#basic-container
-            echo "✅ basic-container built"
-            nix build .#node-app-container
-            echo "✅ node-app-container built"
-            nix build .#python-app-container
-            echo "✅ python-app-container built"
-            nix build .#nixos-full-system
-            echo "✅ nixos-full-system built"
+          program = "${pkgs.writeShellScript "build-container" ''
+            echo "Building NixOS container..."
+            echo "Package selection: ''${NIXOS_PACKAGES:-essential}"
+            nix build .#container
+            echo "✅ Container built"
             echo ""
             echo "Load into Docker with: docker load < result"
+            echo ""
+            echo "To build with all packages: NIXOS_PACKAGES=full nix run .#build-container"
           ''}";
         };
       };

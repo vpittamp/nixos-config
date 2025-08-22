@@ -17,7 +17,6 @@ The architecture eliminates configuration drift by using environment variables t
 ```
 /etc/nixos/
 ├── configuration.nix          # Main NixOS configuration (WSL-aware)
-├── configuration-base.nix     # Base configuration shared by containers
 ├── container-profile.nix      # Container-specific overrides
 ├── home-vpittamp.nix         # Home Manager user configuration
 ├── flake.nix                 # Flake definition for reproducible builds
@@ -206,7 +205,7 @@ The `flake.nix` defines:
 
 2. **Container Package** (`packages.${system}.container`)
    - Builds Docker images from NixOS configuration
-   - Uses `configuration-base.nix` + `container-profile.nix`
+   - Uses `configuration.nix` + `container-profile.nix` overrides
 
 3. **Development Shells** (`devShells.${system}`)
    - Nix development environments

@@ -9,6 +9,9 @@
   # Container-specific settings
   boot.isContainer = true;
   
+  # Disable WSL module in containers
+  wsl.enable = lib.mkForce false;
+  
   # Disable systemd services that don't work in containers
   systemd.services = {
     systemd-udevd.enable = false;
@@ -31,10 +34,14 @@
   # Disable user systemd services that are WSL-specific
   systemd.user = lib.mkForce {};
   
-  # Override environment packages to remove WSL-specific ones
-  # Most packages are now in overlays/packages.nix (essential)
-  environment.systemPackages = lib.mkForce (with pkgs; [
-    # Empty - all packages moved to home.packages via overlays
-    # No wslu or VSCode wrapper in containers
-  ]);
+  # Override environment packages for containers
+  # Use NIXOS_PACKAGES environment variable to control what gets installed
+  # Default: essential packages only (from overlays/packages.nix)
+  environment.systemPackages = lib.mkForce (with pkgs; let
+    overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
+  in
+    # For containers: use essential packages by default
+    # Can be overridden with NIXOS_PACKAGES env var at build time
+    overlayPackages.essential ++ overlayPackages.extras
+  );
 }

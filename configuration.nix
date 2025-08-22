@@ -122,7 +122,9 @@
     nixpkgs.config.allowUnfree = true;
 
     # Basic system packages
-    environment.systemPackages = with pkgs; [
+    environment.systemPackages = with pkgs; let
+      overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
+    in [
       # WSL-specific packages only
       wslu              # WSL utilities for Windows integration
       
@@ -131,7 +133,7 @@
         # Launch VSCode from WSL
         /mnt/c/Users/VinodPittampalli/AppData/Local/Programs/Microsoft\ VS\ Code/bin/code "$@"
       '')
-    ];
+    ] ++ overlayPackages.allPackages;
 
     # Enable Docker (native NixOS docker package)
     # Temporarily disabled to use Docker Desktop integration

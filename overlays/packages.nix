@@ -63,13 +63,13 @@ rec {
     pname = "idpbuilder";
     version = "0.9.1";
     src = pkgs.fetchurl {
-      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64";
-      sha256 = "sha256-M7JMUiJ/dECv5jpjCdtOxJQg0PmthVKykq5Vu1OF0Xg=";
+      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
+      sha256 = "sha256-pPFpQ+wgxq1BZk7XrimGKCNo2veCc1ZRb51mh7gwqgk=";
     };
-    dontUnpack = true;
+    sourceRoot = ".";
     installPhase = ''
       mkdir -p $out/bin
-      cp $src $out/bin/idpbuilder
+      cp idpbuilder $out/bin/idpbuilder
       chmod +x $out/bin/idpbuilder
     '';
   };
@@ -99,6 +99,7 @@ rec {
     sesh
   ];
   
+  # For container builds - filtered by NIXOS_PACKAGES env var
   extras = lib.flatten [
     (filterPackages kubernetesPackages)
     (filterPackages developmentPackages)
@@ -106,5 +107,14 @@ rec {
     (lib.optional (includePackage "idpbuilder") idpbuilder)
   ];
   
-  allPackages = essential ++ extras;
+  # For main system - always include everything
+  allExtras = lib.flatten [
+    (lib.attrValues kubernetesPackages)
+    (lib.attrValues developmentPackages)
+    (lib.attrValues toolPackages)
+    idpbuilder
+  ];
+  
+  # Used by main configuration.nix - includes everything
+  allPackages = essential ++ allExtras;
 }
