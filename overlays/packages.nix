@@ -61,10 +61,13 @@ rec {
   essential = with pkgs; [
     # Core (neovim configured via programs.neovim)
     tmux git vim
-    fzf ripgrep fd bat eza zoxide
+    fzf ripgrep grep fd bat eza zoxide
     curl wget jq yq tree htop
     which file ncurses
     direnv stow
+    
+    # Claude tools
+    claude-code  # CLI for Claude Code
     
     # Custom packages
     claude-manager
