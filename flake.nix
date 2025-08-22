@@ -139,7 +139,7 @@
               home = {
                 username = "root";  # Containers typically run as root
                 homeDirectory = "/root";
-                stateVersion = "24.05";
+                stateVersion = "25.05";  # Match home-vpittamp.nix
                 enableNixpkgsReleaseCheck = false;
               };
               
@@ -160,7 +160,7 @@
               home = {
                 username = "vpittamp";
                 homeDirectory = "/home/vpittamp";
-                stateVersion = "24.05";
+                stateVersion = "25.05";  # Match home-vpittamp.nix
                 enableNixpkgsReleaseCheck = false;
               };
               nixpkgs.config.allowUnfree = true;
