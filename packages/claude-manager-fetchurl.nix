@@ -2,7 +2,7 @@
 
 let
   # Version information
-  version = "1.0.0";
+  version = "1.0.1";
   
   # Binary URLs and hashes for different platforms
   # Add more platforms as binaries become available
@@ -69,16 +69,6 @@ stdenv.mkDerivation rec {
     # Wrap with runtime dependencies in PATH
     wrapProgram $out/bin/claude-manager \
       --prefix PATH : ${lib.makeBinPath runtimeDeps}
-    
-    # On Linux, patch the interpreter if needed
-    ${lib.optionalString stdenv.isLinux ''
-      if ldd $out/bin/claude-manager 2>/dev/null | grep -q "not a dynamic executable"; then
-        echo "Binary is statically linked, no patching needed"
-      else
-        patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" \
-          $out/bin/claude-manager || true
-      fi
-    ''}
   '';
   
   meta = with lib; {
