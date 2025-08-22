@@ -59,8 +59,8 @@ rec {
   # Essential packages - always included unless explicitly building minimal
   # ~1.5GB container
   essential = with pkgs; [
-    # Core
-    tmux git vim neovim
+    # Core (neovim configured via programs.neovim)
+    tmux git vim
     fzf ripgrep fd bat eza zoxide
     curl wget jq yq tree htop
     which file ncurses
