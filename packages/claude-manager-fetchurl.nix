@@ -9,7 +9,7 @@ let
   sources = {
     "x86_64-linux" = {
       url = "https://github.com/PittampalliOrg/claude-session-manager/releases/download/v${version}/claude-manager-linux-x64";
-      sha256 = "Ku5GK+AVB5+9cwwO/wyJmzDSEM6jMmkYfuaV/TukhHs=";
+      sha256 = "yfVMQ+TALF2HWlO3T7QAQWp7zIdUxZVkM2bOok/H6D0=";
     };
     # Future platform support can be added here
     # "aarch64-linux" = {
