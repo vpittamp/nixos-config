@@ -52,8 +52,7 @@ rec {
       wrapProgram $out/bin/sesh \
         --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.tmux pkgs.zoxide pkgs.fzf ]} \
         --set-default SESH_DEFAULT_SESSION "main" \
-        --set-default SESH_DEFAULT_COMMAND "tmux" \
-        --replace "fzf " "${pkgs.fzf}/bin/fzf "
+        --set-default SESH_DEFAULT_COMMAND "tmux"
     '';
   };
 
