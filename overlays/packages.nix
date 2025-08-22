@@ -1,22 +1,61 @@
-# Simplified overlay package definitions
-# Use NIXOS_PACKAGES env var to control what gets included
 { pkgs, lib, ... }:
 
 let
-  # Get package selection from environment (default: "essential")
-  # Options: "essential", "full", or comma-separated list like "essential,kubernetes,development"
+  # Essential packages - always included
+  essentialPackages = with pkgs; [
+    # Core
+    tmux git vim
+    fzf ripgrep grep fd bat eza zoxide
+    curl wget jq yq tree htop
+    which file ncurses direnv stow
+    nodejs_20        # ~150MB
+    claude-code      # ~50MB
+    yazi            # ~50MB - terminal file manager
+    gum             # shell scripts UI
+  ];
+  
+  # Optional package groups
+  kubernetesPackages = {
+    kubectl = pkgs.kubectl;           # ~50MB
+    helm = pkgs.kubernetes-helm;      # ~50MB
+    k9s = pkgs.k9s;                  # ~80MB
+    argocd = pkgs.argocd;            # ~100MB
+    vcluster = pkgs.vcluster;        # ~40MB
+    kind = pkgs.kind;                # ~10MB
+  };
+  
+  developmentPackages = {
+    gh = pkgs.gh;                    # ~30MB
+    devspace = pkgs.devspace;        # ~70MB
+    deno = pkgs.deno;                # ~120MB
+    docker-compose = pkgs.docker-compose;  # ~100MB
+  };
+  
+  toolPackages = {
+    btop = pkgs.btop;
+    ncdu = pkgs.ncdu;
+    glow = pkgs.glow;
+  };
+  
+  # NIXOS_PACKAGES can be:
+  # - "essential" (default)
+  # - "essential,kubectl,k9s,gh" (specific packages)
+  # - "full" (everything)
   packageSelection = builtins.getEnv "NIXOS_PACKAGES";
+  selectedPackages = lib.splitString "," packageSelection;
   
-  # Parse selection
-  selectedGroups = if packageSelection == "" then [ "essential" ]
-                   else if packageSelection == "full" then [ "essential" "kubernetes" "development" "extras" ]
-                   else lib.splitString "," packageSelection;
-  
-  # Check if a group should be included
-  includeGroup = group: builtins.elem group selectedGroups;
+  # Check if a package should be included
+  includePackage = name: 
+    packageSelection == "full" || 
+    builtins.elem name selectedPackages;
+    
+  # Apply includePackage filter to package set
+  filterPackages = packages: 
+    lib.filterAttrs (name: _: includePackage name) packages
+    |> lib.attrValues;
 in
 rec {
-  # Custom packages that were in the let block
+  # Custom packages
   claude-manager = pkgs.callPackage ../packages/claude-manager-fetchurl.nix { 
     inherit (pkgs.stdenv.hostPlatform) system;
   };
@@ -56,60 +95,17 @@ rec {
     '';
   };
 
-  # Essential packages - always included unless explicitly building minimal
-  # ~1.5GB container
-  essential = with pkgs; [
-    # Core (neovim configured via programs.neovim)
-    tmux git vim
-    fzf ripgrep grep fd bat eza zoxide
-    curl wget jq yq tree htop
-    which file ncurses
-    direnv stow
-    
-    # Development basics
-    nodejs_20        # Node.js LTS
-    docker-compose   # Docker Compose for multi-container apps
-    
-    # Claude tools
-    claude-code      # CLI for Claude Code
-    
-    # Custom packages
+  essential = essentialPackages ++ [
     claude-manager
     sesh
   ];
   
-  # Kubernetes tools - ~600MB
-  # Include with: NIXOS_PACKAGES="essential,kubernetes"
-  kubernetes = if includeGroup "kubernetes" then with pkgs; [
-    kubectl
-    kubernetes-helm
-    k9s
-    argocd
-    vcluster
-    kind
-  ] else [];
+  extras = lib.flatten [
+    (filterPackages kubernetesPackages)
+    (filterPackages developmentPackages)
+    (filterPackages toolPackages)
+    (lib.optional (includePackage "idpbuilder") idpbuilder)
+  ];
   
-  # Development tools - ~600MB
-  # Include with: NIXOS_PACKAGES="essential,development"
-  development = if includeGroup "development" then (with pkgs; [
-    gh
-    docker-compose
-    devspace
-    deno
-    nodejs_20
-  ] ++ [ idpbuilder ])  # Add custom idpbuilder
-  else [];
-  
-  # Extra tools - ~200MB
-  # Include with: NIXOS_PACKAGES="essential,extras"
-  extras = if includeGroup "extras" then with pkgs; [
-    btop      # better htop
-    ncdu      # disk usage
-    yazi      # file manager
-    gum       # interactive scripts
-    glow      # markdown viewer
-  ] else [];
-  
-  # All packages combined based on selection
-  allPackages = essential ++ kubernetes ++ development ++ extras;
+  allPackages = essential ++ extras;
 }
