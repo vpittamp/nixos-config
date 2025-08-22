@@ -126,6 +126,50 @@
         };
       };
       
+      # Home Manager configurations for standalone use (e.g., in containers)
+      homeConfigurations = {
+        # Configuration for containers or non-NixOS systems
+        vpittamp = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
+            {
+              # Container/standalone specific settings
+              home = {
+                username = "root";  # Containers typically run as root
+                homeDirectory = "/root";
+                stateVersion = "24.05";
+                enableNixpkgsReleaseCheck = false;
+              };
+              
+              # Override package selection via environment variable
+              nixpkgs.config.allowUnfree = true;
+            }
+          ];
+          extraSpecialArgs = { inherit inputs; };
+        };
+        
+        # Alternative configuration for non-root containers
+        vpittamp-user = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
+            {
+              home = {
+                username = "vpittamp";
+                homeDirectory = "/home/vpittamp";
+                stateVersion = "24.05";
+                enableNixpkgsReleaseCheck = false;
+              };
+              nixpkgs.config.allowUnfree = true;
+            }
+          ];
+          extraSpecialArgs = { inherit inputs; };
+        };
+      };
+      
       # Development shells
       devShells.${system} = import ./shells { inherit pkgs; };
       
