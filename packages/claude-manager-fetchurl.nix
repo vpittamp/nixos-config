@@ -53,22 +53,32 @@ stdenv.mkDerivation rec {
   dontUnpack = true;
   dontBuild = true;
   
+  # CRITICAL: Don't patch the ELF binary - it corrupts Deno compiled executables
+  dontPatchELF = true;
+  dontStrip = true;
+  dontPatchShebangs = true;
+  
   buildInputs = runtimeDeps;
   
-  nativeBuildInputs = with pkgs; [
-    makeWrapper
-  ] ++ lib.optionals stdenv.isLinux [ patchelf ];
+  nativeBuildInputs = with pkgs; [ ];
   
   installPhase = ''
     mkdir -p $out/bin
     
-    # Copy the binary
-    cp $src $out/bin/claude-manager
-    chmod +x $out/bin/claude-manager
+    # Copy the binary unchanged to preserve its integrity
+    cp $src $out/bin/.claude-manager-binary
+    chmod +x $out/bin/.claude-manager-binary
     
-    # Wrap with runtime dependencies in PATH
-    wrapProgram $out/bin/claude-manager \
-      --prefix PATH : ${lib.makeBinPath runtimeDeps}
+    # Create a wrapper script that sets up the environment
+    cat > $out/bin/claude-manager <<'EOF'
+    #!/usr/bin/env bash
+    # Set PATH to include runtime dependencies
+    export PATH="${lib.makeBinPath runtimeDeps}:$PATH"
+    # Execute the original binary with all arguments
+    exec "''${BASH_SOURCE[0]%/*}/.claude-manager-binary" "$@"
+    EOF
+    
+    chmod +x $out/bin/claude-manager
   '';
   
   meta = with lib; {
