@@ -5,7 +5,7 @@ let
   essentialPackages = with pkgs; [
     # Core
     tmux git vim
-    fzf ripgrep grep fd bat eza zoxide
+    fzf ripgrep gnugrep fd bat eza zoxide
     curl wget jq yq tree htop
     which file ncurses direnv stow
     nodejs_20        # ~150MB
