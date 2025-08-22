@@ -1,8 +1,8 @@
-{ pkgs, lib, homeModule, systemPackages }:
+{ pkgs, lib, homeModule, systemPackages, inputs }:
 
 let
   # Import home configuration and extract settings
-  homeConfig = homeModule { config = {}; inherit pkgs lib; };
+  homeConfig = homeModule { config = {}; inherit pkgs lib inputs; };
   
   # Extract packages and configurations from home-manager
   homePackages = homeConfig.home.packages;

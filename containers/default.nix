@@ -1,4 +1,4 @@
-{ pkgs, lib, config }:
+{ pkgs, lib, config, inputs }:
 
 let
   # Import home configuration for full system container
@@ -62,6 +62,6 @@ in
   
   # Full NixOS system container
   nixos-full-system = import ./nixos-full-system.nix {
-    inherit pkgs lib homeModule systemPackages;
+    inherit pkgs lib homeModule systemPackages inputs;
   };
 }

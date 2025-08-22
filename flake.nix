@@ -79,7 +79,7 @@
           lib = nixpkgs.lib;
           config = {}; 
         }) // (import ./containers { 
-          inherit pkgs;
+          inherit pkgs inputs;
           lib = nixpkgs.lib;
           config = {};
         });
