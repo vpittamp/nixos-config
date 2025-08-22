@@ -134,18 +134,18 @@
           modules = [
             ./home-vpittamp.nix
             onepassword-shell-plugins.hmModules.default
-            {
-              # Container/standalone specific settings
+            ({ lib, ... }: {
+              # Container/standalone specific settings - override with force
               home = {
-                username = "root";  # Containers typically run as root
-                homeDirectory = "/root";
-                stateVersion = "25.05";  # Match home-vpittamp.nix
+                username = lib.mkForce "root";  # Containers typically run as root
+                homeDirectory = lib.mkForce "/root";
+                stateVersion = lib.mkForce "25.05";  # Match home-vpittamp.nix
                 enableNixpkgsReleaseCheck = false;
               };
               
               # Override package selection via environment variable
               nixpkgs.config.allowUnfree = true;
-            }
+            })
           ];
           extraSpecialArgs = { inherit inputs; };
         };
