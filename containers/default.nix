@@ -64,4 +64,9 @@ in
   nixos-full-system = import ./nixos-full-system.nix {
     inherit pkgs lib homeModule systemPackages inputs;
   };
+  
+  # Minimal runtime container (production use)
+  nixos-runtime-system = import ./nixos-runtime-system.nix {
+    inherit pkgs lib inputs;
+  };
 }
