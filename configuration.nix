@@ -123,16 +123,8 @@
 
     # Basic system packages
     environment.systemPackages = with pkgs; [
-      neovim
-      vim
-      git
-      wget
-      curl
-      wslu
-      nodejs_20
-      claude-code
-      # Docker tools for Docker Desktop integration
-      docker-compose    # Docker Compose for multi-container apps
+      # WSL-specific packages only
+      wslu              # WSL utilities for Windows integration
       
       # VSCode wrapper for WSL integration
       (pkgs.writeShellScriptBin "code" ''

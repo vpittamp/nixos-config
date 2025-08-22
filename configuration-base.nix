@@ -62,15 +62,10 @@ in
   nixpkgs.config.allowUnfree = true;
 
   # Basic system packages
+  # Most packages are now in overlays/packages.nix (essential)
+  # Keep this minimal - only system-critical packages
   environment.systemPackages = with pkgs; [
-    neovim
-    vim
-    git
-    wget
-    curl
-    nodejs_20
-    claude-code
-    docker-compose
+    # Empty - all packages moved to home.packages via overlays
   ];
 
   # Enable Docker (native NixOS docker package)

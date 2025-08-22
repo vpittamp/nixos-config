@@ -66,8 +66,12 @@ rec {
     which file ncurses
     direnv stow
     
+    # Development basics
+    nodejs_20        # Node.js LTS
+    docker-compose   # Docker Compose for multi-container apps
+    
     # Claude tools
-    claude-code  # CLI for Claude Code
+    claude-code      # CLI for Claude Code
     
     # Custom packages
     claude-manager

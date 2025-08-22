@@ -32,15 +32,9 @@
   systemd.user = lib.mkForce {};
   
   # Override environment packages to remove WSL-specific ones
+  # Most packages are now in overlays/packages.nix (essential)
   environment.systemPackages = lib.mkForce (with pkgs; [
-    neovim
-    vim
-    git
-    wget
-    curl
-    nodejs_20
-    claude-code
-    docker-compose
+    # Empty - all packages moved to home.packages via overlays
     # No wslu or VSCode wrapper in containers
   ]);
 }
