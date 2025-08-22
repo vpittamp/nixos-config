@@ -51,8 +51,7 @@ let
     
   # Apply includePackage filter to package set
   filterPackages = packages: 
-    lib.filterAttrs (name: _: includePackage name) packages
-    |> lib.attrValues;
+    lib.attrValues (lib.filterAttrs (name: _: includePackage name) packages);
 in
 rec {
   # Custom packages
