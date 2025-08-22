@@ -15,7 +15,7 @@ let
   # Check if a group should be included
   includeGroup = group: builtins.elem group selectedGroups;
 in
-{
+rec {
   # Custom packages that were in the let block
   claude-manager = pkgs.callPackage ../packages/claude-manager-fetchurl.nix { 
     inherit (pkgs.stdenv.hostPlatform) system;
