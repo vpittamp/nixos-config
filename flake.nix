@@ -72,17 +72,59 @@
         };
       };
       
-      # Container packages
-      packages.${system} = 
-        (import ./flake-container.nix { 
-          inherit pkgs inputs; 
-          lib = nixpkgs.lib;
-          config = {}; 
-        }) // (import ./containers { 
-          inherit pkgs inputs;
-          lib = nixpkgs.lib;
-          config = {};
-        });
+      # Container packages - unified with main configuration
+      packages.${system} = {
+        # Build container from main configuration
+        # Usage: NIXOS_CONTAINER=1 NIXOS_PACKAGES="essential" nix build .#container
+        container = let
+          # Build the NixOS configuration with container mode enabled
+          containerConfig = nixpkgs.lib.nixosSystem {
+            inherit system;
+            specialArgs = { inherit inputs; };
+            modules = [
+              # Use base configuration instead of full WSL config
+              ./configuration-base.nix
+              # Add home-manager
+              home-manager.nixosModules.home-manager
+              {
+                home-manager.useGlobalPkgs = true;
+                home-manager.useUserPackages = true;
+                home-manager.users.vpittamp = import ./home-vpittamp.nix;
+                home-manager.extraSpecialArgs = { inherit inputs; };
+              }
+              # Apply container-specific overrides
+              ./container-profile.nix
+            ];
+          };
+        in
+        pkgs.dockerTools.buildLayeredImage {
+          name = "nixos-system";
+          tag = let
+            profile = builtins.getEnv "NIXOS_PACKAGES";
+          in if profile == "" then "latest" else profile;
+          
+          contents = pkgs.buildEnv {
+            name = "container-root";
+            paths = [
+              containerConfig.config.system.path
+              pkgs.bashInteractive
+              pkgs.coreutils
+            ];
+            pathsToLink = [ "/bin" "/lib" "/share" "/etc" ];
+          };
+          
+          config = {
+            Env = [
+              "PATH=/bin:/usr/bin:/usr/local/bin"
+              "HOME=/root"
+              "USER=root"
+              "TERM=xterm-256color"
+            ];
+            Cmd = [ "/bin/bash" ];
+            WorkingDir = "/";
+          };
+        };
+      };
       
       # Development shells
       devShells.${system} = import ./shells { inherit pkgs; };
