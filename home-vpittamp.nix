@@ -412,10 +412,13 @@ in
       VISUAL = "nvim";
       PAGER = "less";
       LESS = "-R";
-      TERM = "xterm-256color";
+      # TERM is now set dynamically in bash initExtra to avoid conflicts
+      # TERM = "screen-256color";
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
       # WSL-specific: Use Windows clipboard
       DISPLAY = ":0";
+      # Disable OSC color queries
+      NO_COLOR = "";  # Set to empty string so programs can check it exists
     };
     
     shellAliases = {
@@ -497,6 +500,15 @@ in
     };
     
     initExtra = ''
+      # Clean terminal state on shell init to prevent escape sequence issues
+      if [[ $- == *i* ]]; then
+        # Disable bracketed paste mode
+        printf "\033[?2004l" 2>/dev/null || true
+        # Clear any pending OSC sequences
+        printf "\033]110;\007" 2>/dev/null || true
+        printf "\033]111;\007" 2>/dev/null || true
+      fi
+      
       # Fix terminal compatibility - detect VSCode terminal
       if [ "$TERM_PROGRAM" = "vscode" ]; then
         # VSCode terminal specific settings
@@ -506,9 +518,10 @@ in
         # Disable problematic OSC sequences
         export STARSHIP_DISABLE_ANSI_INJECTION=1
       else
-        # Regular terminal settings
-        export TERM=xterm-256color
-        export COLORTERM=truecolor
+        # Regular terminal settings - use screen-256color to match tmux
+        export TERM=screen-256color
+        # Don't set COLORTERM to avoid OSC queries
+        unset COLORTERM
       fi
       
       # Add /usr/local/bin to PATH for Docker Desktop
@@ -728,6 +741,14 @@ in
       set -g focus-events off  # Disable to prevent [O[I escape sequences in WSL
       set -g detach-on-destroy off  # don't exit from tmux when closing a session
       set -g repeat-time 1000
+      
+      # Enable passthrough for terminal escape sequences
+      set -g allow-passthrough on
+      
+      # Disable OSC sequences and bracketed paste to prevent escape sequence issues
+      set -as terminal-overrides ',*:Ms@'  # Disable OSC 52 clipboard
+      set -g set-clipboard off  # Disable clipboard integration
+      set -as terminal-features ',*:RGB'  # Use RGB instead of OSC sequences
       
       # Pane settings
       set -g pane-base-index 1
@@ -1134,8 +1155,8 @@ in
     name = "nix-all 📦"
     path = "/etc/nixos"
     startup_command = ""
-    preview_command = "eza --all --git --icons --color=always --group-directories-first /etc/nixos"
-    windows = [ "git", "build" ]
+    # preview_command = "eza --all --git --icons --color=always --group-directories-first /etc/nixos"
+    # windows = [ "git", "build" ]
 
     # Window definitions for multi-window sessions
     [[window]]
