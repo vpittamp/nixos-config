@@ -8,8 +8,8 @@ let
   # Add more platforms as binaries become available
   sources = {
     "x86_64-linux" = {
-      url = "https://github.com/vpittamp/nixos-config/releases/download/v${version}/claude-manager-linux-x64";
-      sha256 = "s37+f25pkUKDm+NJs9GC+qIhIrtLN8aCguIyjWRHLL0=";
+      url = "https://github.com/PittampalliOrg/claude-session-manager/releases/download/v${version}/claude-manager-linux-x64";
+      sha256 = "Ku5GK+AVB5+9cwwO/wyJmzDSEM6jMmkYfuaV/TukhHs=";
     };
     # Future platform support can be added here
     # "aarch64-linux" = {
@@ -83,7 +83,7 @@ stdenv.mkDerivation rec {
   
   meta = with lib; {
     description = "Claude session manager for managing Claude Code sessions";
-    homepage = "https://github.com/vpittamp/nixos-config";
+    homepage = "https://github.com/PittampalliOrg/claude-session-manager";
     license = licenses.mit;
     platforms = [ "x86_64-linux" ];  # Add more as binaries become available
     mainProgram = "claude-manager";
