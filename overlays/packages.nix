@@ -40,14 +40,14 @@ rec {
     pname = "sesh";
     version = "2.6.0";
     src = pkgs.fetchurl {
-      url = "https://github.com/joshmedeski/sesh/releases/download/v${version}/sesh-linux-amd64.tar.gz";
-      sha256 = "sha256-nDPnIBnURr9DuB6zi8CE0c8JKGdV//zBpvQCCNhjI7g=";
+      url = "https://github.com/joshmedeski/sesh/releases/download/v${version}/sesh_Linux_x86_64.tar.gz";
+      sha256 = "1i88yvy0r20ndkhimbcpxvkfndq8gfx8r83jb2axjankwcyriwis";
     };
     nativeBuildInputs = [ pkgs.makeWrapper ];
     unpackPhase = "tar -xzf $src";
     installPhase = ''
       mkdir -p $out/bin
-      cp sesh-linux-amd64 $out/bin/sesh
+      cp sesh $out/bin/sesh
       chmod +x $out/bin/sesh
       wrapProgram $out/bin/sesh \
         --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.tmux pkgs.zoxide pkgs.fzf ]} \
