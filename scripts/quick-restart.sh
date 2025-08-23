@@ -16,33 +16,57 @@ export NIXOS_PACKAGES="${NIXOS_PACKAGES:-essential}"
 echo "Profile: $NIXOS_PACKAGES"
 echo ""
 
-# Check if a build is already in progress
-if pgrep -f "nix build" > /dev/null; then
-    echo "⚠️  A build is already running. Showing progress..."
-    echo ""
-    
-    # Tail the build log
-    if [ -f /tmp/nix-build.log ]; then
-        tail -f /tmp/nix-build.log
-    else
-        echo "Waiting for build output..."
-        while ! [ -f /tmp/nix-build.log ]; do
-            sleep 1
-        done
-        tail -f /tmp/nix-build.log
+# Check if a build is already in progress (using ps if pgrep not available)
+if command -v pgrep >/dev/null 2>&1; then
+    if pgrep -f "nix build" > /dev/null; then
+        echo "⚠️  A build is already running. Showing progress..."
+        echo ""
+        
+        # Tail the build log
+        if [ -f /tmp/nix-build.log ]; then
+            tail -f /tmp/nix-build.log
+        else
+            echo "Waiting for build output..."
+            while ! [ -f /tmp/nix-build.log ]; do
+                sleep 1
+            done
+            tail -f /tmp/nix-build.log
+        fi
+        exit 0
     fi
-    exit 0
+elif ps aux 2>/dev/null | grep -v grep | grep -q "nix build"; then
+    echo "⚠️  A build may be running. Continuing anyway..."
 fi
 
 # Apply optimized nix configuration if not already done
 if ! grep -q "nix-community.cachix.org" /etc/nix/nix.conf 2>/dev/null; then
     echo "Applying optimized Nix configuration..."
-    sudo cp /etc/nixos/scripts/container-nix.conf /etc/nix/nix.conf
     
-    # Restart nix-daemon if available
-    if systemctl is-active --quiet nix-daemon; then
-        sudo systemctl restart nix-daemon
-        sleep 2
+    # Check if we need sudo or if we're root
+    if [ "$EUID" -eq 0 ]; then
+        # Running as root, no sudo needed
+        cp /etc/nixos/scripts/container-nix.conf /etc/nix/nix.conf
+    elif command -v sudo >/dev/null 2>&1; then
+        # sudo available
+        sudo cp /etc/nixos/scripts/container-nix.conf /etc/nix/nix.conf
+    else
+        # Try without sudo (may fail if not root)
+        cp /etc/nixos/scripts/container-nix.conf /etc/nix/nix.conf 2>/dev/null || {
+            echo "Warning: Could not update /etc/nix/nix.conf (permission denied)"
+            echo "Continuing with existing configuration..."
+        }
+    fi
+    
+    # Restart nix-daemon if available and we have systemctl
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet nix-daemon 2>/dev/null; then
+            if [ "$EUID" -eq 0 ]; then
+                systemctl restart nix-daemon
+            elif command -v sudo >/dev/null 2>&1; then
+                sudo systemctl restart nix-daemon
+            fi
+            sleep 2
+        fi
     fi
 fi
 
