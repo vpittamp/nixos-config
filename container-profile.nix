@@ -9,6 +9,47 @@
   # Container-specific settings
   boot.isContainer = true;
   
+  # Optimize Nix for container builds
+  nix = {
+    settings = {
+      # Use binary caches for faster downloads
+      substituters = [
+        "https://cache.nixos.org"
+        "https://nix-community.cachix.org"
+        "https://devenv.cachix.org"
+      ];
+      
+      trusted-public-keys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+        "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
+      ];
+      
+      # Optimize for container environment
+      max-jobs = "auto";
+      cores = 0; # Use all available cores
+      max-substitution-jobs = 16; # Parallel downloads
+      connect-timeout = 10;
+      download-attempts = 3;
+      
+      # Reduce memory usage during builds
+      min-free = 128 * 1024 * 1024; # 128MB
+      max-free = 1024 * 1024 * 1024; # 1GB
+      
+      # Trust the build user
+      trusted-users = [ "root" "@wheel" ];
+      
+      # Enable flakes
+      experimental-features = [ "nix-command" "flakes" ];
+    };
+    
+    # Garbage collection settings for containers
+    gc = {
+      automatic = false; # Manual GC in containers
+      options = "--max-freed 1G";
+    };
+  };
+  
   # Disable WSL module in containers
   wsl.enable = lib.mkForce false;
   

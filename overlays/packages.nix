@@ -1,18 +1,30 @@
 { pkgs, lib, ... }:
 
 let
-  # Essential packages - always included
-  essentialPackages = with pkgs; [
-    # Core
+  # Minimal packages for initial container setup
+  minimalPackages = with pkgs; [
+    # Absolute essentials only
     tmux git vim
-    fzf ripgrep gnugrep fd bat eza zoxide
-    curl wget jq yq tree htop
-    which file ncurses direnv stow
-    nodejs_20        # ~150MB
-    claude-code      # ~50MB
-    yazi            # ~50MB - terminal file manager
+    fzf ripgrep fd bat
+    curl wget jq
+    which file
+  ];
+  
+  # Essential packages - core tools
+  essentialPackages = with pkgs; [
+    # Core (extends minimal)
+    gnugrep eza zoxide
+    yq tree htop
+    ncurses direnv stow
     gum             # shell scripts UI
   ];
+  
+  # Language/runtime packages (large downloads)
+  runtimePackages = {
+    nodejs_20 = pkgs.nodejs_20;       # ~150MB
+    deno = pkgs.deno;                 # ~120MB
+    python3 = pkgs.python3;           # ~100MB
+  };
   
   # Optional package groups
   kubernetesPackages = {
@@ -27,21 +39,26 @@ let
   developmentPackages = {
     gh = pkgs.gh;                    # ~30MB
     devspace = pkgs.devspace;        # ~70MB
-    deno = pkgs.deno;                # ~120MB
     docker-compose = pkgs.docker-compose;  # ~100MB
+    claude-code = pkgs.claude-code;  # ~50MB
   };
   
   toolPackages = {
+    yazi = pkgs.yazi;                # ~50MB - terminal file manager
     btop = pkgs.btop;
     ncdu = pkgs.ncdu;
     glow = pkgs.glow;
   };
   
   # NIXOS_PACKAGES can be:
-  # - "essential" (default)
+  # - "minimal" (bare minimum for container bootstrap)
+  # - "essential" (default - common tools)
   # - "essential,kubectl,k9s,gh" (specific packages)
   # - "full" (everything)
-  packageSelection = builtins.getEnv "NIXOS_PACKAGES";
+  packageSelection = let
+    envValue = builtins.getEnv "NIXOS_PACKAGES";
+  in if envValue == "" then "essential" else envValue;
+  
   selectedPackages = lib.splitString "," packageSelection;
   
   # Check if a package should be included
@@ -94,13 +111,17 @@ rec {
     '';
   };
 
-  essential = essentialPackages ++ [
+  # Package sets based on selection
+  minimal = minimalPackages ++ [ sesh ];
+  
+  essential = minimalPackages ++ essentialPackages ++ [
     claude-manager
     sesh
   ];
   
   # For container builds - filtered by NIXOS_PACKAGES env var
   extras = lib.flatten [
+    (filterPackages runtimePackages)
     (filterPackages kubernetesPackages)
     (filterPackages developmentPackages)
     (filterPackages toolPackages)
@@ -109,12 +130,17 @@ rec {
   
   # For main system - always include everything
   allExtras = lib.flatten [
+    (lib.attrValues runtimePackages)
     (lib.attrValues kubernetesPackages)
     (lib.attrValues developmentPackages)
     (lib.attrValues toolPackages)
     idpbuilder
   ];
   
-  # Used by main configuration.nix - includes everything
-  allPackages = essential ++ allExtras;
+  # Determine which package set to use
+  allPackages = 
+    if packageSelection == "minimal" then minimal
+    else if packageSelection == "essential" then essential
+    else if packageSelection == "full" then essential ++ allExtras
+    else essential ++ extras;
 }
