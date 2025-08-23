@@ -8,7 +8,7 @@ in
     enable = true;
     enableBashIntegration = true;
     settings = {
-      format = "$username$hostname $directory$git_branch$git_status $kubernetes\n$character ";
+      format = "$username$hostname $custom$directory$git_branch$git_status $kubernetes\n$character ";
       
       palette = "catppuccin_mocha";
       
@@ -237,6 +237,23 @@ in
         success_symbol = "[➜](bold fg:${colors.green})";
         error_symbol = "[➜](bold fg:${colors.red})";
         vimcmd_symbol = "[❮](bold fg:${colors.green})";
+      };
+      
+      # Tmux session/window/pane indicator
+      env_var.tmux = {
+        variable = "TMUX";
+        format = "[$env_value]($style) ";
+        style = "fg:${colors.teal}";
+        default = "";
+      };
+      
+      # Custom tmux format command substitution
+      custom.tmux = {
+        when = "test -n \"$TMUX\"";
+        command = "tmux display-message -p '#S:#I.#P'";
+        format = "[\\[$output\\]]($style) ";
+        style = "fg:${colors.subtext0}";
+        disabled = false;
       };
     };
   };

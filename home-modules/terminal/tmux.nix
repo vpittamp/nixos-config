@@ -131,10 +131,10 @@ in
       set -g status-right-length 150
       
       # Left status with powerline separators, session count and window count
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] ⚡ PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold]  COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] 🔍 ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] ◉ TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S \ue0b1 #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
       
-      # Right status with development info
-      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} #[fg=${colors.surface1},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface1}]  #(git branch --show-current 2>/dev/null || echo 'no-git') #[fg=${colors.surface2},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface2}] ☸ #(kubectl config current-context 2>/dev/null | cut -d'/' -f2 | cut -c1-10 || echo 'none') #[fg=${colors.blue},bg=${colors.surface2}]#[fg=${colors.crust},bg=${colors.blue},bold] 🐳 #(docker ps -q 2>/dev/null | wc -l || echo '0') "
+      # Right status - simplified with just pane info
+      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} "
       
       # Window status with powerline styling
       set -g window-status-format "#[fg=${colors.crust},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface0}] #I:#W #[fg=${colors.surface0},bg=${colors.crust}]"
@@ -173,6 +173,7 @@ in
       bind -r L resize-pane -R 5
       
       # Window management
+      bind c new-window -c "#{pane_current_path}"
       bind f resize-pane -Z
       bind x kill-pane
       bind X kill-window
@@ -201,15 +202,6 @@ in
         -e COLORTERM=truecolor \
         "exec bash --login"
       
-      # Claude session selector popup
-      bind c display-popup -E \
-        -w 90% -h 90% \
-        -T " 🤖 Claude Session Selector (ESC to close) " \
-        -d "#{pane_current_path}" \
-        -e TERM=xterm-256color \
-        -e COLORTERM=truecolor \
-        "/home/vpittamp/claude-popup-selector.sh"
-      
       # Quick Claude commands
       bind C display-popup -E -w 80% -h 80% "claude"
       bind R display-popup -E -w 80% -h 80% "claude --continue"
@@ -225,9 +217,6 @@ in
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/mnt/c/Windows/System32/clip.exe'
-      
-      # Paste from Windows clipboard (Prefix + p)
-      bind p run-shell 'powershell.exe -command "Get-Clipboard" | head -c -2 | tmux load-buffer - && tmux paste-buffer'
     '';
   };
 }

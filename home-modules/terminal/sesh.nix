@@ -27,26 +27,26 @@
 
       # Nix Configuration Sessions
       [[session]]
-      name = "nix-config 🔧"
+      name = "nix-config"
       path = "/etc/nixos"
       startup_command = "nvim configuration.nix"
       preview_command = "bat --color=always /etc/nixos/configuration.nix"
 
       [[session]]
-      name = "nix-home 🏠"
+      name = "nix-home"
       path = "/etc/nixos"
       startup_command = "nvim home-vpittamp.nix"
       preview_command = "bat --color=always /etc/nixos/home-vpittamp.nix"
 
       [[session]]
-      name = "nix-flake ❄️"
+      name = "nix-flake"
       path = "/etc/nixos"
       startup_command = "nvim flake.nix"
       preview_command = "bat --color=always /etc/nixos/flake.nix"
 
       # Quick edit session for all Nix configs
       [[session]]
-      name = "nix-all 📦"
+      name = "nix-all"
       path = "/etc/nixos"
       startup_command = ""
       # preview_command = "eza --all --git --icons --color=always --group-directories-first /etc/nixos"
@@ -63,20 +63,20 @@
 
       # Development Sessions
       [[session]]
-      name = "workspace 💻"
+      name = "workspace"
       path = "~/workspace"
       startup_command = "nvim"
       preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
 
       [[session]]
-      name = "dotfiles 📝"
+      name = "dotfiles"
       path = "~/.config"
       startup_command = "nvim"
       preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
 
       # Kubernetes/Container Sessions
       [[session]]
-      name = "k8s-dev ☸️"
+      name = "k8s-dev"
       path = "~/k8s"
       startup_command = "k9s"
       preview_command = "kubectl get pods --all-namespaces 2>/dev/null || echo 'No cluster connected'"
