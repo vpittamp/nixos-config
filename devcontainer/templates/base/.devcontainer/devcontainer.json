@@ -1,0 +1,28 @@
+{
+  "name": "nixos-dev",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "containerEnv": {
+    "NIXOS_CONFIG_ACTIVATE": "true",
+    "NIXOS_CONFIG_GITHUB": "https://github.com/vpittamp/nixos-config",
+    "NIXOS_PACKAGES": "essential"
+  },
+  "onCreateCommand": "/usr/local/bin/nixos-activate || echo 'NixOS activation completed with warnings'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "arrterian.nix-env-selector",
+        "jnoortheen.nix-ide",
+        "mkhl.direnv"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "nix.enableLanguageServer": true,
+        "nix.serverPath": "nil"
+      }
+    }
+  },
+  "remoteUser": "code"
+}

@@ -1,0 +1,74 @@
+{
+  "name": "backstage-nixos-dev",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "containerEnv": {
+    "NIXOS_CONFIG_ACTIVATE": "true",
+    "NIXOS_CONFIG_GITHUB": "https://github.com/vpittamp/nixos-config",
+    "NIXOS_PACKAGES": "essential,nodejs_20,yarn,kubectl,devspace,gh",
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "NODE_ENV": "development",
+    "BROWSER": "none"
+  },
+  "initializeCommand": "echo 'Preparing to start devcontainer...'",
+  "onCreateCommand": "/usr/local/bin/nixos-activate || echo 'NixOS activation completed with warnings'",
+  "postCreateCommand": "echo 'Checking development tools...' && (which node && node --version || echo 'Node not found yet') && (which yarn && yarn --version || echo 'Yarn not found yet')",
+  "postStartCommand": "cd /workspace && [ -f package.json ] && yarn install --frozen-lockfile || echo 'No package.json found'",
+  "forwardPorts": [3000, 7007, 9229],
+  "portsAttributes": {
+    "3000": {
+      "label": "Frontend",
+      "onAutoForward": "notify"
+    },
+    "7007": {
+      "label": "Backend API",
+      "onAutoForward": "notify"
+    },
+    "9229": {
+      "label": "Node.js Debugger",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "arrterian.nix-env-selector",
+        "ms-vscode.js-debug",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker",
+        "jnoortheen.nix-ide",
+        "mkhl.direnv"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash",
+            "icon": "terminal-bash"
+          }
+        },
+        "nix.enableLanguageServer": true,
+        "nix.serverPath": "nil",
+        "files.watcherExclude": {
+          "**/node_modules/**": true,
+          "**/.nx/**": true,
+          "**/dist/**": true
+        },
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact"
+        ]
+      }
+    }
+  },
+  "remoteUser": "code",
+  "features": {},
+  "updateRemoteUserUID": true
+}

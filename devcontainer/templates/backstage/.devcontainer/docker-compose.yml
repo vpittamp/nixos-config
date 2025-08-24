@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  app:
+    image: backstage-devcontainer:latest
+    volumes:
+      # Use the current directory as workspace
+      - .:/workspace:cached
+      # Named volumes for persistence
+      - nix-store:/nix
+      - node-modules:/workspace/node_modules
+      - vscode-extensions:/home/code/.vscode-server/extensions
+      - vscode-insiders:/home/code/.vscode-server-insiders
+    environment:
+      - NIXOS_CONFIG_ACTIVATE=true
+      - NIXOS_CONFIG_GITHUB=https://github.com/vpittamp/nixos-config
+      - NIXOS_PACKAGES=essential,nodejs_20,yarn,kubectl,devspace,gh
+      - NODE_OPTIONS=--max-old-space-size=4096
+      - NODE_ENV=development
+      - BROWSER=none
+    # Overrides default command so things don't shut down after the process ends.
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    network_mode: bridge
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+volumes:
+  nix-store:
+  node-modules:
+  vscode-extensions:
+  vscode-insiders:
