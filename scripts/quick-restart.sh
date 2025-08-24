@@ -34,12 +34,12 @@ if command -v pgrep >/dev/null 2>&1; then
         fi
         exit 0
     fi
-elif ps aux 2>/dev/null | grep -v grep | grep -q "nix build"; then
+elif command -v grep >/dev/null 2>&1 && ps aux 2>/dev/null | grep -v grep | grep -q "nix build"; then
     echo "⚠️  A build may be running. Continuing anyway..."
 fi
 
 # Apply optimized nix configuration if not already done
-if ! grep -q "nix-community.cachix.org" /etc/nix/nix.conf 2>/dev/null; then
+if command -v grep >/dev/null 2>&1 && ! grep -q "nix-community.cachix.org" /etc/nix/nix.conf 2>/dev/null; then
     echo "Applying optimized Nix configuration..."
     
     # Check if we need sudo or if we're root
@@ -107,8 +107,8 @@ while kill -0 $BUILD_PID 2>/dev/null; do
     echo -n "."
     sleep 2
     
-    # Periodically show build status
-    if [ -f /tmp/nix-build.log ]; then
+    # Periodically show build status (only if grep is available)
+    if [ -f /tmp/nix-build.log ] && command -v grep >/dev/null 2>&1; then
         STATUS=$(tail -n1 /tmp/nix-build.log | grep -oE '\[[0-9]+/[0-9]+ built' || echo "")
         if [ -n "$STATUS" ]; then
             printf "\rBuilding... %s     " "$STATUS"
