@@ -26,6 +26,11 @@
       DISPLAY = ":0";
       # Disable OSC color queries
       NO_COLOR = "";  # Set to empty string so programs can check it exists
+      
+      # AI/LLM API Keys (set these in your environment or use a secrets manager)
+      # AVANTE_ANTHROPIC_API_KEY = "your-api-key-here"; # Uncomment and set your Claude API key
+      # Or use a command to retrieve from password manager:
+      # AVANTE_ANTHROPIC_API_KEY = "$(op read 'op://Private/Anthropic API Key/api_key')"; # Example with 1Password
     };
     
     shellAliases = {
@@ -101,9 +106,14 @@
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
-      # WSL clipboard helpers
+      # WSL clipboard helpers - Windows native
       clip = "/mnt/c/Windows/System32/clip.exe";
-      paste = "powershell.exe -command 'Get-Clipboard' | head -c -2";
+      paste = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
+      
+      # Linux-style clipboard with xclip (uses WSLg X11) - falls back to Windows tools
+      # Note: xclip for copy uses timeout to prevent hanging when no X11 client is consuming
+      pbcopy = "timeout 0.5 xclip -selection clipboard 2>/dev/null || /mnt/c/Windows/System32/clip.exe";
+      pbpaste = "xclip -selection clipboard -o 2>/dev/null || /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
     };
     
     initExtra = ''
@@ -212,6 +222,38 @@
       if [[ $- == *i* ]] && [[ -t 0 ]]; then
         bind -x '"\C-t": sesh_connect' 2>/dev/null || true
       fi
+      
+      # Yazi wrapper function with zoxide integration
+      # This allows yazi to change the current directory and update zoxide's database
+      function yazi() {
+        local tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
+        command yazi "$@" --cwd-file="$tmp"
+        if cwd="$(cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+          cd -- "$cwd"
+          # Update zoxide database when changing directories via yazi
+          zoxide add "$PWD" 2>/dev/null || true
+        fi
+        rm -f -- "$tmp"
+      }
+      
+      # Clipboard helper functions for better integration
+      # Smart copy function that tries xclip first with timeout, then falls back to Windows
+      copy() {
+        if command -v xclip &> /dev/null && [ -n "$DISPLAY" ]; then
+          timeout 0.5 xclip -selection clipboard 2>/dev/null || /mnt/c/Windows/System32/clip.exe
+        else
+          /mnt/c/Windows/System32/clip.exe
+        fi
+      }
+      
+      # Smart paste function that tries xclip first, then falls back to Windows
+      paste() {
+        if command -v xclip &> /dev/null && [ -n "$DISPLAY" ]; then
+          xclip -selection clipboard -o 2>/dev/null || /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
+        else
+          /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
+        fi
+      }
       
       # Initialize zoxide at the very end to avoid configuration issues
       eval "$(zoxide init bash)"
