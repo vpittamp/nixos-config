@@ -29,6 +29,7 @@ let
     devspace = pkgs.devspace;        # ~70MB
     deno = pkgs.deno;                # ~120MB
     docker-compose = pkgs.docker-compose;  # ~100MB
+    yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
   };
   
   toolPackages = {
