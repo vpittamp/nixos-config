@@ -170,6 +170,16 @@
           ];
           extraSpecialArgs = { inherit inputs; };
         };
+        
+        # Devcontainer user "code" - extends vpittamp-user with overrides
+        code = self.homeConfigurations.vpittamp-user.extendModules {
+          modules = [{
+            home = {
+              username = nixpkgs.lib.mkForce "code";
+              homeDirectory = nixpkgs.lib.mkForce "/home/code";
+            };
+          }];
+        };
       };
       
       # Formatter for 'nix fmt'
