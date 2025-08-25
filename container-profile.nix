@@ -3,6 +3,9 @@
 { config, lib, pkgs, ... }:
 
 {
+  # Import SSH module for containers
+  imports = [ ./container-ssh.nix ];
+  
   # Explicitly disable WSL features in containers
   disabledModules = [ ];
   
@@ -83,6 +86,30 @@
   in
     # For containers: use essential packages by default
     # Can be overridden with NIXOS_PACKAGES env var at build time
-    overlayPackages.essential ++ overlayPackages.extras
+    overlayPackages.essential ++ overlayPackages.extras ++ [
+      # Add SSH-related packages for containers
+      pkgs.openssh
+    ]
   );
+  
+  # Users for SSH access in containers
+  users.users = {
+    # Code user for development containers
+    code = {
+      isNormalUser = true;
+      uid = 1000;
+      group = "users";
+      extraGroups = [ "wheel" ];
+      home = "/home/code";
+      shell = pkgs.bash;
+      # Allow passwordless sudo for development
+      openssh.authorizedKeys.keys = [
+        # These will be overridden by mounted secrets
+        # Add default keys here if needed
+      ];
+    };
+  };
+  
+  # Ensure wheel group has sudo access
+  security.sudo.wheelNeedsPassword = false;
 }
