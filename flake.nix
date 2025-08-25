@@ -121,9 +121,15 @@
               "HOME=/root"
               "USER=root"
               "TERM=xterm-256color"
+              "CONTAINER_SSH_ENABLED=true"
+              "CONTAINER_SSH_PORT=2222"
             ];
-            Cmd = [ "/bin/bash" ];
+            Entrypoint = [ "/etc/container-entrypoint.sh" ];
+            Cmd = [ "sleep" "infinity" ];
             WorkingDir = "/";
+            ExposedPorts = {
+              "2222/tcp" = {};
+            };
           };
         };
       };
