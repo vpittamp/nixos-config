@@ -247,13 +247,15 @@
       }
       
       # Smart paste function that tries xclip first, then falls back to Windows
-      paste() {
+      clipaste() {
         if command -v xclip &> /dev/null && [ -n "$DISPLAY" ]; then
           xclip -selection clipboard -o 2>/dev/null || /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
         else
           /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
         fi
       }
+      # Create an alias for convenience
+      alias paste='clipaste'
       
       # Initialize zoxide at the very end to avoid configuration issues
       eval "$(zoxide init bash)"
