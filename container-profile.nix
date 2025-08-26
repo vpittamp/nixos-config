@@ -95,12 +95,6 @@
     overlayPackages.essential ++ overlayPackages.extras ++ [
       # Add SSH-related packages for containers
       pkgs.openssh
-      # Add neovim since home-manager won't be applied for code user
-      pkgs.neovim
-      # Add other development tools that would normally come from home-manager
-      pkgs.ripgrep
-      pkgs.fd
-      pkgs.nodejs_20
     ]
   );
   
@@ -114,21 +108,12 @@
       extraGroups = [ "wheel" ];
       home = "/home/code";
       shell = pkgs.bash;
+      createHome = true;
       # Allow passwordless sudo for development
       openssh.authorizedKeys.keys = [
         # These will be overridden by mounted secrets
         # Add default keys here if needed
       ];
-    };
-    # Also create vpittamp user for home-manager compatibility
-    vpittamp = {
-      isNormalUser = true;
-      uid = 1001;
-      group = "users";
-      extraGroups = [ "wheel" ];
-      home = "/home/vpittamp";
-      shell = pkgs.bash;
-      createHome = true;
     };
   };
   

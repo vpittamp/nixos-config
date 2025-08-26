@@ -97,7 +97,18 @@
               {
                 home-manager.useGlobalPkgs = true;
                 home-manager.useUserPackages = true;
-                home-manager.users.vpittamp = import ./home-vpittamp.nix;
+                home-manager.users = {
+                  # Apply home-manager to both users in container
+                  vpittamp = import ./home-vpittamp.nix;
+                  # Code user gets the same configuration but with overrides
+                  code = { config, pkgs, lib, ... }: {
+                    imports = [ ./home-vpittamp.nix ];
+                    home = {
+                      username = lib.mkForce "code";
+                      homeDirectory = lib.mkForce "/home/code";
+                    };
+                  };
+                };
                 home-manager.extraSpecialArgs = { inherit inputs; };
               }
               # Add VS Code server support
