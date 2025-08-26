@@ -8,8 +8,8 @@ set -e
 setup_ssh() {
     echo "[entrypoint] Setting up SSH environment..."
     
-    # Create necessary directories
-    mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh
+    # Create necessary directories (including runtime directories for sshd)
+    mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
     
     # Create basic user system if not exists
     if [ ! -f /etc/passwd ]; then
@@ -85,18 +85,27 @@ start_sshd() {
     if [ "${CONTAINER_SSH_ENABLED}" = "true" ]; then
         echo "[entrypoint] Starting SSH daemon on port ${CONTAINER_SSH_PORT:-2222}..."
         setup_ssh
-        # Start sshd in daemon mode (without -D flag)
-        # The daemon will fork to background and persist
-        /bin/sshd -f /etc/ssh/sshd_config
-        # Verify it started by checking the exit code
-        if [ $? -eq 0 ]; then
-            echo "[entrypoint] SSH daemon started successfully"
-            # Try to find the PID if possible
-            if [ -f /var/run/sshd.pid ]; then
-                echo "[entrypoint] SSH daemon PID: $(cat /var/run/sshd.pid)"
-            fi
+        
+        # Ensure privilege separation directory has correct permissions
+        chmod 755 /var/empty
+        
+        # Start sshd in debug mode in the background
+        # Using -D (no detach) with & to keep it running in background
+        # This ensures the process doesn't exit immediately
+        echo "[entrypoint] Starting sshd with command: /bin/sshd -D -f /etc/ssh/sshd_config &"
+        /bin/sshd -D -f /etc/ssh/sshd_config &
+        SSHD_PID=$!
+        
+        # Wait a moment to ensure it starts
+        sleep 2
+        
+        # Check if the process is still running
+        if kill -0 $SSHD_PID 2>/dev/null; then
+            echo "[entrypoint] SSH daemon started successfully (PID: $SSHD_PID)"
         else
-            echo "[entrypoint] Warning: SSH daemon failed to start"
+            echo "[entrypoint] Warning: SSH daemon failed to start or exited"
+            # Try to get any error output
+            /bin/sshd -t -f /etc/ssh/sshd_config 2>&1
         fi
     else
         echo "[entrypoint] SSH is disabled (CONTAINER_SSH_ENABLED != true)"
