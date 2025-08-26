@@ -11,23 +11,7 @@ setup_ssh() {
     # Create necessary directories (including runtime directories for sshd)
     mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
     
-    # Create basic user system if not exists
-    if [ ! -f /etc/passwd ]; then
-        cat > /etc/passwd << 'EOF'
-root:x:0:0:root:/root:/bin/bash
-sshd:x:74:74:SSH daemon:/var/empty:/sbin/nologin
-code:x:1000:1000:code:/home/code:/bin/bash
-EOF
-    fi
-    
-    if [ ! -f /etc/group ]; then
-        cat > /etc/group << 'EOF'
-root:x:0:
-sshd:x:74:
-users:x:100:code
-wheel:x:10:code
-EOF
-    fi
+    # NixOS manages users, no need to create /etc/passwd
     
     # Generate SSH host keys if they don't exist
     if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
@@ -62,17 +46,8 @@ LogLevel INFO
 PidFile /var/run/sshd.pid
 EOF
     
-    # Setup authorized keys for code user
-    if [ -f /ssh-keys/authorized_keys ]; then
-        echo "[entrypoint] Copying authorized keys for code user..."
-        cp /ssh-keys/authorized_keys /home/code/.ssh/authorized_keys
-        chmod 700 /home/code/.ssh
-        chmod 600 /home/code/.ssh/authorized_keys
-        # Also copy for root for emergency access
-        cp /ssh-keys/authorized_keys /root/.ssh/authorized_keys
-        chmod 700 /root/.ssh
-        chmod 600 /root/.ssh/authorized_keys
-    fi
+    # Note: authorized_keys copying is handled by container-ssh.nix activation script
+    # This ensures proper ownership and permissions
     
     # Create home directories if they don't exist
     mkdir -p /home/code /root

@@ -77,67 +77,9 @@
     which
   ];
   
-  # Activation script to handle idpbuilder certificate if mounted
-  system.activationScripts.idpbuilder-cert = ''
-    # If idpbuilder certificate is mounted, use it
-    if [ -f /etc/ssl/certs/idpbuilder-ca.crt ]; then
-      echo "Using idpbuilder certificate"
-      export SSL_CERT_FILE=/etc/ssl/certs/idpbuilder-ca.crt
-      export CURL_CA_BUNDLE=/etc/ssl/certs/idpbuilder-ca.crt
-      export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/idpbuilder-ca.crt
-    fi
-  '';
-  
-  # VS Code compatibility setup for containers
-  system.activationScripts.vscode-container-compat = ''
-    echo "Setting up VS Code container compatibility..."
-    
-    # Create /usr/bin with essential symlinks
-    mkdir -p /usr/bin
-    for cmd in env bash sh uname ps find grep sed hostname which; do
-      if command -v $cmd >/dev/null 2>&1; then
-        ln -sf $(command -v $cmd) /usr/bin/$cmd 2>/dev/null || true
-      fi
-    done
-    
-    # Create /lib64 for dynamic linker
-    mkdir -p /lib64
-    if [ -f ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
-      ln -sf ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2 2>/dev/null || true
-    fi
-    
-    # Link essential libraries
-    mkdir -p /lib /usr/lib
-    for lib in ${pkgs.glibc}/lib/*.so* ${pkgs.gcc-unwrapped.lib}/lib/*.so*; do
-      if [ -f "$lib" ]; then
-        ln -sf "$lib" /lib/$(basename "$lib") 2>/dev/null || true
-        ln -sf "$lib" /usr/lib/$(basename "$lib") 2>/dev/null || true
-      fi
-    done
-    
-    # Create ldconfig stub
-    cat > /usr/bin/ldconfig << 'EOF'
-#!/bin/sh
-exit 0
-EOF
-    chmod +x /usr/bin/ldconfig 2>/dev/null || true
-    
-    # Create /etc/os-release if missing
-    if [ ! -f /etc/os-release ]; then
-      cat > /etc/os-release << 'EOF'
-NAME="NixOS"
-ID=nixos
-VERSION="24.11"
-VERSION_ID="24.11"
-PRETTY_NAME="NixOS 24.11"
-HOME_URL="https://nixos.org/"
-SUPPORT_URL="https://nixos.org/community/"
-BUG_REPORT_URL="https://github.com/NixOS/nixpkgs/issues"
-EOF
-    fi
-    
-    echo "VS Code container compatibility setup complete"
-  '';
+  # Note: VS Code compatibility setup (symlinks, libraries, etc.) is handled
+  # by /etc/container-entrypoint.sh which runs when the container starts.
+  # The nixos-vscode-server module handles node binary replacement.
   
   # VS Code tunnel support (optional)
   system.activationScripts.vscode-tunnel = lib.mkIf (builtins.getEnv "VSCODE_TUNNEL_ENABLED" == "true") ''
