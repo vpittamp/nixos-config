@@ -3,8 +3,13 @@
 { config, lib, pkgs, ... }:
 
 {
-  # Import SSH module for containers
-  imports = [ ./container-ssh.nix ];
+  # Import modules for containers
+  imports = [ 
+    ./container-ssh.nix 
+    # Use the simplified VS Code module with nix-community's vscode-server
+    ./container-vscode-simple.nix
+    # ./container-vscode.nix  # Old manual approach (kept for reference)
+  ];
   
   # Explicitly disable WSL features in containers
   disabledModules = [ ];

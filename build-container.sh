@@ -21,6 +21,14 @@ function show_help {
     echo "  --project-dir, -p DIR  Project directory for devcontainer (default: current dir)"
     echo "  --help, -h            Show this help message"
     echo ""
+    echo "Environment Variables:"
+    echo "  LOAD_DOCKER=true       Automatically load container into Docker"
+    echo "  DOCKER_TAG=<tag>       Tag the loaded image (e.g., docker.io/user/image:tag)"
+    echo "  DOCKER_PUSH=true       Push the tagged image to registry"
+    echo "  CONTAINER_SSH_ENABLED=true    Enable SSH server in container"
+    echo "  CONTAINER_SSH_PORT=2222       SSH server port (default: 2222)"
+    echo "  VSCODE_TUNNEL_ENABLED=true    Enable VS Code tunnel support"
+    echo ""
     echo "Profiles:"
     echo "  essential              Core tools only (~275MB)"
     echo "  essential,kubernetes   Core + K8s tools (~600MB)"
@@ -28,9 +36,20 @@ function show_help {
     echo "  full                   All packages (~1GB)"
     echo ""
     echo "Examples:"
-    echo "  $0 essential output.tar.gz              # Build standard container"
-    echo "  $0 --devcontainer full                  # Build devcontainer with full profile"
-    echo "  $0 -d -p /my/project development        # Build devcontainer for specific project"
+    echo "  # Build standard container"
+    echo "  $0 essential output.tar.gz"
+    echo ""
+    echo "  # Build and load into Docker"
+    echo "  LOAD_DOCKER=true $0"
+    echo ""
+    echo "  # Build, load, tag and push"
+    echo "  LOAD_DOCKER=true DOCKER_TAG=docker.io/user/image:v1.0 DOCKER_PUSH=true $0"
+    echo ""
+    echo "  # Build with SSH and VS Code tunnel support"
+    echo "  CONTAINER_SSH_ENABLED=true VSCODE_TUNNEL_ENABLED=true $0"
+    echo ""
+    echo "  # Build devcontainer with full profile"
+    echo "  $0 --devcontainer full"
     exit 0
 }
 
@@ -73,6 +92,16 @@ fi
 
 echo "🔨 Building NixOS ${MODE}"
 echo "📦 Package profile: $PROFILE"
+
+# Show enabled features
+echo "🔧 Features:"
+[ "${CONTAINER_SSH_ENABLED:-}" = "true" ] && echo "  ✅ SSH server (port ${CONTAINER_SSH_PORT:-2222})"
+[ "${VSCODE_TUNNEL_ENABLED:-}" = "true" ] && echo "  ✅ VS Code tunnel support"
+[ "${VSCODE_SERVER_PREINSTALL:-}" = "true" ] && echo "  ✅ VS Code server pre-installed"
+[ "${LOAD_DOCKER:-}" = "true" ] && echo "  ✅ Auto-load into Docker"
+[ -n "${DOCKER_TAG:-}" ] && echo "  ✅ Docker tag: ${DOCKER_TAG}"
+[ "${DOCKER_PUSH:-}" = "true" ] && echo "  ✅ Push to registry"
+echo ""
 
 # Set environment variables for the build
 export NIXOS_CONTAINER=1
@@ -167,13 +196,70 @@ EOF
     
 else
     # Build standard container
+    echo "🏗️  Starting Nix build (this may take a while)..."
     cd /etc/nixos
-    CONTAINER_PATH=$(nix build .#container --no-link --print-out-paths)
+    
+    # Add progress indicator for long build
+    (
+        while true; do
+            echo -n "."
+            sleep 5
+        done
+    ) &
+    PROGRESS_PID=$!
+    
+    # Build the container
+    CONTAINER_PATH=$(nix build .#container --no-link --print-out-paths 2>&1 | tail -1)
+    
+    # Stop progress indicator
+    kill $PROGRESS_PID 2>/dev/null || true
+    echo ""  # New line after dots
+    
+    # Check if build succeeded
+    if [ ! -f "$CONTAINER_PATH" ]; then
+        echo "❌ Build failed. Container path not found: $CONTAINER_PATH"
+        exit 1
+    fi
     
     # Get container size
     SIZE=$(du -sh "$CONTAINER_PATH" | cut -f1)
     echo "✅ Container built: $CONTAINER_PATH"
     echo "📏 Size: $SIZE"
+    
+    # Option to load into Docker
+    if [ "${LOAD_DOCKER:-}" = "true" ] || [ "${AUTO_LOAD:-}" = "true" ]; then
+        echo "📦 Loading container into Docker..."
+        
+        # Handle both .tar.gz and .tar formats
+        if [[ "$CONTAINER_PATH" == *.tar.gz ]]; then
+            echo "🔓 Decompressing and loading..."
+            gunzip -c "$CONTAINER_PATH" | docker load 2>&1 | grep "Loaded image" || {
+                echo "❌ Failed to load container into Docker"
+                exit 1
+            }
+        else
+            docker load < "$CONTAINER_PATH" 2>&1 | grep "Loaded image" || {
+                echo "❌ Failed to load container into Docker"
+                exit 1
+            }
+        fi
+        
+        # Tag the image if requested
+        if [ -n "${DOCKER_TAG:-}" ]; then
+            echo "🏷️  Tagging image as: $DOCKER_TAG"
+            docker tag nixos-system:latest "$DOCKER_TAG"
+            
+            # Push if requested
+            if [ "${DOCKER_PUSH:-}" = "true" ]; then
+                echo "📤 Pushing to registry..."
+                docker push "$DOCKER_TAG" || {
+                    echo "⚠️  Push failed. Make sure you're logged in: docker login"
+                }
+            fi
+        fi
+        
+        echo "✅ Docker image ready: nixos-system:latest"
+    fi
     
     # Copy to output file if specified
     if [ -n "$OUTPUT_FILE" ]; then
@@ -183,6 +269,12 @@ else
     
     echo ""
     echo "To load this container in Docker:"
-    echo "  docker load < $CONTAINER_PATH"
-    echo "  docker run -it nixos-system:${PROFILE} /bin/bash"
+    echo "  gunzip -c $CONTAINER_PATH | docker load"
+    echo "  docker run -it nixos-system:latest /bin/bash"
+    echo ""
+    echo "Or with automatic loading:"
+    echo "  LOAD_DOCKER=true $0"
+    echo ""
+    echo "To tag and push:"
+    echo "  LOAD_DOCKER=true DOCKER_TAG=docker.io/user/image:tag DOCKER_PUSH=true $0"
 fi

@@ -19,7 +19,7 @@ in
       
       settings = {
         # Security settings
-        PermitRootLogin = "no";
+        PermitRootLogin = "yes";  # Required for container access
         PasswordAuthentication = false;
         PubkeyAuthentication = true;
         ChallengeResponseAuthentication = false;
@@ -34,7 +34,7 @@ in
         ClientAliveCountMax = 3;
         
         # Allow specific users
-        AllowUsers = [ "code" "vpittamp" ];
+        AllowUsers = [ "root" "code" "vpittamp" ];
         
         # Use only strong ciphers
         Ciphers = [
@@ -89,6 +89,18 @@ in
     
     # Create SSH directories for users
     system.activationScripts.ssh-setup = ''
+      # Setup SSH for root user (required for container access)
+      mkdir -p /root/.ssh
+      touch /root/.ssh/authorized_keys
+      chmod 700 /root/.ssh
+      chmod 600 /root/.ssh/authorized_keys
+      
+      # Copy authorized keys from mounted secret if available
+      if [ -f /ssh-keys/authorized_keys ]; then
+        cp /ssh-keys/authorized_keys /root/.ssh/authorized_keys
+        chmod 600 /root/.ssh/authorized_keys
+      fi
+      
       # Setup SSH for code user
       if id -u code >/dev/null 2>&1; then
         mkdir -p /home/code/.ssh
