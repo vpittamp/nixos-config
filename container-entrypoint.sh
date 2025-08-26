@@ -88,12 +88,15 @@ start_sshd() {
         # Start sshd in daemon mode (without -D flag)
         # The daemon will fork to background and persist
         /bin/sshd -f /etc/ssh/sshd_config
-        # Verify it started
-        sleep 1
-        if pgrep sshd > /dev/null 2>&1; then
-            echo "[entrypoint] SSH daemon started successfully (PID: $(pgrep sshd))"
+        # Verify it started by checking the exit code
+        if [ $? -eq 0 ]; then
+            echo "[entrypoint] SSH daemon started successfully"
+            # Try to find the PID if possible
+            if [ -f /var/run/sshd.pid ]; then
+                echo "[entrypoint] SSH daemon PID: $(cat /var/run/sshd.pid)"
+            fi
         else
-            echo "[entrypoint] Warning: SSH daemon may not have started properly"
+            echo "[entrypoint] Warning: SSH daemon failed to start"
         fi
     else
         echo "[entrypoint] SSH is disabled (CONTAINER_SSH_ENABLED != true)"
