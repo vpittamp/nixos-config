@@ -85,8 +85,16 @@ start_sshd() {
     if [ "${CONTAINER_SSH_ENABLED}" = "true" ]; then
         echo "[entrypoint] Starting SSH daemon on port ${CONTAINER_SSH_PORT:-2222}..."
         setup_ssh
+        # Start sshd in daemon mode (without -D flag)
+        # The daemon will fork to background and persist
         /bin/sshd -f /etc/ssh/sshd_config
-        echo "[entrypoint] SSH daemon started successfully"
+        # Verify it started
+        sleep 1
+        if pgrep sshd > /dev/null 2>&1; then
+            echo "[entrypoint] SSH daemon started successfully (PID: $(pgrep sshd))"
+        else
+            echo "[entrypoint] Warning: SSH daemon may not have started properly"
+        fi
     else
         echo "[entrypoint] SSH is disabled (CONTAINER_SSH_ENABLED != true)"
     fi
