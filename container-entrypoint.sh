@@ -186,12 +186,47 @@ OSRELEASE
     echo "[entrypoint] VS Code compatibility setup complete"
 }
 
+# Function to fix VS Code server node binaries
+fix_vscode_node() {
+    echo "[entrypoint] Checking for VS Code server installations..."
+    
+    # Check common VS Code server locations
+    for vscode_dir in /root/.vscode-server/bin/* /home/*/.vscode-server/bin/*; do
+        if [ -d "$vscode_dir" ] && [ -f "$vscode_dir/node" ]; then
+            # Check if it's already a symlink to our node
+            if [ ! -L "$vscode_dir/node" ] || [ "$(readlink "$vscode_dir/node")" != "/bin/node" ]; then
+                echo "[entrypoint] Fixing VS Code node at: $vscode_dir"
+                
+                # Backup original if not already done
+                if [ ! -f "$vscode_dir/node.microsoft" ]; then
+                    mv "$vscode_dir/node" "$vscode_dir/node.microsoft" 2>/dev/null || true
+                fi
+                
+                # Create symlink to NixOS node
+                ln -sf /bin/node "$vscode_dir/node"
+                echo "[entrypoint] Replaced with NixOS node $(node --version)"
+            fi
+        fi
+    done
+}
+
 # Main execution
 main() {
     echo "[entrypoint] Container starting at $(date)"
     
     # Setup VS Code compatibility first
     setup_vscode_compat
+    
+    # Fix any VS Code server installations
+    fix_vscode_node
+    
+    # Also run the fix periodically in background
+    (
+        while true; do
+            sleep 60
+            fix_vscode_node >/dev/null 2>&1
+        done
+    ) &
     
     # Start SSH if enabled
     start_sshd
