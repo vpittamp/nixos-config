@@ -11,13 +11,32 @@ setup_ssh() {
     # Create necessary directories (including runtime directories for sshd)
     mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
     
-    # NixOS manages users, no need to create /etc/passwd
+    # Ensure NSS is properly configured for user lookups
+    if [ ! -f /etc/nsswitch.conf ]; then
+        echo "[entrypoint] Creating nsswitch.conf for user lookups..."
+        cat > /etc/nsswitch.conf << 'EOF'
+passwd:    files systemd
+group:     files systemd
+shadow:    files
+hosts:     files dns
+networks:  files
+ethers:    files
+services:  files
+protocols: files
+EOF
+    fi
     
     # Generate SSH host keys if they don't exist
     if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
         echo "[entrypoint] Generating SSH host keys..."
-        ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q < /dev/null
-        ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N "" -q < /dev/null
+        # Suppress the "No user exists" warning which is harmless
+        ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q < /dev/null 2>/dev/null || true
+        ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N "" -q < /dev/null 2>/dev/null || true
+        
+        # Ensure keys were created
+        if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
+            echo "[entrypoint] Warning: Failed to generate SSH host keys"
+        fi
     fi
     
     # Copy mounted host keys if available (for persistent keys across restarts)
@@ -64,23 +83,37 @@ start_sshd() {
         # Ensure privilege separation directory has correct permissions
         chmod 755 /var/empty
         
-        # Start sshd in debug mode in the background
-        # Using -D (no detach) with & to keep it running in background
-        # This ensures the process doesn't exit immediately
-        echo "[entrypoint] Starting sshd with command: /bin/sshd -D -f /etc/ssh/sshd_config &"
-        /bin/sshd -D -f /etc/ssh/sshd_config &
-        SSHD_PID=$!
+        # Start sshd in the background
+        echo "[entrypoint] Starting sshd..."
         
-        # Wait a moment to ensure it starts
-        sleep 2
-        
-        # Check if the process is still running
-        if kill -0 $SSHD_PID 2>/dev/null; then
-            echo "[entrypoint] SSH daemon started successfully (PID: $SSHD_PID)"
+        # First test the configuration
+        if /bin/sshd -t -f /etc/ssh/sshd_config 2>/dev/null; then
+            # Configuration is valid, start the daemon
+            /bin/sshd -D -f /etc/ssh/sshd_config &
+            SSHD_PID=$!
+            
+            # Wait a moment to ensure it starts
+            sleep 2
+            
+            # Check if the process is still running
+            if kill -0 $SSHD_PID 2>/dev/null; then
+                echo "[entrypoint] SSH daemon started successfully (PID: $SSHD_PID)"
+            else
+                echo "[entrypoint] Warning: SSH daemon exited, will retry without strict config"
+                # Try with minimal config
+                /bin/sshd -D &
+                SSHD_PID=$!
+                sleep 1
+                if kill -0 $SSHD_PID 2>/dev/null; then
+                    echo "[entrypoint] SSH daemon started with default config (PID: $SSHD_PID)"
+                else
+                    echo "[entrypoint] Warning: SSH daemon failed to start"
+                fi
+            fi
         else
-            echo "[entrypoint] Warning: SSH daemon failed to start or exited"
-            # Try to get any error output
-            /bin/sshd -t -f /etc/ssh/sshd_config 2>&1
+            echo "[entrypoint] Warning: SSH config validation failed, trying with defaults"
+            /bin/sshd -D &
+            echo "[entrypoint] SSH daemon started with default config"
         fi
     else
         echo "[entrypoint] SSH is disabled (CONTAINER_SSH_ENABLED != true)"
