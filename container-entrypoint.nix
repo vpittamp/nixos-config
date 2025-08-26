@@ -22,17 +22,17 @@
       
       # Create /lib64 for dynamic linker
       mkdir -p /lib64
-      GLIBC_PATH=$(ldd /bin/bash 2>/dev/null | grep ld-linux | awk '{print $1}')
-      if [ -n "$GLIBC_PATH" ]; then
-        ln -sf "$GLIBC_PATH" /lib64/ld-linux-x86-64.so.2 2>/dev/null || true
+      GLIBC_PATH=$(ldd /bin/bash 2>/dev/null | grep ld-linux | awk '{print ''$1}')
+      if [ -n "''$GLIBC_PATH" ]; then
+        ln -sf "''$GLIBC_PATH" /lib64/ld-linux-x86-64.so.2 2>/dev/null || true
       fi
       
       # Link essential libraries
       mkdir -p /lib /usr/lib
       for lib in /nix/store/*/lib/libc.so* /nix/store/*/lib/libstdc++.so* /nix/store/*/lib/libgcc_s.so*; do
-        if [ -f "$lib" ]; then
-          ln -sf "$lib" /lib/$(basename "$lib") 2>/dev/null || true
-          ln -sf "$lib" /usr/lib/$(basename "$lib") 2>/dev/null || true
+        if [ -f "''$lib" ]; then
+          ln -sf "''$lib" /lib/$(basename "''$lib") 2>/dev/null || true
+          ln -sf "''$lib" /usr/lib/$(basename "''$lib") 2>/dev/null || true
         fi
       done
       
@@ -70,18 +70,20 @@ OSRELEASE
       echo "Container setup complete"
       
       # If SSH is enabled, ensure it's running
-      if [ "${CONTAINER_SSH_ENABLED}" = "true" ]; then
+      if [ "''${CONTAINER_SSH_ENABLED}" = "true" ]; then
         echo "Starting SSH service..."
-        /nix/store/*/bin/sshd -D &
+        if command -v sshd >/dev/null 2>&1; then
+          sshd -D &
+        fi
       fi
       
       # Execute the command passed to the container
-      if [ $# -eq 0 ]; then
+      if [ ''$# -eq 0 ]; then
         # No command specified, run sleep infinity for devcontainer
         exec sleep infinity
       else
         # Run the specified command
-        exec "$@"
+        exec "''$@"
       fi
     '';
   };
