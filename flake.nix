@@ -111,6 +111,12 @@
               containerConfig.config.system.path
               pkgs.bashInteractive
               pkgs.coreutils
+              # Add entrypoint script package
+              (pkgs.runCommand "entrypoint-script" {} ''
+                mkdir -p $out/etc
+                cp ${./container-entrypoint.sh} $out/etc/container-entrypoint.sh
+                chmod 755 $out/etc/container-entrypoint.sh
+              '')
             ];
             pathsToLink = [ "/bin" "/lib" "/share" "/etc" ];
           };

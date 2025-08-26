@@ -112,10 +112,4 @@
   
   # Ensure wheel group has sudo access
   security.sudo.wheelNeedsPassword = false;
-  
-  # Add the entrypoint script to the container
-  environment.etc."container-entrypoint.sh" = {
-    source = ./container-entrypoint.sh;
-    mode = "0755";
-  };
 }
