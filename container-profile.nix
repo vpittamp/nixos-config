@@ -9,6 +9,7 @@
     # Use the simplified VS Code module with nix-community's vscode-server
     ./container-vscode-simple.nix
     # ./container-vscode.nix  # Old manual approach (kept for reference)
+    ./container-entrypoint.nix  # Entrypoint script for proper initialization
   ];
   
   # Explicitly disable WSL features in containers
