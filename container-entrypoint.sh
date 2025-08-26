@@ -47,7 +47,7 @@ EOF
     # Create SSH config
     cat > /etc/ssh/sshd_config << 'EOF'
 Port 2222
-PermitRootLogin no
+PermitRootLogin yes
 PubkeyAuthentication yes
 PasswordAuthentication no
 ChallengeResponseAuthentication no
