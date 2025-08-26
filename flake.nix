@@ -23,11 +23,17 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
+    # VS Code Server support for NixOS
+    vscode-server = {
+      url = "github:nix-community/nixos-vscode-server";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -94,6 +100,8 @@
                 home-manager.users.vpittamp = import ./home-vpittamp.nix;
                 home-manager.extraSpecialArgs = { inherit inputs; };
               }
+              # Add VS Code server support
+              vscode-server.nixosModules.default
               # Apply container-specific overrides last
               ./container-profile.nix
             ];

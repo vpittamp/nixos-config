@@ -1,6 +1,6 @@
 #!/bin/bash
 # Container entrypoint script that starts SSH daemon and executes the main command
-# This script ensures SSH is available for development access
+# This script ensures SSH is available for development access and VS Code compatibility
 
 set -e
 
@@ -112,9 +112,86 @@ start_sshd() {
     fi
 }
 
+# Function to setup VS Code compatibility
+setup_vscode_compat() {
+    echo "[entrypoint] Setting up VS Code compatibility..."
+    
+    # Create /usr/bin with essential symlinks
+    mkdir -p /usr/bin
+    for cmd in env bash sh uname ps find grep sed hostname which curl wget git cat ls cp mv rm mkdir touch; do
+        if command -v $cmd >/dev/null 2>&1; then
+            ln -sf $(command -v $cmd) /usr/bin/$cmd 2>/dev/null || true
+        fi
+    done
+    
+    # Create /lib64 for dynamic linker
+    mkdir -p /lib64
+    GLIBC_LD=$(ls /nix/store/*/glibc*/lib/ld-linux-x86-64.so.2 2>/dev/null | head -1)
+    if [ -n "$GLIBC_LD" ]; then
+        ln -sf "$GLIBC_LD" /lib64/ld-linux-x86-64.so.2 2>/dev/null || true
+    fi
+    
+    # Link essential libraries
+    mkdir -p /lib /usr/lib
+    
+    # Find and link glibc libraries
+    for lib in /nix/store/*/glibc*/lib/*.so*; do
+        if [ -f "$lib" ]; then
+            basename_lib=$(basename "$lib")
+            [ ! -e "/lib/$basename_lib" ] && ln -sf "$lib" "/lib/$basename_lib" 2>/dev/null || true
+            [ ! -e "/usr/lib/$basename_lib" ] && ln -sf "$lib" "/usr/lib/$basename_lib" 2>/dev/null || true
+        fi
+    done
+    
+    # Find and link gcc libraries (libstdc++, libgcc_s)
+    for lib in /nix/store/*/gcc*/lib/libstdc++.so* /nix/store/*/gcc*/lib/libgcc_s.so*; do
+        if [ -f "$lib" ]; then
+            basename_lib=$(basename "$lib")
+            [ ! -e "/lib/$basename_lib" ] && ln -sf "$lib" "/lib/$basename_lib" 2>/dev/null || true
+            [ ! -e "/usr/lib/$basename_lib" ] && ln -sf "$lib" "/usr/lib/$basename_lib" 2>/dev/null || true
+        fi
+    done
+    
+    # Create ldconfig stub
+    if [ ! -f /usr/bin/ldconfig ]; then
+        cat > /usr/bin/ldconfig << 'LDCONFIG'
+#!/bin/sh
+exit 0
+LDCONFIG
+        chmod +x /usr/bin/ldconfig 2>/dev/null || true
+    fi
+    
+    # Create /etc/os-release if missing
+    if [ ! -f /etc/os-release ]; then
+        cat > /etc/os-release << 'OSRELEASE'
+NAME="NixOS"
+ID=nixos
+VERSION="24.11"
+VERSION_ID="24.11"
+PRETTY_NAME="NixOS 24.11"
+HOME_URL="https://nixos.org/"
+SUPPORT_URL="https://nixos.org/community/"
+BUG_REPORT_URL="https://github.com/NixOS/nixpkgs/issues"
+OSRELEASE
+    fi
+    
+    # Export library paths
+    export LD_LIBRARY_PATH="/lib:/usr/lib:/lib64:${LD_LIBRARY_PATH}"
+    for dir in /nix/store/*/gcc*/lib /nix/store/*/glibc*/lib; do
+        if [ -d "$dir" ]; then
+            export LD_LIBRARY_PATH="${dir}:${LD_LIBRARY_PATH}"
+        fi
+    done
+    
+    echo "[entrypoint] VS Code compatibility setup complete"
+}
+
 # Main execution
 main() {
     echo "[entrypoint] Container starting at $(date)"
+    
+    # Setup VS Code compatibility first
+    setup_vscode_compat
     
     # Start SSH if enabled
     start_sshd
