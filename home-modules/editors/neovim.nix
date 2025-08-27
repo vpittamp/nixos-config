@@ -92,7 +92,7 @@ in
       
       # AI assistance
       claudecode-nvim  # Custom plugin defined above
-      avante-nvim
+      # avante-nvim  # Commented out to save space (65MB + dependencies)
       
       # Avante.nvim dependencies
       nui-nvim
@@ -325,7 +325,8 @@ in
       vim.keymap.set('n', '<leader>p', ':Precognition toggle<CR>', { desc = 'Toggle Precognition hints' })
       
       -- Avante.nvim configuration - AI-powered code assistance
-      require('avante').setup({
+      -- Commented out to save space
+      --[[ require('avante').setup({
         provider = "claude", -- Use Claude as the AI provider
         mode = "agentic", -- Use tools for automatic code generation
         auto_suggestions_provider = "claude", -- Use Claude for auto-suggestions (be careful with costs)
@@ -371,8 +372,8 @@ in
             dismiss = "<C-]>",
           },
           jump = {
-            next = "]]",
-            prev = "[[",
+            next = "}<",  -- Changed from ]] to avoid Lua string parsing issues
+            prev = "{>",  -- Changed from [[ to avoid Lua string parsing issues
           },
           submit = {
             normal = "<CR>",
@@ -414,15 +415,15 @@ in
             insert = "<C-p>",
           },
         },
-      })
+      }) ]]--
       
-      -- Avante keybindings for quick access
-      vim.keymap.set('n', '<leader>aa', ':AvanteAsk<CR>', { desc = 'Avante: Ask AI' })
+      -- Avante keybindings for quick access (commented out)
+      --[[ vim.keymap.set('n', '<leader>aa', ':AvanteAsk<CR>', { desc = 'Avante: Ask AI' })
       vim.keymap.set('v', '<leader>aa', ':AvanteAsk<CR>', { desc = 'Avante: Ask AI about selection' })
       vim.keymap.set('n', '<leader>ae', ':AvanteEdit<CR>', { desc = 'Avante: Edit with AI' })
       vim.keymap.set('v', '<leader>ae', ':AvanteEdit<CR>', { desc = 'Avante: Edit selection with AI' })
       vim.keymap.set('n', '<leader>ar', ':AvanteRefresh<CR>', { desc = 'Avante: Refresh' })
-      vim.keymap.set('n', '<leader>at', ':AvanteToggle<CR>', { desc = 'Avante: Toggle sidebar' })
+      vim.keymap.set('n', '<leader>at', ':AvanteToggle<CR>', { desc = 'Avante: Toggle sidebar' }) ]]--
       
       -- Render-markdown configuration for better markdown display in Avante
       require('render-markdown').setup({

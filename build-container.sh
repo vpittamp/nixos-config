@@ -207,8 +207,8 @@ else
     ) &
     PROGRESS_PID=$!
     
-    # Build the container - ensure NIXOS_PACKAGES is passed to nix build
-    CONTAINER_PATH=$(NIXOS_PACKAGES="$PROFILE" nix build .#container --no-link --print-out-paths 2>&1 | tail -1)
+    # Build the container - use --impure to allow NIXOS_PACKAGES env var
+    CONTAINER_PATH=$(NIXOS_PACKAGES="$PROFILE" nix build .#container --impure --no-link --print-out-paths 2>&1 | tail -1)
     
     # Stop progress indicator
     kill $PROGRESS_PID 2>/dev/null || true

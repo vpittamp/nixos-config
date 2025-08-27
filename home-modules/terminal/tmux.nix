@@ -213,12 +213,12 @@ in
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      # Use full path to clip.exe for WSL clipboard integration
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel '/mnt/c/Windows/System32/clip.exe'
+      # Clipboard integration - try wl-copy first (Wayland/WSLg), fall back to clip.exe
+      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel 'wl-copy --type text/plain 2>/dev/null || /mnt/c/Windows/System32/clip.exe'
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/mnt/c/Windows/System32/clip.exe'
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'wl-copy --type text/plain 2>/dev/null || /mnt/c/Windows/System32/clip.exe'
     '';
   };
 }

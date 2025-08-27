@@ -237,7 +237,8 @@
       }
       
       # Clipboard helper functions for robust WSL/WSLg behavior
-      # pbcopy: reads from stdin (or args) and copies to X11 clipboard if available, else to Windows clipboard
+      # pbcopy: reads from stdin (or args) and copies to clipboard
+      # Prioritizes Wayland (wl-copy) for WSLg, falls back to Windows clipboard
       pbcopy() {
         local input
         if [ -t 0 ]; then
@@ -245,25 +246,25 @@
         else
           input="$(cat)"
         fi
-        if [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
-          printf "%s" "$input" | timeout 0.5 xclip -selection clipboard >/dev/null 2>&1 \
-            || printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
+        # Try wl-copy first (Wayland/WSLg) with explicit text/plain MIME type
+        if command -v wl-copy >/dev/null 2>&1; then
+          printf "%s" "$input" | wl-copy --type text/plain 2>/dev/null
+        # Fall back to Windows clipboard
         else
           printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
         fi
       }
 
-      # pbpaste: prints clipboard contents, prefers X11 when available, falls back to Windows clipboard
+      # pbpaste: prints clipboard contents
+      # Prioritizes Wayland (wl-paste) for WSLg, falls back to Windows clipboard
       pbpaste() {
-        if [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
-          local out
-          out="$(xclip -selection clipboard -o 2>/dev/null)"
-          if [ -n "$out" ]; then
-            printf "%s" "$out" | sed 's/\r$//'
-            return 0
-          fi
+        # Try wl-paste first (Wayland/WSLg) with text output
+        if command -v wl-paste >/dev/null 2>&1; then
+          wl-paste --no-newline 2>/dev/null | sed 's/\r$//'
+        # Fall back to Windows clipboard
+        else
+          /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | sed 's/\r$//'
         fi
-        /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | sed 's/\r$//'
       }
 
       # Backwards-compatible helpers

@@ -60,6 +60,10 @@
   # Disable WSL module in containers
   wsl.enable = lib.mkForce false;
   
+  # Disable 1password in containers (saves ~611MB)
+  programs._1password.enable = lib.mkForce false;
+  programs._1password-gui.enable = lib.mkForce false;
+  
   # Disable systemd services that don't work in containers
   systemd.services = {
     systemd-udevd.enable = false;
@@ -83,15 +87,15 @@
   systemd.user = lib.mkForce {};
   
   # Override environment packages for containers
-  # Use NIXOS_PACKAGES environment variable to control what gets installed
-  # Default: essential packages only (from overlays/packages.nix)
+  # The overlays/packages.nix already handles NIXOS_PACKAGES environment variable
+  # and returns the appropriate package set via allPackages
   environment.systemPackages = lib.mkForce (with pkgs; let
     overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
   in
-    # For containers: use essential packages by default
-    # Can be overridden with NIXOS_PACKAGES env var at build time
-    overlayPackages.essential ++ overlayPackages.extras ++ [
-      # Add SSH-related packages for containers
+    # Use the pre-filtered allPackages from overlays/packages.nix
+    # which respects the NIXOS_PACKAGES environment variable
+    overlayPackages.allPackages ++ [
+      # Always include SSH-related packages for containers
       pkgs.openssh
       # Add nix-ld for VS Code compatibility
       pkgs.nix-ld
@@ -103,8 +107,8 @@
       pkgs.starship
       # Add tmux for terminal multiplexing
       pkgs.tmux
-      # Add locale support
-      pkgs.glibcLocales
+      # Locale support is handled by i18n.supportedLocales
+      # Don't include full glibcLocales package (saves ~200MB)
     ]
   );
   
@@ -170,21 +174,20 @@
   };
   
   # Configure locale settings for containers
+  # Use minimal C.UTF-8 locale to save space and avoid locale warnings
   i18n = {
-    defaultLocale = "en_US.UTF-8";
+    defaultLocale = "C.UTF-8";
     supportedLocales = [
-      "en_US.UTF-8/UTF-8"
-      "C.UTF-8/UTF-8"
+      "C.UTF-8/UTF-8"  # Minimal UTF-8 locale, no need for full language packs
     ];
   };
   
   
   # Environment variables for locale
   environment.variables = {
-    LANG = "en_US.UTF-8";
-    LC_ALL = "en_US.UTF-8";
-    LC_CTYPE = "en_US.UTF-8";
-    LC_COLLATE = "en_US.UTF-8";
-    LOCALE_ARCHIVE = lib.mkForce "${pkgs.glibcLocales}/lib/locale/locale-archive";
+    LANG = "C.UTF-8";
+    LC_ALL = "C.UTF-8";
+    # C.UTF-8 is built into glibc, no need for locale-archive
+    # This saves space and avoids locale warnings
   };
 }

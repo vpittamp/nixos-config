@@ -79,14 +79,18 @@ EOF
     if [ -d /ssh-host-keys ] && [ "$(ls -A /ssh-host-keys 2>/dev/null)" ]; then
         echo "[entrypoint] Using mounted SSH host keys..."
         
-        # Check if keys are base64-encoded (they should not contain "BEGIN" if encoded)
-        for keyfile in /ssh-host-keys/ssh_host_*_key; do
+        # Copy both private keys and public keys if they exist
+        for keyfile in /ssh-host-keys/ssh_host_*; do
             if [ -f "$keyfile" ]; then
                 keyname=$(basename "$keyfile")
                 
-                # Check if the file is base64-encoded by looking for typical SSH key headers
-                if ! grep -q "BEGIN" "$keyfile" 2>/dev/null; then
-                    echo "[entrypoint] Key appears to be base64-encoded: $keyname"
+                # Public keys (.pub files) are never base64-encoded, they're plain text
+                if [[ "$keyname" == *.pub ]]; then
+                    echo "[entrypoint] Copying public key: $keyname"
+                    cp -f "$keyfile" "/etc/ssh/$keyname"
+                # Private keys might be base64-encoded
+                elif ! grep -q "BEGIN" "$keyfile" 2>/dev/null; then
+                    echo "[entrypoint] Private key appears to be base64-encoded: $keyname"
                     
                     # Ensure temp directory exists
                     mkdir -p /tmp
@@ -103,11 +107,16 @@ EOF
                         mv "/tmp/${keyname}.tmp" "/etc/ssh/$keyname"
                     fi
                 else
-                    echo "[entrypoint] Copying plain text key: $keyname"
+                    echo "[entrypoint] Copying plain text private key: $keyname"
                     cp -f "$keyfile" "/etc/ssh/$keyname"
                 fi
                 
-                chmod 600 "/etc/ssh/$keyname" 2>/dev/null || true
+                # Set appropriate permissions based on file type
+                if [[ "$keyname" == *.pub ]]; then
+                    chmod 644 "/etc/ssh/$keyname" 2>/dev/null || true
+                else
+                    chmod 600 "/etc/ssh/$keyname" 2>/dev/null || true
+                fi
             fi
         done
         
@@ -153,61 +162,9 @@ EOF
     echo "[entrypoint] SSH setup complete"
 }
 
-# Function to setup and start Code tunnel
-setup_code_tunnel() {
-    if [ "${CODE_TUNNEL_ENABLED}" = "true" ]; then
-        echo "[entrypoint] Setting up VS Code tunnel..."
-        
-        # Check if GitHub token is available from mounted secret
-        if [ -f /code-tunnel/github_token ]; then
-            export GITHUB_TOKEN=$(cat /code-tunnel/github_token)
-        fi
-        
-        if [ -f /code-tunnel/tunnel_name ]; then
-            export TUNNEL_NAME=$(cat /code-tunnel/tunnel_name)
-        else
-            export TUNNEL_NAME="${TUNNEL_NAME:-backstage-dev}"
-        fi
-        
-        if [ -z "$GITHUB_TOKEN" ]; then
-            echo "[entrypoint] Warning: GITHUB_TOKEN not set, Code tunnel disabled"
-            return 1
-        fi
-        
-        # Install Code CLI if not present
-        if ! command -v code &> /dev/null; then
-            echo "[entrypoint] Installing VS Code CLI..."
-            mkdir -p /tmp
-            curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' \
-                --output /tmp/vscode_cli.tar.gz
-            tar -xf /tmp/vscode_cli.tar.gz -C /usr/local/bin
-            rm /tmp/vscode_cli.tar.gz
-        fi
-        
-        # Authenticate with GitHub
-        echo "[entrypoint] Authenticating Code tunnel with GitHub..."
-        echo "$GITHUB_TOKEN" | code tunnel user login --provider github --access-token - 2>/dev/null || true
-        
-        # Start the tunnel in background
-        echo "[entrypoint] Starting Code tunnel: $TUNNEL_NAME"
-        nohup code tunnel --accept-server-license-terms --name "$TUNNEL_NAME" > /var/log/code-tunnel.log 2>&1 &
-        CODE_TUNNEL_PID=$!
-        echo $CODE_TUNNEL_PID > /var/run/code-tunnel.pid
-        
-        # Wait for tunnel to be ready
-        sleep 5
-        
-        # Check if tunnel is running
-        if kill -0 $CODE_TUNNEL_PID 2>/dev/null; then
-            echo "[entrypoint] Code tunnel started successfully (PID: $CODE_TUNNEL_PID)"
-            echo "[entrypoint] Connect via: https://vscode.dev/tunnel/$TUNNEL_NAME"
-        else
-            echo "[entrypoint] Warning: Code tunnel failed to start"
-        fi
-    else
-        echo "[entrypoint] Code tunnel is disabled (CODE_TUNNEL_ENABLED != true)"
-    fi
-}
+# VS Code tunnel functionality has been removed
+# The tunnel had compatibility issues with NixOS container structure
+# Use SSH on port 2222 for remote development access
 
 # Function to start SSH daemon
 start_sshd() {
@@ -295,10 +252,11 @@ setup_vscode_compat() {
         fi
     done
     
-    # Create ldconfig stub
+    # Create ldconfig stub (some tools may expect it)
     if [ ! -f /usr/bin/ldconfig ]; then
         cat > /usr/bin/ldconfig << 'LDCONFIG'
 #!/bin/sh
+# Basic ldconfig stub for compatibility
 exit 0
 LDCONFIG
         chmod +x /usr/bin/ldconfig 2>/dev/null || true
@@ -567,27 +525,10 @@ main() {
     fi
     
     # Run NixOS system activation which includes home-manager
-    echo "[entrypoint] Activating NixOS system configuration..."
-    # Try to find the activation script from the system build
-    if [ -x /nix/var/nix/profiles/system/activate ]; then
-        echo "[entrypoint] Running system activation from profile..."
-        /nix/var/nix/profiles/system/activate
-        echo "[entrypoint] System activation complete"
-    elif [ -x /run/current-system/activate ]; then
-        echo "[entrypoint] Running system activation from current-system..."
-        /run/current-system/activate
-        echo "[entrypoint] System activation complete"
-    else
-        # Try to find it in the store
-        ACTIVATE=$(find /nix/store -maxdepth 2 -name activate -type f -executable 2>/dev/null | grep -E 'nixos-system|system-path' | head -1)
-        if [ -n "$ACTIVATE" ] && [ -x "$ACTIVATE" ]; then
-            echo "[entrypoint] Running activation from: $ACTIVATE"
-            $ACTIVATE
-            echo "[entrypoint] System activation complete"
-        else
-            echo "[entrypoint] Warning: System activation script not found, but packages should be available in /bin"
-        fi
-    fi
+    echo "[entrypoint] Skipping NixOS system activation (not needed in container)..."
+    # In containers, the activation script tries to mount filesystems which fails
+    # The packages are already available in /bin from the container build
+    echo "[entrypoint] Packages are available in /bin from container build"
     
     # Set up PATH to include per-user profiles
     if [ -d "/etc/profiles/per-user/$USER/bin" ]; then
@@ -595,16 +536,10 @@ main() {
     fi
     echo "[entrypoint] Using container PATH: $PATH"
     
-    # Set locale environment variables
-    export LANG="en_US.UTF-8"
-    export LC_ALL="en_US.UTF-8"
-    export LC_CTYPE="en_US.UTF-8"
-    export LC_COLLATE="en_US.UTF-8"
-    # Find and set the locale archive - use find instead of shell glob
-    LOCALE_ARCHIVE_PATH=$(find /nix/store -name locale-archive -path "*/lib/locale/*" 2>/dev/null | head -1)
-    if [ -n "$LOCALE_ARCHIVE_PATH" ] && [ -f "$LOCALE_ARCHIVE_PATH" ]; then
-        export LOCALE_ARCHIVE="$LOCALE_ARCHIVE_PATH"
-    fi
+    # Set locale environment variables to C.UTF-8 (minimal UTF-8 locale)
+    # C.UTF-8 is built into glibc, no need for locale-archive
+    export LANG="C.UTF-8"
+    export LC_ALL="C.UTF-8"
     
     echo "[entrypoint] Locale configured: LANG=$LANG"
     
@@ -663,8 +598,7 @@ main() {
     # Start SSH if enabled
     start_sshd
     
-    # Start Code tunnel if enabled
-    setup_code_tunnel
+    # VS Code tunnel removed - use SSH on port 2222 for remote access
     
     # Execute the original command
     if [ $# -eq 0 ]; then

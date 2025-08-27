@@ -24,7 +24,9 @@ let
     stdenv.cc.cc.lib # Provides libstdc++
     gawk            # Provides getconf
     coreutils       # Additional utilities
-    xclip           # X11 clipboard utility for WSLg
+    findutils       # Required for VS Code Server (provides find command)
+    wl-clipboard    # Wayland clipboard utilities for WSLg (wl-copy, wl-paste)
+    nodejs_20       # Required for Backstage (~74MB)
   ];
   
   # Language/runtime packages (large downloads)
