@@ -6,7 +6,7 @@ set -e
 
 # Parse command line arguments
 MODE="container"  # Default mode
-PROFILE="essential"
+PROFILE=""  # Will be set from arguments or default to "essential" later
 OUTPUT_FILE=""
 PROJECT_DIR=""
 
@@ -82,12 +82,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Set first positional argument as profile if provided
-if [ -n "${1:-}" ]; then
-    PROFILE="$1"
-fi
-if [ -n "${2:-}" ]; then
-    OUTPUT_FILE="$2"
+# Don't re-process arguments - they were already handled in the while loop above
+
+# Set default profile if not specified
+if [ -z "$PROFILE" ]; then
+    PROFILE="essential"
 fi
 
 echo "🔨 Building NixOS ${MODE}"
@@ -208,8 +207,8 @@ else
     ) &
     PROGRESS_PID=$!
     
-    # Build the container
-    CONTAINER_PATH=$(nix build .#container --no-link --print-out-paths 2>&1 | tail -1)
+    # Build the container - ensure NIXOS_PACKAGES is passed to nix build
+    CONTAINER_PATH=$(NIXOS_PACKAGES="$PROFILE" nix build .#container --no-link --print-out-paths 2>&1 | tail -1)
     
     # Stop progress indicator
     kill $PROGRESS_PID 2>/dev/null || true
@@ -230,24 +229,28 @@ else
     if [ "${LOAD_DOCKER:-}" = "true" ] || [ "${AUTO_LOAD:-}" = "true" ]; then
         echo "📦 Loading container into Docker..."
         
-        # Handle both .tar.gz and .tar formats
+        # Handle both .tar.gz and .tar formats and capture the loaded image name
         if [[ "$CONTAINER_PATH" == *.tar.gz ]]; then
             echo "🔓 Decompressing and loading..."
-            gunzip -c "$CONTAINER_PATH" | docker load 2>&1 | grep "Loaded image" || {
+            LOADED_IMAGE=$(gunzip -c "$CONTAINER_PATH" | docker load 2>&1 | grep "Loaded image" | cut -d: -f2- | tr -d ' ')
+            if [ -z "$LOADED_IMAGE" ]; then
                 echo "❌ Failed to load container into Docker"
                 exit 1
-            }
+            fi
         else
-            docker load < "$CONTAINER_PATH" 2>&1 | grep "Loaded image" || {
+            LOADED_IMAGE=$(docker load < "$CONTAINER_PATH" 2>&1 | grep "Loaded image" | cut -d: -f2- | tr -d ' ')
+            if [ -z "$LOADED_IMAGE" ]; then
                 echo "❌ Failed to load container into Docker"
                 exit 1
-            }
+            fi
         fi
+        
+        echo "📦 Loaded image: $LOADED_IMAGE"
         
         # Tag the image if requested
         if [ -n "${DOCKER_TAG:-}" ]; then
             echo "🏷️  Tagging image as: $DOCKER_TAG"
-            docker tag nixos-system:latest "$DOCKER_TAG"
+            docker tag "$LOADED_IMAGE" "$DOCKER_TAG"
             
             # Push if requested
             if [ "${DOCKER_PUSH:-}" = "true" ]; then
@@ -258,7 +261,7 @@ else
             fi
         fi
         
-        echo "✅ Docker image ready: nixos-system:latest"
+        echo "✅ Docker image ready: ${LOADED_IMAGE:-nixos-dev:${PROFILE}}"
     fi
     
     # Copy to output file if specified
@@ -270,7 +273,7 @@ else
     echo ""
     echo "To load this container in Docker:"
     echo "  gunzip -c $CONTAINER_PATH | docker load"
-    echo "  docker run -it nixos-system:latest /bin/bash"
+    echo "  docker run -it nixos-dev:${PROFILE} /bin/bash"
     echo ""
     echo "Or with automatic loading:"
     echo "  LOAD_DOCKER=true $0"

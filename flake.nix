@@ -98,6 +98,14 @@
                 home-manager.useGlobalPkgs = true;
                 home-manager.useUserPackages = true;
                 home-manager.users = {
+                  # Apply home-manager to root user in container
+                  root = { config, pkgs, lib, ... }: {
+                    imports = [ ./home-vpittamp.nix ];
+                    home = {
+                      username = lib.mkForce "root";
+                      homeDirectory = lib.mkForce "/root";
+                    };
+                  };
                   # Apply home-manager to both users in container
                   vpittamp = import ./home-vpittamp.nix;
                   # Code user gets the same configuration but with overrides
@@ -119,35 +127,70 @@
           };
         in
         pkgs.dockerTools.buildLayeredImage {
-          name = "nixos-system";
+          name = "nixos-dev";
           tag = let
             profile = builtins.getEnv "NIXOS_PACKAGES";
           in if profile == "" then "latest" else profile;
           
-          contents = pkgs.buildEnv {
+          contents = let
+            # Build home-manager generations for each user to get their config files
+            homeManagerPackages = pkgs.runCommand "home-manager-packages" {} ''
+              mkdir -p $out
+              
+              # Create a marker file to indicate home-manager files should be activated
+              touch $out/.hm-activate-required
+              
+              # Store paths to home-manager generations
+              echo "${containerConfig.config.system.path}" > $out/.system-path
+            '';
+          in pkgs.buildEnv {
             name = "container-root";
             paths = [
+              # Use system.path which contains all packages including home-manager
               containerConfig.config.system.path
               pkgs.bashInteractive
               pkgs.coreutils
-              # Add entrypoint script package
-              (pkgs.runCommand "entrypoint-script" {} ''
+              
+              # Add /etc files from the system build
+              containerConfig.config.system.build.etc
+              
+              # Include the entire system toplevel for activation scripts
+              containerConfig.config.system.build.toplevel
+              
+              # Include home-manager marker
+              homeManagerPackages
+              
+              # Add entrypoint script with timestamp to force rebuilds
+              (pkgs.runCommand "entrypoint-script-${builtins.substring 0 8 (builtins.hashFile "sha256" ./container-entrypoint.sh)}" {
+                entrypoint = ./container-entrypoint.sh;
+              } ''
                 mkdir -p $out/etc
-                cp ${./container-entrypoint.sh} $out/etc/container-entrypoint.sh
+                cp $entrypoint $out/etc/container-entrypoint.sh
                 chmod 755 $out/etc/container-entrypoint.sh
               '')
+              
             ];
-            pathsToLink = [ "/bin" "/lib" "/share" "/etc" ];
+            pathsToLink = [ 
+              "/bin" 
+              "/lib" 
+              "/share" 
+              "/etc"
+              "/sw"        # Include sw directory
+            ];
+            extraOutputsToInstall = [ "out" ];
           };
           
           config = {
             Env = [
-              "PATH=/bin:/usr/bin:/usr/local/bin"
+              "PATH=/bin:/sbin:/usr/bin:/usr/local/bin"
               "HOME=/root"
               "USER=root"
               "TERM=xterm-256color"
               "CONTAINER_SSH_ENABLED=true"
               "CONTAINER_SSH_PORT=2222"
+              # Critical for VS Code server to find libraries
+              "LD_LIBRARY_PATH=/lib:/usr/lib:/lib64"
+              "NIX_LD_LIBRARY_PATH=/lib:/usr/lib:/lib64"
             ];
             Entrypoint = [ "/etc/container-entrypoint.sh" ];
             Cmd = [ "sleep" "infinity" ];

@@ -23,6 +23,7 @@
     ./home-modules/tools/bat.nix
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
+    # ./home-modules/tools/k9s.nix  # Temporarily disabled for container build
     ./home-modules/tools/yazi.nix
   ];
 

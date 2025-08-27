@@ -110,10 +110,10 @@
       clip = "/mnt/c/Windows/System32/clip.exe";
       paste = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
       
-      # Linux-style clipboard with xclip (uses WSLg X11) - falls back to Windows tools
-      # Note: xclip for copy uses timeout to prevent hanging when no X11 client is consuming
-      pbcopy = "timeout 0.5 xclip -selection clipboard 2>/dev/null || /mnt/c/Windows/System32/clip.exe";
-      pbpaste = "xclip -selection clipboard -o 2>/dev/null || /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
+      # Linux-style clipboard helpers are implemented as shell functions below
+      # Keep short aliases for convenience
+      pbcopy = "pbcopy";
+      pbpaste = "pbpaste";
     };
     
     initExtra = ''
@@ -236,26 +236,40 @@
         rm -f -- "$tmp"
       }
       
-      # Clipboard helper functions for better integration
-      # Smart copy function that tries xclip first with timeout, then falls back to Windows
-      copy() {
-        if command -v xclip &> /dev/null && [ -n "$DISPLAY" ]; then
-          timeout 0.5 xclip -selection clipboard 2>/dev/null || /mnt/c/Windows/System32/clip.exe
+      # Clipboard helper functions for robust WSL/WSLg behavior
+      # pbcopy: reads from stdin (or args) and copies to X11 clipboard if available, else to Windows clipboard
+      pbcopy() {
+        local input
+        if [ -t 0 ]; then
+          input="$*"
         else
-          /mnt/c/Windows/System32/clip.exe
+          input="$(cat)"
+        fi
+        if [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
+          printf "%s" "$input" | timeout 0.5 xclip -selection clipboard >/dev/null 2>&1 \
+            || printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
+        else
+          printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
         fi
       }
-      
-      # Smart paste function that tries xclip first, then falls back to Windows
-      clipaste() {
-        if command -v xclip &> /dev/null && [ -n "$DISPLAY" ]; then
-          xclip -selection clipboard -o 2>/dev/null || /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
-        else
-          /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2
+
+      # pbpaste: prints clipboard contents, prefers X11 when available, falls back to Windows clipboard
+      pbpaste() {
+        if [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
+          local out
+          out="$(xclip -selection clipboard -o 2>/dev/null)"
+          if [ -n "$out" ]; then
+            printf "%s" "$out" | sed 's/\r$//'
+            return 0
+          fi
         fi
+        /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | sed 's/\r$//'
       }
-      # Create an alias for convenience
-      alias paste='clipaste'
+
+      # Backwards-compatible helpers
+      copy() { pbcopy "$@"; }
+      clipaste() { pbpaste; }
+      alias paste='pbpaste'
       
       # Initialize zoxide at the very end to avoid configuration issues
       eval "$(zoxide init bash)"

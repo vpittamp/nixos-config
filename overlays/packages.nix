@@ -59,6 +59,7 @@ let
     claude-code = pkgs.claude-code;  # ~50MB
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
+    # VS Code CLI is not in nixpkgs yet, will be installed via script
   };
   
   toolPackages = {

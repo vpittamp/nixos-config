@@ -11,6 +11,42 @@ setup_ssh() {
     # Create necessary directories (including runtime directories for sshd)
     mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
     
+    # Initialize user database files if missing
+    if [ ! -f /etc/passwd ]; then
+        echo "[entrypoint] Creating /etc/passwd for user database..."
+        cat > /etc/passwd << 'EOF'
+root:x:0:0:System administrator:/root:/bin/bash
+code:x:1000:100:Development user:/home/code:/bin/bash
+vpittamp:x:1001:100:VPittamp user:/home/vpittamp:/bin/bash
+sshd:x:74:74:SSH Privilege Separation:/var/empty:/sbin/nologin
+nobody:x:65534:65534:Nobody:/var/empty:/bin/false
+EOF
+    fi
+    
+    if [ ! -f /etc/group ]; then
+        echo "[entrypoint] Creating /etc/group..."
+        cat > /etc/group << 'EOF'
+root:x:0:
+wheel:x:1:code,vpittamp
+users:x:100:code,vpittamp
+sshd:x:74:
+nogroup:x:65534:
+EOF
+    fi
+    
+    if [ ! -f /etc/shadow ]; then
+        echo "[entrypoint] Creating /etc/shadow..."
+        touch /etc/shadow
+        chmod 640 /etc/shadow
+        cat > /etc/shadow << 'EOF'
+root:!:19000:0:99999:7:::
+code:!:19000:0:99999:7:::
+vpittamp:!:19000:0:99999:7:::
+sshd:!:19000:0:99999:7:::
+nobody:!:19000:0:99999:7:::
+EOF
+    fi
+    
     # Ensure NSS is properly configured for user lookups
     if [ ! -f /etc/nsswitch.conf ]; then
         echo "[entrypoint] Creating nsswitch.conf for user lookups..."
@@ -42,8 +78,50 @@ EOF
     # Copy mounted host keys if available (for persistent keys across restarts)
     if [ -d /ssh-host-keys ] && [ "$(ls -A /ssh-host-keys 2>/dev/null)" ]; then
         echo "[entrypoint] Using mounted SSH host keys..."
-        cp -f /ssh-host-keys/ssh_host_* /etc/ssh/ 2>/dev/null || true
-        chmod 600 /etc/ssh/ssh_host_*_key 2>/dev/null || true
+        
+        # Check if keys are base64-encoded (they should not contain "BEGIN" if encoded)
+        for keyfile in /ssh-host-keys/ssh_host_*_key; do
+            if [ -f "$keyfile" ]; then
+                keyname=$(basename "$keyfile")
+                
+                # Check if the file is base64-encoded by looking for typical SSH key headers
+                if ! grep -q "BEGIN" "$keyfile" 2>/dev/null; then
+                    echo "[entrypoint] Key appears to be base64-encoded: $keyname"
+                    
+                    # Ensure temp directory exists
+                    mkdir -p /tmp
+                    
+                    # Decode once and check if it's still base64
+                    base64 -d < "$keyfile" > "/tmp/${keyname}.tmp"
+                    
+                    # Check if decoded content is STILL base64 (double encoding from External Secrets)
+                    if ! grep -q "BEGIN" "/tmp/${keyname}.tmp" 2>/dev/null; then
+                        echo "[entrypoint] Key was double base64-encoded, decoding again..."
+                        base64 -d < "/tmp/${keyname}.tmp" > "/etc/ssh/$keyname"
+                    else
+                        # Single base64 encoding
+                        mv "/tmp/${keyname}.tmp" "/etc/ssh/$keyname"
+                    fi
+                else
+                    echo "[entrypoint] Copying plain text key: $keyname"
+                    cp -f "$keyfile" "/etc/ssh/$keyname"
+                fi
+                
+                chmod 600 "/etc/ssh/$keyname" 2>/dev/null || true
+            fi
+        done
+        
+        # Generate public keys from private keys if .pub files don't exist
+        if [ -f /etc/ssh/ssh_host_ed25519_key ] && [ ! -f /etc/ssh/ssh_host_ed25519_key.pub ]; then
+            echo "[entrypoint] Generating ED25519 public key from private key..."
+            ssh-keygen -y -f /etc/ssh/ssh_host_ed25519_key > /etc/ssh/ssh_host_ed25519_key.pub
+        fi
+        
+        if [ -f /etc/ssh/ssh_host_rsa_key ] && [ ! -f /etc/ssh/ssh_host_rsa_key.pub ]; then
+            echo "[entrypoint] Generating RSA public key from private key..."
+            ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key > /etc/ssh/ssh_host_rsa_key.pub
+        fi
+        
         chmod 644 /etc/ssh/ssh_host_*_key.pub 2>/dev/null || true
     fi
     
@@ -56,6 +134,7 @@ PasswordAuthentication no
 ChallengeResponseAuthentication no
 StrictModes no
 UsePAM no
+UsePrivilegeSeparation no
 AllowUsers code root
 HostKey /etc/ssh/ssh_host_ed25519_key
 HostKey /etc/ssh/ssh_host_rsa_key
@@ -72,6 +151,62 @@ EOF
     mkdir -p /home/code /root
     
     echo "[entrypoint] SSH setup complete"
+}
+
+# Function to setup and start Code tunnel
+setup_code_tunnel() {
+    if [ "${CODE_TUNNEL_ENABLED}" = "true" ]; then
+        echo "[entrypoint] Setting up VS Code tunnel..."
+        
+        # Check if GitHub token is available from mounted secret
+        if [ -f /code-tunnel/github_token ]; then
+            export GITHUB_TOKEN=$(cat /code-tunnel/github_token)
+        fi
+        
+        if [ -f /code-tunnel/tunnel_name ]; then
+            export TUNNEL_NAME=$(cat /code-tunnel/tunnel_name)
+        else
+            export TUNNEL_NAME="${TUNNEL_NAME:-backstage-dev}"
+        fi
+        
+        if [ -z "$GITHUB_TOKEN" ]; then
+            echo "[entrypoint] Warning: GITHUB_TOKEN not set, Code tunnel disabled"
+            return 1
+        fi
+        
+        # Install Code CLI if not present
+        if ! command -v code &> /dev/null; then
+            echo "[entrypoint] Installing VS Code CLI..."
+            mkdir -p /tmp
+            curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' \
+                --output /tmp/vscode_cli.tar.gz
+            tar -xf /tmp/vscode_cli.tar.gz -C /usr/local/bin
+            rm /tmp/vscode_cli.tar.gz
+        fi
+        
+        # Authenticate with GitHub
+        echo "[entrypoint] Authenticating Code tunnel with GitHub..."
+        echo "$GITHUB_TOKEN" | code tunnel user login --provider github --access-token - 2>/dev/null || true
+        
+        # Start the tunnel in background
+        echo "[entrypoint] Starting Code tunnel: $TUNNEL_NAME"
+        nohup code tunnel --accept-server-license-terms --name "$TUNNEL_NAME" > /var/log/code-tunnel.log 2>&1 &
+        CODE_TUNNEL_PID=$!
+        echo $CODE_TUNNEL_PID > /var/run/code-tunnel.pid
+        
+        # Wait for tunnel to be ready
+        sleep 5
+        
+        # Check if tunnel is running
+        if kill -0 $CODE_TUNNEL_PID 2>/dev/null; then
+            echo "[entrypoint] Code tunnel started successfully (PID: $CODE_TUNNEL_PID)"
+            echo "[entrypoint] Connect via: https://vscode.dev/tunnel/$TUNNEL_NAME"
+        else
+            echo "[entrypoint] Warning: Code tunnel failed to start"
+        fi
+    else
+        echo "[entrypoint] Code tunnel is disabled (CODE_TUNNEL_ENABLED != true)"
+    fi
 }
 
 # Function to start SSH daemon
@@ -194,28 +329,203 @@ OSRELEASE
     echo "[entrypoint] VS Code compatibility setup complete"
 }
 
-# Function to fix VS Code server node binaries
+# Function to ensure dynamic loader is available for VS Code
 fix_vscode_node() {
+    echo "[entrypoint] Setting up dynamic loader for VS Code compatibility..."
+    
+    # Always recreate the symlink to ensure it's correct
+    mkdir -p /lib64 /lib
+    
+    # Find the glibc loader
+    LOADER=$(ls /nix/store/*/lib/ld-linux-x86-64.so.2 2>/dev/null | grep glibc | head -1)
+    
+    if [ -n "$LOADER" ]; then
+        ln -sf "$LOADER" /lib64/ld-linux-x86-64.so.2
+        ln -sf "$LOADER" /lib/ld-linux-x86-64.so.2
+        echo "[entrypoint] Created dynamic loader symlinks:"
+        echo "  /lib64/ld-linux-x86-64.so.2 -> $LOADER"
+        echo "  /lib/ld-linux-x86-64.so.2 -> $LOADER"
+        
+        # Set up NIX_LD environment variables for VS Code
+        export NIX_LD="$LOADER"
+        # Find actual library directories
+        LIBDIRS=$(find /nix/store -maxdepth 2 -name lib -type d 2>/dev/null | head -20 | tr '\n' ':')
+        export NIX_LD_LIBRARY_PATH="${LIBDIRS}${NIX_LD_LIBRARY_PATH}"
+        
+        # Write to profile for SSH sessions and VS Code
+        mkdir -p /etc/profile.d
+        cat > /etc/profile.d/nix-ld.sh << EOF
+export NIX_LD="$LOADER"
+export NIX_LD_LIBRARY_PATH="${LIBDIRS}\${NIX_LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="/lib:/usr/lib:/lib64:\${LD_LIBRARY_PATH}"
+EOF
+        chmod +x /etc/profile.d/nix-ld.sh 2>/dev/null || true
+        
+        # Test if it works
+        if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
+            echo "[entrypoint] Dynamic loader setup successful"
+            echo "[entrypoint] NIX_LD=$NIX_LD"
+        else
+            echo "[entrypoint] Warning: Dynamic loader symlink creation may have failed"
+        fi
+    else
+        echo "[entrypoint] Warning: Could not find glibc loader in /nix/store"
+    fi
+    
+    return 0
+}
+
+# Legacy function kept for compatibility
+fix_vscode_node_legacy() {
     echo "[entrypoint] Checking for VS Code server installations..."
     
-    # Check common VS Code server locations
-    for vscode_dir in /root/.vscode-server/bin/* /home/*/.vscode-server/bin/*; do
-        if [ -d "$vscode_dir" ] && [ -f "$vscode_dir/node" ]; then
-            # Check if it's already a symlink to our node
-            if [ ! -L "$vscode_dir/node" ] || [ "$(readlink "$vscode_dir/node")" != "/bin/node" ]; then
-                echo "[entrypoint] Fixing VS Code node at: $vscode_dir"
+    # Find the NixOS interpreter path
+    local INTERPRETER=$(ls /nix/store/*/glibc*/lib/ld-linux-x86-64.so.2 2>/dev/null | head -1)
+    if [ -z "$INTERPRETER" ]; then
+        INTERPRETER="/lib64/ld-linux-x86-64.so.2"
+    fi
+    
+    # Function to patch a VS Code installation
+    patch_vscode_dir() {
+        local vscode_dir="$1"
+        echo "[entrypoint] Patching VS Code server at: $vscode_dir"
+        
+        # Replace node binary with wrapper script
+        if [ -f "$vscode_dir/node" ]; then
+            # Check if already fixed
+            if ! grep -q "exec /bin/node" "$vscode_dir/node" 2>/dev/null; then
+                mv "$vscode_dir/node" "$vscode_dir/node.orig" 2>/dev/null || true
                 
-                # Backup original if not already done
-                if [ ! -f "$vscode_dir/node.microsoft" ]; then
-                    mv "$vscode_dir/node" "$vscode_dir/node.microsoft" 2>/dev/null || true
-                fi
-                
-                # Create symlink to NixOS node
-                ln -sf /bin/node "$vscode_dir/node"
-                echo "[entrypoint] Replaced with NixOS node $(node --version)"
+                # Create wrapper script that uses system node
+                cat > "$vscode_dir/node" << 'NODEWRAPPER'
+#!/bin/bash
+exec /bin/node "$@"
+NODEWRAPPER
+                chmod +x "$vscode_dir/node"
+                echo "[entrypoint] Replaced node with wrapper script"
             fi
         fi
+        
+        # Fix ripgrep if present
+        if [ -f "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg" ] && command -v rg >/dev/null 2>&1; then
+            rm -f "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg" 2>/dev/null || true
+            ln -sf $(command -v rg) "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg"
+            echo "[entrypoint] Replaced ripgrep with system version"
+        fi
+        
+        # Use patchelf to fix binary interpreters if available
+        if command -v patchelf >/dev/null 2>&1 && [ -n "$INTERPRETER" ]; then
+            # Patch node_modules binaries
+            for binary in "$vscode_dir"/node_modules/**/bin/*; do
+                if [ -f "$binary" ] && [ ! -L "$binary" ] && file "$binary" 2>/dev/null | grep -q "ELF"; then
+                    echo "[entrypoint] Patching binary: $(basename $binary)"
+                    patchelf --set-interpreter "$INTERPRETER" "$binary" 2>/dev/null || true
+                fi
+            done
+            
+            # Patch extensions binaries
+            for ext_binary in "$vscode_dir"/extensions/*/server/bin/*; do
+                if [ -f "$ext_binary" ] && [ ! -L "$ext_binary" ] && file "$ext_binary" 2>/dev/null | grep -q "ELF"; then
+                    echo "[entrypoint] Patching extension binary: $(basename $ext_binary)"
+                    patchelf --set-interpreter "$INTERPRETER" "$ext_binary" 2>/dev/null || true
+                fi
+            done
+        fi
+        
+        # Fix helpers/check-requirements.sh to bypass GLIBC check
+        if [ -f "$vscode_dir/bin/helpers/check-requirements.sh" ]; then
+            if ! grep -q "NixOS detected" "$vscode_dir/bin/helpers/check-requirements.sh" 2>/dev/null; then
+                echo "[entrypoint] Patching check-requirements.sh for NixOS"
+                sed -i '1a echo "Warning: NixOS detected, skipping GLIBC check"; exit 0' "$vscode_dir/bin/helpers/check-requirements.sh" 2>/dev/null || true
+            fi
+        fi
+        
+        # Also fix the bin/remote-cli directory if it exists
+        if [ -f "$vscode_dir/bin/remote-cli/node" ]; then
+            if ! grep -q "exec /bin/node" "$vscode_dir/bin/remote-cli/node" 2>/dev/null; then
+                mv "$vscode_dir/bin/remote-cli/node" "$vscode_dir/bin/remote-cli/node.orig" 2>/dev/null || true
+                cat > "$vscode_dir/bin/remote-cli/node" << 'NODEWRAPPER'
+#!/bin/bash
+exec /bin/node "$@"
+NODEWRAPPER
+                chmod +x "$vscode_dir/bin/remote-cli/node"
+            fi
+        fi
+    }
+    
+    # Check common VS Code server locations (both bin and cli/servers)
+    for vscode_dir in /root/.vscode-server/bin/* /root/.vscode-server/cli/servers/*/server /home/*/.vscode-server/bin/* /home/*/.vscode-server/cli/servers/*/server; do
+        if [ -d "$vscode_dir" ]; then
+            patch_vscode_dir "$vscode_dir"
+        fi
     done
+    
+    # Monitor for new VS Code installations using inotify if available
+    if command -v inotifywait >/dev/null 2>&1; then
+        # Run in background to watch for new installations
+        (
+            # Create directories if they don't exist yet
+            mkdir -p /root/.vscode-server/bin 2>/dev/null || true
+            
+            while true; do
+                # Watch for new VS Code server installations
+                inotifywait -q -r -e create,close_write --include "node$" /root/.vscode-server 2>/dev/null
+                
+                # Immediately patch any node binaries found
+                for node_file in /root/.vscode-server/bin/*/node /root/.vscode-server/cli/servers/*/server/node; do
+                    if [ -f "$node_file" ] && ! grep -q "exec /bin/node" "$node_file" 2>/dev/null; then
+                        echo "[entrypoint-monitor] Found new node binary: $node_file"
+                        dir=$(dirname "$node_file")
+                        patch_vscode_dir "$dir"
+                    fi
+                done
+            done
+        ) >> /var/log/vscode-monitor.log 2>&1 &
+        echo "[entrypoint] Started VS Code monitor (PID: $!)"
+    fi
+    
+    # Create a wrapper script that fixes node on demand
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/fix-vscode-node << 'FIXSCRIPT'
+#!/bin/bash
+echo "Fixing VS Code server node binaries..."
+
+for vscode_dir in /root/.vscode-server/bin/* /root/.vscode-server/cli/servers/*/server /home/*/.vscode-server/bin/* /home/*/.vscode-server/cli/servers/*/server; do
+    if [ -d "$vscode_dir" ] && [ -f "$vscode_dir/node" ]; then
+        # Check if not already fixed
+        if ! grep -q "exec /bin/node" "$vscode_dir/node" 2>/dev/null; then
+            echo "Fixing node at: $vscode_dir"
+            mv "$vscode_dir/node" "$vscode_dir/node.orig" 2>/dev/null || true
+            cat > "$vscode_dir/node" << 'NODEWRAPPER'
+#!/bin/bash
+exec /bin/node "$@"
+NODEWRAPPER
+            chmod +x "$vscode_dir/node"
+        fi
+        
+        # Fix remote-cli node
+        if [ -f "$vscode_dir/bin/remote-cli/node" ]; then
+            if ! grep -q "exec /bin/node" "$vscode_dir/bin/remote-cli/node" 2>/dev/null; then
+                mv "$vscode_dir/bin/remote-cli/node" "$vscode_dir/bin/remote-cli/node.orig" 2>/dev/null || true
+                cat > "$vscode_dir/bin/remote-cli/node" << 'NODEWRAPPER2'
+#!/bin/bash
+exec /bin/node "$@"
+NODEWRAPPER2
+                chmod +x "$vscode_dir/bin/remote-cli/node"
+            fi
+        fi
+        
+        # Fix ripgrep
+        if [ -f "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg" ] && command -v rg >/dev/null 2>&1; then
+            rm -f "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg"
+            ln -sf $(command -v rg) "$vscode_dir/node_modules/@vscode/ripgrep/bin/rg"
+        fi
+    fi
+done
+
+echo "VS Code node fix complete"
+FIXSCRIPT
+    chmod +x /usr/local/bin/fix-vscode-node 2>/dev/null || true
 }
 
 # Main execution
@@ -225,19 +535,136 @@ main() {
     # Setup VS Code compatibility first
     setup_vscode_compat
     
-    # Fix any VS Code server installations
+    # Ensure nix-ld is properly configured
     fix_vscode_node
     
-    # Also run the fix periodically in background
-    (
-        while true; do
-            sleep 60
-            fix_vscode_node >/dev/null 2>&1
-        done
-    ) &
+    # Export NIX_LD variables to current shell and all child processes
+    if [ -f /etc/profile.d/nix-ld.sh ]; then
+        . /etc/profile.d/nix-ld.sh
+        echo "[entrypoint] NIX_LD environment variables loaded"
+    fi
+    
+    # Setup SSL/TLS certificates
+    echo "[entrypoint] Setting up SSL certificates..."
+    # Find NixOS CA bundle
+    CA_BUNDLE=$(find /nix/store -name ca-bundle.crt 2>/dev/null | head -1)
+    if [ -n "$CA_BUNDLE" ]; then
+        export SSL_CERT_FILE="$CA_BUNDLE"
+        export NIX_SSL_CERT_FILE="$CA_BUNDLE"
+        export CURL_CA_BUNDLE="$CA_BUNDLE"
+        echo "[entrypoint] SSL certificates configured: $CA_BUNDLE"
+    elif [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+        export SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+        export NIX_SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+        export CURL_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+        echo "[entrypoint] SSL certificates configured: /etc/ssl/certs/ca-certificates.crt"
+    fi
+    
+    # Add idpbuilder certificate if available
+    if [ -f /etc/ssl/certs/idpbuilder-ca.crt ]; then
+        export NODE_EXTRA_CA_CERTS="/etc/ssl/certs/idpbuilder-ca.crt"
+        echo "[entrypoint] IdpBuilder CA configured for Node.js"
+    fi
+    
+    # Run NixOS system activation which includes home-manager
+    echo "[entrypoint] Activating NixOS system configuration..."
+    # Try to find the activation script from the system build
+    if [ -x /nix/var/nix/profiles/system/activate ]; then
+        echo "[entrypoint] Running system activation from profile..."
+        /nix/var/nix/profiles/system/activate
+        echo "[entrypoint] System activation complete"
+    elif [ -x /run/current-system/activate ]; then
+        echo "[entrypoint] Running system activation from current-system..."
+        /run/current-system/activate
+        echo "[entrypoint] System activation complete"
+    else
+        # Try to find it in the store
+        ACTIVATE=$(find /nix/store -maxdepth 2 -name activate -type f -executable 2>/dev/null | grep -E 'nixos-system|system-path' | head -1)
+        if [ -n "$ACTIVATE" ] && [ -x "$ACTIVATE" ]; then
+            echo "[entrypoint] Running activation from: $ACTIVATE"
+            $ACTIVATE
+            echo "[entrypoint] System activation complete"
+        else
+            echo "[entrypoint] Warning: System activation script not found, but packages should be available in /bin"
+        fi
+    fi
+    
+    # Set up PATH to include per-user profiles
+    if [ -d "/etc/profiles/per-user/$USER/bin" ]; then
+        export PATH="/etc/profiles/per-user/$USER/bin:$PATH"
+    fi
+    echo "[entrypoint] Using container PATH: $PATH"
+    
+    # Set locale environment variables
+    export LANG="en_US.UTF-8"
+    export LC_ALL="en_US.UTF-8"
+    export LC_CTYPE="en_US.UTF-8"
+    export LC_COLLATE="en_US.UTF-8"
+    # Find and set the locale archive - use find instead of shell glob
+    LOCALE_ARCHIVE_PATH=$(find /nix/store -name locale-archive -path "*/lib/locale/*" 2>/dev/null | head -1)
+    if [ -n "$LOCALE_ARCHIVE_PATH" ] && [ -f "$LOCALE_ARCHIVE_PATH" ]; then
+        export LOCALE_ARCHIVE="$LOCALE_ARCHIVE_PATH"
+    fi
+    
+    echo "[entrypoint] Locale configured: LANG=$LANG"
+    
+    # Link home-manager configuration files for users
+    echo "[entrypoint] Setting up home-manager configuration files..."
+    setup_home_manager_files() {
+        local user="$1"
+        local home="$2"
+        
+        # Create home directory if it doesn't exist
+        if [ ! -d "$home" ]; then
+            mkdir -p "$home"
+            chown "$user:$user" "$home" 2>/dev/null || true
+        fi
+        
+        # Find home-manager-files directory (they're all the same for our users)
+        local HM_FILES=$(ls -d /nix/store/*-home-manager-files 2>/dev/null | head -1)
+        
+        if [ -n "$HM_FILES" ] && [ -d "$HM_FILES" ]; then
+            echo "[entrypoint] Linking home-manager files from $HM_FILES to $home"
+            
+            # Use cp -rsf to create symlinks for all files
+            # -r: recursive, -s: symbolic links, -f: force overwrite
+            cp -rsf "$HM_FILES"/. "$home"/
+            
+            # Fix ownership
+            chown -R "$user:$user" "$home" 2>/dev/null || true
+            
+            echo "[entrypoint] Home-manager files linked for $user"
+        else
+            echo "[entrypoint] Warning: home-manager-files not found in /nix/store"
+        fi
+        
+        # Also try to run home-manager activation if available
+        local HM_GEN=$(ls -d /nix/store/*-home-manager-generation 2>/dev/null | head -1)
+        if [ -n "$HM_GEN" ] && [ -f "$HM_GEN/activate" ]; then
+            echo "[entrypoint] Running home-manager activation for $user"
+            # Run activation with modern driver (doesn't update profile)
+            HOME="$home" USER="$user" "$HM_GEN/activate" --driver-version 1 2>/dev/null || true
+        fi
+    }
+    
+    # Setup for root
+    setup_home_manager_files "root" "/root"
+    
+    # Setup for other users if they exist
+    if id -u vpittamp >/dev/null 2>&1; then
+        setup_home_manager_files "vpittamp" "/home/vpittamp"
+    fi
+    if id -u code >/dev/null 2>&1; then
+        setup_home_manager_files "code" "/home/code"
+    fi
+    
+    echo "[entrypoint] Home-manager configuration files setup complete"
     
     # Start SSH if enabled
     start_sshd
+    
+    # Start Code tunnel if enabled
+    setup_code_tunnel
     
     # Execute the original command
     if [ $# -eq 0 ]; then

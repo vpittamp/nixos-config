@@ -93,11 +93,30 @@
     overlayPackages.essential ++ overlayPackages.extras ++ [
       # Add SSH-related packages for containers
       pkgs.openssh
+      # Add nix-ld for VS Code compatibility
+      pkgs.nix-ld
+      # Add CA certificates for SSL/TLS operations
+      pkgs.cacert
+      # Add neovim explicitly since home-manager packages don't get included
+      pkgs.neovim
+      # Add starship for prompt theming
+      pkgs.starship
+      # Add tmux for terminal multiplexing
+      pkgs.tmux
+      # Add locale support
+      pkgs.glibcLocales
     ]
   );
   
   # Users for SSH access in containers
   users.users = {
+    # Root user with development key for container access
+    root = {
+      openssh.authorizedKeys.keys = [
+        # Development key for container access
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyZ6emQaxS4xcdQf4y6fLUpmh11ufOi7jGLbOsvDY+7 dev@backstage"
+      ];
+    };
     # Code user for development containers
     code = {
       isNormalUser = true;
@@ -109,12 +128,63 @@
       createHome = true;
       # Allow passwordless sudo for development
       openssh.authorizedKeys.keys = [
-        # These will be overridden by mounted secrets
-        # Add default keys here if needed
+        # Development key for container access
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEyZ6emQaxS4xcdQf4y6fLUpmh11ufOi7jGLbOsvDY+7 dev@backstage"
       ];
     };
   };
   
-  # Ensure wheel group has sudo access
-  security.sudo.wheelNeedsPassword = false;
+  # Ensure user management is properly initialized in containers
+  users.mutableUsers = false;  # Users are defined declaratively
+  
+  # Create essential system groups
+  users.groups = {
+    users = { gid = 100; };
+    wheel = { gid = 1; };
+  };
+  
+  # Ensure wheel group has sudo access (override main config for containers)
+  security.sudo.wheelNeedsPassword = lib.mkForce false;
+  
+  # Enable nix-ld for VS Code compatibility
+  # This provides the dynamic loader at /lib64/ld-linux-x86-64.so.2
+  # allowing VS Code's node binary to run
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      # Add libraries that VS Code and extensions might need
+      stdenv.cc.cc
+      stdenv.cc.cc.lib
+      glibc
+      zlib
+      openssl
+      curl
+      icu
+      xz
+      # Additional libraries for node/VS Code
+      libgcc
+      libstdcxx5
+      gcc-unwrapped.lib
+      nodePackages.node-gyp-build
+    ];
+  };
+  
+  # Configure locale settings for containers
+  i18n = {
+    defaultLocale = "en_US.UTF-8";
+    supportedLocales = [
+      "en_US.UTF-8/UTF-8"
+      "C.UTF-8/UTF-8"
+    ];
+  };
+  
+  
+  # Environment variables for locale
+  environment.variables = {
+    LANG = "en_US.UTF-8";
+    LC_ALL = "en_US.UTF-8";
+    LC_CTYPE = "en_US.UTF-8";
+    LC_COLLATE = "en_US.UTF-8";
+    LOCALE_ARCHIVE = lib.mkForce "${pkgs.glibcLocales}/lib/locale/locale-archive";
+  };
 }

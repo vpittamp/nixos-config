@@ -9,9 +9,12 @@
   services.vscode-server = {
     enable = true;
     
-    # Create FHS environment for better extension compatibility
-    # This helps extensions that expect standard Linux paths
-    enableFHS = true;
+    # Disable FHS since we're using nix-ld instead
+    # nix-ld provides better compatibility without the FHS downsides
+    enableFHS = false;
+    
+    # Install helper packages that provide the environment VS Code expects
+    installPath = "$HOME/.vscode-server";
     
     # Add extra runtime dependencies that extensions might need
     extraRuntimeDependencies = with pkgs; [
@@ -49,6 +52,21 @@
     SSL_CERT_FILE = lib.mkDefault "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     CURL_CA_BUNDLE = lib.mkDefault "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     NODE_EXTRA_CA_CERTS = lib.mkDefault "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    
+    # Set NIX_LD environment variables for VS Code compatibility
+    NIX_LD_LIBRARY_PATH = lib.mkDefault (lib.makeLibraryPath (with pkgs; [
+      stdenv.cc.cc
+      stdenv.cc.cc.lib
+      glibc
+      zlib
+      openssl
+      curl
+      icu
+      xz
+      libgcc
+      gcc-unwrapped.lib
+    ]));
+    NIX_LD = lib.mkDefault (lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker");
   };
   
   # System packages (reduced since vscode-server module handles most)
@@ -75,6 +93,19 @@
     procps
     hostname
     which
+    
+    # For monitoring VS Code installations
+    inotify-tools
+    
+    # Node.js for VS Code
+    nodejs_20
+    
+    # For patching binaries
+    patchelf
+    file
+    
+    # Ripgrep for VS Code search
+    ripgrep
   ];
   
   # Note: VS Code compatibility setup (symlinks, libraries, etc.) is handled

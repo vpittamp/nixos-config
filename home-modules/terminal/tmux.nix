@@ -40,7 +40,7 @@ in
   # Tmux configuration
   programs.tmux = {
     enable = true;
-    terminal = "screen-256color";
+    terminal = "tmux-256color";  # Better compatibility with modern terminals
     prefix = "`";
     baseIndex = 1;
     historyLimit = 10000;
@@ -102,18 +102,20 @@ in
     
     extraConfig = ''
       # General settings
-      set -g default-terminal "screen-256color"
-      set -ga terminal-overrides ",*256col*:Tc"
+      set -g default-terminal "tmux-256color"
+      set -ga terminal-overrides ",xterm-256color:Tc"
+      set -ga terminal-overrides ",screen-256color:Tc"
+      set -ga terminal-overrides ",tmux-256color:Tc"
       set -sg escape-time 0
-      set -g focus-events off  # Disable to prevent [O[I escape sequences in WSL
+      set -g focus-events off  # Disable to prevent [O[I escape sequences in VS Code
       set -g detach-on-destroy off  # don't exit from tmux when closing a session
       set -g repeat-time 1000
       
       # Enable passthrough for terminal escape sequences
       set -g allow-passthrough on
       
-      # Disable OSC sequences and bracketed paste to prevent escape sequence issues
-      set -as terminal-overrides ',*:Ms@'  # Disable OSC 52 clipboard
+      # Fix for VS Code terminal - disable problematic features
+      set -as terminal-overrides ',vscode*:Ms@'  # Disable OSC 52 clipboard for VS Code
       set -g set-clipboard off  # Disable clipboard integration
       set -as terminal-features ',*:RGB'  # Use RGB instead of OSC sequences
       

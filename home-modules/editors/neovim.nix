@@ -1,5 +1,18 @@
 { config, lib, pkgs, ... }:
 
+let
+  # Custom plugin for claudecode.nvim (not in nixpkgs yet)
+  claudecode-nvim = pkgs.vimUtils.buildVimPlugin {
+    pname = "claudecode-nvim";
+    version = "unstable-2024-12-01";
+    src = pkgs.fetchFromGitHub {
+      owner = "coder";
+      repo = "claudecode.nvim";
+      rev = "main";
+      sha256 = "sha256-b4jCKIqowkVuWhI9jxthluZISBOnIc8eOIgkw5++HRY=";
+    };
+  };
+in
 {
   programs.neovim = {
     enable = true;
@@ -78,7 +91,7 @@
       conform-nvim
       
       # AI assistance
-      claude-code-nvim
+      claudecode-nvim  # Custom plugin defined above
       avante-nvim
       
       # Avante.nvim dependencies
@@ -117,8 +130,21 @@
     ];
     
     extraLuaConfig = ''
-      -- Set colorscheme
-      vim.cmd.colorscheme "tokyonight-night"
+      -- Configure and set tokyonight colorscheme
+      local status, tokyonight = pcall(require, "tokyonight")
+      if status then
+        tokyonight.setup({
+          style = "night",
+          transparent = false,
+          terminal_colors = true,
+        })
+      end
+      
+      -- Set colorscheme with error handling
+      local colorscheme_ok, _ = pcall(vim.cmd, "colorscheme tokyonight-night")
+      if not colorscheme_ok then
+        vim.cmd("colorscheme default")
+      end
       
       -- Use system clipboard by default
       vim.opt.clipboard = "unnamedplus"
@@ -140,16 +166,14 @@
       -- Indent blankline
       require('ibl').setup()
       
-      -- Claude Code AI assistant
-      require('claude-code').setup({
-        -- Use default settings for now
-        keymaps = {
-          toggle = {
-            normal = "<C-,>",       -- Normal mode keymap
-            terminal = "<C-,>",     -- Terminal mode keymap
-          },
-        },
-      })
+      -- Claudecode.nvim AI assistant
+      local claudecode_ok, claudecode = pcall(require, 'claudecode')
+      if claudecode_ok then
+        claudecode.setup({
+          -- No configuration needed, it works out of the box
+          -- The plugin creates a WebSocket server that Claude Code CLI connects to
+        })
+      end
       
       -- Telescope configuration
       local telescope = require('telescope')
