@@ -196,7 +196,7 @@
     # This saves space and avoids locale warnings
     
     # Add nixpkgs channel path for easier package discovery
-    NIX_PATH = "nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs";
+    NIX_PATH = lib.mkForce "nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs";
   };
   
   # Add helpful aliases for ad-hoc package management
