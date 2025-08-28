@@ -11,9 +11,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
-    # Home Manager
+    # Home Manager - using master branch for latest features including claude-code
     home-manager = {
-      url = "github:nix-community/home-manager";
+      url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
@@ -31,6 +31,10 @@
     
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
+
+    # NPM Package utility - for installing npm packages as Nix derivations
+    # Commented out but kept for potential future use
+    # npm-package.url = "github:netbrain/npm-package";
   };
 
   outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
@@ -57,6 +61,16 @@
             # Main system configuration
             ./configuration.nix
             
+            # Example: How to add npm packages using npm-package (if enabled in inputs)
+            # ({ pkgs, lib, ... }: {
+            #   environment.systemPackages = with pkgs; [
+            #     (npm-package.lib.${pkgs.system}.npmPackage {
+            #       name = "package-name";
+            #       packageName = "@scope/package-name";
+            #       version = "1.0.0";
+            #     })
+            #   ];
+            # })
             # Home Manager module
             home-manager.nixosModules.home-manager
             {

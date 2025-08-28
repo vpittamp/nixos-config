@@ -27,6 +27,8 @@ let
     findutils       # Required for VS Code Server (provides find command)
     wl-clipboard    # Wayland clipboard utilities for WSLg (wl-copy, wl-paste)
     nodejs_20       # Required for Backstage (~74MB)
+    nix             # Nix package manager for ad-hoc installs
+    # Note: claude-code, codex, and gemini-cli are provided by home-manager modules
   ];
   
   # Language/runtime packages (large downloads)
@@ -58,10 +60,7 @@ let
     devspace = pkgs.devspace;        # ~70MB
     docker-compose = pkgs.docker-compose;  # ~100MB
     yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
-    claude-code = pkgs.claude-code;  # ~50MB - Claude CLI tool
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
-    codex = pkgs.codex;              # Lightweight coding agent for terminal
-    gemini-cli = pkgs.gemini-cli;    # Gemini protocol CLI client
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
     # VS Code CLI is not in nixpkgs yet, will be installed via script
   };
