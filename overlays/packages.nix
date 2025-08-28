@@ -60,6 +60,8 @@ let
     yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
     claude-code = pkgs.claude-code;  # ~50MB - Claude CLI tool
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
+    codex = pkgs.codex;              # Lightweight coding agent for terminal
+    gemini-cli = pkgs.gemini-cli;    # Gemini protocol CLI client
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
     # VS Code CLI is not in nixpkgs yet, will be installed via script
   };
