@@ -504,6 +504,7 @@ main() {
     
     # Initialize Nix channels for ad-hoc package management
     echo "[entrypoint] Initializing Nix channels for ad-hoc package management..."
+    mkdir -p /root
     if [ ! -e /root/.nix-channels ]; then
         echo "https://nixos.org/channels/nixpkgs-unstable nixpkgs" > /root/.nix-channels
         nix-channel --update 2>/dev/null || true
