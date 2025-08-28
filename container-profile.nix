@@ -49,7 +49,7 @@
       allowed-users = [ "root" "code" "@wheel" ];
       
       # Enable flakes and other experimental features for modern Nix usage
-      experimental-features = [ "nix-command" "flakes" "repl-flake" ];
+      experimental-features = [ "nix-command" "flakes" ];
       
       # Auto-optimize store to save space
       auto-optimise-store = true;
