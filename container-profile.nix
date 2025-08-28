@@ -16,7 +16,7 @@
   # Container-specific settings
   boot.isContainer = true;
   
-  # Optimize Nix for container builds
+  # Optimize Nix for container builds and ad-hoc package management
   nix = {
     settings = {
       # Use binary caches for faster downloads
@@ -24,6 +24,7 @@
         "https://cache.nixos.org"
         "https://nix-community.cachix.org"
         "https://devenv.cachix.org"
+        "https://nix-community.cachix.org"
       ];
       
       trusted-public-keys = [
@@ -43,11 +44,15 @@
       min-free = 128 * 1024 * 1024; # 128MB
       max-free = 1024 * 1024 * 1024; # 1GB
       
-      # Trust the build user
-      trusted-users = [ "root" "@wheel" ];
+      # Trust the build user and code user for nix-env
+      trusted-users = [ "root" "code" "@wheel" ];
+      allowed-users = [ "root" "code" "@wheel" ];
       
-      # Enable flakes
-      experimental-features = [ "nix-command" "flakes" ];
+      # Enable flakes and other experimental features for modern Nix usage
+      experimental-features = [ "nix-command" "flakes" "repl-flake" ];
+      
+      # Auto-optimize store to save space
+      auto-optimise-store = true;
     };
     
     # Garbage collection settings for containers
@@ -189,5 +194,44 @@
     LC_ALL = "C.UTF-8";
     # C.UTF-8 is built into glibc, no need for locale-archive
     # This saves space and avoids locale warnings
+    
+    # Add nixpkgs channel path for easier package discovery
+    NIX_PATH = "nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs";
   };
+  
+  # Add helpful aliases for ad-hoc package management
+  environment.shellAliases = {
+    # Quick package management
+    "nix-search" = "nix search nixpkgs";
+    "nix-install" = "nix-env -iA nixpkgs";
+    "nix-shell-with" = "nix-shell -p";  # e.g., nix-shell-with python3 nodejs
+    "nix-run" = "nix run nixpkgs#";     # e.g., nix-run cowsay hello
+    "nix-list" = "nix-env -q";
+    "nix-remove" = "nix-env -e";
+    "nix-gc" = "nix-collect-garbage -d";
+    
+    # Helpful shortcuts
+    "nsp" = "nix-shell -p";  # Short for nix-shell-with
+    "nr" = "nix run nixpkgs#"; # Short for nix-run
+  };
+  
+  # Add documentation for container users
+  environment.etc."motd".text = ''
+    ╔══════════════════════════════════════════════════════════════╗
+    ║  NixOS Development Container                                  ║
+    ║  Ad-hoc package management with Nix:                          ║
+    ║                                                                ║
+    ║  • nix-shell -p <pkg>     # Temporary shell with package      ║
+    ║  • nix run nixpkgs#<pkg>  # Run package without installing    ║
+    ║  • nix-install <pkg>      # Install package permanently       ║
+    ║  • nix search nixpkgs <q> # Search for packages               ║
+    ║                                                                ║
+    ║  Examples:                                                     ║
+    ║    nix-shell -p python3 nodejs  # Shell with Python & Node    ║
+    ║    nix run nixpkgs#htop         # Run htop without install    ║
+    ║    nix-install go               # Install Go permanently      ║
+    ║                                                                ║
+    ║  Type 'cat /etc/motd' to see this message again.              ║
+    ╚══════════════════════════════════════════════════════════════╝
+  '';
 }

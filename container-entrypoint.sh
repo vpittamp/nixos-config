@@ -502,6 +502,14 @@ main() {
         echo "[entrypoint] NIX_LD environment variables loaded"
     fi
     
+    # Initialize Nix channels for ad-hoc package management
+    echo "[entrypoint] Initializing Nix channels for ad-hoc package management..."
+    if [ ! -e /root/.nix-channels ]; then
+        echo "https://nixos.org/channels/nixpkgs-unstable nixpkgs" > /root/.nix-channels
+        nix-channel --update 2>/dev/null || true
+        echo "[entrypoint] Nix channels initialized - packages can be installed with 'nix-env -iA nixpkgs.packagename'"
+    fi
+    
     # Setup SSL/TLS certificates
     echo "[entrypoint] Setting up SSL certificates..."
     # Find NixOS CA bundle

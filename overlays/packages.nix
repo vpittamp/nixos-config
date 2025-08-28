@@ -27,6 +27,8 @@ let
     findutils       # Required for VS Code Server (provides find command)
     wl-clipboard    # Wayland clipboard utilities for WSLg (wl-copy, wl-paste)
     nodejs_20       # Required for Backstage (~74MB)
+    nix             # Nix package manager for ad-hoc installs (~30MB)
+    cachix          # Binary cache client for faster installs (~10MB)
   ];
   
   # Language/runtime packages (large downloads)
