@@ -58,8 +58,9 @@ let
     devspace = pkgs.devspace;        # ~70MB
     docker-compose = pkgs.docker-compose;  # ~100MB
     yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
-    claude-code = pkgs.claude-code;  # ~50MB
+    # claude = pkgs.claude;            # ~50MB - Claude CLI tool (not in nixpkgs by default)
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
+    # idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };  # ~50MB - IDP builder tool (uncomment after committing)
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
     # VS Code CLI is not in nixpkgs yet, will be installed via script
   };
