@@ -60,7 +60,6 @@ let
     yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
     # claude = pkgs.claude;            # ~50MB - Claude CLI tool (not in nixpkgs by default)
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
-    # idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };  # ~50MB - IDP builder tool (uncomment after committing)
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
     # VS Code CLI is not in nixpkgs yet, will be installed via script
   };
@@ -100,20 +99,7 @@ rec {
     inherit (pkgs.stdenv.hostPlatform) system;
   };
   
-  idpbuilder = pkgs.stdenv.mkDerivation rec {
-    pname = "idpbuilder";
-    version = "0.9.1";
-    src = pkgs.fetchurl {
-      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
-      sha256 = "sha256-pPFpQ+wgxq1BZk7XrimGKCNo2veCc1ZRb51mh7gwqgk=";
-    };
-    sourceRoot = ".";
-    installPhase = ''
-      mkdir -p $out/bin
-      cp idpbuilder $out/bin/idpbuilder
-      chmod +x $out/bin/idpbuilder
-    '';
-  };
+  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
   
   sesh = pkgs.stdenv.mkDerivation rec {
     pname = "sesh";

@@ -6,16 +6,21 @@ stdenv.mkDerivation rec {
 
   src = fetchurl {
     url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
-    hash = "sha256-Cc2iYTWMdbYaSk0dwtUX4OoTySs49JEhsfVetZDwwN8=";
+    hash = "sha256-ZE5ActmrVmpJzaL7p/MsAqFjgHdHkpItpQ7WmEMCN7s=";
   };
 
   dontBuild = true;
+  
+  sourceRoot = ".";
 
   nativeBuildInputs = [ autoPatchelfHook ];
 
+  unpackPhase = ''
+    tar -xzf $src
+  '';
+
   installPhase = ''
     mkdir -p $out/bin
-    tar -xzf $src
     cp idpbuilder $out/bin/
     chmod +x $out/bin/idpbuilder
   '';
