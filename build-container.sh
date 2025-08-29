@@ -32,6 +32,38 @@ PROFILE=""  # Will be set from arguments or default to "essential" later
 OUTPUT_FILE=""
 PROJECT_DIR=""
 
+# Docker Hub defaults
+DOCKER_USER="${DOCKER_USER:-vpittamp23}"
+DEFAULT_VERSION="v1.23.0"  # Starting version
+
+# Function to get next version number
+get_next_version() {
+    local profile="$1"
+    local base_version="${VERSION:-}"
+    
+    if [ -n "$base_version" ]; then
+        echo "$base_version"
+        return
+    fi
+    
+    # Check existing tags in Docker Hub
+    local latest_tag=$(docker images "${DOCKER_USER}/nixos-dev" --format "{{.Tag}}" 2>/dev/null | \
+                       grep -E "^v[0-9]+\.[0-9]+\.[0-9]+-${profile}$" | \
+                       sort -V | tail -1)
+    
+    if [ -z "$latest_tag" ]; then
+        echo "${DEFAULT_VERSION}-${profile}"
+    else
+        # Extract version and increment patch number
+        local version_part=$(echo "$latest_tag" | sed "s/-${profile}$//" | sed 's/^v//')
+        local major=$(echo "$version_part" | cut -d. -f1)
+        local minor=$(echo "$version_part" | cut -d. -f2)
+        local patch=$(echo "$version_part" | cut -d. -f3)
+        patch=$((patch + 1))
+        echo "v${major}.${minor}.${patch}-${profile}"
+    fi
+}
+
 # Function to format duration from seconds
 format_duration() {
     local duration=$1
@@ -253,6 +285,8 @@ function show_help {
     echo "  DOCKER_TAG=<tag>       Tag the loaded image (e.g., docker.io/user/image:tag)"
     echo "  SHOW_PACKAGE_SIZES=true  Analyze and display package sizes (adds ~30s)"
     echo "  DOCKER_PUSH=true       Push the tagged image to registry"
+    echo "  DOCKER_USER=<user>     Docker Hub username (default: vpittamp23)"
+    echo "  VERSION=<version>      Version tag (default: auto-incremented from v1.23.0)"
     echo "  CONTAINER_SSH_ENABLED=true    Enable SSH server in container"
     echo "  CONTAINER_SSH_PORT=2222       SSH server port (default: 2222)"
     echo "  VSCODE_TUNNEL_ENABLED=true    Enable VS Code tunnel support"
@@ -496,7 +530,14 @@ else
         echo "📦 Loaded image: $LOADED_IMAGE"
         end_step
         
-        # Tag the image if requested
+        # Auto-generate tag if pushing without explicit tag
+        if [ "${DOCKER_PUSH:-}" = "true" ] && [ -z "${DOCKER_TAG:-}" ]; then
+            NEXT_VERSION=$(get_next_version "$PROFILE")
+            DOCKER_TAG="docker.io/${DOCKER_USER}/nixos-dev:${NEXT_VERSION}"
+            echo "📋 Auto-generated tag: $DOCKER_TAG"
+        fi
+        
+        # Tag the image if requested or auto-generated
         if [ -n "${DOCKER_TAG:-}" ]; then
             start_step "Tagging Docker image"
             docker tag "$LOADED_IMAGE" "$DOCKER_TAG"
@@ -508,6 +549,7 @@ else
                 start_step "Pushing to Docker registry"
                 if docker push "$DOCKER_TAG"; then
                     echo "📤 Successfully pushed to registry"
+                    echo -e "${GREEN}✅ Image available at: $DOCKER_TAG${NC}"
                 else
                     echo -e "${YELLOW}⚠️  Push failed. Make sure you're logged in: docker login${NC}"
                 fi
@@ -544,6 +586,9 @@ else
     echo ""
     echo "To tag and push:"
     echo "  LOAD_DOCKER=true DOCKER_TAG=docker.io/user/image:tag DOCKER_PUSH=true $0"
+    echo ""
+    echo "Or auto-tag and push to Docker Hub (vpittamp23):"
+    echo "  LOAD_DOCKER=true DOCKER_PUSH=true $0"
 fi
 
 # Add trap to ensure timing summary is printed on exit

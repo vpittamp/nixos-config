@@ -114,9 +114,16 @@ in
       # Enable passthrough for terminal escape sequences
       set -g allow-passthrough on
       
-      # Fix for VS Code terminal - disable problematic features
+      # Clipboard integration
+      # Enable OSC 52 clipboard for terminals that support it (e.g. WezTerm/kitty)
+      # Keep it disabled for VS Code specifically to avoid interference
+      set -g set-clipboard on
       set -as terminal-overrides ',vscode*:Ms@'  # Disable OSC 52 clipboard for VS Code
-      set -g set-clipboard off  # Disable clipboard integration
+      
+      # Configure tmux-yank to use Windows clipboard in WSL
+      # Falls back to wl-copy via explicit bindings below when available
+      set -g @yank_selection 'clipboard'
+      set -g @copy-command '/usr/local/bin/clip.exe'
       set -as terminal-features ',*:RGB'  # Use RGB instead of OSC sequences
       
       # Pane settings
@@ -213,12 +220,16 @@ in
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      # Clipboard integration - try wl-copy first (Wayland/WSLg), fall back to clip.exe
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel 'wl-copy --type text/plain 2>/dev/null || /mnt/c/Windows/System32/clip.exe'
+      # Enter copy-mode and start selection when dragging with mouse
+      bind -n MouseDown1Pane select-pane -t= \; copy-mode -M
+      # Scrolling with wheel enters copy-mode and scrolls
+      bind -n WheelUpPane if -F "#{pane_in_mode}" "send-keys -X -N 1 scroll-up" "copy-mode -e; send-keys -X -N 1 scroll-up"
+      # Clipboard integration - use resilient wrapper that prefers wl-copy, falls back to Windows clip.exe
+      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip'
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'wl-copy --type text/plain 2>/dev/null || /mnt/c/Windows/System32/clip.exe'
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip'
     '';
   };
 }

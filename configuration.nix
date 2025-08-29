@@ -170,6 +170,19 @@ EOF
       if [ -f /mnt/c/Windows/System32/clip.exe ]; then
         mkdir -p /usr/local/bin
         ln -sf /mnt/c/Windows/System32/clip.exe /usr/local/bin/clip.exe
+        # Provide a resilient wrapper that prefers wl-copy (WSLg) and falls back to Windows clipboard
+        cat > /usr/local/bin/wsl-clip << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# Usage: wsl-clip
+# Reads stdin and copies to Wayland clipboard if available, otherwise to Windows clipboard
+if command -v wl-copy >/dev/null 2>&1; then
+  wl-copy --type text/plain 2>/dev/null || cat >/usr/local/bin/.wsl-clip-discard
+else
+  /mnt/c/Windows/System32/clip.exe
+fi
+EOF
+        chmod +x /usr/local/bin/wsl-clip
       fi
     '';
 
