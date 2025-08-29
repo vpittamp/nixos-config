@@ -46,7 +46,7 @@ in
     baseIndex = 1;
     historyLimit = 10000;
     keyMode = "vi";
-    mouse = false;
+    mouse = true;  # Enable mouse support for proper scrolling
     
     plugins = with pkgs.tmuxPlugins; [
       sensible
@@ -244,6 +244,9 @@ in
       # Synchronize panes toggle
       bind S setw synchronize-panes \; display-message "Synchronize panes: #{?pane_synchronized,ON,OFF}"
       
+      # Mouse mode toggle
+      bind m set -g mouse \; display-message "Mouse: #{?mouse,ON,OFF}"
+      
       # Sesh session management
       bind -N "last-session (via sesh)" l run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
@@ -267,7 +270,14 @@ in
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      # Mouse is disabled in tmux to defer selection/paste to the terminal
+      # Mouse scrolling and selection
+      # When mouse is enabled, scrolling enters copy mode automatically
+      bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'copy-mode -e'"
+      bind -n WheelDownPane select-pane -t= \; send-keys -M
+      
+      # Mouse selection in copy mode
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip-clean'
+      
       # Clipboard integration
       # - y: copy cleaned (no emojis/private-use icons) to Windows clipboard
       # - Y: copy raw (full Unicode) to Windows clipboard
@@ -276,7 +286,6 @@ in
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      # Mouse-specific tmux bindings removed to avoid conflicts; terminal handles mouse behavior
     '';
   };
 }
