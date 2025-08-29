@@ -33,18 +33,6 @@ let
     '';
   };
 
-  # tmux-which-key for context-aware keybinding help
-  tmux-which-key = pkgs.tmuxPlugins.mkTmuxPlugin {
-    pluginName = "tmux-which-key";
-    version = "unstable-2024-01-01";
-    rtpFilePath = "plugin.sh.tmux";
-    src = pkgs.fetchFromGitHub {
-      owner = "alexwforsythe";
-      repo = "tmux-which-key";
-      rev = "main";
-      sha256 = "sha256-X7FunHrAexDgAlZfN+JOUJvXFZeyVj9yu6WRnxMEA8E=";
-    };
-  };
 
   # Color scheme access
   colors = config.colorScheme;
@@ -63,21 +51,8 @@ in
     plugins = with pkgs.tmuxPlugins; [
       sensible
       yank
-      {
-        plugin = tmux-which-key;
-        extraConfig = ''
-          # Which-key configuration
-          set -g @tmux-which-key-delay 500  # Delay before showing help (ms)
-          set -g @tmux-which-key-position bottom  # Position of help window
-          
-          # Custom key groups (optional)
-          # Format: set -g @tmux-which-key-group-<name> '<keys>'
-          set -g @tmux-which-key-group-windows 'window'
-          set -g @tmux-which-key-group-panes 'pane'
-          set -g @tmux-which-key-group-sessions 'session'
-          set -g @tmux-which-key-group-copy 'copy'
-        '';
-      }
+      # Try the nixpkgs version of tmux-which-key if it exists
+      # Otherwise we'll use a simpler menu alternative
       {
         plugin = tmux-mode-indicator;
         extraConfig = ''
@@ -191,10 +166,47 @@ in
       # Paste from Windows clipboard (helper: /usr/local/bin/wsl-paste)
       bind P run-shell "/usr/local/bin/wsl-paste | tmux load-buffer - && tmux paste-buffer -p" \; display-message 'Pasted from Windows clipboard'
       
-      # Help and documentation
-      bind ? display-popup -E "tmux list-keys | less"  # Show all keybindings
-      bind / command-prompt -p "Search for command:" "display-popup -E 'tmux list-keys | grep -i %%'"
-      # Note: tmux-which-key will automatically show help after pressing prefix and waiting
+      # Help and documentation with context-aware menus
+      bind ? display-menu -T "Tmux Quick Help" -x C -y C \
+        "Window Operations"  w "display-menu -T 'Window Operations' \
+          'New Window (c)'           c 'new-window' \
+          'Kill Window (X)'          X 'kill-window' \
+          'Rename Window (,)'        , 'command-prompt -I \"#W\" \"rename-window %%\"' \
+          'List Windows (w)'         w 'choose-window' \
+          'Next Window (n)'          n 'next-window' \
+          'Previous Window (p)'      p 'previous-window' \
+          'Last Window (l)'          l 'last-window'" \
+        "Pane Operations"    p "display-menu -T 'Pane Operations' \
+          'Split Horizontal (|)'     | 'split-window -h' \
+          'Split Vertical (-)'       - 'split-window -v' \
+          'Kill Pane (x)'            x 'kill-pane' \
+          'Zoom Pane (f)'            f 'resize-pane -Z' \
+          'Rotate Panes (C-o)'       C-o 'rotate-window' \
+          'Break Pane (!)'           ! 'break-pane' \
+          'Swap Panes (})'           } 'swap-pane -D'" \
+        "Session Operations" s "display-menu -T 'Session Operations' \
+          'New Session'              N 'new-session' \
+          'Choose Session (s)'       s 'choose-session' \
+          'Detach (d)'               d 'detach-client' \
+          'Rename Session ($)'       $ 'command-prompt -I \"#S\" \"rename-session %%\"' \
+          'Kill Session'             K 'kill-session'" \
+        "Copy Mode"          m "display-menu -T 'Copy Mode' \
+          'Enter Copy Mode ([)'      [ 'copy-mode' \
+          'Paste Buffer (])'         ] 'paste-buffer' \
+          'List Buffers (=)'         = 'choose-buffer' \
+          'Save Buffer'              S 'command-prompt -p \"Save to:\" \"save-buffer %%\"'" \
+        "" \
+        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'display-popup -E \"tmux list-keys | grep -i %%\"'" \
+        "List All Keys"      a "display-popup -E 'tmux list-keys | less'" \
+        "Reload Config (r)"  r "source-file ~/.config/tmux/tmux.conf"
+      
+      # Alternative simpler help binding
+      bind h display-popup -E "printf 'Tmux Key Bindings (Prefix = backtick):\n\n\
+      WINDOWS: c=new | X=kill | ,=rename | n/p=next/prev | 0-9=select\n\
+      PANES:   |=split-h | -=split-v | x=kill | f=zoom | hjkl=navigate\n\
+      SESSION: d=detach | s=list | \$=rename | o=sessionx\n\
+      COPY:    [=copy-mode | ]=paste | v=select | y=yank\n\n\
+      Press ? for interactive menu'"
       
       # Split windows
       bind v split-window -v -c "#{pane_current_path}"

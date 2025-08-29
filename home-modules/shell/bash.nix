@@ -164,9 +164,10 @@
       # Enable direnv
       eval "$(direnv hook bash)"
       
-      # Better history search
-      bind '"\e[A": history-search-backward'
-      bind '"\e[B": history-search-forward'
+      # Better history search (avoid interfering with mouse wheel)
+      # Use Ctrl+Up/Down for prefix-based search to prevent accidental triggers
+      bind '"\e[1;5A": history-search-backward'  # Ctrl+Up
+      bind '"\e[1;5B": history-search-forward'   # Ctrl+Down
       
       # Colored man pages
       export LESS_TERMCAP_mb=$'\e[1;32m'
