@@ -53,6 +53,10 @@
       
       # Auto-optimize store to save space
       auto-optimise-store = true;
+      
+      # Disable sandbox for container compatibility
+      # Containers already provide isolation, and sandbox causes issues
+      sandbox = false;
     };
     
     # Garbage collection settings for containers
