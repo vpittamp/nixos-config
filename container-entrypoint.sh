@@ -212,6 +212,77 @@ start_sshd() {
     fi
 }
 
+# Function to setup Nix for container use
+setup_nix() {
+    echo "[entrypoint] Setting up Nix environment..."
+    
+    # Create required directories
+    mkdir -p /nix/var/nix/daemon-socket
+    mkdir -p /nix/var/nix/profiles/per-user/root
+    mkdir -p /nix/var/nix/profiles/per-user/code
+    mkdir -p /nix/var/nix/profiles/per-user/vpittamp
+    mkdir -p /nix/var/nix/gcroots/per-user/root
+    mkdir -p /nix/var/nix/gcroots/per-user/code
+    mkdir -p /nix/var/nix/gcroots/per-user/vpittamp
+    
+    # Set ownership for user directories
+    chown -R code:users /nix/var/nix/profiles/per-user/code 2>/dev/null || true
+    chown -R code:users /nix/var/nix/gcroots/per-user/code 2>/dev/null || true
+    if id vpittamp >/dev/null 2>&1; then
+        chown -R vpittamp:users /nix/var/nix/profiles/per-user/vpittamp 2>/dev/null || true
+        chown -R vpittamp:users /nix/var/nix/gcroots/per-user/vpittamp 2>/dev/null || true
+    fi
+    
+    # Set up Nix environment variables for single-user mode
+    export NIX_REMOTE=""
+    export NIX_STATE_DIR="/nix/var/nix"
+    export NIX_STORE_DIR="/nix/store"
+    export NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+    
+    # Create nix.conf for single-user mode if it doesn't exist
+    if [ ! -f /etc/nix/nix.conf ]; then
+        mkdir -p /etc/nix
+        cat > /etc/nix/nix.conf << 'EOF'
+# Nix configuration for container single-user mode
+sandbox = false
+experimental-features = nix-command flakes
+trusted-users = root code vpittamp @wheel
+max-jobs = auto
+cores = 0
+substituters = https://cache.nixos.org https://nix-community.cachix.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+EOF
+    fi
+    
+    # Set up environment for all users (both login and non-login shells)
+    cat > /etc/profile.d/nix.sh << 'EOF'
+# Nix single-user mode environment
+export NIX_REMOTE=""
+export NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+export PATH="/nix/var/nix/profiles/default/bin:$PATH"
+
+# Add user profile to PATH
+if [ -n "$USER" ] && [ -d "/nix/var/nix/profiles/per-user/$USER" ]; then
+    export PATH="/nix/var/nix/profiles/per-user/$USER/profile/bin:$PATH"
+fi
+EOF
+    
+    # Also create a bashrc snippet for non-login shells
+    mkdir -p /etc/bashrc.d
+    cat > /etc/bashrc.d/nix.sh << 'EOF'
+# Nix single-user mode environment for non-login shells
+export NIX_REMOTE=""
+export NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+EOF
+    
+    # Ensure bashrc sources the nix environment
+    if ! grep -q "NIX_REMOTE" /etc/bashrc 2>/dev/null; then
+        echo 'export NIX_REMOTE=""' >> /etc/bashrc
+    fi
+    
+    echo "[entrypoint] Nix environment configured for single-user mode"
+}
+
 # Function to setup VS Code compatibility
 setup_vscode_compat() {
     echo "[entrypoint] Setting up VS Code compatibility..."
@@ -490,7 +561,10 @@ FIXSCRIPT
 main() {
     echo "[entrypoint] Container starting at $(date)"
     
-    # Setup VS Code compatibility first
+    # Setup Nix environment first
+    setup_nix
+    
+    # Setup VS Code compatibility
     setup_vscode_compat
     
     # Ensure nix-ld is properly configured

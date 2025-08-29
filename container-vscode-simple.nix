@@ -113,27 +113,10 @@
   # The nixos-vscode-server module handles node binary replacement.
   
   # VS Code tunnel support (optional)
+  # Note: VS Code CLI is now included via the vscode-cli package in essentialPackages
   system.activationScripts.vscode-tunnel = lib.mkIf (builtins.getEnv "VSCODE_TUNNEL_ENABLED" == "true") ''
-    echo "Setting up VS Code tunnel..."
-    
-    # Download VS Code CLI if not present
-    if [ ! -f /usr/local/bin/code ]; then
-      echo "Downloading VS Code CLI..."
-      mkdir -p /usr/local/bin /tmp/vscode-cli
-      cd /tmp/vscode-cli
-      
-      # Download the CLI (it's a standalone binary)
-      if ${pkgs.curl}/bin/curl -L "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o vscode-cli.tar.gz; then
-        ${pkgs.gnutar}/bin/tar -xzf vscode-cli.tar.gz
-        mv code /usr/local/bin/code
-        chmod +x /usr/local/bin/code
-        echo "VS Code CLI installed to /usr/local/bin/code"
-      else
-        echo "Failed to download VS Code CLI (network might not be available)"
-      fi
-      
-      rm -rf /tmp/vscode-cli
-    fi
+    echo "VS Code CLI is available at: $(which code)"
+    echo "VS Code version: $(code --version | head -1)"
   '';
   
   # Create the tunnel helper script
@@ -147,22 +130,18 @@
       echo "This will allow you to connect to this container from anywhere without SSH/port-forwarding"
       echo ""
       
-      # Download VS Code CLI if not present
-      if [ ! -f /usr/local/bin/code ]; then
-        echo "VS Code CLI not found. Downloading..."
-        mkdir -p /usr/local/bin /tmp/vscode-cli
-        cd /tmp/vscode-cli
-        
-        curl -L "https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64" -o vscode-cli.tar.gz
-        tar -xzf vscode-cli.tar.gz
-        mv code /usr/local/bin/code
-        chmod +x /usr/local/bin/code
-        rm -rf /tmp/vscode-cli
-        echo "VS Code CLI installed!"
+      # VS Code CLI is now included in the system packages
+      CODE_BIN=$(which code)
+      if [ -z "$CODE_BIN" ]; then
+        echo "Error: VS Code CLI not found in system packages"
+        exit 1
       fi
       
+      echo "Using VS Code CLI at: $CODE_BIN"
+      echo "VS Code version: $(code --version | head -1)"
+      
       # Check if already authenticated
-      if /usr/local/bin/code tunnel user show 2>/dev/null | grep -q "Logged in"; then
+      if $CODE_BIN tunnel user show 2>/dev/null | grep -q "Logged in"; then
         echo "Already authenticated!"
       else
         echo "Please choose your authentication provider:"
@@ -172,10 +151,10 @@
         
         case $choice in
           1)
-            /usr/local/bin/code tunnel user login --provider github
+            $CODE_BIN tunnel user login --provider github
             ;;
           2)
-            /usr/local/bin/code tunnel user login --provider microsoft
+            $CODE_BIN tunnel user login --provider microsoft
             ;;
           *)
             echo "Invalid choice"
@@ -187,7 +166,7 @@
       # Start the tunnel
       echo "Starting VS Code tunnel..."
       echo "You can access this machine at: https://vscode.dev/tunnel/<machine-name>"
-      /usr/local/bin/code tunnel --accept-server-license-terms --name "backstage-dev-$(hostname -s)"
+      $CODE_BIN tunnel --accept-server-license-terms --name "backstage-dev-$(hostname -s)"
     '';
   };
 }

@@ -1,13 +1,44 @@
 { pkgs, lib, ... }:
 
 let
+  # AI CLI tools - fundamental packages that should always be available
+  # These are defined here as they're core to our development workflow
+  gemini-cli = pkgs.writeShellScriptBin "gemini" ''
+    export npm_config_loglevel=error
+    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
+    export NODE="${pkgs.nodejs_20}/bin/node"
+    export SHELL="${pkgs.bash}/bin/bash"
+    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @google/gemini-cli@0.2.1 "$@"
+  '';
+  
+  claude-cli = pkgs.writeShellScriptBin "claude" ''
+    export npm_config_loglevel=error
+    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
+    export NODE="${pkgs.nodejs_20}/bin/node"
+    export SHELL="${pkgs.bash}/bin/bash"
+    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @anthropic-ai/claude-code@1.0.95 "$@"
+  '';
+  
+  codex-cli = pkgs.writeShellScriptBin "codex" ''
+    export npm_config_loglevel=error
+    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
+    export NODE="${pkgs.nodejs_20}/bin/node"
+    export SHELL="${pkgs.bash}/bin/bash"
+    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @openai/codex@0.25.0 "$@"
+  '';
+
   # Minimal packages for initial container setup
+  # Includes fundamental tools and AI assistants
   minimalPackages = with pkgs; [
     # Absolute essentials only
     tmux git vim
     fzf ripgrep fd bat
     curl wget jq
     which file
+    # AI CLI tools - fundamental to our workflow
+    gemini-cli
+    claude-cli
+    codex-cli
   ];
   
   # Essential packages - core tools
@@ -28,7 +59,8 @@ let
     wl-clipboard    # Wayland clipboard utilities for WSLg (wl-copy, wl-paste)
     nodejs_20       # Required for Backstage (~74MB)
     nix             # Nix package manager for ad-hoc installs
-    # Note: claude-code, codex, and gemini-cli are provided by home-manager modules
+    tailscale       # Zero config VPN for secure networking
+    # Note: claude-code, codex, and gemini-cli are provided by home-manager modules or npm-package
   ];
   
   # Language/runtime packages (large downloads)
@@ -100,6 +132,10 @@ rec {
     inherit (pkgs.stdenv.hostPlatform) system;
   };
   
+  vscode-cli = pkgs.callPackage ../packages/vscode-cli.nix { };
+  
+  azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
+  
   idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
   
   sesh = pkgs.stdenv.mkDerivation rec {
@@ -127,6 +163,8 @@ rec {
   
   essential = minimalPackages ++ essentialPackages ++ [
     claude-manager
+    vscode-cli
+    azure-cli-bin
     sesh
   ];
   

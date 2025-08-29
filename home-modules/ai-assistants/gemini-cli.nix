@@ -4,10 +4,10 @@
   # Gemini CLI - Google's Gemini AI in terminal
   programs.gemini-cli = {
     enable = true;
-    package = pkgs.gemini-cli;
+    package = null;  # Using npm-package version from flake.nix instead
     
-    # Default model to use
-    defaultModel = "gemini-2.0-pro";
+    # Default model to use (Gemini 2.5 Pro is now available)
+    defaultModel = "gemini-2.5-pro";
     
     # Settings for gemini-cli
     settings = {

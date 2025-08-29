@@ -3,7 +3,7 @@
 {
   # Codex - Lightweight coding agent
   programs.codex = {
-    enable = true;
+    enable = false;  # Disabled - using npm-package version from flake.nix instead
     package = pkgs.codex;
     
     # Custom instructions for the agent

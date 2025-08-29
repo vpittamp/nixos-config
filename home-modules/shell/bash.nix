@@ -27,6 +27,9 @@
       # Disable OSC color queries
       NO_COLOR = "";  # Set to empty string so programs can check it exists
       
+      # Nix single-user mode for containers (harmless on WSL)
+      NIX_REMOTE = "";
+      
       # AI/LLM API Keys (set these in your environment or use a secrets manager)
       # AVANTE_ANTHROPIC_API_KEY = "your-api-key-here"; # Uncomment and set your Claude API key
       # Or use a command to retrieve from password manager:

@@ -33,11 +33,10 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     # NPM Package utility - for installing npm packages as Nix derivations
-    # Commented out but kept for potential future use
-    # npm-package.url = "github:netbrain/npm-package";
+    npm-package.url = "github:netbrain/npm-package";
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, npm-package, ... }@inputs: 
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -61,16 +60,8 @@
             # Main system configuration
             ./configuration.nix
             
-            # Example: How to add npm packages using npm-package (if enabled in inputs)
-            # ({ pkgs, lib, ... }: {
-            #   environment.systemPackages = with pkgs; [
-            #     (npm-package.lib.${pkgs.system}.npmPackage {
-            #       name = "package-name";
-            #       packageName = "@scope/package-name";
-            #       version = "1.0.0";
-            #     })
-            #   ];
-            # })
+            # NPM packages are now defined in overlays/packages.nix
+            # to avoid duplication and ensure they're available in containers
             # Home Manager module
             home-manager.nixosModules.home-manager
             {
@@ -94,7 +85,51 @@
       
       # Container packages - unified with main configuration
       packages.${system} = {
-        # Build container from main configuration
+        # Base container with minimal NixOS and runtime setup capability
+        # Usage: nix build .#container-base
+        container-base = let
+          baseConfig = nixpkgs.lib.nixosSystem {
+            inherit system;
+            specialArgs = { inherit inputs; };
+            modules = [
+              ./container-base.nix
+              vscode-server.nixosModules.default
+            ];
+          };
+        in
+        pkgs.dockerTools.buildLayeredImage {
+          name = "nixos-base";
+          tag = "latest";
+          
+          contents = pkgs.buildEnv {
+            name = "container-base-root";
+            paths = [
+              baseConfig.config.system.path
+              pkgs.bashInteractive
+              pkgs.coreutils
+              pkgs.nix
+              
+              # Add runtime setup script
+              (pkgs.runCommand "runtime-setup" {} ''
+                mkdir -p $out/usr/local/bin
+                cp ${./container-runtime-setup.sh} $out/usr/local/bin/nixos-setup
+                chmod 755 $out/usr/local/bin/nixos-setup
+              '')
+            ];
+            pathsToLink = [ "/bin" "/lib" "/share" "/etc" "/usr" ];
+          };
+          
+          config = {
+            Env = [
+              "PATH=/usr/local/bin:/bin:/usr/bin"
+              "NIX_PATH=nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+            ];
+            Cmd = [ "/usr/local/bin/nixos-setup" ];
+            WorkingDir = "/";
+          };
+        };
+        
+        # Build container from main configuration (existing approach)
         # Usage: NIXOS_CONTAINER=1 NIXOS_PACKAGES="essential" nix build .#container
         container = let
           # Build the NixOS configuration with container mode enabled
@@ -205,6 +240,9 @@
               # Critical for VS Code server to find libraries
               "LD_LIBRARY_PATH=/lib:/usr/lib:/lib64"
               "NIX_LD_LIBRARY_PATH=/lib:/usr/lib:/lib64"
+              # Critical for Nix single-user mode in containers
+              "NIX_REMOTE="
+              "NIX_PATH=nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
             ];
             Entrypoint = [ "/etc/container-entrypoint.sh" ];
             Cmd = [ "sleep" "infinity" ];

@@ -3,12 +3,20 @@
 {
   # Claude Code - Anthropic's Claude CLI
   programs.claude-code = {
-    enable = true;
+    enable = false;  # Disabled - using npm-package version from flake.nix instead
     package = pkgs.claude-code;
     
     settings = {
-      model = "claude-3-5-sonnet-20241022";
+      model = "opus";
       theme = "dark";
+      autoCompact = true;
+      useTodoList = true;
+      verboseOutput = true;
+      autoUpdates = true;
+      notifications = "bell";
+      outputStyle = "default";
+      editorMode = "vim";
+      autoConnectToIde = true;
       includeCoAuthoredBy = true;
     };
     
@@ -28,12 +36,35 @@
     #   };
     # };
     
-    # MCP servers (if needed in future)
-    # mcpServers = {
-    #   "example-server" = {
-    #     command = "example-mcp-server";
-    #     args = ["--example"];
-    #   };
-    # };
+    # MCP servers configuration
+    mcpServers = {
+      "context7" = {
+        transport = "sse";
+        command = "npx";
+        args = [
+          "-y"
+          "@modelcontextprotocol/server-sse"
+          "https://mcp.context7.com/sse"
+        ];
+      };
+      
+      "grep" = {
+        transport = "http";
+        command = "npx";
+        args = [
+          "-y"
+          "@modelcontextprotocol/server-http"
+          "https://mcp.grep.app"
+        ];
+      };
+
+      "playwright" = {
+        transport = "http";
+        command = "npx";
+        args = [
+          "@playwright/mcp@latest"
+        ];
+      };
+    };
   };
 }

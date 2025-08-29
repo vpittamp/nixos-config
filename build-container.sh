@@ -4,11 +4,238 @@
 
 set -e
 
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m' # No Color
+
+# Timing variables
+declare -A STEP_TIMES
+declare -A STEP_NAMES
+STEP_COUNT=0
+BUILD_START_TIME=""
+
+# Package size tracking variables
+declare -A PACKAGE_SIZES
+declare -A PACKAGE_CLOSURE_SIZES
+PACKAGE_SIZE_FILE="/tmp/nix-package-sizes-$$.json"
+SHOW_PACKAGE_SIZES="${SHOW_PACKAGE_SIZES:-true}"
+SIZE_ANALYSIS_VERBOSE="${SIZE_ANALYSIS_VERBOSE:-false}"
+
 # Parse command line arguments
 MODE="container"  # Default mode
 PROFILE=""  # Will be set from arguments or default to "essential" later
 OUTPUT_FILE=""
 PROJECT_DIR=""
+
+# Function to format duration from seconds
+format_duration() {
+    local duration=$1
+    local minutes=$((duration / 60))
+    local seconds=$((duration % 60))
+    if [ $minutes -gt 0 ]; then
+        printf "%dm %ds" $minutes $seconds
+    else
+        printf "%ds" $seconds
+    fi
+}
+
+# Function to record step timing
+start_step() {
+    local step_name="$1"
+    STEP_COUNT=$((STEP_COUNT + 1))
+    STEP_NAMES[$STEP_COUNT]="$step_name"
+    STEP_TIMES["${STEP_COUNT}_start"]=$(date +%s)
+    echo -e "${CYAN}⏱️  [$(date +%H:%M:%S)] Starting: $step_name${NC}"
+}
+
+# Function to end step timing
+end_step() {
+    local end_time=$(date +%s)
+    local start_time=${STEP_TIMES["${STEP_COUNT}_start"]}
+    local duration=$((end_time - start_time))
+    STEP_TIMES["${STEP_COUNT}_duration"]=$duration
+    echo -e "${GREEN}✓ [$(date +%H:%M:%S)] Completed: ${STEP_NAMES[$STEP_COUNT]} ($(format_duration $duration))${NC}"
+}
+
+# Function to print timing summary
+print_timing_summary() {
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}                   Build Time Summary                  ${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+    
+    local total_duration=0
+    for i in $(seq 1 $STEP_COUNT); do
+        local duration=${STEP_TIMES["${i}_duration"]}
+        if [ -n "$duration" ]; then
+            total_duration=$((total_duration + duration))
+            printf "  %-40s %10s\n" "${STEP_NAMES[$i]}" "$(format_duration $duration)"
+        fi
+    done
+    
+    echo -e "${BLUE}───────────────────────────────────────────────────────${NC}"
+    printf "  ${GREEN}%-40s %10s${NC}\n" "Total Build Time" "$(format_duration $total_duration)"
+    echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+}
+
+# Function to get packages list based on profile
+get_profile_packages() {
+    local profile="$1"
+    local packages=""
+    
+    # Base minimal packages
+    packages="tmux git vim fzf ripgrep fd bat curl wget jq which file"
+    
+    # Add essential packages if profile includes them
+    if [[ "$profile" == *"essential"* ]] || [[ "$profile" == "full" ]]; then
+        packages="$packages gnugrep eza zoxide yq tree htop ncurses direnv stow gum"
+        packages="$packages gnutar gzip gnused glibc coreutils findutils nodejs_20 nix tailscale"
+        packages="$packages sesh claude-manager vscode-cli azure-cli-bin"
+    fi
+    
+    # Add kubernetes packages if requested
+    if [[ "$profile" == *"kubernetes"* ]] || [[ "$profile" == "full" ]]; then
+        packages="$packages kubectl helm k9s kubectx kubernetes-helm devspace"
+    fi
+    
+    # Add development packages if requested
+    if [[ "$profile" == *"development"* ]] || [[ "$profile" == "full" ]]; then
+        packages="$packages go rustc gcc python3 deno"
+    fi
+    
+    echo "$packages"
+}
+
+# Function to collect package sizes asynchronously
+collect_package_sizes() {
+    local profile="$1"
+    local output_file="$2"
+    
+    if [ "$SHOW_PACKAGE_SIZES" != "true" ]; then
+        return
+    fi
+    
+    echo -e "${CYAN}📊 Analyzing package sizes in background...${NC}"
+    
+    # Get package list
+    local packages=$(get_profile_packages "$profile")
+    
+    # Start background process to collect sizes
+    (
+        echo "{" > "$output_file.tmp"
+        echo '  "packages": {' >> "$output_file.tmp"
+        
+        local first=true
+        for pkg in $packages; do
+            # Skip certain pseudo-packages
+            [[ "$pkg" == "claude-manager" ]] && continue
+            [[ "$pkg" == "vscode-cli" ]] && continue
+            [[ "$pkg" == "azure-cli-bin" ]] && continue
+            [[ "$pkg" == "sesh" ]] && continue
+            
+            if [ "$first" = false ]; then
+                echo "," >> "$output_file.tmp"
+            fi
+            first=false
+            
+            # Get package size (timeout after 2 seconds per package)
+            local size_info=$(timeout 2 nix path-info --closure-size --json "nixpkgs#$pkg" 2>/dev/null || echo "{}")
+            if [ -n "$size_info" ] && [ "$size_info" != "{}" ]; then
+                local closure_size=$(echo "$size_info" | jq -r '.[].closureSize // 0' 2>/dev/null || echo 0)
+                local size_mb=$(echo "scale=2; $closure_size / 1048576" | bc 2>/dev/null || echo 0)
+                echo -n "    \"$pkg\": {\"closureSize\": $closure_size, \"sizeMB\": $size_mb}" >> "$output_file.tmp"
+            else
+                echo -n "    \"$pkg\": {\"closureSize\": 0, \"sizeMB\": 0}" >> "$output_file.tmp"
+            fi
+        done
+        
+        echo "" >> "$output_file.tmp"
+        echo '  }' >> "$output_file.tmp"
+        echo '}' >> "$output_file.tmp"
+        
+        mv "$output_file.tmp" "$output_file"
+    ) &
+    
+    PACKAGE_SIZE_PID=$!
+}
+
+# Function to print package size summary
+print_package_size_summary() {
+    if [ "$SHOW_PACKAGE_SIZES" != "true" ]; then
+        return
+    fi
+    
+    # Wait for background process if still running (max 5 seconds)
+    if [ -n "$PACKAGE_SIZE_PID" ]; then
+        local wait_count=0
+        while kill -0 $PACKAGE_SIZE_PID 2>/dev/null && [ $wait_count -lt 10 ]; do
+            sleep 0.5
+            wait_count=$((wait_count + 1))
+        done
+    fi
+    
+    if [ ! -f "$PACKAGE_SIZE_FILE" ]; then
+        echo -e "${YELLOW}⚠️  Package size analysis not available${NC}"
+        return
+    fi
+    
+    echo ""
+    echo -e "${MAGENTA}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${MAGENTA}                 📦 Package Size Analysis              ${NC}"
+    echo -e "${MAGENTA}═══════════════════════════════════════════════════════${NC}"
+    
+    # Parse and sort packages by size
+    local total_size=0
+    local package_data=$(cat "$PACKAGE_SIZE_FILE" | jq -r '.packages | to_entries | sort_by(-.value.closureSize) | .[]' 2>/dev/null)
+    
+    if [ -z "$package_data" ]; then
+        echo "  No package data available"
+        return
+    fi
+    
+    # Calculate total size first
+    total_size=$(cat "$PACKAGE_SIZE_FILE" | jq '[.packages[].closureSize] | add' 2>/dev/null || echo 0)
+    
+    # Print header
+    printf "  %-25s %12s %10s\n" "Package" "Size" "% of Total"
+    echo -e "${MAGENTA}───────────────────────────────────────────────────────${NC}"
+    
+    # Print packages
+    local count=0
+    echo "$package_data" | while IFS= read -r line; do
+        local pkg_name=$(echo "$line" | jq -r '.key')
+        local pkg_size=$(echo "$line" | jq -r '.value.closureSize')
+        local pkg_size_mb=$(echo "$line" | jq -r '.value.sizeMB')
+        
+        if [ "$pkg_size" -gt 0 ] && [ "$total_size" -gt 0 ]; then
+            local percentage=$(echo "scale=1; $pkg_size * 100 / $total_size" | bc)
+            
+            # Show top 10 by default, or all if verbose
+            if [ "$SIZE_ANALYSIS_VERBOSE" = "true" ] || [ $count -lt 10 ]; then
+                printf "  %-25s %10s MB %9s%%\n" "$pkg_name" "$pkg_size_mb" "$percentage"
+            fi
+            count=$((count + 1))
+        fi
+    done
+    
+    if [ "$SIZE_ANALYSIS_VERBOSE" != "true" ] && [ $count -gt 10 ]; then
+        echo "  ... ($(($count - 10)) more packages, use SIZE_ANALYSIS_VERBOSE=true to see all)"
+    fi
+    
+    # Print total
+    echo -e "${MAGENTA}───────────────────────────────────────────────────────${NC}"
+    local total_mb=$(echo "scale=2; $total_size / 1048576" | bc 2>/dev/null || echo 0)
+    printf "  ${GREEN}%-25s %10s MB %9s%%${NC}\n" "Total (Closure Size)" "$total_mb" "100.0"
+    echo -e "${MAGENTA}═══════════════════════════════════════════════════════${NC}"
+    
+    # Clean up temp file
+    rm -f "$PACKAGE_SIZE_FILE" "$PACKAGE_SIZE_FILE.tmp" 2>/dev/null
+}
 
 function show_help {
     echo "🔨 NixOS Container Builder"
@@ -24,6 +251,7 @@ function show_help {
     echo "Environment Variables:"
     echo "  LOAD_DOCKER=true       Automatically load container into Docker"
     echo "  DOCKER_TAG=<tag>       Tag the loaded image (e.g., docker.io/user/image:tag)"
+    echo "  SHOW_PACKAGE_SIZES=true  Analyze and display package sizes (adds ~30s)"
     echo "  DOCKER_PUSH=true       Push the tagged image to registry"
     echo "  CONTAINER_SSH_ENABLED=true    Enable SSH server in container"
     echo "  CONTAINER_SSH_PORT=2222       SSH server port (default: 2222)"
@@ -108,6 +336,7 @@ export NIXOS_PACKAGES="$PROFILE"
 
 if [ "$MODE" = "devcontainer" ]; then
     # Build devcontainer
+    BUILD_START_TIME=$(date +%s)
     echo "🐳 Building devcontainer..."
     
     # Set project directory (default to current directory)
@@ -115,13 +344,16 @@ if [ "$MODE" = "devcontainer" ]; then
     echo "📁 Project directory: $PROJECT_DIR"
     
     # First build the base NixOS container
+    start_step "Building base NixOS container"
     cd /etc/nixos
     CONTAINER_PATH=$(nix build .#container --no-link --print-out-paths)
+    end_step
     
     # Load the container into Docker
-    echo "📦 Loading NixOS container into Docker..."
+    start_step "Loading container into Docker"
     docker load < "$CONTAINER_PATH" | grep "Loaded image" | cut -d' ' -f3 > /tmp/nixos-image-id
     BASE_IMAGE=$(cat /tmp/nixos-image-id)
+    end_step
     
     # Create devcontainer configuration if it doesn't exist
     DEVCONTAINER_DIR="$PROJECT_DIR/.devcontainer"
@@ -173,8 +405,9 @@ EOF
     fi
     
     # Build Docker image for devcontainer
-    echo "🏗️  Building devcontainer Docker image..."
+    start_step "Tagging devcontainer Docker image"
     docker tag "$BASE_IMAGE" "nixos-devcontainer:${PROFILE}"
+    end_step
     
     # Clean up temporary files if created but keep devcontainer config
     if [ "$TEMP_DEVCONTAINER" = false ]; then
@@ -183,8 +416,11 @@ EOF
         echo "✅ Created devcontainer configuration in $DEVCONTAINER_DIR"
     fi
     
+    # Print timing summary
+    print_timing_summary
+    
     echo ""
-    echo "✅ Devcontainer ready: nixos-devcontainer:${PROFILE}"
+    echo -e "${GREEN}✅ Devcontainer ready: nixos-devcontainer:${PROFILE}${NC}"
     echo ""
     echo "To use this devcontainer:"
     echo "  1. Open VS Code in your project: code $PROJECT_DIR"
@@ -195,7 +431,15 @@ EOF
     
 else
     # Build standard container
-    echo "🏗️  Starting Nix build (this may take a while)..."
+    BUILD_START_TIME=$(date +%s)
+    
+    # Start collecting package sizes in the background if enabled
+    if [ "$SHOW_PACKAGE_SIZES" = "true" ]; then
+        PACKAGE_SIZE_FILE="/tmp/package_sizes_$$_$(date +%s).json"
+        collect_package_sizes "$PROFILE" "$PACKAGE_SIZE_FILE"
+    fi
+    
+    start_step "Nix container build"
     cd /etc/nixos
     
     # Add progress indicator for long build
@@ -216,58 +460,78 @@ else
     
     # Check if build succeeded
     if [ ! -f "$CONTAINER_PATH" ]; then
-        echo "❌ Build failed. Container path not found: $CONTAINER_PATH"
+        echo -e "${RED}❌ Build failed. Container path not found: $CONTAINER_PATH${NC}"
         exit 1
     fi
     
+    end_step
+    
     # Get container size
+    start_step "Calculating container size"
     SIZE=$(du -sh "$CONTAINER_PATH" | cut -f1)
     echo "✅ Container built: $CONTAINER_PATH"
     echo "📏 Size: $SIZE"
+    end_step
     
     # Option to load into Docker
     if [ "${LOAD_DOCKER:-}" = "true" ] || [ "${AUTO_LOAD:-}" = "true" ]; then
-        echo "📦 Loading container into Docker..."
+        start_step "Loading container into Docker"
         
         # Handle both .tar.gz and .tar formats and capture the loaded image name
         if [[ "$CONTAINER_PATH" == *.tar.gz ]]; then
             echo "🔓 Decompressing and loading..."
             LOADED_IMAGE=$(gunzip -c "$CONTAINER_PATH" | docker load 2>&1 | grep "Loaded image" | cut -d: -f2- | tr -d ' ')
             if [ -z "$LOADED_IMAGE" ]; then
-                echo "❌ Failed to load container into Docker"
+                echo -e "${RED}❌ Failed to load container into Docker${NC}"
                 exit 1
             fi
         else
             LOADED_IMAGE=$(docker load < "$CONTAINER_PATH" 2>&1 | grep "Loaded image" | cut -d: -f2- | tr -d ' ')
             if [ -z "$LOADED_IMAGE" ]; then
-                echo "❌ Failed to load container into Docker"
+                echo -e "${RED}❌ Failed to load container into Docker${NC}"
                 exit 1
             fi
         fi
         
         echo "📦 Loaded image: $LOADED_IMAGE"
+        end_step
         
         # Tag the image if requested
         if [ -n "${DOCKER_TAG:-}" ]; then
-            echo "🏷️  Tagging image as: $DOCKER_TAG"
+            start_step "Tagging Docker image"
             docker tag "$LOADED_IMAGE" "$DOCKER_TAG"
+            echo "🏷️  Tagged as: $DOCKER_TAG"
+            end_step
             
             # Push if requested
             if [ "${DOCKER_PUSH:-}" = "true" ]; then
-                echo "📤 Pushing to registry..."
-                docker push "$DOCKER_TAG" || {
-                    echo "⚠️  Push failed. Make sure you're logged in: docker login"
-                }
+                start_step "Pushing to Docker registry"
+                if docker push "$DOCKER_TAG"; then
+                    echo "📤 Successfully pushed to registry"
+                else
+                    echo -e "${YELLOW}⚠️  Push failed. Make sure you're logged in: docker login${NC}"
+                fi
+                end_step
             fi
         fi
         
-        echo "✅ Docker image ready: ${LOADED_IMAGE:-nixos-dev:${PROFILE}}"
+        echo -e "${GREEN}✅ Docker image ready: ${LOADED_IMAGE:-nixos-dev:${PROFILE}}${NC}"
     fi
     
     # Copy to output file if specified
     if [ -n "$OUTPUT_FILE" ]; then
+        start_step "Copying to output file"
         cp "$CONTAINER_PATH" "$OUTPUT_FILE"
         echo "📁 Copied to: $OUTPUT_FILE"
+        end_step
+    fi
+    
+    # Print timing summary
+    print_timing_summary
+    
+    # Print package size summary if available
+    if [ -n "$PACKAGE_SIZE_FILE" ] && [ -f "$PACKAGE_SIZE_FILE" ]; then
+        print_package_size_summary "$PACKAGE_SIZE_FILE"
     fi
     
     echo ""
@@ -281,3 +545,6 @@ else
     echo "To tag and push:"
     echo "  LOAD_DOCKER=true DOCKER_TAG=docker.io/user/image:tag DOCKER_PUSH=true $0"
 fi
+
+# Add trap to ensure timing summary is printed on exit
+trap 'if [ $STEP_COUNT -gt 0 ] && [ -z "$SUMMARY_PRINTED" ]; then print_timing_summary; fi' EXIT
