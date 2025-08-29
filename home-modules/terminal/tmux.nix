@@ -37,12 +37,12 @@ let
   tmux-which-key = pkgs.tmuxPlugins.mkTmuxPlugin {
     pluginName = "tmux-which-key";
     version = "unstable-2024-01-01";
-    rtpFilePath = "plugin.tmux.sh";
+    rtpFilePath = "plugin.sh.tmux";
     src = pkgs.fetchFromGitHub {
       owner = "alexwforsythe";
       repo = "tmux-which-key";
       rev = "main";
-      sha256 = "sha256-r6y9MlKzVEtPrLdblWgDpoQlXuw1czhfMXNhPJsHFUY=";
+      sha256 = "sha256-X7FunHrAexDgAlZfN+JOUJvXFZeyVj9yu6WRnxMEA8E=";
     };
   };
 
@@ -188,6 +188,8 @@ in
       
       # Key bindings
       bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
+      # Paste from Windows clipboard (helper: /usr/local/bin/wsl-paste)
+      bind P run-shell "/usr/local/bin/wsl-paste | tmux load-buffer - && tmux paste-buffer -p" \; display-message 'Pasted from Windows clipboard'
       
       # Help and documentation
       bind ? display-popup -E "tmux list-keys | less"  # Show all keybindings
@@ -262,12 +264,7 @@ in
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      # Remove any mouse-specific bindings to avoid conflicts
-      unbind -T copy-mode-vi MouseDragEnd1Pane 2>/dev/null || true
-      unbind -T copy-mode-vi MouseDown1Pane 2>/dev/null || true
-      unbind -T copy-mode-vi MouseUp1Pane 2>/dev/null || true
-      unbind -T copy-mode-vi MouseUp3Pane 2>/dev/null || true
-      unbind -T copy-mode-vi DoubleClick1Pane 2>/dev/null || true
+      # Mouse-specific tmux bindings removed to avoid conflicts; terminal handles mouse behavior
     '';
   };
 }
