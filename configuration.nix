@@ -183,6 +183,60 @@ else
 fi
 EOF
         chmod +x /usr/local/bin/wsl-clip
+
+        # Provide a paste helper that prefers wl-paste and falls back to Windows clipboard
+        cat > /usr/local/bin/wsl-paste << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# Usage: wsl-paste
+# Prints clipboard contents to stdout, preferring Wayland when available
+if command -v wl-paste >/dev/null 2>&1; then
+  wl-paste --no-newline 2>/dev/null | sed 's/\r$//'
+else
+  /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command 'Get-Clipboard -Raw' | sed 's/\r$//'
+fi
+EOF
+        chmod +x /usr/local/bin/wsl-paste
+
+        # Provide a filter to strip emojis and private-use glyphs (Nerd Font icons)
+        cat > /usr/local/bin/strip-fancy << 'EOF'
+#!/usr/bin/env python3
+import sys
+
+def is_private(c):
+    o = ord(c)
+    return (0xE000 <= o <= 0xF8FF) or (0xF0000 <= o <= 0xFFFFD) or (0x100000 <= o <= 0x10FFFD)
+
+def is_emoji(c):
+    o = ord(c)
+    return (
+        0x1F300 <= o <= 0x1F5FF or  # Misc Symbols & Pictographs
+        0x1F600 <= o <= 0x1F64F or  # Emoticons
+        0x1F680 <= o <= 0x1F6FF or  # Transport & Map
+        0x1F900 <= o <= 0x1F9FF or  # Supplemental Symbols & Pictographs
+        0x1FA70 <= o <= 0x1FAFF or  # Symbols & Pictographs Extended-A
+        0x2600  <= o <= 0x26FF  or  # Misc Symbols
+        0x2700  <= o <= 0x27BF  or  # Dingbats
+        0x1F1E6 <= o <= 0x1F1FF     # Regional Indicator Symbols
+    )
+
+def main():
+    data = sys.stdin.read()
+    out = "".join(c for c in data if not (is_private(c) or is_emoji(c)))
+    sys.stdout.write(out)
+
+if __name__ == '__main__':
+    main()
+EOF
+        chmod +x /usr/local/bin/strip-fancy
+
+        # Clean copy helper: strip emojis/icons before sending to Windows clipboard
+        cat > /usr/local/bin/wsl-clip-clean << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+python3 /usr/local/bin/strip-fancy | /usr/local/bin/clip.exe
+EOF
+        chmod +x /usr/local/bin/wsl-clip-clean
       fi
     '';
 

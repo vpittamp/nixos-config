@@ -33,6 +33,19 @@ let
     '';
   };
 
+  # tmux-which-key for context-aware keybinding help
+  tmux-which-key = pkgs.tmuxPlugins.mkTmuxPlugin {
+    pluginName = "tmux-which-key";
+    version = "unstable-2024-01-01";
+    rtpFilePath = "plugin.tmux.sh";
+    src = pkgs.fetchFromGitHub {
+      owner = "alexwforsythe";
+      repo = "tmux-which-key";
+      rev = "main";
+      sha256 = "sha256-r6y9MlKzVEtPrLdblWgDpoQlXuw1czhfMXNhPJsHFUY=";
+    };
+  };
+
   # Color scheme access
   colors = config.colorScheme;
 in
@@ -45,11 +58,26 @@ in
     baseIndex = 1;
     historyLimit = 10000;
     keyMode = "vi";
-    mouse = true;
+    mouse = false;
     
     plugins = with pkgs.tmuxPlugins; [
       sensible
       yank
+      {
+        plugin = tmux-which-key;
+        extraConfig = ''
+          # Which-key configuration
+          set -g @tmux-which-key-delay 500  # Delay before showing help (ms)
+          set -g @tmux-which-key-position bottom  # Position of help window
+          
+          # Custom key groups (optional)
+          # Format: set -g @tmux-which-key-group-<name> '<keys>'
+          set -g @tmux-which-key-group-windows 'window'
+          set -g @tmux-which-key-group-panes 'pane'
+          set -g @tmux-which-key-group-sessions 'session'
+          set -g @tmux-which-key-group-copy 'copy'
+        '';
+      }
       {
         plugin = tmux-mode-indicator;
         extraConfig = ''
@@ -161,6 +189,11 @@ in
       # Key bindings
       bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
       
+      # Help and documentation
+      bind ? display-popup -E "tmux list-keys | less"  # Show all keybindings
+      bind / command-prompt -p "Search for command:" "display-popup -E 'tmux list-keys | grep -i %%'"
+      # Note: tmux-which-key will automatically show help after pressing prefix and waiting
+      
       # Split windows
       bind v split-window -v -c "#{pane_current_path}"
       bind - split-window -v -c "#{pane_current_path}"
@@ -220,16 +253,21 @@ in
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      # Enter copy-mode and start selection when dragging with mouse
-      bind -n MouseDown1Pane select-pane -t= \; copy-mode -M
-      # Scrolling with wheel enters copy-mode and scrolls
-      bind -n WheelUpPane if -F "#{pane_in_mode}" "send-keys -X -N 1 scroll-up" "copy-mode -e; send-keys -X -N 1 scroll-up"
-      # Clipboard integration - use resilient wrapper that prefers wl-copy, falls back to Windows clip.exe
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip'
+      # Mouse is disabled in tmux to defer selection/paste to the terminal
+      # Clipboard integration
+      # - y: copy cleaned (no emojis/private-use icons) to Windows clipboard
+      # - Y: copy raw (full Unicode) to Windows clipboard
+      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip-clean' \; display-message 'Copied (clean)'
+      bind -T copy-mode-vi Y send-keys -X copy-pipe-and-cancel '/usr/local/bin/clip.exe' \; display-message 'Copied (raw)'
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel '/usr/local/bin/wsl-clip'
+      # Remove any mouse-specific bindings to avoid conflicts
+      unbind -T copy-mode-vi MouseDragEnd1Pane 2>/dev/null || true
+      unbind -T copy-mode-vi MouseDown1Pane 2>/dev/null || true
+      unbind -T copy-mode-vi MouseUp1Pane 2>/dev/null || true
+      unbind -T copy-mode-vi MouseUp3Pane 2>/dev/null || true
+      unbind -T copy-mode-vi DoubleClick1Pane 2>/dev/null || true
     '';
   };
 }

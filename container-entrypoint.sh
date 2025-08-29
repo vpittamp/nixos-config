@@ -646,9 +646,12 @@ main() {
         if [ -n "$HM_FILES" ] && [ -d "$HM_FILES" ]; then
             echo "[entrypoint] Linking home-manager files from $HM_FILES to $home"
             
-            # Use cp -rsf to create symlinks for all files
-            # -r: recursive, -s: symbolic links, -f: force overwrite
-            cp -rsf "$HM_FILES"/. "$home"/
+            # Use cp -rsfL to follow symlinks and copy actual files
+            # -r: recursive, -s: symbolic links for regular files, -f: force overwrite, -L: follow symlinks
+            # This ensures all config files are properly copied
+            cp -rsfL "$HM_FILES"/. "$home"/ 2>/dev/null || \
+            cp -rsf "$HM_FILES"/. "$home"/ 2>/dev/null || \
+            echo "[entrypoint] Warning: Some files may not have been linked"
             
             # Fix ownership
             chown -R "$user:$user" "$home" 2>/dev/null || true
