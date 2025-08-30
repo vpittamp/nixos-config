@@ -92,6 +92,8 @@
             inherit system;
             specialArgs = { inherit inputs; };
             modules = [
+              # Include WSL module (will be disabled by container-profile)
+              nixos-wsl.nixosModules.wsl
               ./container-base.nix
               vscode-server.nixosModules.default
             ];
