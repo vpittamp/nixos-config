@@ -3,21 +3,25 @@
 {
   # Claude Code - Anthropic's Claude CLI
   programs.claude-code = {
-    enable = false;  # Disabled - using npm-package version from flake.nix instead
-    package = pkgs.claude-code;
+    enable = true;  # Enable to generate proper configuration
+    # Let home-manager use the default package or the one from overlay
+    # package = pkgs.claude-cli;  # The overlay package is already in use
     
     settings = {
-      model = "opus";
       theme = "dark";
-      autoCompact = true;
-      useTodoList = true;
-      verboseOutput = true;
-      autoUpdates = true;
-      notifications = "bell";
-      outputStyle = "default";
-      editorMode = "vim";
-      autoConnectToIde = true;
+      model = "claude-3-7-sonnet-20250219";
       includeCoAuthoredBy = true;
+      # These settings come from your current .claude.json
+      autoUpdates = true;
+      verbose = true;
+      editorMode = "vim";
+      autoCompactEnabled = true;
+      todoFeatureEnabled = true;
+      autoConnectIde = true;
+      autoInstallIdeExtension = true;
+      autocheckpointingEnabled = true;
+      preferredNotifChannel = "terminal_bell";
+      messageIdleNotifThresholdMs = 60000;
     };
     
     # Agents configuration (if needed in future)
@@ -36,35 +40,7 @@
     #   };
     # };
     
-    # MCP servers configuration
-    mcpServers = {
-      "context7" = {
-        transport = "sse";
-        command = "npx";
-        args = [
-          "-y"
-          "@modelcontextprotocol/server-sse"
-          "https://mcp.context7.com/sse"
-        ];
-      };
-      
-      "grep" = {
-        transport = "http";
-        command = "npx";
-        args = [
-          "-y"
-          "@modelcontextprotocol/server-http"
-          "https://mcp.grep.app"
-        ];
-      };
-
-      "playwright" = {
-        transport = "http";
-        command = "npx";
-        args = [
-          "@playwright/mcp@latest"
-        ];
-      };
-    };
+    # Note: MCP servers configuration not directly supported in home-manager module
+    # They would need to be configured through custom agents or commands
   };
 }

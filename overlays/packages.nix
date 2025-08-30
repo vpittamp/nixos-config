@@ -37,7 +37,7 @@ let
     which file
     # AI CLI tools - fundamental to our workflow
     gemini-cli
-    claude-cli
+    # claude-cli removed - now provided by home-manager programs.claude-code
     codex-cli
   ];
   
