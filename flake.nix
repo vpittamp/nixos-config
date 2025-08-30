@@ -96,21 +96,21 @@
               vscode-server.nixosModules.default
             ];
           };
-        in
-        pkgs.dockerTools.buildLayeredImage {
+        in with pkgs;
+        dockerTools.buildLayeredImage {
           name = "nixos-base";
           tag = "latest";
           
-          contents = pkgs.buildEnv {
+          contents = buildEnv {
             name = "container-base-root";
             paths = [
               baseConfig.config.system.path
-              pkgs.bashInteractive
-              pkgs.coreutils
-              pkgs.nix
+              bashInteractive
+              coreutils
+              nix
               
               # Add runtime setup script
-              (pkgs.runCommand "runtime-setup" {} ''
+              (runCommand "runtime-setup" {} ''
                 mkdir -p $out/usr/local/bin
                 cp ${./container-runtime-setup.sh} $out/usr/local/bin/nixos-setup
                 chmod 755 $out/usr/local/bin/nixos-setup
@@ -174,16 +174,16 @@
               ./container-profile.nix
             ];
           };
-        in
-        pkgs.dockerTools.buildLayeredImage {
+        in with pkgs;
+        dockerTools.buildLayeredImage {
           name = "nixos-dev";
           tag = let
             profile = builtins.getEnv "NIXOS_PACKAGES";
           in if profile == "" then "latest" else profile;
           
           # Pre-activate home-manager during build
-          runAsRoot = ''
-            #!${pkgs.runtimeShell}
+          runAsRoot = with pkgs; ''
+            #!${runtimeShell}
             set -e
             
             echo "Pre-activating home-manager configurations during build..."
@@ -239,7 +239,7 @@
           
           contents = let
             # Build home-manager generations for each user to get their config files
-            homeManagerPackages = pkgs.runCommand "home-manager-packages" {} ''
+            homeManagerPackages = runCommand "home-manager-packages" {} ''
               mkdir -p $out
               
               # Create a marker file to indicate home-manager files should be activated
@@ -248,7 +248,7 @@
               # Store paths to home-manager generations
               echo "${containerConfig.config.system.path}" > $out/.system-path
             '';
-          in pkgs.buildEnv {
+          in buildEnv {
             name = "container-root";
             paths = [
               # Use system.path which contains all packages including home-manager
@@ -266,7 +266,7 @@
               homeManagerPackages
               
               # Add entrypoint script with timestamp to force rebuilds
-              (pkgs.runCommand "entrypoint-script-${builtins.substring 0 8 (builtins.hashFile "sha256" ./container-entrypoint.sh)}" {
+              (runCommand "entrypoint-script-${builtins.substring 0 8 (builtins.hashFile "sha256" ./container-entrypoint.sh)}" {
                 entrypoint = ./container-entrypoint.sh;
               } ''
                 mkdir -p $out/etc
