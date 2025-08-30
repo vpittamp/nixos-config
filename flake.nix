@@ -181,6 +181,62 @@
             profile = builtins.getEnv "NIXOS_PACKAGES";
           in if profile == "" then "latest" else profile;
           
+          # Pre-activate home-manager during build
+          runAsRoot = ''
+            #!${pkgs.runtimeShell}
+            set -e
+            
+            echo "Pre-activating home-manager configurations during build..."
+            
+            # Create home directories
+            mkdir -p /root /home/vpittamp /home/code
+            
+            # Set up basic user/group files for activation
+            cat > /etc/passwd << 'EOF'
+            root:x:0:0:root:/root:/bin/bash
+            vpittamp:x:1000:1000:vpittamp:/home/vpittamp:/bin/bash
+            code:x:1001:1001:code:/home/code:/bin/bash
+            EOF
+            
+            cat > /etc/group << 'EOF'
+            root:x:0:
+            users:x:100:vpittamp,code
+            vpittamp:x:1000:
+            code:x:1001:
+            EOF
+            
+            # Activate home-manager for root user
+            if [ -d "${containerConfig.config.home-manager.users.root.home.activationPackage}" ]; then
+              echo "Activating home-manager for root..."
+              HOME=/root USER=root \
+                ${containerConfig.config.home-manager.users.root.home.activationPackage}/activate \
+                --driver-version 1 || true
+            fi
+            
+            # Activate home-manager for vpittamp user
+            if [ -d "${containerConfig.config.home-manager.users.vpittamp.home.activationPackage}" ]; then
+              echo "Activating home-manager for vpittamp..."
+              HOME=/home/vpittamp USER=vpittamp \
+                ${containerConfig.config.home-manager.users.vpittamp.home.activationPackage}/activate \
+                --driver-version 1 || true
+            fi
+            
+            # Activate home-manager for code user
+            if [ -d "${containerConfig.config.home-manager.users.code.home.activationPackage}" ]; then
+              echo "Activating home-manager for code..."
+              HOME=/home/code USER=code \
+                ${containerConfig.config.home-manager.users.code.home.activationPackage}/activate \
+                --driver-version 1 || true
+            fi
+            
+            # Fix ownership
+            chown -R 0:0 /root
+            chown -R 1000:1000 /home/vpittamp 2>/dev/null || true
+            chown -R 1001:1001 /home/code 2>/dev/null || true
+            
+            echo "Home-manager pre-activation complete"
+          '';
+          
           contents = let
             # Build home-manager generations for each user to get their config files
             homeManagerPackages = pkgs.runCommand "home-manager-packages" {} ''

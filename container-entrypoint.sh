@@ -628,60 +628,27 @@ main() {
     
     echo "[entrypoint] Locale configured: LANG=$LANG"
     
-    # Link home-manager configuration files for users
-    echo "[entrypoint] Setting up home-manager configuration files..."
-    setup_home_manager_files() {
-        local user="$1"
-        local home="$2"
-        
-        # Create home directory if it doesn't exist
-        if [ ! -d "$home" ]; then
-            mkdir -p "$home"
-            chown "$user:$user" "$home" 2>/dev/null || true
-        fi
-        
-        # Find home-manager-files directory (they're all the same for our users)
-        local HM_FILES=$(ls -d /nix/store/*-home-manager-files 2>/dev/null | head -1)
-        
-        if [ -n "$HM_FILES" ] && [ -d "$HM_FILES" ]; then
-            echo "[entrypoint] Linking home-manager files from $HM_FILES to $home"
-            
-            # Use cp -rsfL to follow symlinks and copy actual files
-            # -r: recursive, -s: symbolic links for regular files, -f: force overwrite, -L: follow symlinks
-            # This ensures all config files are properly copied
-            cp -rsfL "$HM_FILES"/. "$home"/ 2>/dev/null || \
-            cp -rsf "$HM_FILES"/. "$home"/ 2>/dev/null || \
-            echo "[entrypoint] Warning: Some files may not have been linked"
-            
-            # Fix ownership
-            chown -R "$user:$user" "$home" 2>/dev/null || true
-            
-            echo "[entrypoint] Home-manager files linked for $user"
-        else
-            echo "[entrypoint] Warning: home-manager-files not found in /nix/store"
-        fi
-        
-        # Also try to run home-manager activation if available
-        local HM_GEN=$(ls -d /nix/store/*-home-manager-generation 2>/dev/null | head -1)
-        if [ -n "$HM_GEN" ] && [ -f "$HM_GEN/activate" ]; then
-            echo "[entrypoint] Running home-manager activation for $user"
-            # Run activation with modern driver (doesn't update profile)
-            HOME="$home" USER="$user" "$HM_GEN/activate" --driver-version 1 2>/dev/null || true
-        fi
-    }
+    # Home-manager configurations are now pre-activated during build
+    # Check if home directories exist and have content
+    echo "[entrypoint] Checking home-manager configurations..."
     
-    # Setup for root
-    setup_home_manager_files "root" "/root"
-    
-    # Setup for other users if they exist
-    if id -u vpittamp >/dev/null 2>&1; then
-        setup_home_manager_files "vpittamp" "/home/vpittamp"
-    fi
-    if id -u code >/dev/null 2>&1; then
-        setup_home_manager_files "code" "/home/code"
+    if [ -d "/root/.config" ] && [ "$(ls -A /root/.config 2>/dev/null)" ]; then
+        echo "[entrypoint] Home-manager configuration found for root (pre-activated during build)"
+    else
+        echo "[entrypoint] No pre-activated home-manager configuration for root"
     fi
     
-    echo "[entrypoint] Home-manager configuration files setup complete"
+    if [ -d "/home/vpittamp/.config" ] && [ "$(ls -A /home/vpittamp/.config 2>/dev/null)" ]; then
+        echo "[entrypoint] Home-manager configuration found for vpittamp (pre-activated during build)"
+    else
+        echo "[entrypoint] No pre-activated home-manager configuration for vpittamp"
+    fi
+    
+    if [ -d "/home/code/.config" ] && [ "$(ls -A /home/code/.config 2>/dev/null)" ]; then
+        echo "[entrypoint] Home-manager configuration found for code (pre-activated during build)"
+    else
+        echo "[entrypoint] No pre-activated home-manager configuration for code"
+    fi
     
     # Start SSH if enabled
     start_sshd
