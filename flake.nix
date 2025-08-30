@@ -99,7 +99,7 @@
             ];
           };
         in with pkgs;
-        dockerTools.buildLayeredImage {
+        dockerTools.buildImage {
           name = "nixos-base";
           tag = "latest";
           
@@ -177,14 +177,15 @@
             ];
           };
         in with pkgs;
-        dockerTools.buildLayeredImage {
+        # Use buildImage instead of buildLayeredImage to support runAsRoot
+        dockerTools.buildImage {
           name = "nixos-dev";
           tag = let
             profile = builtins.getEnv "NIXOS_PACKAGES";
           in if profile == "" then "latest" else profile;
           
           # Pre-activate home-manager during build
-          runAsRoot = with pkgs; ''
+          runAsRoot = ''
             #!${runtimeShell}
             set -e
             
