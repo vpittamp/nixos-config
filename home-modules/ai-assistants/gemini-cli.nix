@@ -1,10 +1,21 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
+let
+  # Define Gemini CLI package using npm-package module
+  gemini-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
+    name = "gemini-cli";
+    packageName = "@google/gemini-cli";
+    version = "0.2.1";
+  };
+in
 {
+  # Install Gemini CLI package
+  home.packages = [ gemini-cli ];
+  
   # Gemini CLI - Google's Gemini AI in terminal
   programs.gemini-cli = {
     enable = true;
-    package = null;  # Using npm-package version from flake.nix instead
+    package = gemini-cli;
     
     # Default model to use (Gemini 2.5 Pro is now available)
     defaultModel = "gemini-2.5-pro";

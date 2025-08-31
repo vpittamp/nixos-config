@@ -1,44 +1,20 @@
 { pkgs, lib, ... }:
 
 let
-  # AI CLI tools - fundamental packages that should always be available
-  # These are defined here as they're core to our development workflow
-  gemini-cli = pkgs.writeShellScriptBin "gemini" ''
-    export npm_config_loglevel=error
-    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
-    export NODE="${pkgs.nodejs_20}/bin/node"
-    export SHELL="${pkgs.bash}/bin/bash"
-    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @google/gemini-cli@0.2.1 "$@"
-  '';
-  
-  claude-cli = pkgs.writeShellScriptBin "claude" ''
-    export npm_config_loglevel=error
-    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
-    export NODE="${pkgs.nodejs_20}/bin/node"
-    export SHELL="${pkgs.bash}/bin/bash"
-    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @anthropic-ai/claude-code@1.0.95 "$@"
-  '';
-  
-  codex-cli = pkgs.writeShellScriptBin "codex" ''
-    export npm_config_loglevel=error
-    export PATH="${lib.makeBinPath [ pkgs.nodejs_20 ]}:$PATH"
-    export NODE="${pkgs.nodejs_20}/bin/node"
-    export SHELL="${pkgs.bash}/bin/bash"
-    exec ${pkgs.nodejs_20}/bin/npx --node "$NODE" --yes @openai/codex@0.25.0 "$@"
-  '';
+  # AI CLI tools are now managed via home-manager modules in home-modules/ai-assistants/
+  # This ensures proper configuration management and avoids duplication
+  # - claude-code: provided by programs.claude-code in claude-code.nix
+  # - gemini-cli: provided by programs.gemini-cli in gemini-cli.nix  
+  # - codex: provided by programs.codex in codex.nix
 
   # Minimal packages for initial container setup
-  # Includes fundamental tools and AI assistants
   minimalPackages = with pkgs; [
     # Absolute essentials only
     tmux git vim
     fzf ripgrep fd bat
     curl wget jq
     which file
-    # AI CLI tools - fundamental to our workflow
-    gemini-cli
-    # claude-cli removed - now provided by home-manager programs.claude-code
-    codex-cli
+    # AI CLI tools are now provided by home-manager modules in home-modules/ai-assistants/
   ];
   
   # Essential packages - core tools

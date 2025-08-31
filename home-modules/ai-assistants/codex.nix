@@ -1,10 +1,21 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
+let
+  # Define Codex package using npm-package module
+  codex-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
+    name = "codex";
+    packageName = "@openai/codex";
+    version = "0.25.0";
+  };
+in
 {
+  # Install Codex package
+  home.packages = [ codex-cli ];
+  
   # Codex - Lightweight coding agent
   programs.codex = {
-    enable = false;  # Disabled - using npm-package version from flake.nix instead
-    package = pkgs.codex;
+    enable = true;
+    package = codex-cli;
     
     # Custom instructions for the agent
     custom-instructions = ''
