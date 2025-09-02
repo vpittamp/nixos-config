@@ -625,22 +625,8 @@ main() {
         echo "[entrypoint] Nix channels initialized - packages can be installed with 'nix-env -iA nixpkgs.packagename'"
     fi
     
-    # Verify flake directory exists (should be created during build)
-    if [ -d /opt/nix-flakes ]; then
-        echo "[entrypoint] Flake directory found at /opt/nix-flakes"
-        # Ensure git repo is valid
-        if [ ! -d /opt/nix-flakes/.git ]; then
-            echo "[entrypoint] WARNING: Flake directory missing .git, reinitializing..."
-            cd /opt/nix-flakes
-            git init
-            git config user.email "container@localhost"
-            git config user.name "Container"
-            git add -A
-            git commit -m "Container flake init" 2>/dev/null || true
-        fi
-    else
-        echo "[entrypoint] WARNING: Flake directory not found, nix-dev commands may not work"
-    fi
+    # Note: nix-dev helpers now use nix shell directly without needing /opt/nix-flakes
+    echo "[entrypoint] Nix shell helpers available: nix-dev, nix-add (nd, na)"
     
     # Setup SSL/TLS certificates
     echo "[entrypoint] Setting up SSL certificates..."

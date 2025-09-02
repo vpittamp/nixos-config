@@ -8,8 +8,8 @@
     ./container-ssh.nix 
     # Use the simplified VS Code module with nix-community's vscode-server
     ./container-vscode-simple.nix
-    # Build-time flake setup that actually works in containers
-    ./container-flake-build.nix
+    # Simplified flake helpers that don't need /opt/nix-flakes
+    ./container-flake-simple.nix
   ];
   
   # Explicitly disable WSL features in containers
