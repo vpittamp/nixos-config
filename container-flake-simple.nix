@@ -14,44 +14,40 @@
         return 0
       fi
       
-      local shell="''${1:-default}"
+      local shell="''${1:-nodejs}"  # Default to nodejs instead of "default"
       echo "Entering development shell: $shell"
       
       # Map shell names to package sets
       case "$shell" in
-        nodejs|node)
+        nodejs|node|js)
           local packages="nodejs_20 nodePackages.yarn nodePackages.pnpm"
           echo "Loading Node.js environment..."
           ;;
-        python)
+        python|py)
           local packages="python3 python3Packages.pip python3Packages.virtualenv"
           echo "Loading Python environment..."
           ;;
-        go)
+        go|golang)
           local packages="go gopls"
           echo "Loading Go environment..."
           ;;
-        rust)
+        rust|rs)
           local packages="rustc cargo rustfmt rust-analyzer"
           echo "Loading Rust environment..."
           ;;
-        default|*)
-          local packages="git curl wget vim"
-          echo "Loading default environment..."
+        *)
+          echo "Unknown shell: $shell"
+          echo "Available: nodejs, python, go, rust"
+          return 1
           ;;
       esac
       
-      # Build the nix shell command
+      # Build the nix shell command - simplified version
       local cmd="IN_NIX_SHELL=1 nix shell"
       for pkg in $packages; do
         cmd="$cmd nixpkgs#$pkg"
       done
-      cmd="$cmd --impure --command bash -c '"
-      cmd="$cmd [ -f /etc/profile ] && source /etc/profile;"
-      cmd="$cmd [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null || true;"
-      cmd="$cmd export IN_NIX_SHELL=1;"
-      cmd="$cmd export NODE_EXTRA_CA_CERTS=\$\{NODE_EXTRA_CA_CERTS:-/etc/ssl/certs/ca-bundle.crt\};"
-      cmd="$cmd exec bash --norc'"
+      cmd="$cmd --impure --command bash --norc"
       
       # Execute the command
       eval $cmd
