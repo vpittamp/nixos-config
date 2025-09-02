@@ -115,6 +115,12 @@
             bashInteractive
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Development shell activated"
             # Preserve terminal customization
             export STARSHIP_CONFIG=$HOME/.config/starship.toml
@@ -154,6 +160,12 @@
             coreutils
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Node.js development environment activated"
             # Fix SSL certificates for yarn/npm
             export NODE_EXTRA_CA_CERTS="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
@@ -189,6 +201,12 @@
             python3Packages.certifi
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Python development environment activated"
             # Set up Python SSL certificates
             export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
@@ -209,6 +227,12 @@
             delve
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Go development environment activated"
             export GOPATH=$HOME/go
             export PATH=$GOPATH/bin:$PATH
@@ -230,6 +254,12 @@
             openssl
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Rust development environment activated"
             # Preserve terminal customization
             export STARSHIP_CONFIG=$HOME/.config/starship.toml
@@ -261,6 +291,12 @@
             cacert
           ];
           shellHook = ''
+            # Prevent recursive shell invocation
+            if [ -n "$IN_NIX_SHELL" ]; then
+              return 0
+            fi
+            export IN_NIX_SHELL=1
+            
             echo "Full-stack development environment activated"
             # Fix SSL certificates
             export NODE_EXTRA_CA_CERTS="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"

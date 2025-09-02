@@ -581,6 +581,9 @@ FIXSCRIPT
 main() {
     echo "[entrypoint] Container starting at $(date)"
     
+    # Export marker to prevent recursive shell invocations
+    export IN_NIX_SHELL=""
+    
     # Check if running as non-root and delegate to simpler script
     if [ "$(id -u)" != "0" ]; then
         echo "[entrypoint] Running as non-root user (UID: $(id -u)), using simplified entrypoint"

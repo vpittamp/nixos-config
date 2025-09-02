@@ -57,13 +57,35 @@
     
     # Function to use development shells easily
     nix-dev() {
+      # Check if already in a nix shell to prevent recursion
+      if [ -n "$IN_NIX_SHELL" ]; then
+        echo "Already in a nix development shell"
+        return 0
+      fi
+      
       local shell="''${1:-default}"
       echo "Entering development shell: $shell"
-      nix develop "/opt/nix-flakes#$shell" --impure
+      
+      # Use --command with explicit bash to maintain interactive shell
+      # Export IN_NIX_SHELL to prevent recursion
+      IN_NIX_SHELL=1 nix develop "/opt/nix-flakes#$shell" --impure --command bash -c '
+        # Source profile and bashrc for proper initialization
+        [ -f /etc/profile ] && source /etc/profile
+        [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null || true
+        # Keep the IN_NIX_SHELL marker
+        export IN_NIX_SHELL=1
+        # Start interactive bash without re-sourcing profiles
+        exec bash --norc
+      '
     }
     
     # Function to add packages temporarily
     nix-add() {
+      # Check if already in a nix shell to prevent recursion
+      if [ -n "$IN_NIX_SHELL" ]; then
+        echo "Already in a nix shell, adding packages to current environment"
+      fi
+      
       if [ $# -eq 0 ]; then
         echo "Usage: nix-add <package1> [package2] ..."
         echo "Example: nix-add ripgrep fd htop"
@@ -76,7 +98,17 @@
       done
       
       echo "Adding packages: $@"
-      nix shell $packages --impure
+      
+      # Use --command with explicit bash to maintain interactive shell
+      IN_NIX_SHELL=1 nix shell $packages --impure --command bash -c '
+        # Source profile and bashrc for proper initialization
+        [ -f /etc/profile ] && source /etc/profile
+        [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null || true
+        # Keep the IN_NIX_SHELL marker
+        export IN_NIX_SHELL=1
+        # Start interactive bash without re-sourcing profiles
+        exec bash --norc
+      '
     }
     
     # Export functions for use

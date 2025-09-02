@@ -4,6 +4,9 @@ set -e
 
 echo "[entrypoint] Container starting at $(date)"
 
+# Export marker to prevent recursive shell invocations
+export IN_NIX_SHELL=""
+
 # Set user information
 USER_ID=$(id -u 2>/dev/null || echo "1000")
 GROUP_ID=$(id -g 2>/dev/null || echo "100")
