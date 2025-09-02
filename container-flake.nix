@@ -5,22 +5,11 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Include flake.nix and overlays in the container
+  # Include minimal flake files in the container for runtime package management
   environment.etc = {
     # Include the flake.nix in /etc/nixos
     "nixos/flake.nix".source = ./flake.nix;
     "nixos/flake.lock".source = ./flake.lock;
-    
-    # Include overlays
-    "nixos/overlays/default.nix".source = ./overlays/default.nix;
-    "nixos/overlays/packages.nix".source = ./overlays/packages.nix;
-    
-    # Include home-manager configurations (for reference)
-    "nixos/home-vpittamp.nix".source = ./home-vpittamp.nix;
-    
-    # Include container profiles
-    "nixos/container-profile.nix".source = ./container-profile.nix;
-    "nixos/container-dev.nix".source = ./container-dev.nix;
     
     # Add a README for container users
     "nixos/README-CONTAINER.md".text = ''
@@ -84,9 +73,5 @@
       - User profile installations persist if /home is a volume mount
     '';
   };
-  
-  # Ensure git is available for flake operations
-  environment.systemPackages = with pkgs; [
-    git  # Required for flake operations
-  ];
+  # Git is already included in the base packages, no need to add it here
 }

@@ -60,33 +60,20 @@
   };
   
   # Modifications overlay - override existing packages
+  # NOTE: These modifications are only applied if the packages are already included
+  # We don't force these packages into the build
   modifications = final: prev: {
-    # Fix SSL certificates for Node.js/Yarn
-    nodejs = prev.nodejs.overrideAttrs (old: {
-      postInstall = (old.postInstall or "") + ''
-        # Ensure NODE_EXTRA_CA_CERTS points to system certificates
-        wrapProgram $out/bin/node \
-          --set NODE_EXTRA_CA_CERTS /etc/ssl/certs/ca-certificates.crt \
-          --set SSL_CERT_FILE /etc/ssl/certs/ca-certificates.crt
-      '';
-    });
-    
-    # Override yarn to handle SSL certificates
-    yarn = prev.yarn.overrideAttrs (old: {
-      postInstall = (old.postInstall or "") + ''
-        # Set SSL certificate environment for yarn
-        wrapProgram $out/bin/yarn \
-          --set NODE_EXTRA_CA_CERTS /etc/ssl/certs/ca-certificates.crt \
-          --set SSL_CERT_FILE /etc/ssl/certs/ca-certificates.crt
-      '';
-    });
+    # Only override if nodejs is already in the package set
+    # This avoids forcing nodejs into containers that don't need it
   };
   
   # Unstable packages overlay - for bleeding edge versions
-  unstable-packages = final: prev: {
-    unstable = import inputs.nixpkgs-unstable {
-      system = final.system;
-      config.allowUnfree = true;
-    };
-  };
+  # NOTE: Commented out to reduce container size
+  # Uncomment only if you need unstable packages
+  # unstable-packages = final: prev: {
+  #   unstable = import inputs.nixpkgs-unstable {
+  #     system = final.system;
+  #     config.allowUnfree = true;
+  #   };
+  # };
 }

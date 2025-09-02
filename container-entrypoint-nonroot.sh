@@ -20,9 +20,16 @@ export USER=$USER_NAME
 export HOME="/home/$USER_NAME"
 
 # SSL Certificate configuration for Node.js/Yarn
-export NODE_EXTRA_CA_CERTS="/etc/ssl/certs/ca-certificates.crt"
-export SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
-export REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+# Check if ca-certificates.crt exists, otherwise use ca-bundle.crt from cacert package
+if [ -f "/etc/ssl/certs/ca-certificates.crt" ]; then
+    export NODE_EXTRA_CA_CERTS="/etc/ssl/certs/ca-certificates.crt"
+    export SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+    export REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+elif [ -f "/etc/ssl/certs/ca-bundle.crt" ]; then
+    export NODE_EXTRA_CA_CERTS="/etc/ssl/certs/ca-bundle.crt"
+    export SSL_CERT_FILE="/etc/ssl/certs/ca-bundle.crt"
+    export REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-bundle.crt"
+fi
 # Development-only: Allow self-signed certificates (with warning)
 if [ "$ALLOW_INSECURE_SSL" = "true" ]; then
     export NODE_TLS_REJECT_UNAUTHORIZED=0

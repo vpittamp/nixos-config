@@ -47,9 +47,11 @@
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
+        # NOTE: Overlays are defined but not applied to the base pkgs
+        # to avoid increasing container size. They can be used in devShells.
         overlays = [
-          overlays.additions
-          overlays.modifications
+          # overlays.additions     # Uncomment if needed
+          # overlays.modifications # Uncomment if needed
         ];
       };
     in
@@ -411,7 +413,7 @@
               containerConfig.config.system.path
               pkgs.bashInteractive
               pkgs.coreutils
-              pkgs.cacert  # Add CA certificates for SSL
+              # cacert is already included in container-profile.nix
               
               # Add /etc files from the system build
               containerConfig.config.system.build.etc
