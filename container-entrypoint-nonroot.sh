@@ -50,21 +50,8 @@ mkdir -p "$NIX_CONF_DIR" 2>/dev/null || true
 export NIX_USER_PROFILE_DIR="$HOME/.nix-profile"
 mkdir -p "$HOME/.nix-defexpr" 2>/dev/null || true
 
-# Create nix.conf with proper settings for containers
-if [ ! -f "$NIX_CONF_DIR/nix.conf" ]; then
-    cat > "$NIX_CONF_DIR/nix.conf" << 'EOF'
-# Container-specific Nix configuration
-sandbox = false
-use-sqlite-wal = false
-auto-optimise-store = false
-require-sigs = false
-experimental-features = nix-command flakes
-# Enable user profiles
-allow-import-from-derivation = true
-# Trust the user to install packages
-trusted-users = code root
-EOF
-fi
+# Nix configuration is handled by the system
+# We don't override it in the entrypoint to avoid conflicts
 
 # Native Nix setup with environment preservation
 
@@ -78,23 +65,10 @@ fi
 # Ensure nix is in PATH
 export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 
-# Create wrapper for better nix shell experience
-if [ -w "$HOME" ]; then
-    mkdir -p "$HOME/.local/bin" 2>/dev/null || true
-    cat > "$HOME/.local/bin/nix-shell-preserve" << 'EOF'
-#!/usr/bin/env bash
-# Wrapper to preserve environment in nix shell
-if [ "$1" = "shell" ]; then
-    shift
-    exec nix shell --impure "$@" --command bash --init-file "$HOME/.bashrc"
-else
-    exec nix "$@"
-fi
-EOF
-    chmod +x "$HOME/.local/bin/nix-shell-preserve"
-    
-    # Add alias for convenience
-    echo 'alias ns="nix-shell-preserve shell"' >> "$HOME/.bashrc" 2>/dev/null || true
+# Helper functions are now provided by /etc/profile.d/flake-helpers.sh
+# Source it if not already done
+if [ -f /etc/profile.d/flake-helpers.sh ]; then
+    source /etc/profile.d/flake-helpers.sh 2>/dev/null || true
 fi
 
 # Set up direnv hook for automatic environment loading (if available)
@@ -266,11 +240,9 @@ if [ -f "$HOME/.envrc" ] && command -v direnv >/dev/null 2>&1; then
 fi
 
 echo "[entrypoint] User environment ready"
-echo "[entrypoint] Nix commands available:"
-echo "  - nix shell nixpkgs#<package>  : Add packages temporarily"
-echo "  - nix develop                  : Enter development shell from flake"
-echo "  - nix profile install          : Install packages persistently"
-echo "  - nix search nixpkgs <query>   : Search for packages"
+echo "[entrypoint] Container ready with Nix flake support"
+echo "[entrypoint] Type 'nix-dev' or 'nd' to enter a development shell"
+echo "[entrypoint] Type 'nix-add <package>' or 'na <package>' to add packages"
 
 # Execute the original command
 if [ $# -eq 0 ]; then

@@ -11,11 +11,32 @@
     "nixos/flake.nix".source = ./flake.nix;
     "nixos/flake.lock".source = ./flake.lock;
     
+    # Also create a .git directory to make it a valid flake
+    "nixos/.git/config".text = ''
+      [core]
+        repositoryformatversion = 0
+        filemode = false
+        bare = false
+    '';
+    
     # Add a README for container users
     "nixos/README-CONTAINER.md".text = ''
       # NixOS Container - Runtime Package Management
       
       This container includes Nix flakes for runtime package management.
+      
+      ## Working Directory
+      
+      Always run nix develop/shell commands from /etc/nixos:
+      ```bash
+      cd /etc/nixos
+      nix develop .#nodejs --impure
+      ```
+      
+      Or use absolute path:
+      ```bash
+      nix develop /etc/nixos#nodejs --impure
+      ```
       
       ## Available Commands:
       
