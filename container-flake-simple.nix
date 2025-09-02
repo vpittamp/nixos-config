@@ -50,7 +50,7 @@
       cmd="$cmd [ -f /etc/profile ] && source /etc/profile;"
       cmd="$cmd [ -f ~/.bashrc ] && source ~/.bashrc 2>/dev/null || true;"
       cmd="$cmd export IN_NIX_SHELL=1;"
-      cmd="$cmd export NODE_EXTRA_CA_CERTS=\${NODE_EXTRA_CA_CERTS:-/etc/ssl/certs/ca-bundle.crt};"
+      cmd="$cmd export NODE_EXTRA_CA_CERTS=\$\{NODE_EXTRA_CA_CERTS:-/etc/ssl/certs/ca-bundle.crt\};"
       cmd="$cmd exec bash --norc'"
       
       # Execute the command
