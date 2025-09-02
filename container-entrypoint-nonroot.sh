@@ -66,8 +66,7 @@ trusted-users = code root
 EOF
 fi
 
-# Native Nix setup - no wrapper needed!
-# Nix commands will work naturally with proper configuration
+# Native Nix setup with environment preservation
 
 # Initialize user nix profile if it doesn't exist
 if [ -w "$HOME" ] && [ ! -L "$HOME/.nix-profile" ]; then
@@ -78,6 +77,25 @@ fi
 
 # Ensure nix is in PATH
 export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
+# Create wrapper for better nix shell experience
+if [ -w "$HOME" ]; then
+    mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+    cat > "$HOME/.local/bin/nix-shell-preserve" << 'EOF'
+#!/usr/bin/env bash
+# Wrapper to preserve environment in nix shell
+if [ "$1" = "shell" ]; then
+    shift
+    exec nix shell --impure "$@" --command bash --init-file "$HOME/.bashrc"
+else
+    exec nix "$@"
+fi
+EOF
+    chmod +x "$HOME/.local/bin/nix-shell-preserve"
+    
+    # Add alias for convenience
+    echo 'alias ns="nix-shell-preserve shell"' >> "$HOME/.bashrc" 2>/dev/null || true
+fi
 
 # Set up direnv hook for automatic environment loading (if available)
 if command -v direnv >/dev/null 2>&1; then
@@ -240,6 +258,11 @@ else
         echo "[entrypoint] This indicates the container was not built with home-manager properly included"
         exit 1
     fi
+fi
+
+# Auto-approve direnv if .envrc exists
+if [ -f "$HOME/.envrc" ] && command -v direnv >/dev/null 2>&1; then
+    direnv allow "$HOME/.envrc" 2>/dev/null || true
 fi
 
 echo "[entrypoint] User environment ready"

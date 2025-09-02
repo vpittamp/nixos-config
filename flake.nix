@@ -110,13 +110,27 @@
             nixpkgs-fmt
             nil
           ];
+          # Preserve existing shell environment
+          nativeBuildInputs = with pkgs; [
+            bashInteractive
+          ];
           shellHook = ''
             echo "Development shell activated"
             # Preserve terminal customization
             export STARSHIP_CONFIG=$HOME/.config/starship.toml
             # Ensure SSL certificates are available
-            export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-            export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+            if [ -n "$NODE_EXTRA_CA_CERTS" ]; then
+              export NODE_EXTRA_CA_CERTS="$NODE_EXTRA_CA_CERTS"
+            elif [ -f "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ]; then
+              export NODE_EXTRA_CA_CERTS="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            fi
+            # Re-initialize shell tools
+            if command -v starship &> /dev/null; then
+              eval "$(starship init bash)"
+            fi
+            if command -v direnv &> /dev/null; then
+              eval "$(direnv hook bash)"
+            fi
           '';
         };
         
@@ -133,6 +147,12 @@
             # SSL certificate support
             cacert
           ];
+          # Use nativeBuildInputs to preserve environment better
+          nativeBuildInputs = with pkgs; [
+            # Include tools that should remain available
+            bashInteractive
+            coreutils
+          ];
           shellHook = ''
             echo "Node.js development environment activated"
             # Fix SSL certificates for yarn/npm
@@ -142,6 +162,16 @@
             echo "Warning: NODE_TLS_REJECT_UNAUTHORIZED=0 is set for development only"
             # Preserve terminal customization
             export STARSHIP_CONFIG=$HOME/.config/starship.toml
+            # Re-initialize shell tools if available
+            if command -v starship &> /dev/null; then
+              eval "$(starship init bash)"
+            fi
+            if command -v direnv &> /dev/null; then
+              eval "$(direnv hook bash)"
+            fi
+            if command -v zoxide &> /dev/null; then
+              eval "$(zoxide init bash)"
+            fi
           '';
         };
         
