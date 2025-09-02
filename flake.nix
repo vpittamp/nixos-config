@@ -186,15 +186,49 @@
           
           
           contents = let
-            # Build home-manager generations for each user to get their config files
-            homeManagerPackages = runCommand "home-manager-packages" {} ''
-              mkdir -p $out
+            # Get home-manager activation packages for container users
+            codeHomeManagerActivation = containerConfig.config.home-manager.users.code.home.activationPackage;
+            
+            # Create user entries as a separate derivation
+            userEntries = runCommand "user-entries" {} ''
+              mkdir -p $out/etc
+              mkdir -p $out/home/code/.vscode-server
+              mkdir -p $out/home/code/.local
+              mkdir -p $out/tmp
+              mkdir -p $out/usr/bin
+              mkdir -p $out/lib64
+              mkdir -p $out/lib
               
-              # Create a marker file to indicate home-manager files should be activated
-              touch $out/.hm-activate-required
+              # Create symlinks for VS Code compatibility
+              ln -s /bin/env $out/usr/bin/env 2>/dev/null || true
+              ln -s /bin/sh $out/usr/bin/sh 2>/dev/null || true
+              ln -s /bin/bash $out/usr/bin/bash 2>/dev/null || true
               
-              # Store paths to home-manager generations
-              echo "${containerConfig.config.system.path}" > $out/.system-path
+              # Find and link the dynamic loader for VS Code's node binary
+              LOADER=$(find ${pkgs.glibc}/lib -name 'ld-linux-x86-64.so.2' -type f 2>/dev/null | head -1)
+              if [ -n "$LOADER" ]; then
+                ln -sf "$LOADER" $out/lib64/ld-linux-x86-64.so.2
+                ln -sf "$LOADER" $out/lib/ld-linux-x86-64.so.2
+              fi
+              
+              # Create passwd with code user entry
+              cat > $out/etc/passwd << 'EOF'
+              root:x:0:0:System administrator:/root:/bin/bash
+              code:x:1000:100:Code User:/home/code:/bin/bash
+              EOF
+              
+              # Create group with users entry
+              cat > $out/etc/group << 'EOF'
+              root:x:0:
+              users:x:100:
+              EOF
+              
+              # Set proper permissions
+              chmod 644 $out/etc/passwd $out/etc/group
+              # Note: ownership will need to be fixed at runtime since we can't chown in Nix build
+              chmod -R 755 $out/home/code
+              chmod 1777 $out/tmp
+              chmod -R 755 $out/usr
             '';
           in buildEnv {
             name = "container-root";
@@ -210,25 +244,38 @@
               # Include the entire system toplevel for activation scripts
               containerConfig.config.system.build.toplevel
               
-              # Include home-manager marker
-              homeManagerPackages
+              # Include home-manager activation package for code user
+              # This contains the actual config files and activation script
+              codeHomeManagerActivation
               
-              # Add entrypoint script with timestamp to force rebuilds
-              (runCommand "entrypoint-script-${builtins.substring 0 8 (builtins.hashFile "sha256" ./container-entrypoint.sh)}" {
-                entrypoint = ./container-entrypoint.sh;
-              } ''
+              # Include user entries
+              userEntries
+              
+              # Add entrypoint scripts
+              (runCommand "entrypoint-scripts" {} ''
                 mkdir -p $out/etc
-                cp $entrypoint $out/etc/container-entrypoint.sh
+                cat > $out/etc/container-entrypoint.sh << 'ENTRYPOINT_EOF'
+                ${builtins.readFile ./container-entrypoint.sh}
+                ENTRYPOINT_EOF
                 chmod 755 $out/etc/container-entrypoint.sh
+                
+                cat > $out/etc/container-entrypoint-nonroot.sh << 'NONROOT_EOF'
+                ${builtins.readFile ./container-entrypoint-nonroot.sh}
+                NONROOT_EOF
+                chmod 755 $out/etc/container-entrypoint-nonroot.sh
               '')
               
             ];
             pathsToLink = [ 
               "/bin" 
               "/lib" 
+              "/lib64"     # Include lib64 for dynamic linker
               "/share" 
               "/etc"
               "/sw"        # Include sw directory
+              "/home"      # Include home directory
+              "/tmp"       # Include tmp directory for non-root writes
+              "/usr"       # Include usr directory for VS Code compatibility
             ];
             extraOutputsToInstall = [ "out" ];
           };
@@ -236,8 +283,8 @@
           config = {
             Env = [
               "PATH=/bin:/sbin:/usr/bin:/usr/local/bin"
-              "HOME=/root"
-              "USER=root"
+              "HOME=/home/code"
+              "USER=code"
               "TERM=xterm-256color"
               "CONTAINER_SSH_ENABLED=true"
               "CONTAINER_SSH_PORT=2222"
@@ -250,7 +297,7 @@
             ];
             Entrypoint = [ "/etc/container-entrypoint.sh" ];
             Cmd = [ "sleep" "infinity" ];
-            WorkingDir = "/";
+            WorkingDir = "/home/code";
             ExposedPorts = {
               "2222/tcp" = {};
             };

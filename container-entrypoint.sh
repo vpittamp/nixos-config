@@ -8,8 +8,14 @@ set -e
 setup_ssh() {
     echo "[entrypoint] Setting up SSH environment..."
     
-    # Create necessary directories (including runtime directories for sshd)
-    mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
+    # Only create directories if running as root
+    if [ "$(id -u)" = "0" ]; then
+        # Create necessary directories (including runtime directories for sshd)
+        mkdir -p /etc/ssh /var/empty /root/.ssh /home/code/.ssh /var/run /var/log
+    else
+        echo "[entrypoint] Running as non-root, SSH setup skipped"
+        return 0
+    fi
     
     # Initialize user database files if missing
     if [ ! -f /etc/passwd ]; then
@@ -216,21 +222,33 @@ start_sshd() {
 setup_nix() {
     echo "[entrypoint] Setting up Nix environment..."
     
-    # Create required directories
-    mkdir -p /nix/var/nix/daemon-socket
-    mkdir -p /nix/var/nix/profiles/per-user/root
-    mkdir -p /nix/var/nix/profiles/per-user/code
-    mkdir -p /nix/var/nix/profiles/per-user/vpittamp
-    mkdir -p /nix/var/nix/gcroots/per-user/root
-    mkdir -p /nix/var/nix/gcroots/per-user/code
-    mkdir -p /nix/var/nix/gcroots/per-user/vpittamp
+    # Only try to create directories if running as root or if they don't exist and we have permissions
+    # When running as non-root, these should already exist from the container build
+    if [ "$(id -u)" = "0" ]; then
+        # Running as root, create directories
+        mkdir -p /nix/var/nix/daemon-socket
+        mkdir -p /nix/var/nix/profiles/per-user/root
+        mkdir -p /nix/var/nix/profiles/per-user/code
+        mkdir -p /nix/var/nix/profiles/per-user/vpittamp
+        mkdir -p /nix/var/nix/gcroots/per-user/root
+        mkdir -p /nix/var/nix/gcroots/per-user/code
+        mkdir -p /nix/var/nix/gcroots/per-user/vpittamp
+    else
+        echo "[entrypoint] Running as non-root (UID: $(id -u)), skipping directory creation"
+        # Check if directories exist
+        if [ ! -d "/nix/var/nix/profiles/per-user/$(whoami)" ]; then
+            echo "[entrypoint] Warning: User profile directory missing for $(whoami)"
+        fi
+    fi
     
-    # Set ownership for user directories
-    chown -R code:users /nix/var/nix/profiles/per-user/code 2>/dev/null || true
-    chown -R code:users /nix/var/nix/gcroots/per-user/code 2>/dev/null || true
-    if id vpittamp >/dev/null 2>&1; then
-        chown -R vpittamp:users /nix/var/nix/profiles/per-user/vpittamp 2>/dev/null || true
-        chown -R vpittamp:users /nix/var/nix/gcroots/per-user/vpittamp 2>/dev/null || true
+    # Set ownership for user directories (only if running as root)
+    if [ "$(id -u)" = "0" ]; then
+        chown -R code:users /nix/var/nix/profiles/per-user/code 2>/dev/null || true
+        chown -R code:users /nix/var/nix/gcroots/per-user/code 2>/dev/null || true
+        if id vpittamp >/dev/null 2>&1; then
+            chown -R vpittamp:users /nix/var/nix/profiles/per-user/vpittamp 2>/dev/null || true
+            chown -R vpittamp:users /nix/var/nix/gcroots/per-user/vpittamp 2>/dev/null || true
+        fi
     fi
     
     # Set up Nix environment variables for single-user mode
@@ -239,10 +257,10 @@ setup_nix() {
     export NIX_STORE_DIR="/nix/store"
     export NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
     
-    # Create nix.conf for single-user mode if it doesn't exist
-    if [ ! -f /etc/nix/nix.conf ]; then
-        mkdir -p /etc/nix
-        cat > /etc/nix/nix.conf << 'EOF'
+    # Create nix.conf for single-user mode if it doesn't exist (only if we can write)
+    if [ ! -f /etc/nix/nix.conf ] && [ -w /etc ] || [ "$(id -u)" = "0" ]; then
+        mkdir -p /etc/nix 2>/dev/null || true
+        cat > /etc/nix/nix.conf << 'EOF' 2>/dev/null || true
 # Nix configuration for container single-user mode
 sandbox = false
 experimental-features = nix-command flakes
@@ -563,6 +581,23 @@ FIXSCRIPT
 main() {
     echo "[entrypoint] Container starting at $(date)"
     
+    # Check if running as non-root and delegate to simpler script
+    if [ "$(id -u)" != "0" ]; then
+        echo "[entrypoint] Running as non-root user (UID: $(id -u)), using simplified entrypoint"
+        # If the non-root entrypoint exists, use it
+        if [ -f /etc/container-entrypoint-nonroot.sh ]; then
+            exec /etc/container-entrypoint-nonroot.sh "$@"
+        else
+            # Fallback: just run the command
+            echo "[entrypoint] Non-root entrypoint not found, running command directly"
+            if [ $# -eq 0 ]; then
+                exec sleep infinity
+            else
+                exec "$@"
+            fi
+        fi
+    fi
+    
     # Setup Nix environment first
     setup_nix
     
@@ -609,11 +644,117 @@ main() {
         echo "[entrypoint] IdpBuilder CA configured for Node.js"
     fi
     
-    # Run NixOS system activation which includes home-manager
-    echo "[entrypoint] Skipping NixOS system activation (not needed in container)..."
-    # In containers, the activation script tries to mount filesystems which fails
-    # The packages are already available in /bin from the container build
-    echo "[entrypoint] Packages are available in /bin from container build"
+    # Activate home-manager configurations for users
+    echo "[entrypoint] Activating home-manager configurations..."
+    activate_home_manager() {
+        local user="$1"
+        local home_dir="$2"
+        
+        echo "[entrypoint] Looking for home-manager activation for $user..."
+        
+        # Find the home-manager activation script
+        local activation_script=""
+        
+        # Look for activation scripts in the system path
+        for path in /nix/store/*-home-manager-generation/activate \
+                    /nix/store/*-home-manager-path/activate \
+                    /run/current-system/sw/bin/home-manager \
+                    /etc/profiles/per-user/$user/activate; do
+            if [ -f "$path" ] || [ -x "$path" ]; then
+                activation_script="$path"
+                echo "[entrypoint] Found activation script: $activation_script"
+                break
+            fi
+        done
+        
+        # If no activation script found, try to create basic configs manually
+        if [ -z "$activation_script" ]; then
+            echo "[entrypoint] No home-manager activation found for $user, creating basic configs..."
+            
+            # Create basic directories
+            mkdir -p "$home_dir/.config" "$home_dir/.local/bin" "$home_dir/.cache"
+            
+            # Create basic bashrc if it doesn't exist
+            if [ ! -f "$home_dir/.bashrc" ]; then
+                cat > "$home_dir/.bashrc" << 'EOF'
+# Basic bash configuration
+export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+export EDITOR=vim
+export PATH="$HOME/.local/bin:$PATH"
+
+# Aliases
+alias ls='ls --color=auto'
+alias ll='ls -la'
+alias grep='grep --color=auto'
+alias vim='vim'
+
+# Source Nix profile
+if [ -f /etc/profile.d/nix.sh ]; then
+    . /etc/profile.d/nix.sh
+fi
+
+# Starship prompt if available
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+fi
+EOF
+            fi
+            
+            # Create basic git config
+            if [ ! -f "$home_dir/.gitconfig" ]; then
+                cat > "$home_dir/.gitconfig" << EOF
+[user]
+    name = $user
+    email = $user@localhost
+[core]
+    editor = vim
+[color]
+    ui = auto
+EOF
+            fi
+            
+            # Set ownership
+            if [ "$user" = "root" ]; then
+                chown -R 0:0 "$home_dir" 2>/dev/null || true
+            elif [ "$user" = "code" ]; then
+                chown -R 1000:100 "$home_dir" 2>/dev/null || true
+            elif [ "$user" = "vpittamp" ]; then
+                chown -R 1001:100 "$home_dir" 2>/dev/null || true
+            fi
+        else
+            # Run the activation script
+            echo "[entrypoint] Running home-manager activation for $user..."
+            
+            # Set environment for activation
+            export HOME="$home_dir"
+            export USER="$user"
+            
+            # Run activation as the user if possible
+            if [ "$user" = "root" ] || [ "$(id -u)" = "0" ]; then
+                # Running as root
+                if [ "$user" != "root" ]; then
+                    # Switch to user for activation
+                    su - "$user" -c "$activation_script" 2>/dev/null || {
+                        echo "[entrypoint] Failed to activate as $user, trying as root..."
+                        $activation_script 2>/dev/null || true
+                    }
+                else
+                    # Activate for root
+                    $activation_script 2>/dev/null || true
+                fi
+            else
+                # Running as non-root, activate directly
+                $activation_script 2>/dev/null || true
+            fi
+            
+            echo "[entrypoint] Home-manager activation completed for $user"
+        fi
+    }
+    
+    # Activate for each user
+    activate_home_manager "root" "/root"
+    activate_home_manager "code" "/home/code"
+    activate_home_manager "vpittamp" "/home/vpittamp"
     
     # Set up PATH to include per-user profiles
     if [ -d "/etc/profiles/per-user/$USER/bin" ]; then
