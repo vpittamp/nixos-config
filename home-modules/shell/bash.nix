@@ -30,6 +30,11 @@
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
       
+      # SSL Certificate configuration
+      NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
+      SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
+      REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+      
       # AI/LLM API Keys (set these in your environment or use a secrets manager)
       # AVANTE_ANTHROPIC_API_KEY = "your-api-key-here"; # Uncomment and set your Claude API key
       # Or use a command to retrieve from password manager:
@@ -130,6 +135,10 @@
         unset COLORTERM
         # Disable problematic OSC sequences
         export STARSHIP_DISABLE_ANSI_INJECTION=1
+        # Suppress OSC 10/11 color queries that cause the rgb: output
+        printf '\033]10;?\007\033]11;?\007' 2>/dev/null | cat > /dev/null
+        # Tell applications not to query terminal colors
+        export VTE_VERSION="6003"  # Fake VTE version to disable color queries
       else
         # Regular terminal settings - use screen-256color to match tmux
         export TERM=screen-256color
@@ -151,9 +160,9 @@
         stty -echoctl 2>/dev/null || true
       fi
       
-      # Set up fzf key bindings
+      # Set up fzf key bindings (only if available)
       if command -v fzf &> /dev/null; then
-        eval "$(fzf --bash)"
+        eval "$(fzf --bash)" 2>/dev/null || true
       fi
       
       # 1Password Shell Plugins
@@ -161,8 +170,10 @@
         source ~/.config/op/plugins.sh
       fi
       
-      # Enable direnv
-      eval "$(direnv hook bash)"
+      # Enable direnv (only if available)
+      if command -v direnv &> /dev/null; then
+        eval "$(direnv hook bash)" 2>/dev/null || true
+      fi
       
       # Better history search (avoid interfering with mouse wheel)
       # Use Ctrl+Up/Down for prefix-based search to prevent accidental triggers
@@ -276,11 +287,23 @@
       clipaste() { pbpaste; }
       alias paste='pbpaste'
       
-      # Initialize zoxide at the very end to avoid configuration issues
-      eval "$(zoxide init bash)"
+      # Initialize zoxide at the very end (only if available)
+      if command -v zoxide &> /dev/null; then
+        eval "$(zoxide init bash)" 2>/dev/null || true
+        # Disable zoxide doctor warnings since we've properly initialized it
+        export _ZO_DOCTOR=0
+      fi
       
-      # Disable zoxide doctor warnings since we've properly initialized it
-      export _ZO_DOCTOR=0
+      # Preserve environment when using nix develop/shell
+      # This ensures terminal customization is maintained
+      if [ -n "$IN_NIX_SHELL" ]; then
+        # Re-source starship if available
+        if command -v starship &> /dev/null; then
+          eval "$(starship init bash)" 2>/dev/null || true
+        fi
+        # Ensure our prompt is still active
+        export STARSHIP_CONFIG="$HOME/.config/starship.toml"
+      fi
     '';
   };
 }

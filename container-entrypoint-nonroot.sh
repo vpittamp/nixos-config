@@ -19,6 +19,64 @@ export LC_ALL="C.UTF-8"
 export USER=$USER_NAME
 export HOME="/home/$USER_NAME"
 
+# SSL Certificate configuration for Node.js/Yarn
+export NODE_EXTRA_CA_CERTS="/etc/ssl/certs/ca-certificates.crt"
+export SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+export REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+# Development-only: Allow self-signed certificates (with warning)
+if [ "$ALLOW_INSECURE_SSL" = "true" ]; then
+    export NODE_TLS_REJECT_UNAUTHORIZED=0
+    echo "[entrypoint] WARNING: SSL certificate verification disabled (NODE_TLS_REJECT_UNAUTHORIZED=0)"
+    echo "[entrypoint] This should only be used in development environments!"
+fi
+
+# Set proper terminal type for tmux compatibility
+export TERM="xterm-256color"
+# Disable terminal color queries that cause escape sequence issues
+export COLORTERM="truecolor"
+
+# Configure Nix for container usage
+export NIX_CONF_DIR="$HOME/.config/nix"
+mkdir -p "$NIX_CONF_DIR" 2>/dev/null || true
+
+# Set up user profile directory for nix profile commands
+export NIX_USER_PROFILE_DIR="$HOME/.nix-profile"
+mkdir -p "$HOME/.nix-defexpr" 2>/dev/null || true
+
+# Create nix.conf with proper settings for containers
+if [ ! -f "$NIX_CONF_DIR/nix.conf" ]; then
+    cat > "$NIX_CONF_DIR/nix.conf" << 'EOF'
+# Container-specific Nix configuration
+sandbox = false
+use-sqlite-wal = false
+auto-optimise-store = false
+require-sigs = false
+experimental-features = nix-command flakes
+# Enable user profiles
+allow-import-from-derivation = true
+# Trust the user to install packages
+trusted-users = code root
+EOF
+fi
+
+# Native Nix setup - no wrapper needed!
+# Nix commands will work naturally with proper configuration
+
+# Initialize user nix profile if it doesn't exist
+if [ -w "$HOME" ] && [ ! -L "$HOME/.nix-profile" ]; then
+    echo "[entrypoint] Initializing user Nix profile..."
+    # Create the profile link
+    nix-env --switch-profile "$HOME/.nix-profile" 2>/dev/null || true
+fi
+
+# Ensure nix is in PATH
+export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
+# Set up direnv hook for automatic environment loading (if available)
+if command -v direnv >/dev/null 2>&1; then
+    eval "$(direnv hook bash)" 2>/dev/null || true
+fi
+
 # Ensure home directory exists and is not a symlink
 # This is critical for nix shell to work properly
 if [ -L "$HOME" ]; then
@@ -65,15 +123,49 @@ if [ -z "$NIX_LD" ]; then
     fi
 fi
 
-# Home-manager activation using GNU Stow
-echo "[entrypoint] Setting up home-manager environment with GNU Stow..."
+# Create .envrc for automatic nix develop activation (optional)
+if [ -w "$HOME" ] && [ ! -f "$HOME/.envrc" ]; then
+    cat > "$HOME/.envrc" << 'ENVRC_EOF'
+# Auto-activate nix develop if flake.nix exists
+if [ -f "flake.nix" ]; then
+    use flake
+fi
+ENVRC_EOF
+    # Note: User needs to run 'direnv allow' to activate
+fi
 
-# Look for home-manager generation files
-# The activationPackage from the build should be in the container
-HM_GENERATION=$(find /nix/store -maxdepth 1 -type d -name "*-home-manager-generation" 2>/dev/null | head -1)
+# Home-manager activation
+echo "[entrypoint] Setting up home-manager environment..."
 
-if [ -n "$HM_GENERATION" ]; then
-    echo "[entrypoint] Found home-manager generation at: $HM_GENERATION"
+# First check if we have pre-staged configs in /etc/skel
+if [ -d "/etc/skel" ] && [ "$(ls -A /etc/skel 2>/dev/null)" ]; then
+    echo "[entrypoint] Found pre-staged home-manager configs in /etc/skel"
+    
+    if [ -w "$HOME" ]; then
+        echo "[entrypoint] Copying pre-staged configs to home directory..."
+        cp -r /etc/skel/. "$HOME/" 2>/dev/null || true
+        
+        # Fix permissions on copied files - make them writable by the user
+        # This is necessary because files from Nix store are read-only
+        echo "[entrypoint] Fixing permissions on home directory files..."
+        find "$HOME" -type d -exec chmod 755 {} \; 2>/dev/null || true
+        find "$HOME" -type f -exec chmod 644 {} \; 2>/dev/null || true
+        # Make .ssh directory more restrictive if it exists
+        [ -d "$HOME/.ssh" ] && chmod 700 "$HOME/.ssh" 2>/dev/null || true
+        [ -f "$HOME/.ssh/config" ] && chmod 600 "$HOME/.ssh/config" 2>/dev/null || true
+        
+        echo "[entrypoint] Home-manager configuration copied and permissions fixed"
+    else
+        echo "[entrypoint] ERROR: Cannot copy configs - home directory not writable"
+        exit 1
+    fi
+else
+    # Fallback to finding home-manager generation in /nix/store
+    echo "[entrypoint] No pre-staged configs found, looking for home-manager generation..."
+    HM_GENERATION=$(find /nix/store -maxdepth 1 -type d -name "*-home-manager-generation" 2>/dev/null | head -1)
+
+    if [ -n "$HM_GENERATION" ]; then
+        echo "[entrypoint] Found home-manager generation at: $HM_GENERATION"
     
     # Use GNU Stow to manage symlinks from home-manager generation to HOME
     # Stow is designed exactly for this use case - managing dotfiles and config directories
@@ -132,17 +224,23 @@ if [ -n "$HM_GENERATION" ]; then
             rm -rf "$STOW_DIR"
         fi
         
+        else
+            echo "[entrypoint] ERROR: Cannot link home-manager files - either generation not found or home not writable"
+            exit 1
+        fi
     else
-        echo "[entrypoint] ERROR: Cannot link home-manager files - either generation not found or home not writable"
+        echo "[entrypoint] ERROR: No home-manager generation found in /nix/store"
+        echo "[entrypoint] This indicates the container was not built with home-manager properly included"
         exit 1
     fi
-else
-    echo "[entrypoint] ERROR: No home-manager generation found in /nix/store"
-    echo "[entrypoint] This indicates the container was not built with home-manager properly included"
-    exit 1
 fi
 
 echo "[entrypoint] User environment ready"
+echo "[entrypoint] Nix commands available:"
+echo "  - nix shell nixpkgs#<package>  : Add packages temporarily"
+echo "  - nix develop                  : Enter development shell from flake"
+echo "  - nix profile install          : Install packages persistently"
+echo "  - nix search nixpkgs <query>   : Search for packages"
 
 # Execute the original command
 if [ $# -eq 0 ]; then

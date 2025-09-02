@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/etc/nixos/logs/.f03feb6d038c80701fea203d3b049f574b2725a3-audit.json",
+    "files": [
+        {
+            "date": 1756814993514,
+            "name": "/etc/nixos/logs/mcp-puppeteer-2025-09-02.log",
+            "hash": "db41db664f2c361a216153651456220e39d13c15a96329bb7f0f77e4851edbfa"
+        }
+    ],
+    "hashType": "sha256"
+}

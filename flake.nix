@@ -39,9 +39,18 @@
   outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, npm-package, ... }@inputs: 
     let
       system = "x86_64-linux";
+      
+      # Import overlays
+      overlays = import ./overlays { inherit inputs; };
+      
+      # Create pkgs with overlays applied
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
+        overlays = [
+          overlays.additions
+          overlays.modifications
+        ];
       };
     in
     {
@@ -80,6 +89,154 @@
               };
             }
           ];
+        };
+      };
+      
+      # Development shells for extending environments at runtime
+      devShells.${system} = {
+        # Default development shell
+        default = pkgs.mkShell {
+          name = "nix-dev";
+          buildInputs = with pkgs; [
+            # Basic tools
+            git
+            curl
+            wget
+            vim
+            # Nix tools
+            nix-prefetch-git
+            nixpkgs-fmt
+            nil
+          ];
+          shellHook = ''
+            echo "Development shell activated"
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+            # Ensure SSL certificates are available
+            export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+            export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          '';
+        };
+        
+        # Node.js development shell
+        nodejs = pkgs.mkShell {
+          name = "nodejs-dev";
+          buildInputs = with pkgs; [
+            nodejs_20
+            nodePackages.yarn
+            nodePackages.pnpm
+            nodePackages.typescript
+            nodePackages.ts-node
+            nodePackages.nodemon
+            # SSL certificate support
+            cacert
+          ];
+          shellHook = ''
+            echo "Node.js development environment activated"
+            # Fix SSL certificates for yarn/npm
+            export NODE_EXTRA_CA_CERTS="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export NODE_TLS_REJECT_UNAUTHORIZED=0  # Only for development!
+            echo "Warning: NODE_TLS_REJECT_UNAUTHORIZED=0 is set for development only"
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+          '';
+        };
+        
+        # Python development shell
+        python = pkgs.mkShell {
+          name = "python-dev";
+          buildInputs = with pkgs; [
+            python3
+            python3Packages.pip
+            python3Packages.virtualenv
+            python3Packages.ipython
+            python3Packages.black
+            python3Packages.pylint
+            python3Packages.requests
+            python3Packages.certifi
+          ];
+          shellHook = ''
+            echo "Python development environment activated"
+            # Set up Python SSL certificates
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export REQUESTS_CA_BUNDLE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+          '';
+        };
+        
+        # Go development shell
+        go = pkgs.mkShell {
+          name = "go-dev";
+          buildInputs = with pkgs; [
+            go
+            gopls
+            go-tools
+            golangci-lint
+            delve
+          ];
+          shellHook = ''
+            echo "Go development environment activated"
+            export GOPATH=$HOME/go
+            export PATH=$GOPATH/bin:$PATH
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+          '';
+        };
+        
+        # Rust development shell
+        rust = pkgs.mkShell {
+          name = "rust-dev";
+          buildInputs = with pkgs; [
+            rustc
+            cargo
+            rustfmt
+            rust-analyzer
+            clippy
+            pkg-config
+            openssl
+          ];
+          shellHook = ''
+            echo "Rust development environment activated"
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+          '';
+        };
+        
+        # Full-stack development shell
+        fullstack = pkgs.mkShell {
+          name = "fullstack-dev";
+          buildInputs = with pkgs; [
+            # Frontend
+            nodejs_20
+            nodePackages.yarn
+            nodePackages.pnpm
+            # Backend languages
+            python3
+            go
+            rustc
+            cargo
+            # Databases
+            postgresql
+            redis
+            sqlite
+            # Tools
+            docker-compose
+            kubectl
+            terraform
+            # SSL certificates
+            cacert
+          ];
+          shellHook = ''
+            echo "Full-stack development environment activated"
+            # Fix SSL certificates
+            export NODE_EXTRA_CA_CERTS="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            export REQUESTS_CA_BUNDLE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            # Preserve terminal customization
+            export STARSHIP_CONFIG=$HOME/.config/starship.toml
+          '';
         };
       };
       
@@ -189,11 +346,29 @@
             # Get home-manager activation packages for container users
             codeHomeManagerActivation = containerConfig.config.home-manager.users.code.home.activationPackage;
             
+            # Pre-stage home-manager configs during build
+            # This creates a derivation with home-manager files ready to be copied
+            homeStaging = runCommand "home-staging" {} ''
+              mkdir -p $out/etc/skel
+              
+              # Copy home-manager files to staging location
+              if [ -d "${codeHomeManagerActivation}/home-files" ]; then
+                echo "Staging home-manager configuration files..."
+                cp -rL ${codeHomeManagerActivation}/home-files/. $out/etc/skel/
+                
+                # Ensure proper permissions
+                chmod -R 755 $out/etc/skel
+              else
+                echo "Warning: No home-files found in activation package"
+              fi
+            '';
+            
             # Create user entries as a separate derivation
             userEntries = runCommand "user-entries" {} ''
               mkdir -p $out/etc
-              mkdir -p $out/home/code/.vscode-server
-              mkdir -p $out/home/code/.local
+              # Don't create /home/code here - it will be mounted as a volume
+              # Creating it here causes buildEnv to make it a symlink to nix store
+              # which breaks nix shell commands
               mkdir -p $out/tmp
               mkdir -p $out/usr/bin
               mkdir -p $out/lib64
@@ -225,8 +400,7 @@
               
               # Set proper permissions
               chmod 644 $out/etc/passwd $out/etc/group
-              # Note: ownership will need to be fixed at runtime since we can't chown in Nix build
-              chmod -R 755 $out/home/code
+              # Note: /home/code will be created at runtime via volume mount
               chmod 1777 $out/tmp
               chmod -R 755 $out/usr
             '';
@@ -237,6 +411,7 @@
               containerConfig.config.system.path
               pkgs.bashInteractive
               pkgs.coreutils
+              pkgs.cacert  # Add CA certificates for SSL
               
               # Add /etc files from the system build
               containerConfig.config.system.build.etc
@@ -247,6 +422,9 @@
               # Include home-manager activation package for code user
               # This contains the actual config files and activation script
               codeHomeManagerActivation
+              
+              # Include pre-staged home-manager configs
+              homeStaging
               
               # Include user entries
               userEntries

@@ -122,6 +122,8 @@ in
       # Keep it disabled for VS Code specifically to avoid interference
       set -g set-clipboard on
       set -as terminal-overrides ',vscode*:Ms@'  # Disable OSC 52 clipboard for VS Code
+      # Disable OSC 10/11 color queries for VSCode to prevent escape sequence artifacts
+      set -as terminal-overrides ',vscode*:Cc@:Cr@:Cs@:Se@:Ss@'
       
       # Configure tmux-yank to use Windows clipboard in WSL
       # Falls back to wl-copy via explicit bindings below when available

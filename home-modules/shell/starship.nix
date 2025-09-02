@@ -8,7 +8,7 @@ in
     enable = true;
     enableBashIntegration = true;
     settings = {
-      format = "$username$hostname $custom$directory$git_branch$git_status $kubernetes\n$character ";
+      format = "$username$hostname $custom$nix_shell$directory$git_branch$git_status $kubernetes\n$character ";
       
       palette = "catppuccin_mocha";
       
@@ -137,6 +137,15 @@ in
         disabled = false;
         detect_extensions = ["rs"];
         detect_files = ["Cargo.toml" "Cargo.lock"];
+      };
+      
+      nix_shell = {
+        disabled = false;
+        impure_msg = "[NIX]";
+        pure_msg = "[NIX-PURE]";
+        unknown_msg = "[NIX?]";
+        format = "[$state( $name)]($style) ";
+        style = "fg:${colors.blue} bold";
       };
       
       golang = {
