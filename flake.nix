@@ -497,6 +497,26 @@
               # Include user entries
               userEntries
               
+              # Include pre-built flake directory
+              (runCommand "flake-directory" {} ''
+                mkdir -p $out/opt/nix-flakes
+                cd $out/opt/nix-flakes
+                
+                # Copy flake files from current directory
+                cp ${./flake.nix} flake.nix
+                cp ${./flake.lock} flake.lock
+                
+                # Initialize git repository (required for flakes)
+                ${pkgs.git}/bin/git init
+                ${pkgs.git}/bin/git config user.email "container@localhost"
+                ${pkgs.git}/bin/git config user.name "Container"
+                ${pkgs.git}/bin/git add flake.nix flake.lock
+                ${pkgs.git}/bin/git commit -m "Initial flake setup for container"
+                
+                # Make it readable by all users
+                chmod -R 755 $out/opt
+              '')
+              
               # Add entrypoint scripts
               (runCommand "entrypoint-scripts" {} ''
                 mkdir -p $out/etc
@@ -522,6 +542,7 @@
               "/home"      # Include home directory
               "/tmp"       # Include tmp directory for non-root writes
               "/usr"       # Include usr directory for VS Code compatibility
+              "/opt"       # Include opt for flake directory
             ];
             extraOutputsToInstall = [ "out" ];
           };
