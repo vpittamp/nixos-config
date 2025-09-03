@@ -69,6 +69,8 @@ let
     docker-compose = pkgs.docker-compose;  # ~100MB
     yarn = pkgs.yarn;                # ~10MB - JavaScript package manager
     lazygit = pkgs.lazygit;          # ~20MB - terminal UI for git
+    devpod = pkgs.devpod;            # ~40MB - Codespaces but open-source
+    devcontainer = pkgs.devcontainer; # ~30MB - Dev container CLI
     # gitingest = pkgs.gitingest;      # ~15MB - git repository ingestion tool (build failure)
     # VS Code CLI is not in nixpkgs yet, will be installed via script
   };

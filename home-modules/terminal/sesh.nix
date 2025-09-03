@@ -20,8 +20,8 @@
 
       # Default session configuration
       [default_session]
-      # Open nvim with telescope on session start
-      startup_command = "nvim -c ':Telescope find_files'"
+      # No automatic editor launch - land in terminal
+      startup_command = ""
       # Show directory contents with eza when previewing
       preview_command = "eza --all --git --icons --color=always --group-directories-first --long {}"
 
@@ -29,19 +29,19 @@
       [[session]]
       name = "nix-config"
       path = "/etc/nixos"
-      startup_command = "nvim configuration.nix"
+      startup_command = ""
       preview_command = "bat --color=always /etc/nixos/configuration.nix"
 
       [[session]]
       name = "nix-home"
       path = "/etc/nixos"
-      startup_command = "nvim home-vpittamp.nix"
+      startup_command = ""
       preview_command = "bat --color=always /etc/nixos/home-vpittamp.nix"
 
       [[session]]
       name = "nix-flake"
       path = "/etc/nixos"
-      startup_command = "nvim flake.nix"
+      startup_command = ""
       preview_command = "bat --color=always /etc/nixos/flake.nix"
 
       # Quick edit session for all Nix configs
@@ -65,20 +65,20 @@
       [[session]]
       name = "workspace"
       path = "~/workspace"
-      startup_command = "nvim"
+      startup_command = ""
       preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
 
       [[session]]
       name = "dotfiles"
       path = "~/.config"
-      startup_command = "nvim"
+      startup_command = ""
       preview_command = "eza --all --git --icons --color=always --group-directories-first {}"
 
       # Kubernetes/Container Sessions
       [[session]]
       name = "k8s-dev"
       path = "~/k8s"
-      startup_command = "k9s"
+      startup_command = ""
       preview_command = "kubectl get pods --all-namespaces 2>/dev/null || echo 'No cluster connected'"
 
       # Blacklist - sessions to hide from results

@@ -56,10 +56,10 @@ in
     # MCP Servers configuration using npm-package installed binaries
     mcpServers = {
       context7 = {
-        transport = "sse";
-        command = "${mcp-server-sse}/bin/mcp-server-sse";
+        command = "npx";
         args = [
-          "https://mcp.context7.com/sse"
+          "-y"
+          "@upstash/context7-mcp@latest"
         ];
       };
       
