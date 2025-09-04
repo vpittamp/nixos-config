@@ -57,12 +57,19 @@ export NIX_PATH="${NIX_PATH:-nixpkgs=channel:nixos-unstable}"
 mkdir -p "$HOME/.config/home-manager"
 mkdir -p "$HOME/.config/nix"
 
-# Configure nix for user
+# Configure nix for user with binary caches
 cat > "$HOME/.config/nix/nix.conf" << 'EOF'
 experimental-features = nix-command flakes
 trusted-users = root @wheel
 max-jobs = auto
 cores = 0
+# Use binary caches to avoid building from source in containers
+substituters = https://cache.nixos.org https://nix-community.cachix.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+# Fallback to building if substitutes fail
+fallback = true
+# Don't build if substitute is available
+prefer-online = true
 EOF
 
 echo -e "${GREEN}Setting up Home Manager...${NC}"

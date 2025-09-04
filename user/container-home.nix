@@ -239,8 +239,58 @@ in
     vimAlias = true;   # vi command runs neovim
     defaultEditor = true;
     
-    # No vim plugins - they all require permissions that fail in restricted containers
+    # No Nix-managed plugins - they require build permissions that fail in containers
+    # Instead, we use lazy.nvim to manage plugins at runtime
     plugins = [];
+    
+    # Configure with lazy.nvim for plugin management
+    extraLuaConfig = ''
+      -- Bootstrap lazy.nvim plugin manager
+      local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+      if not vim.loop.fs_stat(lazypath) then
+        vim.fn.system({
+          "git",
+          "clone",
+          "--filter=blob:none",
+          "https://github.com/folke/lazy.nvim.git",
+          "--branch=stable",
+          lazypath,
+        })
+      end
+      vim.opt.rtp:prepend(lazypath)
+      
+      -- Plugin specifications
+      local plugins = {
+        -- Essential plugins
+        { "tpope/vim-sensible" },
+        { "tpope/vim-surround" },
+        { "tpope/vim-commentary" },
+        { "tpope/vim-fugitive" },
+        
+        -- Language support
+        { "LnL7/vim-nix" },
+        
+        -- UI improvements
+        {
+          "itchyny/lightline.vim",
+          config = function()
+            vim.g.lightline = { colorscheme = "jellybeans" }
+          end,
+        },
+      }
+      
+      -- Setup lazy.nvim with plugins
+      require("lazy").setup(plugins, {
+        -- Store plugins in user directory (writable in containers)
+        root = vim.fn.stdpath("data") .. "/lazy",
+        -- Don't change the RTP (let Nix handle that)
+        performance = {
+          rtp = {
+            reset = false,
+          },
+        },
+      })
+    '';
     
     extraConfig = ''
       " Basic settings
@@ -271,8 +321,14 @@ in
       " Status line always visible
       set laststatus=2
       
-      " Basic status line
-      set statusline=%F%m%r%h%w\ [%{&ff}]\ [%Y]\ [%l,%v][%p%%]
+      " Leader key
+      let mapleader = " "
+      
+      " Quick save
+      nnoremap <leader>w :w<CR>
+      
+      " Quick quit
+      nnoremap <leader>q :q<CR>
     '';
   };
   
