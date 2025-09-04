@@ -84,14 +84,18 @@ echo ""
 # Profile-specific messages
 case "$PROFILE" in
     ai|essential|development)
-        echo "AI tools installed:"
+        echo "AI tools installed (via native home-manager):"
         echo "  - claude-code (use 'claude' command)"
+        echo "  - gemini-cli (use 'gemini' command)"
+        echo "  - codex (use 'codex' command)"
+        echo "  - aichat (multi-model chat)"
         echo "  - Node.js for MCP servers"
         echo "  - Chromium for browser automation"
         echo ""
-        echo "To use claude-code:"
-        echo "  export ANTHROPIC_API_KEY='your-key-here'"
-        echo "  claude"
+        echo "To configure API keys:"
+        echo "  export ANTHROPIC_API_KEY='your-key-here'  # For Claude"
+        echo "  export GEMINI_API_KEY='your-key-here'     # For Gemini"
+        echo "  export OPENAI_API_KEY='your-key-here'     # For GPT/Codex"
         ;;
     minimal)
         echo "Minimal tools installed."
