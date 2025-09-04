@@ -3,6 +3,8 @@
 { config, pkgs, lib, ... }:
 
 {
+  # Allow unfree packages (claude-code is proprietary)
+  nixpkgs.config.allowUnfree = true;
   # Claude Code - Available in nixpkgs
   home.packages = with pkgs; [
     claude-code          # Official Claude CLI
