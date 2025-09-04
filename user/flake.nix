@@ -7,9 +7,13 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    npm-package = {
+      url = "github:serokell/npm-package.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }: 
+  outputs = { self, nixpkgs, home-manager, npm-package, ... } @ inputs: 
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -55,6 +59,8 @@
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "essential";
+              # Pass inputs to modules for npm-package
+              _module.args = { inherit inputs; };
             }
           ];
         };
@@ -68,6 +74,8 @@
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "development";
+              # Pass inputs to modules for npm-package
+              _module.args = { inherit inputs; };
             }
           ];
         };
@@ -82,6 +90,8 @@
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "development";
+              # Pass inputs to modules for npm-package
+              _module.args = { inherit inputs; };
             }
           ];
         };
