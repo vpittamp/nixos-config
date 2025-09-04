@@ -61,8 +61,8 @@ in
     enableCompletion = true;
     
     sessionVariables = {
-      EDITOR = "vim";
-      VISUAL = "vim";
+      EDITOR = "nvim";
+      VISUAL = "nvim";
       PAGER = "less";
       LESS = "-R";
     };
@@ -174,10 +174,13 @@ in
     '';
   };
   
-  # Vim configuration - simplified to avoid conflicts
-  programs.vim = {
+  # Neovim configuration - better than vim, no conflicts
+  programs.neovim = {
     enable = true;
-    plugins = []; # No plugins to avoid permission issues
+    viAlias = true;    # vim command runs neovim
+    vimAlias = true;   # vi command runs neovim
+    defaultEditor = true;
+    plugins = []; # Start with no plugins to avoid permission issues
     extraConfig = ''
       " Basic settings
       set number
