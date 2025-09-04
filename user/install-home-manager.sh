@@ -152,7 +152,8 @@ export NIXOS_CONTAINER=1
 export CONTAINER_PROFILE="${CONTAINER_PROFILE:-essential}"
 
 # Apply the configuration with backup flag for safety
-home-manager switch -b backup
+# Use --impure to avoid hash mismatch issues with fetchTarball
+home-manager switch -b backup --impure
 
 # Source the new configuration
 if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
