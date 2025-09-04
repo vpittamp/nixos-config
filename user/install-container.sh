@@ -38,35 +38,6 @@ echo "Home: $HOME"
 # Ensure home directory exists
 mkdir -p "$HOME"
 
-# Check if nix is installed
-if ! command -v nix &> /dev/null; then
-    echo -e "${YELLOW}Nix not found. Installing Nix...${NC}"
-    
-    # Install Nix using the Determinate Systems installer (works better in containers)
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm
-    
-    # Source nix
-    if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
-        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-    elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-        . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-    fi
-    
-    # Check again
-    if ! command -v nix &> /dev/null; then
-        echo -e "${RED}Failed to install Nix. Please install Nix manually first.${NC}"
-        echo "Visit: https://nixos.org/download.html"
-        exit 1
-    fi
-    echo -e "${GREEN}✓ Nix installed successfully${NC}"
-else
-    echo -e "${GREEN}✓ Nix is already installed${NC}"
-fi
-
-# Enable flakes
-mkdir -p "$HOME/.config/nix"
-echo "experimental-features = nix-command flakes" > "$HOME/.config/nix/nix.conf"
-
 # Clone the repository to a temporary location
 TEMP_DIR=$(mktemp -d)
 echo -e "${GREEN}Cloning configuration repository...${NC}"
