@@ -14,13 +14,17 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       lib = nixpkgs.lib;
+      
+      # Common module for all configurations
+      commonModules = [
+        ./container-minimal.nix
+      ];
     in {
       homeConfigurations = {
         # Default container configuration
         container = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [
-            ./container-minimal.nix
+          modules = commonModules ++ [
             {
               # Set defaults that match common container environments
               home.username = lib.mkDefault "code";
@@ -32,8 +36,7 @@
         # Minimal profile
         "container-minimal" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [
-            ./container-minimal.nix
+          modules = commonModules ++ [
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
@@ -46,8 +49,7 @@
         # Essential profile (default)
         "container-essential" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [
-            ./container-minimal.nix
+          modules = commonModules ++ [
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
@@ -59,12 +61,23 @@
         # Development profile
         "container-development" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [
-            ./container-minimal.nix
+          modules = commonModules ++ [
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "development";
+            }
+          ];
+        };
+        
+        # AI-assisted profile with AI development tools
+        "container-ai" = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./container-ai.nix
+            {
+              home.username = lib.mkDefault "code";
+              home.homeDirectory = lib.mkDefault "/home/code";
             }
           ];
         };
@@ -76,6 +89,7 @@
         minimal = self.homeConfigurations."container-minimal".activationPackage;
         essential = self.homeConfigurations."container-essential".activationPackage;
         development = self.homeConfigurations."container-development".activationPackage;
+        ai = self.homeConfigurations."container-ai".activationPackage;
       };
 
       # Apps for direct activation
@@ -95,6 +109,10 @@
         development = {
           type = "app";
           program = "${self.packages.${system}.development}/activate";
+        };
+        ai = {
+          type = "app";
+          program = "${self.packages.${system}.ai}/activate";
         };
       };
     };
