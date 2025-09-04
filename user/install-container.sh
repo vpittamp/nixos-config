@@ -50,13 +50,17 @@ git clone -b container-ssh --depth 1 https://github.com/vpittamp/nixos-config.gi
 cd "$TEMP_DIR/user"
 
 # Backup existing shell files if they exist
+BACKUP_SUFFIX=".backup-$(date +%s)"
 if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
     echo -e "${YELLOW}Backing up existing shell configuration files...${NC}"
-    BACKUP_SUFFIX=".backup-$(date +%s)"
-    [ -f "$HOME/.bashrc" ] && mv "$HOME/.bashrc" "$HOME/.bashrc${BACKUP_SUFFIX}"
-    [ -f "$HOME/.profile" ] && mv "$HOME/.profile" "$HOME/.profile${BACKUP_SUFFIX}"
-    [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile${BACKUP_SUFFIX}"
+    [ -f "$HOME/.bashrc" ] && { mv "$HOME/.bashrc" "$HOME/.bashrc${BACKUP_SUFFIX}"; echo "  Backed up .bashrc"; }
+    [ -f "$HOME/.profile" ] && { mv "$HOME/.profile" "$HOME/.profile${BACKUP_SUFFIX}"; echo "  Backed up .profile"; }
+    [ -f "$HOME/.bash_profile" ] && { mv "$HOME/.bash_profile" "$HOME/.bash_profile${BACKUP_SUFFIX}"; echo "  Backed up .bash_profile"; }
 fi
+
+# Also backup any other files that might conflict
+[ -f "$HOME/.gitconfig" ] && { mv "$HOME/.gitconfig" "$HOME/.gitconfig${BACKUP_SUFFIX}"; echo "  Backed up .gitconfig"; }
+[ -d "$HOME/.config/nvim" ] && { mv "$HOME/.config/nvim" "$HOME/.config/nvim${BACKUP_SUFFIX}"; echo "  Backed up .config/nvim"; }
 
 # Build and activate the configuration
 echo -e "${GREEN}Building configuration...${NC}"
@@ -79,7 +83,7 @@ echo ""
 
 # Profile-specific messages
 case "$PROFILE" in
-    ai)
+    ai|essential|development)
         echo "AI tools installed:"
         echo "  - claude-code (use 'claude' command)"
         echo "  - Node.js for MCP servers"
@@ -89,16 +93,9 @@ case "$PROFILE" in
         echo "  export ANTHROPIC_API_KEY='your-key-here'"
         echo "  claude"
         ;;
-    development)
-        echo "Development tools installed."
-        echo "Run 'nvim' to start Neovim with lazy.nvim configured."
-        ;;
-    essential)
-        echo "Essential tools installed."
-        echo "Includes tmux, git, fzf, and more."
-        ;;
     minimal)
         echo "Minimal tools installed."
+        echo "Does not include AI assistants."
         ;;
 esac
 

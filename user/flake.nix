@@ -46,10 +46,11 @@
           ];
         };
 
-        # Essential profile (default)
+        # Essential profile (default) - includes AI tools
         "container-essential" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = commonModules ++ [
+            ./ai-container-modules.nix
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
@@ -58,10 +59,11 @@
           ];
         };
 
-        # Development profile
+        # Development profile - includes AI tools
         "container-development" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = commonModules ++ [
+            ./ai-container-modules.nix
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
