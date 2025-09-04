@@ -113,8 +113,8 @@ let
   };
 in
 {
-  # Import the complete container home configuration
-  imports = [ "\${nixosConfig}/user/container-home.nix" ];
+  # Import the minimal container configuration that avoids build issues
+  imports = [ "\${nixosConfig}/user/container-minimal.nix" ];
   
   # Override username and home directory to use current values
   home.username = lib.mkForce "$USER";
@@ -136,13 +136,6 @@ home-manager switch -b backup --impure
 if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
     . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
-
-# Install neovim separately to avoid plugin build issues
-echo -e "${GREEN}Installing neovim...${NC}"
-nix-env -iA nixpkgs.neovim-unwrapped 2>/dev/null || {
-    echo -e "${YELLOW}⚠${NC} Could not install neovim-unwrapped, trying regular neovim..."
-    nix-env -iA nixpkgs.neovim
-}
 
 echo -e "${GREEN}✓ Installation complete!${NC}"
 echo ""
