@@ -121,6 +121,14 @@ echo -e "${GREEN}Applying configuration...${NC}"
 export NIXOS_CONTAINER=1
 export CONTAINER_PROFILE="${CONTAINER_PROFILE:-essential}"
 
+# Backup existing files if they exist
+if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
+    echo -e "${YELLOW}Backing up existing shell configuration files...${NC}"
+    [ -f "$HOME/.bashrc" ] && mv "$HOME/.bashrc" "$HOME/.bashrc.backup"
+    [ -f "$HOME/.profile" ] && mv "$HOME/.profile" "$HOME/.profile.backup"
+    [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile.backup"
+fi
+
 # Apply the configuration
 home-manager switch
 
