@@ -22,9 +22,9 @@
           modules = [
             ./container-minimal.nix
             {
-              # Set defaults that can be overridden at activation time
-              home.username = lib.mkDefault "user";
-              home.homeDirectory = lib.mkDefault "/home/user";
+              # Set defaults that match common container environments
+              home.username = lib.mkDefault "code";
+              home.homeDirectory = lib.mkDefault "/home/code";
             }
           ];
         };
@@ -35,8 +35,8 @@
           modules = [
             ./container-minimal.nix
             {
-              home.username = lib.mkDefault "user";
-              home.homeDirectory = lib.mkDefault "/home/user";
+              home.username = lib.mkDefault "code";
+              home.homeDirectory = lib.mkDefault "/home/code";
               # Force minimal profile
               home.sessionVariables.CONTAINER_PROFILE = "minimal";
             }
@@ -49,8 +49,8 @@
           modules = [
             ./container-minimal.nix
             {
-              home.username = lib.mkDefault "user";
-              home.homeDirectory = lib.mkDefault "/home/user";
+              home.username = lib.mkDefault "code";
+              home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "essential";
             }
           ];
@@ -62,8 +62,8 @@
           modules = [
             ./container-minimal.nix
             {
-              home.username = lib.mkDefault "user";
-              home.homeDirectory = lib.mkDefault "/home/user";
+              home.username = lib.mkDefault "code";
+              home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "development";
             }
           ];
