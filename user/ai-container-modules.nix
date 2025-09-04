@@ -19,7 +19,7 @@
     # Supporting tools
     gh                  # GitHub CLI
     jq                  # JSON processor
-    yq-go              # YAML processor
+    # yq-go removed - conflicts with python yq from user packages
     httpie             # HTTP client
     direnv             # Environment management
     
@@ -67,6 +67,9 @@
     
     # Helper commands
     ai-keys = "echo 'Set: export ANTHROPIC_API_KEY=... export OPENAI_API_KEY=...'";
+    
+    # YAML processing with Python yq
+    yamlpp = "yq '.'";
   };
   
   # Environment variables
