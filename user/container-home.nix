@@ -236,10 +236,9 @@ in
     };
   };
   
-  # Neovim - installed as package, not via programs.neovim to avoid plugin issues
-  # The programs.neovim module tries to build vim plugins even when empty
-  # So we install neovim-unwrapped directly (no wrappers, no plugins)
-  home.packages = [ pkgs.neovim-unwrapped ];
+  # Neovim - NOT installed via home-manager to avoid plugin build issues
+  # Will be installed separately via nix-env in the install script
+  # This avoids home-manager trying to wrap neovim with plugins
   
   # Neovim aliases are already in bash.shellAliases above
   

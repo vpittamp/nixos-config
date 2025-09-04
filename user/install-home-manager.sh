@@ -137,10 +137,17 @@ if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
     . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 
+# Install neovim separately to avoid plugin build issues
+echo -e "${GREEN}Installing neovim...${NC}"
+nix-env -iA nixpkgs.neovim-unwrapped 2>/dev/null || {
+    echo -e "${YELLOW}⚠${NC} Could not install neovim-unwrapped, trying regular neovim..."
+    nix-env -iA nixpkgs.neovim
+}
+
 echo -e "${GREEN}✓ Installation complete!${NC}"
 echo ""
 echo "Available package profiles:"
-echo "  - minimal: Basic tools (vim, git, tmux, curl, jq, fzf, ripgrep)"
+echo "  - minimal: Basic tools (git, tmux, curl, jq, fzf, ripgrep)"
 echo "  - essential: Common development tools (default)"
 echo "  - development: Full development environment"
 echo ""
