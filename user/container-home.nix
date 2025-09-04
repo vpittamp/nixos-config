@@ -241,8 +241,7 @@ in
     
     # Vim plugins from nixpkgs
     plugins = with pkgs.vimPlugins; [
-      # Claude Code integration
-      claudecode-nvim
+      # claudecode-nvim removed - causes permission errors in containers
       
       # Essential plugins for better experience
       vim-sensible
