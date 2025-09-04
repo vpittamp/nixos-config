@@ -12,15 +12,10 @@ in
   ];
 
   # Basic home configuration
-  # These can be overridden in the flake
-  home.username = lib.mkDefault (
-    let user = builtins.getEnv "USER";
-    in if user != "" then user else "user"
-  );
-  home.homeDirectory = lib.mkDefault (
-    let home = builtins.getEnv "HOME";
-    in if home != "" then home else "/home/user"
-  );
+  # These will be overridden by the flake
+  # Using mkDefault allows the flake to set the actual values
+  home.username = lib.mkDefault "code";
+  home.homeDirectory = lib.mkDefault "/home/code";
   home.stateVersion = "24.05";
   
   # Essential packages only - no vim/neovim via home.packages
@@ -44,7 +39,7 @@ in
     ncdu
   ] ++ (
     # Package profile selection - can be overridden via flake
-    let prof = config.home.sessionVariables.CONTAINER_PROFILE or (builtins.getEnv "CONTAINER_PROFILE");
+    let prof = config.home.sessionVariables.CONTAINER_PROFILE or "";
     in if prof == "minimal" then []
        else if prof == "development" then userPackages.development
        else with pkgs; [ yazi yarn ]  # essential extras
