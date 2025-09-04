@@ -1,0 +1,40 @@
+# Simple Dockerfile to add Nix to any existing container
+# Usage: docker build -f Dockerfile.add-nix --build-arg BASE_IMAGE=backstage:latest -t backstage-with-nix .
+
+ARG BASE_IMAGE=ubuntu:latest
+FROM nixos/nix:latest AS nix-env
+
+# Use the specified base image
+FROM ${BASE_IMAGE}
+
+# Copy Nix from the nix image
+COPY --from=nix-env /nix /nix
+COPY --from=nix-env /root/.nix-profile /root/.nix-profile
+
+# Set up Nix environment
+ENV PATH="/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}"
+ENV NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+ENV NIX_SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+
+# Install git and curl if not present (needed for our installation script)
+RUN apt-get update && apt-get install -y git curl || \
+    yum install -y git curl || \
+    apk add --no-cache git curl || \
+    true
+
+# Create a script to install home-manager on first run
+RUN echo '#!/bin/sh\n\
+if [ ! -f ~/.home-manager-installed ]; then\n\
+    echo "Installing home-manager configuration..."\n\
+    curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-container.sh | bash -s essential\n\
+    touch ~/.home-manager-installed\n\
+    echo "Home-manager installation complete!"\n\
+fi\n\
+exec "$@"' > /entrypoint-nix.sh && \
+    chmod +x /entrypoint-nix.sh
+
+# Use the wrapper as entrypoint
+ENTRYPOINT ["/entrypoint-nix.sh"]
+
+# Preserve the original CMD
+CMD ["bash"]

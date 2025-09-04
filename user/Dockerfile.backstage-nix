@@ -1,0 +1,52 @@
+# Dockerfile for Backstage with Nix and AI tools pre-installed
+# This creates a container that can run Backstage with AI development tools
+
+# Stage 1: Build the Nix environment with AI tools
+FROM nixos/nix:latest AS nix-builder
+
+# Set up working directory
+WORKDIR /build
+
+# Copy our flake configuration
+COPY flake.nix flake.lock ./
+COPY *.nix ./
+COPY ai-assistants ./ai-assistants/
+
+# Build the home-manager configuration
+RUN nix build .#homeConfigurations.container-essential.activationPackage \
+    --extra-experimental-features "nix-command flakes" \
+    --print-build-logs
+
+# Stage 2: Backstage base with Nix
+FROM backstage:latest
+
+# Copy Nix store and profile from builder
+COPY --from=nix-builder /nix /nix
+COPY --from=nix-builder /root/.nix-profile /opt/nix-profile
+
+# Set up environment variables
+ENV PATH="/opt/nix-profile/bin:/nix/var/nix/profiles/default/bin:${PATH}"
+ENV NIX_PATH="nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixpkgs"
+ENV NIX_SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+
+# Create code user if it doesn't exist
+RUN useradd -m -u 1000 code 2>/dev/null || true
+
+# Set up home-manager for the code user
+USER code
+WORKDIR /home/code
+
+# Copy the built home-manager configuration
+COPY --from=nix-builder --chown=code:code /build/result /opt/home-manager
+
+# Activate home-manager configuration
+RUN /opt/home-manager/activate
+
+# Source the environment
+RUN echo 'source ~/.nix-profile/etc/profile.d/hm-session-vars.sh' >> ~/.bashrc
+
+# Switch back to root for Backstage
+USER root
+WORKDIR /app
+
+# The CMD from the original Backstage image will be preserved

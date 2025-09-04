@@ -38,6 +38,83 @@ echo "Home: $HOME"
 # Ensure home directory exists
 mkdir -p "$HOME"
 
+# Detect and set up Nix environment
+echo -e "${GREEN}Detecting Nix installation...${NC}"
+
+# Common Nix locations in different containers
+NIX_LOCATIONS=(
+    "/usr/bin/nix"                          # nixpkgs/nix
+    "/root/.nix-profile/bin/nix"            # nixos/nix (as root)
+    "$HOME/.nix-profile/bin/nix"            # xtruder/nix-devcontainer, user installs
+    "/nix/var/nix/profiles/default/bin/nix" # system-wide install
+    "/home/nixuser/.nix-profile/bin/nix"    # custom images
+    "/home/code/.nix-profile/bin/nix"       # xtruder specific
+)
+
+# Find nix
+NIX_FOUND=""
+for nix_path in "${NIX_LOCATIONS[@]}"; do
+    if [ -f "$nix_path" ]; then
+        NIX_FOUND="$nix_path"
+        echo "  Found nix at: $nix_path"
+        break
+    fi
+done
+
+# If not found in standard locations, search PATH
+if [ -z "$NIX_FOUND" ] && command -v nix &> /dev/null; then
+    NIX_FOUND=$(command -v nix)
+    echo "  Found nix in PATH: $NIX_FOUND"
+fi
+
+# If still not found, search filesystem
+if [ -z "$NIX_FOUND" ]; then
+    echo "  Searching for nix installation..."
+    NIX_FOUND=$(find / -name nix -type f -executable 2>/dev/null | grep -E "bin/nix$" | head -1)
+fi
+
+if [ -z "$NIX_FOUND" ]; then
+    echo -e "${RED}✗ Nix not found in container${NC}"
+    echo ""
+    echo "This container doesn't have Nix installed."
+    echo "Please use one of these container images:"
+    echo "  • nixos/nix:latest (recommended)"
+    echo "  • nixpkgs/nix-flakes:latest"
+    echo "  • xtruder/nix-devcontainer:latest"
+    echo ""
+    echo "Or build a custom image with Nix included."
+    exit 1
+fi
+
+# Set up PATH
+export PATH="$(dirname "$NIX_FOUND"):$PATH"
+
+# Source appropriate Nix profiles
+if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix.sh ]; then
+    . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
+elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh
+elif [ -f /etc/profile.d/nix.sh ]; then
+    . /etc/profile.d/nix.sh
+fi
+
+# Verify nix works
+if ! nix --version &> /dev/null; then
+    echo -e "${RED}✗ Nix found but not working properly${NC}"
+    echo "  Nix location: $NIX_FOUND"
+    echo "  PATH: $PATH"
+    echo "  Try running: $(dirname "$NIX_FOUND")/nix --version"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Nix is available: $(nix --version)${NC}"
+
+# Enable flakes
+mkdir -p "$HOME/.config/nix"
+if ! grep -q "experimental-features" "$HOME/.config/nix/nix.conf" 2>/dev/null; then
+    echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
+fi
+
 # Clone the repository to a temporary location
 TEMP_DIR=$(mktemp -d)
 echo -e "${GREEN}Cloning configuration repository...${NC}"
