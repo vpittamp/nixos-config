@@ -78,6 +78,7 @@
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
+              home.sessionVariables.CONTAINER_PROFILE = "development";
             }
           ];
         };

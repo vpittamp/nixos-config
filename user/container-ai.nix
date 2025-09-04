@@ -7,8 +7,7 @@
     ./container-minimal.nix
   ];
   
-  # Override package profile to include development tools
-  home.sessionVariables.CONTAINER_PROFILE = lib.mkForce "development";
+  # Package profile is set to development (inherited from container-minimal.nix)
   
   # Install AI assistant CLI tools that are available in nixpkgs
   home.packages = with pkgs; [
@@ -26,22 +25,15 @@
     httpie         # HTTP client for API testing
   ];
   
-  # Shell aliases for AI tools
-  programs.bash.shellAliases = lib.mkForce (
-    config.programs.bash.shellAliases // {
-      ai = "aider";
-      # Quick API test commands
-      api = "http";
-      jsonpp = "jq '.'";
-    }
-  );
-  
-  # Environment variables for AI tools
-  home.sessionVariables = {
-    # Set default editor for AI tools
-    EDITOR = "nvim";
-    
-    # AI tool configurations can be added here
-    # OPENAI_API_KEY would be set at runtime or via secrets management
+  # Additional shell aliases for AI tools
+  programs.bash.shellAliases = {
+    ai = "aider";
+    # Quick API test commands
+    api = "http";
+    jsonpp = "jq '.'";
   };
+  
+  # Note: EDITOR is already set to nvim in container-minimal.nix
+  # Additional environment variables for AI tools can be added here
+  # Example: OPENAI_API_KEY would be set at runtime or via secrets management
 }
