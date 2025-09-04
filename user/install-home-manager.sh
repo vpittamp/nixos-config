@@ -54,23 +54,29 @@ if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profil
     [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile.pre-hm-backup"
 fi
 
-# Install home-manager
-nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
-nix-channel --update
-
-# Install home-manager command with backup flag
-nix-shell '<home-manager>' -A install -- -b backup 2>/dev/null || {
-    # Alternative installation method
-    nix run home-manager/master -- init --switch -b backup
-}
+# Check if home-manager is already installed
+if command -v home-manager &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Home-manager already installed"
+else
+    # Install home-manager
+    nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
+    nix-channel --update
+    
+    # Install home-manager command with backup flag
+    nix-shell '<home-manager>' -A install -- -b backup 2>/dev/null || {
+        echo -e "${YELLOW}⚠${NC} Initial install method failed, trying alternative..."
+        nix run home-manager/master -- init --switch -b backup
+    }
+fi
 
 echo -e "${GREEN}Fetching configuration from GitHub...${NC}"
 
 # Clone the configuration (using your repo)
 REPO_URL="https://github.com/vpittamp/nixos-config.git"
 BRANCH="container-ssh"
-TEMP_DIR="/tmp/nixos-config-$$"
+TEMP_DIR="$HOME/.cache/nixos-config-$$"
 
+mkdir -p "$(dirname "$TEMP_DIR")"
 git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$TEMP_DIR" 2>/dev/null || {
     echo -e "${YELLOW}Using curl fallback...${NC}"
     mkdir -p "$TEMP_DIR"
@@ -85,8 +91,14 @@ cat > "$HOME/.config/home-manager/home.nix" << EOF
 { config, pkgs, lib, ... }:
 
 let
-  # Import user packages from the repo
-  userPackages = import $TEMP_DIR/user/packages.nix { inherit pkgs lib; };
+  # Fetch configuration from GitHub
+  nixosConfig = builtins.fetchGit {
+    url = "https://github.com/vpittamp/nixos-config.git";
+    ref = "container-ssh";
+  };
+  
+  # Import user packages from the fetched repo
+  userPackages = import "\${nixosConfig}/user/packages.nix" { inherit pkgs lib; };
   
   # For containers, use minimal or essential profile
   packageProfile = if (builtins.getEnv "CONTAINER_PROFILE") == "minimal" 
