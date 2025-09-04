@@ -307,6 +307,9 @@ in
   programs.fzf = {
     enable = true;
     enableBashIntegration = true;
+    tmux = {
+      enableShellIntegration = true;  # Required for sesh tmux integration
+    };
     defaultOptions = [
       "--height 40%"
       "--layout=reverse"
