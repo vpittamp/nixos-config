@@ -42,34 +42,8 @@ mkdir -p "$HOME"
 if ! command -v nix &> /dev/null; then
     echo -e "${YELLOW}Nix not found. Installing Nix...${NC}"
     
-    # Check if we can use sudo (test for restricted container)
-    if sudo -n true 2>&1 | grep -q "no new privileges"; then
-        echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
-        echo -e "${RED}     Security Restriction Detected${NC}"
-        echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo "This container has security policies that prevent Nix installation."
-        echo "This is common in Kubernetes pods with strict security contexts."
-        echo ""
-        echo "For solutions, run:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
-        echo ""
-        echo "Or use a container image with Nix pre-installed:"
-        echo "  • nixos/nix:latest"
-        echo "  • xtruder/nix-devcontainer:latest"
-        echo ""
-        exit 1
-    fi
-    
-    # Try to install Nix
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm 2>/dev/null || {
-        echo -e "${RED}Failed to install Nix automatically.${NC}"
-        echo ""
-        echo "This might be due to container restrictions."
-        echo "For help, run:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
-        exit 1
-    }
+    # Install Nix using the Determinate Systems installer (works better in containers)
+    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm
     
     # Source nix
     if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
@@ -80,9 +54,8 @@ if ! command -v nix &> /dev/null; then
     
     # Check again
     if ! command -v nix &> /dev/null; then
-        echo -e "${RED}Failed to install Nix.${NC}"
-        echo "For restricted containers, see:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
+        echo -e "${RED}Failed to install Nix. Please install Nix manually first.${NC}"
+        echo "Visit: https://nixos.org/download.html"
         exit 1
     fi
     echo -e "${GREEN}✓ Nix installed successfully${NC}"
