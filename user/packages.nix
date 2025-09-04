@@ -6,7 +6,7 @@
 let
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
-    vim
+    # vim is managed by programs.vim in home-manager
     # neovim is managed by programs.neovim in home-manager
     # vscode is provided at system level via wrapper
   ];
@@ -108,7 +108,7 @@ in {
   
   # Common package sets
   essential = terminalTools ++ shellTools ++ [
-    pkgs.vim
+    # vim handled by programs.vim
     pkgs.git-lfs
     pkgs.tldr
   ];
@@ -123,7 +123,7 @@ in {
   
   # Minimal for testing
   minimal = with pkgs; [
-    vim
+    # vim handled by programs.vim
     tmux
     git
     curl

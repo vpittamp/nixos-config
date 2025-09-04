@@ -174,18 +174,18 @@ in
     '';
   };
   
-  # Vim configuration
+  # Vim configuration - simplified to avoid conflicts
   programs.vim = {
     enable = true;
-    settings = {
-      number = true;
-      relativenumber = true;
-      expandtab = true;
-      shiftwidth = 2;
-      tabstop = 2;
-    };
-    
+    plugins = []; # No plugins to avoid permission issues
     extraConfig = ''
+      " Basic settings
+      set number
+      set relativenumber
+      set expandtab
+      set shiftwidth=2
+      set tabstop=2
+      
       " Enable syntax highlighting
       syntax enable
       
@@ -203,10 +203,6 @@ in
       
       " Better colors for dark terminals
       set background=dark
-      
-      " Persistent undo
-      set undofile
-      set undodir=~/.vim/undo
       
       " Status line always visible
       set laststatus=2
