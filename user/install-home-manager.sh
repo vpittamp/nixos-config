@@ -92,7 +92,7 @@ fi
 
 echo -e "${GREEN}Installing user packages configuration...${NC}"
 
-# Create a minimal home.nix that imports only user packages
+# Create a home.nix that imports the complete container configuration
 REPO_URL="https://github.com/vpittamp/nixos-config"
 BRANCH="container-ssh"
 
@@ -101,47 +101,17 @@ cat > "$HOME/.config/home-manager/home.nix" << EOF
 
 let
   # Fetch configuration from GitHub 
-  # Using fetchTarball without sha256 to avoid hash mismatch issues
-  # The tarball will be cached after first download
   nixosConfig = builtins.fetchTarball {
     url = "$REPO_URL/archive/$BRANCH.tar.gz";
   };
-  
-  # Import user packages from the fetched repo
-  userPackages = import "\${nixosConfig}/user/packages.nix" { inherit pkgs lib; };
-  
-  # For containers, use minimal or essential profile
-  packageProfile = if (builtins.getEnv "CONTAINER_PROFILE") == "minimal" 
-    then userPackages.minimal
-    else userPackages.essential;
 in
 {
-  # Basic home-manager configuration
-  home.username = "$USER";
-  home.homeDirectory = "$HOME";
-  home.stateVersion = "24.05";
+  # Import the complete container home configuration
+  imports = [ "\${nixosConfig}/user/container-home.nix" ];
   
-  # Install user packages (safe for containers)
-  home.packages = packageProfile;
-  
-  # Basic program configurations
-  programs.home-manager.enable = true;
-  programs.git.enable = true;
-  programs.bash.enable = true;
-  
-  # Basic bash configuration
-  programs.bash = {
-    enableCompletion = true;
-    sessionVariables = {
-      EDITOR = "vim";
-    };
-  };
-  
-  # Enable direnv for better development experience
-  programs.direnv = {
-    enable = true;
-    nix-direnv.enable = true;
-  };
+  # Override username and home directory to use current values
+  home.username = lib.mkForce "$USER";
+  home.homeDirectory = lib.mkForce "$HOME";
 }
 EOF
 
