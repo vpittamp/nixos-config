@@ -7,9 +7,13 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    npm-package = {
+      url = "github:serokell/nix-npm-buildpackage";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }: 
+  outputs = { self, nixpkgs, home-manager, npm-package, ... }: 
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -75,11 +79,20 @@
           inherit pkgs;
           modules = [
             ./container-minimal.nix
-            ./ai-assistants-container.nix
+            ../home-modules/ai-assistants/claude-code.nix
+            ../home-modules/ai-assistants/codex.nix
+            ../home-modules/ai-assistants/gemini-cli.nix
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
               home.sessionVariables.CONTAINER_PROFILE = "development";
+              
+              # Pass inputs to modules that need them
+              _module.args = { 
+                inputs = { 
+                  inherit npm-package;
+                };
+              };
             }
           ];
         };
