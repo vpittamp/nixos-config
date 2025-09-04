@@ -49,6 +49,15 @@ git clone -b container-ssh --depth 1 https://github.com/vpittamp/nixos-config.gi
 # Navigate to the user directory
 cd "$TEMP_DIR/user"
 
+# Backup existing shell files if they exist
+if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
+    echo -e "${YELLOW}Backing up existing shell configuration files...${NC}"
+    BACKUP_SUFFIX=".backup-$(date +%s)"
+    [ -f "$HOME/.bashrc" ] && mv "$HOME/.bashrc" "$HOME/.bashrc${BACKUP_SUFFIX}"
+    [ -f "$HOME/.profile" ] && mv "$HOME/.profile" "$HOME/.profile${BACKUP_SUFFIX}"
+    [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile${BACKUP_SUFFIX}"
+fi
+
 # Build and activate the configuration
 echo -e "${GREEN}Building configuration...${NC}"
 nix run ".#homeConfigurations.container-${PROFILE}.activationPackage" \
