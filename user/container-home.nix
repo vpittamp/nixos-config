@@ -235,6 +235,7 @@ in
   # Neovim configuration - better than vim, no conflicts
   programs.neovim = {
     enable = true;
+    package = pkgs.neovim-unwrapped;  # Use unwrapped neovim to avoid plugin dependencies
     viAlias = true;    # vim command runs neovim
     vimAlias = true;   # vi command runs neovim
     defaultEditor = true;
