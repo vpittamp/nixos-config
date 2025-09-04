@@ -98,12 +98,16 @@ REPO_URL="https://github.com/vpittamp/nixos-config"
 BRANCH="container-ssh"
 TARBALL_URL="$REPO_URL/archive/$BRANCH.tar.gz"
 
-# Calculate sha256 for the tarball
-SHA256=$(nix-prefetch-url --unpack "$TARBALL_URL" 2>/dev/null || \
-         curl -sL "$TARBALL_URL" | nix hash file --base32 --type sha256 /dev/stdin)
+# Calculate sha256 for the tarball - force fresh download to avoid cache issues
+TEMP_TAR="/tmp/nixos-config-$$.tar.gz"
+curl -sL "$TARBALL_URL" -o "$TEMP_TAR"
 
-if [ -z "$SHA256" ]; then
-    echo -e "${RED}✗${NC} Failed to get configuration hash"
+# Use nix-prefetch-url with the local file to get the correct unpacked hash
+SHA256=$(nix-prefetch-url --unpack "file://$TEMP_TAR" 2>&1 | tail -1)
+rm -f "$TEMP_TAR"
+
+if [ -z "$SHA256" ] || echo "$SHA256" | grep -q "error"; then
+    echo -e "${RED}✗${NC} Failed to calculate hash"
     exit 1
 fi
 
