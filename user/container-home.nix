@@ -61,8 +61,8 @@ in
     enableCompletion = true;
     
     sessionVariables = {
-      EDITOR = "nvim";
-      VISUAL = "nvim";
+      # Don't set EDITOR here - it causes home-manager to pull in neovim
+      # We'll set it in bashrc after neovim is installed
       PAGER = "less";
       LESS = "-R";
     };
@@ -97,6 +97,12 @@ in
     };
     
     initExtra = ''
+      # Set EDITOR after neovim is available (to avoid home-manager pulling it in)
+      if command -v nvim >/dev/null 2>&1; then
+        export EDITOR="nvim"
+        export VISUAL="nvim"
+      fi
+      
       # Better history
       export HISTCONTROL=ignoredups:erasedups
       export HISTSIZE=10000
