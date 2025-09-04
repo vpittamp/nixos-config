@@ -238,8 +238,8 @@ in
   
   # Neovim - installed as package, not via programs.neovim to avoid plugin issues
   # The programs.neovim module tries to build vim plugins even when empty
-  # So we install neovim directly and configure it via init files
-  home.packages = [ pkgs.neovim ];
+  # So we install neovim-unwrapped directly (no wrappers, no plugins)
+  home.packages = [ pkgs.neovim-unwrapped ];
   
   # Neovim aliases are already in bash.shellAliases above
   
