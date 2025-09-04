@@ -112,6 +112,8 @@ in {
     # vim handled by programs.vim
     pkgs.git-lfs
     pkgs.tldr
+    pkgs.yazi    # Terminal file manager
+    pkgs.yarn    # JavaScript package manager
   ];
   
   development = terminalTools ++ shellTools ++ editors ++ 
