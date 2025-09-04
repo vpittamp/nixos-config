@@ -144,16 +144,33 @@ in
     terminal = "screen-256color";
     historyLimit = 10000;
     keyMode = "vi";
+    mouse = true;
+    prefix = "C-a";
+    baseIndex = 1;
+    escapeTime = 0;
+    
+    # Tmux plugins from nixpkgs
+    plugins = with pkgs.tmuxPlugins; [
+      sensible
+      yank
+      mode-indicator
+      {
+        plugin = resurrect;
+        extraConfig = "set -g @resurrect-strategy-nvim 'session'";
+      }
+      {
+        plugin = continuum;
+        extraConfig = ''
+          set -g @continuum-restore 'on'
+          set -g @continuum-save-interval '60' # minutes
+        '';
+      }
+    ];
     
     extraConfig = ''
-      # Better prefix key
-      unbind C-b
-      set -g prefix C-a
-      bind C-a send-prefix
-      
       # Split panes with | and -
-      bind | split-window -h
-      bind - split-window -v
+      bind | split-window -h -c "#{pane_current_path}"
+      bind - split-window -v -c "#{pane_current_path}"
       
       # Vim-style pane navigation
       bind h select-pane -L
@@ -161,17 +178,58 @@ in
       bind k select-pane -U
       bind l select-pane -R
       
-      # Enable mouse
-      set -g mouse on
+      # Resize panes with HJKL
+      bind -r H resize-pane -L 5
+      bind -r J resize-pane -D 5
+      bind -r K resize-pane -U 5
+      bind -r L resize-pane -R 5
       
-      # Status bar
+      # Status bar styling (Catppuccin Mocha theme)
       set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
-      set -g status-left '#[fg=#89b4fa,bold] #S '
-      set -g status-right '#[fg=#f9e2af] %H:%M '
+      set -g status-left '#[fg=#89b4fa,bold] #S #[fg=#cdd6f4]| '
+      set -g status-right '#{tmux_mode_indicator} #[fg=#f9e2af]%H:%M '
+      set -g status-left-length 30
+      
+      # Window status
+      setw -g window-status-format '#[fg=#585b70] #I:#W '
+      setw -g window-status-current-format '#[fg=#89b4fa,bold] #I:#W '
       
       # Active pane border
       set -g pane-active-border-style 'fg=#89b4fa'
+      set -g pane-border-style 'fg=#313244'
+      
+      # Copy mode
+      bind Enter copy-mode
+      bind -T copy-mode-vi v send -X begin-selection
+      bind -T copy-mode-vi y send -X copy-selection-and-cancel
+      
+      # Reload config
+      bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
     '';
+  };
+  
+  # Sesh - Smart session manager for tmux
+  programs.sesh = {
+    enable = true;
+    enableAlias = true;  # Enable 's' alias
+    enableTmuxIntegration = true;
+    icons = true;
+    
+    settings = {
+      default_session = {
+        name = "main";
+        path = "~";
+        startup_command = "nvim";
+      };
+      
+      # Configure startup windows
+      startup_scripts = [
+        {
+          session_name = "config";
+          script_path = "~/.config";
+        }
+      ];
+    };
   };
   
   # Neovim configuration - better than vim, no conflicts
@@ -180,7 +238,30 @@ in
     viAlias = true;    # vim command runs neovim
     vimAlias = true;   # vi command runs neovim
     defaultEditor = true;
-    plugins = []; # Start with no plugins to avoid permission issues
+    
+    # Vim plugins from nixpkgs
+    plugins = with pkgs.vimPlugins; [
+      # Claude Code integration
+      claudecode-nvim
+      
+      # Essential plugins for better experience
+      vim-sensible
+      vim-surround
+      vim-commentary
+      vim-fugitive
+      
+      # Language support
+      vim-nix
+      
+      # UI improvements
+      {
+        plugin = lightline-vim;
+        config = ''
+          let g:lightline = {'colorscheme': 'jellybeans'}
+        '';
+      }
+    ];
+    
     extraConfig = ''
       " Basic settings
       set number

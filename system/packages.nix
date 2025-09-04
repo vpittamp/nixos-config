@@ -15,69 +15,9 @@ let
     inherit (pkgs.stdenv.hostPlatform) system;
   };
   
-  # Sesh session manager - custom binary
-  sesh = pkgs.stdenv.mkDerivation rec {
-    pname = "sesh";
-    version = "2.6.0";
-    src = pkgs.fetchurl {
-      url = "https://github.com/joshmedeski/sesh/releases/download/v${version}/sesh_Linux_x86_64.tar.gz";
-      sha256 = "1i88yvy0r20ndkhimbcpxvkfndq8gfx8r83jb2axjankwcyriwis";
-    };
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    unpackPhase = "tar -xzf $src";
-    installPhase = ''
-      mkdir -p $out/bin
-      cp sesh $out/bin/sesh
-      chmod +x $out/bin/sesh
-      wrapProgram $out/bin/sesh \
-        --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.tmux pkgs.zoxide pkgs.fzf ]} \
-        --set-default SESH_DEFAULT_SESSION "main" \
-        --set-default SESH_DEFAULT_COMMAND "tmux"
-    '';
-  };
-
-  # Custom tmux plugins that need build operations
-  tmux-mode-indicator = pkgs.tmuxPlugins.mkTmuxPlugin {
-    pluginName = "tmux-mode-indicator";
-    version = "unstable-2024-01-01";
-    rtpFilePath = "mode_indicator.tmux";
-    src = pkgs.fetchFromGitHub {
-      owner = "MunifTanjim";
-      repo = "tmux-mode-indicator";
-      rev = "11520829210a34dc9c7e5be9dead152eaf3a4423";
-      sha256 = "sha256-hlhBKC6UzkpUrCanJehs2FxK5SoYBoiGiioXdx6trC4=";
-    };
-  };
-
-  tmux-sessionx = pkgs.tmuxPlugins.mkTmuxPlugin {
-    pluginName = "tmux-sessionx";
-    version = "unstable-2024-12-01";
-    rtpFilePath = "sessionx.tmux";
-    src = pkgs.fetchFromGitHub {
-      owner = "omerxx";
-      repo = "tmux-sessionx";
-      rev = "main";
-      sha256 = "0yfxinx6bdddila3svszpky9776afjprn26c8agj6sqh8glhiz3b";
-    };
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postInstall = ''
-      substituteInPlace $out/share/tmux-plugins/tmux-sessionx/sessionx.tmux \
-        --replace "fzf-tmux" "${pkgs.fzf}/bin/fzf-tmux" \
-        --replace "fzf " "${pkgs.fzf}/bin/fzf "
-    '';
-  };
-
-  # Custom vim plugins that need build operations
-  claudecode-nvim = pkgs.vimUtils.buildVimPlugin {
-    pname = "claudecode-nvim";
-    version = "unstable-2024-01-01";
-    src = pkgs.fetchFromGitHub {
-      owner = "deanrumsby";
-      repo = "claudecode.nvim";
-      rev = "main";
-      sha256 = "sha256-d+eZn2j3xGuiY0QK4Dh5UIrczPLDhwSqQ5uD5fYrqhE=";
-    };
-  };
+  # Plugins are now managed through home-manager:
+  # - Tmux plugins via programs.tmux.plugins
+  # - Vim plugins via programs.neovim.plugins
 
   # System utilities and tools
   systemTools = with pkgs; [
@@ -144,17 +84,11 @@ in {
     vscode-cli
     azure-cli-bin
     claude-manager
-    sesh
   ];
   
-  tmuxPlugins = [
-    tmux-mode-indicator
-    tmux-sessionx
-  ];
-  
-  vimPlugins = [
-    claudecode-nvim
-  ];
+  # Plugins moved to home-manager
+  tmuxPlugins = [];
+  vimPlugins = [];
   
   system = systemTools;
   development = developmentTools;
@@ -166,13 +100,11 @@ in {
     vscode-cli
     azure-cli-bin
     claude-manager
-    sesh
   ];
   
   # Essential system packages only
   essential = systemTools ++ [
     vscode-cli
-    sesh
     claude-manager
   ] ++ (with pkgs; [
     git

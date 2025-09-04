@@ -14,6 +14,7 @@ let
   # Terminal tools and utilities
   terminalTools = with pkgs; [
     tmux
+    # sesh is managed by programs.sesh in home-manager
     zoxide
     fzf
     ripgrep
