@@ -74,7 +74,8 @@
         "container-ai" = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = [
-            ./container-ai.nix
+            ./container-minimal.nix
+            ./ai-assistants-container.nix
             {
               home.username = lib.mkDefault "code";
               home.homeDirectory = lib.mkDefault "/home/code";
