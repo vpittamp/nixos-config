@@ -36,10 +36,31 @@
         "type": "github"
       }
     },
+    "npm-package": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1741180162,
+        "narHash": "sha256-4rlTM1eFDuR8Hz9WDEZSa3AsQaiSD2QtDCjYOjKi/ow=",
+        "owner": "netbrain",
+        "repo": "npm-package",
+        "rev": "1497926028ff0a253e4308459711f41a560a5272",
+        "type": "github"
+      },
+      "original": {
+        "owner": "netbrain",
+        "repo": "npm-package",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "npm-package": "npm-package"
       }
     }
   },
