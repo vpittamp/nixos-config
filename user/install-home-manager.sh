@@ -46,14 +46,22 @@ EOF
 
 echo -e "${GREEN}Setting up Home Manager...${NC}"
 
+# Backup existing shell files BEFORE installing home-manager
+if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
+    echo -e "${YELLOW}Backing up existing shell configuration files...${NC}"
+    [ -f "$HOME/.bashrc" ] && mv "$HOME/.bashrc" "$HOME/.bashrc.pre-hm-backup"
+    [ -f "$HOME/.profile" ] && mv "$HOME/.profile" "$HOME/.profile.pre-hm-backup"
+    [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile.pre-hm-backup"
+fi
+
 # Install home-manager
 nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
 nix-channel --update
 
-# Install home-manager command
-nix-shell '<home-manager>' -A install 2>/dev/null || {
+# Install home-manager command with backup flag
+nix-shell '<home-manager>' -A install -- -b backup 2>/dev/null || {
     # Alternative installation method
-    nix run home-manager/master -- init --switch
+    nix run home-manager/master -- init --switch -b backup
 }
 
 echo -e "${GREEN}Fetching configuration from GitHub...${NC}"
@@ -121,16 +129,8 @@ echo -e "${GREEN}Applying configuration...${NC}"
 export NIXOS_CONTAINER=1
 export CONTAINER_PROFILE="${CONTAINER_PROFILE:-essential}"
 
-# Backup existing files if they exist
-if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
-    echo -e "${YELLOW}Backing up existing shell configuration files...${NC}"
-    [ -f "$HOME/.bashrc" ] && mv "$HOME/.bashrc" "$HOME/.bashrc.backup"
-    [ -f "$HOME/.profile" ] && mv "$HOME/.profile" "$HOME/.profile.backup"
-    [ -f "$HOME/.bash_profile" ] && mv "$HOME/.bash_profile" "$HOME/.bash_profile.backup"
-fi
-
-# Apply the configuration
-home-manager switch
+# Apply the configuration with backup flag for safety
+home-manager switch -b backup
 
 # Clean up
 rm -rf "$TEMP_DIR"
