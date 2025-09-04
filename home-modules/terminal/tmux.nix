@@ -1,39 +1,6 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Custom tmux plugins not in nixpkgs
-  tmux-mode-indicator = pkgs.tmuxPlugins.mkTmuxPlugin {
-    pluginName = "tmux-mode-indicator";
-    version = "unstable-2024-01-01";
-    rtpFilePath = "mode_indicator.tmux";
-    src = pkgs.fetchFromGitHub {
-      owner = "MunifTanjim";
-      repo = "tmux-mode-indicator";
-      rev = "11520829210a34dc9c7e5be9dead152eaf3a4423";
-      sha256 = "sha256-hlhBKC6UzkpUrCanJehs2FxK5SoYBoiGiioXdx6trC4=";
-    };
-  };
-
-  # tmux-sessionx for session management with preview
-  tmux-sessionx = pkgs.tmuxPlugins.mkTmuxPlugin {
-    pluginName = "tmux-sessionx";
-    version = "unstable-2024-12-01";
-    rtpFilePath = "sessionx.tmux";
-    src = pkgs.fetchFromGitHub {
-      owner = "omerxx";
-      repo = "tmux-sessionx";
-      rev = "main";
-      sha256 = "0yfxinx6bdddila3svszpky9776afjprn26c8agj6sqh8glhiz3b";
-    };
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postInstall = ''
-      substituteInPlace $out/share/tmux-plugins/tmux-sessionx/sessionx.tmux \
-        --replace "fzf-tmux" "${pkgs.fzf}/bin/fzf-tmux" \
-        --replace "fzf " "${pkgs.fzf}/bin/fzf "
-    '';
-  };
-
-
   # Color scheme access
   colors = config.colorScheme;
 in
@@ -51,42 +18,9 @@ in
     plugins = with pkgs.tmuxPlugins; [
       sensible
       yank
-      # Try the nixpkgs version of tmux-which-key if it exists
-      # Otherwise we'll use a simpler menu alternative
-      {
-        plugin = tmux-mode-indicator;
-        extraConfig = ''
-          # Mode indicator configuration
-          set -g @mode_indicator_prefix_prompt ' WAIT '
-          set -g @mode_indicator_copy_prompt ' COPY '
-          set -g @mode_indicator_sync_prompt ' SYNC '
-          set -g @mode_indicator_empty_prompt ' TMUX '
-          
-          # Mode indicator styling
-          set -g @mode_indicator_prefix_mode_style "bg=${colors.red},fg=${colors.crust}"
-          set -g @mode_indicator_copy_mode_style "bg=${colors.yellow},fg=${colors.crust}"
-          set -g @mode_indicator_sync_mode_style "bg=${colors.blue},fg=${colors.crust}"
-          set -g @mode_indicator_empty_mode_style "bg=${colors.green},fg=${colors.crust}"
-        '';
-      }
-      {
-        plugin = tmux-sessionx;
-        extraConfig = ''
-          # Sessionx configuration
-          set -g @sessionx-bind 'o'  # Prefix + o to open sessionx
-          set -g @sessionx-x-path '${pkgs.coreutils}/bin'  # Path to coreutils
-          set -g @sessionx-custom-paths '/etc/nixos'  # Add Nix config directory
-          set -g @sessionx-custom-paths-subdirectories 'false'
-          set -g @sessionx-filter-current 'false'  # Show current session in list
-          set -g @sessionx-preview-location 'right'
-          set -g @sessionx-preview-ratio '55%'
-          set -g @sessionx-window-height '90%'
-          set -g @sessionx-window-width '75%'
-          set -g @sessionx-tmuxinator-mode 'off'
-          set -g @sessionx-tree-mode 'off'
-          set -g @sessionx-preview-enabled 'true'
-        '';
-      }
+      # Using only nixpkgs plugins to avoid build permission issues
+      # Custom plugins (tmux-mode-indicator, tmux-sessionx) should be 
+      # provided at system level if needed
       {
         plugin = resurrect;
         extraConfig = ''
@@ -101,6 +35,12 @@ in
           set -g @continuum-save-interval '15'
         '';
       }
+      # Additional safe plugins from nixpkgs
+      pain-control
+      prefix-highlight
+      better-mouse-mode
+      tmux-fzf
+      tmux-thumbs
     ];
     
     extraConfig = ''

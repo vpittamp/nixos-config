@@ -37,16 +37,14 @@
   home.homeDirectory = "/home/vpittamp";
   home.stateVersion = "25.05";
 
-  # Core packages - using overlay system
-  # Control package selection with NIXOS_PACKAGES environment variable:
-  #   - "" or unset: essential packages only (default)
-  #   - "full": all packages  
-  #   - "essential,kubernetes": essential + kubernetes tools
-  #   - "essential,development": essential + development tools
+  # User packages - safe for home-manager in any environment
+  # These packages are from nixpkgs and don't require special permissions
   home.packages = let
-    overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
+    userPackages = import ./user/packages.nix { inherit pkgs lib; };
+    packageConfig = import ./shared/package-lists.nix { inherit pkgs lib; };
   in
-    overlayPackages.allPackages;
+    # Use appropriate profile based on environment
+    packageConfig.getProfile.user;
 
   # Enable yazi (since it uses an option-based enable)
   modules.tools.yazi.enable = true;

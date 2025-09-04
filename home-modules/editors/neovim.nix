@@ -1,18 +1,4 @@
 { config, lib, pkgs, ... }:
-
-let
-  # Custom plugin for claudecode.nvim (not in nixpkgs yet)
-  claudecode-nvim = pkgs.vimUtils.buildVimPlugin {
-    pname = "claudecode-nvim";
-    version = "unstable-2024-12-01";
-    src = pkgs.fetchFromGitHub {
-      owner = "coder";
-      repo = "claudecode.nvim";
-      rev = "main";
-      sha256 = "sha256-b4jCKIqowkVuWhI9jxthluZISBOnIc8eOIgkw5++HRY=";
-    };
-  };
-in
 {
   programs.neovim = {
     enable = true;
@@ -91,7 +77,8 @@ in
       conform-nvim
       
       # AI assistance
-      claudecode-nvim  # Custom plugin defined above
+      # Note: Custom plugins (claudecode-nvim) are provided at system level
+      # to avoid build permission issues in containers
       # avante-nvim  # Commented out to save space (65MB + dependencies)
       
       # Avante.nvim dependencies
