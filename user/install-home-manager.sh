@@ -22,10 +22,31 @@ fi
 
 # Check if nix is available
 if ! command -v nix &> /dev/null; then
-    echo -e "${RED}✗${NC} Nix is not installed or not in PATH"
-    exit 1
+    echo -e "${YELLOW}⚠${NC} Nix is not installed, installing now..."
+    
+    # Try single-user installation (works in containers)
+    if sh <(curl -L https://nixos.org/nix/install) --no-daemon 2>&1 | grep -q "Installation finished"; then
+        echo -e "${GREEN}✓${NC} Nix installed successfully"
+        
+        # Source nix profile
+        if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+            . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+        fi
+        
+        # Verify installation
+        if ! command -v nix &> /dev/null; then
+            echo -e "${RED}✗${NC} Nix installation succeeded but nix command not found"
+            echo "Please run: . $HOME/.nix-profile/etc/profile.d/nix.sh"
+            exit 1
+        fi
+    else
+        echo -e "${RED}✗${NC} Failed to install Nix"
+        echo "Please install Nix manually: https://nixos.org/download.html"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✓${NC} Nix is available"
 fi
-echo -e "${GREEN}✓${NC} Nix is available"
 
 # Set up environment variables
 export USER="${USER:-$(whoami)}"
