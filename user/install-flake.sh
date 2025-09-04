@@ -62,10 +62,12 @@ export HOME="${HOME:-/home/$USER}"
 PROFILE="${1:-essential}"
 echo -e "${GREEN}Using profile: $PROFILE${NC}"
 
-# GitHub repository with flake
-FLAKE_URL="github:vpittamp/nixos-config?dir=user#${PROFILE}"
+# GitHub repository with flake - use the actual repo path
+FLAKE_REF="github:vpittamp/nixos-config/container-ssh?dir=user"
+FLAKE_URL="${FLAKE_REF}#homeConfigurations.container-${PROFILE}.activationPackage"
 
 echo -e "${GREEN}Installing Home Manager configuration...${NC}"
+echo "Using flake: ${FLAKE_URL}"
 
 # Backup existing shell files
 if [ -f "$HOME/.bashrc" ] || [ -f "$HOME/.profile" ] || [ -f "$HOME/.bash_profile" ]; then
@@ -116,6 +118,7 @@ echo "Available profiles:"
 echo "  - minimal: Basic tools only"
 echo "  - essential: Common development tools (default)"
 echo "  - development: Full development environment"
+echo "  - ai: AI assistants (claude-code, etc)"
 echo ""
 echo "To install a different profile, run:"
 echo "  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-flake.sh | bash -s <profile>"
@@ -124,4 +127,4 @@ echo "Or if you have the script locally:"
 echo "  ./install-flake.sh <profile>"
 echo ""
 echo "To update your configuration later:"
-echo "  nix run github:vpittamp/nixos-config?dir=user#<profile>"
+echo "  nix run github:vpittamp/nixos-config/container-ssh?dir=user#homeConfigurations.container-<profile>.activationPackage"
