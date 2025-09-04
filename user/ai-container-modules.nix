@@ -5,25 +5,15 @@
 {
   # Allow unfree packages (claude-code is proprietary)
   nixpkgs.config.allowUnfree = true;
-  # Claude Code - Available in nixpkgs
+  
+  # Claude Code - Official Anthropic CLI (only package we're installing)
   home.packages = with pkgs; [
     claude-code          # Official Claude CLI
-    aider-chat          # AI pair programming (supports Claude, GPT-4, etc.)
     
-    # Development tools for AI
-    python311
-    python311Packages.pip
+    # Node.js for potential MCP servers
     nodejs_22
-    yarn
     
-    # Supporting tools
-    gh                  # GitHub CLI
-    jq                  # JSON processor
-    # yq-go removed - conflicts with python yq from user packages
-    httpie             # HTTP client
-    direnv             # Environment management
-    
-    # For MCP servers (if needed)
+    # For MCP servers that may need browser
     chromium           # Browser for puppeteer
   ];
   
@@ -58,18 +48,8 @@
     claude = "claude-code";
     cc = "claude-code";
     
-    # Aider with different models
-    ai = "aider";
-    ai-claude = "aider --model claude-3-opus-20240229";
-    ai-sonnet = "aider --model claude-3-5-sonnet-20240620";
-    ai-gpt4 = "aider --model gpt-4";
-    ai-gpt4o = "aider --model gpt-4o";
-    
-    # Helper commands
-    ai-keys = "echo 'Set: export ANTHROPIC_API_KEY=... export OPENAI_API_KEY=...'";
-    
-    # YAML processing with Python yq
-    yamlpp = "yq '.'";
+    # Helper command to set API key
+    claude-key = "echo 'Set: export ANTHROPIC_API_KEY=your-key-here'";
   };
   
   # Environment variables
@@ -78,15 +58,20 @@
     EDITOR = lib.mkDefault "nvim";
   };
   
-  # Setup script for Python AI libraries
-  home.file.".config/ai/setup.sh".text = ''
-    #!/usr/bin/env bash
-    echo "Installing AI Python libraries..."
-    pip install --user openai anthropic google-generativeai litellm langchain
-    echo "Done! Set your API keys:"
-    echo "  export ANTHROPIC_API_KEY='your-key'"
-    echo "  export OPENAI_API_KEY='your-key'"
-    echo "  export GOOGLE_API_KEY='your-key'"
+  # Documentation for Claude Code
+  home.file.".config/claude/README.md".text = ''
+    # Claude Code Configuration
+    
+    Claude Code is installed and ready to use.
+    
+    ## Setup
+    1. Set your API key: export ANTHROPIC_API_KEY="your-key-here"
+    2. Run: claude-code (or use alias: claude)
+    
+    ## Configuration
+    Settings are in ~/.config/claude/config.toml
+    
+    ## MCP Servers
+    Context7 MCP server is configured for documentation lookup.
   '';
-  home.file.".config/ai/setup.sh".executable = true;
 }
