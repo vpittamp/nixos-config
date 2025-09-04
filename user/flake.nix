@@ -8,7 +8,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     npm-package = {
-      url = "github:serokell/npm-package.nix";
+      url = "github:netbrain/npm-package";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
