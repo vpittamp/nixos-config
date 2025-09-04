@@ -73,6 +73,10 @@ in
       ".." = "cd ..";
       "..." = "cd ../..";
       
+      # Neovim aliases
+      vim = "nvim";
+      vi = "nvim";
+      
       # Use eza if available
       ls = "eza --icons=auto";
       l = "eza -l --icons=auto";
@@ -232,20 +236,15 @@ in
     };
   };
   
-  # Neovim configuration - better than vim, no conflicts
-  programs.neovim = {
-    enable = true;
-    package = pkgs.neovim-unwrapped;  # Use unwrapped neovim to avoid plugin dependencies
-    viAlias = true;    # vim command runs neovim
-    vimAlias = true;   # vi command runs neovim
-    defaultEditor = true;
-    
-    # No Nix-managed plugins - they require build permissions that fail in containers
-    # Instead, we use lazy.nvim to manage plugins at runtime
-    plugins = [];
-    
-    # Configure with lazy.nvim for plugin management
-    extraLuaConfig = ''
+  # Neovim - installed as package, not via programs.neovim to avoid plugin issues
+  # The programs.neovim module tries to build vim plugins even when empty
+  # So we install neovim directly and configure it via init files
+  home.packages = [ pkgs.neovim ];
+  
+  # Neovim aliases are already in bash.shellAliases above
+  
+  # Neovim configuration via init files
+  home.file.".config/nvim/init.lua".text = ''
       -- Bootstrap lazy.nvim plugin manager
       local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
       if not vim.loop.fs_stat(lazypath) then
@@ -291,47 +290,44 @@ in
           },
         },
       })
-    '';
-    
-    extraConfig = ''
-      " Basic settings
-      set number
-      set relativenumber
-      set expandtab
-      set shiftwidth=2
-      set tabstop=2
       
-      " Enable syntax highlighting
-      syntax enable
+      -- Basic settings
+      vim.opt.number = true
+      vim.opt.relativenumber = true
+      vim.opt.expandtab = true
+      vim.opt.shiftwidth = 2
+      vim.opt.tabstop = 2
       
-      " Better search
-      set ignorecase
-      set smartcase
-      set incsearch
-      set hlsearch
+      -- Enable syntax highlighting
+      vim.cmd('syntax enable')
       
-      " Show matching brackets
-      set showmatch
+      -- Better search
+      vim.opt.ignorecase = true
+      vim.opt.smartcase = true
+      vim.opt.incsearch = true
+      vim.opt.hlsearch = true
       
-      " Enable mouse
-      set mouse=a
+      -- Show matching brackets
+      vim.opt.showmatch = true
       
-      " Better colors for dark terminals
-      set background=dark
+      -- Enable mouse
+      vim.opt.mouse = 'a'
       
-      " Status line always visible
-      set laststatus=2
+      -- Better colors for dark terminals
+      vim.opt.background = 'dark'
       
-      " Leader key
-      let mapleader = " "
+      -- Status line always visible
+      vim.opt.laststatus = 2
       
-      " Quick save
-      nnoremap <leader>w :w<CR>
+      -- Leader key
+      vim.g.mapleader = ' '
       
-      " Quick quit
-      nnoremap <leader>q :q<CR>
-    '';
-  };
+      -- Quick save
+      vim.keymap.set('n', '<leader>w', ':w<CR>')
+      
+      -- Quick quit
+      vim.keymap.set('n', '<leader>q', ':q<CR>')
+  '';
   
   # Direnv for automatic environment loading
   programs.direnv = {
