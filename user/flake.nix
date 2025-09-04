@@ -1,0 +1,101 @@
+{
+  description = "Home Manager configuration for containers";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, home-manager, ... }: 
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      lib = nixpkgs.lib;
+    in {
+      homeConfigurations = {
+        # Default container configuration
+        container = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./container-minimal.nix
+            {
+              # Set defaults that can be overridden at activation time
+              home.username = lib.mkDefault "user";
+              home.homeDirectory = lib.mkDefault "/home/user";
+            }
+          ];
+        };
+
+        # Minimal profile
+        "container-minimal" = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./container-minimal.nix
+            {
+              home.username = lib.mkDefault "user";
+              home.homeDirectory = lib.mkDefault "/home/user";
+              # Force minimal profile
+              home.sessionVariables.CONTAINER_PROFILE = "minimal";
+            }
+          ];
+        };
+
+        # Essential profile (default)
+        "container-essential" = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./container-minimal.nix
+            {
+              home.username = lib.mkDefault "user";
+              home.homeDirectory = lib.mkDefault "/home/user";
+              home.sessionVariables.CONTAINER_PROFILE = "essential";
+            }
+          ];
+        };
+
+        # Development profile
+        "container-development" = home-manager.lib.homeManagerConfiguration {
+          inherit pkgs;
+          modules = [
+            ./container-minimal.nix
+            {
+              home.username = lib.mkDefault "user";
+              home.homeDirectory = lib.mkDefault "/home/user";
+              home.sessionVariables.CONTAINER_PROFILE = "development";
+            }
+          ];
+        };
+      };
+
+      # Provide a default package for easy installation
+      packages.${system} = {
+        default = self.homeConfigurations.container.activationPackage;
+        minimal = self.homeConfigurations."container-minimal".activationPackage;
+        essential = self.homeConfigurations."container-essential".activationPackage;
+        development = self.homeConfigurations."container-development".activationPackage;
+      };
+
+      # Apps for direct activation
+      apps.${system} = {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/activate";
+        };
+        minimal = {
+          type = "app";
+          program = "${self.packages.${system}.minimal}/activate";
+        };
+        essential = {
+          type = "app";
+          program = "${self.packages.${system}.essential}/activate";
+        };
+        development = {
+          type = "app";
+          program = "${self.packages.${system}.development}/activate";
+        };
+      };
+    };
+}
