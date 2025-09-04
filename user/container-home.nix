@@ -239,27 +239,8 @@ in
     vimAlias = true;   # vi command runs neovim
     defaultEditor = true;
     
-    # Vim plugins from nixpkgs
-    plugins = with pkgs.vimPlugins; [
-      # claudecode-nvim removed - causes permission errors in containers
-      
-      # Essential plugins for better experience
-      vim-sensible
-      vim-surround
-      vim-commentary
-      vim-fugitive
-      
-      # Language support
-      vim-nix
-      
-      # UI improvements
-      {
-        plugin = lightline-vim;
-        config = ''
-          let g:lightline = {'colorscheme': 'jellybeans'}
-        '';
-      }
-    ];
+    # No vim plugins - they all require permissions that fail in restricted containers
+    plugins = [];
     
     extraConfig = ''
       " Basic settings
