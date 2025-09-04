@@ -71,18 +71,22 @@ fi
 
 echo -e "${GREEN}Fetching configuration from GitHub...${NC}"
 
-# Clone the configuration (using your repo)
-REPO_URL="https://github.com/vpittamp/nixos-config.git"
+# Get SHA256 for deterministic fetching
+echo -e "${GREEN}Getting configuration hash...${NC}"
+REPO_URL="https://github.com/vpittamp/nixos-config"
 BRANCH="container-ssh"
-TEMP_DIR="$HOME/.cache/nixos-config-$$"
+TARBALL_URL="$REPO_URL/archive/$BRANCH.tar.gz"
 
-mkdir -p "$(dirname "$TEMP_DIR")"
-git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$TEMP_DIR" 2>/dev/null || {
-    echo -e "${YELLOW}Using curl fallback...${NC}"
-    mkdir -p "$TEMP_DIR"
-    cd "$TEMP_DIR"
-    curl -L "https://github.com/vpittamp/nixos-config/archive/$BRANCH.tar.gz" | tar xz --strip-components=1
-}
+# Calculate sha256 for the tarball
+SHA256=$(nix-prefetch-url --unpack "$TARBALL_URL" 2>/dev/null || \
+         curl -sL "$TARBALL_URL" | nix hash file --base32 --type sha256 /dev/stdin)
+
+if [ -z "$SHA256" ]; then
+    echo -e "${RED}✗${NC} Failed to get configuration hash"
+    exit 1
+fi
+
+echo -e "${GREEN}✓${NC} Configuration hash: $SHA256"
 
 echo -e "${GREEN}Installing user packages configuration...${NC}"
 
@@ -91,10 +95,10 @@ cat > "$HOME/.config/home-manager/home.nix" << EOF
 { config, pkgs, lib, ... }:
 
 let
-  # Fetch configuration from GitHub
-  nixosConfig = builtins.fetchGit {
-    url = "https://github.com/vpittamp/nixos-config.git";
-    ref = "container-ssh";
+  # Fetch configuration from GitHub with sha256 for pure evaluation
+  nixosConfig = builtins.fetchTarball {
+    url = "$TARBALL_URL";
+    sha256 = "$SHA256";
   };
   
   # Import user packages from the fetched repo
@@ -144,8 +148,10 @@ export CONTAINER_PROFILE="${CONTAINER_PROFILE:-essential}"
 # Apply the configuration with backup flag for safety
 home-manager switch -b backup
 
-# Clean up
-rm -rf "$TEMP_DIR"
+# Source the new configuration
+if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
 
 echo -e "${GREEN}✓ Installation complete!${NC}"
 echo ""
