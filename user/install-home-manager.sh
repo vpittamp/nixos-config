@@ -90,40 +90,21 @@ else
     }
 fi
 
-echo -e "${GREEN}Fetching configuration from GitHub...${NC}"
-
-# Get SHA256 for deterministic fetching
-echo -e "${GREEN}Getting configuration hash...${NC}"
-REPO_URL="https://github.com/vpittamp/nixos-config"
-BRANCH="container-ssh"
-TARBALL_URL="$REPO_URL/archive/$BRANCH.tar.gz"
-
-# Calculate sha256 for the tarball - force fresh download to avoid cache issues
-TEMP_TAR="/tmp/nixos-config-$$.tar.gz"
-curl -sL "$TARBALL_URL" -o "$TEMP_TAR"
-
-# Use nix-prefetch-url with the local file to get the correct unpacked hash
-SHA256=$(nix-prefetch-url --unpack "file://$TEMP_TAR" 2>&1 | tail -1)
-rm -f "$TEMP_TAR"
-
-if [ -z "$SHA256" ] || echo "$SHA256" | grep -q "error"; then
-    echo -e "${RED}✗${NC} Failed to calculate hash"
-    exit 1
-fi
-
-echo -e "${GREEN}✓${NC} Configuration hash: $SHA256"
-
 echo -e "${GREEN}Installing user packages configuration...${NC}"
 
 # Create a minimal home.nix that imports only user packages
+REPO_URL="https://github.com/vpittamp/nixos-config"
+BRANCH="container-ssh"
+
 cat > "$HOME/.config/home-manager/home.nix" << EOF
 { config, pkgs, lib, ... }:
 
 let
-  # Fetch configuration from GitHub with sha256 for pure evaluation
+  # Fetch configuration from GitHub 
+  # Using fetchTarball without sha256 to avoid hash mismatch issues
+  # The tarball will be cached after first download
   nixosConfig = builtins.fetchTarball {
-    url = "$TARBALL_URL";
-    sha256 = "$SHA256";
+    url = "$REPO_URL/archive/$BRANCH.tar.gz";
   };
   
   # Import user packages from the fetched repo
