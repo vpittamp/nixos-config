@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Simple container installation script for Home Manager configuration
-# This script can be run directly in containers or via curl
+# User-space installation script for Home Manager in restricted containers
+# This version works without root/sudo by using a user-space Nix installation
 
 set -e
 
@@ -10,8 +10,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Container Home Manager Installation${NC}"
-echo "===================================="
+echo -e "${GREEN}Container Home Manager Installation (User-space)${NC}"
+echo "=================================================="
 
 # Determine profile (default to essential)
 PROFILE="${1:-essential}"
@@ -31,68 +31,77 @@ esac
 # Set up environment
 export USER="${USER:-code}"
 export HOME="${HOME:-/home/$USER}"
+export NIX_USER_CONF_FILES="$HOME/.config/nix/nix.conf"
 
 echo "User: $USER"
 echo "Home: $HOME"
 
-# Ensure home directory exists
+# Ensure directories exist
 mkdir -p "$HOME"
+mkdir -p "$HOME/.config/nix"
 
 # Check if nix is installed
 if ! command -v nix &> /dev/null; then
-    echo -e "${YELLOW}Nix not found. Installing Nix...${NC}"
+    echo -e "${YELLOW}Nix not found. Installing user-space Nix...${NC}"
     
-    # Check if we can use sudo (test for restricted container)
-    if sudo -n true 2>&1 | grep -q "no new privileges"; then
-        echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
-        echo -e "${RED}     Security Restriction Detected${NC}"
-        echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
+    # Create a local directory for Nix
+    export NIX_ROOT="$HOME/.local/nix"
+    mkdir -p "$NIX_ROOT"
+    
+    # Try portable Nix installation
+    echo "Attempting portable Nix installation..."
+    
+    # Download and extract portable Nix
+    TEMP_NIX=$(mktemp -d)
+    cd "$TEMP_NIX"
+    
+    # Download static Nix binary
+    echo "Downloading Nix static binary..."
+    curl -L https://releases.nixos.org/nix/nix-2.18.1/nix-2.18.1-x86_64-linux.tar.xz | tar xJ
+    
+    # Set up paths
+    export PATH="$TEMP_NIX/nix-2.18.1-x86_64-linux/bin:$PATH"
+    
+    # Create basic Nix configuration
+    cat > "$HOME/.config/nix/nix.conf" << 'EOF'
+experimental-features = nix-command flakes
+sandbox = false
+build-users-group = 
+trusted-users = root
+allowed-users = *
+EOF
+    
+    # Initialize Nix store in user directory
+    export NIX_STORE_DIR="$HOME/.nix-store"
+    export NIX_STATE_DIR="$HOME/.nix-state"
+    export NIX_LOG_DIR="$HOME/.nix-log"
+    export NIX_CONF_DIR="$HOME/.config/nix"
+    
+    mkdir -p "$NIX_STORE_DIR" "$NIX_STATE_DIR" "$NIX_LOG_DIR"
+    
+    # Check if nix works
+    if nix --version &> /dev/null; then
+        echo -e "${GREEN}✓ Portable Nix setup successful${NC}"
+    else
+        echo -e "${RED}Cannot install Nix in this restricted container.${NC}"
         echo ""
-        echo "This container has security policies that prevent Nix installation."
-        echo "This is common in Kubernetes pods with strict security contexts."
+        echo "This container has security restrictions that prevent Nix installation."
+        echo "Please use a container image with Nix pre-installed:"
+        echo "  - nixos/nix:latest"
+        echo "  - xtruder/nix-devcontainer:latest"
         echo ""
-        echo "For solutions, run:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
-        echo ""
-        echo "Or use a container image with Nix pre-installed:"
-        echo "  • nixos/nix:latest"
-        echo "  • xtruder/nix-devcontainer:latest"
-        echo ""
+        echo "Or ask your administrator to:"
+        echo "  1. Disable 'no new privileges' flag"
+        echo "  2. Allow sudo/root access"
+        echo "  3. Use a less restricted security context"
         exit 1
     fi
-    
-    # Try to install Nix
-    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm 2>/dev/null || {
-        echo -e "${RED}Failed to install Nix automatically.${NC}"
-        echo ""
-        echo "This might be due to container restrictions."
-        echo "For help, run:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
-        exit 1
-    }
-    
-    # Source nix
-    if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
-        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-    elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-        . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-    fi
-    
-    # Check again
-    if ! command -v nix &> /dev/null; then
-        echo -e "${RED}Failed to install Nix.${NC}"
-        echo "For restricted containers, see:"
-        echo -e "${GREEN}  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/container-ssh/user/install-for-restricted.sh | bash${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✓ Nix installed successfully${NC}"
 else
     echo -e "${GREEN}✓ Nix is already installed${NC}"
 fi
 
 # Enable flakes
-mkdir -p "$HOME/.config/nix"
-echo "experimental-features = nix-command flakes" > "$HOME/.config/nix/nix.conf"
+echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
 
 # Clone the repository to a temporary location
 TEMP_DIR=$(mktemp -d)
@@ -148,10 +157,10 @@ case "$PROFILE" in
         echo "  - Node.js for MCP servers"
         echo "  - Chromium for browser automation"
         echo ""
-        echo "To configure API keys:"
-        echo "  export ANTHROPIC_API_KEY='your-key-here'  # For Claude"
-        echo "  export GEMINI_API_KEY='your-key-here'     # For Gemini"
-        echo "  export OPENAI_API_KEY='your-key-here'     # For GPT/Codex"
+        echo "To configure OAuth authentication:"
+        echo "  claude login      # For Claude"
+        echo "  gemini           # For Gemini (select login option)"
+        echo "  codex auth       # For Codex"
         ;;
     minimal)
         echo "Minimal tools installed."
