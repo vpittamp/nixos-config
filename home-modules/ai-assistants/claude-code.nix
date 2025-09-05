@@ -77,6 +77,9 @@ in
         args = [];
         env = {
           PUPPETEER_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+          # Redirect logs to temp directory to avoid cluttering project directories
+          NODE_ENV = "production";
+          LOG_DIR = "/tmp/mcp-puppeteer-logs";
         };
       };
     };

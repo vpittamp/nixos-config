@@ -30,3 +30,7 @@ full
 *.tar.gz
 *.img
 
+# Logs directory (MCP puppeteer logs)
+logs/
+*.log
+
