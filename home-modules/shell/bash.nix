@@ -45,6 +45,7 @@
       # Navigation with zoxide
       cd = "z";  # Use zoxide for cd command
       cdd = "command cd";  # Original cd available as cdd
+      zad = "ls -d */ 2>/dev/null | xargs -I {} zoxide add {}";  # Add all subdirectories to zoxide
       ".." = "cd ..";
       "..." = "cd ../..";
       "...." = "cd ../../..";
