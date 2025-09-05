@@ -6,6 +6,19 @@
     historySize = 10000;
     historyFileSize = 20000;
     
+    # For macOS Terminal.app - it runs login shells by default
+    # This ensures colors and configs load properly
+    profileExtra = ''
+      # macOS Terminal.app runs login shells, so source bashrc
+      if [ -r ~/.bashrc ]; then
+        source ~/.bashrc
+      fi
+      
+      # Enable colors in macOS Terminal
+      export CLICOLOR=1
+      export LSCOLORS=GxFxCxDxBxegedabagaced
+    '';
+    
     shellOptions = [
       "histappend"
       "checkwinsize"
