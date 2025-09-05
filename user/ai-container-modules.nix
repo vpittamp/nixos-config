@@ -8,7 +8,7 @@
   
   # Import the existing AI assistant configurations
   imports = [
-    ./ai-assistants/claude-code.nix
+    ./ai-assistants/claude-code-fixed.nix  # Using npm-package wrapper to avoid chmod issues
     ./ai-assistants/gemini-cli.nix
     ./ai-assistants/codex.nix
   ];
