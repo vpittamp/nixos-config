@@ -24,10 +24,19 @@
       # LSCOLORS is for BSD ls (macOS native)
       export LSCOLORS=GxFxCxDxBxegedabagaced
       
+      # Ensure terminal supports colors
+      export TERM=${TERM:-xterm-256color}
+      
+      # Enable grep colors
+      export GREP_OPTIONS='--color=auto'
+      export GREP_COLOR='1;32'
+      
       # Ensure LS_COLORS is set for GNU coreutils (from dircolors module)
       # This makes both BSD and GNU tools work with colors
       if [ -r ~/.dir_colors ]; then
         eval "$(dircolors -b ~/.dir_colors)"
+      elif command -v dircolors >/dev/null 2>&1; then
+        eval "$(dircolors -b)"
       fi
     '';
     
@@ -170,6 +179,12 @@
         export TERM=screen-256color
         # Don't set COLORTERM to avoid OSC queries
         unset COLORTERM
+      fi
+      
+      # Set up a colored prompt when Starship is not available
+      # This ensures we always have colors even if Starship fails to load
+      if ! command -v starship &> /dev/null; then
+        PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
       fi
       
       # Add /usr/local/bin to PATH for Docker Desktop
