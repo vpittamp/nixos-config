@@ -28,6 +28,9 @@ let
     # Nix tools
     nix
     cachix
+    
+    # VPN tools
+    tailscale
   ];
 
   # Development tools that work better at system level

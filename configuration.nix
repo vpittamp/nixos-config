@@ -156,6 +156,14 @@
       autoPrune.enable = false;
     };
     
+    # Enable Tailscale VPN
+    services.tailscale = {
+      enable = true;
+      port = 41641;  # Default port
+      # useRoutingFeatures = "client";  # Options: "client", "server", "both", "none"
+      # Note: After nixos-rebuild, authenticate with: sudo tailscale up
+    };
+    
     # Patch the docker-desktop-proxy script
     systemd.services.docker-desktop-proxy.script = lib.mkForce ''
       ${config.wsl.wslConf.automount.root}/wsl/docker-desktop/docker-desktop-user-distro proxy --docker-desktop-root ${config.wsl.wslConf.automount.root}/wsl/docker-desktop "C:\Program Files\Docker\Docker\resources"

@@ -33,6 +33,7 @@ let
     curl
     wget
     gum
+    tailscale  # VPN CLI tool
   ];
 
   # Shell enhancements
