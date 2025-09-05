@@ -15,8 +15,16 @@
       fi
       
       # Enable colors in macOS Terminal
+      # CLICOLOR enables color output for BSD commands (ls on macOS)
       export CLICOLOR=1
+      # LSCOLORS is for BSD ls (macOS native)
       export LSCOLORS=GxFxCxDxBxegedabagaced
+      
+      # Ensure LS_COLORS is set for GNU coreutils (from dircolors module)
+      # This makes both BSD and GNU tools work with colors
+      if [ -r ~/.dir_colors ]; then
+        eval "$(dircolors -b ~/.dir_colors)"
+      fi
     '';
     
     shellOptions = [

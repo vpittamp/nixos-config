@@ -6,6 +6,7 @@
     # Shell configurations
     ./home-modules/shell/bash.nix
     ./home-modules/shell/starship.nix
+    ./home-modules/shell/colors.nix
     
     # Terminal configurations
     ./home-modules/terminal/tmux.nix
