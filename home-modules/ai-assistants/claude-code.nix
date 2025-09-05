@@ -4,24 +4,23 @@ let
   # Check if we're on Darwin
   isDarwin = pkgs.stdenv.isDarwin or false;
   
-  # Only define these on Linux
-  # Define MCP server packages using npm-package module
-  mcp-server-sse = inputs.npm-package.lib.${pkgs.system}.npmPackage {
+  # Define MCP server packages using npm-package module (only on Linux)
+  mcp-server-sse = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "mcp-server-sse";
     packageName = "@modelcontextprotocol/server-sse";
-  };
+  } else null;
   
-  mcp-server-http = inputs.npm-package.lib.${pkgs.system}.npmPackage {
+  mcp-server-http = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "mcp-server-http";
     packageName = "@modelcontextprotocol/server-http";
-  };
+  } else null;
   
   # Use Puppeteer instead of Playwright - works better in headless/WSL environments
-  mcp-puppeteer = inputs.npm-package.lib.${pkgs.system}.npmPackage {
+  mcp-puppeteer = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "mcp-puppeteer";
     packageName = "@modelcontextprotocol/server-puppeteer";
     version = "latest";
-  };
+  } else null;
 in
 {
   # Install MCP server packages and Chromium for Puppeteer (Linux only)
@@ -32,8 +31,9 @@ in
     pkgs.chromium
   ];
   
-  # Claude Code configuration with home-manager module (Linux only)
-  programs.claude-code = lib.mkIf (!isDarwin) {
+  # Claude Code configuration with home-manager module
+  # Try to enable on all platforms, will fail gracefully if not available
+  programs.claude-code = {
     enable = true;
     package = pkgs.claude-code;
     

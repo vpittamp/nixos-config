@@ -673,8 +673,8 @@
               home.homeDirectory = nixpkgs.lib.mkForce "/Users/vinodpittampalli";
               home.stateVersion = "25.05";
               
-              # Disable Linux-specific programs
-              programs.claude-code.enable = nixpkgs.lib.mkForce false;  # Claude Code not available on Darwin yet
+              # Claude Code will be handled by the module itself
+              # Removed the disable override to let it work on Darwin
               
               # Platform detection for conditional configs
               home.sessionVariables = {
