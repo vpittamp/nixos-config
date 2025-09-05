@@ -29,14 +29,33 @@ case "$PROFILE" in
 esac
 
 # Set up environment
-export USER="${USER:-code}"
-export HOME="${HOME:-/home/$USER}"
+# Detect the actual user and home directory
+if [ -n "${USER}" ] && [ -n "${HOME}" ]; then
+    # Use provided values
+    export USER="${USER}"
+    export HOME="${HOME}"
+else
+    # Auto-detect from current user
+    export USER="$(whoami)"
+    export HOME="$(eval echo ~$USER)"
+fi
 
 echo "User: $USER"
 echo "Home: $HOME"
+echo "UID: $(id -u)"
+echo "GID: $(id -g)"
 
-# Ensure home directory exists
-mkdir -p "$HOME"
+# Ensure home directory exists and is writable
+if [ ! -d "$HOME" ]; then
+    echo -e "${YELLOW}Home directory doesn't exist, creating...${NC}"
+    mkdir -p "$HOME" 2>/dev/null || {
+        echo -e "${RED}Cannot create home directory (running as non-root?)${NC}"
+        # Use temp directory as fallback
+        export HOME="/tmp/nixuser-$USER"
+        mkdir -p "$HOME"
+        echo "Using temporary home: $HOME"
+    }
+fi
 
 # Detect and set up Nix environment
 echo -e "${GREEN}Detecting Nix installation...${NC}"
@@ -110,18 +129,37 @@ fi
 echo -e "${GREEN}✓ Nix is available: $(nix --version)${NC}"
 
 # Enable flakes
-mkdir -p "$HOME/.config/nix"
-if ! grep -q "experimental-features" "$HOME/.config/nix/nix.conf" 2>/dev/null; then
-    echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
+mkdir -p "$HOME/.config/nix" 2>/dev/null || {
+    echo -e "${YELLOW}Cannot create .config/nix directory, skipping user config${NC}"
+}
+
+if [ -w "$HOME/.config/nix" ]; then
+    if ! grep -q "experimental-features" "$HOME/.config/nix/nix.conf" 2>/dev/null; then
+        echo "experimental-features = nix-command flakes" >> "$HOME/.config/nix/nix.conf"
+    fi
+else
+    echo -e "${YELLOW}Nix config directory not writable, using system config${NC}"
+    export NIX_CONFIG="experimental-features = nix-command flakes"
 fi
 
 # Clone the repository to a temporary location
-TEMP_DIR=$(mktemp -d)
+# For non-root users, ensure temp directory is accessible
+TEMP_DIR=$(mktemp -d -p "${TMPDIR:-/tmp}" nixos-config.XXXXXX)
 echo -e "${GREEN}Cloning configuration repository...${NC}"
-git clone -b container-ssh --depth 1 https://github.com/vpittamp/nixos-config.git "$TEMP_DIR" 2>/dev/null || {
-    echo -e "${RED}Failed to clone repository${NC}"
-    exit 1
-}
+
+# Check if git is available, if not use nix run
+if command -v git &> /dev/null; then
+    git clone -b container-ssh --depth 1 https://github.com/vpittamp/nixos-config.git "$TEMP_DIR" 2>/dev/null || {
+        echo -e "${RED}Failed to clone repository${NC}"
+        exit 1
+    }
+else
+    echo "Git not found, using nix run..."
+    nix run nixpkgs#git -- clone -b container-ssh --depth 1 https://github.com/vpittamp/nixos-config.git "$TEMP_DIR" || {
+        echo -e "${RED}Failed to clone repository${NC}"
+        exit 1
+    }
+fi
 
 # Navigate to the user directory
 cd "$TEMP_DIR/user"
@@ -141,9 +179,35 @@ fi
 
 # Build and activate the configuration
 echo -e "${GREEN}Building configuration...${NC}"
-nix run ".#homeConfigurations.container-${PROFILE}.activationPackage" \
-    --extra-experimental-features "nix-command flakes" \
-    --accept-flake-config
+
+# For non-root users, we need to handle activation differently
+if [ "$(id -u)" -eq 0 ]; then
+    # Running as root (shouldn't happen with our setup)
+    nix run ".#homeConfigurations.container-${PROFILE}.activationPackage" \
+        --extra-experimental-features "nix-command flakes" \
+        --accept-flake-config
+else
+    # Running as non-root user
+    echo "Running as non-root user (UID: $(id -u))..."
+    
+    # Build the configuration first
+    echo "Building home-manager configuration..."
+    nix build ".#homeConfigurations.container-${PROFILE}.activationPackage" \
+        --extra-experimental-features "nix-command flakes" \
+        --accept-flake-config \
+        --no-link \
+        --print-out-paths > /tmp/activation-path.txt || {
+            echo -e "${RED}Failed to build configuration${NC}"
+            exit 1
+        }
+    
+    # Run the activation
+    ACTIVATION_PATH=$(cat /tmp/activation-path.txt)
+    echo "Activating configuration from: $ACTIVATION_PATH"
+    "$ACTIVATION_PATH/activate" || {
+        echo -e "${YELLOW}Activation completed with warnings${NC}"
+    }
+fi
 
 # Source the new environment
 if [ -f "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh" ]; then
