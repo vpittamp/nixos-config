@@ -3,33 +3,26 @@
 let
   # Check if we're on Darwin
   isDarwin = pkgs.stdenv.isDarwin or false;
-  
-  # Define MCP server packages using npm-package module (only on Linux)
-  mcp-server-sse = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
-    name = "mcp-server-sse";
-    packageName = "@modelcontextprotocol/server-sse";
-  } else null;
-  
-  mcp-server-http = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
-    name = "mcp-server-http";
-    packageName = "@modelcontextprotocol/server-http";
-  } else null;
-  
-  # Use Puppeteer instead of Playwright - works better in headless/WSL environments
-  mcp-puppeteer = if !isDarwin then inputs.npm-package.lib.${pkgs.system}.npmPackage {
-    name = "mcp-puppeteer";
-    packageName = "@modelcontextprotocol/server-puppeteer";
-    version = "latest";
-  } else null;
 in
 {
   # Install MCP server packages and Chromium for Puppeteer (Linux only)
-  home.packages = lib.optionals (!isDarwin) [
-    mcp-server-sse
-    mcp-server-http
-    mcp-puppeteer
+  home.packages = lib.optionals (!isDarwin) ([
     pkgs.chromium
-  ];
+  ] ++ (if isDarwin then [] else [
+    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
+      name = "mcp-server-sse";
+      packageName = "@modelcontextprotocol/server-sse";
+    })
+    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
+      name = "mcp-server-http";
+      packageName = "@modelcontextprotocol/server-http";
+    })
+    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
+      name = "mcp-puppeteer";
+      packageName = "@modelcontextprotocol/server-puppeteer";
+      version = "latest";
+    })
+  ]));
   
   # Claude Code configuration with home-manager module
   # Try to enable on all platforms, will fail gracefully if not available
