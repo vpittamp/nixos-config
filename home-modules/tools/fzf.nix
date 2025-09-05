@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  # FZF
+  # FZF with embedded Catppuccin Mocha colors
   programs.fzf = {
     enable = true;
     enableBashIntegration = true;
@@ -10,9 +10,10 @@
       "--layout=reverse"
       "--border"
       "--inline-info"
-      "--color=bg+:${config.colorScheme.surface0},bg:${config.colorScheme.base},spinner:${config.colorScheme.rosewater},hl:${config.colorScheme.red}"
-      "--color=fg:${config.colorScheme.text},header:${config.colorScheme.red},info:${config.colorScheme.mauve},pointer:${config.colorScheme.rosewater}"
-      "--color=marker:${config.colorScheme.rosewater},fg+:${config.colorScheme.text},prompt:${config.colorScheme.mauve},hl+:${config.colorScheme.red}"
+      # Catppuccin Mocha colors
+      "--color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8"
+      "--color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc"
+      "--color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8"
     ];
     # Enable tmux integration for sesh
     tmux = {

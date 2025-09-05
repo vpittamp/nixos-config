@@ -1,52 +1,49 @@
 { config, lib, pkgs, ... }:
 
-let
-  colors = config.colorScheme; # Catppuccin Mocha palette
-in
 {
-  # k9s: Catppuccin-aligned, high-contrast skin
+  # k9s: Catppuccin Mocha theme with embedded colors
   xdg.configFile."k9s/skins/catppuccin-mocha.yaml".text = ''
     k9s:
       body:
-        fgColor: "${colors.text}"
+        fgColor: "#cdd6f4"
         bgColor: "default"
-        logoColor: "${colors.blue}"
+        logoColor: "#89b4fa"
 
       frame:
         border:
-          fgColor: "${colors.surface1}"
-          focusColor: "${colors.mauve}"
+          fgColor: "#45475a"
+          focusColor: "#cba6f7"
         title:
-          fgColor: "${colors.lavender}"
+          fgColor: "#b4befe"
           bgColor: "default"
-          highlightColor: "${colors.peach}"
-          counterColor: "${colors.sky}"
-          filterColor: "${colors.mauve}"
+          highlightColor: "#fab387"
+          counterColor: "#89dceb"
+          filterColor: "#cba6f7"
         crumbs:
-          fgColor: "${colors.subtext0}"
-          bgColor: "${colors.surface0}"
-          activeColor: "${colors.peach}"
+          fgColor: "#a6adc8"
+          bgColor: "#313244"
+          activeColor: "#fab387"
 
       views:
         table:
-          fgColor: "${colors.text}"
+          fgColor: "#cdd6f4"
           bgColor: "default"
-          cursorFgColor: "${colors.crust}"   # dark text on bright selection for readability
-          cursorBgColor: "${colors.blue}"    # selection background (Catppuccin blue)
+          cursorFgColor: "#11111b"   # dark text on bright selection for readability
+          cursorBgColor: "#89b4fa"    # selection background (Catppuccin blue)
           header:
-            fgColor: "${colors.lavender}"
+            fgColor: "#b4befe"
             bgColor: "default"
-            sorterColor: "${colors.yellow}"
+            sorterColor: "#f9e2af"
 
         logs:
-          fgColor: "${colors.subtext1}"
+          fgColor: "#bac2de"
           bgColor: "default"
           indicator:
-            fgColor: "${colors.crust}"
-            bgColor: "${colors.yellow}"
+            fgColor: "#11111b"
+            bgColor: "#f9e2af"
           # Current-line readability in log view
-          cursorFgColor: "${colors.crust}"
-          cursorBgColor: "${colors.blue}"
+          cursorFgColor: "#11111b"
+          cursorBgColor: "#89b4fa"
   '';
 
   # Set the skin as default for k9s

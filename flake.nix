@@ -336,12 +336,6 @@
               coreutils
               nix
               
-              # Add runtime setup script
-              (runCommand "runtime-setup" {} ''
-                mkdir -p $out/usr/local/bin
-                cp ${./container-runtime-setup.sh} $out/usr/local/bin/nixos-setup
-                chmod 755 $out/usr/local/bin/nixos-setup
-              '')
             ];
             pathsToLink = [ "/bin" "/lib" "/share" "/etc" "/usr" ];
           };
@@ -505,10 +499,6 @@
                 ENTRYPOINT_EOF
                 chmod 755 $out/etc/container-entrypoint.sh
                 
-                cat > $out/etc/container-entrypoint-nonroot.sh << 'NONROOT_EOF'
-                ${builtins.readFile ./container-entrypoint-nonroot.sh}
-                NONROOT_EOF
-                chmod 755 $out/etc/container-entrypoint-nonroot.sh
               '')
               
             ];
@@ -604,65 +594,69 @@
           }];
         };
         
-        # Container configurations (replacing the deleted user/flake.nix)
+        # Container configurations (now using unified home-vpittamp.nix)
         container-minimal = home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [
-            ./user/container-minimal.nix
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
             {
-              home.username = nixpkgs.lib.mkDefault "code";
-              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.username = nixpkgs.lib.mkForce "code";
+              home.homeDirectory = nixpkgs.lib.mkForce "/home/code";
+              home.stateVersion = nixpkgs.lib.mkForce "25.05";
               home.sessionVariables.CONTAINER_PROFILE = "minimal";
+              nixpkgs.config.allowUnfree = true;
             }
           ];
+          extraSpecialArgs = { inherit inputs; };
         };
         
         container-essential = home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [
-            ./user/container-minimal.nix
-            ./home-modules/ai-assistants/claude-code.nix
-            ./home-modules/ai-assistants/codex.nix
-            ./home-modules/ai-assistants/gemini-cli.nix
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
             {
-              home.username = nixpkgs.lib.mkDefault "code";
-              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.username = nixpkgs.lib.mkForce "code";
+              home.homeDirectory = nixpkgs.lib.mkForce "/home/code";
+              home.stateVersion = nixpkgs.lib.mkForce "25.05";
               home.sessionVariables.CONTAINER_PROFILE = "essential";
-              _module.args = { inherit inputs; };
+              nixpkgs.config.allowUnfree = true;
             }
           ];
+          extraSpecialArgs = { inherit inputs; };
         };
         
         container-development = home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [
-            ./user/container-minimal.nix
-            ./home-modules/ai-assistants/claude-code.nix
-            ./home-modules/ai-assistants/codex.nix
-            ./home-modules/ai-assistants/gemini-cli.nix
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
             {
-              home.username = nixpkgs.lib.mkDefault "code";
-              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.username = nixpkgs.lib.mkForce "code";
+              home.homeDirectory = nixpkgs.lib.mkForce "/home/code";
+              home.stateVersion = nixpkgs.lib.mkForce "25.05";
               home.sessionVariables.CONTAINER_PROFILE = "development";
-              _module.args = { inherit inputs; };
+              nixpkgs.config.allowUnfree = true;
             }
           ];
+          extraSpecialArgs = { inherit inputs; };
         };
         
         container-ai = home-manager.lib.homeManagerConfiguration {
           pkgs = nixpkgs.legacyPackages.${system};
           modules = [
-            ./user/container-minimal.nix
-            ./home-modules/ai-assistants/claude-code.nix
-            ./home-modules/ai-assistants/codex.nix
-            ./home-modules/ai-assistants/gemini-cli.nix
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
             {
-              home.username = nixpkgs.lib.mkDefault "code";
-              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.username = nixpkgs.lib.mkForce "code";
+              home.homeDirectory = nixpkgs.lib.mkForce "/home/code";
+              home.stateVersion = nixpkgs.lib.mkForce "25.05";
               home.sessionVariables.CONTAINER_PROFILE = "development";
-              _module.args = { inherit inputs; };
+              nixpkgs.config.allowUnfree = true;
             }
           ];
+          extraSpecialArgs = { inherit inputs; };
         };
       };
       

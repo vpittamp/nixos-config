@@ -3,9 +3,6 @@
 {
   # Import all modular configurations
   imports = [
-    # Core configuration
-    ./home-modules/colors.nix
-    
     # Shell configurations
     ./home-modules/shell/bash.nix
     ./home-modules/shell/starship.nix
