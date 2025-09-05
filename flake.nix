@@ -38,7 +38,9 @@
 
   outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, npm-package, ... }@inputs: 
     let
-      system = "x86_64-linux";
+      # Support both Linux and Darwin systems
+      supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
+      system = "x86_64-linux";  # Default for NixOS config
       
       # Import overlays
       overlays = import ./overlays { inherit inputs; };
@@ -658,10 +660,41 @@
           ];
           extraSpecialArgs = { inherit inputs; };
         };
+        
+        # Darwin (macOS) configurations
+        vpittamp-darwin = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.aarch64-darwin;
+          modules = [
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
+            {
+              # Darwin-specific overrides
+              home.username = "vpittamp";
+              home.homeDirectory = "/Users/vpittamp";
+              home.stateVersion = "25.05";
+              
+              # Disable Linux-specific programs
+              programs.claude-code.enable = nixpkgs.lib.mkForce false;  # Claude Code not available on Darwin yet
+              
+              # Platform detection for conditional configs
+              home.sessionVariables = {
+                IS_DARWIN = "1";
+              };
+              
+              nixpkgs.config.allowUnfree = true;
+            }
+          ];
+          extraSpecialArgs = { 
+            inherit inputs;
+            isDarwin = true;
+          };
+        };
       };
       
       # Formatter for 'nix fmt'
       formatter.${system} = pkgs.nixpkgs-fmt;
+      formatter.aarch64-darwin = nixpkgs.legacyPackages.aarch64-darwin.nixpkgs-fmt;
+      formatter.x86_64-darwin = nixpkgs.legacyPackages.x86_64-darwin.nixpkgs-fmt;
       
       # Apps for container building
       apps.${system} = {

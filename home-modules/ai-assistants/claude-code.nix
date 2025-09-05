@@ -1,6 +1,10 @@
 { config, pkgs, lib, inputs, ... }:
 
 let
+  # Check if we're on Darwin
+  isDarwin = pkgs.stdenv.isDarwin or false;
+  
+  # Only define these on Linux
   # Define MCP server packages using npm-package module
   mcp-server-sse = inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "mcp-server-sse";
@@ -20,16 +24,16 @@ let
   };
 in
 {
-  # Install MCP server packages and Chromium for Puppeteer
-  home.packages = [
+  # Install MCP server packages and Chromium for Puppeteer (Linux only)
+  home.packages = lib.optionals (!isDarwin) [
     mcp-server-sse
     mcp-server-http
     mcp-puppeteer
     pkgs.chromium
   ];
   
-  # Claude Code configuration with home-manager module
-  programs.claude-code = {
+  # Claude Code configuration with home-manager module (Linux only)
+  programs.claude-code = lib.mkIf (!isDarwin) {
     enable = true;
     package = pkgs.claude-code;
     
