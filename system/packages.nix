@@ -4,17 +4,6 @@
 { pkgs, lib, ... }:
 
 let
-  # Custom binary packages that need chmod +x
-  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
-  
-  vscode-cli = pkgs.callPackage ../packages/vscode-cli.nix { };
-  
-  azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
-  
-  claude-manager = pkgs.callPackage ../packages/claude-manager-fetchurl.nix { 
-    inherit (pkgs.stdenv.hostPlatform) system;
-  };
-  
   # Plugins are now managed through home-manager:
   # - Tmux plugins via programs.tmux.plugins
   # - Vim plugins via programs.neovim.plugins
@@ -79,12 +68,7 @@ let
 
 in {
   # Export different package sets
-  custom = [
-    idpbuilder
-    vscode-cli
-    azure-cli-bin
-    claude-manager
-  ];
+  custom = [];  # No custom packages currently
   
   # Plugins moved to home-manager
   tmuxPlugins = [];
@@ -95,18 +79,10 @@ in {
   kubernetes = kubernetesTools;
   
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools ++ [
-    idpbuilder
-    vscode-cli
-    azure-cli-bin
-    claude-manager
-  ];
+  all = systemTools ++ developmentTools ++ kubernetesTools;
   
   # Essential system packages only
-  essential = systemTools ++ [
-    vscode-cli
-    claude-manager
-  ] ++ (with pkgs; [
+  essential = systemTools ++ (with pkgs; [
     git
     docker-compose
     nodejs_20

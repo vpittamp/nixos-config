@@ -5,11 +5,8 @@
 {
   # Import modules for containers
   imports = [ 
-    ./container-ssh.nix 
-    # Use the simplified VS Code module with nix-community's vscode-server
-    ./container-vscode-simple.nix
-    # Simplified flake helpers
-    ./container-flake-simple.nix
+    # Consolidated container services (SSH, VS Code Server, Nix helpers)
+    ./container-services.nix
   ];
   
   # Explicitly disable WSL features in containers
@@ -98,14 +95,14 @@
   systemd.user = lib.mkForce {};
   
   # Override environment packages for containers
-  # The overlays/packages.nix already handles NIXOS_PACKAGES environment variable
-  # and returns the appropriate package set via allPackages
+  # The shared/package-lists.nix handles NIXOS_PACKAGES environment variable
   environment.systemPackages = lib.mkForce (with pkgs; let
-    overlayPackages = import ./overlays/packages.nix { inherit pkgs lib; };
+    packageLists = import ./shared/package-lists.nix { inherit pkgs lib; };
+    profile = packageLists.getProfile;
   in
-    # Use the pre-filtered allPackages from overlays/packages.nix
+    # Use the pre-filtered packages from shared/package-lists.nix
     # which respects the NIXOS_PACKAGES environment variable
-    overlayPackages.allPackages ++ [
+    (profile.system ++ profile.user) ++ [
       # Always include SSH-related packages for containers
       pkgs.openssh
       # Add nix-ld for VS Code compatibility
