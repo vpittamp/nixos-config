@@ -603,6 +603,67 @@
             };
           }];
         };
+        
+        # Container configurations (replacing the deleted user/flake.nix)
+        container-minimal = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./user/container-minimal.nix
+            {
+              home.username = nixpkgs.lib.mkDefault "code";
+              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.sessionVariables.CONTAINER_PROFILE = "minimal";
+            }
+          ];
+        };
+        
+        container-essential = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./user/container-minimal.nix
+            ./home-modules/ai-assistants/claude-code.nix
+            ./home-modules/ai-assistants/codex.nix
+            ./home-modules/ai-assistants/gemini-cli.nix
+            {
+              home.username = nixpkgs.lib.mkDefault "code";
+              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.sessionVariables.CONTAINER_PROFILE = "essential";
+              _module.args = { inherit inputs; };
+            }
+          ];
+        };
+        
+        container-development = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./user/container-minimal.nix
+            ./home-modules/ai-assistants/claude-code.nix
+            ./home-modules/ai-assistants/codex.nix
+            ./home-modules/ai-assistants/gemini-cli.nix
+            {
+              home.username = nixpkgs.lib.mkDefault "code";
+              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.sessionVariables.CONTAINER_PROFILE = "development";
+              _module.args = { inherit inputs; };
+            }
+          ];
+        };
+        
+        container-ai = home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${system};
+          modules = [
+            ./user/container-minimal.nix
+            ./home-modules/ai-assistants/claude-code.nix
+            ./home-modules/ai-assistants/codex.nix
+            ./home-modules/ai-assistants/gemini-cli.nix
+            {
+              home.username = nixpkgs.lib.mkDefault "code";
+              home.homeDirectory = nixpkgs.lib.mkDefault "/home/code";
+              home.sessionVariables.CONTAINER_PROFILE = "development";
+              _module.args = { inherit inputs; };
+            }
+          ];
+        };
       };
       
       # Formatter for 'nix fmt'

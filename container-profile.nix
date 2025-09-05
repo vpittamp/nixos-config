@@ -8,7 +8,7 @@
     ./container-ssh.nix 
     # Use the simplified VS Code module with nix-community's vscode-server
     ./container-vscode-simple.nix
-    # Simplified flake helpers that don't need /opt/nix-flakes
+    # Simplified flake helpers
     ./container-flake-simple.nix
   ];
   

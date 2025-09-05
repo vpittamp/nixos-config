@@ -161,8 +161,8 @@ else
     }
 fi
 
-# Navigate to the user directory
-cd "$TEMP_DIR/user"
+# Stay in the repository root
+cd "$TEMP_DIR"
 
 # Backup existing shell files if they exist
 BACKUP_SUFFIX=".backup-$(date +%s)"
