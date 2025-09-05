@@ -668,7 +668,7 @@
             ./home-vpittamp.nix
             onepassword-shell-plugins.hmModules.default
             {
-              # Darwin-specific overrides
+              # Darwin-specific overrides - using actual Mac system username
               home.username = nixpkgs.lib.mkForce "vinodpittampalli";
               home.homeDirectory = nixpkgs.lib.mkForce "/Users/vinodpittampalli";
               home.stateVersion = "25.05";
