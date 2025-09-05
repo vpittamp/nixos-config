@@ -44,6 +44,12 @@ in
     ];
     
     extraConfig = ''
+      # Fix backtick prefix - remove the auto-generated root binding
+      # Home-manager adds 'bind -n ` send-prefix' which breaks the prefix
+      unbind -n '`'
+      # Bind double-backtick to send a literal backtick to applications
+      bind '`' send-prefix
+      
       # General settings
       set -g default-terminal "tmux-256color"
       set -ga terminal-overrides ",xterm-256color:Tc"

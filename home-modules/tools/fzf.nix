@@ -14,5 +14,9 @@
       "--color=fg:${config.colorScheme.text},header:${config.colorScheme.red},info:${config.colorScheme.mauve},pointer:${config.colorScheme.rosewater}"
       "--color=marker:${config.colorScheme.rosewater},fg+:${config.colorScheme.text},prompt:${config.colorScheme.mauve},hl+:${config.colorScheme.red}"
     ];
+    # Enable tmux integration for sesh
+    tmux = {
+      enableShellIntegration = true;
+    };
   };
 }
