@@ -200,8 +200,7 @@ home-manager packages | grep -c '^'
 
 ## 📚 Additional Documentation
 
-- `docs/README.md` - Detailed architecture overview
-- `docs/ARCHITECTURE.md` - System diagrams and flows
+- `docs/AVANTE_SETUP.md` - Avante.nvim setup with Claude integration
 - GitHub: https://github.com/PittampalliOrg/nix-config
 
 ---
