@@ -131,7 +131,20 @@
         # VSCode wrapper for WSL integration
         (pkgs.writeShellScriptBin "code" ''
           # Launch VSCode from WSL
-          /mnt/c/Users/VinodPittampalli/AppData/Local/Programs/Microsoft\ VS\ Code/bin/code "$@"
+          # Try common VS Code installation paths
+          if [ -f "/mnt/c/Program Files/Microsoft VS Code/bin/code" ]; then
+            "/mnt/c/Program Files/Microsoft VS Code/bin/code" "$@"
+          elif [ -f "/mnt/c/Program Files (x86)/Microsoft VS Code/bin/code" ]; then
+            "/mnt/c/Program Files (x86)/Microsoft VS Code/bin/code" "$@"
+          elif [ -f "/mnt/c/Users/$USER/AppData/Local/Programs/Microsoft VS Code/bin/code" ]; then
+            "/mnt/c/Users/$USER/AppData/Local/Programs/Microsoft VS Code/bin/code" "$@"
+          elif [ -f "/mnt/c/Users/VinodPittampalli/AppData/Local/Programs/Microsoft VS Code/bin/code" ]; then
+            "/mnt/c/Users/VinodPittampalli/AppData/Local/Programs/Microsoft VS Code/bin/code" "$@"
+          else
+            echo "VS Code not found in standard Windows locations" >&2
+            echo "Please install VS Code on Windows or update the path in /etc/nixos/configuration.nix" >&2
+            exit 1
+          fi
         '')
       ];
 
