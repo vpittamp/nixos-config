@@ -669,8 +669,8 @@
             onepassword-shell-plugins.hmModules.default
             {
               # Darwin-specific overrides
-              home.username = "vpittamp";
-              home.homeDirectory = "/Users/vpittamp";
+              home.username = nixpkgs.lib.mkForce "vpittamp";
+              home.homeDirectory = nixpkgs.lib.mkForce "/Users/vpittamp";
               home.stateVersion = "25.05";
               
               # Disable Linux-specific programs
