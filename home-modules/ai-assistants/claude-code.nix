@@ -5,24 +5,10 @@ let
   isDarwin = pkgs.stdenv.isDarwin or false;
 in
 {
-  # Install MCP server packages and Chromium for Puppeteer (Linux only)
-  home.packages = lib.optionals (!isDarwin) ([
+  # Install Chromium for Puppeteer (Linux only - macOS can use system Chrome)
+  home.packages = lib.optionals (!isDarwin) [
     pkgs.chromium
-  ] ++ (if isDarwin then [] else [
-    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
-      name = "mcp-server-sse";
-      packageName = "@modelcontextprotocol/server-sse";
-    })
-    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
-      name = "mcp-server-http";
-      packageName = "@modelcontextprotocol/server-http";
-    })
-    (inputs.npm-package.lib.${pkgs.system}.npmPackage {
-      name = "mcp-puppeteer";
-      packageName = "@modelcontextprotocol/server-puppeteer";
-      version = "latest";
-    })
-  ]));
+  ];
   
   # Claude Code configuration with home-manager module
   # Try to enable on all platforms, will fail gracefully if not available
@@ -50,7 +36,7 @@ in
       };
     };
     
-    # MCP Servers configuration using npm-package installed binaries
+    # MCP Servers configuration - using npx for cross-platform compatibility
     mcpServers = {
       context7 = {
         command = "npx";
@@ -60,20 +46,19 @@ in
         ];
       };
       
-      grep = {
-        transport = "http";
-        command = "${mcp-server-http}/bin/mcp-server-http";
-        args = [
-          "https://mcp.grep.app"
-        ];
-      };
-
+      # Using npx for cross-platform compatibility
       puppeteer = {
         transport = "stdio";
-        command = "${mcp-puppeteer}/bin/mcp-puppeteer";
-        args = [];
+        command = "npx";
+        args = [
+          "-y"
+          "@modelcontextprotocol/server-puppeteer@latest"
+        ];
         env = {
-          PUPPETEER_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+          # Use Chromium on Linux, system Chrome on macOS
+          PUPPETEER_EXECUTABLE_PATH = if isDarwin 
+            then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            else "${pkgs.chromium}/bin/chromium";
           # Redirect logs to temp directory to avoid cluttering project directories
           NODE_ENV = "production";
           LOG_DIR = "/tmp/mcp-puppeteer-logs";
