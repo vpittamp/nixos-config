@@ -2,11 +2,11 @@
 
 stdenv.mkDerivation rec {
   pname = "idpbuilder";
-  version = "0.10.0";
+  version = "0.10.1";
 
   src = fetchurl {
     url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
-    hash = "sha256-ZE5ActmrVmpJzaL7p/MsAqFjgHdHkpItpQ7WmEMCN7s=";
+    hash = "sha256-Wd+GNoZfVmS38Gdkzoz9qUCMRjm2NcrC/OxvkNc3MPA=";
   };
 
   dontBuild = true;
