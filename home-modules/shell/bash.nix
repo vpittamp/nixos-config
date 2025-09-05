@@ -2,6 +2,10 @@
 {
   programs.bash = {
     enable = true;
+    # Use the Nix-provided bash (version 5+) instead of system bash
+    # This avoids compatibility issues with macOS's ancient bash 3.2
+    package = pkgs.bashInteractive;
+    
     historyControl = [ "ignoreboth" ];
     historySize = 10000;
     historyFileSize = 20000;
