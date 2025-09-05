@@ -1,12 +1,8 @@
 { config, pkgs, lib, ... }:
 
-let
-  # Firefox is primarily for Linux, on macOS users typically use the native app
-  isDarwin = pkgs.stdenv.isDarwin or false;
-in
 {
-  # Firefox browser configuration (Linux only for now)
-  programs.firefox = lib.mkIf (!isDarwin) {
+  # Firefox browser configuration for both Linux and macOS
+  programs.firefox = {
     enable = true;
     
     # Package selection (use ESR for stability or regular for latest)
