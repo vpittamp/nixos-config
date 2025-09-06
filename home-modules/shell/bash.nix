@@ -17,20 +17,6 @@
       if [ -r ~/.bashrc ]; then
         source ~/.bashrc
       fi
-
-      # Ensure Nix and Home Manager session env are loaded on macOS
-      # Prefer hm-session-vars if available
-      if [ -r "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh" ]; then
-        source "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
-      elif [ -r "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh" ]; then
-        source "/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh"
-      fi
-
-      # Ensure ~/.nix-profile/bin is in PATH early
-      case :$PATH: in
-        *:"$HOME/.nix-profile/bin":*) ;;
-        *) export PATH="$HOME/.nix-profile/bin:$PATH" ;;
-      esac
       
       # Enable colors in macOS Terminal
       # CLICOLOR enables color output for BSD commands (ls on macOS)
@@ -226,10 +212,6 @@
           source "$HOME/.nix-profile/share/fzf/completion.bash" 2>/dev/null || true
           [ -f "$HOME/.nix-profile/share/fzf/key-bindings.bash" ] && \
             source "$HOME/.nix-profile/share/fzf/key-bindings.bash" 2>/dev/null || true
-          # Ensure global completion hook is active
-          if declare -F _fzf_complete >/dev/null 2>&1; then
-            complete -o default -o bashdefault -F _fzf_complete -D 2>/dev/null || true
-          fi
         else
           # Fallback to embedded script
           eval "$(fzf --bash)" 2>/dev/null || true
