@@ -613,7 +613,10 @@
               nixpkgs.config.allowUnfree = true;
             })
           ];
-          extraSpecialArgs = { inherit inputs; };
+          extraSpecialArgs = { 
+            inherit inputs;
+            pkgs-unstable = pkgs-bleeding;
+          };
         };
         
         # Alternative configuration for non-root containers
@@ -632,7 +635,10 @@
               nixpkgs.config.allowUnfree = true;
             }
           ];
-          extraSpecialArgs = { inherit inputs; };
+          extraSpecialArgs = { 
+            inherit inputs;
+            pkgs-unstable = pkgs-bleeding;
+          };
         };
         
         # Devcontainer user "code" - extends vpittamp-user with overrides
