@@ -32,6 +32,7 @@ in
   # Tmux configuration
   programs.tmux = {
     enable = true;
+    shell = "${pkgs.bash}/bin/bash";
     terminal = "tmux-256color";  # Better compatibility with modern terminals
     prefix = "`";
     baseIndex = 1;
@@ -75,6 +76,7 @@ in
       bind '`' send-prefix
       
       # General settings
+      set -g default-command "${pkgs.bash}/bin/bash"
       set -g default-terminal "tmux-256color"
       set -ga terminal-overrides ",xterm-256color:Tc"
       set -ga terminal-overrides ",screen-256color:Tc"
