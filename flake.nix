@@ -42,9 +42,21 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    
+    # Apple Silicon support for NixOS
+    nixos-apple-silicon = {
+      url = "github:tpwrules/nixos-apple-silicon";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    
+    # Disko for disk partitioning
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, ... }@inputs: 
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, nixos-apple-silicon, disko, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
@@ -131,6 +143,50 @@
                 extraSpecialArgs = { 
                   inherit inputs;
                   pkgs-unstable = pkgs-bleeding;
+                };
+                users.vpittamp = {
+                  imports = [ 
+                    ./home-vpittamp.nix
+                    onepassword-shell-plugins.hmModules.default
+                  ];
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
+            }
+          ];
+        };
+        
+        # NixOS configuration for M1 MacBook Pro (Apple Silicon)
+        nixos-m1 = nixpkgs.lib.nixosSystem {
+          system = "aarch64-linux";
+          
+          specialArgs = { inherit inputs; };
+          
+          modules = [
+            # Apple Silicon hardware support
+            nixos-apple-silicon.nixosModules.default
+            
+            # Disko for disk management
+            disko.nixosModules.disko
+            
+            # Hardware configuration for M1 MacBook
+            ./hardware-m1.nix
+            
+            # Main configuration (adapted for bare metal)
+            ./configuration-m1.nix
+            
+            # Home Manager module
+            home-manager.nixosModules.home-manager
+            {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = { 
+                  inherit inputs;
+                  pkgs-unstable = import nixpkgs-bleeding {
+                    system = "aarch64-linux";
+                    config.allowUnfree = true;
+                  };
                 };
                 users.vpittamp = {
                   imports = [ 

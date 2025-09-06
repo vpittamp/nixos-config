@@ -4,6 +4,36 @@
 { pkgs, lib, ... }:
 
 let
+  # Custom packages
+  idpbuilder = pkgs.stdenv.mkDerivation rec {
+    pname = "idpbuilder";
+    version = "0.10.1";
+    
+    src = pkgs.fetchurl {
+      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
+      sha256 = "1w1h6zbr0vzczk1clddn7538qh59zn6cwr37y2vn8mjzhqv8dpsr";
+    };
+    
+    sourceRoot = ".";
+    dontBuild = true;
+    
+    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+    
+    installPhase = ''
+      mkdir -p $out/bin
+      cp idpbuilder $out/bin/
+      chmod +x $out/bin/idpbuilder
+    '';
+    
+    meta = with lib; {
+      description = "Build Internal Developer Platforms (IDPs) declaratively";
+      homepage = "https://github.com/cnoe-io/idpbuilder";
+      license = licenses.asl20;
+      platforms = [ "x86_64-linux" ];
+      mainProgram = "idpbuilder";
+    };
+  };
+
   # Plugins are now managed through home-manager:
   # - Tmux plugins via programs.tmux.plugins
   # - Vim plugins via programs.neovim.plugins
@@ -40,6 +70,9 @@ let
     devpod
     devcontainer
     devspace
+    
+    # IDP tools
+    idpbuilder
     
     # Version control
     git
