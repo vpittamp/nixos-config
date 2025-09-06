@@ -110,6 +110,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-bleeding": {
+      "locked": {
+        "lastModified": 1756911493,
+        "narHash": "sha256-6n/n1GZQ/vi+LhFXMSyoseKdNfc2QQaSBXJdgamrbkE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "c6a788f552b7b7af703b1a29802a7233c0067908",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "onepassword-shell-plugins": {
       "inputs": {
         "nixpkgs": [
@@ -137,6 +153,7 @@
         "home-manager": "home-manager",
         "nixos-wsl": "nixos-wsl",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-bleeding": "nixpkgs-bleeding",
         "onepassword-shell-plugins": "onepassword-shell-plugins",
         "vscode-server": "vscode-server"
       }

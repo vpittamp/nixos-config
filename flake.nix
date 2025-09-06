@@ -5,6 +5,11 @@
     # Nixpkgs
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     
+    # Nixpkgs unstable-small for bleeding edge AI tools (updates more frequently)
+    nixpkgs-bleeding = {
+      url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    };
+    
     # NixOS-WSL
     nixos-wsl = {
       url = "github:nix-community/NixOS-WSL";
@@ -33,11 +38,17 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
       system = "x86_64-linux";  # Default for NixOS config
+      
+      # Get bleeding edge packages for AI tools
+      pkgs-bleeding = import nixpkgs-bleeding {
+        inherit system;
+        config.allowUnfree = true;
+      };
       
       # Import overlays
       overlays = import ./overlays { inherit inputs; };
@@ -78,7 +89,10 @@
               home-manager = {
                 useGlobalPkgs = true;
                 useUserPackages = true;
-                extraSpecialArgs = { inherit inputs; };
+                extraSpecialArgs = { 
+                  inherit inputs;
+                  pkgs-unstable = pkgs-bleeding;
+                };
                 users.vpittamp = {
                   imports = [ 
                     ./home-vpittamp.nix
@@ -108,7 +122,10 @@
               home-manager = {
                 useGlobalPkgs = true;
                 useUserPackages = true;
-                extraSpecialArgs = { inherit inputs; };
+                extraSpecialArgs = { 
+                  inherit inputs;
+                  pkgs-unstable = pkgs-bleeding;
+                };
                 users.vpittamp = {
                   imports = [ 
                     ./home-vpittamp.nix
@@ -713,6 +730,10 @@
           extraSpecialArgs = { 
             inherit inputs;
             isDarwin = true;
+            pkgs-unstable = import nixpkgs-bleeding {
+              system = "aarch64-darwin";
+              config.allowUnfree = true;
+            };
           };
         };
       };

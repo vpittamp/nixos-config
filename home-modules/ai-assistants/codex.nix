@@ -1,10 +1,10 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 {
-  # Codex - Lightweight coding agent (using native home-manager module)
+  # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
     enable = true;
-    package = pkgs.codex;  # Use the package from nixpkgs
+    package = pkgs-unstable.codex or pkgs.codex;  # Use unstable if available, fallback to stable
     
     # Custom instructions for the agent
     custom-instructions = ''

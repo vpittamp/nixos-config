@@ -1,10 +1,10 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 {
-  # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module)
+  # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
   programs.gemini-cli = {
     enable = true;
-    package = pkgs.gemini-cli;  # Use the package from nixpkgs
+    package = pkgs-unstable.gemini-cli or pkgs.gemini-cli;  # Use unstable if available, fallback to stable
     
     # Default model to use (Gemini 2.5 Pro is now available)
     defaultModel = "gemini-2.5-pro";

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
 
 let
   # Check if we're on Darwin
@@ -14,7 +14,7 @@ in
   # Try to enable on all platforms, will fail gracefully if not available
   programs.claude-code = {
     enable = true;
-    package = pkgs.claude-code;
+    package = pkgs-unstable.claude-code or pkgs.claude-code;  # Use unstable if available, fallback to stable
     
     # Settings for Claude Code
     settings = {
