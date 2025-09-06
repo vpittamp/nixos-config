@@ -94,6 +94,35 @@
             }
           ];
         };
+        
+        # NixOS configuration for VM (UTM/QEMU on macOS)
+        nixos-vm = nixpkgs.lib.nixosSystem {
+          system = "aarch64-linux";  # For M1 Mac virtualization
+          
+          specialArgs = { inherit inputs; };
+          
+          modules = [
+            # VM-specific configuration
+            ./configuration-vm.nix
+            
+            # Home Manager module
+            home-manager.nixosModules.home-manager
+            {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = { inherit inputs; };
+                users.vpittamp = {
+                  imports = [ 
+                    ./home-vpittamp.nix
+                    onepassword-shell-plugins.hmModules.default
+                  ];
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
+            }
+          ];
+        };
       };
       
       # Development shells for extending environments at runtime
