@@ -31,6 +31,7 @@
         "https://gist.github.com" = {
           helper = "!gh auth git-credential";
         };
+      } // lib.optionalAttrs (pkgs.stdenv.isLinux) {
         helper = "/mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe";
       };
       
