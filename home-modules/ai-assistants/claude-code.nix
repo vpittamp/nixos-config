@@ -67,6 +67,12 @@ in
           PUPPETEER_EXECUTABLE_PATH = if isDarwin 
             then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
             else "${pkgs.chromium}/bin/chromium";
+          # Sandbox workarounds for containerized environments
+          PUPPETEER_ARGS = "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage";
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true";  # Use system chromium
+          CHROME_BIN = if isDarwin
+            then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            else "${pkgs.chromium}/bin/chromium";
           # Redirect logs to temp directory to avoid cluttering project directories
           NODE_ENV = "production";
           LOG_DIR = "/tmp/mcp-puppeteer-logs";
