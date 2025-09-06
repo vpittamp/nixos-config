@@ -96,7 +96,7 @@ in
         ssh_only = false;
         style = "fg:${colors.blue}";
         format = "@[$hostname]($style)";
-        trim_at = "-";
+        # trim_at = "-";  # Removed to show full hostname
       };
       
       directory = {

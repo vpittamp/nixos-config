@@ -5,7 +5,7 @@ let
   gemini-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "gemini-cli";
     packageName = "@google/gemini-cli";
-    version = "0.2.1";
+    version = "0.3.3";  # Updated to latest version (December 2025)
   };
 in
 {

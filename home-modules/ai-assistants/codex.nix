@@ -5,7 +5,7 @@ let
   codex-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
     name = "codex";
     packageName = "@openai/codex";
-    version = "0.25.0";
+    version = "0.30.0";  # Updated to latest version (December 2025)
   };
 in
 {
