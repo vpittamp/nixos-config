@@ -268,6 +268,140 @@
           require("ibl").setup()
         end,
       },
+      
+      -- Claude Code Integration
+      {
+        "greggh/claude-code.nvim",
+        dependencies = { "nvim-lua/plenary.nvim" },
+        config = function()
+          require('claude-code').setup({
+            -- Window configuration
+            window = {
+              split_ratio = 0.4,  -- 40% of screen for Claude
+              position = "botright",  -- bottom right split
+              enter_insert = true,  -- auto enter insert mode
+            },
+            -- Claude Code command path (already in PATH from Nix)
+            command = "claude",
+            -- Keymaps configuration
+            keymaps = {
+              toggle = {
+                normal = "<leader>ai",  -- Toggle in normal mode
+                terminal = "<leader>ai",  -- Toggle in terminal mode
+              },
+            },
+          })
+        end,
+        keys = {
+          { "<leader>ai", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude Code" },
+          { "<leader>ac", "<cmd>ClaudeCodeContinue<cr>", desc = "Claude Continue" },
+          { "<leader>ar", "<cmd>ClaudeCodeResume<cr>", desc = "Claude Resume" },
+          { "<leader>av", "<cmd>ClaudeCodeVerbose<cr>", desc = "Claude Verbose Mode" },
+        },
+      },
+      
+      -- GitHub Copilot AI Code Completion
+      {
+        "zbirenbaum/copilot.lua",
+        cmd = "Copilot",
+        event = "InsertEnter",
+        config = function()
+          require("copilot").setup({
+            panel = {
+              enabled = true,
+              auto_refresh = false,
+              keymap = {
+                jump_prev = "[[",
+                jump_next = "]]",
+                accept = "<CR>",
+                refresh = "gr",
+                open = "<M-CR>"
+              },
+              layout = {
+                position = "bottom", -- | top | left | right
+                ratio = 0.4
+              },
+            },
+            suggestion = {
+              enabled = true,
+              auto_trigger = true,
+              debounce = 75,
+              keymap = {
+                accept = "<Tab>",
+                accept_word = false,
+                accept_line = false,
+                next = "<M-]>",
+                prev = "<M-[>",
+                dismiss = "<C-]>",
+              },
+            },
+            filetypes = {
+              yaml = false,
+              markdown = false,
+              help = false,
+              gitcommit = false,
+              gitrebase = false,
+              hgcommit = false,
+              svn = false,
+              cvs = false,
+              ["."] = false,
+            },
+            copilot_node_command = "node", -- Node.js version must be > 18.x
+            server_opts_overrides = {},
+          })
+        end,
+      },
+      
+      -- GitHub Copilot Chat
+      {
+        "CopilotC-Nvim/CopilotChat.nvim",
+        branch = "canary",
+        dependencies = {
+          { "zbirenbaum/copilot.lua" },
+          { "nvim-lua/plenary.nvim" },
+        },
+        opts = {
+          debug = true,
+          model = "claude-3.5-sonnet", -- Can use gpt-4o or claude-3.5-sonnet
+          temperature = 0.1,
+          window = {
+            layout = "vertical", -- 'vertical', 'horizontal', 'float', 'replace'
+            width = 0.5, -- fractional width of parent, or absolute width in columns when > 1
+            height = 0.5, -- fractional height of parent, or absolute height in rows when > 1
+            relative = "editor", -- 'editor', 'win', 'cursor', 'mouse'
+            border = "rounded", -- 'none', single', 'double', 'rounded', 'solid', 'shadow'
+            row = nil, -- row position of the window, default is centered
+            col = nil, -- column position of the window, default is centered
+            title = "Copilot Chat", -- title of chat window
+            footer = nil, -- footer of chat window
+            zindex = 1, -- determines if window is on top or below other floating windows
+          },
+        },
+        keys = {
+          -- Chat commands
+          { "<leader>cc", "<cmd>CopilotChatToggle<cr>", desc = "Toggle Copilot Chat" },
+          { "<leader>cr", "<cmd>CopilotChatReset<cr>", desc = "Reset Copilot Chat" },
+          { "<leader>cs", "<cmd>CopilotChatStop<cr>", desc = "Stop Copilot Chat" },
+          
+          -- Quick actions
+          { "<leader>ce", "<cmd>CopilotChatExplain<cr>", mode = { "n", "v" }, desc = "Explain code" },
+          { "<leader>ct", "<cmd>CopilotChatTests<cr>", mode = { "n", "v" }, desc = "Generate tests" },
+          { "<leader>cf", "<cmd>CopilotChatFix<cr>", mode = { "n", "v" }, desc = "Fix code" },
+          { "<leader>co", "<cmd>CopilotChatOptimize<cr>", mode = { "n", "v" }, desc = "Optimize code" },
+          { "<leader>cd", "<cmd>CopilotChatDocs<cr>", mode = { "n", "v" }, desc = "Document code" },
+          { "<leader>cx", "<cmd>CopilotChatFixDiagnostic<cr>", mode = { "n", "v" }, desc = "Fix diagnostic" },
+          { "<leader>cm", "<cmd>CopilotChatCommit<cr>", desc = "Generate commit message" },
+          { "<leader>cq", function()
+            local input = vim.fn.input("Quick Chat: ")
+            if input ~= "" then
+              require("CopilotChat").ask(input, { selection = require("CopilotChat.select").buffer })
+            end
+          end, desc = "Quick chat" },
+          
+          -- Model selection
+          { "<leader>cn", "<cmd>CopilotChatModels<cr>", desc = "Select AI model" },
+        },
+      },
     }
     
     -- Initialize lazy.nvim

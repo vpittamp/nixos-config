@@ -36,9 +36,15 @@
     
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
+    
+    # Claude Code with Cachix binaries - avoids build permission issues in containers
+    claude-code-nix = {
+      url = "github:sadjow/claude-code-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];

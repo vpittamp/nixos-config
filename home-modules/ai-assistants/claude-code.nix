@@ -3,6 +3,14 @@
 let
   # Check if we're on Darwin
   isDarwin = pkgs.stdenv.isDarwin or false;
+  
+  # Use claude-code from the flake with Cachix binaries if available
+  # This avoids build permission issues in containers
+  claudeCodePackage = 
+    if inputs ? claude-code-nix && inputs.claude-code-nix ? packages && inputs.claude-code-nix.packages ? ${pkgs.system} then
+      inputs.claude-code-nix.packages.${pkgs.system}.default
+    else
+      pkgs-unstable.claude-code or pkgs.claude-code;  # Fallback to nixpkgs
 in
 {
   # Install Chromium for Puppeteer (Linux only - macOS can use system Chrome)
@@ -14,7 +22,7 @@ in
   # Try to enable on all platforms, will fail gracefully if not available
   programs.claude-code = {
     enable = true;
-    package = pkgs-unstable.claude-code or pkgs.claude-code;  # Use unstable if available, fallback to stable
+    package = claudeCodePackage;
     
     # Settings for Claude Code
     settings = {

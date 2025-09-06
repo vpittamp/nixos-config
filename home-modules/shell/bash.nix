@@ -149,6 +149,11 @@
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
+      # Claude aliases with initials
+      cc = "claude --continue --dangerously-skip-permissions";
+      cr = "claude --resume --dangerously-skip-permissions";
+      cdsp = "claude --dangerously-skip-permissions";
+      
       # WSL clipboard helpers - Windows native
       clip = "/mnt/c/Windows/System32/clip.exe";
       paste = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
