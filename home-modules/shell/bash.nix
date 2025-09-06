@@ -53,8 +53,6 @@
       VISUAL = "nvim";
       PAGER = "less";
       LESS = "-R";
-      # Ensure fzf completion uses the "**" trigger (for Tab expansion)
-      FZF_COMPLETION_TRIGGER = "**";
       # TERM is now set dynamically in bash initExtra to avoid conflicts
       # TERM = "screen-256color";
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
