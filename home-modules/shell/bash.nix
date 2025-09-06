@@ -203,9 +203,19 @@
         stty -echoctl 2>/dev/null || true
       fi
       
-      # Set up fzf key bindings (only if available)
+      # Set up fzf completion + key bindings
+      # Ensure trigger is set before sourcing scripts
+      export FZF_COMPLETION_TRIGGER="${FZF_COMPLETION_TRIGGER:-**}"
       if command -v fzf &> /dev/null; then
-        eval "$(fzf --bash)" 2>/dev/null || true
+        # Prefer official integration scripts if present (home-manager installs here)
+        if [ -f "$HOME/.nix-profile/share/fzf/completion.bash" ]; then
+          source "$HOME/.nix-profile/share/fzf/completion.bash" 2>/dev/null || true
+          [ -f "$HOME/.nix-profile/share/fzf/key-bindings.bash" ] && \
+            source "$HOME/.nix-profile/share/fzf/key-bindings.bash" 2>/dev/null || true
+        else
+          # Fallback to embedded script
+          eval "$(fzf --bash)" 2>/dev/null || true
+        fi
       fi
       
       # 1Password Shell Plugins
