@@ -1,21 +1,10 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, ... }:
 
-let
-  # Define Codex package using npm-package module
-  codex-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
-    name = "codex";
-    packageName = "@openai/codex";
-    version = "0.30.0";  # Updated to latest version (December 2025)
-  };
-in
 {
-  # Install Codex package
-  home.packages = [ codex-cli ];
-  
-  # Codex - Lightweight coding agent
+  # Codex - Lightweight coding agent (using native home-manager module)
   programs.codex = {
     enable = true;
-    package = codex-cli;
+    package = pkgs.codex;  # Use the package from nixpkgs
     
     # Custom instructions for the agent
     custom-instructions = ''

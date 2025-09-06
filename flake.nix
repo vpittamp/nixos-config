@@ -31,12 +31,9 @@
     
     # Flake utilities for better system/package definitions
     flake-utils.url = "github:numtide/flake-utils";
-
-    # NPM Package utility - for installing npm packages as Nix derivations
-    npm-package.url = "github:netbrain/npm-package";
   };
 
-  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, npm-package, ... }@inputs: 
+  outputs = { self, nixpkgs, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];

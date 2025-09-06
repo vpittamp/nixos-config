@@ -1,21 +1,10 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, ... }:
 
-let
-  # Define Gemini CLI package using npm-package module
-  gemini-cli = inputs.npm-package.lib.${pkgs.system}.npmPackage {
-    name = "gemini-cli";
-    packageName = "@google/gemini-cli";
-    version = "0.3.3";  # Updated to latest version (December 2025)
-  };
-in
 {
-  # Install Gemini CLI package
-  home.packages = [ gemini-cli ];
-  
-  # Gemini CLI - Google's Gemini AI in terminal
+  # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module)
   programs.gemini-cli = {
     enable = true;
-    package = gemini-cli;
+    package = pkgs.gemini-cli;  # Use the package from nixpkgs
     
     # Default model to use (Gemini 2.5 Pro is now available)
     defaultModel = "gemini-2.5-pro";
