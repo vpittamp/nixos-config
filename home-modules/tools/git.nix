@@ -1,6 +1,11 @@
 { config, pkgs, lib, ... }:
 
 {
+  # Git credential OAuth for seamless authentication
+  programs.git-credential-oauth = {
+    enable = true;
+  };
+
   # Git configuration
   programs.git = {
     enable = true;
@@ -24,16 +29,11 @@
       push.autoSetupRemote = true;
       pull.rebase = false;
       
-      credential = {
-        "https://github.com" = {
-          helper = "!gh auth git-credential";
-        };
-        "https://gist.github.com" = {
-          helper = "!gh auth git-credential";
-        };
-      } // lib.optionalAttrs (pkgs.stdenv.isLinux) {
-        helper = "/mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe";
-      };
+      # Use OAuth as the primary credential helper - works seamlessly without manual auth
+      credential.helper = [
+        "oauth"  # Primary: git-credential-oauth for all hosts
+        "!gh auth git-credential"  # Fallback: GitHub CLI if oauth fails
+      ];
       
     };
   };

@@ -60,19 +60,17 @@ in
         command = "npx";
         args = [
           "-y"
-          "@modelcontextprotocol/server-puppeteer@latest"
+          "@modelcontextprotocol/server-puppeteer"
         ];
         env = {
           # Use Chromium on Linux, system Chrome on macOS
           PUPPETEER_EXECUTABLE_PATH = if isDarwin 
             then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
             else "${pkgs.chromium}/bin/chromium";
-          # Sandbox workarounds for containerized environments
-          PUPPETEER_ARGS = "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage";
+          # Launch options for containerized environments
+          PUPPETEER_LAUNCH_OPTIONS = ''{"headless": true, "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]}'';
+          PUPPETEER_ALLOW_DANGEROUS = "true";
           PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true";  # Use system chromium
-          CHROME_BIN = if isDarwin
-            then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-            else "${pkgs.chromium}/bin/chromium";
           # Redirect logs to temp directory to avoid cluttering project directories
           NODE_ENV = "production";
           LOG_DIR = "/tmp/mcp-puppeteer-logs";
