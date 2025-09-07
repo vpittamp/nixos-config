@@ -25,6 +25,7 @@
     # ./home-modules/tools/k9s.nix  # Temporarily disabled for container build
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
+    ./home-modules/tools/cluster-management.nix
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix

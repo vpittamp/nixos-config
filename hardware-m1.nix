@@ -1,4 +1,4 @@
-# Hardware configuration for M1 MacBook Pro with Asahi Linux
+# Hardware configuration for M1 MacBook Pro with NixOS Apple Silicon
 { config, lib, pkgs, modulesPath, ... }:
 
 {
@@ -8,7 +8,7 @@
 
   # Boot configuration for Apple Silicon
   boot = {
-    # Use the systemd-boot EFI boot loader
+    # Use the systemd-boot EFI boot loader (managed by nixos-apple-silicon)
     loader = {
       systemd-boot.enable = true;
       efi.canTouchEfiVariables = false;
@@ -28,43 +28,8 @@
     supportedFilesystems = [ "ext4" "btrfs" "xfs" "ntfs" ];
   };
 
-  # Disko configuration for disk partitioning
-  disko.devices = {
-    disk = {
-      main = {
-        type = "disk";
-        device = "/dev/nvme0n1";  # M1 MacBook internal SSD
-        content = {
-          type = "gpt";
-          partitions = {
-            ESP = {
-              priority = 1;
-              size = "512M";
-              type = "EF00";
-              content = {
-                type = "filesystem";
-                format = "vfat";
-                mountpoint = "/boot";
-                mountOptions = [ "defaults" ];
-              };
-            };
-            root = {
-              priority = 2;
-              size = "100%";
-              content = {
-                type = "filesystem";
-                format = "ext4";
-                mountpoint = "/";
-                mountOptions = [ "defaults" "noatime" ];
-              };
-            };
-          };
-        };
-      };
-    };
-  };
-
-  # File systems configuration (will be overridden by disko during installation)
+  # Filesystem configuration for M1 MacBook
+  # These need to match your actual partition setup
   fileSystems."/" = {
     device = "/dev/disk/by-label/nixos";
     fsType = "ext4";
@@ -75,27 +40,23 @@
     device = "/dev/disk/by-label/ESP";
     fsType = "vfat";
   };
-
+  
   swapDevices = [ ];
 
   # Apple Silicon specific hardware configuration
   hardware = {
-    # Enable firmware for Apple Silicon
+    # Asahi configuration
     asahi = {
-      enable = true;
-      withRust = true;
-      useExperimentalGPUDriver = true;
-      experimentalGPUInstallMode = "replace";
+      # Disable peripheral firmware extraction for now
+      # This will be enabled when firmware is available
+      extractPeripheralFirmware = false;
     };
     
     # Graphics support
-    opengl = {
+    graphics = {
       enable = true;
-      driSupport = true;
     };
     
-    # Audio support
-    pulseaudio.enable = false;
   };
 
   # Enable sound with PipeWire (better for Apple Silicon)

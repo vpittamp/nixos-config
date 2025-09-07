@@ -49,14 +49,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
-    # Disko for disk partitioning
-    disko = {
-      url = "github:nix-community/disko";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, nixos-apple-silicon, disko, ... }@inputs: 
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, nixos-apple-silicon, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
@@ -165,9 +160,6 @@
           modules = [
             # Apple Silicon hardware support
             nixos-apple-silicon.nixosModules.default
-            
-            # Disko for disk management
-            disko.nixosModules.disko
             
             # Hardware configuration for M1 MacBook
             ./hardware-m1.nix

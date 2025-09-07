@@ -2,11 +2,6 @@
 { config, lib, pkgs, ... }:
 
 {
-  # Import shared package configuration
-  imports = [
-    ./shared/package-lists.nix
-  ];
-
   # System version
   system.stateVersion = "24.05";
 
@@ -82,18 +77,65 @@
   };
 
   # System packages
-  environment.systemPackages = let
-    packageConfig = config.packageConfiguration;
-  in
-    packageConfig.getProfile.system ++ [
-      # Additional bare metal tools
-      pkgs.neovim
-      pkgs.git
-      pkgs.htop
-      pkgs.tmux
-      pkgs.tailscale
-      pkgs.networkmanager
-      pkgs.networkmanagerapplet
+  environment.systemPackages = with pkgs; 
+    let 
+      vscode-with-wayland = vscode.overrideAttrs (oldAttrs: {
+        commandLineArgs = "--enable-features=UseOzonePlatform --ozone-platform=wayland";
+      });
+    in [
+      # Core tools
+      neovim
+      git
+      htop
+      tmux
+      tailscale
+      networkmanager
+      networkmanagerapplet
+      vim
+      wget
+      curl
+      tree
+      unzip
+      zip
+      ripgrep
+      fd
+      bat
+      eza
+      fzf
+      jq
+      
+      # Development tools
+      gcc
+      gnumake
+      python3
+      nodejs_20
+      nodePackages.npm
+      go
+      rustc
+      cargo
+      
+      # System tools
+      pciutils
+      usbutils
+      lshw
+      
+      # Network tools
+      iw
+      wirelesstools
+      dig
+      nmap
+      netcat
+      
+      # Nix tools
+      nix-prefetch-git
+      nixpkgs-fmt
+      nil
+      nh
+      
+      # GUI applications
+      vscode-with-wayland
+      firefox-wayland
+      chromium
     ];
 
   # Services
@@ -125,18 +167,44 @@
 
   # Programs
   programs = {
-    bash.enableCompletion = true;
+    bash.completion.enable = true;
     mtr.enable = true;
     gnupg.agent = {
       enable = true;
       enableSSHSupport = true;
     };
+    
+    # Sway window manager
+    sway = {
+      enable = true;
+      wrapperFeatures.gtk = true;
+      extraPackages = with pkgs; [
+        swaylock
+        swayidle
+        wl-clipboard
+        mako
+        alacritty
+        foot
+        wofi
+        waybar
+        grim
+        slurp
+        wf-recorder
+        light
+        pavucontrol
+      ];
+    };
+    
+    # Enable Wayland support in Firefox
+    firefox.nativeMessagingHosts.packages = [ ];
   };
 
   # Environment variables
   environment.variables = {
     EDITOR = "nvim";
     VISUAL = "nvim";
+    MOZ_ENABLE_WAYLAND = "1";
+    NIXOS_OZONE_WL = "1";
   };
 
   # Console configuration
@@ -151,4 +219,25 @@
     man.enable = true;
     info.enable = true;
   };
+  
+  # XDG desktop portal for Wayland
+  xdg.portal = {
+    enable = true;
+    wlr.enable = true;
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+  };
+  
+  # Fonts
+  fonts.packages = with pkgs; [
+    noto-fonts
+    noto-fonts-cjk-sans
+    noto-fonts-emoji
+    liberation_ttf
+    fira-code
+    fira-code-symbols
+    jetbrains-mono
+    font-awesome
+    nerd-fonts.fira-code
+    nerd-fonts.jetbrains-mono
+  ];
 }
