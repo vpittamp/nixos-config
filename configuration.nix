@@ -164,6 +164,14 @@
       # Note: After nixos-rebuild, authenticate with: sudo tailscale up
     };
     
+    # Environment variables
+    environment.variables = {
+      # NH (Nix Helper) configuration
+      NH_FLAKE = "/etc/nixos";  # Default flake directory for nh commands
+      NH_OS_FLAKE = "/etc/nixos";  # Specific flake for 'nh os' commands
+      # This allows using 'nh os switch' without specifying the flake path
+    };
+    
     # Patch the docker-desktop-proxy script
     systemd.services.docker-desktop-proxy.script = lib.mkForce ''
       ${config.wsl.wslConf.automount.root}/wsl/docker-desktop/docker-desktop-user-distro proxy --docker-desktop-root ${config.wsl.wslConf.automount.root}/wsl/docker-desktop "C:\Program Files\Docker\Docker\resources"

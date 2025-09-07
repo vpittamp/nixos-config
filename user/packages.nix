@@ -97,6 +97,16 @@ let
     man-pages-posix
   ];
 
+  # Nix helper tools
+  nixTools = with pkgs; [
+    nh  # Yet another nix cli helper
+    nix-output-monitor  # Prettier nix build output
+    nixpkgs-fmt  # Nix code formatter
+    alejandra  # Alternative Nix formatter
+    nix-tree  # Visualize Nix store dependencies
+    nix-prefetch-git  # Prefetch git repositories
+  ];
+
 in {
   # Export categorized packages
   editors = editors;
@@ -107,9 +117,10 @@ in {
   fileManagers = fileManagers;
   git = gitTools;
   docs = documentation;
+  nix = nixTools;
   
   # Common package sets
-  essential = terminalTools ++ shellTools ++ [
+  essential = terminalTools ++ shellTools ++ nixTools ++ [
     # vim handled by programs.vim
     pkgs.git-lfs
     pkgs.tldr
@@ -118,12 +129,12 @@ in {
   ];
   
   development = terminalTools ++ shellTools ++ editors ++ 
-    languageServers ++ packageManagers ++ gitTools;
+    languageServers ++ packageManagers ++ gitTools ++ nixTools;
   
   # All user packages
   all = terminalTools ++ shellTools ++ editors ++ 
     languageServers ++ packageManagers ++ fileManagers ++ 
-    gitTools ++ documentation;
+    gitTools ++ documentation ++ nixTools;
   
   # Minimal for testing
   minimal = with pkgs; [

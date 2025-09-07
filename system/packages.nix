@@ -61,6 +61,7 @@ let
     # Nix tools
     nix
     cachix
+    nh  # Nix Helper - Yet another nix cli helper
     
     # VPN tools
     tailscale
