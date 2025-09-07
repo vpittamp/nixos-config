@@ -18,7 +18,8 @@ let
       cd "$CDK8S_DIR" && npm run synth || { cd "$ORIG_DIR"; return 1; }
       
       echo "🚀 Creating cluster with idpbuilder..."
-      ${pkgs.idpbuilder}/bin/idpbuilder create \
+      command -v idpbuilder >/dev/null 2>&1 || { echo "❌ idpbuilder not found. Please install it first."; cd "$ORIG_DIR"; return 1; }
+      idpbuilder create \
         -p "$CDK8S_DIR/dist/" \
         -p "$REF_DIR/" \
         --kind-config "$REF_DIR/kind-config-nixos-ssh.yaml" \
@@ -45,48 +46,87 @@ let
     
     cluster-recreate() {
       echo "🗑️  Deleting existing cluster..."
-      ${pkgs.idpbuilder}/bin/idpbuilder delete || ${pkgs.kind}/bin/kind delete cluster --name localdev
+      idpbuilder delete || kind delete cluster --name localdev
       sleep 3
       cluster-deploy "$@"
     }
     
     cluster-status() {
       echo "📊 Cluster Status:"
-      ${pkgs.kubectl}/bin/kubectl cluster-info 2>/dev/null || echo "❌ No cluster found"
+      kubectl cluster-info 2>/dev/null || echo "❌ No cluster found"
       echo ""
       echo "ArgoCD Applications:"
-      ${pkgs.kubectl}/bin/kubectl get applications -n argocd 2>/dev/null | head -10 || echo "❌ ArgoCD not available"
+      kubectl get applications -n argocd 2>/dev/null | head -10 || echo "❌ ArgoCD not available"
     }
     
     # Interactive menu using gum (explicit opt-in)
     cluster-menu() {
       [ ! -t 0 ] && { echo "Interactive mode requires TTY"; return 1; }
       
+      # Option to show logs by default
+      local SHOW_LOGS=''${CLUSTER_MENU_LOGS:-true}
+      
       local ACTION=$(${pkgs.gum}/bin/gum choose \
         --header "🚀 Cluster Management" \
         "Synthesize Only" \
-        "Synthesize & Deploy" \
+        "Synthesize & Deploy (spinner)" \
+        "Synthesize & Deploy (with logs)" \
         "Recreate Cluster" \
         "Show Status" \
+        "Toggle Log Mode (current: $SHOW_LOGS)" \
         "Exit")
       
       case "$ACTION" in
         "Synthesize Only")
-          ${pkgs.gum}/bin/gum spin --spinner dot --title "Synthesizing..." \
-            -- bash -c 'cluster-synth'
+          echo "🔨 Running synthesis..."
+          cluster-synth
           ;;
-        "Synthesize & Deploy")
+        "Synthesize & Deploy (spinner)")
           if ${pkgs.gum}/bin/gum confirm "Deploy to cluster?"; then
-            ${pkgs.gum}/bin/gum spin --spinner moon --title "Deploying..." \
-              -- bash -c 'cluster-deploy'
+            echo "🚀 Starting deployment..."
+            # Show spinner with periodic status updates
+            (cluster-deploy 2>&1 | tee /tmp/cluster-deploy.log) &
+            local PID=$!
+            ${pkgs.gum}/bin/gum spin --spinner moon --title "Deploying... (logs in /tmp/cluster-deploy.log)" \
+              -- bash -c "while kill -0 $PID 2>/dev/null; do sleep 1; done"
+            wait $PID
+            local RESULT=$?
+            if [ $RESULT -eq 0 ]; then
+              ${pkgs.gum}/bin/gum style --foreground 82 "✅ Deployment successful!"
+            else
+              ${pkgs.gum}/bin/gum style --foreground 196 "❌ Deployment failed! Check /tmp/cluster-deploy.log"
+            fi
+          fi
+          ;;
+        "Synthesize & Deploy (with logs)")
+          if ${pkgs.gum}/bin/gum confirm "Deploy to cluster with visible logs?"; then
+            echo "📋 Running with full output..."
+            cluster-deploy
+            echo ""
+            ${pkgs.gum}/bin/gum style --foreground 82 "Press Enter to continue..."
+            read -r
           fi
           ;;
         "Recreate Cluster")
           ${pkgs.gum}/bin/gum style --foreground 196 "⚠️  WARNING: This will delete the cluster!"
-          ${pkgs.gum}/bin/gum confirm "Continue?" && cluster-recreate
+          if ${pkgs.gum}/bin/gum confirm "Continue?"; then
+            echo "🗑️  Recreating cluster..."
+            cluster-recreate
+          fi
           ;;
         "Show Status")
           cluster-status | ${pkgs.gum}/bin/gum pager
+          ;;
+        "Toggle Log Mode"*)
+          if [ "$SHOW_LOGS" = "true" ]; then
+            export CLUSTER_MENU_LOGS=false
+            echo "Log mode disabled - will use spinners"
+          else
+            export CLUSTER_MENU_LOGS=true
+            echo "Log mode enabled - will show full output"
+          fi
+          sleep 1
+          cluster-menu  # Re-run menu
           ;;
       esac
     }
