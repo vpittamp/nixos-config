@@ -34,6 +34,9 @@ let
     };
   };
 
+  # Azure CLI from stable nixpkgs for Python 3.11 compatibility
+  azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
+
   # Plugins are now managed through home-manager:
   # - Tmux plugins via programs.tmux.plugins
   # - Vim plugins via programs.neovim.plugins
@@ -64,7 +67,7 @@ let
   ];
 
   # Development tools that work better at system level
-  developmentTools = with pkgs; [
+  developmentTools = (with pkgs; [
     # Container tools
     docker-compose
     devpod
@@ -90,6 +93,9 @@ let
     go
     rustc
     cargo
+  ]) ++ [ 
+    # Cloud tools (custom packages)
+    azure-cli-bin 
   ];
 
   # Kubernetes tools (often need system access)
@@ -104,7 +110,7 @@ let
 
 in {
   # Export different package sets
-  custom = [];  # No custom packages currently
+  custom = [ azure-cli-bin ];
   
   # Plugins moved to home-manager
   tmuxPlugins = [];
@@ -115,7 +121,7 @@ in {
   kubernetes = kubernetesTools;
   
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools;
+  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin ];
   
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [
