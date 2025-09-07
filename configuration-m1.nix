@@ -136,10 +136,40 @@
       vscode-with-wayland
       firefox-wayland
       chromium
+      
+      # GNOME utilities
+      gnome-tweaks
+      gnome-extension-manager
+      dconf-editor
+      
+      # Essential Wayland tools for GNOME
+      wl-clipboard
+      grim
+      slurp
     ];
 
   # Services
   services = {
+    # X11 and display configuration
+    xserver = {
+      enable = true;
+      
+      # Keyboard layout
+      xkb = {
+        layout = "us";
+        variant = "";
+      };
+    };
+    
+    # GNOME Display Manager with Wayland
+    displayManager.gdm = {
+      enable = true;
+      wayland = true;
+    };
+    
+    # GNOME Desktop Environment
+    desktopManager.gnome.enable = true;
+    
     # SSH daemon
     openssh = {
       enable = true;
@@ -174,27 +204,6 @@
       enableSSHSupport = true;
     };
     
-    # Sway window manager
-    sway = {
-      enable = true;
-      wrapperFeatures.gtk = true;
-      extraPackages = with pkgs; [
-        swaylock
-        swayidle
-        wl-clipboard
-        mako
-        alacritty
-        foot
-        wofi
-        waybar
-        grim
-        slurp
-        wf-recorder
-        light
-        pavucontrol
-      ];
-    };
-    
     # Enable Wayland support in Firefox
     firefox.nativeMessagingHosts.packages = [ ];
   };
@@ -206,6 +215,26 @@
     MOZ_ENABLE_WAYLAND = "1";
     NIXOS_OZONE_WL = "1";
   };
+  
+  # GNOME configuration
+  services.gnome = {
+    # Disable unnecessary GNOME apps to save space
+    games.enable = false;
+    core-utilities.enable = false;
+  };
+  
+  # Exclude some default GNOME packages
+  environment.gnome.excludePackages = with pkgs; [
+    gnome-tour
+    gnome-music
+    epiphany # GNOME Web browser
+    geary # email client
+    gnome-characters
+    tali # poker game
+    iagno # go game
+    hitori # sudoku game
+    atomix # puzzle game
+  ];
 
   # Console configuration
   console = {
