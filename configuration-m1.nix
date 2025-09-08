@@ -6,12 +6,16 @@
     # Hardware configuration
     ./hardware-configuration.nix
     
-    # Apple Silicon support
+    # Apple Silicon support - required for disk mappings
     ./apple-silicon-support
   ];
 
   # System identification
   system.stateVersion = "25.11";
+  
+  # Note: If kernel build fails with rust/core.o error, temporarily comment
+  # out the apple-silicon-support import above. This is a known upstream issue
+  # with Rust versions in the Asahi kernel build.
   
 
   # Nix configuration
