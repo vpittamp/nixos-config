@@ -1,9 +1,18 @@
-# NixOS configuration for M1 MacBook Pro (bare metal)
+# NixOS configuration for M1 MacBook Pro with GUI support
 { config, lib, pkgs, ... }:
 
 {
-  # System version
-  system.stateVersion = "24.05";
+  imports = [
+    # Hardware configuration
+    ./hardware-configuration.nix
+    
+    # Apple Silicon support
+    ./apple-silicon-support
+  ];
+
+  # System identification
+  system.stateVersion = "25.11";
+  
 
   # Nix configuration
   nix = {
@@ -22,54 +31,105 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # Boot and kernel
+  # Boot configuration
   boot = {
+    loader = {
+      systemd-boot.enable = true;
+      efi.canTouchEfiVariables = false;
+      timeout = 3;
+    };
+    
+    # Apple keyboard fixes
+    extraModprobeConfig = ''
+      options hid_apple iso_layout=0
+      options hid_apple fnmode=2
+    '';
+    kernelModules = [ "hid-apple" ];
+    
     # Clean /tmp on boot
     tmp.cleanOnBoot = true;
-    
-    # Disable Plymouth boot splash (was causing boot failures)
-    plymouth.enable = false;
-    
-    # Kernel parameters for Apple Silicon
-    kernelParams = [ 
-      "quiet"
-    ];
   };
 
   # Timezone and locale
   time.timeZone = "America/Los_Angeles";
-  i18n = {
-    defaultLocale = "en_US.UTF-8";
-    extraLocaleSettings = {
-      LC_ADDRESS = "en_US.UTF-8";
-      LC_IDENTIFICATION = "en_US.UTF-8";
-      LC_MEASUREMENT = "en_US.UTF-8";
-      LC_MONETARY = "en_US.UTF-8";
-      LC_NAME = "en_US.UTF-8";
-      LC_NUMERIC = "en_US.UTF-8";
-      LC_PAPER = "en_US.UTF-8";
-      LC_TELEPHONE = "en_US.UTF-8";
-      LC_TIME = "en_US.UTF-8";
-    };
-  };
+  i18n.defaultLocale = "en_US.UTF-8";
 
   # Networking
   networking = {
     hostName = "nixos-m1";
     networkmanager.enable = true;
+    
+    # Use iwd for better WiFi support
+    wireless.iwd = {
+      enable = true;
+      settings.General.EnableNetworkConfiguration = true;
+    };
+    
+    # DNS
+    nameservers = [ "8.8.8.8" "8.8.4.4" ];
+    
+    # Firewall
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 22 ];  # SSH
+      allowedTCPPorts = [ 22 ];
     };
   };
 
-  # Users
+
+  # Enable KDE Plasma 6 Desktop Environment
+  services.xserver.enable = true;
+  services.desktopManager.plasma6.enable = true;
+  
+  # Enable SDDM Display Manager (KDE's native)
+  services.displayManager.sddm.enable = true;
+  services.displayManager.sddm.wayland.enable = true;
+  
+  # Enable KDE Connect for phone integration
+  programs.kdeconnect.enable = true;
+  
+  # Enable XWayland for compatibility
+  programs.xwayland.enable = true;
+
+  # Graphics configuration
+  hardware.opengl = {
+    enable = true;
+  };
+
+  # Sound configuration with PipeWire
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+    jack.enable = true;
+  };
+
+  # Enable touchpad support
+  services.libinput = {
+    enable = true;
+    touchpad = {
+      tapping = true;
+      naturalScrolling = true;
+      scrollMethod = "twofinger";
+      disableWhileTyping = true;
+    };
+  };
+
+  # Services
+  services = {
+    openssh.enable = true;
+    tailscale.enable = true;
+    gvfs.enable = true;
+    dbus.enable = true;
+  };
+
+  # User account
   users.users.vpittamp = {
     isNormalUser = true;
     description = "Vinod Pittampalli";
-    extraGroups = [ "wheel" "networkmanager" "docker" "audio" "video" ];
-    shell = pkgs.bash;
-    hashedPassword = "$6$rounds=100000$Km5MQm.Q5TGwTg6m$iXGppJ0SRTLso71vYJXxfI0nX3MYdJhL8DlpfINPNNnPYmRrGutEQPQq/N0c1xx/2TZKlMPU8B9OWaveHMzSN.";
+    extraGroups = [ "wheel" "networkmanager" "audio" "video" "input" ];
+    initialPassword = "changeme";
   };
 
   # Enable sudo
@@ -79,177 +139,59 @@
   };
 
   # System packages
-  environment.systemPackages = with pkgs; 
-    let 
-      vscode-with-wayland = vscode.overrideAttrs (oldAttrs: {
-        commandLineArgs = "--enable-features=UseOzonePlatform --ozone-platform=wayland";
-      });
-    in [
-      # Core tools
-      neovim
-      git
-      htop
-      tmux
-      tailscale
-      networkmanager
-      networkmanagerapplet
-      vim
-      wget
-      curl
-      tree
-      unzip
-      zip
-      ripgrep
-      fd
-      bat
-      eza
-      fzf
-      jq
-      
-      # Development tools
-      gcc
-      gnumake
-      python3
-      nodejs_20
-      nodePackages.npm
-      go
-      rustc
-      cargo
-      
-      # System tools
-      pciutils
-      usbutils
-      lshw
-      
-      # Network tools
-      iw
-      wirelesstools
-      dig
-      nmap
-      netcat
-      
-      # Nix tools
-      nix-prefetch-git
-      nixpkgs-fmt
-      nil
-      nh
-      
-      # GUI applications
-      vscode-with-wayland
-      firefox-wayland
-      chromium
-      
-      # Essential Wayland tools
-      wl-clipboard
-      grim
-      slurp
-    ];
-
-  # Services
-  services = {
-    # X11 configuration (required even for Wayland)
-    xserver = {
-      enable = true;
-      
-      # Keyboard layout
-      xkb = {
-        layout = "us";
-        variant = "";
-      };
-    };
+  environment.systemPackages = with pkgs; [
+    vscode
+    # Core utilities
+    vim neovim git wget curl htop tree tmux
     
-    # SSH daemon
-    openssh = {
-      enable = true;
-      settings = {
-        PermitRootLogin = "no";
-        PasswordAuthentication = true;
-      };
-    };
-
-    # Tailscale VPN
-    tailscale.enable = true;
-
-    # Docker (if needed)
-    # docker = {
-    #   enable = true;
-    #   enableOnBoot = true;
-    # };
-
-    # Automatic upgrades
-    # system.autoUpgrade = {
-    #   enable = true;
-    #   allowReboot = false;
-    # };
-  };
-
-  # Programs
-  programs = {
-    bash.completion.enable = true;
-    mtr.enable = true;
-    gnupg.agent = {
-      enable = true;
-      enableSSHSupport = true;
-    };
+    # Terminal emulators
+    alacritty foot kitty konsole
     
-    # Enable Wayland support in Firefox
-    firefox.nativeMessagingHosts.packages = [ ];
-  };
+    # Development tools
+    gcc gnumake python3 nodejs go
+    
+    # GUI applications
+    firefox-wayland chromium vscodium
+    
+    # Media
+    mpv pavucontrol
+    
+    # Utilities
+    ripgrep fd bat eza fzf jq
+    
+    # Wayland tools
+    wl-clipboard
+    
+    # File managers
+    dolphin
+    
+    # KDE utilities
+    kate ark spectacle
+  ];
 
   # Environment variables
-  environment.variables = {
-    EDITOR = "nvim";
-    VISUAL = "nvim";
+  environment.sessionVariables = {
     MOZ_ENABLE_WAYLAND = "1";
     NIXOS_OZONE_WL = "1";
+    # Remove desktop specification - KDE will set this
   };
-  
-  # Sway window manager
-  programs.sway = {
-    enable = true;
-    wrapperFeatures.gtk = true;
-    extraPackages = with pkgs; [
-      swaylock
-      swayidle
-      foot
-      alacritty
-      wofi
-      waybar
-      mako
+
+  # Fonts
+  fonts = {
+    packages = with pkgs; [
+      noto-fonts
+      noto-fonts-emoji
+      liberation_ttf
+      fira-code
+      jetbrains-mono
+      font-awesome
     ];
   };
 
-  # Console configuration
-  console = {
-    font = "Lat2-Terminus16";
-    keyMap = "us";
-  };
-
-  # Documentation
-  documentation = {
-    enable = true;
-    man.enable = true;
-    info.enable = true;
-  };
-  
-  # XDG desktop portal for Wayland
+  # XDG portal for Wayland
   xdg.portal = {
     enable = true;
     wlr.enable = true;
     extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
   };
-  
-  # Fonts
-  fonts.packages = with pkgs; [
-    noto-fonts
-    noto-fonts-cjk-sans
-    noto-fonts-emoji
-    liberation_ttf
-    fira-code
-    fira-code-symbols
-    jetbrains-mono
-    font-awesome
-    nerd-fonts.fira-code
-    nerd-fonts.jetbrains-mono
-  ];
 }
