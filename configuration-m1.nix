@@ -25,7 +25,7 @@
     
     # Apple Silicon support - CRITICAL for hardware functionality
     # Comment out ONLY if kernel build fails, then use fallback config
-    ./apple-silicon-support
+    ./apple-silicon-support/modules/default.nix
   ];
 
   # System identification
