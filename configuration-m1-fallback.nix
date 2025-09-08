@@ -131,7 +131,7 @@
   programs.xwayland.enable = true;
 
   # Basic graphics support (may be limited without Apple Silicon drivers)
-  hardware.opengl = {
+  hardware.graphics = {
     enable = true;
   };
 
@@ -209,7 +209,7 @@
     tree
     
     # Terminal emulators
-    konsole
+    kdePackages.konsole
     foot
     
     # Essential dev tools for fixing issues
@@ -222,7 +222,7 @@
     netcat
     
     # File manager
-    dolphin
+    kdePackages.dolphin
     
     # Basic KDE utilities
     kdePackages.kate
