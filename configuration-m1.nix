@@ -27,10 +27,12 @@
     # Clean /tmp on boot
     tmp.cleanOnBoot = true;
     
+    # Disable Plymouth boot splash (was causing boot failures)
+    plymouth.enable = false;
+    
     # Kernel parameters for Apple Silicon
     kernelParams = [ 
       "quiet"
-      "splash"
     ];
   };
 
@@ -137,12 +139,7 @@
       firefox-wayland
       chromium
       
-      # GNOME utilities
-      gnome-tweaks
-      gnome-extension-manager
-      dconf-editor
-      
-      # Essential Wayland tools for GNOME
+      # Essential Wayland tools
       wl-clipboard
       grim
       slurp
@@ -150,7 +147,7 @@
 
   # Services
   services = {
-    # X11 and display configuration
+    # X11 configuration (required even for Wayland)
     xserver = {
       enable = true;
       
@@ -160,15 +157,6 @@
         variant = "";
       };
     };
-    
-    # GNOME Display Manager with Wayland
-    displayManager.gdm = {
-      enable = true;
-      wayland = true;
-    };
-    
-    # GNOME Desktop Environment
-    desktopManager.gnome.enable = true;
     
     # SSH daemon
     openssh = {
@@ -216,25 +204,20 @@
     NIXOS_OZONE_WL = "1";
   };
   
-  # GNOME configuration
-  services.gnome = {
-    # Disable unnecessary GNOME apps to save space
-    games.enable = false;
-    core-utilities.enable = false;
+  # Sway window manager
+  programs.sway = {
+    enable = true;
+    wrapperFeatures.gtk = true;
+    extraPackages = with pkgs; [
+      swaylock
+      swayidle
+      foot
+      alacritty
+      wofi
+      waybar
+      mako
+    ];
   };
-  
-  # Exclude some default GNOME packages
-  environment.gnome.excludePackages = with pkgs; [
-    gnome-tour
-    gnome-music
-    epiphany # GNOME Web browser
-    geary # email client
-    gnome-characters
-    tali # poker game
-    iagno # go game
-    hitori # sudoku game
-    atomix # puzzle game
-  ];
 
   # Console configuration
   console = {
