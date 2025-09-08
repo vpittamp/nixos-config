@@ -25,7 +25,7 @@
     
     # Apple Silicon support - CRITICAL for hardware functionality
     # Comment out ONLY if kernel build fails, then use fallback config
-    ./apple-silicon-support/modules/default.nix
+    ./apple-silicon-support/apple-silicon-support
   ];
 
   # System identification
@@ -126,7 +126,7 @@
   programs.xwayland.enable = true;
 
   # Graphics configuration
-  hardware.opengl = {
+  hardware.graphics = {
     enable = true;
   };
 
@@ -181,7 +181,7 @@
     vim neovim git wget curl htop tree tmux
     
     # Terminal emulators
-    alacritty foot kitty konsole
+    alacritty foot kitty kdePackages.konsole
     
     # Development tools
     gcc gnumake python3 nodejs go
@@ -199,7 +199,7 @@
     wl-clipboard
     
     # File managers
-    dolphin
+    kdePackages.dolphin
     
     # KDE utilities (using kdePackages prefix for Qt6 compatibility)
     kdePackages.kate
