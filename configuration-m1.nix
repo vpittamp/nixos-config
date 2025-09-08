@@ -1,21 +1,35 @@
-# NixOS configuration for M1 MacBook Pro with GUI support
+# NixOS configuration for M1 MacBook Pro with KDE Plasma 6
+# 
+# IMPORTANT: Apple Silicon Module Notes
+# =====================================
+# The apple-silicon-support module is REQUIRED for:
+# - Correct disk device mappings (/dev/nvme0n1p* -> /dev/disk/by-*)
+# - WiFi and Bluetooth hardware support
+# - Display and GPU acceleration
+# - Audio hardware support
+#
+# KNOWN ISSUE: Kernel build may fail with "rust/core.o Error 1"
+# This is due to Rust version incompatibilities in the Asahi kernel.
+#
+# WORKAROUNDS:
+# 1. Try building with cachix cache (usually has pre-built kernels)
+# 2. If build fails, use configuration-m1-fallback.nix temporarily
+# 3. After successful boot, re-enable the module
+#
 { config, lib, pkgs, ... }:
 
 {
   imports = [
-    # Hardware configuration
+    # Hardware configuration (generated during installation)
     ./hardware-configuration.nix
     
-    # Apple Silicon support - required for disk mappings
+    # Apple Silicon support - CRITICAL for hardware functionality
+    # Comment out ONLY if kernel build fails, then use fallback config
     ./apple-silicon-support
   ];
 
   # System identification
   system.stateVersion = "25.11";
-  
-  # Note: If kernel build fails with rust/core.o error, temporarily comment
-  # out the apple-silicon-support import above. This is a known upstream issue
-  # with Rust versions in the Asahi kernel build.
   
 
   # Nix configuration
@@ -24,6 +38,17 @@
       experimental-features = [ "nix-command" "flakes" ];
       trusted-users = [ "root" "vpittamp" ];
       auto-optimise-store = true;
+      # Cachix for pre-built Apple Silicon kernels
+      substituters = [
+        "https://cache.nixos.org"
+        "https://nixos-apple-silicon.cachix.org"
+        "https://nix-community.cachix.org"
+      ];
+      trusted-public-keys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "nixos-apple-silicon.cachix.org-1:HN6Zb4XV5bjFLGKZva1CGpJLuDqLux/erYbBbYneNRQ="
+        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      ];
     };
     gc = {
       automatic = true;
@@ -40,8 +65,14 @@
     loader = {
       systemd-boot.enable = true;
       efi.canTouchEfiVariables = false;
-      timeout = 3;
+      # Longer timeout for troubleshooting
+      timeout = 10;
+      # Keep more generations for recovery
+      systemd-boot.configurationLimit = 20;
     };
+    
+    # Disable Plymouth to avoid boot issues
+    plymouth.enable = false;
     
     # Apple keyboard fixes
     extraModprobeConfig = ''
@@ -144,6 +175,7 @@
 
   # System packages
   environment.systemPackages = with pkgs; [
+    # Development tools with proper configuration
     vscode
     # Core utilities
     vim neovim git wget curl htop tree tmux
@@ -169,8 +201,20 @@
     # File managers
     dolphin
     
-    # KDE utilities
-    kate ark spectacle
+    # KDE utilities (using kdePackages prefix for Qt6 compatibility)
+    kdePackages.kate
+    kdePackages.ark
+    kdePackages.spectacle
+    kdePackages.okular
+    kdePackages.gwenview
+    kdePackages.kcalc
+    
+    # System recovery tools
+    gparted
+    testdisk
+    
+    # Nix helper for easier rebuilds
+    nh
   ];
 
   # Environment variables
@@ -189,7 +233,18 @@
       fira-code
       jetbrains-mono
       font-awesome
+      # Additional fonts for better rendering
+      inter
+      roboto
+      ubuntu_font_family
     ];
+    fontconfig = {
+      defaultFonts = {
+        serif = [ "Noto Serif" ];
+        sansSerif = [ "Inter" "Noto Sans" ];
+        monospace = [ "JetBrains Mono" "Fira Code" ];
+      };
+    };
   };
 
   # XDG portal for Wayland
@@ -198,4 +253,31 @@
     wlr.enable = true;
     extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
   };
+  
+  # Additional shell aliases for recovery
+  environment.shellAliases = {
+    # Quick rebuilds
+    rebuild = "sudo nixos-rebuild switch";
+    rebuild-test = "sudo nixos-rebuild test";
+    rebuild-boot = "sudo nixos-rebuild boot";
+    # Using fallback config if needed
+    rebuild-fallback = "sudo nixos-rebuild switch -I nixos-config=/etc/nixos/configuration-m1-fallback.nix";
+    # System info
+    nixos-version = "nixos-version --json | jq";
+    # Disk utilities
+    show-disks = "lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,UUID";
+    show-uuids = "blkid";
+  };
+  
+  # Documentation for fresh install
+  # ================================
+  # After installing NixOS:
+  # 1. Boot into the system
+  # 2. Run: sudo blkid
+  # 3. Update hardware-configuration.nix with correct UUIDs
+  # 4. Run: sudo nixos-rebuild switch
+  # 
+  # If kernel build fails:
+  # 1. Use: sudo nixos-rebuild switch -I nixos-config=/etc/nixos/configuration-m1-fallback.nix
+  # 2. After successful boot, try re-enabling apple-silicon-support
 }
