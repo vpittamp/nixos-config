@@ -107,7 +107,8 @@
     # Firewall
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 22 ];
+      allowedTCPPorts = [ 22 7236 7250 5353 ];  # SSH + Miracast ports
+      allowedUDPPorts = [ 5353 7236 ];  # Miracast UDP ports
     };
   };
 
@@ -166,6 +167,14 @@
   # Enable Touchegg for macOS-like trackpad gestures
   services.touchegg = {
     enable = true;
+  };
+
+  # Power management - prevent sleep when plugged in
+  # Power management - prevent sleep when plugged in
+  services.logind = {
+    lidSwitch = "suspend";  # Suspend on lid close
+    lidSwitchDocked = "ignore";  # Do not suspend when docked/external display
+    lidSwitchExternalPower = "ignore";  # Do not suspend when on AC power
   };
 
   # Additional services
@@ -229,7 +238,9 @@
     
     # Nix helper for easier rebuilds
     nh
-    pkgs.wtype  # Wayland key simulation for clipboard paste
+    wtype  # Wayland key simulation for clipboard paste
+    miraclecast              # Open source Miracast implementation
+    gnome-network-displays   # GUI for wireless displays
     touchegg  # macOS-like trackpad gestures
   ];
 
@@ -296,5 +307,19 @@
   # If kernel build fails:
   # 1. Use: sudo nixos-rebuild switch -I nixos-config=/etc/nixos/configuration-m1-fallback.nix
   # 2. After successful boot, try re-enabling apple-silicon-support
-}
 
+  # Enable Avahi for device discovery
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    publish = {
+      enable = true;
+      userServices = true;
+      addresses = true;
+      workstation = true;
+    };
+    openFirewall = true;  # Automatically opens required ports
+  };
+
+
+}
