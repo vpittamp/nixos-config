@@ -198,20 +198,17 @@
           ];
         };
         
-        # NixOS configuration for Hetzner Cloud server
+        # NixOS configuration for Hetzner Cloud server - Full Desktop
         nixos-hetzner = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           
           specialArgs = { inherit inputs; };
           
-          modules = [
-            # Disko for disk management
-            disko.nixosModules.disko
+          modules = [            
+            # Hetzner-specific configuration with KDE Desktop
+            ./configuration-hetzner-desktop.nix
             
-            # Hetzner-specific configuration
-            ./configuration-hetzner.nix
-            
-            # Home Manager module (minimal for now, full config after bootstrap)
+            # Home Manager module with full configuration
             home-manager.nixosModules.home-manager
             {
               home-manager = {
@@ -219,19 +216,17 @@
                 useUserPackages = true;
                 extraSpecialArgs = { 
                   inherit inputs;
-                  pkgs-unstable = pkgs-bleeding;
+                  pkgs-unstable = import nixpkgs-bleeding {
+                    system = "x86_64-linux";
+                    config.allowUnfree = true;
+                  };
                   isDarwin = false;
                 };
                 users.vpittamp = {
                   imports = [ 
-                    # Start minimal, will add full home-manager config after bootstrap
+                    ./home-vpittamp.nix
                     onepassword-shell-plugins.hmModules.default
                   ];
-                  home = {
-                    username = "vpittamp";
-                    homeDirectory = "/home/vpittamp";
-                    stateVersion = "25.05";
-                  };
                   home.enableNixpkgsReleaseCheck = false;
                 };
               };
