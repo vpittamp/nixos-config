@@ -59,7 +59,7 @@
     
     # Database clients
     postgresql
-    mysql
+    mariadb
     redis
     mongodb-tools
     
