@@ -4,7 +4,7 @@
 {
   imports = [
     (modulesPath + "/profiles/qemu-guest.nix")
-    ./disk-config-hetzner.nix
+    # disk-config not needed after installation
   ];
 
   # Boot configuration for Hetzner
