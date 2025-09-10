@@ -39,10 +39,7 @@
   };
 
   # Enable hardware acceleration
-  hardware.opengl = {
-    enable = true;
-    driSupport = true;
-  };
+  hardware.graphics.enable = true;
 
   # Desktop packages
   environment.systemPackages = with pkgs; [
