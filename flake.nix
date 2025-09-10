@@ -49,9 +49,15 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     
+    # Disk management for NixOS installations
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, nixos-apple-silicon, ... }@inputs: 
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, home-manager, onepassword-shell-plugins, vscode-server, flake-utils, claude-code-nix, nixos-apple-silicon, disko, ... }@inputs: 
     let
       # Support both Linux and Darwin systems
       supportedSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
@@ -185,6 +191,47 @@
                     ./home-vpittamp.nix
                     onepassword-shell-plugins.hmModules.default
                   ];
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
+            }
+          ];
+        };
+        
+        # NixOS configuration for Hetzner Cloud server
+        nixos-hetzner = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          
+          specialArgs = { inherit inputs; };
+          
+          modules = [
+            # Disko for disk management
+            disko.nixosModules.disko
+            
+            # Hetzner-specific configuration
+            ./configuration-hetzner.nix
+            
+            # Home Manager module (minimal for now, full config after bootstrap)
+            home-manager.nixosModules.home-manager
+            {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = { 
+                  inherit inputs;
+                  pkgs-unstable = pkgs-bleeding;
+                  isDarwin = false;
+                };
+                users.vpittamp = {
+                  imports = [ 
+                    # Start minimal, will add full home-manager config after bootstrap
+                    onepassword-shell-plugins.hmModules.default
+                  ];
+                  home = {
+                    username = "vpittamp";
+                    homeDirectory = "/home/vpittamp";
+                    stateVersion = "25.05";
+                  };
                   home.enableNixpkgsReleaseCheck = false;
                 };
               };
