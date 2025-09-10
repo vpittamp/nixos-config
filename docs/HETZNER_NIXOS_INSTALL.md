@@ -238,29 +238,28 @@ nix-env -iA nixos.git
 cd /etc/nixos
 git init
 git remote add origin https://github.com/vpittamp/nixos-config
-git fetch origin m1-installer
-git checkout -b m1-installer origin/m1-installer
+git fetch origin main
+git checkout -b main origin/main
 ```
 
-#### 4.3 Fix Package Issues
+#### 4.3 Update Hardware Configuration
 ```bash
-# Fix Qt5 to Qt6 migrations
-sed -i 's/pkgs\.xdg-desktop-portal-kde/pkgs.kdePackages.xdg-desktop-portal-kde/g' configuration-hetzner-desktop.nix
-sed -i 's/^    kate$/    kdePackages.kate/' configuration-hetzner-desktop.nix
-sed -i 's/^    konsole$/    kdePackages.konsole/' configuration-hetzner-desktop.nix
-sed -i 's/^    dolphin$/    kdePackages.dolphin/' configuration-hetzner-desktop.nix
-sed -i 's/^    ark$/    kdePackages.ark/' configuration-hetzner-desktop.nix
-sed -i 's/^    spectacle$/    kdePackages.spectacle/' configuration-hetzner-desktop.nix
+# The generated hardware configuration needs to be integrated
+# Compare with the existing hardware module
+diff hardware-configuration.nix hardware/hetzner.nix
+
+# Usually you'll want to keep the generated UUIDs
+# But use the module's optimized settings
 ```
 
 #### 4.4 Apply Full Configuration
 ```bash
 # Stage changes in git (required for flakes)
 git add -A
-git commit -m "Fix KDE package references"
+git commit -m "Initial Hetzner configuration"
 
 # Rebuild with full configuration
-nixos-rebuild switch --flake .#nixos-hetzner
+nixos-rebuild switch --flake .#hetzner
 ```
 
 #### 4.5 Start Desktop Services
@@ -279,7 +278,7 @@ systemctl start xrdp
 ```bash
 # Boot into NixOS ISO
 # Download and run the script
-curl -O https://raw.githubusercontent.com/vpittamp/nixos-config/m1-installer/scripts/install-nixos-hetzner.sh
+curl -O https://raw.githubusercontent.com/vpittamp/nixos-config/main/scripts/install-nixos-hetzner.sh
 chmod +x install-nixos-hetzner.sh
 sudo ./install-nixos-hetzner.sh
 ```
@@ -498,7 +497,7 @@ cd /etc/nixos
 nix flake update
 
 # Rebuild system
-sudo nixos-rebuild switch --flake .#nixos-hetzner
+sudo nixos-rebuild switch --flake .#hetzner
 ```
 
 ### Garbage Collection
@@ -516,7 +515,7 @@ sudo nix-collect-garbage --delete-older-than 7d
 cd /etc/nixos
 git add -A
 git commit -m "Configuration backup $(date +%Y-%m-%d)"
-git push origin m1-installer
+git push origin main
 ```
 
 ## Performance Optimization
@@ -597,4 +596,4 @@ git push                          # Backup to repository
 
 ---
 
-*Last updated: 2025 | Tested with NixOS 24.11 and Hetzner Cloud CCX33*
+*Last updated: September 2025 | Tested with NixOS 24.11 and Hetzner Cloud CCX33 | Using modular architecture*

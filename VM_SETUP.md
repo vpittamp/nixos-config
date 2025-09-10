@@ -49,14 +49,13 @@ sudo mount /dev/vda1 /mnt/boot
 sudo nixos-generate-config --root /mnt
 
 # Clone your configuration
-sudo git clone <your-repo> /mnt/etc/nixos-custom
+sudo git clone https://github.com/vpittamp/nixos-config /mnt/etc/nixos-custom
 
-# Copy VM configuration
-sudo cp /mnt/etc/nixos-custom/configuration-vm.nix /mnt/etc/nixos/configuration.nix
-sudo cp /mnt/etc/nixos-custom/flake.* /mnt/etc/nixos/
+# Copy M1 configuration as base
+sudo cp -r /mnt/etc/nixos-custom/* /mnt/etc/nixos/
 
-# Install NixOS
-sudo nixos-install --flake /mnt/etc/nixos#nixos-vm
+# Install NixOS with M1 configuration
+sudo nixos-install --flake /mnt/etc/nixos#m1
 
 # Set root password when prompted
 # Reboot
@@ -74,11 +73,11 @@ passwd vpittamp
 # Switch to your user
 su - vpittamp
 
-# Clone your dotfiles
-git clone <your-repo> ~/nixos-config
+# Clone your configuration
+git clone https://github.com/vpittamp/nixos-config ~/nixos-config
 
 # Apply home-manager configuration
-home-manager switch --flake ~/nixos-config#vpittamp-user
+home-manager switch --flake ~/nixos-config#vpittamp
 
 # Test SSH from your Mac
 ssh vpittamp@<vm-ip>
@@ -116,7 +115,10 @@ ssh nixos-vm
 
 ## Alternative: Headless VM
 
-For a minimal headless setup, remove the `services.xserver` section from `configuration-vm.nix` and manage entirely via SSH.
+For a minimal headless setup:
+1. Create a custom configuration that doesn't import the desktop module
+2. Import only the base and development modules
+3. Manage entirely via SSH
 
 ## Using with VS Code
 

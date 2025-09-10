@@ -5,109 +5,146 @@
 ### Essential Commands
 ```bash
 # Test configuration changes (ALWAYS RUN BEFORE APPLYING)
-cd /etc/nixos && sudo nixos-rebuild dry-build
+sudo nixos-rebuild dry-build --flake .#wsl    # For WSL
+sudo nixos-rebuild dry-build --flake .#hetzner # For Hetzner
+sudo nixos-rebuild dry-build --flake .#m1      # For M1 Mac
 
 # Apply configuration changes
-sudo nixos-rebuild switch
+sudo nixos-rebuild switch --flake .#wsl    # For WSL
+sudo nixos-rebuild switch --flake .#hetzner # For Hetzner
+sudo nixos-rebuild switch --flake .#m1      # For M1 Mac
 
-# Build container image
-cd /etc/nixos && nix build .#container
-
-# Install home-manager configuration in container
-home-manager switch --flake github:PittampalliOrg/nix-config#container-essential
+# Build container images
+nix build .#container-minimal      # Minimal container (~100MB)
+nix build .#container-dev          # Development container (~600MB)
 ```
-
-### Key Files
-- `configuration.nix` - Main NixOS system configuration
-- `home-vpittamp.nix` - User environment (works in WSL & containers)
-- `flake.nix` - Reproducible builds & container definitions
-- `container-services.nix` - SSH, VS Code Server, Nix helpers
-- `shared/package-lists.nix` - Package profiles (minimal/essential/full)
 
 ## 📁 Directory Structure
 
 ```
-/etc/nixos/                      # Root configuration directory
-├── configuration.nix            # Main system config (imports container-profile if needed)
-├── container-base.nix           # Base container configuration
-├── container-profile.nix        # Container-specific overrides
-├── container-services.nix       # Consolidated container services (SSH, VS Code, Nix)
-├── flake.nix                    # Flake with WSL & container outputs
-├── home-vpittamp.nix            # Unified home-manager config
-├── home-modules/                # Modular home-manager configurations
-│   ├── ai-assistants/           # Claude Code, Codex, Gemini CLI
-│   ├── editors/                 # Neovim with lazy.nvim (runtime plugins)
-│   ├── shell/                   # Bash, Starship prompt
-│   ├── terminal/                # Tmux, Sesh
-│   └── tools/                   # Git, SSH, Bat, Direnv, FZF, Yazi
-├── shared/                      # Shared utilities
-│   └── package-lists.nix        # Package profile definitions
+/etc/nixos/
+├── flake.nix                    # Entry point - defines all configurations
+├── configuration.nix            # Current system configuration (symlink/import)
+├── hardware-configuration.nix   # Auto-generated hardware config
+│
+├── configurations/              # Target-specific configurations
+│   ├── base.nix                # Shared base configuration (from Hetzner)
+│   ├── hetzner.nix             # Hetzner Cloud server config
+│   ├── m1.nix                  # Apple Silicon Mac config
+│   ├── wsl.nix                 # Windows Subsystem for Linux config
+│   └── container.nix           # Container base configuration
+│
+├── hardware/                    # Hardware-specific configurations
+│   ├── hetzner.nix             # Hetzner virtual hardware
+│   └── m1.nix                  # Apple Silicon hardware
+│
+├── modules/                     # Reusable system modules
+│   ├── desktop/
+│   │   ├── kde-plasma.nix      # KDE Plasma 6 desktop
+│   │   └── remote-access.nix   # RDP/VNC configuration
+│   └── services/
+│       ├── development.nix     # Dev tools (Docker, K8s, languages)
+│       ├── networking.nix      # Network services (SSH, Tailscale)
+│       └── container.nix       # Container-specific services
+│
+├── home-modules/                # User environment (home-manager)
+│   ├── ai-assistants/          # Claude, Codex, Gemini CLI tools
+│   ├── editors/                # Neovim with lazy.nvim
+│   ├── shell/                  # Bash, Starship prompt
+│   ├── terminal/               # Tmux, terminal tools
+│   └── tools/                  # Git, SSH, developer utilities
+│
+├── shared/                      # Shared configurations
+│   └── package-lists.nix       # Package profiles
+│
 ├── system/                      # System-level packages
-│   └── packages.nix             # System packages (Docker, K8s, dev tools)
-└── user/                        # User-level packages
-    └── packages.nix             # User packages (CLI tools, utilities)
+│   └── packages.nix            # System packages
+│
+├── user/                        # User-level packages
+│   └── packages.nix            # User packages
+│
+├── scripts/                     # Utility scripts
+└── docs/                        # Additional documentation
 ```
 
-## 🎯 Architecture Overview
+## 🏗️ Architecture Overview
 
-### Unified Configuration
-- **Single source**: Same configuration for WSL and containers
-- **Environment detection**: Automatically adapts based on context
-- **No sudo required**: Home-manager works in restricted containers
-- **Runtime plugins**: Neovim uses lazy.nvim (no Nix plugin builds)
+### Configuration Hierarchy
+
+```
+1. Base Configuration (configurations/base.nix)
+   ↓ Provides core settings
+2. Hardware Module (hardware/*.nix)
+   ↓ Adds hardware-specific settings
+3. Service Modules (modules/services/*.nix)
+   ↓ Adds optional services
+4. Desktop Modules (modules/desktop/*.nix)
+   ↓ Adds GUI if needed
+5. Target Configuration (configurations/*.nix)
+   ↓ Combines and customizes
+6. Flake Output (flake.nix)
+```
+
+### Key Design Principles
+
+1. **Hetzner as Base**: The Hetzner configuration serves as the reference implementation
+2. **Modular Composition**: Each target combines only the modules it needs
+3. **Override Hierarchy**: Use `lib.mkDefault` for overrideable defaults, `lib.mkForce` for mandatory settings
+4. **Single Source of Truth**: Avoid duplication by extracting common patterns into modules
+
+## 🎯 Configuration Targets
+
+### WSL (Windows Subsystem for Linux)
+- **Purpose**: Local development on Windows
+- **Features**: Docker Desktop integration, VS Code support
+- **Build**: `sudo nixos-rebuild switch --flake .#wsl`
+
+### Hetzner (Cloud Server)
+- **Purpose**: Remote development workstation
+- **Features**: Full KDE desktop, RDP access, Tailscale VPN
+- **Build**: `sudo nixos-rebuild switch --flake .#hetzner`
+
+### M1 (Apple Silicon Mac)
+- **Purpose**: Native NixOS on Apple hardware
+- **Features**: Optimized for ARM64, Apple-specific drivers
+- **Build**: `sudo nixos-rebuild switch --flake .#m1`
+
+### Containers
+- **Purpose**: Minimal NixOS for Kubernetes/Docker
+- **Profiles**: minimal, development, full
+- **Build**: `nix build .#container-minimal`
+
+## 📦 Package Management
 
 ### Package Profiles
-Controlled by `NIXOS_PACKAGES` environment variable:
+Controlled by environment variables or module imports:
 - `minimal` (~100MB): Core utilities only
-- `essential` (~275MB): Development basics
-- `development` (~600MB): Full dev tools
+- `essential` (~275MB): Basic development tools
+- `development` (~600MB): Full development environment
 - `full` (~1GB): Everything including K8s tools
-
-### Container vs WSL Mode
-- **WSL**: Full system with Docker Desktop integration
-- **Container**: Minimal base with selected packages
-- Detection: `isContainer = builtins.getEnv "NIXOS_CONTAINER" != "";`
-
-## 📝 Common Tasks
 
 ### Adding Packages
 
-1. **For all environments** - Edit `user/packages.nix`:
-```nix
-utilityTools = with pkgs; [
-  existing-package
-  your-new-package  # Add here
-];
-```
+1. **System-wide** - Edit appropriate module in `modules/services/`
+2. **User-specific** - Edit `user/packages.nix`
+3. **Target-specific** - Add to specific configuration in `configurations/`
 
-2. **For containers only** - Edit `container-profile.nix`:
-```nix
-environment.systemPackages = lib.mkForce (with pkgs; [
-  # ... existing packages
-  your-new-package
-]);
-```
-
-3. **For home-manager** - Edit relevant module in `home-modules/`:
-```nix
-home.packages = with pkgs; [
-  your-new-package
-];
-```
+## 🔧 Common Tasks
 
 ### Testing Changes
 ```bash
 # ALWAYS test before applying
-cd /etc/nixos && sudo nixos-rebuild dry-build
+sudo nixos-rebuild dry-build --flake .#<target>
 
 # Check for errors, then apply
-sudo nixos-rebuild switch
+sudo nixos-rebuild switch --flake .#<target>
 ```
 
 ### Building Containers
 ```bash
-# Build with specific profile
-NIXOS_CONTAINER=1 NIXOS_PACKAGES="essential" nix build .#container
+# Build specific container profile
+nix build .#container-minimal
+nix build .#container-dev
 
 # Load into Docker
 docker load < result
@@ -116,92 +153,59 @@ docker load < result
 docker run -it nixos-container:latest
 ```
 
-## ⚠️ Important Context
-
-### Recent Cleanup (Sep 2025)
-- Reduced from 48 to 24 .nix files
-- Removed 2,674 lines of unused code
-- Consolidated container services into single file
-- Deleted: devcontainer/, scripts/, overlays/, packages/
-
-### Design Decisions
-1. **No Nix plugins**: Use lazy.nvim for runtime loading
-2. **No colors module**: Catppuccin Mocha embedded directly
-3. **Unified home-manager**: Same config for WSL & containers
-4. **Minimal container base**: Only essential packages
-
-### Key Modules
-- **container-services.nix**: Merged SSH + VS Code + Nix helpers
-- **shared/package-lists.nix**: Central package profile logic
-- **home-modules/**: Modular user environment configs
-
-## 🔧 Best Practices
-
-### DO:
-- ✅ Always run `nixos-rebuild dry-build` before applying changes
-- ✅ Test in container before applying to WSL
-- ✅ Use package profiles for size control
-- ✅ Keep configurations modular
-- ✅ Commit working configurations
-
-### DON'T:
-- ❌ Modify without testing
-- ❌ Add packages requiring sudo in containers
-- ❌ Use Nix plugin system (use lazy.nvim)
-- ❌ Create duplicate configurations
-- ❌ Ignore build warnings
-
-## 🎭 Working with Home-Manager
-
-### In Containers
+### Updating Flake Inputs
 ```bash
-# Install from GitHub (no sudo needed)
-home-manager switch --flake github:PittampalliOrg/nix-config#container-essential
+# Update all inputs
+nix flake update
 
-# Or for development profile
-home-manager switch --flake github:PittampalliOrg/nix-config#container-development
+# Update specific input
+nix flake lock --update-input nixpkgs
 ```
 
-### In WSL
-```bash
-# Already integrated via configuration.nix
-sudo nixos-rebuild switch
-```
+## ⚠️ Important Notes
 
-## 📊 Container Profiles
+### Recent Consolidation (2024-09)
+- Reduced from 46 to ~25 .nix files
+- Removed 3,486 lines of duplicate code
+- Hetzner configuration now serves as base
+- Modular architecture for better maintainability
 
-| Profile | Command | Size | Includes |
-|---------|---------|------|----------|
-| Minimal | `container-minimal` | ~100MB | Core utils |
-| Essential | `container-essential` | ~275MB | Dev basics |
-| Development | `container-development` | ~600MB | Node, Python, Go |
-| AI Tools | `container-ai` | ~400MB | Essential + AI assistants |
+### Module Conventions
+- Use `lib.mkDefault` for overrideable options
+- Use `lib.mkForce` only when override is mandatory
+- Always test with `dry-build` before applying
+- Keep hardware-specific settings in `hardware/` modules
 
-## 🔍 Debugging
+### Troubleshooting
 
-### Check current environment
-```bash
-# In container
-echo $NIXOS_PACKAGES
-echo $CONTAINER_PROFILE
-
-# Check if in container
-[[ -f /.dockerenv ]] && echo "In container" || echo "Not in container"
-```
-
-### View package list
-```bash
-# System packages
-nix-store -q --requisites /run/current-system | wc -l
-
-# User packages
-home-manager packages | grep -c '^'
-```
+1. **File system errors**: Ensure `hardware-configuration.nix` exists
+2. **Package conflicts**: Check for deprecated packages (e.g., mysql → mariadb)
+3. **Option deprecations**: Update to new option names (e.g., hardware.opengl → hardware.graphics)
+4. **Build failures**: Run with `--show-trace` for detailed errors
 
 ## 📚 Additional Documentation
 
-- `docs/AVANTE_SETUP.md` - Avante.nvim setup with Claude integration
-- GitHub: https://github.com/PittampalliOrg/nix-config
+- `README.md` - Project overview and quick start
+- `docs/ARCHITECTURE.md` - Detailed architecture documentation
+- `docs/HETZNER_NIXOS_INSTALL.md` - Hetzner installation guide
+- `docs/AVANTE_SETUP.md` - Neovim AI assistant setup
+- `docs/MIGRATION.md` - Migration from old structure
+
+## 🔍 Quick Debugging
+
+```bash
+# Check current configuration
+nixos-rebuild dry-build --flake .#<target> --show-trace
+
+# List available configurations
+nix flake show
+
+# Check flake inputs
+nix flake metadata
+
+# Evaluate specific option
+nix eval .#nixosConfigurations.<target>.config.<option>
+```
 
 ---
-*Last updated: September 2025 after major cleanup (48→24 files)*
+*Last updated: 2024-09 after major consolidation*
