@@ -34,6 +34,7 @@
     remmina
     tigervnc
     freerdp
+    kdePackages.krdc  # KDE Remote Desktop Client for RDP/VNC connections
   ];
 
   # Ensure X11 forwarding is enabled for SSH
