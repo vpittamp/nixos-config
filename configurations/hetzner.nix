@@ -67,7 +67,7 @@
   ];
   
   # Performance tuning for cloud server
-  powerManagement.cpuFreqGovernor = lib.mkDefault "performance";
+  powerManagement.cpuFreqGovernor = lib.mkForce "performance";
   
   # System state version
   system.stateVersion = "24.11";
