@@ -67,6 +67,9 @@
   # Set initial password for user (change after first login!)
   users.users.vpittamp.initialPassword = "nixos";
   
+  # Apple Silicon firmware location
+  hardware.asahi.peripheralFirmwareDirectory = "/etc/nixos/firmware";
+  
   # Disable services that don't work well on Apple Silicon
   services.xrdp.enable = lib.mkForce false;  # RDP doesn't work well on M1
   

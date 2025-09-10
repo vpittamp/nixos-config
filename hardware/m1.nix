@@ -90,8 +90,13 @@
   #   { device = "/swapfile"; size = 8192; }  # 8GB swap file
   # ];
   
-  # No swap by default
-  swapDevices = [ ];
+  # Swap file configuration - 8GB to prevent OOM during builds
+  swapDevices = [
+    { 
+      device = "/swapfile";
+      size = 8192;  # 8GB swap file
+    }
+  ];
 
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
