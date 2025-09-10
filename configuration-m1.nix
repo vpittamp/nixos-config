@@ -21,7 +21,7 @@
 {
   imports = [
     # Hardware configuration (generated during installation)
-    ./hardware-configuration.nix
+    ./hardware-m1.nix
     
     # Apple Silicon support - CRITICAL for hardware functionality
     # Comment out ONLY if kernel build fails, then use fallback config
