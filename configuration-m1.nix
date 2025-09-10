@@ -254,6 +254,28 @@
     extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
   };
   
+  # Fix for KDE not sourcing home-manager session variables
+  # This ensures terminals in KDE work automatically with home-manager
+  environment.loginShellInit = ''
+    # Source user profile which contains home-manager session vars
+    if [ -e "$HOME/.profile" ]; then
+      . "$HOME/.profile"
+    fi
+  '';
+
+  # Ensure bash is configured properly system-wide for KDE terminals
+  programs.bash = {
+    enable = true;
+    enableCompletion = true;
+    # This will source for all interactive bash shells (what Konsole starts)
+    interactiveShellInit = ''
+      # Source home-manager session vars if available
+      if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
+        . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
+      fi
+    '';
+  };
+
   # Additional shell aliases for recovery
   environment.shellAliases = {
     # Quick rebuilds

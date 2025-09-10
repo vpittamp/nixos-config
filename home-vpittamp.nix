@@ -11,6 +11,7 @@
     # Terminal configurations
     ./home-modules/terminal/tmux.nix
     ./home-modules/terminal/sesh.nix
+    ./home-modules/terminal/konsole-fix.nix
     
     # Editor configurations
     ./home-modules/editors/neovim.nix
@@ -37,6 +38,10 @@
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
   home.stateVersion = "25.05";
+
+  # Enable xsession for KDE to source home-manager session variables
+  # This creates ~/.xprofile which KDE/SDDM sources on login
+  xsession.enable = true;
 
   # User packages - safe for home-manager in any environment
   # These packages are from nixpkgs and don't require special permissions
