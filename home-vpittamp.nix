@@ -22,6 +22,8 @@
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
     ./home-modules/tools/firefox.nix
+    ./home-modules/tools/chromium.nix  # New Chromium module with 1Password
+    ./home-modules/tools/clipboard.nix  # Clipboard management module
     # ./home-modules/tools/k9s.nix  # Temporarily disabled for container build
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix

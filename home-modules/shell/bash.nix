@@ -154,11 +154,6 @@
       cr = "claude --resume --dangerously-skip-permissions";
       cdsp = "claude --dangerously-skip-permissions";
       
-      # WSL clipboard helpers - Windows native
-      clip = "/mnt/c/Windows/System32/clip.exe";
-      paste = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | head -c -2";
-      
-      # Linux-style clipboard helpers are implemented as shell functions below
       # Keep short aliases for convenience
       pbcopy = "pbcopy";
       pbpaste = "pbpaste";

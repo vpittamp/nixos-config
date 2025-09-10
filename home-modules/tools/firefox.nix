@@ -1,14 +1,12 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Firefox browser configuration for both Linux and macOS
+  # Firefox browser configuration - simplified without extensions
+  # Extensions can be installed manually from the browser
   programs.firefox = {
     enable = true;
-    
-    # Package selection (use ESR for stability or regular for latest)
     package = pkgs.firefox;
     
-    # Firefox profiles
     profiles = {
       default = {
         id = 0;
@@ -28,25 +26,25 @@
                   { name = "query"; value = "{searchTerms}"; }
                 ];
               }];
-              icon = "''${pkgs.nixos-icons}/share/icons/hicolor/scalable/apps/nix-snowflake.svg";
               definedAliases = [ "@np" ];
             };
             
             "NixOS Wiki" = {
               urls = [{ template = "https://nixos.wiki/index.php?search={searchTerms}"; }];
-              iconUpdateURL = "https://nixos.wiki/favicon.png";
-              updateInterval = 24 * 60 * 60 * 1000; # every day
               definedAliases = [ "@nw" ];
             };
           };
         };
         
-        # Firefox settings
+        # Firefox settings with 1Password support
         settings = {
+          # Enable native messaging for 1Password
+          "extensions.1Password.native-messaging-hosts" = true;
+          "dom.event.clipboardevents.enabled" = true; # Required for 1Password
+          
           # Privacy settings
           "browser.send_pings" = false;
           "browser.urlbar.speculativeConnect.enabled" = false;
-          "dom.event.clipboardevents.enabled" = false;
           "media.eme.enabled" = true;
           "media.gmp-widevinecdm.enabled" = true;
           "media.navigator.enabled" = false;
@@ -55,12 +53,11 @@
           "network.http.referer.XOriginTrimmingPolicy" = 2;
           "privacy.firstparty.isolate" = true;
           "privacy.trackingprotection.enabled" = true;
-          "services.sync.prefs.sync.browser.newtabpage.activity-stream.showSponsoredTopSite" = false;
           
           # UI settings
           "browser.toolbars.bookmarks.visibility" = "always";
           "browser.tabs.inTitlebar" = 1;
-          "browser.uidensity" = 0;  # 0=normal, 1=compact, 2=touch
+          "browser.uidensity" = 0;
           
           # Performance
           "gfx.webrender.all" = true;
@@ -72,38 +69,24 @@
           "devtools.debugger.remote-enabled" = true;
           "devtools.chrome.enabled" = true;
           
-          # New tab page
-          "browser.newtabpage.activity-stream.showSponsored" = false;
-          "browser.newtabpage.activity-stream.showSponsoredTopSites" = false;
-          "browser.newtabpage.activity-stream.feeds.topsites" = false;
-          "browser.newtabpage.activity-stream.feeds.snippets" = false;
-          "browser.newtabpage.activity-stream.feeds.section.topstories" = false;
-          "browser.newtabpage.activity-stream.section.highlights.includePocket" = false;
-          "browser.newtabpage.activity-stream.section.highlights.includeBookmarks" = false;
-          "browser.newtabpage.activity-stream.section.highlights.includeDownloads" = false;
-          "browser.newtabpage.activity-stream.section.highlights.includeVisited" = false;
-          
           # Disable telemetry
           "browser.newtabpage.activity-stream.telemetry" = false;
           "browser.ping-centre.telemetry" = false;
           "toolkit.telemetry.archive.enabled" = false;
-          "toolkit.telemetry.bhrPing.enabled" = false;
           "toolkit.telemetry.enabled" = false;
-          "toolkit.telemetry.firstShutdownPing.enabled" = false;
-          "toolkit.telemetry.hybridContent.enabled" = false;
-          "toolkit.telemetry.newProfilePing.enabled" = false;
-          "toolkit.telemetry.reportingpolicy.firstRun" = false;
-          "toolkit.telemetry.shutdownPingSender.enabled" = false;
           "toolkit.telemetry.unified" = false;
-          "toolkit.telemetry.updatePing.enabled" = false;
         };
         
-        # Bookmarks - you can add your frequently used sites
+        # Bookmarks
         bookmarks = [
           {
             name = "Nix Sites";
             toolbar = true;
             bookmarks = [
+              {
+                name = "1Password";
+                url = "https://my.1password.com";
+              }
               {
                 name = "NixOS Search";
                 url = "https://search.nixos.org";
@@ -112,29 +95,10 @@
                 name = "Home Manager Options";
                 url = "https://nix-community.github.io/home-manager/options.html";
               }
-              {
-                name = "Nix Pills";
-                url = "https://nixos.org/guides/nix-pills/";
-              }
             ];
           }
         ];
-        
-        # Extensions can be added later with NUR
-        # extensions = with pkgs.nur.repos.rycee.firefox-addons; [
-        #   ublock-origin
-        #   bitwarden
-        #   vimium
-        #   darkreader
-        #   privacy-badger
-        # ];
       };
     };
-    
-    # Enable Firefox accounts sync
-    # policies = {
-    #   DisableFirefoxAccounts = false;
-    #   PasswordManagerEnabled = true;
-    # };
   };
 }

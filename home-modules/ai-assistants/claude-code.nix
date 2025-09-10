@@ -13,10 +13,8 @@ let
       pkgs-unstable.claude-code or pkgs.claude-code;  # Fallback to nixpkgs
 in
 {
-  # Install Chromium for Puppeteer (Linux only - macOS can use system Chrome)
-  home.packages = lib.optionals (!isDarwin) [
-    pkgs.chromium
-  ];
+  # Chromium is installed via programs.chromium in tools/chromium.nix
+  # No need to install it here - avoids conflicts
   
   # Claude Code configuration with home-manager module
   # Try to enable on all platforms, will fail gracefully if not available
