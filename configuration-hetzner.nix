@@ -1,5 +1,4 @@
-# Minimal NixOS configuration for Hetzner Cloud CCX33
-# Phase 1: Bootstrap configuration
+# NixOS configuration for Hetzner Cloud CCX33
 { config, lib, pkgs, modulesPath, ... }:
 
 {
@@ -19,37 +18,20 @@
   boot.initrd.availableKernelModules = [ "ata_piix" "virtio_pci" "virtio_scsi" "xhci_pci" "sd_mod" "sr_mod" ];
   boot.kernelModules = [ ];
   boot.extraModulePackages = [ ];
+  
+  # Use predictable network interface names (eth0 instead of ens3/enp1s0)
+  boot.kernelParams = [ "net.ifnames=0" ];
 
-  # Networking configuration
+  # Networking configuration - simple DHCP that works with Hetzner
   networking = {
     hostName = "nixos-hetzner";
-    useDHCP = false;
+    useDHCP = true;  # Simple DHCP for all interfaces
     
-    # Configure the main network interface - try both ens3 and enp1s0
-    interfaces.ens3 = {
-      useDHCP = true;  # For IPv4
-      ipv6.addresses = [{
-        address = "2a01:4ff:f0:cd16::1";
-        prefixLength = 64;
-      }];
-    };
-    
-    interfaces.enp1s0 = {
-      useDHCP = true;  # Alternative interface name
-    };
-    
-    # IPv6 gateway
-    defaultGateway6 = {
-      address = "fe80::1";
-      interface = "ens3";
-    };
-    
-    # Firewall - minimal for now
+    # Firewall
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 22 41641 ];  # SSH and Tailscale
-      allowedUDPPorts = [ 41641 ];  # Tailscale
-      checkReversePath = "loose";  # For Tailscale
+      allowedTCPPorts = [ 22 ];  # SSH
+      # Tailscale will open its own ports
     };
   };
   
