@@ -13,6 +13,12 @@
     # For macOS Terminal.app - it runs login shells by default
     # This ensures colors and configs load properly
     profileExtra = ''
+      # CRITICAL: Source home-manager session variables for login shells
+      # This ensures KDE terminals that start login shells get the environment
+      if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
+        . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
+      fi
+      
       # macOS Terminal.app runs login shells, so source bashrc
       if [ -r ~/.bashrc ]; then
         source ~/.bashrc
@@ -120,6 +126,11 @@
       ts = "tmux new-session -s";
       tl = "tmux list-sessions";
       
+      # Tmux pane information for LLM interaction
+      tpane = "tmux display-message -p 'Current pane: #{session_name}:#{window_index}.#{pane_index} | Command: #{pane_current_command} | Path: #{pane_current_path}'";
+      tpanes = "tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} → #{pane_current_command} (#{pane_current_path})'";
+      tpinfo = "echo -e 'CURRENT PANE:\\n' && tmux display-message -p '  #{session_name}:#{window_index}.#{pane_index} (#{pane_current_command})\\n\\nALL PANES:' && tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} → #{pane_current_command}'";
+      
       # Kubernetes
       k = "kubectl";
       kgp = "kubectl get pods";
@@ -160,6 +171,13 @@
     };
     
     initExtra = ''
+      # CRITICAL: Source home-manager session variables
+      # This is required for all home-manager configurations to work properly
+      # especially in KDE where the display manager doesn't source these
+      if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
+        . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
+      fi
+      
       # Terminal configuration moved to TERM settings below
       
       # Fix terminal compatibility - detect VSCode terminal
@@ -333,6 +351,12 @@
         eval "$(zoxide init bash)" 2>/dev/null || true
         # Disable zoxide doctor warnings since we've properly initialized it
         export _ZO_DOCTOR=0
+      fi
+      
+      # Initialize Starship prompt (should always be last to override PS1)
+      if command -v starship &> /dev/null; then
+        export STARSHIP_CONFIG="$HOME/.config/starship.toml"
+        eval "$(starship init bash)" 2>/dev/null || true
       fi
       
       # Preserve environment when using nix develop/shell

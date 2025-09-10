@@ -100,10 +100,8 @@
   powerManagement.cpuFreqGovernor = lib.mkDefault "ondemand";
   
   # Hardware acceleration support
-  hardware.opengl = {
-    enable = true;
-    driSupport = true;
-  };
+  # Graphics - using new API (hardware.graphics instead of hardware.opengl)
+  hardware.graphics.enable = true;
 
   # Firmware updates
   hardware.enableRedistributableFirmware = true;
