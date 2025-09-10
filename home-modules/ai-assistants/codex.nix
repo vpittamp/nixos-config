@@ -41,8 +41,8 @@
     # Configuration for codex (TOML format)
     settings = {
       # Model configuration
-      model = "claude-3.5-sonnet";
-      model_provider = "anthropic";
+      model = "gpt-5";
+      model_provider = "openai";
       
       # Project trust settings
       projects = {

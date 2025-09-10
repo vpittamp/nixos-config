@@ -126,6 +126,11 @@
       ts = "tmux new-session -s";
       tl = "tmux list-sessions";
       
+      # Tmux pane information for LLM interaction
+      tpane = "tmux display-message -p 'Current pane: #{session_name}:#{window_index}.#{pane_index} | Command: #{pane_current_command} | Path: #{pane_current_path}'";
+      tpanes = "tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} → #{pane_current_command} (#{pane_current_path})'";
+      tpinfo = "echo -e 'CURRENT PANE:\\n' && tmux display-message -p '  #{session_name}:#{window_index}.#{pane_index} (#{pane_current_command})\\n\\nALL PANES:' && tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} → #{pane_current_command}'";
+      
       # Kubernetes
       k = "kubectl";
       kgp = "kubectl get pods";

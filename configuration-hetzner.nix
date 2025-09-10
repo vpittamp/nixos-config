@@ -25,13 +25,17 @@
     hostName = "nixos-hetzner";
     useDHCP = false;
     
-    # Configure the main network interface
+    # Configure the main network interface - try both ens3 and enp1s0
     interfaces.ens3 = {
       useDHCP = true;  # For IPv4
       ipv6.addresses = [{
         address = "2a01:4ff:f0:cd16::1";
         prefixLength = 64;
       }];
+    };
+    
+    interfaces.enp1s0 = {
+      useDHCP = true;  # Alternative interface name
     };
     
     # IPv6 gateway
@@ -43,8 +47,16 @@
     # Firewall - minimal for now
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 22 ];  # Just SSH for now
+      allowedTCPPorts = [ 22 41641 ];  # SSH and Tailscale
+      allowedUDPPorts = [ 41641 ];  # Tailscale
+      checkReversePath = "loose";  # For Tailscale
     };
+  };
+  
+  # Enable Tailscale for reliable connectivity
+  services.tailscale = {
+    enable = true;
+    openFirewall = true;
   };
 
   # Enable SSH
@@ -56,8 +68,6 @@
     };
   };
 
-  # Enable Tailscale for easy access
-  services.tailscale.enable = true;
 
   # Your user account
   users.users.vpittamp = {
