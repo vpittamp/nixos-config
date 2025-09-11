@@ -20,7 +20,7 @@
   services.displayManager = {
     sddm = {
       enable = true;
-      wayland.enable = true;
+      wayland.enable = false;
     };
     defaultSession = lib.mkDefault "plasma";  # Use Wayland by default
   };
