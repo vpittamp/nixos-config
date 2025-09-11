@@ -58,37 +58,9 @@
     SSH_AUTH_SOCK = "~/.1password/agent.sock";
   };
 
-  # 1Password CLI plugins configuration
-  home.file.".config/op/plugins.sh" = {
-    text = ''
-      # 1Password CLI plugins for various tools
-      
-      # GitHub CLI
-      alias gh='op plugin run -- gh'
-      
-      # GitLab CLI
-      alias glab='op plugin run -- glab'
-      
-      # AWS CLI
-      alias aws='op plugin run -- aws'
-      
-      # Stripe CLI
-      alias stripe='op plugin run -- stripe'
-      
-      # npm/yarn with registry credentials
-      alias npm='op plugin run -- npm'
-      alias yarn='op plugin run -- yarn'
-    '';
-    executable = false;
-  };
 
   # Source 1Password plugins in shell
   programs.bash.initExtra = ''
-    # Source 1Password CLI plugins
-    if [ -f ~/.config/op/plugins.sh ]; then
-      source ~/.config/op/plugins.sh
-    fi
-    
     # Initialize 1Password SSH agent socket
     export SSH_AUTH_SOCK=~/.1password/agent.sock
     
@@ -104,7 +76,7 @@
     
     # Function to inject secrets into environment
     op-env() {
-      op run --env-file="$1" -- "$\{@:2\}"
+      op run --env-file="$1" -- "''${@:2}"
     }
   '';
 

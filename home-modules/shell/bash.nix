@@ -157,9 +157,6 @@
       opv = "op vault list";
       opi = "op item list";
       
-      # 1Password plugin aliases
-      gh = "op plugin run -- gh";
-      
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
@@ -225,11 +222,6 @@
       # Set up fzf key bindings (only if available)
       if command -v fzf &> /dev/null; then
         eval "$(fzf --bash)" 2>/dev/null || true
-      fi
-      
-      # 1Password Shell Plugins
-      if [ -f ~/.config/op/plugins.sh ]; then
-        source ~/.config/op/plugins.sh
       fi
       
       # Enable direnv (only if available)
