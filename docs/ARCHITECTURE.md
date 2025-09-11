@@ -75,6 +75,14 @@ Network services and tools:
 - Firewall configuration
 - Network diagnostic tools
 
+#### `onepassword.nix`
+Secret management and authentication:
+- 1Password CLI and GUI (conditional)
+- SSH agent integration
+- Git credential helper
+- Polkit authentication rules
+- Automatic vault configuration
+
 #### `container.nix`
 Container-specific services:
 - VS Code Server support
@@ -105,13 +113,15 @@ Optimized for Windows Subsystem for Linux:
 imports = [
   ./base.nix
   ../modules/services/development.nix
-  ../home-manager/vpittamp.nix
+  ../modules/services/networking.nix
+  ../modules/services/onepassword.nix  # CLI-only
 ];
 ```
 - No desktop environment
 - Docker Desktop integration
 - VS Code Remote support
 - Windows interop
+- 1Password CLI for secrets
 
 ### Hetzner (`configurations/hetzner.nix`)
 Full-featured cloud workstation:
@@ -123,11 +133,13 @@ imports = [
   ../modules/desktop/remote-access.nix
   ../modules/services/development.nix
   ../modules/services/networking.nix
+  ../modules/services/onepassword.nix  # Full GUI
 ];
 ```
 - Complete desktop environment
 - Remote access capabilities
 - Full development stack
+- 1Password with GUI
 
 ### M1 (`configurations/m1.nix`)
 Apple Silicon optimized:
@@ -137,11 +149,15 @@ imports = [
   ../hardware/m1.nix
   ../modules/desktop/kde-plasma.nix
   ../modules/services/development.nix
+  ../modules/services/networking.nix
+  ../modules/services/onepassword.nix  # Full GUI
 ];
 ```
 - Native Apple hardware support
 - ARM64 optimizations
 - Local desktop environment
+- Custom display scaling for Retina
+- Swap configuration for memory management
 
 ### Container (`configurations/container.nix`)
 Minimal container base:
@@ -226,6 +242,47 @@ Modules are composed using imports:
 }
 ```
 
+### Conditional Module Features
+
+Modules can adapt based on system capabilities:
+```nix
+{ config, lib, pkgs, ... }:
+let
+  # Detect if GUI is available
+  hasGui = config.services.xserver.enable or false;
+in
+{
+  # Conditional package installation
+  environment.systemPackages = with pkgs; [
+    package-cli                    # Always installed
+  ] ++ lib.optionals hasGui [
+    package-gui                    # Only with GUI
+  ];
+  
+  # Conditional service configuration
+  services.example = lib.mkIf hasGui {
+    enable = true;
+    guiMode = true;
+  };
+}
+```
+
+### Complex Attribute Merging
+
+For modules with multiple attribute sets:
+```nix
+environment.etc = lib.mkMerge [
+  # First set of files
+  (lib.mkIf condition1 {
+    "file1".text = "...";
+  })
+  # Second set of files
+  {
+    "file2".text = "...";
+  }
+];
+```
+
 ## Flake Structure
 
 The `flake.nix` serves as the entry point:
@@ -294,6 +351,7 @@ sudo nixos-rebuild switch --rollback
 - Key-only authentication by default
 - Rate limiting
 - Fail2ban integration
+- 1Password SSH agent for key management
 
 ### Firewall
 - Default deny policy
@@ -301,9 +359,16 @@ sudo nixos-rebuild switch --rollback
 - Per-service rules
 
 ### Secret Management
-- No secrets in configuration
-- Environment variables for sensitive data
-- Integration with secret management tools
+- 1Password integration for centralized secrets
+- No hardcoded secrets in configuration
+- SSH keys stored in 1Password vaults
+- Git commit signing with 1Password SSH keys
+- Credential helpers for GitHub/GitLab
+
+### Authentication
+- Polkit integration for system authentication
+- PAM support for 1Password unlock
+- Conditional biometric support (platform-dependent)
 
 ## Performance Optimization
 

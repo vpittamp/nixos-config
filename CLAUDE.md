@@ -7,12 +7,12 @@
 # Test configuration changes (ALWAYS RUN BEFORE APPLYING)
 sudo nixos-rebuild dry-build --flake .#wsl    # For WSL
 sudo nixos-rebuild dry-build --flake .#hetzner # For Hetzner
-sudo nixos-rebuild dry-build --flake .#m1      # For M1 Mac
+sudo nixos-rebuild dry-build --flake .#m1 --impure  # For M1 Mac (--impure for firmware)
 
 # Apply configuration changes
 sudo nixos-rebuild switch --flake .#wsl    # For WSL
 sudo nixos-rebuild switch --flake .#hetzner # For Hetzner
-sudo nixos-rebuild switch --flake .#m1      # For M1 Mac
+sudo nixos-rebuild switch --flake .#m1 --impure  # For M1 Mac (--impure for firmware)
 
 # Build container images
 nix build .#container-minimal      # Minimal container (~100MB)
@@ -45,6 +45,7 @@ nix build .#container-dev          # Development container (~600MB)
 │   └── services/
 │       ├── development.nix     # Dev tools (Docker, K8s, languages)
 │       ├── networking.nix      # Network services (SSH, Tailscale)
+│       ├── onepassword.nix     # 1Password integration (GUI/CLI)
 │       └── container.nix       # Container-specific services
 │
 ├── home-modules/                # User environment (home-manager)
@@ -96,18 +97,19 @@ nix build .#container-dev          # Development container (~600MB)
 
 ### WSL (Windows Subsystem for Linux)
 - **Purpose**: Local development on Windows
-- **Features**: Docker Desktop integration, VS Code support
+- **Features**: Docker Desktop integration, VS Code support, 1Password CLI
 - **Build**: `sudo nixos-rebuild switch --flake .#wsl`
 
 ### Hetzner (Cloud Server)
 - **Purpose**: Remote development workstation
-- **Features**: Full KDE desktop, RDP access, Tailscale VPN
+- **Features**: Full KDE desktop, RDP access, Tailscale VPN, 1Password GUI
 - **Build**: `sudo nixos-rebuild switch --flake .#hetzner`
 
 ### M1 (Apple Silicon Mac)
 - **Purpose**: Native NixOS on Apple hardware
-- **Features**: Optimized for ARM64, Apple-specific drivers
-- **Build**: `sudo nixos-rebuild switch --flake .#m1`
+- **Features**: Optimized for ARM64, Apple-specific drivers, Retina display support
+- **Build**: `sudo nixos-rebuild switch --flake .#m1 --impure`
+- **Note**: Requires `--impure` flag for Asahi firmware access
 
 ### Containers
 - **Purpose**: Minimal NixOS for Kubernetes/Docker
@@ -164,6 +166,12 @@ nix flake lock --update-input nixpkgs
 
 ## ⚠️ Important Notes
 
+### Recent Updates (2025-09)
+- Added comprehensive 1Password integration
+- Fixed M1 display scaling and memory issues
+- Implemented conditional module features (GUI vs headless)
+- Added declarative Git signing configuration
+
 ### Recent Consolidation (2024-09)
 - Reduced from 46 to ~25 .nix files
 - Removed 3,486 lines of duplicate code
@@ -187,6 +195,8 @@ nix flake lock --update-input nixpkgs
 
 - `README.md` - Project overview and quick start
 - `docs/ARCHITECTURE.md` - Detailed architecture documentation
+- `docs/M1_SETUP.md` - Apple Silicon setup and troubleshooting
+- `docs/ONEPASSWORD.md` - 1Password integration guide
 - `docs/HETZNER_NIXOS_INSTALL.md` - Hetzner installation guide
 - `docs/AVANTE_SETUP.md` - Neovim AI assistant setup
 - `docs/MIGRATION.md` - Migration from old structure
@@ -207,5 +217,27 @@ nix flake metadata
 nix eval .#nixosConfigurations.<target>.config.<option>
 ```
 
+## 🔐 1Password Commands
+
+```bash
+# Sign in to 1Password
+op signin
+
+# List vaults
+op vault list
+
+# List items
+op item list
+
+# Create SSH key
+op item create --category="SSH Key" --title="My Key" --vault="Personal" --ssh-generate-key=ed25519
+
+# Test SSH agent
+SSH_AUTH_SOCK=~/.1password/agent.sock ssh-add -l
+
+# Use GitHub CLI with 1Password
+gh auth status  # Uses 1Password token automatically
+```
+
 ---
-*Last updated: 2024-09 after major consolidation*
+*Last updated: 2025-09 with 1Password integration and M1 improvements*

@@ -47,12 +47,13 @@ sudo nixos-rebuild switch --flake .#hetzner
 
 #### For Apple Silicon Mac
 ```bash
-# Test the configuration
-sudo nixos-rebuild dry-build --flake .#m1
+# Test the configuration (--impure required for firmware)
+sudo nixos-rebuild dry-build --flake .#m1 --impure
 
 # Apply the configuration
-sudo nixos-rebuild switch --flake .#m1
+sudo nixos-rebuild switch --flake .#m1 --impure
 ```
+> **Note**: The `--impure` flag is required for M1 builds to access Asahi Linux firmware.
 
 #### For Containers
 ```bash
@@ -128,6 +129,14 @@ The configuration follows a modular, hierarchical design:
 - Gemini CLI
 - Avante.nvim for in-editor AI assistance
 
+### Security & Authentication
+- **1Password Integration**: Centralized secret management
+  - CLI and GUI support (GUI on desktop systems only)
+  - SSH agent for key management
+  - Git commit signing with SSH keys
+  - GitHub/GitLab credential management
+  - Automatic biometric authentication (where supported)
+
 ## 🔧 Configuration
 
 ### Adding Packages
@@ -157,6 +166,8 @@ nix flake lock --update-input nixpkgs
 
 - **[CLAUDE.md](./CLAUDE.md)** - LLM-optimized navigation guide
 - **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Detailed architecture documentation
+- **[docs/M1_SETUP.md](./docs/M1_SETUP.md)** - Apple Silicon setup guide and troubleshooting
+- **[docs/ONEPASSWORD.md](./docs/ONEPASSWORD.md)** - 1Password integration guide
 - **[docs/HETZNER_NIXOS_INSTALL.md](./docs/HETZNER_NIXOS_INSTALL.md)** - Hetzner installation guide
 - **[docs/MIGRATION.md](./docs/MIGRATION.md)** - Migration from old structure
 - **[docs/AVANTE_SETUP.md](./docs/AVANTE_SETUP.md)** - AI assistant setup for Neovim
@@ -183,4 +194,4 @@ This project is open source and available under the MIT License.
 
 **Repository**: [github.com/vpittamp/nixos-config](https://github.com/vpittamp/nixos-config)  
 **Author**: Vinod Pittampalli  
-**Last Updated**: September 2024
+**Last Updated**: September 2025
