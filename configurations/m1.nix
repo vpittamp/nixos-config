@@ -38,21 +38,26 @@
   ];
   # Use firmware from boot partition (requires --impure flag)
   hardware.asahi.peripheralFirmwareDirectory = /boot/asahi;
-  networking.networkmanager.enable = true;
+  
+  # Use IWD for WiFi (recommended for Apple Silicon with WPA3 support)
+  networking.networkmanager.enable = false;  # Disable NetworkManager
+  networking.wireless.iwd = {
+    enable = true;
+    settings.General.EnableNetworkConfiguration = true;
+  };
   
   # Display configuration for Retina display
   # Note: GPU acceleration is enabled by default with mesa 25.1 in nixos-apple-silicon
-  services.xserver.dpi = 192;  # 2x scaling for Retina display (96 * 2)
-  
-  # Environment variables for better Wayland support
-  environment.sessionVariables = {
-    # Use Wayland for Qt applications
-    QT_QPA_PLATFORM = "wayland";
-    # Firefox Wayland support
-    MOZ_ENABLE_WAYLAND = "1";
-    # Scaling for GTK applications
-    GDK_SCALE = "2";
-    GDK_DPI_SCALE = "0.5";  # Compensate for GDK_SCALE
+  services.xserver = {
+    dpi = 192;  # 2x scaling for Retina display (96 * 2)
+    
+    # X11-specific scaling configuration
+    displayManager.sessionCommands = ''
+      export GDK_SCALE=2
+      export GDK_DPI_SCALE=0.5
+      export QT_AUTO_SCREEN_SCALE_FACTOR=1
+      export XCURSOR_SIZE=48
+    '';
   };
   
   # Platform configuration

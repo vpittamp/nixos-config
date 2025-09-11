@@ -20,9 +20,9 @@
   services.displayManager = {
     sddm = {
       enable = true;
-      wayland.enable = true;  # Enable Wayland support in SDDM
+      wayland.enable = false;  # Disable Wayland due to Mesa/GPU issues on Apple Silicon
     };
-    defaultSession = lib.mkDefault "plasma";  # Use Wayland session by default
+    defaultSession = lib.mkDefault "plasmax11";  # Use X11 session (stable on Apple Silicon)
   };
   
   # Desktop environment
