@@ -40,6 +40,21 @@
   hardware.asahi.peripheralFirmwareDirectory = /boot/asahi;
   networking.networkmanager.enable = true;
   
+  # Display configuration for Retina display
+  # Note: GPU acceleration is enabled by default with mesa 25.1 in nixos-apple-silicon
+  services.xserver.dpi = 192;  # 2x scaling for Retina display (96 * 2)
+  
+  # Environment variables for better Wayland support
+  environment.sessionVariables = {
+    # Use Wayland for Qt applications
+    QT_QPA_PLATFORM = "wayland";
+    # Firefox Wayland support
+    MOZ_ENABLE_WAYLAND = "1";
+    # Scaling for GTK applications
+    GDK_SCALE = "2";
+    GDK_DPI_SCALE = "0.5";  # Compensate for GDK_SCALE
+  };
+  
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
   

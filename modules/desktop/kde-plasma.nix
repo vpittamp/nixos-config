@@ -20,9 +20,9 @@
   services.displayManager = {
     sddm = {
       enable = true;
-      wayland.enable = false;
+      wayland.enable = true;  # Enable Wayland support in SDDM
     };
-    defaultSession = lib.mkDefault "plasma";  # Use Wayland by default
+    defaultSession = lib.mkDefault "plasma";  # Use Wayland session by default
   };
   
   # Desktop environment
