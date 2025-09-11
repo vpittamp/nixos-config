@@ -35,22 +35,20 @@
       executable = true;
     };
     
-    # VNC password file - using a hashed password
-    # To generate: echo -n "yourpassword" | vncpasswd -f > passwd
-    # For now, we'll create an empty file that prompts for password on first run
-    home.file.".vnc/passwd" = {
-      source = pkgs.writeText "vnc-passwd" "";
-      mode = "600";
-      onChange = ''
-        # If password file is empty, prompt to set it
-        if [ ! -s ~/.vnc/passwd ]; then
-          echo "================================================"
-          echo "VNC PASSWORD NOT SET!"
-          echo "Please run: vncpasswd"
-          echo "to set your VNC password"
-          echo "================================================"
-        fi
-      '';
-    };
+    # VNC password file - needs to be created by user for security
+    # User must run: vncpasswd
+    # We'll create an empty placeholder
+    home.activation.vncPasswordCheck = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      if [ ! -f ~/.vnc/passwd ]; then
+        mkdir -p ~/.vnc
+        touch ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+        echo "================================================"
+        echo "VNC PASSWORD NOT SET!"
+        echo "Please run: vncpasswd"
+        echo "to set your VNC password"
+        echo "================================================"
+      fi
+    '';
   };
 }
