@@ -15,6 +15,7 @@
     
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
+    ../modules/desktop/remote-access.nix
     
     # Services
     ../modules/services/development.nix
