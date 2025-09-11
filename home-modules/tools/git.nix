@@ -50,17 +50,16 @@
         };
       };
       
-      # Credential helpers with 1Password integration
+      # Credential helpers with GitHub CLI integration
       credential = {
         helper = [
           "oauth"  # Use OAuth as primary (from git-credential-oauth module)
-          "${pkgs._1password-gui or pkgs._1password}/share/1password/op-ssh-sign"
         ];
         "https://github.com" = {
-          helper = "!${pkgs._1password}/bin/op plugin run -- gh auth git-credential";
+          helper = "!gh auth git-credential";  # Use GitHub CLI directly
         };
         "https://gitlab.com" = {
-          helper = "!${pkgs._1password}/bin/op plugin run -- glab auth git-credential";
+          helper = "!glab auth git-credential";  # Use GitLab CLI directly  
         };
       };
     };

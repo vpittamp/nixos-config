@@ -34,21 +34,8 @@ in
     });
   '';
 
-  # Git configuration with 1Password integration
-  programs.git = {
-    enable = true;
-    config = {
-      credential = {
-        helper = "${pkgs._1password-gui}/share/1password/op-ssh-sign";
-        "https://github.com" = {
-          helper = "${pkgs._1password}/bin/op plugin run -- gh auth git-credential";
-        };
-        "https://gitlab.com" = {
-          helper = "${pkgs._1password}/bin/op plugin run -- glab auth git-credential";
-        };
-      };
-    };
-  };
+  # Git configuration - removed as it's handled in home-manager
+  # The credential helpers are configured in home-modules/tools/git.nix
 
   # SSH configuration - disable default agent to use 1Password's
   programs.ssh.startAgent = false;
