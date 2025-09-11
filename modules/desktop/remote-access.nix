@@ -14,27 +14,37 @@
   };
 
   # Enable TigerVNC server for better Linux-to-Linux remote access
-  # Use x0vncserver to share the existing display instead of creating a new one
+  # Creates a persistent virtual desktop session
   systemd.services.vncserver = {
-    description = "TigerVNC Server (x0vncserver)";
-    after = [ "graphical.target" "display-manager.service" ];
-    wantedBy = [ "graphical.target" ];
+    description = "TigerVNC Server";
+    after = [ "network.target" ];
+    wantedBy = [ "multi-user.target" ];
     
     environment = {
-      DISPLAY = ":0";
-      XAUTHORITY = "/run/sddm/xauth_session";
+      PATH = lib.makeBinPath [ 
+        pkgs.xorg.xinit 
+        pkgs.xorg.xauth 
+        pkgs.dbus 
+        pkgs.coreutils
+        pkgs.gnugrep
+        pkgs.gnused
+        pkgs.kdePackages.plasma-workspace
+      ];
+      HOME = "/home/vpittamp";
     };
     
     serviceConfig = {
-      Type = "simple";
+      Type = "forking";
       User = "vpittamp";
       Group = "users";
+      WorkingDirectory = "/home/vpittamp";
       
-      # Use x0vncserver to share the existing display :0
-      # This shares the actual desktop session instead of creating a virtual one
-      ExecStart = "${pkgs.tigervnc}/bin/x0vncserver -display :0 -rfbport 5901 -passwordfile /home/vpittamp/.vnc/passwd -AlwaysShared";
+      # Create a virtual desktop on display :1
+      ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.tigervnc}/bin/vncserver -kill :1 > /dev/null 2>&1 || true'";
+      ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.tigervnc}/bin/vncserver :1 -geometry 1920x1080 -depth 24 -localhost no -fg'";
+      ExecStop = "${pkgs.tigervnc}/bin/vncserver -kill :1";
       
-      # Restart on failure
+      # Don't restart too quickly
       Restart = "on-failure";
       RestartSec = 10;
     };
