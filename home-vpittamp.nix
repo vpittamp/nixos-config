@@ -27,6 +27,7 @@
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
     ./home-modules/tools/cluster-management.nix
+    ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix

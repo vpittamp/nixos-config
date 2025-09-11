@@ -29,6 +29,10 @@
 
   # Development packages
   environment.systemPackages = with pkgs; [
+    # Version control and GitHub
+    git
+    gh  # GitHub CLI for authentication
+    
     # Container tools
     docker-compose
     kubectl

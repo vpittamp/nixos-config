@@ -87,9 +87,11 @@
       export GDK_SCALE=2
       export GDK_DPI_SCALE=0.5  # Inverse of GDK_SCALE for fine-tuning
       
-      # Qt applications - auto-detect HiDPI
-      export QT_AUTO_SCREEN_SCALE_FACTOR=1
-      unset QT_SCALE_FACTOR  # Let Qt auto-detect
+      # Qt applications - DISABLE auto-scaling to prevent double-scaling with KDE
+      export QT_AUTO_SCREEN_SCALE_FACTOR=0  # Critical: prevents double-scaling
+      export QT_ENABLE_HIGHDPI_SCALING=0    # Disable Qt's HiDPI handling
+      export PLASMA_USE_QT_SCALING=1        # Let Plasma handle Qt scaling
+      unset QT_SCALE_FACTOR                 # Don't force any Qt scaling
       
       # Java applications
       export _JAVA_OPTIONS="-Dsun.java2d.uiScale=2"
@@ -103,6 +105,8 @@
       
       # Let KDE handle its own scaling based on DPI
       kwriteconfig5 --file kcmfonts --group General --key forceFontDPI 180 || true
+      kwriteconfig5 --file kdeglobals --group KScreen --key ScaleFactor 2 || true
+      kwriteconfig5 --file kdeglobals --group KScreen --key ScreenScaleFactors "eDP-1=2;" || true
     '';
   };
   
