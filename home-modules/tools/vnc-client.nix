@@ -68,35 +68,44 @@
   };
   
   # Create a Remmina connection profile for Hetzner VNC
-  home.file.".local/share/remmina/hetzner-vnc.remmina" = {
-    text = ''
-      [remmina]
-      password=hetzner123
-      gateway_usage=0
-      colordepth=32
-      quality=9
-      viewmode=1
-      scale=0
-      aspectscale=1
-      fullscreen=1
-      viewonly=0
-      disableclipboard=0
-      disableencryption=0
-      showcursor=1
-      disableserverinput=0
-      disablesmoothing=0
-      enableaudio=0
-      protocol=VNC
-      server=nixos-hetzner:5901
-      name=Hetzner KDE Desktop (VNC)
-      group=NixOS
-    '';
-    mode = "600";
-  };
+  home.file.".local/share/remmina/hetzner-vnc.remmina".text = ''
+    [remmina]
+    password=hetzner123
+    gateway_usage=0
+    colordepth=32
+    quality=9
+    viewmode=4
+    scale=1
+    aspectscale=1
+    fullscreen=1
+    viewonly=0
+    disableclipboard=0
+    disableencryption=0
+    showcursor=1
+    disableserverinput=0
+    disablesmoothing=0
+    enableaudio=0
+    protocol=VNC
+    server=nixos-hetzner:5901
+    resolution_mode=2
+    resolution_width=2560
+    resolution_height=1600
+    name=Hetzner KDE Desktop (VNC)
+    group=NixOS
+  '';
   
   # Shell aliases for quick connection
   programs.bash.shellAliases = {
-    vnc-hetzner = "vncviewer -FullScreen -RemoteResize=1 -QualityLevel=9 nixos-hetzner:5901";
-    vnc-hetzner-windowed = "vncviewer -geometry 2560x1600 nixos-hetzner:5901";
+    # Fullscreen with proper HiDPI scaling
+    vnc-hetzner = "FLTK_SCALING_FACTOR=1 XAUTHORITY=$HOME/.Xauthority vncviewer -FullScreen -DesktopSize=2560x1600 -RemoteResize=1 -QualityLevel=9 nixos-hetzner:5901";
+    
+    # Windowed mode with scaling
+    vnc-hetzner-windowed = "FLTK_SCALING_FACTOR=1 XAUTHORITY=$HOME/.Xauthority vncviewer -DesktopSize=2560x1600 nixos-hetzner:5901";
+    
+    # Alternative scaled mode (if FLTK scaling doesn't work)
+    vnc-hetzner-scaled = "FLTK_SCALING_FACTOR=0.5 XAUTHORITY=$HOME/.Xauthority vncviewer -FullScreen -DesktopSize=2560x1600 nixos-hetzner:5901";
+    
+    # No scaling - let system handle it
+    vnc-hetzner-native = "XAUTHORITY=$HOME/.Xauthority vncviewer -FullScreen -AutoSelect=0 -FullColour -PreferredEncoding=Tight -QualityLevel=9 nixos-hetzner:5901";
   };
 }

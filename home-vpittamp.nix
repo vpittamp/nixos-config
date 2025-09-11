@@ -29,6 +29,7 @@
     ./home-modules/tools/nix.nix
     ./home-modules/tools/cluster-management.nix
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
+    ./home-modules/tools/vnc-client.nix  # VNC client configuration
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix

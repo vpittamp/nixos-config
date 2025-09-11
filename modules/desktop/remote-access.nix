@@ -71,6 +71,7 @@
     remmina
     tigervnc
     freerdp
+    x2goclient      # X2Go client for better remote desktop
     xorg.xinit      # Required for VNC server
     xorg.xauth      # X authentication
   ];

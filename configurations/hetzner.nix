@@ -21,6 +21,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/x2go.nix
   ];
 
   # System identification
