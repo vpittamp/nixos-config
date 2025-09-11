@@ -157,6 +157,9 @@
       opv = "op vault list";
       opi = "op item list";
       
+      # 1Password plugin aliases
+      gh = "op plugin run -- gh";
+      
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
