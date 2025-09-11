@@ -13,36 +13,43 @@
     port = 3389;
   };
 
-  # Enable TigerVNC server for better Linux-to-Linux remote access
-  # Creates a persistent virtual desktop session
+  # Enable TigerVNC server using Xvnc directly
+  # This bypasses vncserver wrapper which has issues on NixOS
   systemd.services.vncserver = {
-    description = "TigerVNC Server";
+    description = "TigerVNC Xvnc Server";
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     
-    path = [ 
-      pkgs.xorg.xinit 
-      pkgs.xorg.xauth 
-      pkgs.dbus 
-      pkgs.kdePackages.plasma-workspace
+    path = with pkgs; [ 
+      xorg.xinit 
+      xorg.xauth 
+      dbus 
+      kdePackages.plasma-workspace
+      bash
+      coreutils
     ];
     
     environment = {
       HOME = "/home/vpittamp";
+      USER = "vpittamp";
     };
     
     serviceConfig = {
-      Type = "forking";
+      Type = "simple";
       User = "vpittamp";
       Group = "users";
       WorkingDirectory = "/home/vpittamp";
       
-      # Create a virtual desktop on display :1
-      ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.tigervnc}/bin/vncserver -kill :1 > /dev/null 2>&1 || true'";
-      ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.tigervnc}/bin/vncserver :1 -geometry 1920x1080 -depth 24 -localhost no -fg'";
-      ExecStop = "${pkgs.tigervnc}/bin/vncserver -kill :1";
+      # Start Xvnc directly (the actual VNC X server)
+      ExecStart = "${pkgs.tigervnc}/bin/Xvnc :1 -geometry 1920x1080 -depth 24 -rfbport 5901 -rfbauth /home/vpittamp/.vnc/passwd -AlwaysShared";
       
-      # Don't restart too quickly
+      # Start the desktop session after Xvnc is running
+      ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 2; DISPLAY=:1 /home/vpittamp/.vnc/xstartup &'";
+      
+      # Clean shutdown
+      ExecStop = "${pkgs.procps}/bin/pkill -u vpittamp -f 'Xvnc :1'";
+      
+      # Restart on failure
       Restart = "on-failure";
       RestartSec = 10;
     };
