@@ -40,8 +40,9 @@
       Group = "users";
       WorkingDirectory = "/home/vpittamp";
       
-      # Start Xvnc directly (the actual VNC X server)
-      ExecStart = "${pkgs.tigervnc}/bin/Xvnc :1 -geometry 1920x1080 -depth 24 -rfbport 5901 -rfbauth /home/vpittamp/.vnc/passwd -AlwaysShared";
+      # Start Xvnc with M1 MacBook Pro Retina resolution
+      # 2560x1600 is the native resolution for 14" M1 MacBook Pro
+      ExecStart = "${pkgs.tigervnc}/bin/Xvnc :1 -geometry 2560x1600 -depth 24 -rfbport 5901 -rfbauth /home/vpittamp/.vnc/passwd -AlwaysShared -dpi 144";
       
       # Start the desktop session after Xvnc is running
       ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 2; DISPLAY=:1 /home/vpittamp/.vnc/xstartup &'";

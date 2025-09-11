@@ -4,15 +4,25 @@
 {
   # VNC configuration files managed by home-manager
   home-manager.users.vpittamp = {
-    # VNC server configuration
+    # VNC server configuration optimized for M1 MacBook Pro
     home.file.".vnc/config".text = ''
-      # TigerVNC Configuration
-      geometry=1920x1080
+      # TigerVNC Configuration for M1 MacBook Pro Retina Display
+      geometry=2560x1600
       depth=24
       localhost=no
       alwaysshared=yes
       desktop=Hetzner-KDE
       SecurityTypes=VncAuth,TLSVnc
+      # Performance optimizations
+      CompareFB=1
+      Protocol3.3=off
+      # Quality settings for LAN/fast connections
+      QualityLevel=9
+      CompressLevel=1
+      # Enable full color
+      FullColor=1
+      # DPI for Retina display
+      DPI=144
     '';
     
     # VNC startup script for KDE Plasma
