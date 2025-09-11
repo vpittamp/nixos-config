@@ -14,24 +14,25 @@
   };
 
   # Enable TigerVNC server for better Linux-to-Linux remote access
-  # TigerVNC provides a persistent desktop session
+  # Use x0vncserver to share the existing display instead of creating a new one
   systemd.services.vncserver = {
-    description = "TigerVNC Server";
-    after = [ "syslog.target" "network.target" ];
-    wantedBy = [ "multi-user.target" ];
+    description = "TigerVNC Server (x0vncserver)";
+    after = [ "graphical.target" "display-manager.service" ];
+    wantedBy = [ "graphical.target" ];
     
-    path = [ pkgs.xorg.xinit pkgs.xorg.xauth pkgs.dbus ];
+    environment = {
+      DISPLAY = ":0";
+      XAUTHORITY = "/run/sddm/xauth_session";
+    };
     
     serviceConfig = {
-      Type = "forking";
+      Type = "simple";
       User = "vpittamp";
       Group = "users";
-      WorkingDirectory = "/home/vpittamp";
       
-      # Start VNC server on display :1
-      ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.tigervnc}/bin/vncserver -kill :1 > /dev/null 2>&1 || true'";
-      ExecStart = "${pkgs.tigervnc}/bin/vncserver :1 -geometry 1920x1080 -depth 24 -localhost no";
-      ExecStop = "${pkgs.tigervnc}/bin/vncserver -kill :1";
+      # Use x0vncserver to share the existing display :0
+      # This shares the actual desktop session instead of creating a virtual one
+      ExecStart = "${pkgs.tigervnc}/bin/x0vncserver -display :0 -rfbport 5901 -passwordfile /home/vpittamp/.vnc/passwd -AlwaysShared";
       
       # Restart on failure
       Restart = "on-failure";
@@ -54,6 +55,8 @@
     remmina
     tigervnc
     freerdp
+    xorg.xinit      # Required for VNC server
+    xorg.xauth      # X authentication
   ];
 
   # Ensure X11 forwarding is enabled for SSH
