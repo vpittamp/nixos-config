@@ -39,15 +39,5 @@
     }
   '';
 
-  # Git configuration to use 1Password for signing
-  programs.git.extraConfig = {
-    # Use 1Password for commit signing
-    user.signingkey = "op://Personal/SSH-Signing-Key/public-key";
-    commit.gpgsign = true;
-    gpg.format = "ssh";
-    gpg.ssh.program = "${pkgs._1password-gui}/bin/op-ssh-sign";
-    
-    # Use 1Password for HTTPS credentials
-    credential.helper = "${pkgs._1password-gui}/share/1password/op-ssh-sign";
-  };
+  # Git configuration is now handled in git.nix module
 }

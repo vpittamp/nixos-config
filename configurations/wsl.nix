@@ -13,6 +13,7 @@
     # Services (no desktop needed in WSL)
     ../modules/services/development.nix
     ../modules/services/networking.nix
+    ../modules/services/onepassword.nix  # 1Password CLI for secret management
   ];
 
   # WSL Configuration

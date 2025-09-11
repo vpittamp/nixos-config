@@ -2,18 +2,23 @@
 # Provides centralized secret management and desktop integration
 { config, lib, pkgs, ... }:
 
+let
+  # Detect if we're in a headless environment (no GUI)
+  hasGui = config.services.xserver.enable or false;
+in
 {
-  # 1Password desktop application and CLI
+  # 1Password packages - GUI only if desktop is available
   environment.systemPackages = with pkgs; [
-    _1password-gui    # Desktop application
-    _1password        # CLI tool
+    _1password        # CLI tool (always needed)
+  ] ++ lib.optionals hasGui [
+    _1password-gui    # Desktop application (only with GUI)
   ];
 
   # Enable 1Password system services
   programs._1password.enable = true;
   programs._1password-gui = {
-    enable = true;
-    polkitPolicyOwners = [ "vpittamp" ];
+    enable = hasGui;  # Only enable GUI program if desktop is available
+    polkitPolicyOwners = lib.optionals hasGui [ "vpittamp" ];
   };
   
   # Ensure polkit is enabled and running
@@ -54,40 +59,69 @@
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };
 
-  # XDG autostart for KDE Plasma
-  environment.etc."xdg/autostart/1password.desktop".text = ''
-    [Desktop Entry]
-    Name=1Password
-    GenericName=Password Manager
-    Comment=1Password password manager
-    Exec=${pkgs._1password-gui}/bin/1password --silent
-    Terminal=false
-    Type=Application
-    Icon=1password
-    StartupNotify=false
-    Categories=Utility;Security;
-    X-GNOME-Autostart-enabled=true
-    X-KDE-autostart-after=panel
-    X-KDE-autostart-phase=2
-  '';
-  
-  # Alternative desktop entry for manual scaling control
-  environment.etc."applications/1password-scaled.desktop" = {
-    text = ''
-      [Desktop Entry]
-      Name=1Password (Scaled)
-      GenericName=Password Manager
-      Comment=1Password with custom scaling for HiDPI
-      Exec=env QT_SCALE_FACTOR=0.75 ${pkgs._1password-gui}/bin/1password
-      Terminal=false
-      Type=Application
-      Icon=1password
-      StartupNotify=true
-      Categories=Utility;Security;
-      NoDisplay=false
-    '';
-    mode = "0644";
-  };
+  # XDG autostart for KDE Plasma (only with GUI)
+  environment.etc = lib.mkMerge [
+    (lib.mkIf hasGui {
+      "xdg/autostart/1password.desktop".text = ''
+        [Desktop Entry]
+        Name=1Password
+        GenericName=Password Manager
+        Comment=1Password password manager
+        Exec=${pkgs._1password-gui}/bin/1password --silent
+        Terminal=false
+        Type=Application
+        Icon=1password
+        StartupNotify=false
+        Categories=Utility;Security;
+        X-GNOME-Autostart-enabled=true
+        X-KDE-autostart-after=panel
+        X-KDE-autostart-phase=2
+      '';
+      
+      # Alternative desktop entry for manual scaling control
+      "applications/1password-scaled.desktop" = {
+        text = ''
+          [Desktop Entry]
+          Name=1Password (Scaled)
+          GenericName=Password Manager
+          Comment=1Password with custom scaling for HiDPI
+          Exec=env QT_SCALE_FACTOR=0.75 ${pkgs._1password-gui}/bin/1password
+          Terminal=false
+          Type=Application
+          Icon=1password
+          StartupNotify=true
+          Categories=Utility;Security;
+          NoDisplay=false
+        '';
+        mode = "0644";
+      };
+    })
+    
+    # 1Password SSH agent configuration
+    # This enables SSH keys from all vaults to be available
+    {
+      "1password-ssh-agent.toml" = {
+        target = "skel/.config/1Password/ssh/agent.toml";
+        text = ''
+          # 1Password SSH Agent Configuration
+          # This file configures which SSH keys are available through the agent
+          
+          # Make all SSH keys from Personal vault available
+          [[ssh-keys]]
+          vault = "Personal"
+          
+          # Make all SSH keys from Private vault available (if exists)
+          [[ssh-keys]]
+          vault = "Private"
+          
+          # You can add specific keys like this:
+          # [[ssh-keys]]
+          # item = "GitHub SSH Key"
+          # vault = "Personal"
+        '';
+      };
+    }
+  ];
 
   # User-specific configuration
   users.users.vpittamp = {
@@ -101,29 +135,6 @@
     "d /home/vpittamp/.config/1Password 0700 vpittamp users -"
     "d /home/vpittamp/.config/1Password/ssh 0700 vpittamp users -"
   ];
-  
-  # 1Password SSH agent configuration
-  # This enables SSH keys from all vaults to be available
-  environment.etc."1password-ssh-agent.toml" = {
-    target = "skel/.config/1Password/ssh/agent.toml";
-    text = ''
-      # 1Password SSH Agent Configuration
-      # This file configures which SSH keys are available through the agent
-      
-      # Make all SSH keys from Personal vault available
-      [[ssh-keys]]
-      vault = "Personal"
-      
-      # Make all SSH keys from Private vault available (if exists)
-      [[ssh-keys]]
-      vault = "Private"
-      
-      # You can add specific keys like this:
-      # [[ssh-keys]]
-      # item = "GitHub SSH Key"
-      # vault = "Personal"
-    '';
-  };
   
   # Also create the config for the current user
   system.activationScripts.onePasswordSSHConfig = ''
@@ -146,8 +157,8 @@
     chmod 600 /home/vpittamp/.config/1Password/ssh/agent.toml
   '';
 
-  # Systemd service to ensure 1Password starts properly
-  systemd.user.services.onepassword-gui = {
+  # Systemd service to ensure 1Password starts properly (only with GUI)
+  systemd.user.services.onepassword-gui = lib.mkIf hasGui {
     description = "1Password Desktop Application";
     after = [ "graphical-session.target" ];
     wantedBy = [ "graphical-session.target" ];
