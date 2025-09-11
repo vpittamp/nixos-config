@@ -20,6 +20,8 @@
     after = [ "syslog.target" "network.target" ];
     wantedBy = [ "multi-user.target" ];
     
+    path = [ pkgs.xorg.xinit pkgs.xorg.xauth pkgs.dbus ];
+    
     serviceConfig = {
       Type = "forking";
       User = "vpittamp";
