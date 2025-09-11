@@ -55,22 +55,61 @@ The Hetzner server runs full KDE Plasma desktop with xRDP for remote access. 1Pa
    # Or use any RDP client to connect to the server
    ```
 
-2. **Verify SSH Agent**
-   ```bash
-   # Check agent socket exists
-   ls -la ~/.1password/agent.sock
+2. **Configure GitHub CLI with 1Password**
    
-   # List available keys
-   SSH_AUTH_SOCK=~/.1password/agent.sock ssh-add -l
+   a. Create a GitHub Personal Access Token:
+   ```bash
+   # Open GitHub settings in browser
+   open https://github.com/settings/tokens/new
+   # Or navigate manually to Settings → Developer settings → Personal access tokens
+   
+   # Required scopes:
+   # - repo (full control)
+   # - workflow (if using Actions)
+   # - admin:ssh_signing_key (for SSH key management)
+   ```
+   
+   b. Save token in 1Password:
+   ```bash
+   # Create a new Login item in 1Password desktop
+   # Title: "GitHub CLI"
+   # Fields:
+   #   - username: your-github-username
+   #   - password: your-personal-access-token
+   #   - website: https://github.com
+   ```
+   
+   c. Initialize GitHub CLI plugin:
+   ```bash
+   # Interactive setup (requires desktop session)
+   op plugin init gh
+   
+   # Or configure manually
+   gh auth login --with-token < <(op item get "GitHub CLI" --fields password)
    ```
 
-3. **Add SSH Key to GitHub**
+3. **Verify SSH Agent**
+   ```bash
+   # Ensure SSH_AUTH_SOCK is set
+   echo $SSH_AUTH_SOCK  # Should show: /home/vpittamp/.1password/agent.sock
+   
+   # If not set, reload shell or run:
+   export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+   
+   # List available keys
+   ssh-add -l
+   ```
+
+4. **Add SSH Key to GitHub**
    ```bash
    # Get public key from 1Password
    op item get "Git Signing Key" --fields "public key"
    
    # Add to GitHub via CLI
    echo "YOUR_PUBLIC_KEY" | gh ssh-key add --title "Workstation (1Password)"
+   
+   # Or if GitHub CLI is configured:
+   op item get "Git Signing Key" --fields "public key" | gh ssh-key add --title "$(hostname)"
    ```
 
 
