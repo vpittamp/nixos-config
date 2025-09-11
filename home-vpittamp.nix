@@ -19,7 +19,6 @@
     # Tool configurations
     ./home-modules/tools/git.nix
     ./home-modules/tools/ssh.nix
-    ./home-modules/tools/ssh-server.nix  # SSH configuration for headless servers
     ./home-modules/tools/bat.nix
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix

@@ -2,21 +2,18 @@
 
 ## Overview
 
-This guide explains how the 1Password integration works across different environments (M1 Mac, WSL, Hetzner server) and how to resolve common authentication issues.
+This guide explains how the 1Password integration works across all NixOS environments (M1 Mac, WSL, Hetzner server with KDE) and how to resolve common authentication issues.
 
 ## Architecture
 
-### Workstations (M1, WSL with GUI)
-- **1Password Desktop**: Required and automatically started
+All systems use the same 1Password desktop configuration:
+- **1Password Desktop**: Required and automatically started with GUI
 - **SSH Agent**: Uses 1Password's agent at `~/.1password/agent.sock`
 - **Git Signing**: Enabled via `op-ssh-sign`
 - **Credential Helper**: Uses 1Password for GitHub/GitLab authentication
 
-### Headless Servers (Hetzner)
-- **1Password Desktop**: Not available
-- **SSH Agent**: Falls back to standard SSH agent
-- **Git Signing**: Disabled automatically
-- **Credential Helper**: Uses OAuth or GitHub CLI tokens
+### Important Note for Hetzner
+The Hetzner server runs full KDE Plasma desktop with xRDP for remote access. 1Password desktop must be started within the desktop session (via RDP), not over SSH.
 
 ## Configuration Details
 
@@ -28,32 +25,34 @@ This guide explains how the 1Password integration works across different environ
    - Conditionally enables desktop integration
 
 2. **`home-modules/tools/git.nix`**
-   - Configures git with conditional signing
-   - Uses 1Password on workstations, OAuth on servers
-   - Automatically detects environment
+   - Configures git with SSH signing via 1Password
+   - Uses 1Password for credential storage
+   - OAuth as fallback authentication
 
 3. **`home-modules/tools/ssh.nix`**
    - SSH client configuration
-   - Uses 1Password agent when available
-   - Falls back to standard SSH on servers
-
-4. **`home-modules/tools/ssh-server.nix`**
-   - Server-specific SSH configuration
-   - Provides instructions for manual key setup
-   - Only active on Hetzner server
+   - Uses 1Password agent on all systems
+   - Supports DevSpace dynamic SSH config
 
 ## Setting Up Authentication
 
-### On Workstations (M1, WSL)
+### On All Systems (M1, WSL, Hetzner)
 
 1. **Initial 1Password Setup**
    ```bash
-   # 1Password desktop should auto-start
-   # If not, start manually:
+   # 1Password desktop should auto-start with GUI session
+   # If not, start manually from within desktop session:
    1password --silent &
    
-   # Sign in to 1Password
+   # Sign in to 1Password (from terminal within desktop)
    op signin
+   ```
+   
+   **Note for Hetzner**: Connect via RDP first to access the desktop session:
+   ```bash
+   # From your local machine:
+   xfreerdp /v:nixos-hetzner /u:vpittamp /p:PASSWORD /size:1920x1080
+   # Or use any RDP client to connect to the server
    ```
 
 2. **Verify SSH Agent**
@@ -74,40 +73,6 @@ This guide explains how the 1Password integration works across different environ
    echo "YOUR_PUBLIC_KEY" | gh ssh-key add --title "Workstation (1Password)"
    ```
 
-### On Headless Servers (Hetzner)
-
-1. **Generate or Import SSH Keys**
-   
-   Option A: Generate new key
-   ```bash
-   ssh-keygen -t ed25519 -C "hetzner@$(date +%Y-%m-%d)"
-   ```
-   
-   Option B: Import from 1Password CLI
-   ```bash
-   # Login to 1Password CLI
-   op signin
-   
-   # Get key from vault
-   op item get "GitHub SSH Key" --fields "private key" > ~/.ssh/id_ed25519
-   op item get "GitHub SSH Key" --fields "public key" > ~/.ssh/id_ed25519.pub
-   chmod 600 ~/.ssh/id_ed25519
-   chmod 644 ~/.ssh/id_ed25519.pub
-   ```
-
-2. **Add to GitHub**
-   ```bash
-   # Using GitHub CLI
-   gh auth login
-   gh ssh-key add ~/.ssh/id_ed25519.pub --title "Hetzner Server"
-   ```
-
-3. **Configure Git (No Signing)**
-   ```bash
-   # Signing is automatically disabled on servers
-   # Use HTTPS with GitHub CLI for authentication
-   git config --global credential.helper "!gh auth git-credential"
-   ```
 
 ## Troubleshooting
 
@@ -160,6 +125,25 @@ This guide explains how the 1Password integration works across different environ
    git config --global user.signingkey "ssh-ed25519 YOUR_KEY_HERE"
    ```
 
+### Issue: 1Password won't start over SSH on Hetzner
+
+**Cause**: 1Password requires a display session (X11/Wayland)
+
+**Solution**:
+1. Connect to Hetzner via RDP:
+   ```bash
+   xfreerdp /v:nixos-hetzner /u:vpittamp /size:1920x1080
+   ```
+
+2. Once in the desktop session, open a terminal and start 1Password:
+   ```bash
+   1password --silent &
+   ```
+
+3. The agent socket will be created at `~/.1password/agent.sock`
+
+4. After this, SSH connections will work with the running agent
+
 ### Issue: 1Password agent not running
 
 **Cause**: 1Password desktop not started or CLI integration disabled
@@ -186,21 +170,20 @@ This guide explains how the 1Password integration works across different environ
 The configuration automatically detects:
 
 1. **GUI Availability**: `config.services.xserver.enable`
-2. **Server Detection**: `config.networking.hostName == "nixos-hetzner"`
-3. **1Password Availability**: Presence of `~/.1password/agent.sock`
+2. **1Password Availability**: Presence of 1Password GUI package
 
-Based on these, it:
-- Enables/disables git signing
-- Switches between 1Password and standard SSH agents
-- Adjusts credential helpers
+All systems with GUI (including Hetzner) use the same 1Password configuration for:
+- Git signing with SSH keys
+- SSH agent for authentication
+- Credential helpers for GitHub/GitLab
 
 ## Best Practices
 
-1. **Workstations**: Always use 1Password for SSH keys
-2. **Servers**: Use GitHub CLI with OAuth tokens
-3. **Commits**: Sign on workstations, don't sign on servers
-4. **Keys**: Store all keys in 1Password vault
-5. **Backups**: Keep encrypted backups of server SSH keys
+1. **All Systems**: Use 1Password for SSH keys
+2. **Authentication**: Store all keys in 1Password vault
+3. **Commits**: Sign all commits with SSH keys from 1Password
+4. **Hetzner Access**: Always start 1Password from within RDP session
+5. **Backups**: 1Password syncs keys across devices automatically
 
 ## Quick Commands Reference
 

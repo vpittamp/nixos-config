@@ -1,15 +1,5 @@
 { config, pkgs, lib, ... }:
 
-let
-  # Detect if 1Password desktop is available
-  hasOnePasswordDesktop = builtins.pathExists "/home/vpittamp/.1password/agent.sock";
-  
-  # Detect if we're on a server (Hetzner)
-  isServer = config.networking.hostName or "" == "nixos-hetzner";
-  
-  # Use 1Password signing on workstations, disable on servers
-  enableSigning = !isServer;
-in
 {
   # Git credential OAuth for seamless authentication
   programs.git-credential-oauth = {
@@ -22,8 +12,8 @@ in
     userName = "Vinod Pittampalli";
     userEmail = "vinod@pittampalli.com";
     
-    # SSH signing configuration (only on workstations with 1Password)
-    signing = lib.mkIf enableSigning {
+    # SSH signing configuration with 1Password
+    signing = {
       key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
       signByDefault = true;
     };
@@ -51,8 +41,8 @@ in
       push.autoSetupRemote = true;
       pull.rebase = false;
       
-      # SSH signing configuration (only on workstations)
-      gpg = lib.mkIf enableSigning {
+      # SSH signing configuration
+      gpg = {
         format = "ssh";
         ssh = {
           program = "${pkgs._1password-gui or pkgs._1password}/bin/op-ssh-sign";
@@ -60,18 +50,16 @@ in
         };
       };
       
-      # Credential helpers - use OAuth for all, 1Password only on workstations
+      # Credential helpers with 1Password integration
       credential = {
-        helper = if enableSigning then [
-          "oauth"  # Use OAuth as primary
+        helper = [
+          "oauth"  # Use OAuth as primary (from git-credential-oauth module)
           "${pkgs._1password-gui or pkgs._1password}/share/1password/op-ssh-sign"
-        ] else [
-          "oauth"  # OAuth only on servers
         ];
-        "https://github.com" = lib.mkIf enableSigning {
+        "https://github.com" = {
           helper = "!${pkgs._1password}/bin/op plugin run -- gh auth git-credential";
         };
-        "https://gitlab.com" = lib.mkIf enableSigning {
+        "https://gitlab.com" = {
           helper = "!${pkgs._1password}/bin/op plugin run -- glab auth git-credential";
         };
       };
