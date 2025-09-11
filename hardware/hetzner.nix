@@ -17,17 +17,31 @@
   ];
   
   boot.initrd.kernelModules = [ ];
-  boot.kernelModules = [ "kvm-intel" ];
+  boot.kernelModules = [ "kvm-amd" ];  # Hetzner uses AMD EPYC CPUs
   boot.extraModulePackages = [ ];
 
-  # File systems - these should be defined by generated hardware-configuration.nix
-  # or overridden in the specific system configuration
+  # File systems - Hetzner server specific
+  fileSystems."/" = {
+    device = "/dev/disk/by-uuid/9209b382-481e-4eaf-bf22-7dfb7373f798";
+    fsType = "ext4";
+  };
+
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-uuid/C197-021E";
+    fsType = "vfat";
+    options = [ "fmask=0022" "dmask=0022" ];
+  };
+
+  swapDevices = [ ];
   
   # Networking
   networking.usePredictableInterfaceNames = false;
   
   # Hardware settings
-  hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+  
+  # Platform
+  nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   
   # Graphics - using new API (hardware.graphics instead of hardware.opengl)
   hardware.graphics.enable = true;

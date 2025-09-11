@@ -7,8 +7,8 @@
     # Base configuration
     ./base.nix
     
-    # Hardware - use generated hardware-configuration.nix
-    ../hardware-configuration.nix
+    # Hardware
+    ../hardware/hetzner.nix
     
     # QEMU guest optimizations
     (modulesPath + "/profiles/qemu-guest.nix")
