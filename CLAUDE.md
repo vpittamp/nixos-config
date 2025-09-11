@@ -171,6 +171,9 @@ nix flake lock --update-input nixpkgs
 - Fixed M1 display scaling and memory issues
 - Implemented conditional module features (GUI vs headless)
 - Added declarative Git signing configuration
+- Fixed Hetzner configuration to properly import hardware-configuration.nix
+- Re-enabled all home-manager modules after architecture isolation debugging
+- Added GitHub CLI to development module
 
 ### Recent Consolidation (2024-09)
 - Reduced from 46 to ~25 .nix files

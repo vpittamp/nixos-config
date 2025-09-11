@@ -9,6 +9,7 @@
     
     # Hardware
     ../hardware/hetzner.nix
+    ../hardware-configuration.nix  # Generated hardware config with filesystems
     
     # QEMU guest optimizations
     (modulesPath + "/profiles/qemu-guest.nix")
