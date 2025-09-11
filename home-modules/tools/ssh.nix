@@ -1,7 +1,14 @@
 { config, pkgs, lib, ... }:
 
+let
+  # Detect if we're on a server (Hetzner)
+  isServer = config.networking.hostName or "" == "nixos-hetzner";
+  
+  # Use 1Password agent on workstations, regular SSH agent on servers
+  sshAuthSock = if isServer then "$SSH_AUTH_SOCK" else "~/.1password/agent.sock";
+in
 {
-  # SSH configuration with 1Password integration and DevSpace support
+  # SSH configuration with conditional 1Password integration and DevSpace support
   # Using a writable config approach for DevSpace compatibility
   
   # Don't let home-manager manage the SSH config directly
@@ -11,21 +18,21 @@
       Include ~/.ssh/devspace_config
       
       Host *
-        IdentityAgent ~/.1password/agent.sock
+        ${lib.optionalString (!isServer) "IdentityAgent ${sshAuthSock}"}
         AddKeysToAgent yes
         IdentitiesOnly yes
       
       Host github.com
         User git
-        IdentityAgent ~/.1password/agent.sock
+        ${lib.optionalString (!isServer) "IdentityAgent ${sshAuthSock}"}
       
       Host gitlab.com
         User git
-        IdentityAgent ~/.1password/agent.sock
+        ${lib.optionalString (!isServer) "IdentityAgent ${sshAuthSock}"}
       
       Host *.hetzner.cloud
         User root
-        IdentityAgent ~/.1password/agent.sock
+        ${lib.optionalString (!isServer) "IdentityAgent ${sshAuthSock}"}
         ForwardAgent yes
     '';
     onChange = ''

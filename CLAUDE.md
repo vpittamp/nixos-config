@@ -200,6 +200,7 @@ nix flake lock --update-input nixpkgs
 - `docs/ARCHITECTURE.md` - Detailed architecture documentation
 - `docs/M1_SETUP.md` - Apple Silicon setup and troubleshooting
 - `docs/ONEPASSWORD.md` - 1Password integration guide
+- `docs/ONEPASSWORD_SSH.md` - 1Password SSH and Git authentication guide
 - `docs/HETZNER_NIXOS_INSTALL.md` - Hetzner installation guide
 - `docs/AVANTE_SETUP.md` - Neovim AI assistant setup
 - `docs/MIGRATION.md` - Migration from old structure

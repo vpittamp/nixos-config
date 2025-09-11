@@ -5,6 +5,9 @@
 let
   # Detect if we're in a headless environment (no GUI)
   hasGui = config.services.xserver.enable or false;
+  
+  # Detect if we're on a server (Hetzner) vs workstation
+  isServer = config.networking.hostName == "nixos-hetzner";
 in
 {
   # 1Password packages - GUI only if desktop is available
@@ -34,8 +37,8 @@ in
     });
   '';
 
-  # Git configuration with 1Password integration
-  programs.git = {
+  # Git configuration with 1Password integration (only on workstations)
+  programs.git = lib.mkIf (!isServer) {
     enable = true;
     config = {
       credential = {
@@ -53,8 +56,8 @@ in
   # SSH configuration - disable default agent to use 1Password's
   programs.ssh.startAgent = false;
   
-  # System-wide environment variables for 1Password
-  environment.sessionVariables = {
+  # System-wide environment variables for 1Password (only if GUI available)
+  environment.sessionVariables = lib.mkIf hasGui {
     SSH_AUTH_SOCK = "/home/vpittamp/.1password/agent.sock";
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };

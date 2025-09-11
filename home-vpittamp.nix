@@ -19,11 +19,12 @@
     # Tool configurations
     ./home-modules/tools/git.nix
     ./home-modules/tools/ssh.nix
+    ./home-modules/tools/ssh-server.nix  # SSH configuration for headless servers
     ./home-modules/tools/bat.nix
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
     ./home-modules/tools/firefox.nix
-    # ./home-modules/tools/k9s.nix  # Temporarily disabled for container build
+    ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
     ./home-modules/tools/cluster-management.nix
