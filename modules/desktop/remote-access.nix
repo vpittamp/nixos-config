@@ -20,16 +20,14 @@
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
     
+    path = [ 
+      pkgs.xorg.xinit 
+      pkgs.xorg.xauth 
+      pkgs.dbus 
+      pkgs.kdePackages.plasma-workspace
+    ];
+    
     environment = {
-      PATH = lib.makeBinPath [ 
-        pkgs.xorg.xinit 
-        pkgs.xorg.xauth 
-        pkgs.dbus 
-        pkgs.coreutils
-        pkgs.gnugrep
-        pkgs.gnused
-        pkgs.kdePackages.plasma-workspace
-      ];
       HOME = "/home/vpittamp";
     };
     
