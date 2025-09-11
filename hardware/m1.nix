@@ -37,14 +37,14 @@
   # Option 1: Using UUIDs (preferred after first boot)
   fileSystems."/" = {
     # Replace with actual UUID from: blkid /dev/nvme0n1p7
-    device = "/dev/disk/by-uuid/REPLACE-WITH-ROOT-UUID";
+    device = "/dev/disk/by-uuid/c4cd0580-a78b-48c5-a954-838618f48b1b";
     fsType = "ext4";
     options = [ "noatime" "nodiratime" ];
   };
 
   fileSystems."/boot" = {
     # Replace with actual UUID from: blkid /dev/nvme0n1p5
-    device = "/dev/disk/by-uuid/REPLACE-WITH-BOOT-UUID";
+    device = "/dev/disk/by-uuid/7E5D-2CF4";
     fsType = "vfat";
     options = [ "fmask=0022" "dmask=0022" ];
   };
