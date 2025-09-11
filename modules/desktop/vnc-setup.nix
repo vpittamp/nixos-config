@@ -35,18 +35,14 @@
       executable = true;
     };
     
-    # VNC password file - needs to be created by user for security
-    # User must run: vncpasswd
-    # We'll create an empty placeholder
-    home.activation.vncPasswordCheck = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      if [ ! -f ~/.vnc/passwd ]; then
-        mkdir -p ~/.vnc
-        touch ~/.vnc/passwd
-        chmod 600 ~/.vnc/passwd
+    # VNC password setup script in bash profile
+    programs.bash.initExtra = ''
+      # Check for VNC password on login
+      if [ ! -f ~/.vnc/passwd ] || [ ! -s ~/.vnc/passwd ]; then
         echo "================================================"
         echo "VNC PASSWORD NOT SET!"
         echo "Please run: vncpasswd"
-        echo "to set your VNC password"
+        echo "to set your VNC password for remote access"
         echo "================================================"
       fi
     '';
