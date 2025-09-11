@@ -1,9 +1,9 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Git credential OAuth for seamless authentication
+  # Git credential OAuth - disabled to avoid conflicts
   programs.git-credential-oauth = {
-    enable = true;
+    enable = false;  # We'll use GitHub CLI instead
   };
 
   # Git configuration
@@ -50,16 +50,14 @@
         };
       };
       
-      # Credential helpers with GitHub CLI integration
+      # Credential helpers - simplified configuration
       credential = {
-        helper = [
-          "oauth"  # Use OAuth as primary (from git-credential-oauth module)
-        ];
+        helper = "cache --timeout=3600";  # Cache credentials for 1 hour
         "https://github.com" = {
-          helper = "!gh auth git-credential";  # Use GitHub CLI directly
+          helper = "!gh auth git-credential";  # Use GitHub CLI
         };
         "https://gitlab.com" = {
-          helper = "!glab auth git-credential";  # Use GitLab CLI directly  
+          helper = "!glab auth git-credential";  # Use GitLab CLI
         };
       };
     };

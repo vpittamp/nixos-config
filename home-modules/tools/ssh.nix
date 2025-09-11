@@ -13,20 +13,23 @@
       Host *
         IdentityAgent ~/.1password/agent.sock
         AddKeysToAgent yes
-        IdentitiesOnly yes
+        IdentitiesOnly no
       
       Host github.com
         User git
         IdentityAgent ~/.1password/agent.sock
+        IdentitiesOnly no
       
       Host gitlab.com
         User git
         IdentityAgent ~/.1password/agent.sock
+        IdentitiesOnly no
       
       Host *.hetzner.cloud
         User root
         IdentityAgent ~/.1password/agent.sock
         ForwardAgent yes
+        IdentitiesOnly no
     '';
     onChange = ''
       # Create a writable SSH config from the source
