@@ -19,6 +19,7 @@
     # Tool configurations
     ./home-modules/tools/git.nix
     ./home-modules/tools/ssh.nix
+    ./home-modules/tools/onepassword-env.nix  # 1Password environment setup
     ./home-modules/tools/bat.nix
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
