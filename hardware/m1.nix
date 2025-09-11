@@ -108,7 +108,7 @@
   
   # High-DPI console for Retina display
   console.earlySetup = true;
-  console.font = "ter-v32n";  # Larger font for HiDPI
+  console.font = "Lat2-Terminus16";  # A known-to-work default font
   
   # TROUBLESHOOTING DISK ISSUES
   # ============================

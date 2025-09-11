@@ -29,12 +29,15 @@
   boot.loader.efi.canTouchEfiVariables = false;  # Different on Apple Silicon
   
   # Apple Silicon specific settings
-  boot.initrd.availableKernelModules = [ 
+  boot.initrd.availableKernelModules = [
+    "brcmfmac"
     "xhci_pci"      # USB 3.0
     "usbhid"        # USB HID devices
     "usb_storage"   # USB storage
     "nvme"          # NVMe SSD support
   ];
+  hardware.asahi.peripheralFirmwareDirectory = ../firmware;
+  networking.networkmanager.enable = true;
   
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
@@ -48,11 +51,7 @@
   # Firmware updates
   hardware.enableRedistributableFirmware = true;
   
-  # High-DPI console for Retina display
-  console = {
-    earlySetup = true;
-    font = "ter-v32n";  # Larger font for HiDPI
-  };
+  
   
   # Additional Apple Silicon caches
   nix.settings = {

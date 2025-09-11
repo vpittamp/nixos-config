@@ -4,7 +4,7 @@
 
 {
   # System identification
-  system.stateVersion = "24.11";
+  system.stateVersion = lib.mkDefault "24.11";
   
   # Boot configuration basics (can be overridden)
   boot = {
