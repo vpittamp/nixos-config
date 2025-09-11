@@ -36,7 +36,8 @@
     "usb_storage"   # USB storage
     "nvme"          # NVMe SSD support
   ];
-  hardware.asahi.peripheralFirmwareDirectory = ../firmware;
+  # Use firmware from boot partition (requires --impure flag)
+  hardware.asahi.peripheralFirmwareDirectory = /boot/asahi;
   networking.networkmanager.enable = true;
   
   # Platform configuration
