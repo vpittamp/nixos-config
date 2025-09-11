@@ -20,6 +20,7 @@
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
+    ../modules/services/onepassword.nix
   ];
 
   # System identification

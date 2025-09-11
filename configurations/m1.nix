@@ -19,13 +19,31 @@
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
+    ../modules/services/onepassword.nix
   ];
 
   # System identification
   networking.hostName = "nixos-m1";
   
+  # Swap configuration - 8GB swap file for memory pressure relief
+  swapDevices = [
+    {
+      device = "/var/lib/swapfile";
+      size = 8192; # 8GB swap
+    }
+  ];
+  
+  # Memory management tweaks for better performance
+  boot.kernel.sysctl = {
+    "vm.swappiness" = 10; # Reduce swap usage unless necessary
+    "vm.vfs_cache_pressure" = 50; # Balance between caching and reclaiming memory
+    "vm.dirty_background_ratio" = 5; # Start writing dirty pages earlier
+    "vm.dirty_ratio" = 10; # Force synchronous I/O earlier
+  };
+  
   # Boot configuration for Apple Silicon
   boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 5;  # Keep only 5 generations to prevent EFI space issues
   boot.loader.efi.canTouchEfiVariables = false;  # Different on Apple Silicon
   
   # Apple Silicon specific settings
@@ -36,27 +54,55 @@
     "usb_storage"   # USB storage
     "nvme"          # NVMe SSD support
   ];
+  
+  # Fix keyboard layout for US keyboards on Apple Silicon
+  boot.extraModprobeConfig = ''
+    options hid_apple iso_layout=0
+  '';
   # Use firmware from boot partition (requires --impure flag)
   hardware.asahi.peripheralFirmwareDirectory = /boot/asahi;
   
-  # Use IWD for WiFi (recommended for Apple Silicon with WPA3 support)
-  networking.networkmanager.enable = false;  # Disable NetworkManager
-  networking.wireless.iwd = {
+  # Use NetworkManager with wpa_supplicant for WiFi (more stable on Apple Silicon)
+  networking.networkmanager = {
     enable = true;
-    settings.General.EnableNetworkConfiguration = true;
+    wifi.backend = "wpa_supplicant";  # Use wpa_supplicant for better stability
   };
   
+  # Disable IWD - conflicts with NetworkManager on Apple Silicon
+  networking.wireless.iwd.enable = false;
+  
   # Display configuration for Retina display
-  # Note: GPU acceleration is enabled by default with mesa 25.1 in nixos-apple-silicon
+  # Following NixOS HiDPI recommendations: use integer scaling with higher DPI
   services.xserver = {
-    dpi = 192;  # 2x scaling for Retina display (96 * 2)
+    dpi = 180;  # Recommended DPI for Retina displays
+    
+    # Force proper DPI in X11 server
+    serverFlagsSection = ''
+      Option "DPI" "180 x 180"
+    '';
     
     # X11-specific scaling configuration
     displayManager.sessionCommands = ''
+      # GTK applications - integer scaling only (GDK_SCALE must be integer)
       export GDK_SCALE=2
-      export GDK_DPI_SCALE=0.5
+      export GDK_DPI_SCALE=0.5  # Inverse of GDK_SCALE for fine-tuning
+      
+      # Qt applications - auto-detect HiDPI
       export QT_AUTO_SCREEN_SCALE_FACTOR=1
+      unset QT_SCALE_FACTOR  # Let Qt auto-detect
+      
+      # Java applications
+      export _JAVA_OPTIONS="-Dsun.java2d.uiScale=2"
+      
+      # Cursor size for HiDPI
       export XCURSOR_SIZE=48
+      
+      # Firefox-specific scaling
+      export MOZ_ENABLE_WAYLAND=0  # Force X11 for Firefox
+      export MOZ_USE_XINPUT2=1
+      
+      # Let KDE handle its own scaling based on DPI
+      kwriteconfig5 --file kcmfonts --group General --key forceFontDPI 180 || true
     '';
   };
   
@@ -74,14 +120,11 @@
   
   
   
-  # Additional Apple Silicon caches
-  nix.settings = {
-    substituters = lib.mkAfter [
-      "https://nixos-apple-silicon.cachix.org"
-    ];
-    trusted-public-keys = lib.mkAfter [
-      "nixos-apple-silicon.cachix.org-1:HN6Zb4XV5bjFLGKZva1CGpJLuDqLux/erYbBbYneNRQ="
-    ];
+  # Automatic garbage collection to prevent space issues
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 7d";
   };
   
   # Set initial password for user (change after first login!)

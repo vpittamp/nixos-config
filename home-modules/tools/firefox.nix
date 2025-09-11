@@ -59,6 +59,12 @@
           "browser.tabs.inTitlebar" = 1;
           "browser.uidensity" = 0;
           
+          # Display scaling for HiDPI Retina display (180 DPI)
+          "layout.css.devPixelsPerPx" = "-1.0";  # Let Firefox auto-detect from system DPI
+          "layout.css.dpi" = 0;  # Disable automatic DPI detection
+          "browser.zoom.full" = true;  # Zoom text and images together
+          "browser.zoom.updateBackgroundTabs" = false;
+          
           # Performance
           "gfx.webrender.all" = true;
           "media.ffmpeg.vaapi.enabled" = true;

@@ -21,6 +21,15 @@
     sddm = {
       enable = true;
       wayland.enable = false;  # Disable Wayland due to Mesa/GPU issues on Apple Silicon
+      
+      # Workaround for black screen on logout on Apple Silicon
+      settings = {
+        General = {
+          # Don't halt the X server on logout - helps prevent black screen
+          HaltCommand = "";
+          RebootCommand = "";
+        };
+      };
     };
     defaultSession = lib.mkForce "plasmax11";  # Force X11 session (stable on Apple Silicon)
   };
