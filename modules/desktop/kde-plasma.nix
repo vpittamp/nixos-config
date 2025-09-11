@@ -22,7 +22,7 @@
       enable = true;
       wayland.enable = false;  # Disable Wayland due to Mesa/GPU issues on Apple Silicon
     };
-    defaultSession = lib.mkDefault "plasmax11";  # Use X11 session (stable on Apple Silicon)
+    defaultSession = lib.mkForce "plasmax11";  # Force X11 session (stable on Apple Silicon)
   };
   
   # Desktop environment
