@@ -21,7 +21,6 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/x2go.nix
   ];
 
   # System identification
@@ -45,7 +44,6 @@
   networking.firewall.allowedTCPPorts = [
     22     # SSH
     3389   # RDP
-    5900   # VNC
     8080   # Web services
   ];
   
