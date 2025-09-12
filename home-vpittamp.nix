@@ -61,6 +61,13 @@
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
 
+  xdg.mimeApps.enable = true;
+  xdg.mimeApps.defaultApplications = {
+    "text/html" = [ "firefox.desktop" ];
+    "x-scheme-handler/http" = [ "firefox.desktop" ];
+    "x-scheme-handler/https" = [ "firefox.desktop" ];
+  };
+
   home.sessionVariables = {
     QT_AUTO_SCREEN_SCALE_FACTOR = "0";
     QT_ENABLE_HIGHDPI_SCALING = "0";
@@ -85,6 +92,7 @@
         widgets = [
           "org.kde.plasma.kickoff"
           "org.kde.plasma.taskmanager"
+          "org.kde.plasma.pager"
           "org.kde.plasma.marginsseparator"
           "org.kde.plasma.systemtray"
           "org.kde.plasma.digitalclock"
@@ -104,6 +112,31 @@
       command = "/run/current-system/sw/bin/bash -l";
       colorScheme = "Catppuccin-Mocha";
     };
+  };
+
+
+  programs.plasma.configFile = {
+    "kwinrc".Desktops = {
+      Number = 8;
+      Rows = 2;
+    };
+    "kglobalshortcutsrc".kwin = {
+      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";
+      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";
+      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";
+      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
+      "Overview" = "Meta+W,none,Toggle Overview";
+    };
+    # Mirror prior XRDP tuning precisely
+    "kcmfonts".General.forceFontDPI = 180;
+    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=2;";
+    # Theme defaults
+    "kdeglobals" = {
+      General.ColorScheme = "BreezeDark";
+      Icons.Theme = "breeze-dark";
+      KDE.widgetStyle = "Breeze";
+    };
+    "kcminputrc".Mouse.cursorTheme = "breeze_cursors";
   };
 
 }
