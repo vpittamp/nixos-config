@@ -34,6 +34,7 @@
     ./home-modules/ai-assistants/claude-code.nix
     ./home-modules/ai-assistants/codex.nix
     ./home-modules/ai-assistants/gemini-cli.nix
+    ./home-modules/desktop/plasma-taskbar.nix
   ];
 
   # Home Manager configuration
