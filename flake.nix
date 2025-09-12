@@ -19,7 +19,6 @@
     
     # Home Manager
     home-manager = {
-              backupFileExtension = "backup";
       url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -66,6 +65,7 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
+                backupFileExtension = "backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
