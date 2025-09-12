@@ -76,6 +76,7 @@
   services.pulseaudio = {
     enable = lib.mkForce true;
     package = pkgs.pulseaudioFull;
+    extraModules = [ pkgs.pulseaudio-module-xrdp ];
   };
   users.users.vpittamp.extraGroups = lib.mkAfter [ "audio" ];
   
