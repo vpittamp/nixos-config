@@ -77,6 +77,14 @@
     enable = lib.mkForce true;
     package = pkgs.pulseaudioFull;
     extraModules = [ pkgs.pulseaudio-module-xrdp ];
+    extraConfig = ''
+      .ifexists module-xrdp-sink.so
+      load-module module-xrdp-sink
+      .endif
+      .ifexists module-xrdp-source.so
+      load-module module-xrdp-source
+      .endif
+    '';
   };
   users.users.vpittamp.extraGroups = lib.mkAfter [ "audio" ];
   
