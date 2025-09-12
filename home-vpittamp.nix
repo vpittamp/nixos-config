@@ -69,11 +69,12 @@
   };
 
   home.sessionVariables = {
+    GDK_DPI_SCALE = "1.0";
     QT_AUTO_SCREEN_SCALE_FACTOR = "0";
     QT_ENABLE_HIGHDPI_SCALING = "0";
     PLASMA_USE_QT_SCALING = "1";
-    GDK_SCALE = "2";
-    XCURSOR_SIZE = "48";
+    GDK_SCALE = "1";
+    XCURSOR_SIZE = "32";
   };
 
 
@@ -128,8 +129,8 @@
       "Overview" = "Meta+W,none,Toggle Overview";
     };
     # Mirror prior XRDP tuning precisely
-    "kcmfonts".General.forceFontDPI = 180;
-    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=2;";
+    "kcmfonts".General.forceFontDPI = 110;
+    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=1.2;";
     # Theme defaults
     "kdeglobals" = {
       General.ColorScheme = "BreezeDark";
