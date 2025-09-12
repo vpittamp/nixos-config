@@ -3,13 +3,18 @@
 {
   programs.chromium = {
     enable = true;
-    # Force-install 1Password – Password Manager
-    extensions = [
-      "aeblfdkhhhdcdjpifhhbdiojplfjncoa"
-    ];
-    # Disable built-in password manager to avoid conflicts with 1Password
+    # Enterprise policies: disable built-in password manager and pin 1Password
     extraOpts = {
       "PasswordManagerEnabled" = false;
+      "ExtensionSettings" = {
+        "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
+          "toolbar_pin" = "force_pinned";
+        };
+      };
+    };
+    # Also set initial preferences to turn off password saving UI on first run
+    initialPrefs = {
+      "credentials_enable_service" = false;
     };
   };
 }

@@ -53,6 +53,9 @@
           "extensions.1Password.native-messaging-hosts" = true;
           "dom.event.clipboardevents.enabled" = true; # Required for 1Password
           
+          # Show extension buttons on toolbar (not unified menu)
+          "extensions.unifiedExtensions.enabled" = false;
+          
           # WebAuthn/Passkeys
           "security.webauth.webauthn" = true;
           "security.webauth.u2f" = true;
