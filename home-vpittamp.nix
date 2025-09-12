@@ -74,7 +74,7 @@
   programs.plasma = {
     enable = true;
     # Keep user changes during initial rollout; flip to true after validation
-    overrideConfig = false;
+    overrideConfig = true;
 
     # Replace XRDP/display tweaks previously set via sessionCommands
     # Per-screen bottom panel with icon-only task manager limited to current screen
