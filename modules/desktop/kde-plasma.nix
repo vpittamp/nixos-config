@@ -64,7 +64,8 @@
     # Browsers
     firefox
     chromium
-  ];
+  ]
+  ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [ pkgs.gitkraken ];
 
   # Enable flatpak for additional apps
   services.flatpak.enable = true;
