@@ -69,7 +69,17 @@
   
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
+
+  # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim
+  services.pipewire.pulse.enable = lib.mkForce false;
+  services.pipewire.enable = lib.mkForce false;
+  services.pulseaudio = {
+    enable = lib.mkForce true;
+    package = pkgs.pulseaudioFull;
+  };
+  users.users.vpittamp.extraGroups = lib.mkAfter [ "audio" ];
   
   # System state version
   system.stateVersion = "24.11";
 }
+
