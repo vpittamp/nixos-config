@@ -11,7 +11,7 @@
     # Terminal configurations
     ./home-modules/terminal/tmux.nix
     ./home-modules/terminal/sesh.nix
-    ./home-modules/terminal/konsole-fix.nix
+    # Konsole profile/settings will be managed via plasma-manager
     
     # Editor configurations
     ./home-modules/editors/neovim.nix
@@ -34,7 +34,7 @@
     ./home-modules/ai-assistants/claude-code.nix
     ./home-modules/ai-assistants/codex.nix
     ./home-modules/ai-assistants/gemini-cli.nix
-    ./home-modules/desktop/plasma-taskbar.nix
+    # Plasma panels/layout will be managed via plasma-manager
   ];
 
   # Home Manager configuration
@@ -60,4 +60,51 @@
 
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
+
+  # Plasma Manager: declarative KDE user configuration
+  programs.plasma = {
+    enable = true;
+    # Keep user changes during initial rollout; flip to true after validation
+    overrideConfig = false;
+
+    # Replace XRDP/display tweaks previously set via sessionCommands
+    fonts.forceFontDPI = 180;
+    session.variables = {
+      QT_AUTO_SCREEN_SCALE_FACTOR = "0";
+      QT_ENABLE_HIGHDPI_SCALING = "0";
+      PLASMA_USE_QT_SCALING = "1";
+      GDK_SCALE = "2";
+      XCURSOR_SIZE = "48";
+    };
+
+    # Per-screen bottom panel with icon-only task manager limited to current screen
+    panels = [
+      {
+        screen = "all";
+        location = "bottom";
+        height = 36;
+        widgets = [
+          "org.kde.plasma.kickoff"
+          { name = "org.kde.plasma.icontasks"; config = { General = { showOnlyCurrentScreen = true; }; }; }
+          "org.kde.plasma.marginsseparator"
+          "org.kde.plasma.systemtray"
+          "org.kde.plasma.digitalclock"
+          "org.kde.plasma.showdesktop"
+        ];
+      }
+    ];
+  };
+
+  # Konsole profile via plasma-manager app module
+  programs.konsole = {
+    enable = true;
+    defaultProfile = "Shell";
+    profiles.Shell = {
+      font.family = "FiraCode Nerd Font";
+      font.pointSize = 11;
+      command = "/run/current-system/sw/bin/bash -l";
+      appearance.colorScheme = "Catppuccin-Mocha";
+    };
+  };
+
 }

@@ -45,6 +45,12 @@
     };
     
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Plasma (KDE) user configuration via Home Manager
+    plasma-manager = {
+      url = "github:nix-community/plasma-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
@@ -72,6 +78,7 @@
                   imports = [ 
                     ./home-vpittamp.nix
                     onepassword-shell-plugins.hmModules.default
+                    inputs.plasma-manager.homeManagerModules.plasma-manager
                   ];
                   home.enableNixpkgsReleaseCheck = false;
                 };
