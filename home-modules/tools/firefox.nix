@@ -6,6 +6,14 @@
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
+    policies = {
+      Extensions = {
+        Install = [
+          "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+        ];
+      };
+      PasswordManagerEnabled = false;
+    };
     
     profiles = {
       default = {
@@ -39,8 +47,15 @@
         # Firefox settings with 1Password support
         settings = {
           # Enable native messaging for 1Password
+          "signon.rememberSignons" = false;
+          
+          # Enable native messaging for 1Password
           "extensions.1Password.native-messaging-hosts" = true;
           "dom.event.clipboardevents.enabled" = true; # Required for 1Password
+          
+          # WebAuthn/Passkeys
+          "security.webauth.webauthn" = true;
+          "security.webauth.u2f" = true;
           
           # Privacy settings
           "browser.send_pings" = false;
