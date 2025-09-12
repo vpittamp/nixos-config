@@ -4,13 +4,9 @@ let
   # Check if we're on Darwin
   isDarwin = pkgs.stdenv.isDarwin or false;
   
-  # Use claude-code from the flake with Cachix binaries if available
-  # This avoids build permission issues in containers
-  claudeCodePackage = 
-    if inputs ? claude-code-nix && inputs.claude-code-nix ? packages && inputs.claude-code-nix.packages ? ${pkgs.system} then
-      inputs.claude-code-nix.packages.${pkgs.system}.default
-    else
-      pkgs-unstable.claude-code or pkgs.claude-code;  # Fallback to nixpkgs
+  # Use claude-code from nixpkgs-unstable
+  # Note: The flake-based package was causing crashes, reverting to direct nixpkgs version
+  claudeCodePackage = pkgs-unstable.claude-code or pkgs.claude-code;  # Use unstable if available, fallback to stable
 in
 {
   # Chromium is installed via programs.chromium in tools/chromium.nix
