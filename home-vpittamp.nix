@@ -74,7 +74,7 @@
     QT_ENABLE_HIGHDPI_SCALING = "0";
     PLASMA_USE_QT_SCALING = "1";
     GDK_SCALE = "1";
-    XCURSOR_SIZE = "32";
+    XCURSOR_SIZE = "28";
   };
 
 
@@ -129,8 +129,8 @@
       "Overview" = "Meta+W,none,Toggle Overview";
     };
     # Mirror prior XRDP tuning precisely
-    "kcmfonts".General.forceFontDPI = 110;
-    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=1.2;";
+    "kcmfonts".General.forceFontDPI = 100;
+    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=1.15;";
     # Theme defaults
     "kdeglobals" = {
       General.ColorScheme = "BreezeDark";
