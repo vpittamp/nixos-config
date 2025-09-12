@@ -68,7 +68,6 @@
     overrideConfig = false;
 
     # Replace XRDP/display tweaks previously set via sessionCommands
-    fonts.forceFontDPI = 180;
     session.variables = {
       QT_AUTO_SCREEN_SCALE_FACTOR = "0";
       QT_ENABLE_HIGHDPI_SCALING = "0";
@@ -85,7 +84,7 @@
         height = 36;
         widgets = [
           "org.kde.plasma.kickoff"
-          { name = "org.kde.plasma.icontasks"; config = { General = { showOnlyCurrentScreen = true; }; }; }
+          { name = "org.kde.plasma.taskmanager"; config = { General = { showOnlyCurrentScreen = true; }; }; }
           "org.kde.plasma.marginsseparator"
           "org.kde.plasma.systemtray"
           "org.kde.plasma.digitalclock"
@@ -100,10 +99,10 @@
     enable = true;
     defaultProfile = "Shell";
     profiles.Shell = {
-      font.family = "FiraCode Nerd Font";
-      font.pointSize = 11;
+      font.name = "FiraCode Nerd Font";
+      font.size = 11;
       command = "/run/current-system/sw/bin/bash -l";
-      appearance.colorScheme = "Catppuccin-Mocha";
+      colorScheme = "Catppuccin-Mocha";
     };
   };
 
