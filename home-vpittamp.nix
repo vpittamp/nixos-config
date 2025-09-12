@@ -61,6 +61,15 @@
   # Let Home Manager manage itself
   programs.home-manager.enable = true;
 
+  home.sessionVariables = {
+    QT_AUTO_SCREEN_SCALE_FACTOR = "0";
+    QT_ENABLE_HIGHDPI_SCALING = "0";
+    PLASMA_USE_QT_SCALING = "1";
+    GDK_SCALE = "2";
+    XCURSOR_SIZE = "48";
+  };
+
+
   # Plasma Manager: declarative KDE user configuration
   programs.plasma = {
     enable = true;
@@ -68,23 +77,14 @@
     overrideConfig = false;
 
     # Replace XRDP/display tweaks previously set via sessionCommands
-    session.variables = {
-      QT_AUTO_SCREEN_SCALE_FACTOR = "0";
-      QT_ENABLE_HIGHDPI_SCALING = "0";
-      PLASMA_USE_QT_SCALING = "1";
-      GDK_SCALE = "2";
-      XCURSOR_SIZE = "48";
-    };
-
     # Per-screen bottom panel with icon-only task manager limited to current screen
     panels = [
       {
-        screen = "all";
         location = "bottom";
         height = 36;
         widgets = [
           "org.kde.plasma.kickoff"
-          { name = "org.kde.plasma.taskmanager"; config = { General = { showOnlyCurrentScreen = true; }; }; }
+          "org.kde.plasma.taskmanager"
           "org.kde.plasma.marginsseparator"
           "org.kde.plasma.systemtray"
           "org.kde.plasma.digitalclock"
