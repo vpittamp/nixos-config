@@ -6,22 +6,16 @@
     enable = true;
     package = pkgs.chromium;
     
-    # Declaratively install extensions using Chrome Web Store IDs
+    # Extension IDs for manual installation
+    # Note: Chromium extensions in Nix must be installed via policies
+    # The ExtensionSettings policy below will auto-install these
     extensions = [
-      # 1Password - Password Manager (will be pinned via policy)
-      { id = "aeblfdkhhhdcdjpifhhbdiojplfjncoa"; }
-      
-      # uBlock Origin - Ad blocker
-      { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; }
-      
-      # Dark Reader - Dark mode for websites
-      { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }
-      
-      # Vimium - Vim keybindings for navigation
-      { id = "dbepggeogbaibhgnhhndojpepiihcmeb"; }
-      
-      # Privacy Badger - Privacy protection
-      { id = "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"; }
+      # These IDs are referenced but actual installation happens via policy
+      "aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password
+      "cjpalhdlnbpafiamejdnhcphjbkeiagm"  # uBlock Origin
+      "eimadpbcbfnmbkopoojfekhnkhdbieeh"  # Dark Reader
+      "dbepggeogbaibhgnhhndojpepiihcmeb"  # Vimium
+      "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"  # Privacy Badger
     ];
     
     # Command line arguments for better performance and privacy
@@ -87,12 +81,33 @@
   # This ensures 1Password extension is pinned and properly configured
   home.file.".config/chromium/policies/managed/1password-policy.json" = {
     text = builtins.toJSON {
-      # Pin the 1Password extension to the toolbar
+      # Force install and pin extensions
       ExtensionSettings = {
+        # 1Password - Password Manager
         "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
-          installation_mode = "normal_installed";
+          installation_mode = "force_installed";
           update_url = "https://clients2.google.com/service/update2/crx";
           toolbar_pin = "force_pinned";
+        };
+        # uBlock Origin
+        "cjpalhdlnbpafiamejdnhcphjbkeiagm" = {
+          installation_mode = "force_installed";
+          update_url = "https://clients2.google.com/service/update2/crx";
+        };
+        # Dark Reader
+        "eimadpbcbfnmbkopoojfekhnkhdbieeh" = {
+          installation_mode = "force_installed";
+          update_url = "https://clients2.google.com/service/update2/crx";
+        };
+        # Vimium
+        "dbepggeogbaibhgnhhndojpepiihcmeb" = {
+          installation_mode = "force_installed";
+          update_url = "https://clients2.google.com/service/update2/crx";
+        };
+        # Privacy Badger
+        "pkehgijcmpdhfbdbbnkijodmdjhbjlgp" = {
+          installation_mode = "force_installed";
+          update_url = "https://clients2.google.com/service/update2/crx";
         };
       };
       
