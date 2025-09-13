@@ -38,11 +38,10 @@ in
     baseIndex = 1;
     historyLimit = 10000;
     keyMode = "vi";
-    mouse = true;  # Enable mouse support for proper scrolling
+    mouse = true;  # Enable mouse for scrolling only (clicks disabled in config)
     
     plugins = with pkgs.tmuxPlugins; [
       sensible
-      yank
       {
         plugin = resurrect;
         extraConfig = ''
@@ -59,9 +58,7 @@ in
       }
       pain-control
       prefix-highlight
-      better-mouse-mode
       tmux-fzf
-      tmux-thumbs
     ];
     
     extraConfig = ''
@@ -81,12 +78,7 @@ in
       set -g repeat-time 1000
       set -g allow-passthrough on
       
-      # Clipboard integration
-      set -g set-clipboard on
-      set -as terminal-overrides ',vscode*:Ms@'
-      set -as terminal-overrides ',vscode*:Cc@:Cr@:Cs@:Se@:Ss@'
-      set -g @yank_selection 'clipboard'
-      set -g @copy-command 'wl-copy'
+      # Basic terminal features
       set -as terminal-features ',*:RGB'
       
       # Pane settings
@@ -124,21 +116,18 @@ in
       # Key bindings
       bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
       
-      # Copy mode
+      # Basic copy mode
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel 'wl-copy'
-      bind -T copy-mode-vi Y send-keys -X copy-pipe-and-cancel 'wl-copy'
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel 'wl-copy'
+      bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
       
-      # Paste from system clipboard
-      bind ] run-shell "wl-paste | tmux load-buffer - && tmux paste-buffer"
-      bind p run-shell "wl-paste | tmux load-buffer - && tmux paste-buffer"
-      bind -n C-v run-shell "wl-paste | tmux load-buffer - && tmux paste-buffer"
+      # Basic paste
+      bind ] paste-buffer
+      bind p paste-buffer
       bind P choose-buffer
       
       # Window management
@@ -173,6 +162,13 @@ in
       bind S setw synchronize-panes \; display-message "Synchronize panes: #{?pane_synchronized,ON,OFF}"
       bind m set -g mouse \; display-message "Mouse: #{?mouse,ON,OFF}"
       
+      # Mouse behavior:
+      # - Normal click/drag: tmux handles (selection, copy mode, scrolling)
+      # - Shift + click/drag: native terminal selection (bypasses tmux)
+      # Disable right-click context menu since we don't use it
+      unbind -n MouseDown3Pane
+      unbind -T copy-mode-vi MouseDown3Pane
+      
       # Sesh session management
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"
@@ -190,9 +186,6 @@ in
       bind C display-popup -E -w 80% -h 80% "claude"
       bind R display-popup -E -w 80% -h 80% "claude --continue"
       
-      # Mouse scrolling
-      bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'copy-mode -e'"
-      bind -n WheelDownPane select-pane -t= \; send-keys -M
       
       # Help menu
       bind ? display-menu -T "Tmux Quick Help" -x C -y C \
