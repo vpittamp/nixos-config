@@ -31,7 +31,7 @@
       export LSCOLORS=GxFxCxDxBxegedabagaced
       
       # Ensure terminal supports colors
-      export TERM=${TERM:-xterm-256color}
+      export TERM=''${TERM:-xterm-256color}
       
       # Enable grep colors
       export GREP_OPTIONS='--color=auto'
