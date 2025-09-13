@@ -6,18 +6,9 @@ let
   
   # Use claude-code from nixpkgs-unstable
   # Note: Version 1.0.105-1.0.107 have TTY issues, latest is 1.0.112
-  # For now, using nixpkgs version and will install latest via npm manually if needed
   claudeCodePackage = pkgs-unstable.claude-code or pkgs.claude-code;
 in
 {
-  # Add npm-installed claude to PATH if it exists
-  home.sessionPath = [ "$HOME/.local/node_modules/.bin" ];
-  
-  # Shell alias for claude (uses npm version if available, otherwise nixpkgs)
-  programs.bash.shellAliases = {
-    claude = "if [ -x ~/.local/node_modules/.bin/claude ]; then ~/.local/node_modules/.bin/claude; else ${claudeCodePackage}/bin/claude; fi";
-  };
-  
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
   
