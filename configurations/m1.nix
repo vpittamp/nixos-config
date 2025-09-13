@@ -82,6 +82,18 @@
       Option "DPI" "180 x 180"
     '';
     
+    # Touchpad configuration with natural scrolling (Apple-style)
+    libinput = {
+      enable = true;
+      touchpad = {
+        naturalScrolling = true;  # Reverse scroll direction (Apple-style)
+        tapping = true;           # Tap to click
+        clickMethod = "clickfinger";  # Two-finger right-click
+        disableWhileTyping = true;
+        scrollMethod = "twofinger";
+      };
+    };
+    
     # X11-specific scaling configuration
     displayManager.sessionCommands = ''
       # GTK applications - integer scaling only (GDK_SCALE must be integer)

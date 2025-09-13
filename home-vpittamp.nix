@@ -25,7 +25,8 @@
     # ./home-modules/tools/clipboard.nix  # DISABLED - Testing native KDE clipboard
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
-    ./home-modules/tools/firefox.nix
+    # ./home-modules/tools/firefox.nix  # Disabled - using Chromium as default
+    ./home-modules/tools/chromium.nix  # Chromium with 1Password integration
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix

@@ -52,9 +52,7 @@
       source "$HOME/.config/1Password/init.sh" 2>/dev/null
     fi
     
-    # Source 1Password plugins if available
-    if [ -f "$HOME/.config/op/plugins.sh" ]; then
-      source "$HOME/.config/op/plugins.sh"
-    fi
+    # DO NOT source plugins.sh as it creates aliases that conflict with functions
+    # The 1Password shell-plugins module handles function creation automatically
   '';
 }

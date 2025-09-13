@@ -69,8 +69,8 @@
     libxkbcommon  # Keyboard handling for Qt
     
     # Browsers
-    firefox
-    chromium
+    chromium  # Default browser with 1Password integration
+    # firefox  # Disabled - using Chromium as default
   ]
   ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [ pkgs.gitkraken ];
 
@@ -90,4 +90,10 @@
     powerOnBoot = true;
   };
   services.blueman.enable = true;
+
+  # Set system-wide default browser to Chromium
+  environment.sessionVariables = {
+    DEFAULT_BROWSER = "chromium";
+    BROWSER = "chromium";
+  };
 }

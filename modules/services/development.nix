@@ -40,12 +40,14 @@
     k9s
     kind
     minikube
+    argocd  # Argo CD CLI
     
     # Cloud tools
     terraform
     awscli2
     azure-cli
     google-cloud-sdk
+    hcloud  # Hetzner Cloud CLI
     
     # Development tools
     vscode

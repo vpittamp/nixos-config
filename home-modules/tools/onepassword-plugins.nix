@@ -3,26 +3,22 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # Import the 1Password shell plugins module
-  imports = [ inputs.onepassword-shell-plugins.hmModules.default ];
+  # Note: The 1Password shell plugins module is imported in flake.nix
+  # This file configures the plugins
+  # The module AUTOMATICALLY creates shell functions for each plugin
 
   # Enable 1Password shell plugins
   programs._1password-shell-plugins = {
     enable = true;
     
     # Enable plugins for specific tools
+    # The module will automatically create wrapper functions for these
     plugins = with pkgs; [
-      gh          # GitHub CLI
-      awscli2     # AWS CLI
-      cachix      # Cachix binary cache
-      tea         # Gitea CLI
-      hcloud      # Hetzner Cloud CLI
-      postgresql  # PostgreSQL tools (psql, pg_dump, pg_restore)
-      argocd      # Argo CD CLI
-      # Additional plugins available:
-      # glab      # GitLab CLI
-      # stripe    # Stripe CLI
-      # doctl     # DigitalOcean CLI
+      gh          # GitHub CLI - creates gh() function
+      awscli2     # AWS CLI - creates aws() function
+      cachix      # Cachix binary cache - creates cachix() function
+      # Note: Only packages that have 1Password plugins can be added here
+      # Check available plugins with: op plugin list
     ];
   };
 
@@ -41,7 +37,7 @@
       command gh "$@"
     }
     
-    # Use GitHub with 1Password plugin for interactive operations
+    # Use GitHub with 1Password plugin for interactive operations  
     gh-auth() {
       op plugin run -- gh auth login --git-protocol https
     }
@@ -51,39 +47,20 @@
       op plugin run -- aws configure
     }
     
-    # Cachix wrapper function
-    cachix() {
-      op plugin run -- cachix "$@"
-    }
+    # Manual plugin wrappers for tools not in the plugins list
+    # These need to be initialized with: op plugin init <name>
     
-    # Gitea CLI wrapper (tea)
-    tea() {
-      op plugin run -- tea "$@"
-    }
-    
-    # Hetzner Cloud CLI wrapper
+    # Hetzner Cloud CLI wrapper (initialize with: op plugin init hcloud)
     hcloud() {
       op plugin run -- hcloud "$@"
     }
     
-    # PostgreSQL wrappers
+    # PostgreSQL wrappers (initialize with: op plugin init psql)
     psql() {
       op plugin run -- psql "$@"
     }
     
-    pg_dump() {
-      op plugin run -- pg_dump "$@"
-    }
-    
-    pg_restore() {
-      op plugin run -- pg_restore "$@"
-    }
-    
-    pgcli() {
-      op plugin run -- pgcli "$@"
-    }
-    
-    # Argo CD wrapper
+    # Argo CD wrapper (initialize with: op plugin init argocd)
     argocd() {
       op plugin run -- argocd "$@"
     }
@@ -97,8 +74,10 @@
         echo ""
         echo "Examples:"
         echo "  op-init gh       # Initialize GitHub CLI"
-        echo "  op-init hcloud   # Initialize Hetzner Cloud CLI"
+        echo "  op-init hcloud   # Initialize Hetzner Cloud CLI (correct name: hcloud)"
         echo "  op-init argocd   # Initialize Argo CD CLI"
+        echo ""
+        echo "Note: Use exact plugin names from 'op plugin list'"
         return 1
       fi
       op plugin init "$plugin"
@@ -142,7 +121,7 @@
   programs.bash.shellAliases = {
     # Quick plugin management
     opl = "op-list";
-    opi = "op-init";
+    opinit = "op-init";  # Changed from opi to avoid conflict with existing alias
     opc = "op-clear";
     opx = "op-inspect";
     
