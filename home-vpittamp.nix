@@ -21,6 +21,7 @@
     ./home-modules/tools/ssh.nix
     ./home-modules/tools/onepassword-env.nix  # 1Password environment setup
     ./home-modules/tools/bat.nix
+    # ./home-modules/tools/clipboard.nix  # DISABLED - Testing native KDE clipboard
     ./home-modules/tools/direnv.nix
     ./home-modules/tools/fzf.nix
     ./home-modules/tools/firefox.nix
@@ -138,6 +139,8 @@
       KDE.widgetStyle = "Breeze";
     };
     "kcminputrc".Mouse.cursorTheme = "breeze_cursors";
+    # Enable Klipper clipboard manager autostart
+    "ksmserverrc"."org.kde.klipper".autostart = true;
   };
 
 }

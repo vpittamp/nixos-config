@@ -23,25 +23,20 @@
       export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
       export OP_BIOMETRIC_UNLOCK_ENABLED="true"
       
-      # Check if 1Password is running (only start if we have DISPLAY)
-      if [ -n "$DISPLAY" ] && ! pgrep -x "1password" > /dev/null; then
-        echo "Starting 1Password in background..."
-        1password --silent &
-        sleep 2
-      fi
+      # Don't auto-start 1Password - it should be started by the desktop environment
+      # or manually by the user when needed. Auto-starting causes segfaults.
+      # if [ -n "$DISPLAY" ] && ! pgrep -x "1password" > /dev/null; then
+      #   echo "Starting 1Password in background..."
+      #   1password --silent &
+      #   sleep 2
+      # fi
       
-      # Verify agent is working
+      # Verify agent is working (silently)
       if [ -S "$SSH_AUTH_SOCK" ]; then
         # Test the agent silently
         ssh-add -l &>/dev/null
-        if [ $? -eq 0 ] || [ $? -eq 1 ]; then
-          # Exit code 0 = has keys, 1 = no keys, 2 = agent not running
-          :  # Agent is working
-        else
-          echo "Warning: 1Password SSH agent not responding"
-        fi
-      else
-        echo "Warning: 1Password SSH agent socket not found at $SSH_AUTH_SOCK"
+        # Exit code 0 = has keys, 1 = no keys, 2 = agent not running
+        # We don't need to notify the user unless there's a real problem
       fi
     '';
     executable = true;

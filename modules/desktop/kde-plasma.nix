@@ -61,6 +61,13 @@
     kdePackages.okular
     kdePackages.gwenview
     
+    # Clipboard management - using native Klipper instead of CopyQ
+    # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
+    wl-clipboard  # Wayland clipboard utilities
+    xclip  # X11 clipboard utilities (fallback)
+    xorg.libxcb  # XCB library for Qt
+    libxkbcommon  # Keyboard handling for Qt
+    
     # Browsers
     firefox
     chromium

@@ -131,10 +131,10 @@ let
       esac
     }
     
-    # Welcome message when loaded
-    if [ -n "$PS1" ]; then
-      echo "🎯 Cluster functions loaded: cluster-synth, cluster-deploy, cluster-recreate, cluster-status, cluster-menu"
-    fi
+    # Welcome message disabled - functions are available without announcement
+    # if [ -n "$PS1" ]; then
+    #   echo "🎯 Cluster functions loaded: cluster-synth, cluster-deploy, cluster-recreate, cluster-status, cluster-menu"
+    # fi
   '';
 in
 {

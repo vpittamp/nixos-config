@@ -210,6 +210,14 @@
       # Add /usr/local/bin to PATH for Docker Desktop
       export PATH="/usr/local/bin:$PATH"
       
+      # Fix DISPLAY for SSH sessions with X11 forwarding
+      if [ -n "$SSH_CONNECTION" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+        # Check if we have the correct DISPLAY for X11 forwarding
+        if xauth list 2>/dev/null | grep -q "unix:10"; then
+          export DISPLAY=:10
+        fi
+      fi
+      
       # Terminal configuration handled by tmux settings
       
       # VSCode-specific: Suppress OSC sequences that cause visual artifacts
