@@ -54,7 +54,7 @@ in
         Name=1Password
         GenericName=Password Manager
         Comment=1Password password manager
-        Exec=env GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent
+        Exec=env QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent
         Terminal=false
         Type=Application
         Icon=1password
@@ -152,7 +152,7 @@ in
     
     serviceConfig = {
       Type = "forking";
-      ExecStart = "${pkgs.bash}/bin/bash -c 'GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent'";
+      ExecStart = "${pkgs.bash}/bin/bash -c 'QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent'";
       Restart = "on-failure";
       RestartSec = 5;
       Environment = [
