@@ -24,7 +24,7 @@
   };
 
   # Time zone and locale
-  time.timeZone = lib.mkDefault "UTC";
+  time.timeZone = lib.mkDefault "America/New_York";
   i18n = {
     defaultLocale = "en_US.UTF-8";
     extraLocaleSettings = {

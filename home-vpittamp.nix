@@ -111,7 +111,7 @@
       font.name = "FiraCode Nerd Font";
       font.size = 11;
       command = "/run/current-system/sw/bin/bash -l";
-      colorScheme = "Catppuccin-Mocha";
+      colorScheme = "WhiteOnBlack";
     };
   };
 

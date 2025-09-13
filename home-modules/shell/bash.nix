@@ -64,8 +64,8 @@
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
       # WSL-specific: Use Windows clipboard
       DISPLAY = ":0";
-      # Disable OSC color queries
-      NO_COLOR = "";  # Set to empty string so programs can check it exists
+      # Disable OSC color queries - commented out to allow colors
+      # NO_COLOR = "";  # Don't set this as it disables colors in many programs
       
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
@@ -193,10 +193,12 @@
         # Tell applications not to query terminal colors
         export VTE_VERSION="6003"  # Fake VTE version to disable color queries
       else
-        # Regular terminal settings - use screen-256color to match tmux
-        export TERM=screen-256color
-        # Don't set COLORTERM to avoid OSC queries
-        unset COLORTERM
+        # Regular terminal settings - let Konsole set its own TERM
+        # Only set TERM if it's not already set properly
+        if [ -z "$TERM" ] || [ "$TERM" = "dumb" ]; then
+          export TERM=xterm-256color
+        fi
+        # Keep COLORTERM if set by the terminal
       fi
       
       # Set up a colored prompt when Starship is not available
