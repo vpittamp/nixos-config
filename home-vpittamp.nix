@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, inputs, osConfig, ... }:
 
 {
   # Import all modular configurations
@@ -20,6 +20,7 @@
     ./home-modules/tools/git.nix
     ./home-modules/tools/ssh.nix
     ./home-modules/tools/onepassword-env.nix  # 1Password environment setup
+    ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
     ./home-modules/tools/bat.nix
     # ./home-modules/tools/clipboard.nix  # DISABLED - Testing native KDE clipboard
     ./home-modules/tools/direnv.nix
@@ -28,6 +29,7 @@
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
+    ./home-modules/tools/vscode.nix  # VSCode with 1Password integration
     ./home-modules/tools/cluster-management.nix
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
     
@@ -70,12 +72,13 @@
   };
 
   home.sessionVariables = {
-    GDK_DPI_SCALE = "1.0";
+    # Display scaling environment variables - conditional based on system
+    GDK_DPI_SCALE = if osConfig.networking.hostName == "nixos-m1" then "0.5" else "1.0";
     QT_AUTO_SCREEN_SCALE_FACTOR = "0";
     QT_ENABLE_HIGHDPI_SCALING = "0";
     PLASMA_USE_QT_SCALING = "1";
-    GDK_SCALE = "1";
-    XCURSOR_SIZE = "28";
+    GDK_SCALE = if osConfig.networking.hostName == "nixos-m1" then "2" else "1";
+    XCURSOR_SIZE = if osConfig.networking.hostName == "nixos-m1" then "48" else "28";
   };
 
 
@@ -129,9 +132,14 @@
       "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
       "Overview" = "Meta+W,none,Toggle Overview";
     };
-    # Mirror prior XRDP tuning precisely
-    "kcmfonts".General.forceFontDPI = 100;
-    "kdeglobals".KScreen.ScreenScaleFactors = "XORGXRDP0=1.15;";
+    # Display scaling configuration based on system
+    # M1 needs higher DPI/scale for Retina display, Hetzner needs lower for RDP
+    "kcmfonts".General.forceFontDPI = 
+      if osConfig.networking.hostName == "nixos-m1" then 180 else 100;
+    "kdeglobals".KScreen.ScreenScaleFactors = 
+      if osConfig.networking.hostName == "nixos-m1" 
+      then "eDP-1=2;" 
+      else "XORGXRDP0=1.15;";
     # Theme defaults
     "kdeglobals" = {
       General.ColorScheme = "BreezeDark";
