@@ -177,4 +177,19 @@
   security.pam.services.sddm.enableKwallet = true;
   security.pam.services.login.enableKwallet = true;
 
+  # Yakuake dropdown terminal autostart
+  # Creates an XDG autostart entry for Yakuake to start with KDE Plasma
+  environment.etc."xdg/autostart/yakuake.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Yakuake
+    Comment=Drop-down terminal emulator
+    Exec=${pkgs.kdePackages.yakuake}/bin/yakuake
+    Icon=yakuake
+    Terminal=false
+    Categories=Qt;KDE;System;TerminalEmulator;
+    X-KDE-autostart-after=panel
+    X-GNOME-Autostart-enabled=true
+  '';
+
 }
