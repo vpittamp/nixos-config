@@ -2,6 +2,7 @@
 
 {
   # Copy touchegg configuration to user directory
+  # Using the correct qttools.bin output that contains the qdbus binary
   home.file.".config/touchegg/touchegg.conf".text = ''
     <touchégg>
       <settings>
@@ -15,42 +16,42 @@
         <!-- 3 finger swipe up: Overview -->
         <gesture type="SWIPE" fingers="3" direction="UP">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Overview"</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Overview"</command>
           </action>
         </gesture>
         
         <!-- 3 finger swipe down: Show Desktop -->
         <gesture type="SWIPE" fingers="3" direction="DOWN">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ShowDesktop"</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ShowDesktop"</command>
           </action>
         </gesture>
         
         <!-- 3 finger swipe left: Next Desktop -->
         <gesture type="SWIPE" fingers="3" direction="LEFT">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.KWin /KWin nextDesktop</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.KWin /KWin nextDesktop</command>
           </action>
         </gesture>
         
         <!-- 3 finger swipe right: Previous Desktop -->
         <gesture type="SWIPE" fingers="3" direction="RIGHT">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.KWin /KWin previousDesktop</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.KWin /KWin previousDesktop</command>
           </action>
         </gesture>
         
         <!-- 4 finger swipe up: Present Windows (All) -->
         <gesture type="SWIPE" fingers="4" direction="UP">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ExposeAll"</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ExposeAll"</command>
           </action>
         </gesture>
         
         <!-- 4 finger swipe down: Present Windows (Current Desktop) -->
         <gesture type="SWIPE" fingers="4" direction="DOWN">
           <action type="RUN_COMMAND">
-            <command>${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Expose"</command>
+            <command>${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Expose"</command>
           </action>
         </gesture>
         
