@@ -32,11 +32,24 @@ in
   # SSH configuration - disable default agent to use 1Password's
   programs.ssh.startAgent = false;
   
+  # Configure SSH client to use 1Password agent (addresses GitHub issue #222991)
+  programs.ssh.extraConfig = ''
+    # Use 1Password SSH agent for all hosts
+    Host *
+      IdentityAgent ~/.1password/agent.sock
+      # Allow 1Password to handle all SSH keys
+      IdentitiesOnly yes
+      # Prevent SSH from trying other authentication methods first
+      PreferredAuthentications publickey
+  '';
+  
   # System-wide environment variables for 1Password
   environment.sessionVariables = {
     SSH_AUTH_SOCK = "/home/vpittamp/.1password/agent.sock";
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };
+  
+  # Polkit configuration is merged below with other polkit rules
 
   # XDG autostart for KDE Plasma and Chromium integration
   environment.etc = lib.mkMerge [
@@ -182,7 +195,7 @@ in
   # This allows using system password/biometrics instead of master password
   security.polkit.enable = true;
   
-  # Polkit rules for 1Password system authentication
+  # Polkit rules for 1Password system authentication and SSH agent
   security.polkit.extraConfig = ''
     // Allow 1Password to use system authentication service
     polkit.addRule(function(action, subject) {
@@ -194,25 +207,33 @@ in
         }
       }
     });
+    
+    // Allow 1Password to prompt for SSH key usage (addresses GitHub issue #222991)
+    polkit.addRule(function(action, subject) {
+      if (action.id == "com.1password.1Password.authorizeSshAgent" &&
+          subject.user == "vpittamp") {
+        return polkit.Result.YES;
+      }
+    });
   '';
 
 
-  # Create persistent 1Password settings with system authentication enabled
+  # Create 1Password directories but DO NOT overwrite settings
+  # Settings must be configured through the 1Password GUI and will persist
   system.activationScripts.onePasswordSettings = ''
+    # Only create directories, never overwrite the settings file
     mkdir -p /home/vpittamp/.config/1Password/settings
     
-    # Create settings file with system authentication enabled by default
-    cat > /home/vpittamp/.config/1Password/settings/settings.json << 'EOF'
-    {
-      "security.authenticatedUnlock.enabled": true,
-      "security.authenticatedUnlock.method": "systemAuthentication",
-      "appearance.interfaceScale": "default"
-    }
-    EOF
-    
+    # Fix permissions on directories only
     chown -R vpittamp:users /home/vpittamp/.config/1Password
     chmod 700 /home/vpittamp/.config/1Password
-    chmod 600 /home/vpittamp/.config/1Password/settings/settings.json
+    chmod 700 /home/vpittamp/.config/1Password/settings
+    
+    # If settings file exists, preserve it with correct permissions
+    if [ -f /home/vpittamp/.config/1Password/settings/settings.json ]; then
+      chown vpittamp:users /home/vpittamp/.config/1Password/settings/settings.json
+      chmod 600 /home/vpittamp/.config/1Password/settings/settings.json
+    fi
   '';
 
   # Systemd service to ensure 1Password starts properly (only with GUI)
