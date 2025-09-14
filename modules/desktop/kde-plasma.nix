@@ -96,4 +96,5 @@
     DEFAULT_BROWSER = "chromium";
     BROWSER = "chromium";
   };
+
 }

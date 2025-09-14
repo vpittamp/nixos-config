@@ -11,7 +11,7 @@
     # Terminal configurations
     ./home-modules/terminal/tmux.nix
     ./home-modules/terminal/sesh.nix
-    # Konsole profile/settings will be managed via plasma-manager
+    ./home-modules/terminal/konsole.nix  # Konsole with improved selection
     
     # Editor configurations
     ./home-modules/editors/neovim.nix
