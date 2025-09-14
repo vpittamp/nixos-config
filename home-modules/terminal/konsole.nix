@@ -6,7 +6,7 @@
     kdePackages.yakuake
   ];
   
-  # Yakuake configuration - minimal settings
+  # Yakuake configuration with autostart and keybinding
   home.file.".config/yakuakerc" = {
     text = ''
       [Dialogs]
@@ -14,8 +14,24 @@
       
       [Window]
       KeepOpen=false
+      Height=50
+      Width=100
+      ShowTabBar=true
+      
+      [Shortcuts]
+      toggle-window-state=F12
+      
+      [Appearance]
+      Translucency=true
+      BackgroundColorOpacity=85
+      
+      [Autostart]
+      Enabled=true
     '';
   };
+  
+  # Note: Autostart is configured in modules/desktop/kde-plasma.nix
+  # Keybinding (F12) is set in the yakuakerc above
   
   
   # Konsole profile for better text selection
