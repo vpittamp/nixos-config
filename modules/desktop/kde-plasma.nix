@@ -36,6 +36,78 @@
   
   # Desktop environment
   services.desktopManager.plasma6.enable = true;
+  
+  # Enable touchegg for X11 gesture support
+  services.touchegg.enable = true;
+  
+  # Configure touchegg gestures for KDE
+  environment.etc."touchegg/touchegg.conf".text = ''
+    <touchégg>
+      <settings>
+        <property name="animation_delay">150</property>
+        <property name="action_execute_threshold">20</property>
+        <property name="color">auto</property>
+        <property name="borderColor">auto</property>
+      </settings>
+      
+      <application name="All">
+        <!-- 3 finger swipe up: Overview -->
+        <gesture type="SWIPE" fingers="3" direction="UP">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Overview"</command>
+          </action>
+        </gesture>
+        
+        <!-- 3 finger swipe down: Show Desktop -->
+        <gesture type="SWIPE" fingers="3" direction="DOWN">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ShowDesktop"</command>
+          </action>
+        </gesture>
+        
+        <!-- 3 finger swipe left: Next Desktop -->
+        <gesture type="SWIPE" fingers="3" direction="LEFT">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.KWin /KWin nextDesktop</command>
+          </action>
+        </gesture>
+        
+        <!-- 3 finger swipe right: Previous Desktop -->
+        <gesture type="SWIPE" fingers="3" direction="RIGHT">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.KWin /KWin previousDesktop</command>
+          </action>
+        </gesture>
+        
+        <!-- 4 finger swipe up: Present Windows (All) -->
+        <gesture type="SWIPE" fingers="4" direction="UP">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "ExposeAll"</command>
+          </action>
+        </gesture>
+        
+        <!-- 4 finger swipe down: Present Windows (Current Desktop) -->
+        <gesture type="SWIPE" fingers="4" direction="DOWN">
+          <action type="RUN_COMMAND">
+            <command>qdbus org.kde.kglobalaccel /component/kwin invokeShortcut "Expose"</command>
+          </action>
+        </gesture>
+        
+        <!-- Pinch in/out: Zoom -->
+        <gesture type="PINCH" fingers="2" direction="IN">
+          <action type="SEND_KEYS">
+            <keys>Control+minus</keys>
+          </action>
+        </gesture>
+        
+        <gesture type="PINCH" fingers="2" direction="OUT">
+          <action type="SEND_KEYS">
+            <keys>Control+plus</keys>
+          </action>
+        </gesture>
+      </application>
+    </touchégg>
+  '';
 
   # Sound system
   hardware.pulseaudio.enable = false;

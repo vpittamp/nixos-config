@@ -14,25 +14,17 @@ in
     _1password-gui    # Desktop application (only with GUI)
   ];
 
-  # Enable 1Password system services
+  # Enable 1Password system services with proper NixOS configuration
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = hasGui;  # Only enable GUI program if desktop is available
+    # This enables polkit integration for system authentication
+    # The user can unlock 1Password with system password/fingerprint
     polkitPolicyOwners = lib.optionals hasGui [ "vpittamp" ];
   };
   
-  # Ensure polkit is enabled and running
-  security.polkit.enable = true;
-  
-  # Add polkit rules for 1Password
-  security.polkit.extraConfig = ''
-    polkit.addRule(function(action, subject) {
-      if (action.id == "com.1password.1Password.authorizationhelper" &&
-          subject.user == "vpittamp") {
-        return polkit.Result.YES;
-      }
-    });
-  '';
+  # Note: polkit rules are automatically configured by polkitPolicyOwners
+  # No manual polkit configuration needed - NixOS handles this properly
 
   # Git configuration - removed as it's handled in home-manager
   # The credential helpers are configured in home-modules/tools/git.nix
@@ -46,8 +38,68 @@ in
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };
 
-  # XDG autostart for KDE Plasma (only with GUI)
+  # XDG autostart for KDE Plasma and Chromium integration
   environment.etc = lib.mkMerge [
+    # Minimal Chromium policy - only enable native messaging, no forced extensions
+    {
+      "chromium/policies/recommended/1password-support.json" = {
+        text = builtins.toJSON {
+          # Only configure what's necessary for 1Password to work
+          # Using 'recommended' instead of 'managed' to avoid "managed by organization"
+          
+          # Enable native messaging for 1Password
+          NativeMessagingAllowlist = [
+            "com.1password.1password"
+            "com.1password.browser_support"
+          ];
+          
+          # Disable Chrome's password manager (user can override)
+          PasswordManagerEnabled = false;
+          
+          # Enable autofill
+          AutofillEnabled = true;
+        };
+        mode = "0644";
+      };
+
+      # Custom allowed browsers for 1Password
+      "1password/custom_allowed_browsers" = {
+        text = ''
+          chromium
+          chromium-browser
+          chrome
+          google-chrome
+        '';
+        mode = "0644";
+      };
+
+      # System-wide native messaging hosts for Chromium
+      "chromium/native-messaging-hosts/com.1password.1password.json" = {
+        text = builtins.toJSON {
+          name = "com.1password.1password";
+          description = "1Password Native Messaging Host";
+          type = "stdio";
+          allowed_origins = [
+            "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
+          ];
+          path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+        };
+        mode = "0644";
+      };
+
+      "chromium/native-messaging-hosts/com.1password.browser_support.json" = {
+        text = builtins.toJSON {
+          name = "com.1password.browser_support";
+          description = "1Password Browser Support";
+          type = "stdio";
+          allowed_origins = [
+            "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
+          ];
+          path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+        };
+        mode = "0644";
+      };
+    }
     (lib.mkIf hasGui {
       "xdg/autostart/1password.desktop".text = ''
         [Desktop Entry]
@@ -64,24 +116,6 @@ in
         X-KDE-autostart-after=panel
         X-KDE-autostart-phase=2
       '';
-      
-      # Alternative desktop entry for manual scaling control
-      "applications/1password-scaled.desktop" = {
-        text = ''
-          [Desktop Entry]
-          Name=1Password (Scaled)
-          GenericName=Password Manager
-          Comment=1Password with custom scaling for HiDPI
-          Exec=env QT_SCALE_FACTOR=0.75 ${pkgs._1password-gui}/bin/1password
-          Terminal=false
-          Type=Application
-          Icon=1password
-          StartupNotify=true
-          Categories=Utility;Security;
-          NoDisplay=false
-        '';
-        mode = "0644";
-      };
     })
     
     # 1Password SSH agent configuration
@@ -144,6 +178,43 @@ in
     chmod 600 /home/vpittamp/.config/1Password/ssh/agent.toml
   '';
 
+  # Enable system authentication for 1Password
+  # This allows using system password/biometrics instead of master password
+  security.polkit.enable = true;
+  
+  # Polkit rules for 1Password system authentication
+  security.polkit.extraConfig = ''
+    // Allow 1Password to use system authentication service
+    polkit.addRule(function(action, subject) {
+      if (action.id == "com.1password.1Password.authorizationhelper" ||
+          action.id == "com.onepassword.op.authorizationhelper" ||
+          action.id == "com.1password.1password.authprompt") {
+        if (subject.user == "vpittamp") {
+          return polkit.Result.AUTH_SELF;
+        }
+      }
+    });
+  '';
+
+
+  # Create persistent 1Password settings with system authentication enabled
+  system.activationScripts.onePasswordSettings = ''
+    mkdir -p /home/vpittamp/.config/1Password/settings
+    
+    # Create settings file with system authentication enabled by default
+    cat > /home/vpittamp/.config/1Password/settings/settings.json << 'EOF'
+    {
+      "security.authenticatedUnlock.enabled": true,
+      "security.authenticatedUnlock.method": "systemAuthentication",
+      "appearance.interfaceScale": "default"
+    }
+    EOF
+    
+    chown -R vpittamp:users /home/vpittamp/.config/1Password
+    chmod 700 /home/vpittamp/.config/1Password
+    chmod 600 /home/vpittamp/.config/1Password/settings/settings.json
+  '';
+
   # Systemd service to ensure 1Password starts properly (only with GUI)
   systemd.user.services.onepassword-gui = lib.mkIf hasGui {
     description = "1Password Desktop Application";
@@ -152,6 +223,7 @@ in
     
     serviceConfig = {
       Type = "forking";
+      # QT_SCALE_FACTOR=0.75 makes 1Password smaller on HiDPI displays
       ExecStart = "${pkgs.bash}/bin/bash -c 'QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent'";
       Restart = "on-failure";
       RestartSec = 5;

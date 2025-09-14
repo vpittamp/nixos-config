@@ -19,6 +19,7 @@
     # Tool configurations
     ./home-modules/tools/git.nix
     ./home-modules/tools/ssh.nix
+    ./home-modules/tools/onepassword.nix  # 1Password settings and config
     ./home-modules/tools/onepassword-env.nix  # 1Password environment setup
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
     ./home-modules/tools/bat.nix
@@ -27,6 +28,9 @@
     ./home-modules/tools/fzf.nix
     # ./home-modules/tools/firefox.nix  # Disabled - using Chromium as default
     ./home-modules/tools/chromium.nix  # Chromium with 1Password integration
+    
+    # Desktop configurations
+    ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix

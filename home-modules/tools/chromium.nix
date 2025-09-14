@@ -6,16 +6,13 @@
     enable = true;
     package = pkgs.chromium;
     
-    # Extension IDs for manual installation
-    # Note: Chromium extensions in Nix must be installed via policies
-    # The ExtensionSettings policy below will auto-install these
+    # Extension IDs - These are installed declaratively by Nix
     extensions = [
-      # These IDs are referenced but actual installation happens via policy
-      "aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password
-      "cjpalhdlnbpafiamejdnhcphjbkeiagm"  # uBlock Origin
-      "eimadpbcbfnmbkopoojfekhnkhdbieeh"  # Dark Reader
-      "dbepggeogbaibhgnhhndojpepiihcmeb"  # Vimium
-      "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"  # Privacy Badger
+      { id = "aeblfdkhhhdcdjpifhhbdiojplfjncoa"; }  # 1Password - Password Manager
+      { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; }  # uBlock Origin
+      { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }  # Dark Reader
+      { id = "dbepggeogbaibhgnhhndojpepiihcmeb"; }  # Vimium
+      { id = "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"; }  # Privacy Badger
     ];
     
     # Command line arguments for better performance and privacy
@@ -38,6 +35,12 @@
       
       # Enable password import features
       "--enable-features=PasswordImport"
+      
+      # Load extensions from External Extensions directory
+      "--load-extension=${config.home.homeDirectory}/.config/chromium/External Extensions"
+      
+      # Disable extension installation prompts
+      "--disable-extensions-install-verification"
       
       # Privacy enhancements
       "--disable-reading-from-canvas"
@@ -77,65 +80,54 @@
     };
   };
 
-  # Create Chromium policies for enterprise configuration
-  # This ensures 1Password extension is pinned and properly configured
-  home.file.".config/chromium/policies/managed/1password-policy.json" = {
+  # Configure Chromium master preferences for first run
+  # This ensures extensions are installed and pinned on first launch
+  home.file.".config/chromium/initial_preferences.json" = {
     text = builtins.toJSON {
-      # Force install and pin extensions
-      ExtensionSettings = {
-        # 1Password - Password Manager
-        "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
-          installation_mode = "force_installed";
-          update_url = "https://clients2.google.com/service/update2/crx";
-          toolbar_pin = "force_pinned";
-        };
-        # uBlock Origin
-        "cjpalhdlnbpafiamejdnhcphjbkeiagm" = {
-          installation_mode = "force_installed";
-          update_url = "https://clients2.google.com/service/update2/crx";
-        };
-        # Dark Reader
-        "eimadpbcbfnmbkopoojfekhnkhdbieeh" = {
-          installation_mode = "force_installed";
-          update_url = "https://clients2.google.com/service/update2/crx";
-        };
-        # Vimium
-        "dbepggeogbaibhgnhhndojpepiihcmeb" = {
-          installation_mode = "force_installed";
-          update_url = "https://clients2.google.com/service/update2/crx";
-        };
-        # Privacy Badger
-        "pkehgijcmpdhfbdbbnkijodmdjhbjlgp" = {
-          installation_mode = "force_installed";
-          update_url = "https://clients2.google.com/service/update2/crx";
+      browser = {
+        show_home_button = true;
+        check_default_browser = false;
+      };
+      bookmark_bar = {
+        show_on_all_tabs = true;
+      };
+      extensions = {
+        # Pin extensions to toolbar
+        toolbar = [
+          "aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password
+        ];
+        # Settings for specific extensions
+        settings = {
+          "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
+            toolbar_pin = "force_pinned";
+          };
         };
       };
-      
-      # Disable Chrome's built-in password manager to avoid conflicts
-      PasswordManagerEnabled = false;
-      
-      # Enable native messaging for 1Password
-      NativeMessagingAllowlist = [
-        "com.1password.1password"
-        "com.1password.browser_support"
-      ];
-      
-      # Set homepage and startup behavior
-      HomepageLocation = "chrome://newtab";
-      RestoreOnStartup = 1;  # Restore last session
-      
-      # Privacy and security settings
-      SafeBrowsingProtectionLevel = 2;  # Enhanced protection
-      DefaultCookiesSetting = 1;  # Allow cookies
-      DefaultGeolocationSetting = 3;  # Ask before accessing
-      DefaultNotificationsSetting = 3;  # Ask before showing
-      
-      # Development settings
-      DeveloperToolsAvailability = 1;  # Allow developer tools
+      # Disable Chrome's password manager since we use 1Password
+      credentials_enable_service = false;
+      credentials_enable_autosignon = false;
     };
   };
+  
+  # Ensure extensions are installed via command line flag
+  home.activation.installChromiumExtensions = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    # Create directory for extension preferences if it doesn't exist
+    mkdir -p $HOME/.config/chromium/Default
+    
+    # Create External Extensions entries for each extension
+    # This forces Chromium to download and install them
+    mkdir -p "$HOME/.config/chromium/External Extensions"
+    
+    # 1Password
+    echo '{"external_update_url":"https://clients2.google.com/service/update2/crx"}' > \
+      "$HOME/.config/chromium/External Extensions/aeblfdkhhhdcdjpifhhbdiojplfjncoa.json"
+    
+    # Set proper permissions
+    chmod 755 "$HOME/.config/chromium/External Extensions"
+    chmod 644 "$HOME/.config/chromium/External Extensions"/*.json
+  '';
 
-  # Create native messaging host manifest for 1Password
+  # Native messaging host manifest for 1Password
   # This allows the browser extension to communicate with the desktop app
   home.file.".config/chromium/NativeMessagingHosts/com.1password.1password.json" = {
     text = builtins.toJSON {
@@ -146,7 +138,7 @@
         "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
       ];
       # Path to the 1Password browser support binary
-      path = "${pkgs._1password-gui}/share/1password/op-browser-support";
+      path = "/run/current-system/sw/share/1password/1Password-BrowserSupport";
     };
   };
 
@@ -159,7 +151,7 @@
       allowed_origins = [
         "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
       ];
-      path = "${pkgs._1password-gui}/share/1password/op-browser-support";
+      path = "/run/current-system/sw/share/1password/1Password-BrowserSupport";
     };
   };
 
