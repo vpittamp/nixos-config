@@ -12,10 +12,10 @@
     userName = "Vinod Pittampalli";
     userEmail = "vinod@pittampalli.com";
     
-    # SSH signing configuration with 1Password
+    # SSH signing configuration with 1Password (disabled - only using for authentication)
     signing = {
       key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
-      signByDefault = true;
+      signByDefault = false;  # Disabled - we only want authentication, not signing
     };
     
     aliases = {
