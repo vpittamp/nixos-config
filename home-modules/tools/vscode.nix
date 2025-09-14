@@ -6,12 +6,7 @@
     package = pkgs.vscode;
     
     # Extensions for development and 1Password integration
-    extensions = with pkgs.vscode-extensions; [
-      # 1Password extension
-      # Note: The 1Password extension needs to be installed manually
-      # from the VSCode marketplace as "1Password"
-      # Extension ID: 1Password.op-vscode
-      
+    extensions = (with pkgs.vscode-extensions; [
       # Development essentials
       ms-vscode-remote.remote-ssh
       ms-vscode-remote.remote-containers
@@ -39,14 +34,23 @@
       # Productivity
       vscodevim.vim
       streetsidesoftware.code-spell-checker
+    ]) ++ [
+      # 1Password extension (special syntax due to naming)
+      pkgs.vscode-extensions."1Password".op-vscode
     ];
     
     # User settings for VSCode
     userSettings = {
       # 1Password integration settings
-      "1password.items.cacheValues" = true;
-      "1password.items.useSecretReferences" = true;
-      "1password.editor.suggestStorage" = true;
+      "1password.items.cacheValues" = true;  # Cache CLI values for performance
+      "1password.items.useSecretReferences" = true;  # Enable secret reference syntax
+      "1password.editor.suggestStorage" = true;  # Auto-detect and suggest saving secrets
+      "1password.hover.enableHover" = true;  # Show secret details on hover
+      "1password.hover.enableUnlock" = true;  # Allow unlocking secrets inline
+      "1password.codeLens.enable" = true;  # Show CodeLens for detected secrets
+      "1password.contextMenu.enable" = true;  # Add 1Password to context menu
+      
+      # Password generation recipe for new secrets
       "1password.items.passwordRecipe" = {
         "length" = 32;
         "includeSymbols" = true;
@@ -54,6 +58,22 @@
         "includeUppercase" = true;
         "includeLowercase" = true;
       };
+      
+      # Secret reference format preference
+      "1password.secretReferenceFormat" = "op://vault/item/field";
+      
+      # Automatic secret detection patterns
+      "1password.detection.enableAutomaticDetection" = true;
+      "1password.detection.filePatterns" = [
+        "**/.env*"
+        "**/config.json"
+        "**/settings.json"
+        "**/*.config.js"
+        "**/*.config.ts"
+      ];
+      
+      # Disable KDE Wallet integration - use 1Password instead
+      "password-store" = "basic";  # Use basic keychain instead of system keychain
       
       # Terminal integration
       "terminal.integrated.defaultProfile.linux" = "bash";

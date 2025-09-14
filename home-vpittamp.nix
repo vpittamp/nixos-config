@@ -22,6 +22,8 @@
     ./home-modules/tools/onepassword.nix  # 1Password settings and config
     ./home-modules/tools/onepassword-env.nix  # 1Password environment setup
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
+    ./home-modules/tools/onepassword-autostart.nix  # 1Password autostart and checks
+    ./home-modules/tools/kwallet-config.nix  # KDE Wallet declarative config
     ./home-modules/tools/bat.nix
     # ./home-modules/tools/clipboard.nix  # DISABLED - Testing native KDE clipboard
     ./home-modules/tools/direnv.nix
@@ -31,6 +33,7 @@
     
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
+    ./home-modules/desktop/plasma-config.nix  # Comprehensive Plasma configuration
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
@@ -42,7 +45,6 @@
     ./home-modules/ai-assistants/claude-code.nix
     ./home-modules/ai-assistants/codex.nix
     ./home-modules/ai-assistants/gemini-cli.nix
-    # Plasma panels/layout will be managed via plasma-manager
   ];
 
   # Home Manager configuration
@@ -125,35 +127,6 @@
   };
 
 
-  programs.plasma.configFile = {
-    "kwinrc".Desktops = {
-      Number = 8;
-      Rows = 2;
-    };
-    "kglobalshortcutsrc".kwin = {
-      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";
-      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";
-      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";
-      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
-      "Overview" = "Meta+W,none,Toggle Overview";
-    };
-    # Display scaling configuration based on system
-    # M1 needs higher DPI/scale for Retina display, Hetzner needs lower for RDP
-    "kcmfonts".General.forceFontDPI = 
-      if osConfig.networking.hostName == "nixos-m1" then 180 else 100;
-    "kdeglobals".KScreen.ScreenScaleFactors = 
-      if osConfig.networking.hostName == "nixos-m1" 
-      then "eDP-1=2;" 
-      else "XORGXRDP0=1.15;";
-    # Theme defaults
-    "kdeglobals" = {
-      General.ColorScheme = "BreezeDark";
-      Icons.Theme = "breeze-dark";
-      KDE.widgetStyle = "Breeze";
-    };
-    "kcminputrc".Mouse.cursorTheme = "breeze_cursors";
-    # Enable Klipper clipboard manager autostart
-    "ksmserverrc"."org.kde.klipper".autostart = true;
-  };
+  # Plasma configuration has been moved to ./home-modules/desktop/plasma-config.nix
 
 }

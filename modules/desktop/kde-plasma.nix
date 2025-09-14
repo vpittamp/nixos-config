@@ -172,4 +172,9 @@
     BROWSER = "chromium";
   };
 
+  # Enable PAM integration for KDE Wallet auto-unlock
+  # This allows the wallet to unlock automatically with the user's login password
+  security.pam.services.sddm.enableKwallet = true;
+  security.pam.services.login.enableKwallet = true;
+
 }

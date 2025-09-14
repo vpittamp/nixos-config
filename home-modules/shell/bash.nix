@@ -62,8 +62,8 @@
       # TERM is now set dynamically in bash initExtra to avoid conflicts
       # TERM = "screen-256color";
       DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
-      # WSL-specific: Use Windows clipboard
-      DISPLAY = ":0";
+      # Do not force DISPLAY here — let the desktop/remote session set it.
+      # Forcing DISPLAY to :0 breaks apps like VS Code under XRDP or non-:0 seats.
       # Disable OSC color queries - commented out to allow colors
       # NO_COLOR = "";  # Don't set this as it disables colors in many programs
       
@@ -179,6 +179,12 @@
       fi
       
       # Terminal configuration moved to TERM settings below
+      
+      # WSL-specific DISPLAY configuration
+      # Only set DISPLAY if we're in WSL and it's not already set
+      if [ -n "$WSL_DISTRO_NAME" ] && [ -z "$DISPLAY" ]; then
+        export DISPLAY=:0
+      fi
       
       # Fix terminal compatibility - detect VSCode terminal
       if [ "$TERM_PROGRAM" = "vscode" ]; then

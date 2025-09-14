@@ -14,7 +14,16 @@
       cat > $HOME/.config/1Password/settings/settings.json << 'EOF'
 {
   "security.authenticatedUnlock.enabled": true,
-  "security.authenticatedUnlock.method": "systemAuthentication"
+  "security.authenticatedUnlock.method": "systemAuthentication",
+  "security.autolock.minutes": 10,
+  "security.autolock.onScreenSaver": true,
+  "security.autolock.onSleep": true,
+  "security.biometry.enabled": true,
+  "browser.verifyBrowserExtensions": true,
+  "browser.autoFillShortcut.enabled": true,
+  "sshAgent.enabled": true,
+  "sshAgent.storeKeyTitles": true,
+  "gitCredentialHelper.enabled": true
 }
 EOF
       echo "Created default 1Password settings with system authentication enabled"

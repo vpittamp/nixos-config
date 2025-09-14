@@ -1,5 +1,10 @@
 { config, pkgs, lib, ... }:
 
+let
+  # Detect if we're on M1 or Hetzner based on hostname
+  isM1 = config.networking.hostName or "" == "nixos-m1";
+  scaleFactor = if isM1 then "1.75" else "1.0";
+in
 {
   # Chromium browser configuration with 1Password and other extensions
   programs.chromium = {
@@ -17,9 +22,12 @@
     
     # Command line arguments for better performance and privacy
     commandLineArgs = [
-      # Display scaling for HiDPI/Retina displays
-      "--force-device-scale-factor=1.75"  # 1.75x scaling for M1 Retina display
+      # Display scaling - dynamic based on system
+      "--force-device-scale-factor=${scaleFactor}"
       "--high-dpi-support=1"
+      
+      # Disable KDE Wallet to prevent errors - use basic password store
+      "--password-store=basic"
       
       # Enable hardware acceleration
       "--enable-features=VaapiVideoDecoder"
