@@ -50,6 +50,11 @@
       "1password.codeLens.enable" = true;  # Show CodeLens for detected secrets
       "1password.contextMenu.enable" = true;  # Add 1Password to context menu
       
+      # Default account configuration
+      "1password.account" = "vinod@pittampalli.com";  # Default account email
+      "1password.defaultVault" = "Personal";  # Default vault name
+      "1password.signInAddress" = "https://my.1password.com/";  # Sign-in address
+      
       # Password generation recipe for new secrets
       "1password.items.passwordRecipe" = {
         "length" = 32;

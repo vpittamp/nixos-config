@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, osConfig, ... }:
 {
   programs.bash = {
     enable = true;
@@ -61,7 +61,7 @@
       LESS = "-R";
       # TERM is now set dynamically in bash initExtra to avoid conflicts
       # TERM = "screen-256color";
-      DOCKER_HOST = "unix:///mnt/wsl/docker-desktop/shared-sockets/guest-services/docker.proxy.sock";
+      # DOCKER_HOST is now set conditionally in WSL configuration only
       # Do not force DISPLAY here — let the desktop/remote session set it.
       # Forcing DISPLAY to :0 breaks apps like VS Code under XRDP or non-:0 seats.
       # Disable OSC color queries - commented out to allow colors
@@ -110,9 +110,6 @@
       gd = "git diff";
       gco = "git checkout";
       gb = "git branch";
-      
-      # Docker alias to use Docker Desktop via wrapper
-      docker = "/etc/nixos/docker-wrapper.sh";
       
       # Docker shortcuts
       d = "docker";
