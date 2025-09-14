@@ -86,23 +86,9 @@
       Option "DPI" "180 x 180"
     '';
     
-    # X11 server configuration ends here
-  };
-  
-  # Touchpad configuration with natural scrolling (Apple-style)
-  services.libinput = {
-    enable = true;
-    touchpad = {
-      naturalScrolling = true;  # Reverse scroll direction (Apple-style)
-      tapping = true;           # Tap to click
-      clickMethod = "clickfinger";  # Two-finger right-click
-      disableWhileTyping = true;
-      scrollMethod = "twofinger";
-    };
-  };
-  
-  # X11-specific scaling configuration
-  services.displayManager.sessionCommands = ''
+    
+    # X11-specific scaling configuration
+    displayManager.sessionCommands = ''
       # GTK applications - integer scaling only (GDK_SCALE must be integer)
       export GDK_SCALE=2
       export GDK_DPI_SCALE=0.5  # Inverse of GDK_SCALE for fine-tuning
@@ -128,6 +114,19 @@
       kwriteconfig5 --file kdeglobals --group KScreen --key ScaleFactor 2 || true
       kwriteconfig5 --file kdeglobals --group KScreen --key ScreenScaleFactors "eDP-1=2;" || true
     '';
+  };
+  
+  # Touchpad configuration with natural scrolling (Apple-style)
+  services.libinput = {
+    enable = true;
+    touchpad = {
+      naturalScrolling = true;  # Reverse scroll direction (Apple-style)
+      tapping = true;           # Tap to click
+      clickMethod = "clickfinger";  # Two-finger right-click
+      disableWhileTyping = true;
+      scrollMethod = "twofinger";
+    };
+  };
   
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
