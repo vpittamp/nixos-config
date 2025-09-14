@@ -96,7 +96,7 @@
   xdg.desktopEntries.gitkraken = {
     name = "GitKraken";
     comment = "Git GUI client with 1Password integration";
-    exec = "%h/.local/bin/gitkraken-wrapper %U";
+    exec = "${config.home.homeDirectory}/.local/bin/gitkraken-wrapper %U";
     icon = "gitkraken";
     terminal = false;
     type = "Application";
