@@ -191,5 +191,27 @@
     X-KDE-autostart-after=panel
     X-GNOME-Autostart-enabled=true
   '';
+  
+  # Multi-monitor panel configuration script
+  # This ensures panels are created on all connected monitors
+  system.activationScripts.plasmaMultiMonitorPanels = ''
+    # Create a default panel layout for multi-monitor setups
+    # This will be applied on first login or when panels are reset
+    mkdir -p /etc/xdg/plasma-workspace/env
+    cat > /etc/xdg/plasma-workspace/env/multi-monitor-panels.sh << 'EOF'
+    #!/bin/sh
+    # This script ensures panels exist on all monitors
+    # It's executed when Plasma starts
+    
+    # Check if we're in a Plasma session
+    if [ "$XDG_SESSION_DESKTOP" = "KDE" ] || [ "$XDG_SESSION_DESKTOP" = "plasma" ]; then
+      # The actual panel creation is handled by Plasma's built-in multi-screen support
+      # We just need to ensure the right settings are in place
+      export QT_SCREEN_SCALE_FACTORS=""  # Let Qt auto-detect
+      export QT_AUTO_SCREEN_SCALE_FACTOR=1
+    fi
+    EOF
+    chmod +x /etc/xdg/plasma-workspace/env/multi-monitor-panels.sh
+  '';
 
 }

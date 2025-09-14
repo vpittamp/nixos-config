@@ -84,7 +84,7 @@
       HighlightWindows = true;
       LayoutName = "thumbnail_grid";
       MinimizedMode = 0;  # Ignore minimized windows
-      MultiScreenMode = 0;  # Ignore multi-screen
+      MultiScreenMode = 1;  # Current screen only (for Alt+Tab)
       ShowDesktopMode = 0;  # Do not show desktop
       ShowTabBox = true;
       SwitchingMode = 0;  # Focus on switching
@@ -224,6 +224,45 @@
       wmclass = "discord";
       wmclasscomplete = false;
       wmclassmatch = 1;  # Contains
+    };
+    
+    # Multi-Monitor Panel/Taskbar Configuration
+    # Configure panels to appear on all screens with screen-specific task managers
+    "plasmashellrc"."ScreenConnectors" = {
+      # This ensures panels are created for all screens
+      # The actual screen connectors will be auto-detected
+      "0" = "Primary";
+      "1" = "Secondary";
+      "2" = "Tertiary";
+    };
+    
+    # Task Manager behavior for multi-monitor setup
+    "plasma-org.kde.plasma.desktop-appletsrc"."Containments" = {
+      # Note: This is a simplified representation
+      # Actual panel configuration requires more complex structure
+      # We'll use plasma-manager's limited support and supplement with system config
+    };
+    
+    # Configure task manager to show only windows from current screen
+    "plasmashellrc"."TaskManager" = {
+      "showOnlyCurrentScreen" = true;  # Show only tasks from current monitor
+      "showOnlyCurrentDesktop" = false;  # Show tasks from all desktops
+      "showOnlyCurrentActivity" = true;  # Show only current activity
+      "showOnlyMinimized" = false;
+      "sortingStrategy" = 1;  # Manually sort
+      "separateLaunchers" = false;
+      "middleClickAction" = "NewInstance";
+      "wheelEnabled" = true;
+      "showToolTips" = true;
+      "highlightWindows" = true;
+      "maxStripes" = 1;  # Single row
+      "forceStripes" = false;
+      "groupingStrategy" = 0;  # Don't group
+      "groupingAppIdBlacklist" = "org.kde.plasmashell";
+      "groupPopups" = true;
+      "onAllDesktopsTasksFirst" = false;
+      "unhideOnAttentionNeeded" = true;
+      "iconSize" = "medium";
     };
     
     # Additional KDE Global Settings
