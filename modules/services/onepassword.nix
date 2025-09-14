@@ -197,22 +197,22 @@ in
   '';
 
 
-  # Create persistent 1Password settings with system authentication enabled
+  # Create 1Password directories but DO NOT overwrite settings
+  # Settings must be configured through the 1Password GUI and will persist
   system.activationScripts.onePasswordSettings = ''
+    # Only create directories, never overwrite the settings file
     mkdir -p /home/vpittamp/.config/1Password/settings
     
-    # Create settings file with system authentication enabled by default
-    cat > /home/vpittamp/.config/1Password/settings/settings.json << 'EOF'
-    {
-      "security.authenticatedUnlock.enabled": true,
-      "security.authenticatedUnlock.method": "systemAuthentication",
-      "appearance.interfaceScale": "default"
-    }
-    EOF
-    
+    # Fix permissions on directories only
     chown -R vpittamp:users /home/vpittamp/.config/1Password
     chmod 700 /home/vpittamp/.config/1Password
-    chmod 600 /home/vpittamp/.config/1Password/settings/settings.json
+    chmod 700 /home/vpittamp/.config/1Password/settings
+    
+    # If settings file exists, preserve it with correct permissions
+    if [ -f /home/vpittamp/.config/1Password/settings/settings.json ]; then
+      chown vpittamp:users /home/vpittamp/.config/1Password/settings/settings.json
+      chmod 600 /home/vpittamp/.config/1Password/settings/settings.json
+    fi
   '';
 
   # Systemd service to ensure 1Password starts properly (only with GUI)
