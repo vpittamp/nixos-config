@@ -227,23 +227,20 @@
     };
     
     # Multi-Monitor Panel/Taskbar Configuration
-    # Configure panels to appear on all screens with screen-specific task managers
+    # NOTE: KDE Plasma 6 automatically creates panels on all monitors when it detects them
+    # These settings control the BEHAVIOR of those panels, not their creation
+    
+    # Screen connector labels (optional - Plasma auto-detects actual connectors)
     "plasmashellrc"."ScreenConnectors" = {
-      # This ensures panels are created for all screens
-      # The actual screen connectors will be auto-detected
+      # These are display labels, not actual connector names
+      # Plasma will map these to actual outputs (HDMI-1, DP-1, etc.)
       "0" = "Primary";
-      "1" = "Secondary";
+      "1" = "Secondary";  
       "2" = "Tertiary";
     };
     
-    # Task Manager behavior for multi-monitor setup
-    "plasma-org.kde.plasma.desktop-appletsrc"."Containments" = {
-      # Note: This is a simplified representation
-      # Actual panel configuration requires more complex structure
-      # We'll use plasma-manager's limited support and supplement with system config
-    };
-    
-    # Configure task manager to show only windows from current screen
+    # Configure task manager widget behavior (applies to all panels)
+    # These settings are declaratively applied via plasma-manager
     "plasmashellrc"."TaskManager" = {
       "showOnlyCurrentScreen" = true;  # Show only tasks from current monitor
       "showOnlyCurrentDesktop" = false;  # Show tasks from all desktops
