@@ -227,16 +227,23 @@
     };
     
     # Multi-Monitor Panel/Taskbar Configuration
-    # NOTE: KDE Plasma 6 automatically creates panels on all monitors when it detects them
-    # These settings control the BEHAVIOR of those panels, not their creation
+    # IMPORTANT: KDE Plasma does NOT automatically create panels on all monitors
+    # We need to configure screen mapping for RDP connections
     
-    # Screen connector labels (optional - Plasma auto-detects actual connectors)
+    # Map screen indices to actual display connectors (for RDP)
+    "plasmashellrc"."ScreenMapping" = {
+      # For RDP connections, map screen indices to rdp outputs
+      "0" = "rdp0";
+      "1" = "rdp1";
+      "2" = "rdp2";
+    };
+    
+    # Screen connector configuration for physical displays
     "plasmashellrc"."ScreenConnectors" = {
-      # These are display labels, not actual connector names
-      # Plasma will map these to actual outputs (HDMI-1, DP-1, etc.)
-      "0" = "Primary";
-      "1" = "Secondary";  
-      "2" = "Tertiary";
+      # Map connectors to screen indices
+      "0" = "rdp0";
+      "1" = "rdp1";
+      "2" = "rdp2";
     };
     
     # Configure task manager widget behavior (applies to all panels)
