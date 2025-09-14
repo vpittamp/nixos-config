@@ -119,14 +119,14 @@ in
         Name=1Password
         GenericName=Password Manager
         Comment=1Password password manager
-        Exec=env QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent --unlock
+        Exec=env QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent
         Terminal=false
         Type=Application
         Icon=1password
         StartupNotify=false
         Categories=Utility;Security;
         X-GNOME-Autostart-enabled=true
-        X-KDE-autostart-after=panel
+        X-KDE-autostart-after=kwalletd6
         X-KDE-autostart-phase=2
       '';
     })
@@ -239,19 +239,21 @@ in
   # Systemd service to ensure 1Password starts properly (only with GUI)
   systemd.user.services.onepassword-gui = lib.mkIf hasGui {
     description = "1Password Desktop Application";
-    after = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" "kwallet.service" ];
     wantedBy = [ "graphical-session.target" ];
     
     serviceConfig = {
       Type = "forking";
       # QT_SCALE_FACTOR=0.75 makes 1Password smaller on HiDPI displays
-      # --silent starts minimized, --unlock prompts for unlock immediately
-      ExecStart = "${pkgs.bash}/bin/bash -c 'QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent --unlock'";
+      # --silent starts minimized to system tray
+      ExecStart = "${pkgs.bash}/bin/bash -c 'QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent'";
       Restart = "on-failure";
       RestartSec = 5;
       Environment = [
         "DISPLAY=:0"
         "SSH_AUTH_SOCK=/home/vpittamp/.1password/agent.sock"
+        # Enable Secret Service for 2FA token storage
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
       ];
     };
   };
