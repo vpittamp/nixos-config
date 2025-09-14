@@ -133,12 +133,6 @@
     kdePackages.okular
     kdePackages.gwenview
     
-    # KDE Wallet and Secret Service integration
-    kdePackages.kwallet
-    kdePackages.kwalletmanager
-    kdePackages.ksshaskpass
-    libsecret  # Secret Service client library
-    
     # Clipboard management - using native Klipper instead of CopyQ
     # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
     wl-clipboard  # Wayland clipboard utilities
@@ -182,59 +176,6 @@
   # This allows the wallet to unlock automatically with the user's login password
   security.pam.services.sddm.enableKwallet = true;
   security.pam.services.login.enableKwallet = true;
-  
-  # Enable KDE Wallet's Secret Service API for better integration with apps
-  # This allows 1Password and other apps to use the freedesktop.org Secret Service
-  programs.ssh.askPassword = "${pkgs.kdePackages.ksshaskpass}/bin/ksshaskpass";
-  
-  # Configure KDE Wallet to provide the Secret Service interface
-  # This enables better integration with 1Password's 2FA token storage
-  environment.etc."xdg/autostart/kwallet-secretservice.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=KDE Wallet Secret Service
-    Comment=Enable Secret Service API for KDE Wallet
-    Exec=${pkgs.kdePackages.kwallet}/bin/kwalletd6 --enable-secretservice
-    Icon=kwalletmanager
-    Terminal=false
-    Categories=Qt;KDE;System;Security;
-    X-KDE-autostart-after=panel
-    X-GNOME-Autostart-enabled=true
-    Hidden=false
-  '';
-  
-  # System-wide KDE Wallet configuration
-  environment.etc."xdg/kwalletrc".text = ''
-    [Wallet]
-    # Enable the wallet subsystem
-    Enabled=true
-    # Use KWallet for the Secret Service interface (freedesktop.org standard)
-    UseSecretService=true
-    # First use should prompt to create wallet with system password
-    First Use=false
-    # Close wallet when last application stops using it
-    Close When Idle=false
-    # Close wallet after 10 minutes of inactivity
-    Close on Screensaver=false
-    Idle Timeout=600
-    # Launch wallet manager on startup
-    Launch Manager=false
-    # Leave wallet open when session is closed
-    Leave Open=false
-    # Prompt when an application accesses the wallet
-    Prompt on Open=true
-    # Use one wallet for everything
-    Use One Wallet=true
-    
-    [Auto Allow]
-    # Applications that should have automatic access to wallet
-    # 1Password needs access for 2FA token storage
-    kdewallet=Network Management,Chromium,1Password
-    
-    [Auto Deny]
-    # Applications that should be denied access
-    kdewallet=
-  '';
 
   # Yakuake dropdown terminal autostart
   # Creates an XDG autostart entry for Yakuake to start with KDE Plasma
