@@ -84,7 +84,7 @@
       HighlightWindows = true;
       LayoutName = "thumbnail_grid";
       MinimizedMode = 0;  # Ignore minimized windows
-      MultiScreenMode = 0;  # Ignore multi-screen
+      MultiScreenMode = 1;  # Current screen only (for Alt+Tab)
       ShowDesktopMode = 0;  # Do not show desktop
       ShowTabBox = true;
       SwitchingMode = 0;  # Focus on switching
@@ -224,6 +224,42 @@
       wmclass = "discord";
       wmclasscomplete = false;
       wmclassmatch = 1;  # Contains
+    };
+    
+    # Multi-Monitor Panel/Taskbar Configuration
+    # NOTE: KDE Plasma 6 automatically creates panels on all monitors when it detects them
+    # These settings control the BEHAVIOR of those panels, not their creation
+    
+    # Screen connector labels (optional - Plasma auto-detects actual connectors)
+    "plasmashellrc"."ScreenConnectors" = {
+      # These are display labels, not actual connector names
+      # Plasma will map these to actual outputs (HDMI-1, DP-1, etc.)
+      "0" = "Primary";
+      "1" = "Secondary";  
+      "2" = "Tertiary";
+    };
+    
+    # Configure task manager widget behavior (applies to all panels)
+    # These settings are declaratively applied via plasma-manager
+    "plasmashellrc"."TaskManager" = {
+      "showOnlyCurrentScreen" = true;  # Show only tasks from current monitor
+      "showOnlyCurrentDesktop" = false;  # Show tasks from all desktops
+      "showOnlyCurrentActivity" = true;  # Show only current activity
+      "showOnlyMinimized" = false;
+      "sortingStrategy" = 1;  # Manually sort
+      "separateLaunchers" = false;
+      "middleClickAction" = "NewInstance";
+      "wheelEnabled" = true;
+      "showToolTips" = true;
+      "highlightWindows" = true;
+      "maxStripes" = 1;  # Single row
+      "forceStripes" = false;
+      "groupingStrategy" = 0;  # Don't group
+      "groupingAppIdBlacklist" = "org.kde.plasmashell";
+      "groupPopups" = true;
+      "onAllDesktopsTasksFirst" = false;
+      "unhideOnAttentionNeeded" = true;
+      "iconSize" = "medium";
     };
     
     # Additional KDE Global Settings

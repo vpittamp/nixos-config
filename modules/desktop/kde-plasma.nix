@@ -191,5 +191,10 @@
     X-KDE-autostart-after=panel
     X-GNOME-Autostart-enabled=true
   '';
+  
+  # Note: Multi-monitor panel configuration is handled declaratively via plasma-manager
+  # in home-modules/desktop/plasma-config.nix
+  # KDE Plasma 6 has built-in multi-screen support that automatically creates panels
+  # on all monitors when configured properly through plasmashellrc settings.
 
 }
