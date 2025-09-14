@@ -38,6 +38,7 @@
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
     ./home-modules/tools/vscode.nix  # VSCode with 1Password integration
+    ./home-modules/tools/gitkraken.nix  # GitKraken with Konsole and 1Password
     ./home-modules/tools/cluster-management.nix
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
     
