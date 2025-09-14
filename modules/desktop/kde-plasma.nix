@@ -167,9 +167,15 @@
   services.blueman.enable = true;
 
   # Set system-wide default browser to Chromium
-  environment.sessionVariables = {
+  # Multi-screen environment variables for non-HiDPI systems  
+  # IMPORTANT: M1 configuration overrides these for HiDPI displays
+  environment.sessionVariables = lib.mkDefault {
     DEFAULT_BROWSER = "chromium";
     BROWSER = "chromium";
+    # Multi-screen setup - these are overridden in m1.nix for HiDPI
+    PLASMA_USE_QT_SCALING = "1";
+    QT_SCREEN_SCALE_FACTORS = "";  # Let Qt auto-detect
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1";
   };
 
   # Enable PAM integration for KDE Wallet auto-unlock
@@ -191,18 +197,5 @@
     X-KDE-autostart-after=panel
     X-GNOME-Autostart-enabled=true
   '';
-  
-  # Multi-monitor panel configuration
-  # NOTE: KDE Plasma requires manual panel creation on additional monitors
-  # The settings in plasma-config.nix configure the BEHAVIOR once panels exist
-  
-  # Enable KDE's experimental multi-screen aware panel option (Plasma 6.1+)
-  environment.sessionVariables = {
-    # This tells Plasma to be more aggressive about multi-screen setups
-    PLASMA_USE_QT_SCALING = "1";
-    # Enable experimental multi-screen panel features
-    QT_SCREEN_SCALE_FACTORS = "";  # Let Qt auto-detect
-    QT_AUTO_SCREEN_SCALE_FACTOR = "1";
-  };
 
 }
