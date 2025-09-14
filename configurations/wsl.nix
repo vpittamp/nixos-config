@@ -14,6 +14,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # 1Password CLI for secret management
+    ../modules/services/wsl-docker.nix  # WSL-specific Docker Desktop integration
   ];
 
   # WSL Configuration
