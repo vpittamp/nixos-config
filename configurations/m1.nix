@@ -46,6 +46,24 @@
   # This disables power management features that can cause firmware crashes
   boot.kernelParams = [ "brcmfmac.feature_disable=0x82000" ];
   
+  # WiFi recovery service - reload module if it fails on boot
+  systemd.services.wifi-recovery = {
+    description = "WiFi module recovery for BCM4378";
+    after = [ "network-pre.target" ];
+    before = [ "network.target" "NetworkManager.service" ];
+    wantedBy = [ "multi-user.target" ];
+    
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.kmod}/bin/modprobe brcmfmac";
+      ExecStartPre = [
+        "-${pkgs.kmod}/bin/modprobe -r brcmfmac"
+        "${pkgs.coreutils}/bin/sleep 2"
+      ];
+    };
+  };
+  
   # Boot configuration for Apple Silicon
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 5;  # Keep only 5 generations to prevent EFI space issues
