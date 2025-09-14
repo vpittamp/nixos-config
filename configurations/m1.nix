@@ -42,6 +42,10 @@
     "vm.dirty_ratio" = 10; # Force synchronous I/O earlier
   };
   
+  # WiFi firmware workaround for BCM4378 stability issues
+  # This disables power management features that can cause firmware crashes
+  boot.kernelParams = [ "brcmfmac.feature_disable=0x82000" ];
+  
   # Boot configuration for Apple Silicon
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 5;  # Keep only 5 generations to prevent EFI space issues

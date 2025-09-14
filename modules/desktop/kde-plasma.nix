@@ -140,6 +140,9 @@
     xorg.libxcb  # XCB library for Qt
     libxkbcommon  # Keyboard handling for Qt
     
+    # QDBus for touchpad gestures (touchegg needs this)
+    libsForQt5.qttools  # Provides qdbus command
+    
     # Browsers
     chromium  # Default browser with 1Password integration
     # firefox  # Disabled - using Chromium as default

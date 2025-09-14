@@ -36,11 +36,8 @@
       # Enable password import features
       "--enable-features=PasswordImport"
       
-      # Load extensions from External Extensions directory
-      "--load-extension=${config.home.homeDirectory}/.config/chromium/External Extensions"
-      
-      # Disable extension installation prompts
-      "--disable-extensions-install-verification"
+      # Note: Removed --load-extension flag that was causing "Manifest file missing" error
+      # External Extensions are handled automatically by Chromium from the JSON files
       
       # Privacy enhancements
       "--disable-reading-from-canvas"
@@ -109,23 +106,8 @@
     };
   };
   
-  # Ensure extensions are installed via command line flag
-  home.activation.installChromiumExtensions = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    # Create directory for extension preferences if it doesn't exist
-    mkdir -p $HOME/.config/chromium/Default
-    
-    # Create External Extensions entries for each extension
-    # This forces Chromium to download and install them
-    mkdir -p "$HOME/.config/chromium/External Extensions"
-    
-    # 1Password
-    echo '{"external_update_url":"https://clients2.google.com/service/update2/crx"}' > \
-      "$HOME/.config/chromium/External Extensions/aeblfdkhhhdcdjpifhhbdiojplfjncoa.json"
-    
-    # Set proper permissions
-    chmod 755 "$HOME/.config/chromium/External Extensions"
-    chmod 644 "$HOME/.config/chromium/External Extensions"/*.json
-  '';
+  # Extensions are already installed via home.file declarations above
+  # No need for an activation script since home-manager handles the files
 
   # Native messaging host manifest for 1Password
   # This allows the browser extension to communicate with the desktop app
