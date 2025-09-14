@@ -85,8 +85,7 @@
       Wants = [ "touchegg.service" ];  # Requires the system daemon
       PartOf = [ "graphical-session.target" ];
       
-      # Add startup conditions
-      ConditionPathExists = "/run/touchegg.socket";  # Ensure daemon socket exists
+      # No socket file check needed - touchegg uses abstract socket
     };
     
     Service = {
