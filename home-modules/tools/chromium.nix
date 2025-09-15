@@ -3,7 +3,8 @@
 let
   # Detect if we're on M1 or Hetzner based on hostname
   isM1 = config.networking.hostName or "" == "nixos-m1";
-  scaleFactor = if isM1 then "1.75" else "1.0";
+  # M1 with HiDPI uses system scaling via GDK_SCALE=2, so no additional scaling needed
+  scaleFactor = if isM1 then "1.0" else "1.0";
 in
 {
   # Chromium browser configuration with 1Password and other extensions
@@ -22,9 +23,7 @@ in
     
     # Command line arguments for better performance and privacy
     commandLineArgs = [
-      # Display scaling - dynamic based on system
-      "--force-device-scale-factor=${scaleFactor}"
-      "--high-dpi-support=1"
+      # Display scaling handled by system environment variables (GDK_SCALE)
       
       # Disable KDE Wallet to prevent errors - use basic password store
       "--password-store=basic"
