@@ -115,6 +115,8 @@
     fd
     ncdu
     rsync
+    openssl
+    jq
     
     # Nix tools
     nix-prefetch-git

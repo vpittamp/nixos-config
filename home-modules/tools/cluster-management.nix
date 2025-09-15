@@ -11,6 +11,11 @@ let
       local REF_DIR="$STACKS_DIR/ref-implementation"
       local ORIG_DIR="$(pwd)"
       
+      # Clear any WSL Docker environment variables
+      unset DOCKER_HOST
+      unset DOCKER_TLS_VERIFY
+      unset DOCKER_CERT_PATH
+      
       # Source environment files
       [ -f "$STACKS_DIR/.env-files/wi.env" ] && source "$STACKS_DIR/.env-files/wi.env"
       
@@ -18,12 +23,29 @@ let
       cd "$CDK8S_DIR" && npm run synth || { cd "$ORIG_DIR"; return 1; }
       
       echo "🚀 Creating cluster with idpbuilder..."
-      command -v idpbuilder >/dev/null 2>&1 || { echo "❌ idpbuilder not found. Please install it first."; cd "$ORIG_DIR"; return 1; }
-      idpbuilder create \
-        -p "$CDK8S_DIR/dist/" \
-        -p "$REF_DIR/" \
-        --kind-config "$REF_DIR/kind-config-nixos-ssh.yaml" \
-        --dev-password "$@"
+      
+      # Check if Linux deployment script exists and use it
+      if [ -f "$REF_DIR/deploy-linux-ssh.sh" ]; then
+        echo "Using Linux deployment script with direct key mounting and Azure integration..."
+        cd "$REF_DIR" && ./deploy-linux-ssh.sh \
+          --package "$CDK8S_DIR/dist/" \
+          --package "$REF_DIR/" \
+          "$@"
+      else
+        # Fallback to standard idpbuilder with post-setup JWKS sync
+        command -v idpbuilder >/dev/null 2>&1 || { echo "❌ idpbuilder not found. Please install it first."; cd "$ORIG_DIR"; return 1; }
+        idpbuilder create \
+          -p "$CDK8S_DIR/dist/" \
+          -p "$REF_DIR/" \
+          --kind-config "$REF_DIR/kind-config-nixos-ssh.yaml" \
+          --dev-password "$@"
+        
+        # Sync JWKS after cluster creation
+        if [ -f "$REF_DIR/sync-jwks-to-azure.sh" ]; then
+          echo "🔄 Syncing JWKS to Azure for External Secrets..."
+          cd "$REF_DIR" && ./sync-jwks-to-azure.sh
+        fi
+      fi
       
       local result=$?
       cd "$ORIG_DIR"
@@ -33,6 +55,11 @@ let
     cluster-synth() {
       local CDK8S_DIR="$STACKS_DIR/cdk8s"
       local ORIG_DIR="$(pwd)"
+      
+      # Clear any WSL Docker environment variables
+      unset DOCKER_HOST
+      unset DOCKER_TLS_VERIFY
+      unset DOCKER_CERT_PATH
       
       [ -f "$STACKS_DIR/.env-files/wi.env" ] && source "$STACKS_DIR/.env-files/wi.env"
       
@@ -45,6 +72,11 @@ let
     }
     
     cluster-recreate() {
+      # Clear any WSL Docker environment variables
+      unset DOCKER_HOST
+      unset DOCKER_TLS_VERIFY
+      unset DOCKER_CERT_PATH
+      
       echo "🗑️  Deleting existing cluster..."
       idpbuilder delete || kind delete cluster --name localdev
       sleep 3

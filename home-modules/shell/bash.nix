@@ -177,6 +177,15 @@
       
       # Terminal configuration moved to TERM settings below
       
+      # Fix Docker for NixOS - Remove legacy WSL DOCKER_HOST
+      # This should not be set on native Linux systems (only in WSL)
+      if [[ -n "''${DOCKER_HOST:-}" ]] && [[ "''${DOCKER_HOST}" == *"wsl"* ]]; then
+        if [[ -S /var/run/docker.sock ]]; then
+          # Native Docker socket exists, unset WSL Docker host
+          unset DOCKER_HOST
+        fi
+      fi
+      
       # WSL-specific DISPLAY configuration
       # Only set DISPLAY if we're in WSL and it's not already set
       if [ -n "$WSL_DISTRO_NAME" ] && [ -z "$DISPLAY" ]; then
