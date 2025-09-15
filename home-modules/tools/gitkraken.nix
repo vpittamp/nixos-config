@@ -1,7 +1,8 @@
 # GitKraken Configuration Module
 { config, pkgs, lib, ... }:
 
-{
+# Only configure GitKraken on x86_64 systems where it's available
+lib.mkIf pkgs.stdenv.hostPlatform.isx86_64 {
   # GitKraken configuration files
   # Note: GitKraken has limited configuration options via files
   # Most settings are stored in binary format, but we can configure some preferences
