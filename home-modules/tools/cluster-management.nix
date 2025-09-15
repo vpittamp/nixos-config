@@ -95,6 +95,11 @@ let
     cluster-menu() {
       [ ! -t 0 ] && { echo "Interactive mode requires TTY"; return 1; }
       
+      # Clear any WSL Docker environment variables at menu start
+      unset DOCKER_HOST
+      unset DOCKER_TLS_VERIFY
+      unset DOCKER_CERT_PATH
+      
       # Option to show logs by default
       local SHOW_LOGS=''${CLUSTER_MENU_LOGS:-true}
       
