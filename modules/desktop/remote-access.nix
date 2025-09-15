@@ -5,6 +5,7 @@
   # Enable RDP for remote desktop access
   services.xrdp = {
     enable = true;
+    audio.enable = true;  # Enable audio redirection support
     defaultWindowManager = "startplasma-x11";
     openFirewall = true;
     port = 3389;

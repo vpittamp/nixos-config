@@ -146,8 +146,7 @@
       zr = "zoxide remove";     # Remove entry from database
       zs = "zoxide query -s";   # Show database statistics
       
-      # WSL specific
-      winhome = "cd /mnt/c/Users/VinodPittampalli/";
+      # Platform-specific aliases moved to respective configurations
       
       # 1Password aliases
       ops = "eval $(op signin --account my)";
@@ -177,19 +176,14 @@
       
       # Terminal configuration moved to TERM settings below
       
-      # Fix Docker for NixOS - Remove legacy WSL DOCKER_HOST
-      # This should not be set on native Linux systems (only in WSL)
-      if [[ -n "''${DOCKER_HOST:-}" ]] && [[ "''${DOCKER_HOST}" == *"wsl"* ]]; then
-        if [[ -S /var/run/docker.sock ]]; then
-          # Native Docker socket exists, unset WSL Docker host
+      # Native Linux Docker configuration (baseline)
+      # Ensure we're using the local Docker socket if available
+      if [[ -S /var/run/docker.sock ]]; then
+        # Clear any incorrect Docker environment variables
+        if [[ -n "''${DOCKER_HOST:-}" ]]; then
           unset DOCKER_HOST
         fi
-      fi
-      
-      # WSL-specific DISPLAY configuration
-      # Only set DISPLAY if we're in WSL and it's not already set
-      if [ -n "$WSL_DISTRO_NAME" ] && [ -z "$DISPLAY" ]; then
-        export DISPLAY=:0
+        export DOCKER_HOST=""
       fi
       
       # Fix terminal compatibility - detect VSCode terminal
@@ -327,9 +321,7 @@
         rm -f -- "$tmp"
       }
       
-      # Clipboard helper functions for robust WSL/WSLg behavior
-      # pbcopy: reads from stdin (or args) and copies to clipboard
-      # Prioritizes Wayland (wl-copy) for WSLg, falls back to Windows clipboard
+      # Native Linux clipboard functions (Wayland/X11)
       pbcopy() {
         local input
         if [ -t 0 ]; then
@@ -337,24 +329,28 @@
         else
           input="$(cat)"
         fi
-        # Try wl-copy first (Wayland/WSLg) with explicit text/plain MIME type
-        if command -v wl-copy >/dev/null 2>&1; then
+        # Try Wayland first (KDE Plasma on Hetzner)
+        if command -v wl-copy >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
           printf "%s" "$input" | wl-copy --type text/plain 2>/dev/null
-        # Fall back to Windows clipboard
+        # Fall back to X11
+        elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then
+          printf "%s" "$input" | xclip -selection clipboard
         else
-          printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
+          echo "No clipboard utility available" >&2
+          return 1
         fi
       }
 
-      # pbpaste: prints clipboard contents
-      # Prioritizes Wayland (wl-paste) for WSLg, falls back to Windows clipboard
       pbpaste() {
-        # Try wl-paste first (Wayland/WSLg) with text output
-        if command -v wl-paste >/dev/null 2>&1; then
-          wl-paste --no-newline 2>/dev/null | sed 's/\r$//'
-        # Fall back to Windows clipboard
+        # Try Wayland first (KDE Plasma on Hetzner)
+        if command -v wl-paste >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
+          wl-paste --no-newline 2>/dev/null
+        # Fall back to X11
+        elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then
+          xclip -selection clipboard -o
         else
-          /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | sed 's/\r$//'
+          echo "No clipboard utility available" >&2
+          return 1
         fi
       }
 

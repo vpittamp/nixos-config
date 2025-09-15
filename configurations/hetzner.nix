@@ -16,7 +16,10 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    ../modules/desktop/chromium-policies.nix
+    ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
+    # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
+    # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
+    # ../modules/desktop/cluster-certificates.nix  # Disabled - reverting certificate handling
     ../modules/desktop/rdp-display.nix
     
     # Services

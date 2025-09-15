@@ -18,9 +18,7 @@ if stdenv.isLinux && stdenv.isx86_64 then
     inherit pname version src;
     
     extraInstallCommands = ''
-      mv $out/bin/{${pname}-${version},${pname}}
-      
-      # Install desktop file
+      # Install desktop file and icon from AppImage contents
       install -m 444 -D ${appimageContents}/headlamp.desktop \
         $out/share/applications/headlamp.desktop
       substituteInPlace $out/share/applications/headlamp.desktop \

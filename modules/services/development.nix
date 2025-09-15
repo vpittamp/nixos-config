@@ -59,24 +59,8 @@
       };
     };
     
-    # Import Headlamp package (AppImage version)
-    headlamp = pkgs.appimageTools.wrapType2 {
-      pname = "headlamp";
-      version = "0.35.0";
-      
-      src = pkgs.fetchurl {
-        url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v0.35.0/Headlamp-0.35.0-linux-x64.AppImage";
-        sha256 = "02iqwnm0jivgv06h8wv2gslp3sf2jd9x19g9wxrljv58i6yplyzn";
-      };
-      
-      meta = with lib; {
-        description = "A Kubernetes web UI that is fully-featured, user-friendly and extensible";
-        homepage = "https://headlamp.dev/";
-        license = licenses.asl20;
-        platforms = [ "x86_64-linux" ];
-        mainProgram = "headlamp";
-      };
-    };
+    # Headlamp package with desktop entry and icon
+    headlamp = pkgs.callPackage ../../packages/headlamp.nix {};
   in [
     # Version control and GitHub
     git

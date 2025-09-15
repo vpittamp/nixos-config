@@ -5,19 +5,121 @@ let
     # Cluster management functions
     export STACKS_DIR="''${STACKS_DIR:-$HOME/stacks}"
     
+    # Azure authentication helper functions
+    check-azure-auth() {
+      # Check if logged in and token is valid
+      local token_expiry=$(az account get-access-token --query "expiresOn" -o tsv 2>/dev/null || echo "")
+      
+      if [ -z "$token_expiry" ]; then
+        # Not logged in
+        ${pkgs.gum}/bin/gum style --foreground 214 "🔐 Azure authentication required"
+        if ${pkgs.gum}/bin/gum confirm "Log in to Azure now?"; then
+          ${pkgs.gum}/bin/gum style --foreground 45 "Opening Azure login..."
+          echo ""
+          echo "Please complete the authentication in your browser"
+          echo ""
+          az login
+          if [ $? -eq 0 ]; then
+            local account=$(az account show --query "user.name" -o tsv 2>/dev/null)
+            ${pkgs.gum}/bin/gum style --foreground 82 "✅ Successfully logged in as: $account"
+            return 0
+          else
+            ${pkgs.gum}/bin/gum style --foreground 196 "❌ Azure login failed"
+            return 1
+          fi
+        else
+          ${pkgs.gum}/bin/gum style --foreground 196 "❌ Azure login required for this operation"
+          return 1
+        fi
+      else
+        # Check if token is expired or about to expire (within 5 minutes)
+        local current_time=$(date +%s)
+        local expiry_time=$(date -d "$token_expiry" +%s 2>/dev/null || echo 0)
+        local time_diff=$((expiry_time - current_time))
+        
+        if [ $time_diff -lt 300 ]; then
+          ${pkgs.gum}/bin/gum style --foreground 214 "⚠️  Azure token expired or expiring soon (expires: $token_expiry)"
+          if ${pkgs.gum}/bin/gum confirm "Refresh Azure login?"; then
+            ${pkgs.gum}/bin/gum style --foreground 45 "Refreshing Azure login..."
+            az login
+            if [ $? -eq 0 ]; then
+              local account=$(az account show --query "user.name" -o tsv 2>/dev/null)
+              ${pkgs.gum}/bin/gum style --foreground 82 "✅ Successfully refreshed login as: $account"
+              return 0
+            else
+              ${pkgs.gum}/bin/gum style --foreground 196 "❌ Azure login refresh failed"
+              return 1
+            fi
+          else
+            ${pkgs.gum}/bin/gum style --foreground 196 "❌ Azure token may expire during operation"
+            return 1
+          fi
+        else
+          # Token is valid
+          local account=$(az account show --query "user.name" -o tsv 2>/dev/null)
+          local subscription=$(az account show --query "name" -o tsv 2>/dev/null)
+          ${pkgs.gum}/bin/gum style --foreground 82 "✅ Azure authenticated"
+          echo "   Account: $account"
+          echo "   Subscription: $subscription"
+          echo "   Token valid until: $token_expiry"
+        fi
+      fi
+      return 0
+    }
+    
+    # Get Azure status for display
+    get-azure-status() {
+      if ! command -v az &>/dev/null; then
+        echo "Azure CLI not installed"
+        return
+      fi
+      
+      local account=$(az account show --query "user.name" -o tsv 2>/dev/null || echo "")
+      if [ -z "$account" ]; then
+        echo "Not logged in"
+      else
+        # Check token expiry
+        local token_expiry=$(az account get-access-token --query "expiresOn" -o tsv 2>/dev/null || echo "")
+        if [ -n "$token_expiry" ]; then
+          local current_time=$(date +%s)
+          local expiry_time=$(date -d "$token_expiry" +%s 2>/dev/null || echo 0)
+          local time_diff=$((expiry_time - current_time))
+          
+          if [ $time_diff -lt 300 ]; then
+            echo "$account (⚠️ expiring)"
+          else
+            echo "$account"
+          fi
+        else
+          echo "$account"
+        fi
+      fi
+    }
+    
     # Base functions - always non-interactive
     cluster-deploy() {
+      # Check if being called internally (skip auth check if SKIP_AZURE_CHECK is set)
+      if [ "''${SKIP_AZURE_CHECK:-}" != "true" ]; then
+        echo "🔐 Checking Azure authentication..."
+        check-azure-auth || return 1
+        echo ""
+      fi
+      
       local CDK8S_DIR="$STACKS_DIR/cdk8s"
       local REF_DIR="$STACKS_DIR/ref-implementation"
       local ORIG_DIR="$(pwd)"
       
-      # Clear any WSL Docker environment variables
-      unset DOCKER_HOST
-      unset DOCKER_TLS_VERIFY
-      unset DOCKER_CERT_PATH
-      
-      # Source environment files
+      # Source environment files FIRST (before any operations that need them)
       [ -f "$STACKS_DIR/.env-files/wi.env" ] && source "$STACKS_DIR/.env-files/wi.env"
+      
+      # Clear any WSL Docker environment variables
+      # Check if we have a native Docker socket
+      if [[ -S /var/run/docker.sock ]]; then
+        unset DOCKER_HOST
+        unset DOCKER_TLS_VERIFY
+        unset DOCKER_CERT_PATH
+        export DOCKER_HOST=""
+      fi
       
       echo "🔨 Synthesizing CDK8s manifests..."
       cd "$CDK8S_DIR" && npm run synth || { cd "$ORIG_DIR"; return 1; }
@@ -57,9 +159,13 @@ let
       local ORIG_DIR="$(pwd)"
       
       # Clear any WSL Docker environment variables
-      unset DOCKER_HOST
-      unset DOCKER_TLS_VERIFY
-      unset DOCKER_CERT_PATH
+      # Check if we have a native Docker socket
+      if [[ -S /var/run/docker.sock ]]; then
+        unset DOCKER_HOST
+        unset DOCKER_TLS_VERIFY
+        unset DOCKER_CERT_PATH
+        export DOCKER_HOST=""
+      fi
       
       [ -f "$STACKS_DIR/.env-files/wi.env" ] && source "$STACKS_DIR/.env-files/wi.env"
       
@@ -72,15 +178,26 @@ let
     }
     
     cluster-recreate() {
+      # Check Azure authentication first (required for JWKS sync)
+      echo "🔐 Checking Azure authentication..."
+      check-azure-auth || return 1
+      echo ""
+      
       # Clear any WSL Docker environment variables
-      unset DOCKER_HOST
-      unset DOCKER_TLS_VERIFY
-      unset DOCKER_CERT_PATH
+      # Check if we have a native Docker socket
+      if [[ -S /var/run/docker.sock ]]; then
+        unset DOCKER_HOST
+        unset DOCKER_TLS_VERIFY
+        unset DOCKER_CERT_PATH
+        export DOCKER_HOST=""
+      fi
       
       echo "🗑️  Deleting existing cluster..."
-      idpbuilder delete || kind delete cluster --name localdev
+      idpbuilder delete || kind delete cluster --name local
       sleep 3
-      cluster-deploy "$@"
+      
+      # Call cluster-deploy with flag to skip redundant auth check
+      SKIP_AZURE_CHECK=true cluster-deploy "$@"
     }
     
     cluster-status() {
@@ -100,16 +217,20 @@ let
       unset DOCKER_TLS_VERIFY
       unset DOCKER_CERT_PATH
       
+      # Get Azure status for display
+      local azure_status=$(get-azure-status)
+      
       # Option to show logs by default
       local SHOW_LOGS=''${CLUSTER_MENU_LOGS:-true}
       
       local ACTION=$(${pkgs.gum}/bin/gum choose \
-        --header "🚀 Cluster Management" \
+        --header "🚀 Cluster Management | Azure: $azure_status" \
         "Synthesize Only" \
         "Synthesize & Deploy (spinner)" \
         "Synthesize & Deploy (with logs)" \
         "Recreate Cluster" \
         "Show Status" \
+        "Azure Login/Refresh" \
         "Toggle Log Mode (current: $SHOW_LOGS)" \
         "Exit")
       
@@ -154,6 +275,13 @@ let
         "Show Status")
           cluster-status | ${pkgs.gum}/bin/gum pager
           ;;
+        "Azure Login/Refresh")
+          check-azure-auth
+          echo ""
+          ${pkgs.gum}/bin/gum style --foreground 82 "Press Enter to continue..."
+          read -r
+          cluster-menu  # Re-run menu
+          ;;
         "Toggle Log Mode"*)
           if [ "$SHOW_LOGS" = "true" ]; then
             export CLUSTER_MENU_LOGS=false
@@ -184,6 +312,7 @@ in
     clr = "cluster-recreate";
     clst = "cluster-status";
     clm = "cluster-menu";  # Interactive menu
+    clb = "chromium-dev";  # Cluster browser with dev profile
   };
   
   programs.zsh.shellAliases = config.programs.bash.shellAliases;

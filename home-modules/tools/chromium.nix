@@ -49,6 +49,9 @@ in
       # Privacy enhancements
       "--disable-reading-from-canvas"
       "--disable-background-networking"
+      
+      # Note: Certificate bypass flags moved to chromium-dev profile
+      # Use 'chromium-dev' or 'clb' for cluster development
     ];
     
     # Enable spell checking

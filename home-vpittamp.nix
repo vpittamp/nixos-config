@@ -30,6 +30,8 @@
     ./home-modules/tools/fzf.nix
     # ./home-modules/tools/firefox.nix  # Disabled - using Chromium as default
     ./home-modules/tools/chromium.nix  # Chromium with 1Password integration
+    # ./home-modules/tools/chromium-profiles.nix  # Disabled - certificate handling approach
+    # ./home-modules/tools/chromium-unified.nix  # Disabled - certificate handling approach
     
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
@@ -41,6 +43,9 @@
     ./home-modules/tools/gitkraken.nix  # GitKraken with Konsole and 1Password
     ./home-modules/tools/cluster-management.nix
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
+    
+    # Application configurations
+    ./home-modules/apps/headlamp.nix  # Headlamp Kubernetes UI with plugins
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix
