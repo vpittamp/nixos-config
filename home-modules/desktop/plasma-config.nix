@@ -5,12 +5,12 @@
   # This module demonstrates various configurable properties
   
   programs.plasma.configFile = {
-    # Virtual Desktop Configuration - 4 desktops in 2x2 grid
+    # Virtual Desktop Configuration - Project-based desktops
     "kwinrc".Desktops = {
       Number = 4;
       Rows = 2;
-      Name_1 = "Development";
-      Name_2 = "Communication";
+      Name_1 = "NixOS";        # /etc/nixos configuration
+      Name_2 = "Stacks";       # ~/stacks project
       Name_3 = "Research";
       Name_4 = "System";
     };
@@ -139,13 +139,13 @@
       CommandWindowWheel = "Scroll";
     };
     
-    # Global Shortcuts - Extended configuration
+    # Global Shortcuts - Extended configuration with project shortcuts
     "kglobalshortcutsrc".kwin = {
-      # Desktop switching
-      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";
-      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";
-      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";
-      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
+      # Desktop switching - Project-based
+      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";  # NixOS
+      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";  # Stacks
+      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";  # Research
+      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";  # System
       
       # Move windows to desktops
       "Window to Desktop 1" = "Meta+Shift+1,none,Window to Desktop 1";
@@ -194,36 +194,96 @@
       "ActivityManager" = "Meta+Q,none,Show Activity Switcher";
     };
     
-    # Window Rules Examples
+    # Window Rules - Project-specific placements
     "kwinrulesrc"."1" = {
-      Description = "Firefox on Desktop 2";
-      desktop = 2;
-      desktoprule = 2;  # Force
-      wmclass = "firefox";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-    };
-    
-    "kwinrulesrc"."2" = {
-      Description = "Konsole Always on Top";
-      above = true;
-      aboverule = 2;  # Force
+      Description = "Terminal in /etc/nixos on NixOS desktop";
+      desktop = 1;  # NixOS desktop
+      desktoprule = 3;  # Apply Initially
       wmclass = "konsole";
       wmclasscomplete = false;
       wmclassmatch = 1;  # Contains
+      title = ".*/etc/nixos.*";
+      titlematch = 3;  # Regular Expression
+    };
+    
+    "kwinrulesrc"."2" = {
+      Description = "Terminal in ~/stacks on Stacks desktop";
+      desktop = 2;  # Stacks desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "konsole";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Contains
+      title = ".*/stacks.*";
+      titlematch = 3;  # Regular Expression
     };
     
     "kwinrulesrc"."3" = {
-      Description = "Discord on Desktop 2 Maximized";
-      desktop = 2;
-      desktoprule = 2;  # Force
-      maximizehoriz = true;
-      maximizehorizrule = 3;  # Apply Initially
-      maximizevert = true;
-      maximizevertrule = 3;  # Apply Initially
-      wmclass = "discord";
+      Description = "VS Code editing NixOS configs on NixOS desktop";
+      desktop = 1;  # NixOS desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "code";
       wmclasscomplete = false;
       wmclassmatch = 1;  # Contains
+      title = ".*/etc/nixos.*";
+      titlematch = 3;  # Regular Expression
+    };
+
+    "kwinrulesrc"."4" = {
+      Description = "VS Code editing Stacks on Stacks desktop";
+      desktop = 2;  # Stacks desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "code";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Contains
+      title = ".*/stacks.*";
+      titlematch = 3;  # Regular Expression
+    };
+
+    "kwinrulesrc"."5" = {
+      Description = "Neovim editing NixOS on NixOS desktop";
+      desktop = 1;  # NixOS desktop
+      desktoprule = 3;  # Apply Initially
+      title = ".*nvim.*/etc/nixos.*";
+      titlematch = 3;  # Regular Expression
+    };
+
+    "kwinrulesrc"."6" = {
+      Description = "Neovim editing Stacks on Stacks desktop";
+      desktop = 2;  # Stacks desktop
+      desktoprule = 3;  # Apply Initially
+      title = ".*nvim.*stacks.*";
+      titlematch = 3;  # Regular Expression
+    };
+
+    "kwinrulesrc"."7" = {
+      Description = "GitKraken on project desktop based on repo";
+      desktop = 1;  # Default to NixOS desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "gitkraken";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Contains
+    };
+
+    "kwinrulesrc"."8" = {
+      Description = "File manager in /etc/nixos on NixOS desktop";
+      desktop = 1;  # NixOS desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "dolphin";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Contains
+      title = ".*/etc/nixos.*";
+      titlematch = 3;  # Regular Expression
+    };
+
+    "kwinrulesrc"."9" = {
+      Description = "File manager in ~/stacks on Stacks desktop";
+      desktop = 2;  # Stacks desktop
+      desktoprule = 3;  # Apply Initially
+      wmclass = "dolphin";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Contains
+      title = ".*stacks.*";
+      titlematch = 3;  # Regular Expression
     };
     
     # Multi-Monitor Panel/Taskbar Configuration

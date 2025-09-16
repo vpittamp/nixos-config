@@ -156,10 +156,7 @@
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
-      # Claude aliases with initials
-      cc = "claude --continue --dangerously-skip-permissions";
-      cr = "claude --resume --dangerously-skip-permissions";
-      cdsp = "claude --dangerously-skip-permissions";
+      # Claude aliases handled by functions in initExtra (for tmux alt-screen)
       
       # Keep short aliases for convenience
       pbcopy = "pbcopy";
@@ -234,7 +231,24 @@
         # Suppress specific terminal query sequences
         stty -echoctl 2>/dev/null || true
       fi
-      
+
+      # Claude wrappers: ensure scrollback in tmux by disabling alternate-screen per-window
+      __claude_run() {
+        local mode="$1"; shift || true
+        if [ -n "$TMUX" ]; then
+          tmux setw alternate-screen off >/dev/null 2>&1 || true
+          tmux setw @altscreen off >/dev/null 2>&1 || true
+        fi
+        case "$mode" in
+          continue) claude --continue --dangerously-skip-permissions "$@" ;;
+          resume)   claude --resume   --dangerously-skip-permissions "$@" ;;
+          *)        claude              --dangerously-skip-permissions "$@" ;;
+        esac
+      }
+      cc()   { __claude_run continue  "$@"; }
+      cr()   { __claude_run resume    "$@"; }
+      cdsp() { __claude_run ""        "$@"; }
+
       # Set up fzf key bindings (only if available)
       if command -v fzf &> /dev/null; then
         eval "$(fzf --bash)" 2>/dev/null || true

@@ -76,10 +76,13 @@ in
       set -g focus-events off
       set -g detach-on-destroy off
       set -g repeat-time 1000
-      set -g allow-passthrough on
+      # Prevent OSC pass-through changing terminal colors (can cause white bg)
+      set -g allow-passthrough off
       
       # Basic terminal features
       set -as terminal-features ',*:RGB'
+      # Track alternate-screen state via user option (window-scoped)
+      setw -g @altscreen on
       
       # Pane settings
       set -g pane-base-index 1
@@ -95,7 +98,8 @@ in
       set -g status-right-length 150
       
       # Left status with session info
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
+      # Shows ⎇ icon only when alternate-screen is ON; hidden when OFF
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},on},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
       
       # Right status
       set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} "
@@ -173,20 +177,21 @@ in
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
-      
-      # Popup windows
-      bind e display-popup -E \
-        -w 80% -h 80% \
-        -d "#{pane_current_path}" \
-        -T " 🚀 Ephemeral Shell (ESC to close) " \
-        -e TERM=xterm-256color \
-        -e COLORTERM=truecolor \
-        "exec bash --login"
-      
-      bind C display-popup -E -w 80% -h 80% "claude"
-      bind R display-popup -E -w 80% -h 80% "claude --continue"
-      
-      
+      # Claude in scrollable windows (scoped alt-screen off)
+      # - These bindings open Claude in a regular tmux window and disable
+      #   the alternate screen only for that window, so tmux history/mouse
+      #   scrolling works as expected.
+      bind g new-window -n "Claude" "claude" \; setw alternate-screen off \; setw @altscreen off
+      bind G new-window -n "Claude*" "claude --continue" \; setw alternate-screen off \; setw @altscreen off
+
+      # Optional: launch in the current pane (no new window)
+      # Use prefix + a / A to start Claude here with alt-screen disabled.
+      bind a setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude" C-m
+      bind A setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude --continue" C-m
+      # Toggle alternate-screen for current window and update indicator
+      bind M if -F '#{==:#{@altscreen},off}' \
+        "setw alternate-screen on \; setw @altscreen on \; display-message \"ALT screen: ON\"" \
+        "setw alternate-screen off \; setw @altscreen off \; display-message \"ALT screen: OFF\""
       # Help menu
       bind ? display-menu -T "Tmux Quick Help" -x C -y C \
         "Window Operations"  w "display-menu -T 'Window Operations' \
@@ -217,8 +222,8 @@ in
           'List Buffers (=)'         = 'choose-buffer' \
           'Save Buffer'              S 'command-prompt -p \"Save to:\" \"save-buffer %%\"'" \
         "" \
-        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'display-popup -E \"tmux list-keys | grep -i %%\"'" \
-        "List All Keys"      a "display-popup -E 'tmux list-keys | less'" \
+        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'new-window -n \"Keys\" \"sh -lc \"tmux list-keys | grep -i %% | less\"\"'" \
+        "List All Keys"      a "new-window -n 'Keys' 'sh -lc "tmux list-keys | less"'" \
         "Reload Config (r)"  r "source-file ~/.config/tmux/tmux.conf"
     '';
   };
