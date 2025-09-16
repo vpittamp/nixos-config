@@ -233,7 +233,15 @@ in {
       }] ++
 
       # Window rules for each project
-      (mapAttrsToList mkWindowRules cfg.projects)
+      (mapAttrsToList mkWindowRules cfg.projects) ++
+
+      # Global keyboard shortcuts
+      (imap0 (i: project: {
+        "kglobalshortcutsrc" = {
+          "kwin"."Switch to Desktop ${toString (i + 1)}" = "Meta+${toString (i + 1)},none,Switch to Desktop ${toString (i + 1)}";
+          "project-${project.name}"."Open ${project.name} Workspace" = "Meta+Alt+${toString (i + 1)},none,Open ${project.name} Workspace";
+        };
+      }) (attrValues cfg.projects))
     );
 
     # Desktop entries for application menu
@@ -307,14 +315,5 @@ in {
       (mapAttrs' (projectName: project: nameValuePair "cd${projectName}" "cd ${project.path}") cfg.projects)
       (mapAttrs' (projectName: project: nameValuePair "work-${projectName}" "systemctl --user start kde-project-${projectName}") cfg.projects)
     ];
-
-    # Global keyboard shortcuts - merge with existing plasma config
-    programs.plasma.configFile = mkMerge ([
-      (programs.plasma.configFile or {})
-    ] ++ (imap0 (i: project: {
-      "kglobalshortcutsrc" = {
-      "kwin"."Switch to Desktop ${toString (i + 1)}" = "Meta+${toString (i + 1)},none,Switch to Desktop ${toString (i + 1)}";
-      "project-${project.name}"."Open ${project.name} Workspace" = "Meta+Alt+${toString (i + 1)},none,Open ${project.name} Workspace";
-    }) (attrValues cfg.projects));
   };
 }

@@ -174,19 +174,19 @@
 
     # Configure Present Windows per desktop
     "kwinrc".Effect-PresentWindows = {
-      BorderActivate = 7;  # Top-left corner
-      BorderActivateAll = 0;
-      LayoutMode = 0;  # Natural
-      ShowPanel = false;
-      ShowDesktop = false;
+      BorderActivate = lib.mkForce 7;  # Top-left corner
+      BorderActivateAll = lib.mkForce 0;
+      LayoutMode = lib.mkForce 0;  # Natural
+      ShowPanel = lib.mkForce false;
+      ShowDesktop = lib.mkForce false;
     };
 
     # Task Manager - show only current desktop's tasks
     "plasmashellrc".TaskManager = {
-      showOnlyCurrentDesktop = true;
-      showOnlyCurrentActivity = true;
-      separateLaunchers = true;
-      sortingStrategy = 1;  # Desktop
+      showOnlyCurrentDesktop = lib.mkForce true;
+      showOnlyCurrentActivity = lib.mkForce true;
+      separateLaunchers = lib.mkForce true;
+      sortingStrategy = lib.mkForce 1;  # Desktop
     };
 
     # Panel configuration

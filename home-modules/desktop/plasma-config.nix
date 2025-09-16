@@ -6,13 +6,14 @@
   
   programs.plasma.configFile = {
     # Virtual Desktop Configuration - Project-based desktops
+    # Note: These are defaults that can be overridden by kde-projects module
     "kwinrc".Desktops = {
-      Number = 4;
-      Rows = 2;
-      Name_1 = "NixOS";        # /etc/nixos configuration
-      Name_2 = "Stacks";       # ~/stacks project
-      Name_3 = "Research";
-      Name_4 = "System";
+      Number = lib.mkDefault 4;
+      Rows = lib.mkDefault 2;
+      Name_1 = lib.mkDefault "NixOS";        # /etc/nixos configuration
+      Name_2 = lib.mkDefault "Stacks";       # ~/stacks project
+      Name_3 = lib.mkDefault "Research";
+      Name_4 = lib.mkDefault "System";
     };
     
     # Desktop navigation behavior

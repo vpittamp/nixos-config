@@ -97,22 +97,21 @@ in
       set -g status-left-length 80
       set -g status-right-length 150
       
-      # Left status with session info
-      # Shows ⎇ icon only when alternate-screen is OFF (desired Claude behavior)
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
+      # Left status with session info (no session/window counts). Shows ⎇ only when alt-screen is OFF.
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.surface1},bg=${colors.crust}] "
       
-      # Right status
-      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} "
+      # Right status: canonical pane target (session:window.pane)
+      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #S:#I.#P "
       
-      # Window status
-      set -g window-status-format "#[fg=${colors.crust},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface0}] #I:#W #[fg=${colors.surface0},bg=${colors.crust}]"
-      set -g window-status-current-format "#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}}]#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bold]#{?window_zoomed_flag, 🔍,} #I:#W[#{window_panes}] #[fg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bg=${colors.crust}]"
-      set -g window-status-separator ""
+      # Window status: standard notation (#I:#W) with minimal styling
+      set -g window-status-format "#I:#W"
+      set -g window-status-current-format "#[bold]#I:#W#F"
+      set -g window-status-separator " "
       
-      # Pane borders
+      # Pane borders: display canonical target for deterministic addressing
       set -g pane-border-style "fg=${colors.surface0}"
       set -g pane-active-border-style "fg=${colors.blue},bold"
-      set -g pane-border-format " #[fg=${colors.text}]#{?pane_active,#[bg=${colors.surface1}],}[#P/#{window_panes}] #{pane_current_command} #{?window_zoomed_flag,#[fg=${colors.yellow}](ZOOMED) ,}#[default] "
+      set -g pane-border-format " [#S:#I.#P] "
       
       # Message styling
       set -g message-style "fg=${colors.crust} bg=${colors.yellow} bold"
