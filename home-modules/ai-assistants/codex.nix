@@ -41,7 +41,7 @@
     # Configuration for codex (TOML format)
     settings = {
       # Model configuration
-      model = "gpt-5";
+      model = "gpt-5-codex-high";
       model_provider = "openai";
       
       # Project trust settings
