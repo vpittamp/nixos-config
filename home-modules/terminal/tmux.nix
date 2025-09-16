@@ -62,10 +62,8 @@ in
     ];
     
     extraConfig = ''
-      # Fix backtick prefix
-      unbind -n `
-      bind ` send-prefix
-      
+      # Prefix is set via programs.tmux.prefix
+
       # General settings
       set -g default-command "${pkgs.bash}/bin/bash"
       set -g default-terminal "tmux-256color"
