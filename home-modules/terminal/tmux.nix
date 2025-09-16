@@ -63,8 +63,8 @@ in
     
     extraConfig = ''
       # Fix backtick prefix
-      unbind -n '\`'
-      bind '\`' send-prefix
+      unbind -n `
+      bind ` send-prefix
       
       # General settings
       set -g default-command "${pkgs.bash}/bin/bash"
