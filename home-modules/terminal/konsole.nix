@@ -7,7 +7,7 @@
   ];
   
   # Yakuake config is now managed declaratively via plasma-manager
-  # (see home-modules/desktop/project-workspaces.nix). Avoid creating a
+  # (see home-modules/desktop/projects-config.nix). Avoid creating a
   # read-only symlink at ~/.config/yakuakerc that conflicts with
   # plasma-manager's writer.
   
@@ -19,7 +19,7 @@
   home.file.".local/share/konsole/improved.profile" = {
     text = ''
       [Appearance]
-      ColorScheme=Breeze
+      ColorScheme=BreezeDark
       Font=FiraCode Nerd Font,11,-1,5,50,0,0,0,0,0
       
       [Cursor Options]
@@ -70,5 +70,10 @@
       VerticalLine=false
       VerticalLineAtChar=80
     '';
+  };
+
+  # Set this improved profile as the default for Konsole
+  programs.plasma.configFile."konsolerc".General = {
+    DefaultProfile = "Improved Selection.profile";
   };
 }

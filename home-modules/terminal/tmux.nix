@@ -87,6 +87,11 @@ in
       set -g renumber-windows on
       set -g pane-border-lines single
       set -g pane-border-status top
+      # Ghost borders: match border color to background so only the label shows
+      set -g pane-border-style "fg=${colors.crust}"
+      set -g pane-active-border-style "fg=${colors.crust}"
+      # Per-pane label (pill) with canonical target; active pane highlighted via conditional format
+      set -g pane-border-format  " #{?pane_active,#[bg=${colors.sapphire},fg=${colors.crust},bold],#[bg=${colors.surface0},fg=${colors.text}]} [#S:#I.#P] #[default] "
       
       # Status bar styling
       set -g status-position top
@@ -106,10 +111,7 @@ in
       set -g window-status-current-format "#[bold]#I:#W#F"
       set -g window-status-separator " "
       
-      # Pane borders: display canonical target for deterministic addressing
-      set -g pane-border-style "fg=${colors.surface0}"
-      set -g pane-active-border-style "fg=${colors.blue},bold"
-      set -g pane-border-format " [#S:#I.#P] "
+      # Pane borders handled above (ghost borders + per-pane pills)
       
       # Message styling
       set -g message-style "fg=${colors.crust} bg=${colors.yellow} bold"

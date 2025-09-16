@@ -223,12 +223,10 @@
       
       # Terminal configuration handled by tmux settings
       
-      # VSCode-specific: Suppress OSC sequences that cause visual artifacts
+      # VSCode-specific: reduce terminal artifacts without resetting colors
       if [ "$TERM_PROGRAM" = "vscode" ]; then
-        # Disable OSC 10/11 (foreground/background color queries)
-        # These cause the rgb: output you're seeing
-        alias clear='printf "\033c"'
-        # Suppress specific terminal query sequences
+        # Avoid RIS (\033c) which can force a light default background
+        # Keep control-character echo suppressed
         stty -echoctl 2>/dev/null || true
       fi
 

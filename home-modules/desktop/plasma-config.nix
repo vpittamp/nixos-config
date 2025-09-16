@@ -5,15 +5,12 @@
   # This module demonstrates various configurable properties
   
   programs.plasma.configFile = {
-    # Virtual Desktop Configuration - Project-based desktops
-    # Note: These are defaults that can be overridden by kde-projects module
+    # Virtual Desktop Configuration
+    # Note: Desktop names and count are managed by my-projects.nix
+    # This just provides fallback defaults if my-projects.nix is disabled
     "kwinrc".Desktops = {
-      Number = lib.mkDefault 4;
-      Rows = lib.mkDefault 2;
-      Name_1 = lib.mkDefault "NixOS";        # /etc/nixos configuration
-      Name_2 = lib.mkDefault "Stacks";       # ~/stacks project
-      Name_3 = lib.mkDefault "Research";
-      Name_4 = lib.mkDefault "System";
+      Number = lib.mkDefault 2;
+      Rows = lib.mkDefault 1;
     };
     
     # Desktop navigation behavior
@@ -142,17 +139,7 @@
     
     # Global Shortcuts - Extended configuration with project shortcuts
     "kglobalshortcutsrc".kwin = {
-      # Desktop switching - Project-based
-      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";  # NixOS
-      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";  # Stacks
-      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";  # Research
-      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";  # System
-      
-      # Move windows to desktops
-      "Window to Desktop 1" = "Meta+Shift+1,none,Window to Desktop 1";
-      "Window to Desktop 2" = "Meta+Shift+2,none,Window to Desktop 2";
-      "Window to Desktop 3" = "Meta+Shift+3,none,Window to Desktop 3";
-      "Window to Desktop 4" = "Meta+Shift+4,none,Window to Desktop 4";
+      # Desktop switching and window movement - now managed by my-projects.nix
       
       # Desktop navigation
       "Switch One Desktop Down" = "Meta+Ctrl+Down,none,Switch One Desktop Down";
@@ -195,97 +182,8 @@
       "ActivityManager" = "Meta+Q,none,Show Activity Switcher";
     };
     
-    # Window Rules - Project-specific placements
-    "kwinrulesrc"."1" = {
-      Description = "Terminal in /etc/nixos on NixOS desktop";
-      desktop = 1;  # NixOS desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "konsole";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*/etc/nixos.*";
-      titlematch = 3;  # Regular Expression
-    };
-    
-    "kwinrulesrc"."2" = {
-      Description = "Terminal in ~/stacks on Stacks desktop";
-      desktop = 2;  # Stacks desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "konsole";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*/stacks.*";
-      titlematch = 3;  # Regular Expression
-    };
-    
-    "kwinrulesrc"."3" = {
-      Description = "VS Code editing NixOS configs on NixOS desktop";
-      desktop = 1;  # NixOS desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "code";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*/etc/nixos.*";
-      titlematch = 3;  # Regular Expression
-    };
-
-    "kwinrulesrc"."4" = {
-      Description = "VS Code editing Stacks on Stacks desktop";
-      desktop = 2;  # Stacks desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "code";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*/stacks.*";
-      titlematch = 3;  # Regular Expression
-    };
-
-    "kwinrulesrc"."5" = {
-      Description = "Neovim editing NixOS on NixOS desktop";
-      desktop = 1;  # NixOS desktop
-      desktoprule = 3;  # Apply Initially
-      title = ".*nvim.*/etc/nixos.*";
-      titlematch = 3;  # Regular Expression
-    };
-
-    "kwinrulesrc"."6" = {
-      Description = "Neovim editing Stacks on Stacks desktop";
-      desktop = 2;  # Stacks desktop
-      desktoprule = 3;  # Apply Initially
-      title = ".*nvim.*stacks.*";
-      titlematch = 3;  # Regular Expression
-    };
-
-    "kwinrulesrc"."7" = {
-      Description = "GitKraken on project desktop based on repo";
-      desktop = 1;  # Default to NixOS desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "gitkraken";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-    };
-
-    "kwinrulesrc"."8" = {
-      Description = "File manager in /etc/nixos on NixOS desktop";
-      desktop = 1;  # NixOS desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "dolphin";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*/etc/nixos.*";
-      titlematch = 3;  # Regular Expression
-    };
-
-    "kwinrulesrc"."9" = {
-      Description = "File manager in ~/stacks on Stacks desktop";
-      desktop = 2;  # Stacks desktop
-      desktoprule = 3;  # Apply Initially
-      wmclass = "dolphin";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-      title = ".*stacks.*";
-      titlematch = 3;  # Regular Expression
-    };
+    # Window Rules
+    # Note: Project-specific window rules are now managed by my-projects.nix
     
     # Multi-Monitor Panel/Taskbar Configuration
     # IMPORTANT: KDE Plasma does NOT automatically create panels on all monitors

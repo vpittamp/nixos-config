@@ -36,7 +36,6 @@
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
     ./home-modules/desktop/plasma-config.nix  # Comprehensive Plasma configuration
-    ./home-modules/desktop/projects-config.nix  # Native KDE project management
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
