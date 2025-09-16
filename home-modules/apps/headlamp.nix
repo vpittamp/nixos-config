@@ -131,7 +131,7 @@ in
       in ''
         #!/usr/bin/env bash
         set -euo pipefail
-        exec op run ${envFlags} -- headlamp --watch-plugins-changes "$@"
+        exec op run ${envFlags} -- headlamp --disable-gpu --watch-plugins-changes "$@"
       '';
     };
 

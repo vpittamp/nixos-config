@@ -26,6 +26,9 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    
+    # Kubernetes modules
+    ../modules/kubernetes/agentgateway.nix
   ];
 
   # System identification
@@ -73,6 +76,13 @@
   
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
+  
+  # AgentGateway configuration
+  services.agentgateway = {
+    enable = true;
+    autoDeployOnBoot = false;  # Manual deployment for now
+    enableAIBackends = true;   # Enable AI routing capabilities
+  };
 
   # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim
   services.pipewire.pulse.enable = lib.mkForce false;

@@ -46,6 +46,7 @@
     
     # Application configurations
     ./home-modules/apps/headlamp.nix  # Headlamp Kubernetes UI with plugins
+    ./home-modules/apps/headlamp-config.nix  # Headlamp configuration with API keys
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix

@@ -22,7 +22,8 @@ if stdenv.isLinux && stdenv.isx86_64 then
       install -m 444 -D ${appimageContents}/headlamp.desktop \
         $out/share/applications/headlamp.desktop
       substituteInPlace $out/share/applications/headlamp.desktop \
-        --replace 'Exec=headlamp' 'Exec=${pname}'
+        --replace 'Exec=AppRun' "Exec=$out/bin/${pname} --disable-gpu" \
+        --replace 'Exec=headlamp' "Exec=$out/bin/${pname} --disable-gpu"
       
       # Install icon
       install -m 444 -D ${appimageContents}/headlamp.png \
