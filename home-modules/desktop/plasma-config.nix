@@ -55,20 +55,20 @@
     
     # Desktop Effect Settings
     "kwinrc".Effect-overview = {
-      BorderActivate = 9;  # Top-right corner
-      BorderActivateAll = 7;  # Top-left corner
+      BorderActivate = 0;      # Disable screen edge activation
+      BorderActivateAll = 0;   # Disable for all desktops
     };
     
     "kwinrc".Effect-desktopgrid = {
-      BorderActivate = 3;  # Bottom-right corner
+      BorderActivate = 0;  # Disable screen edge activation
       DesktopNameAlignment = 0;  # Center
       LayoutMode = 1;  # Pager layout
       ShowAddRemove = true;
     };
     
     "kwinrc".Effect-PresentWindows = {
-      BorderActivate = 1;  # Bottom-left corner
-      BorderActivateAll = 5;  # Left edge
+      BorderActivate = 0;      # Disable screen edge activation
+      BorderActivateAll = 0;   # Disable for all windows
       BorderActivateClass = 0;  # None
     };
     
@@ -108,13 +108,13 @@
     # Screen Edges Actions
     "kwinrc".ElectricBorders = {
       Bottom = "None";
-      BottomLeft = "PresentWindows";
-      BottomRight = "ShowDesktop";
+      BottomLeft = "None";
+      BottomRight = "None";
       Left = "None";
       Right = "None";
       Top = "None";
-      TopLeft = "Overview";
-      TopRight = "DesktopGrid";
+      TopLeft = "None";
+      TopRight = "None";
     };
     
     # Mouse Actions on Desktop
