@@ -98,8 +98,8 @@ in
       set -g status-right-length 150
       
       # Left status with session info
-      # Shows ⎇ icon only when alternate-screen is ON; hidden when OFF
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},on},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
+      # Shows ⎇ icon only when alternate-screen is OFF (desired Claude behavior)
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
       
       # Right status
       set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} "

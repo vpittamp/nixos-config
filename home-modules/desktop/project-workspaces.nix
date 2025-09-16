@@ -179,6 +179,16 @@
     Skin = "breeze-dark";
   };
 
+  # Yakuake keyboard shortcut and autostart
+  programs.plasma.configFile."yakuakerc"."Shortcuts" = {
+    # Toggle Yakuake with F12
+    "toggle-window-state" = "F12";
+  };
+
+  programs.plasma.configFile."yakuakerc"."Autostart" = {
+    Enabled = true;
+  };
+
   # Desktop-specific wallpapers (if you want different backgrounds per desktop)
   # Note: This would require the wallpaper files to exist
   programs.plasma.configFile."plasma-org.kde.plasma.desktop-appletsrc"."Wallpaper" = {

@@ -6,29 +6,10 @@
     kdePackages.yakuake
   ];
   
-  # Yakuake configuration with autostart and keybinding
-  home.file.".config/yakuakerc" = {
-    text = ''
-      [Dialogs]
-      FirstRun=false
-      
-      [Window]
-      KeepOpen=false
-      Height=50
-      Width=100
-      ShowTabBar=true
-      
-      [Shortcuts]
-      toggle-window-state=F12
-      
-      [Appearance]
-      Translucency=true
-      BackgroundColorOpacity=85
-      
-      [Autostart]
-      Enabled=true
-    '';
-  };
+  # Yakuake config is now managed declaratively via plasma-manager
+  # (see home-modules/desktop/project-workspaces.nix). Avoid creating a
+  # read-only symlink at ~/.config/yakuakerc that conflicts with
+  # plasma-manager's writer.
   
   # Note: Autostart is configured in modules/desktop/kde-plasma.nix
   # Keybinding (F12) is set in the yakuakerc above
