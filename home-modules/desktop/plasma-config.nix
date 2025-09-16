@@ -3,14 +3,15 @@
 {
   # Comprehensive Plasma Configuration via plasma-manager
   # This module demonstrates various configurable properties
-  
+
+  # NOTE: Panels configuration temporarily disabled due to plasma-manager compatibility issues
+  # programs.plasma.panels = [ ... ];
+
   programs.plasma.configFile = {
     # Virtual Desktop Configuration
-    # Note: Desktop names and count are managed by my-projects.nix
-    # This just provides fallback defaults if my-projects.nix is disabled
     "kwinrc".Desktops = {
-      Number = lib.mkDefault 2;
-      Rows = lib.mkDefault 1;
+      Number = lib.mkDefault 4;
+      Rows = lib.mkDefault 2;
     };
     
     # Desktop navigation behavior
@@ -47,7 +48,7 @@
       kwin4_effect_dimscreenEnabled = true;
       kwin4_effect_translucencyEnabled = false;
       magiclampEnabled = true;  # Magic lamp minimize effect
-      overviewEnabled = true;  # Meta+W overview
+      overviewEnabled = false;  # Disable hot-edge app picker/overview
       slideEnabled = true;  # Slide when switching desktops
       wobblywindowsEnabled = false;
       zoomEnabled = true;  # Magnifier
@@ -139,7 +140,17 @@
     
     # Global Shortcuts - Extended configuration with project shortcuts
     "kglobalshortcutsrc".kwin = {
-      # Desktop switching and window movement - now managed by my-projects.nix
+      # Desktop switching
+      "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";
+      "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";
+      "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";
+      "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
+
+      # Window movement to desktops
+      "Window to Desktop 1" = "Meta+Shift+1,none,Window to Desktop 1";
+      "Window to Desktop 2" = "Meta+Shift+2,none,Window to Desktop 2";
+      "Window to Desktop 3" = "Meta+Shift+3,none,Window to Desktop 3";
+      "Window to Desktop 4" = "Meta+Shift+4,none,Window to Desktop 4";
       
       # Desktop navigation
       "Switch One Desktop Down" = "Meta+Ctrl+Down,none,Switch One Desktop Down";

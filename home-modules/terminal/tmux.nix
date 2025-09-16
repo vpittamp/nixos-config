@@ -86,12 +86,14 @@ in
       set -g pane-base-index 1
       set -g renumber-windows on
       set -g pane-border-lines single
-      set -g pane-border-status top
+      # Place per-pane pill at the bottom to avoid any conflict with the top status line
+      set -g pane-border-status bottom
       # Ghost borders: match border color to background so only the label shows
       set -g pane-border-style "fg=${colors.crust}"
       set -g pane-active-border-style "fg=${colors.crust}"
-      # Per-pane label (pill) with canonical target; active pane highlighted via conditional format
-      set -g pane-border-format  " #{?pane_active,#[bg=${colors.sapphire},fg=${colors.crust},bold],#[bg=${colors.surface0},fg=${colors.text}]} [#S:#I.#P] #[default] "
+      # Per-pane label (pill) with canonical target; ensure high contrast in dark theme
+      # Active: bold text on Yellow; Inactive: subtle Surface1 on Text
+      set -g pane-border-format  " #{?pane_active,#[bg=${colors.yellow},fg=${colors.crust},bold],#[bg=${colors.surface1},fg=${colors.text}]} [#S:#I.#P] #[default] "
       
       # Status bar styling
       set -g status-position top
@@ -171,7 +173,10 @@ in
       # Disable right-click context menu since we don't use it
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
-      
+      # Keep selection anchor when finishing a mouse drag in copy mode so the
+      # view doesn't snap back to the live pane
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
+
       # Sesh session management
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"

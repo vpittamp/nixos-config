@@ -36,6 +36,7 @@
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
     ./home-modules/desktop/plasma-config.nix  # Comprehensive Plasma configuration
+    ./home-modules/desktop/activities-poc.nix  # TEST: KDE Activities POC
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
@@ -99,27 +100,10 @@
   # Plasma Manager: declarative KDE user configuration
   programs.plasma = {
     enable = true;
-    # Keep user changes during initial rollout; flip to true after validation
     overrideConfig = true;
-
-    # Replace XRDP/display tweaks previously set via sessionCommands
-    # Per-screen bottom panel with icon-only task manager limited to current screen
-    panels = [
-      {
-        location = "bottom";
-        height = 36;
-        widgets = [
-          "org.kde.plasma.kickoff"
-          "org.kde.plasma.taskmanager"
-          "org.kde.plasma.pager"
-          "org.kde.plasma.marginsseparator"
-          "org.kde.plasma.systemtray"
-          "org.kde.plasma.digitalclock"
-          "org.kde.plasma.showdesktop"
-        ];
-      }
-    ];
+    resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];
   };
+
 
   # Konsole profile via plasma-manager app module
   programs.konsole = {
