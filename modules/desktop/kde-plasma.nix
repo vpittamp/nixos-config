@@ -132,6 +132,7 @@
     kdePackages.spectacle
     kdePackages.okular
     kdePackages.gwenview
+    kdePackages.kdeconnect-kde  # Phone/device integration
     
     # Clipboard management - using native Klipper instead of CopyQ
     # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
@@ -165,6 +166,9 @@
     powerOnBoot = true;
   };
   services.blueman.enable = true;
+
+  # Enable KDE Connect for phone/device integration
+  programs.kdeconnect.enable = true;
 
   # Set system-wide default browser to Chromium
   # Multi-screen environment variables for non-HiDPI systems  
