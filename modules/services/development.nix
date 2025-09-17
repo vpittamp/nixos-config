@@ -66,9 +66,6 @@
     git
     gh  # GitHub CLI for authentication
     
-    # IDP and platform tools
-    idpbuilder
-    headlamp  # Kubernetes Dashboard UI
     
     # Container tools
     docker-compose
@@ -112,6 +109,9 @@
     postman
     jq
     yq
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
+    idpbuilder  # IDP builder tool (x86_64 only)
+    headlamp    # Kubernetes Dashboard UI (x86_64 only)
   ];
 
   # Firewall ports for development services
