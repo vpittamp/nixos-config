@@ -1,6 +1,9 @@
 { config, lib, pkgs, osConfig, ... }:
 
-{
+let
+  enablePlasma = config.homeProfile.enablePlasma or true;
+in
+lib.mkIf enablePlasma {
   # Comprehensive Plasma Configuration via plasma-manager
   # This module demonstrates various configurable properties
 
@@ -8,10 +11,9 @@
   # programs.plasma.panels = [ ... ];
 
   # Global theme settings
+  programs.plasma.immutableByDefault = false;
   programs.plasma.workspace.theme = "breeze-dark";
-  programs.plasma.workspace.colorScheme = "BreezeDark";
   programs.plasma.workspace.iconTheme = "Papirus-Dark";
-  programs.plasma.workspace.lookAndFeel = "org.kde.breezedark.desktop";
 
   programs.plasma.configFile = {
     # Virtual Desktop Configuration
@@ -240,15 +242,14 @@
       AnimationDurationFactor = 1;
       ShowDeleteCommand = false;
       SingleClick = false;  # Double-click to open
-      LookAndFeelPackage = "org.kde.breezedark.desktop";
       widgetStyle = "Breeze";
     };
 
     "kdeglobals".General = {
       AccentColor = "128,178,230";  # Light blue accent
-      ColorScheme = "BreezeDark";
       Name = "Breeze Dark";
       accentColorFromWallpaper = false;
+      ColorScheme = lib.mkForce null;
       TerminalApplication = "konsole";
       TerminalService = "org.kde.konsole.desktop";
       XftAntialias = true;
