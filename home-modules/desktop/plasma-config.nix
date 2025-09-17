@@ -1,9 +1,6 @@
 { config, lib, pkgs, osConfig, ... }:
 
-let
-  enablePlasma = config.homeProfile.enablePlasma or true;
-in
-lib.mkIf enablePlasma {
+{
   # Comprehensive Plasma Configuration via plasma-manager
   # This module demonstrates various configurable properties
 

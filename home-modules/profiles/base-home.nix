@@ -1,4 +1,19 @@
 { config, pkgs, lib, inputs, osConfig, ... }:
+
+let
+  hostName = if osConfig ? networking && osConfig.networking ? hostName
+    then osConfig.networking.hostName
+    else null;
+  isM1 = hostName == "nixos-m1";
+  sessionConfig = {
+    GDK_DPI_SCALE = if isM1 then "0.5" else "1.0";
+    QT_AUTO_SCREEN_SCALE_FACTOR = "0";
+    QT_ENABLE_HIGHDPI_SCALING = "0";
+    PLASMA_USE_QT_SCALING = "1";
+    GDK_SCALE = if isM1 then "2" else "1";
+    XCURSOR_SIZE = if isM1 then "48" else "28";
+  };
+in
 {
   imports = [
     # Shell configurations
@@ -60,17 +75,5 @@
     "x-scheme-handler/https" = [ "firefox.desktop" ];
   };
 
-  home.sessionVariables = let
-    hostName = if osConfig ? networking && osConfig.networking ? hostName
-      then osConfig.networking.hostName
-      else null;
-    isM1 = hostName == "nixos-m1";
-  in {
-    GDK_DPI_SCALE = if isM1 then "0.5" else "1.0";
-    QT_AUTO_SCREEN_SCALE_FACTOR = "0";
-    QT_ENABLE_HIGHDPI_SCALING = "0";
-    PLASMA_USE_QT_SCALING = "1";
-    GDK_SCALE = if isM1 then "2" else "1";
-    XCURSOR_SIZE = if isM1 then "48" else "28";
-  };
+  home.sessionVariables = sessionConfig;
 }
