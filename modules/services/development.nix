@@ -75,6 +75,8 @@
     kind
     minikube
     argocd  # Argo CD CLI
+    devspace  # DevSpace for Kubernetes development
+    vcluster  # Virtual Kubernetes clusters
     
     # Cloud tools
     terraform

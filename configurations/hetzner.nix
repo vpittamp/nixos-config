@@ -19,7 +19,7 @@
     ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
     # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
-    # ../modules/desktop/cluster-certificates.nix  # Disabled - reverting certificate handling
+    ../modules/desktop/cluster-certificates.nix
     ../modules/desktop/rdp-display.nix
     
     # Services
@@ -105,4 +105,3 @@
   # System state version
   system.stateVersion = "24.11";
 }
-

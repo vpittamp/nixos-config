@@ -4,8 +4,23 @@ let
   clusterFunctions = ''
     # Cluster management functions
     export STACKS_DIR="''${STACKS_DIR:-$HOME/stacks}"
+
+    custom_bundle="$STACKS_DIR/certs/ca-bundle-with-idpbuilder.crt"
+    if [ -f "$custom_bundle" ]; then
+      export SSL_CERT_FILE="$custom_bundle"
+      export NIX_SSL_CERT_FILE="$custom_bundle"
+    fi
     
     # Azure authentication helper functions
+    detect_host_context() {
+      local ctx
+      ctx=$(kubectl config get-contexts -o name 2>/dev/null | grep '^kind-' | tail -1)
+      if [ -z "$ctx" ]; then
+        ctx=$(kubectl config current-context 2>/dev/null || echo "")
+      fi
+      echo "$ctx"
+    }
+
     check-azure-auth() {
       # Check if logged in and token is valid
       local token_expiry=$(az account get-access-token --query "expiresOn" -o tsv 2>/dev/null || echo "")
@@ -204,7 +219,7 @@ let
       # Interactive cluster update using gum
       local REF_DIR="$STACKS_DIR/ref-implementation"
       local CDK8S_DIR="$STACKS_DIR/cdk8s"
-      local CLUSTER_NAME="local"
+      local HOST_CONTEXT="$(detect_host_context)"
       local ORIG_DIR="$(pwd)"
 
       # Source environment files (needed for CDK8s synthesis)
@@ -213,11 +228,12 @@ let
       # Clear Docker environment
       unset DOCKER_HOST DOCKER_TLS_VERIFY DOCKER_CERT_PATH
 
-      # Check cluster exists
-      if ! kubectl cluster-info &>/dev/null; then
+      if [ -z "$HOST_CONTEXT" ] || ! kubectl --context "$HOST_CONTEXT" cluster-info &>/dev/null; then
         ${pkgs.gum}/bin/gum style --foreground 196 "❌ No cluster found. Please create a cluster first."
         return 1
       fi
+
+      kubectl config use-context "$HOST_CONTEXT" >/dev/null 2>&1 || true
 
       # Step 1: Synthesis with progress
       ${pkgs.gum}/bin/gum style --border double --padding "1 2" --border-foreground 212 \
@@ -412,7 +428,7 @@ let
       # Update existing cluster with idpbuilder (idempotent operation)
       local REF_DIR="$STACKS_DIR/ref-implementation"
       local CDK8S_DIR="$STACKS_DIR/cdk8s"
-      local CLUSTER_NAME="local"
+      local HOST_CONTEXT="$(detect_host_context)"
       local NO_EXIT=""
       local ORIG_DIR="$(pwd)"
 
@@ -437,9 +453,13 @@ let
       fi
 
       # Check if cluster exists
-      if ! kubectl cluster-info &>/dev/null; then
+      if [ -z "$HOST_CONTEXT" ] || ! kubectl --context "$HOST_CONTEXT" cluster-info &>/dev/null; then
         echo "❌ No cluster found. Please create a cluster first with 'cld' or 'cluster-deploy'"
         return 1
+      fi
+
+      if [ -n "$HOST_CONTEXT" ]; then
+        kubectl config use-context "$HOST_CONTEXT" >/dev/null 2>&1 || true
       fi
 
       # Step 1: Synthesize CDK8s manifests (with environment variables)
@@ -599,12 +619,18 @@ let
 
     cluster-status() {
       echo "📊 Cluster Status:"
-      kubectl cluster-info 2>/dev/null || echo "❌ No cluster found"
+      local HOST_CONTEXT="$(detect_host_context)"
+      if [ -z "$HOST_CONTEXT" ] || ! kubectl --context "$HOST_CONTEXT" cluster-info 2>/dev/null; then
+        echo "❌ No cluster found"
+        return 1
+      fi
+
+      kubectl config use-context "$HOST_CONTEXT" >/dev/null 2>&1 || true
+      kubectl --context "$HOST_CONTEXT" cluster-info 2>/dev/null
       echo ""
       echo "ArgoCD Applications:"
-      kubectl get applications -n argocd 2>/dev/null | head -10 || echo "❌ ArgoCD not available"
+      kubectl --context "$HOST_CONTEXT" get applications -n argocd 2>/dev/null | head -10 || echo "❌ ArgoCD not available"
     }
-    
     # Interactive menu using gum (explicit opt-in)
     cluster-menu() {
       [ ! -t 0 ] && { echo "Interactive mode requires TTY"; return 1; }
