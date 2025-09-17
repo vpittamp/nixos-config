@@ -1,11 +1,11 @@
 # Container Configuration
 # Minimal NixOS for Docker/Kubernetes containers
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, inputs ? null, containerProfile ? null, ... }:
 
 let
-  # Environment detection
-  isContainer = builtins.getEnv "NIXOS_CONTAINER" != "";
-  packageEnv = builtins.getEnv "NIXOS_PACKAGES";
+  resolvedProfile =
+    if containerProfile != null then containerProfile else builtins.getEnv "NIXOS_PACKAGES";
+  packageEnv = if resolvedProfile == "" then "minimal" else resolvedProfile;
 in
 {
   imports = [
@@ -55,7 +55,7 @@ in
   };
   
   # Container user (in addition to vpittamp from base)
-  users.users.code = lib.mkIf isContainer {
+  users.users.code = {
     isNormalUser = true;
     uid = 1000;
     group = "users";

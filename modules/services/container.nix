@@ -1,6 +1,6 @@
 # Container services configuration
 # Combines SSH, VS Code Server, and Nix development helpers
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, inputs ? null, ... }:
 
 let
   # SSH configuration from environment
@@ -8,8 +8,12 @@ let
   sshPort = let
     port = builtins.getEnv "CONTAINER_SSH_PORT";
   in if port == "" then 2222 else lib.toInt port;
+  hasVscodeModule = inputs != null && builtins.hasAttr "vscode-server" inputs;
 in
 {
+  imports = lib.optionals hasVscodeModule [
+    inputs."vscode-server".nixosModules.default
+  ];
   #############################################################################
   # SSH Server Configuration
   #############################################################################
@@ -116,7 +120,7 @@ in
     #############################################################################
     # VS Code Server Configuration
     #############################################################################
-    {
+    (lib.mkIf hasVscodeModule {
       # Enable the vscode-server service
       services.vscode-server = {
         enable = true;
@@ -320,6 +324,6 @@ in
           echo ""
         fi
       '';
-    }
+    })
   ];
 }

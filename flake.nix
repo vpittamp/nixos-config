@@ -126,20 +126,18 @@
         osConfigFor = system:
           if system == "aarch64-linux" then self.nixosConfigurations.m1.config
           else self.nixosConfigurations.hetzner.config;
-      in {
-        vpittamp = home-manager.lib.homeManagerConfiguration {
+        mkHome = modulePath: home-manager.lib.homeManagerConfiguration {
           pkgs = pkgsFor currentSystem;
           extraSpecialArgs = {
             inherit inputs;
             osConfig = osConfigFor currentSystem;
             pkgs-unstable = unstableFor currentSystem;
           };
-          modules = [
-            ./home-vpittamp.nix
-            onepassword-shell-plugins.hmModules.default
-            inputs.plasma-manager.homeModules.plasma-manager
-          ];
+          modules = [ modulePath ];
         };
+      in {
+        vpittamp = mkHome ./home-vpittamp.nix;
+        code = mkHome ./home-code.nix;
       };
       
       # Container configurations
@@ -149,18 +147,45 @@
             inherit system;
             config.allowUnfree = true;
           };
+          pkgsUnstable = import nixpkgs-bleeding {
+            inherit system;
+            config.allowUnfree = true;
+          };
+          mkContainerSystem = profile:
+            (nixpkgs.lib.nixosSystem {
+              inherit system;
+              specialArgs = {
+                inherit inputs pkgsUnstable;
+                containerProfile = profile;
+              };
+              modules = [
+                ./configurations/container.nix
+                home-manager.nixosModules.home-manager
+                ({ config, pkgsUnstable, ... }:
+                  {
+                    home-manager = {
+                      backupFileExtension = "hm-backup";
+                      useGlobalPkgs = true;
+                      useUserPackages = true;
+                      extraSpecialArgs = {
+                        inherit inputs;
+                        osConfig = config;
+                        pkgs-unstable = pkgsUnstable;
+                      };
+                      users.code = {
+                        imports = [ ./home-code.nix ];
+                      };
+                    };
+                  })
+              ];
+            }).config.system.build.toplevel;
         in
-        {
+        rec {
           # Minimal container
           container-minimal = pkgs.dockerTools.buildLayeredImage {
             name = "nixos-container";
             tag = "minimal";
-            contents = [
-              (pkgs.nixos {
-                imports = [ ./configurations/container.nix ];
-                environment.variables.NIXOS_PACKAGES = "minimal";
-              }).config.system.build.toplevel
-            ];
+            contents = [ (mkContainerSystem "minimal") ];
             config = {
               Cmd = [ "/bin/bash" ];
               Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
@@ -171,12 +196,7 @@
           container-dev = pkgs.dockerTools.buildLayeredImage {
             name = "nixos-container";
             tag = "development";
-            contents = [
-              (pkgs.nixos {
-                imports = [ ./configurations/container.nix ];
-                environment.variables.NIXOS_PACKAGES = "development";
-              }).config.system.build.toplevel
-            ];
+            contents = [ (mkContainerSystem "development") ];
             config = {
               Cmd = [ "/bin/bash" ];
               Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=development" ];
@@ -184,7 +204,7 @@
           };
           
           # Default container output
-          default = self.packages.${system}.container-minimal;
+          default = container-minimal;
         });
       
       # Development shells
