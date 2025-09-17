@@ -54,9 +54,9 @@ let
     file
     ncurses
     
-    # WSL integration
-    wslu
-    wl-clipboard
+    # Clipboard utilities (Wayland/X11)
+    wl-clipboard  # Wayland clipboard
+    xclip         # X11 clipboard
     
     # Nix tools
     nix
@@ -65,6 +65,9 @@ let
     
     # VPN tools
     tailscale
+    
+    # Certificate management tools
+    nss_latest.tools  # Provides certutil for managing NSS certificate database
   ];
 
   # Development tools that work better at system level

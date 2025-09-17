@@ -146,8 +146,7 @@
       zr = "zoxide remove";     # Remove entry from database
       zs = "zoxide query -s";   # Show database statistics
       
-      # WSL specific
-      winhome = "cd /mnt/c/Users/VinodPittampalli/";
+      # Platform-specific aliases moved to respective configurations
       
       # 1Password aliases
       ops = "eval $(op signin --account my)";
@@ -157,10 +156,7 @@
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       
-      # Claude aliases with initials
-      cc = "claude --continue --dangerously-skip-permissions";
-      cr = "claude --resume --dangerously-skip-permissions";
-      cdsp = "claude --dangerously-skip-permissions";
+      # Claude aliases handled by functions in initExtra (for tmux alt-screen)
       
       # Keep short aliases for convenience
       pbcopy = "pbcopy";
@@ -177,10 +173,14 @@
       
       # Terminal configuration moved to TERM settings below
       
-      # WSL-specific DISPLAY configuration
-      # Only set DISPLAY if we're in WSL and it's not already set
-      if [ -n "$WSL_DISTRO_NAME" ] && [ -z "$DISPLAY" ]; then
-        export DISPLAY=:0
+      # Native Linux Docker configuration (baseline)
+      # Ensure we're using the local Docker socket if available
+      if [[ -S /var/run/docker.sock ]]; then
+        # Clear any incorrect Docker environment variables
+        if [[ -n "''${DOCKER_HOST:-}" ]]; then
+          unset DOCKER_HOST
+        fi
+        export DOCKER_HOST=""
       fi
       
       # Fix terminal compatibility - detect VSCode terminal
@@ -223,15 +223,30 @@
       
       # Terminal configuration handled by tmux settings
       
-      # VSCode-specific: Suppress OSC sequences that cause visual artifacts
+      # VSCode-specific: reduce terminal artifacts without resetting colors
       if [ "$TERM_PROGRAM" = "vscode" ]; then
-        # Disable OSC 10/11 (foreground/background color queries)
-        # These cause the rgb: output you're seeing
-        alias clear='printf "\033c"'
-        # Suppress specific terminal query sequences
+        # Avoid RIS (\033c) which can force a light default background
+        # Keep control-character echo suppressed
         stty -echoctl 2>/dev/null || true
       fi
-      
+
+      # Claude wrappers: ensure scrollback in tmux by disabling alternate-screen per-window
+      __claude_run() {
+        local mode="$1"; shift || true
+        if [ -n "$TMUX" ]; then
+          tmux setw alternate-screen off >/dev/null 2>&1 || true
+          tmux setw @altscreen off >/dev/null 2>&1 || true
+        fi
+        case "$mode" in
+          continue) claude --continue --dangerously-skip-permissions "$@" ;;
+          resume)   claude --resume   --dangerously-skip-permissions "$@" ;;
+          *)        claude              --dangerously-skip-permissions "$@" ;;
+        esac
+      }
+      cc()   { __claude_run continue  "$@"; }
+      cr()   { __claude_run resume    "$@"; }
+      cdsp() { __claude_run ""        "$@"; }
+
       # Set up fzf key bindings (only if available)
       if command -v fzf &> /dev/null; then
         eval "$(fzf --bash)" 2>/dev/null || true
@@ -318,9 +333,7 @@
         rm -f -- "$tmp"
       }
       
-      # Clipboard helper functions for robust WSL/WSLg behavior
-      # pbcopy: reads from stdin (or args) and copies to clipboard
-      # Prioritizes Wayland (wl-copy) for WSLg, falls back to Windows clipboard
+      # Native Linux clipboard functions (Wayland/X11)
       pbcopy() {
         local input
         if [ -t 0 ]; then
@@ -328,24 +341,28 @@
         else
           input="$(cat)"
         fi
-        # Try wl-copy first (Wayland/WSLg) with explicit text/plain MIME type
-        if command -v wl-copy >/dev/null 2>&1; then
+        # Try Wayland first (KDE Plasma on Hetzner)
+        if command -v wl-copy >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
           printf "%s" "$input" | wl-copy --type text/plain 2>/dev/null
-        # Fall back to Windows clipboard
+        # Fall back to X11
+        elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then
+          printf "%s" "$input" | xclip -selection clipboard
         else
-          printf "%s" "$input" | /mnt/c/Windows/System32/clip.exe
+          echo "No clipboard utility available" >&2
+          return 1
         fi
       }
 
-      # pbpaste: prints clipboard contents
-      # Prioritizes Wayland (wl-paste) for WSLg, falls back to Windows clipboard
       pbpaste() {
-        # Try wl-paste first (Wayland/WSLg) with text output
-        if command -v wl-paste >/dev/null 2>&1; then
-          wl-paste --no-newline 2>/dev/null | sed 's/\r$//'
-        # Fall back to Windows clipboard
+        # Try Wayland first (KDE Plasma on Hetzner)
+        if command -v wl-paste >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
+          wl-paste --no-newline 2>/dev/null
+        # Fall back to X11
+        elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then
+          xclip -selection clipboard -o
         else
-          /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -command 'Get-Clipboard' | sed 's/\r$//'
+          echo "No clipboard utility available" >&2
+          return 1
         fi
       }
 

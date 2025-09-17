@@ -10,11 +10,14 @@
     # WSL module
     inputs.nixos-wsl.nixosModules.wsl
     
+    # WSL-specific configurations
+    ../modules/wsl/wsl-config.nix  # WSL-specific settings
+    ../modules/services/wsl-docker.nix  # WSL Docker Desktop integration
+    
     # Services (no desktop needed in WSL)
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # 1Password CLI for secret management
-    ../modules/services/wsl-docker.nix  # WSL-specific Docker Desktop integration
   ];
 
   # WSL Configuration

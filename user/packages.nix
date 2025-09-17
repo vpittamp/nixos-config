@@ -20,6 +20,7 @@ let
     ripgrep
     fd
     bat
+    lazydocker
     eza
     direnv
     stow
@@ -88,6 +89,7 @@ let
     git-crypt
     delta
     diff-so-fancy
+    lazygit
   ];
 
   # Documentation and help

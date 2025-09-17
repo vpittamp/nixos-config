@@ -62,10 +62,8 @@ in
     ];
     
     extraConfig = ''
-      # Fix backtick prefix
-      unbind -n '\`'
-      bind '\`' send-prefix
-      
+      # Prefix is set via programs.tmux.prefix
+
       # General settings
       set -g default-command "${pkgs.bash}/bin/bash"
       set -g default-terminal "tmux-256color"
@@ -76,16 +74,26 @@ in
       set -g focus-events off
       set -g detach-on-destroy off
       set -g repeat-time 1000
-      set -g allow-passthrough on
+      # Prevent OSC pass-through changing terminal colors (can cause white bg)
+      set -g allow-passthrough off
       
       # Basic terminal features
       set -as terminal-features ',*:RGB'
+      # Track alternate-screen state via user option (window-scoped)
+      setw -g @altscreen on
       
       # Pane settings
       set -g pane-base-index 1
       set -g renumber-windows on
       set -g pane-border-lines single
-      set -g pane-border-status top
+      # Place per-pane pill at the bottom to avoid any conflict with the top status line
+      set -g pane-border-status bottom
+      # Ghost borders: match border color to background so only the label shows
+      set -g pane-border-style "fg=${colors.crust}"
+      set -g pane-active-border-style "fg=${colors.crust}"
+      # Per-pane label (pill) with canonical target; ensure high contrast in dark theme
+      # Active: bold text on Yellow; Inactive: subtle Surface1 on Text
+      set -g pane-border-format  " #{?pane_active,#[bg=${colors.yellow},fg=${colors.crust},bold],#[bg=${colors.surface1},fg=${colors.text}]} [#S:#I.#P] #[default] "
       
       # Status bar styling
       set -g status-position top
@@ -94,21 +102,18 @@ in
       set -g status-left-length 80
       set -g status-right-length 150
       
-      # Left status with session info
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.text},bg=${colors.surface1}]  #(tmux ls | wc -l)S #{session_windows}W #[fg=${colors.surface1},bg=${colors.crust}] "
+      # Left status with session info (no session/window counts). Shows ⎇ only when alt-screen is OFF.
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.surface1},bg=${colors.crust}] "
       
-      # Right status
-      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #{window_panes} "
+      # Right status: canonical pane target (session:window.pane)
+      set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #S:#I.#P "
       
-      # Window status
-      set -g window-status-format "#[fg=${colors.crust},bg=${colors.surface0}]#[fg=${colors.text},bg=${colors.surface0}] #I:#W #[fg=${colors.surface0},bg=${colors.crust}]"
-      set -g window-status-current-format "#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}}]#[fg=${colors.crust},bg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bold]#{?window_zoomed_flag, 🔍,} #I:#W[#{window_panes}] #[fg=#{?window_zoomed_flag,${colors.yellow},${colors.blue}},bg=${colors.crust}]"
-      set -g window-status-separator ""
+      # Window status: standard notation (#I:#W) with minimal styling
+      set -g window-status-format "#I:#W"
+      set -g window-status-current-format "#[bold]#I:#W#F"
+      set -g window-status-separator " "
       
-      # Pane borders
-      set -g pane-border-style "fg=${colors.surface0}"
-      set -g pane-active-border-style "fg=${colors.blue},bold"
-      set -g pane-border-format " #[fg=${colors.text}]#{?pane_active,#[bg=${colors.surface1}],}[#P/#{window_panes}] #{pane_current_command} #{?window_zoomed_flag,#[fg=${colors.yellow}](ZOOMED) ,}#[default] "
+      # Pane borders handled above (ghost borders + per-pane pills)
       
       # Message styling
       set -g message-style "fg=${colors.crust} bg=${colors.yellow} bold"
@@ -168,25 +173,29 @@ in
       # Disable right-click context menu since we don't use it
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
-      
+      # Keep selection anchor when finishing a mouse drag in copy mode so the
+      # view doesn't snap back to the live pane
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
+
       # Sesh session management
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
-      
-      # Popup windows
-      bind e display-popup -E \
-        -w 80% -h 80% \
-        -d "#{pane_current_path}" \
-        -T " 🚀 Ephemeral Shell (ESC to close) " \
-        -e TERM=xterm-256color \
-        -e COLORTERM=truecolor \
-        "exec bash --login"
-      
-      bind C display-popup -E -w 80% -h 80% "claude"
-      bind R display-popup -E -w 80% -h 80% "claude --continue"
-      
-      
+      # Claude in scrollable windows (scoped alt-screen off)
+      # - These bindings open Claude in a regular tmux window and disable
+      #   the alternate screen only for that window, so tmux history/mouse
+      #   scrolling works as expected.
+      bind g new-window -n "Claude" "claude" \; setw alternate-screen off \; setw @altscreen off
+      bind G new-window -n "Claude*" "claude --continue" \; setw alternate-screen off \; setw @altscreen off
+
+      # Optional: launch in the current pane (no new window)
+      # Use prefix + a / A to start Claude here with alt-screen disabled.
+      bind a setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude" C-m
+      bind A setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude --continue" C-m
+      # Toggle alternate-screen for current window and update indicator
+      bind M if -F '#{==:#{@altscreen},off}' \
+        "setw alternate-screen on \; setw @altscreen on \; display-message \"ALT screen: ON\"" \
+        "setw alternate-screen off \; setw @altscreen off \; display-message \"ALT screen: OFF\""
       # Help menu
       bind ? display-menu -T "Tmux Quick Help" -x C -y C \
         "Window Operations"  w "display-menu -T 'Window Operations' \
@@ -217,8 +226,8 @@ in
           'List Buffers (=)'         = 'choose-buffer' \
           'Save Buffer'              S 'command-prompt -p \"Save to:\" \"save-buffer %%\"'" \
         "" \
-        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'display-popup -E \"tmux list-keys | grep -i %%\"'" \
-        "List All Keys"      a "display-popup -E 'tmux list-keys | less'" \
+        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'new-window -n \"Keys\" \"sh -lc \"tmux list-keys | grep -i %% | less\"\"'" \
+        "List All Keys"      a "new-window -n 'Keys' 'sh -lc "tmux list-keys | less"'" \
         "Reload Config (r)"  r "source-file ~/.config/tmux/tmux.conf"
     '';
   };

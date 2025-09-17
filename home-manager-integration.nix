@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  imports = [ 
+  imports = [
     <home-manager/nixos>
   ];
 
@@ -9,7 +9,7 @@
     useGlobalPkgs = true;
     useUserPackages = true;
     users.vpittamp = import ./home-vpittamp.nix;
-    extraSpecialArgs = { 
+    extraSpecialArgs = {
       # Provide empty inputs for modules that expect it
       inputs = {};
       pkgs-unstable = pkgs;

@@ -30,10 +30,13 @@
     ./home-modules/tools/fzf.nix
     # ./home-modules/tools/firefox.nix  # Disabled - using Chromium as default
     ./home-modules/tools/chromium.nix  # Chromium with 1Password integration
+    # ./home-modules/tools/chromium-profiles.nix  # Disabled - certificate handling approach
+    # ./home-modules/tools/chromium-unified.nix  # Disabled - certificate handling approach
     
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
     ./home-modules/desktop/plasma-config.nix  # Comprehensive Plasma configuration
+    ./home-modules/desktop/activities-poc.nix  # TEST: KDE Activities POC
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
@@ -41,6 +44,10 @@
     ./home-modules/tools/gitkraken.nix  # GitKraken with Konsole and 1Password
     ./home-modules/tools/cluster-management.nix
     ./home-modules/tools/onepassword-plugins.nix  # 1Password shell plugins
+    
+    # Application configurations
+    ./home-modules/apps/headlamp.nix  # Headlamp Kubernetes UI with plugins
+    ./home-modules/apps/headlamp-config.nix  # Headlamp configuration with API keys
     
     # AI Assistant configurations
     ./home-modules/ai-assistants/claude-code.nix
@@ -93,27 +100,10 @@
   # Plasma Manager: declarative KDE user configuration
   programs.plasma = {
     enable = true;
-    # Keep user changes during initial rollout; flip to true after validation
     overrideConfig = true;
-
-    # Replace XRDP/display tweaks previously set via sessionCommands
-    # Per-screen bottom panel with icon-only task manager limited to current screen
-    panels = [
-      {
-        location = "bottom";
-        height = 36;
-        widgets = [
-          "org.kde.plasma.kickoff"
-          "org.kde.plasma.taskmanager"
-          "org.kde.plasma.pager"
-          "org.kde.plasma.marginsseparator"
-          "org.kde.plasma.systemtray"
-          "org.kde.plasma.digitalclock"
-          "org.kde.plasma.showdesktop"
-        ];
-      }
-    ];
+    resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];
   };
+
 
   # Konsole profile via plasma-manager app module
   programs.konsole = {

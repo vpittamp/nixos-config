@@ -6,29 +6,10 @@
     kdePackages.yakuake
   ];
   
-  # Yakuake configuration with autostart and keybinding
-  home.file.".config/yakuakerc" = {
-    text = ''
-      [Dialogs]
-      FirstRun=false
-      
-      [Window]
-      KeepOpen=false
-      Height=50
-      Width=100
-      ShowTabBar=true
-      
-      [Shortcuts]
-      toggle-window-state=F12
-      
-      [Appearance]
-      Translucency=true
-      BackgroundColorOpacity=85
-      
-      [Autostart]
-      Enabled=true
-    '';
-  };
+  # Yakuake config is now managed declaratively via plasma-manager
+  # (see home-modules/desktop/projects-config.nix). Avoid creating a
+  # read-only symlink at ~/.config/yakuakerc that conflicts with
+  # plasma-manager's writer.
   
   # Note: Autostart is configured in modules/desktop/kde-plasma.nix
   # Keybinding (F12) is set in the yakuakerc above
@@ -38,7 +19,7 @@
   home.file.".local/share/konsole/improved.profile" = {
     text = ''
       [Appearance]
-      ColorScheme=Breeze
+      ColorScheme=BreezeDark
       Font=FiraCode Nerd Font,11,-1,5,50,0,0,0,0,0
       
       [Cursor Options]
@@ -89,5 +70,10 @@
       VerticalLine=false
       VerticalLineAtChar=80
     '';
+  };
+
+  # Set this improved profile as the default for Konsole
+  programs.plasma.configFile."konsolerc".General = {
+    DefaultProfile = "Improved Selection.profile";
   };
 }

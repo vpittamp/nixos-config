@@ -65,7 +65,7 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                backupFileExtension = "backup";
+                backupFileExtension = null;  # Disable backups - overwrites directly
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 

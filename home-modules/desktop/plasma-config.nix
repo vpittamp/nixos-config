@@ -3,16 +3,15 @@
 {
   # Comprehensive Plasma Configuration via plasma-manager
   # This module demonstrates various configurable properties
-  
+
+  # NOTE: Panels configuration temporarily disabled due to plasma-manager compatibility issues
+  # programs.plasma.panels = [ ... ];
+
   programs.plasma.configFile = {
-    # Virtual Desktop Configuration - 4 desktops in 2x2 grid
+    # Virtual Desktop Configuration
     "kwinrc".Desktops = {
-      Number = 4;
-      Rows = 2;
-      Name_1 = "Development";
-      Name_2 = "Communication";
-      Name_3 = "Research";
-      Name_4 = "System";
+      Number = lib.mkDefault 4;
+      Rows = lib.mkDefault 2;
     };
     
     # Desktop navigation behavior
@@ -49,7 +48,7 @@
       kwin4_effect_dimscreenEnabled = true;
       kwin4_effect_translucencyEnabled = false;
       magiclampEnabled = true;  # Magic lamp minimize effect
-      overviewEnabled = true;  # Meta+W overview
+      overviewEnabled = false;  # Disable hot-edge app picker/overview
       slideEnabled = true;  # Slide when switching desktops
       wobblywindowsEnabled = false;
       zoomEnabled = true;  # Magnifier
@@ -57,20 +56,20 @@
     
     # Desktop Effect Settings
     "kwinrc".Effect-overview = {
-      BorderActivate = 9;  # Top-right corner
-      BorderActivateAll = 7;  # Top-left corner
+      BorderActivate = 0;      # Disable screen edge activation
+      BorderActivateAll = 0;   # Disable for all desktops
     };
     
     "kwinrc".Effect-desktopgrid = {
-      BorderActivate = 3;  # Bottom-right corner
+      BorderActivate = 0;  # Disable screen edge activation
       DesktopNameAlignment = 0;  # Center
       LayoutMode = 1;  # Pager layout
       ShowAddRemove = true;
     };
     
     "kwinrc".Effect-PresentWindows = {
-      BorderActivate = 1;  # Bottom-left corner
-      BorderActivateAll = 5;  # Left edge
+      BorderActivate = 0;      # Disable screen edge activation
+      BorderActivateAll = 0;   # Disable for all windows
       BorderActivateClass = 0;  # None
     };
     
@@ -110,13 +109,13 @@
     # Screen Edges Actions
     "kwinrc".ElectricBorders = {
       Bottom = "None";
-      BottomLeft = "PresentWindows";
-      BottomRight = "ShowDesktop";
+      BottomLeft = "None";
+      BottomRight = "None";
       Left = "None";
       Right = "None";
       Top = "None";
-      TopLeft = "Overview";
-      TopRight = "DesktopGrid";
+      TopLeft = "None";
+      TopRight = "None";
     };
     
     # Mouse Actions on Desktop
@@ -139,15 +138,15 @@
       CommandWindowWheel = "Scroll";
     };
     
-    # Global Shortcuts - Extended configuration
+    # Global Shortcuts - Extended configuration with project shortcuts
     "kglobalshortcutsrc".kwin = {
       # Desktop switching
       "Switch to Desktop 1" = "Meta+1,none,Switch to Desktop 1";
       "Switch to Desktop 2" = "Meta+2,none,Switch to Desktop 2";
       "Switch to Desktop 3" = "Meta+3,none,Switch to Desktop 3";
       "Switch to Desktop 4" = "Meta+4,none,Switch to Desktop 4";
-      
-      # Move windows to desktops
+
+      # Window movement to desktops
       "Window to Desktop 1" = "Meta+Shift+1,none,Window to Desktop 1";
       "Window to Desktop 2" = "Meta+Shift+2,none,Window to Desktop 2";
       "Window to Desktop 3" = "Meta+Shift+3,none,Window to Desktop 3";
@@ -194,37 +193,8 @@
       "ActivityManager" = "Meta+Q,none,Show Activity Switcher";
     };
     
-    # Window Rules Examples
-    "kwinrulesrc"."1" = {
-      Description = "Firefox on Desktop 2";
-      desktop = 2;
-      desktoprule = 2;  # Force
-      wmclass = "firefox";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-    };
-    
-    "kwinrulesrc"."2" = {
-      Description = "Konsole Always on Top";
-      above = true;
-      aboverule = 2;  # Force
-      wmclass = "konsole";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-    };
-    
-    "kwinrulesrc"."3" = {
-      Description = "Discord on Desktop 2 Maximized";
-      desktop = 2;
-      desktoprule = 2;  # Force
-      maximizehoriz = true;
-      maximizehorizrule = 3;  # Apply Initially
-      maximizevert = true;
-      maximizevertrule = 3;  # Apply Initially
-      wmclass = "discord";
-      wmclasscomplete = false;
-      wmclassmatch = 1;  # Contains
-    };
+    # Window Rules
+    # Note: Project-specific window rules are now managed by my-projects.nix
     
     # Multi-Monitor Panel/Taskbar Configuration
     # IMPORTANT: KDE Plasma does NOT automatically create panels on all monitors

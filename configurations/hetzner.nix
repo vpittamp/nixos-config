@@ -16,13 +16,19 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    ../modules/desktop/chromium-policies.nix
+    ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
+    # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
+    # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
+    # ../modules/desktop/cluster-certificates.nix  # Disabled - reverting certificate handling
     ../modules/desktop/rdp-display.nix
     
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    
+    # Kubernetes modules
+    ../modules/kubernetes/agentgateway.nix
   ];
 
   # System identification
@@ -70,6 +76,13 @@
   
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
+  
+  # AgentGateway configuration
+  services.agentgateway = {
+    enable = true;
+    autoDeployOnBoot = false;  # Manual deployment for now
+    enableAIBackends = true;   # Enable AI routing capabilities
+  };
 
   # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim
   services.pipewire.pulse.enable = lib.mkForce false;
