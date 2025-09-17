@@ -59,7 +59,7 @@ in rec {
     stacks = {
       name = "Stacks";
       description = "Platform engineering stacks and deployment playbooks.";
-      icon = "folder-gitlab";
+      icon = "application-x-yaml";  # YAML/config files - common in GitOps
       directory = expandPath "~/stacks";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
       colorScheme = {

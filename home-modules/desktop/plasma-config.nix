@@ -49,12 +49,12 @@
     "kwinrc".Plugins = {
       blurEnabled = true;
       contrastEnabled = true;
-      desktopgridEnabled = true;
+      desktopgridEnabled = false;  # Deprecated in Plasma 6
       highlightwindowEnabled = true;
       kwin4_effect_dimscreenEnabled = true;
       kwin4_effect_translucencyEnabled = false;
       magiclampEnabled = true;  # Magic lamp minimize effect
-      overviewEnabled = false;  # Disable hot-edge app picker/overview
+      overviewEnabled = true;  # Enable Overview effect for desktop grid functionality
       slideEnabled = true;  # Slide when switching desktops
       wobblywindowsEnabled = false;
       zoomEnabled = true;  # Magnifier
@@ -154,12 +154,11 @@
       "Switch One Desktop Up" = "Meta+Ctrl+Up,none,Switch One Desktop Up";
       "Switch One Desktop to the Left" = "Meta+Ctrl+Left,none,Switch One Desktop to the Left";
       "Switch One Desktop to the Right" = "Meta+Ctrl+Right,none,Switch One Desktop to the Right";
-      
-      # Window management
-      "Overview" = "Meta+W,none,Toggle Overview";
+
+      # Window management - Updated to use Overview for desktop grid functionality
+      "Overview" = "Meta+F8,Meta+W,Toggle Overview";  # Meta+F8 for desktop overview, Meta+W as alternate
       "Expose" = "Meta+Tab,none,Toggle Present Windows (Current desktop)";
       "ExposeAll" = "Meta+Shift+Tab,none,Toggle Present Windows (All desktops)";
-      "DesktopGrid" = "Meta+F8,none,Show Desktop Grid";
       
       # Window operations
       "Window Maximize" = "Meta+Up,none,Maximize Window";
@@ -413,5 +412,6 @@
     "kdeglobals"."Passwords" = {
       "UseKWallet" = true;  # Available for apps that need it (like 1Password)
     };
+
   };
 }
