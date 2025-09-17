@@ -77,6 +77,7 @@
     argocd  # Argo CD CLI
     devspace  # DevSpace for Kubernetes development
     vcluster  # Virtual Kubernetes clusters
+    nssTools  # Provides certutil for Chromium certificate import
     
     # Cloud tools
     terraform

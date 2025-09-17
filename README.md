@@ -123,6 +123,11 @@ The configuration follows a modular, hierarchical design:
 - Tailscale VPN for secure connectivity
 - Full development environment
 
+### KDE Plasma Workflow
+- System-level display manager, Qt/GPU services, and remote access live under `modules/desktop/kde-plasma.nix`, keeping session-critical pieces in the NixOS layer while user customisations stay in Home Manager, mirroring the approach recommended in the NixOS KDE guide. citeturn0search0
+- User-scoped Plasma state is managed declaratively via Home Manager and `plasma-manager`, with `programs.plasma.overrideConfig = true;` so KDE rewrites its config at login instead of diverging per machine. Apply changes with `nix run home-manager/master -- switch --flake .#vpittamp`. citeturn0search1turn0search4
+- To capture new tweaks made in a live session before refactoring them into modules, run `./scripts/plasma-rc2nix.sh > plasma-export.nix`. The helper wraps `plasma-manager rc2nix`, giving you a clean starting point for further declarative edits. citeturn0search4
+
 ### AI Assistant Integration
 - Claude CLI (`claude-cli`)
 - GitHub Copilot CLI (`gh copilot`)

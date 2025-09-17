@@ -1,23 +1,6 @@
-{ config, lib, pkgs, ... }:
+{ lib, activities, mkUUID }:
 
 let
-  activities = {
-    nixos = {
-      name = "NixOS";
-      path = "/etc/nixos";
-      wallpaper = null;
-    };
-    stacks = {
-      name = "Stacks";
-      path = "~/stacks";
-      wallpaper = null;
-    };
-  };
-
-  mkUUID = name: let
-    hash = builtins.hashString "sha256" name;
-  in "${builtins.substring 0 8 hash}-${builtins.substring 8 4 hash}-${builtins.substring 12 4 hash}-${builtins.substring 16 4 hash}-${builtins.substring 20 12 hash}";
-
   primaryPanelIni = ''
 [Containments][410]
 activityId=
@@ -43,6 +26,24 @@ plugin=org.kde.plasma.icontasks
 showOnlyCurrentActivity=true
 showOnlyCurrentDesktop=false
 showOnlyCurrentScreen=true
+
+[Containments][410][Applets][437]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][410][Applets][437][Configuration][General]
+expanding=true
+
+[Containments][410][Applets][436]
+immutability=1
+plugin=org.kde.plasma.showActivityManager
+
+[Containments][410][Applets][438]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][410][Applets][438][Configuration][General]
+expanding=true
 
 [Containments][410][Applets][413]
 immutability=1
@@ -136,7 +137,7 @@ immutability=1
 plugin=org.kde.plasma.showdesktop
 
 [Containments][410][General]
-AppletOrder=411;412;413;414;427;428
+AppletOrder=411;412;437;436;438;413;414;427;428
 
 '';
 
@@ -160,8 +161,26 @@ showOnlyCurrentActivity=true
 showOnlyCurrentDesktop=false
 showOnlyCurrentScreen=true
 
+[Containments][429][Applets][442]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][429][Applets][442][Configuration][General]
+expanding=true
+
+[Containments][429][Applets][440]
+immutability=1
+plugin=org.kde.plasma.showActivityManager
+
+[Containments][429][Applets][443]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][429][Applets][443][Configuration][General]
+expanding=true
+
 [Containments][429][General]
-AppletOrder=430
+AppletOrder=430;442;440;443
 
 [Containments][431]
 activityId=
@@ -182,8 +201,26 @@ showOnlyCurrentActivity=true
 showOnlyCurrentDesktop=false
 showOnlyCurrentScreen=true
 
+[Containments][431][Applets][444]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][431][Applets][444][Configuration][General]
+expanding=true
+
+[Containments][431][Applets][441]
+immutability=1
+plugin=org.kde.plasma.showActivityManager
+
 [Containments][431][General]
-AppletOrder=430
+AppletOrder=430;444;441;445
+
+[Containments][431][Applets][445]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][431][Applets][445][Configuration][General]
+expanding=true
 
 '';
 
@@ -191,10 +228,9 @@ AppletOrder=430
     let
       activity = activities.${entry.id};
       containmentId = toString (600 + entry.idx);
-      uuid = mkUUID entry.id;
     in ''
 [Containments][${containmentId}]
-activityId=${uuid}
+activityId=${mkUUID entry.id}
 formfactor=0
 immutability=1
 lastScreen=0
@@ -203,7 +239,7 @@ plugin=org.kde.plasma.folder
 wallpaperplugin=org.kde.image
 
 [Containments][${containmentId}][General]
-url=file://${activity.path}
+url=file://${activity.directory}
 
 '' + lib.optionalString (activity.wallpaper != null) ''
 [Containments][${containmentId}][Wallpaper][org.kde.image][General]
@@ -220,50 +256,10 @@ PreviewImage=${activity.wallpaper}
   screenMappingIni = ''
 [ScreenMapping]
 itemsOnDisabledScreens=
-screenMapping=desktop:/chrome-agimnkijcaahngcdmfeangaknmldooml-Default.desktop,0,${mkUUID "nixos"},desktop:/chrome-ejjefgjnimbklpdgenehmplpccdknekl-Default.desktop,0,${mkUUID "nixos"}
+screenMapping=
 
 '';
 
-  panelIniText = primaryPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
-
-  ensureActivities = pkgs.writeShellScript "ensure-activities" ''
-    #!/usr/bin/env bash
-
-    while ! ${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.ActivityManager &>/dev/null; do
-      sleep 1
-    done
-
-    ${lib.concatStringsSep "
-" (lib.mapAttrsToList (id: activity: ''
-      uuid="${mkUUID id}"
-      name="${activity.name}"
-
-      if ! ${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.ActivityManager /ActivityManager/Activities ActivityName "$uuid" &>/dev/null; then
-        echo "Creating activity: $name ($uuid)"
-        mkdir -p ~/.config
-        cat >> ~/.config/kactivitymanagerdrc <<EOF
-
-[$uuid]
-Name=$name
-EOF
-      fi
-    '') activities)}
-
-    ${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd --replace &
-  '';
-
 in {
-  programs.plasma.configFile."kactivitymanagerdrc" = {
-    activities = lib.mapAttrs' (id: activity: lib.nameValuePair (mkUUID id) activity.name) activities;
-    main.currentActivity = lib.mkForce (mkUUID "nixos");
-  };
-
-  programs.plasma.resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];
-
-  home.file.".config/plasma-org.kde.plasma.desktop-appletsrc" = {
-    force = true;
-    text = panelIniText;
-  };
-
-  programs.bash.shellAliases = lib.mapAttrs (id: _: "${pkgs.libsForQt5.qttools}/bin/qdbus org.kde.ActivityManager /ActivityManager/Activities SetCurrentActivity ${mkUUID id}") activities;
+  panelIniText = primaryPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
 }

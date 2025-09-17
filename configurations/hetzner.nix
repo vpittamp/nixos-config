@@ -21,6 +21,7 @@
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
     ../modules/desktop/cluster-certificates.nix
     ../modules/desktop/rdp-display.nix
+    ../modules/peripherals/logitech-mx-master3.nix
     
     # Services
     ../modules/services/development.nix

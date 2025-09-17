@@ -5,10 +5,10 @@
   # Enable X11 and KDE Plasma 6
   services.xserver = {
     enable = true;
-    
+
     # Configure for headless operation with virtual display (for cloud servers)
     videoDrivers = lib.mkDefault [ "modesetting" "fbdev" ];
-    
+
     # Enable DRI for better performance
     deviceSection = ''
       Option "DRI" "3"
@@ -20,8 +20,8 @@
   services.displayManager = {
     sddm = {
       enable = true;
-      wayland.enable = false;  # Disable Wayland due to Mesa/GPU issues on Apple Silicon
-      
+      wayland.enable = false; # Disable Wayland due to Mesa/GPU issues on Apple Silicon
+
       # Workaround for black screen on logout on Apple Silicon
       settings = {
         General = {
@@ -31,15 +31,15 @@
         };
       };
     };
-    defaultSession = lib.mkForce "plasmax11";  # Force X11 session (stable on Apple Silicon)
+    defaultSession = lib.mkForce "plasmax11"; # Force X11 session (stable on Apple Silicon)
   };
-  
+
   # Desktop environment
   services.desktopManager.plasma6.enable = true;
-  
+
   # Enable touchegg for X11 gesture support
   services.touchegg.enable = true;
-  
+
   # Configure touchegg gestures for KDE
   environment.etc."touchegg/touchegg.conf".text = ''
     <touchégg>
@@ -71,28 +71,49 @@
             <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.KWin /KWin nextDesktop'</command>
           </action>
         </gesture>
-        
+
         <!-- 3 finger swipe right: Previous Desktop -->
         <gesture type="SWIPE" fingers="3" direction="RIGHT">
           <action type="RUN_COMMAND">
             <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.KWin /KWin previousDesktop'</command>
           </action>
         </gesture>
-        
+
+        <!-- 3 finger pinch out: Activity Switcher -->
+        <gesture type="PINCH" fingers="3" direction="OUT">
+          <action type="RUN_COMMAND">
+            <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut ActivityManager'</command>
+          </action>
+        </gesture>
+
         <!-- 4 finger swipe up: Present Windows (All) -->
         <gesture type="SWIPE" fingers="4" direction="UP">
           <action type="RUN_COMMAND">
             <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut ExposeAll'</command>
           </action>
         </gesture>
-        
+
         <!-- 4 finger swipe down: Present Windows (Current Desktop) -->
         <gesture type="SWIPE" fingers="4" direction="DOWN">
           <action type="RUN_COMMAND">
             <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.kglobalaccel /component/kwin invokeShortcut Expose'</command>
           </action>
         </gesture>
-        
+
+        <!-- 4 finger swipe left: Next Activity -->
+        <gesture type="SWIPE" fingers="4" direction="LEFT">
+          <action type="RUN_COMMAND">
+            <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.ActivityManager /ActivityManager/Activities org.kde.ActivityManager.Activities.NextActivity'</command>
+          </action>
+        </gesture>
+
+        <!-- 4 finger swipe right: Previous Activity -->
+        <gesture type="SWIPE" fingers="4" direction="RIGHT">
+          <action type="RUN_COMMAND">
+            <command>sh -c 'export DISPLAY=:0; export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus; ${pkgs.libsForQt5.qttools.bin}/bin/qdbus org.kde.ActivityManager /ActivityManager/Activities org.kde.ActivityManager.Activities.PreviousActivity'</command>
+          </action>
+        </gesture>
+
         <!-- Pinch in/out: Zoom -->
         <gesture type="PINCH" fingers="2" direction="IN">
           <action type="SEND_KEYS">
@@ -132,20 +153,20 @@
     kdePackages.spectacle
     kdePackages.okular
     kdePackages.gwenview
-    kdePackages.kdeconnect-kde  # Phone/device integration
-    
+    kdePackages.kdeconnect-kde # Phone/device integration
+
     # Clipboard management - using native Klipper instead of CopyQ
     # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
-    wl-clipboard  # Wayland clipboard utilities
-    xclip  # X11 clipboard utilities (fallback)
-    xorg.libxcb  # XCB library for Qt
-    libxkbcommon  # Keyboard handling for Qt
-    
+    wl-clipboard # Wayland clipboard utilities
+    xclip # X11 clipboard utilities (fallback)
+    xorg.libxcb # XCB library for Qt
+    libxkbcommon # Keyboard handling for Qt
+
     # QDBus for touchpad gestures (touchegg needs this)
-    libsForQt5.qttools  # Provides qdbus command
-    
+    libsForQt5.qttools # Provides qdbus command
+
     # Browsers
-    chromium  # Default browser with 1Password integration
+    chromium # Default browser with 1Password integration
     # firefox  # Disabled - using Chromium as default
   ]
   ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [ pkgs.gitkraken ];
@@ -178,7 +199,7 @@
     BROWSER = "chromium";
     # Multi-screen setup - these are overridden in m1.nix for HiDPI
     PLASMA_USE_QT_SCALING = "1";
-    QT_SCREEN_SCALE_FACTORS = "";  # Let Qt auto-detect
+    QT_SCREEN_SCALE_FACTORS = ""; # Let Qt auto-detect
     QT_AUTO_SCREEN_SCALE_FACTOR = "1";
   };
 

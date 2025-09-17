@@ -7,6 +7,12 @@
   # NOTE: Panels configuration temporarily disabled due to plasma-manager compatibility issues
   # programs.plasma.panels = [ ... ];
 
+  # Global theme settings
+  programs.plasma.workspace.theme = "breeze-dark";
+  programs.plasma.workspace.colorScheme = "BreezeDark";
+  programs.plasma.workspace.iconTheme = "Papirus-Dark";
+  programs.plasma.workspace.lookAndFeel = "org.kde.breezedark.desktop";
+
   programs.plasma.configFile = {
     # Virtual Desktop Configuration
     "kwinrc".Desktops = {
@@ -89,17 +95,8 @@
       SwitchingMode = 0;  # Focus on switching
     };
     
-    # Activities Configuration
-    # Note: Activities require UUIDs, using existing one and creating test entries
-    "kactivitymanagerdrc".activities = {
-      "7ddbcb0a-1539-4ed5-854d-2ac3971f0f34" = "Default";
-      # Additional activities would need to be created via KDE UI first to get UUIDs
-    };
-    
-    "kactivitymanagerdrc".main = {
-      currentActivity = "7ddbcb0a-1539-4ed5-854d-2ac3971f0f34";
-    };
-    
+    # Activities are managed declaratively via project-activities module
+
     # Activity Manager Plugins Configuration
     "kactivitymanagerd-pluginsrc"."Plugin-org.kde.ActivityManager.Resources.Scoring" = {
       blocked = "firefox.desktop,google-chrome.desktop";
@@ -239,17 +236,20 @@
       "iconSize" = "medium";
     };
     
-    # Additional KDE Global Settings
+    # KDE Global Settings
     "kdeglobals".KDE = {
       AnimationDurationFactor = 1;
       ShowDeleteCommand = false;
       SingleClick = false;  # Double-click to open
+      LookAndFeelPackage = "org.kde.breezedark.desktop";
       widgetStyle = "Breeze";
     };
-    
+
     "kdeglobals".General = {
       AccentColor = "128,178,230";  # Light blue accent
       ColorScheme = "BreezeDark";
+      Name = "Breeze Dark";
+      accentColorFromWallpaper = false;
       TerminalApplication = "konsole";
       TerminalService = "org.kde.konsole.desktop";
       XftAntialias = true;
@@ -261,7 +261,15 @@
       smallestReadableFont = "Noto Sans,8,-1,5,50,0,0,0,0,0";
       toolBarFont = "Noto Sans,10,-1,5,50,0,0,0,0,0";
     };
-    
+
+    # Window decorations
+    "kwinrc"."org.kde.kdecoration2" = {
+      library = "org.kde.breeze";
+      theme = "Breeze";
+      ButtonsOnLeft = "XAI";
+      ButtonsOnRight = "SM";
+    };
+
     # Input Configuration
     "kcminputrc".Mouse = {
       cursorSize = if osConfig.networking.hostName == "nixos-m1" then 32 else 24;
@@ -361,9 +369,6 @@
       if osConfig.networking.hostName == "nixos-m1" 
       then "eDP-1=2;" 
       else "XORGXRDP0=1.15;";
-    
-    # Icons Theme
-    "kdeglobals".Icons.Theme = "breeze-dark";
     
     # Configure KDE Wallet for 1Password support with minimal interference
     "kwalletrc"."Wallet" = {

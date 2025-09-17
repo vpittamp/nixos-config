@@ -67,7 +67,7 @@ let
     tailscale
     
     # Certificate management tools
-    nss_latest.tools  # Provides certutil for managing NSS certificate database
+    nssTools  # Provides certutil for managing NSS certificate database
   ];
 
   # Development tools that work better at system level

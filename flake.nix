@@ -65,7 +65,7 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                backupFileExtension = null;  # Disable backups - overwrites directly
+                backupFileExtension = "hm-backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
@@ -110,6 +110,35 @@
           hostname = "nixos-wsl";
           system = "x86_64-linux";
           modules = [ ./configurations/wsl.nix ];
+        };
+      };
+      
+      homeConfigurations = let
+        currentSystem = if builtins ? currentSystem then builtins.currentSystem else "x86_64-linux";
+        pkgsFor = system: import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
+        unstableFor = system: import nixpkgs-bleeding {
+          inherit system;
+          config.allowUnfree = true;
+        };
+        osConfigFor = system:
+          if system == "aarch64-linux" then self.nixosConfigurations.m1.config
+          else self.nixosConfigurations.hetzner.config;
+      in {
+        vpittamp = home-manager.lib.homeManagerConfiguration {
+          pkgs = pkgsFor currentSystem;
+          extraSpecialArgs = {
+            inherit inputs;
+            osConfig = osConfigFor currentSystem;
+            pkgs-unstable = unstableFor currentSystem;
+          };
+          modules = [
+            ./home-vpittamp.nix
+            onepassword-shell-plugins.hmModules.default
+            inputs.plasma-manager.homeModules.plasma-manager
+          ];
         };
       };
       
@@ -196,6 +225,8 @@
               echo "  - container: Docker/K8s containers"
               echo ""
               echo "Build with: nixos-rebuild switch --flake .#<config>"
+              echo "Export current Plasma settings: ./scripts/plasma-rc2nix.sh > plasma-latest.nix"
+              echo "Apply Home Manager profile: nix run home-manager/master -- switch --flake .#vpittamp"
             '';
           };
         });

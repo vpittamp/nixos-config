@@ -36,7 +36,7 @@
     # Desktop configurations
     ./home-modules/desktop/touchpad-gestures.nix  # Touchpad gestures for KDE
     ./home-modules/desktop/plasma-config.nix  # Comprehensive Plasma configuration
-    ./home-modules/desktop/activities-poc.nix  # TEST: KDE Activities POC
+    ./home-modules/desktop/project-activities  # Declarative project activities
     ./home-modules/tools/k9s.nix
     ./home-modules/tools/yazi.nix
     ./home-modules/tools/nix.nix
@@ -71,7 +71,8 @@
     packageConfig = import ./shared/package-lists.nix { inherit pkgs lib; };
   in
     # Use appropriate profile based on environment
-    packageConfig.getProfile.user;
+    packageConfig.getProfile.user
+    ++ [ pkgs.papirus-icon-theme ];
 
   # Enable yazi (since it uses an option-based enable)
   modules.tools.yazi.enable = true;

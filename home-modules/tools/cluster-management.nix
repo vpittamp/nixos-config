@@ -1,6 +1,7 @@
 { config, pkgs, lib, ... }:
 
 let
+  dollar = "$";
   clusterFunctions = ''
     # Cluster management functions
     export STACKS_DIR="''${STACKS_DIR:-$HOME/stacks}"
@@ -19,6 +20,18 @@ let
         ctx=$(kubectl config current-context 2>/dev/null || echo "")
       fi
       echo "$ctx"
+    }
+
+    # Derive the Kind cluster name from the host context (e.g., kind-localdev -> localdev)
+    detect_cluster_name() {
+      local ctx="$(detect_host_context)"
+      if [[ "$ctx" == kind-* ]]; then
+        echo "''${ctx#kind-}"
+      elif [ -n "$ctx" ]; then
+        echo "$ctx"
+      else
+        echo "localdev"
+      fi
     }
 
     check-azure-auth() {
@@ -81,7 +94,7 @@ let
       fi
       return 0
     }
-    
+
     # Get Azure status for display
     get-azure-status() {
       if ! command -v az &>/dev/null; then
@@ -140,7 +153,8 @@ let
       cd "$CDK8S_DIR" && npm run synth || { cd "$ORIG_DIR"; return 1; }
       
       echo "🚀 Creating cluster with idpbuilder..."
-      
+
+      # Allow idpbuilder to manage its own self-signed certificates
       # Check if Linux deployment script exists and use it
       if [ -f "$REF_DIR/deploy-linux-ssh.sh" ]; then
         echo "Using Linux deployment script with direct key mounting and Azure integration..."
@@ -317,8 +331,24 @@ let
       cd "$ORIG_DIR"
 
       # Step 2: Update cluster
-      local CONFIG_FILE="$REF_DIR/kind-config-linux-ssh.yaml"
       local LOG_FILE="/tmp/idpbuilder-update-$$.log"
+      local CLUSTER_NAME="$(detect_cluster_name)"
+      local IDP_CMD=(
+        idpbuilder create
+        --name "''${CLUSTER_NAME}"
+        --dev-password
+        --package "$CDK8S_DIR/dist/"
+        --package "$REF_DIR/"
+      )
+
+      if [ "$#" -gt 0 ]; then
+        IDP_CMD+=("$@")
+      fi
+
+      # Show the exact command that will run
+      local IDP_CMD_STR
+      IDP_CMD_STR=$(printf '%q ' "${dollar}{IDP_CMD[@]}")
+      ${pkgs.gum}/bin/gum style --foreground 247 "🧰 Command:" "${dollar}{IDP_CMD_STR}"
 
       ${pkgs.gum}/bin/gum style --border double --padding "1 2" --border-foreground 212 \
         "🔄 Cluster Update" \
@@ -335,40 +365,20 @@ let
       case "$UPDATE_VIEW" in
         "Show progress only")
           ${pkgs.gum}/bin/gum spin --spinner pulse --title "Updating cluster..." -- \
-            bash -c "idpbuilder create \
-              --name \"$CLUSTER_NAME\" \
-              --kind-config \"$CONFIG_FILE\" \
-              --dev-password \
-              -p \"$CDK8S_DIR/dist/\" \
-              -p \"$REF_DIR/\" &> \"$LOG_FILE\""
+            bash -c 'LOG_FILE="$1"; shift; "$@" &> "$LOG_FILE"' bash "$LOG_FILE" "${dollar}{IDP_CMD[@]}"
           ;;
         "Show filtered logs")
-          idpbuilder create \
-            --name "''${CLUSTER_NAME}" \
-            --kind-config "''${CONFIG_FILE}" \
-            --dev-password \
-            -p "$CDK8S_DIR/dist/" \
-            -p "$REF_DIR/" 2>&1 | tee "$LOG_FILE" | \
+          "${dollar}{IDP_CMD[@]}" 2>&1 | tee "$LOG_FILE" | \
           grep -E "(ERROR|Warning|Successfully|Created|Updated|Applied)" | \
           ${pkgs.gum}/bin/gum pager
           ;;
         "Show all logs")
-          idpbuilder create \
-            --name "''${CLUSTER_NAME}" \
-            --kind-config "''${CONFIG_FILE}" \
-            --dev-password \
-            -p "$CDK8S_DIR/dist/" \
-            -p "$REF_DIR/" 2>&1 | tee "$LOG_FILE" | \
+          "${dollar}{IDP_CMD[@]}" 2>&1 | tee "$LOG_FILE" | \
           ${pkgs.gum}/bin/gum pager
           ;;
         "Run in background")
           ${pkgs.gum}/bin/gum style --foreground 226 "📝 Logs: tail -f $LOG_FILE"
-          idpbuilder create \
-            --name "''${CLUSTER_NAME}" \
-            --kind-config "''${CONFIG_FILE}" \
-            --dev-password \
-            -p "$CDK8S_DIR/dist/" \
-            -p "$REF_DIR/" &> "$LOG_FILE" &
+          "${dollar}{IDP_CMD[@]}" &> "$LOG_FILE" &
           local PID=$!
           ${pkgs.gum}/bin/gum spin --spinner line --title "Update running in background (PID: $PID)" \
             -- sleep 5
@@ -376,6 +386,13 @@ let
       esac
 
       local result=$?
+
+      if [ $result -eq 0 ] && [ -x "$STACKS_DIR/scripts/update-argocd-token.sh" ]; then
+        ${pkgs.gum}/bin/gum style --foreground 82 "Updating ArgoCD token in 1Password..."
+        if ! "$STACKS_DIR/scripts/update-argocd-token.sh"; then
+          ${pkgs.gum}/bin/gum style --foreground 214 "⚠️  Unable to store ArgoCD token automatically; check logs."
+        fi
+      fi
 
       # Show final status
       if [ $result -eq 0 ]; then
@@ -536,13 +553,6 @@ let
 
       cd "$ORIG_DIR"
 
-      # Build the kind config path
-      local CONFIG_FILE="$REF_DIR/kind-config-linux-ssh.yaml"
-      if [ ! -f "$CONFIG_FILE" ]; then
-        echo "❌ Kind config not found at: $CONFIG_FILE"
-        return 1
-      fi
-
       echo ""
       echo "🔄 Starting cluster update with idpbuilder..."
       echo "📦 Packages: $CDK8S_DIR/dist/ + $REF_DIR/"
@@ -553,21 +563,32 @@ let
       echo "📝 Full logs: tail -f $LOG_FILE"
       echo ""
 
+      local CLUSTER_NAME="$(detect_cluster_name)"
+      local IDP_CMD=(
+        idpbuilder create
+        --name "''${CLUSTER_NAME}"
+        --dev-password
+        --package "$CDK8S_DIR/dist/"
+        --package "$REF_DIR/"
+      )
+      if [ "$#" -gt 0 ]; then
+        IDP_CMD+=("$@")
+      fi
+
+      # Show the exact command that will run
+      local IDP_CMD_STR
+      IDP_CMD_STR=$(printf '%q ' "${dollar}{IDP_CMD[@]}")
+      echo "🧰 Command: ${dollar}{IDP_CMD_STR}"
+
       # Run idpbuilder with limited output display
       # Show only key status lines and errors
       {
-        idpbuilder create \
-          --name "''${CLUSTER_NAME}" \
-          --kind-config "''${CONFIG_FILE}" \
-          --dev-password \
-          -p "$CDK8S_DIR/dist/" \
-          -p "$REF_DIR/" \
-          $NO_EXIT "$@" 2>&1 | tee "$LOG_FILE" | {
-            # Filter output to show only important lines
-            while IFS= read -r line; do
-              # Show errors, warnings, and key status updates
-              if [[ "$line" =~ (ERROR|Error|FAILED|Failed|failed) ]] || \
-                 [[ "$line" =~ (WARNING|Warning) ]] || \
+        "${dollar}{IDP_CMD[@]}" 2>&1 | tee "$LOG_FILE" | {
+          # Filter output to show only important lines
+          while IFS= read -r line; do
+            # Show errors, warnings, and key status updates
+            if [[ "$line" =~ (ERROR|Error|FAILED|Failed|failed) ]] || \
+               [[ "$line" =~ (WARNING|Warning) ]] || \
                  [[ "$line" =~ (Successfully|Completed|Created|Updated|Applied) ]] || \
                  [[ "$line" =~ (Syncing|Installing|Deploying|Processing) ]] || \
                  [[ "$line" =~ ^(Creating|Updating|Applying) ]]; then
@@ -582,6 +603,13 @@ let
       }
 
       local result=''${PIPESTATUS[0]}
+
+      if [ $result -eq 0 ] && [ -x "$STACKS_DIR/scripts/update-argocd-token.sh" ]; then
+        echo "🔑 Updating ArgoCD token in 1Password..."
+        if ! "$STACKS_DIR/scripts/update-argocd-token.sh"; then
+          echo "⚠️  Unable to store ArgoCD token automatically; check logs."
+        fi
+      fi
 
       # Cleanup temp files
       if [ -f "$DIFF_FILE" ]; then
@@ -691,7 +719,7 @@ let
           fi
           ;;
         "Update Cluster")
-          cluster-update-gum
+          cluster-update
           ;;
         "Update Cluster (watch mode)")
           ${pkgs.gum}/bin/gum style --foreground 45 "📌 Watch mode will continuously sync changes"
