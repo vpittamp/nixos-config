@@ -20,13 +20,12 @@ in
     ];
     
     # Command line arguments for better performance and privacy
-    commandLineArgs = [
+    commandLineArgs = (if isM1 then [
+      # M1-specific: Force scaling to compensate for GDK_SCALE=2
+      "--force-device-scale-factor=0.75"
+    ] else []) ++ [
       # Disable KDE Wallet to prevent errors - use basic password store
       "--password-store=basic"
-    ] ++ lib.optionals isM1 [
-      # M1 HiDPI scaling - override GDK_SCALE effect
-      "--force-device-scale-factor=1.25"  # Sweet spot for 180 DPI with GDK_SCALE=2
-    ] ++ [
       
       # Enable hardware acceleration
       "--enable-features=VaapiVideoDecoder"
