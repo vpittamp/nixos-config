@@ -45,7 +45,7 @@
       gpg = {
         format = "ssh";
         ssh = {
-          program = "${pkgs._1password-gui or pkgs._1password}/bin/op-ssh-sign";
+          program = "${pkgs._1password-gui or pkgs._1password-cli}/bin/op-ssh-sign";
           allowedSignersFile = "~/.config/git/allowed_signers";
         };
       };

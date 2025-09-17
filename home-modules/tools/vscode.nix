@@ -1,12 +1,16 @@
 { config, pkgs, lib, ... }:
 
+let
+  profile = "default";
+in
 {
   programs.vscode = {
     enable = true;
     package = pkgs.vscode;
     
-    # Extensions for development and 1Password integration
-    extensions = (with pkgs.vscode-extensions; [
+    profiles.${profile} = {
+      # Extensions for development and 1Password integration
+      extensions = (with pkgs.vscode-extensions; [
       # Development essentials
       ms-vscode-remote.remote-ssh
       ms-vscode-remote.remote-containers
@@ -38,9 +42,8 @@
       # 1Password extension (special syntax due to naming)
       pkgs.vscode-extensions."1Password".op-vscode
     ];
-    
-    # User settings for VSCode
-    userSettings = {
+      # User settings for VSCode
+      userSettings = {
       # 1Password integration settings
       "1password.items.cacheValues" = true;  # Cache CLI values for performance
       "1password.items.useSecretReferences" = true;  # Enable secret reference syntax
@@ -143,10 +146,10 @@
           };
         };
       };
-    };
-    
-    # Keybindings
-    keybindings = [
+      };
+      
+      # Keybindings
+      keybindings = [
       {
         key = "ctrl+shift+p";
         command = "workbench.action.showCommands";
@@ -166,12 +169,13 @@
         command = "1password.save";
         when = "editorTextFocus && editorHasSelection";
       }
-    ];
+      ];
+    };
   };
   
   # Create VSCode settings directory and SSH config for 1Password
   home.file.".vscode-server/data/Machine/settings.json" = {
-    text = builtins.toJSON config.programs.vscode.userSettings;
+    text = builtins.toJSON config.programs.vscode.profiles.${profile}.userSettings;
   };
   
   # Environment variables for VSCode

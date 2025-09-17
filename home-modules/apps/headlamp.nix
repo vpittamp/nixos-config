@@ -118,7 +118,7 @@ in
     };
 
     # Wrapper that runs Headlamp via 1Password CLI with provided secret refs
-    home.packages = [ pkgs._1password ];
+    home.packages = [ pkgs._1password-cli ];
 
     home.file.".local/bin/headlamp-ai" = {
       executable = true;
@@ -149,4 +149,3 @@ in
     };
   };
 }
-
