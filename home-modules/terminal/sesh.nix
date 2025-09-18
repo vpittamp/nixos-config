@@ -64,6 +64,24 @@
           preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
         }
         {
+          name = "stacks";
+          path = "~/stacks";
+          startup_command = "";
+          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
+        }
+        {
+          name = "backstage";
+          path = "~/backstage-cnoe";
+          startup_command = "";
+          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
+        }
+        {
+          name = "dev";
+          path = "~/dev";
+          startup_command = "";
+          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
+        }
+        {
           name = "dotfiles";
           path = "~/.config";
           startup_command = "";

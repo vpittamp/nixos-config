@@ -17,6 +17,47 @@ let
     let
       quoted = lib.escapeShellArg workspacePath;
     in "${pkgs.kdePackages.konsole}/bin/konsole --profile Shell --workdir ${quoted}";
+
+  konsoleSeshCmd = sessionName: workspacePath:
+    let
+      path = expandPath workspacePath;
+      quotedPath = lib.escapeShellArg path;
+      launchCmd = lib.escapeShellArg "cd ${path} && sesh connect ${sessionName}";
+    in "${pkgs.kdePackages.konsole}/bin/konsole --profile Shell --workdir ${quotedPath} -e ${pkgs.runtimeShell} -lc ${launchCmd}";
+
+  yakuakeSessionScript = name: workspacePath:
+    let
+      path = expandPath workspacePath;
+    in pkgs.writeShellScript "activity-yakuake-${name}" ''
+      set -euo pipefail
+
+      TARGET=${lib.escapeShellArg path}
+
+      QDBUS=${lib.escapeShellArg "${pkgs.libsForQt5.qttools.bin}/bin/qdbus"}
+      YAKUAKE=${lib.escapeShellArg "${pkgs.kdePackages.yakuake}/bin/yakuake"}
+      PGREP=${lib.escapeShellArg "${pkgs.procps}/bin/pgrep"}
+
+      if ! $PGREP -x yakuake >/dev/null 2>&1; then
+        nohup $YAKUAKE >/dev/null 2>&1 &
+      fi
+
+      for attempt in $(seq 1 40); do
+        if $QDBUS org.kde.yakuake /yakuake/sessions >/dev/null 2>&1; then
+          break
+        fi
+        sleep 0.25
+        if [ "$attempt" -eq 40 ]; then
+          exit 0
+        fi
+      done
+
+      if [ -z "$($QDBUS org.kde.yakuake /yakuake/sessions sessionIdList 2>/dev/null)" ]; then
+        $QDBUS org.kde.yakuake /yakuake/sessions addSession >/dev/null 2>&1 || true
+      fi
+
+      CMD=$(printf 'cd %q && clear' "$TARGET")
+      $QDBUS org.kde.yakuake /yakuake/sessions runCommand "$CMD"
+    '';
   dolphinCmd = workspacePath:
     let
       quoted = lib.escapeShellArg workspacePath;
@@ -27,6 +68,7 @@ in rec {
 
   rawActivities = {
     nixos = {
+      uuid = "6ed332bc-fa61-5381-511d-4d5ba44a293b";
       name = "NixOS";
       description = "System configuration, infra-as-code, and declarative desktop tweaks.";
       icon = "nix-snowflake";
@@ -42,8 +84,13 @@ in rec {
       ];
       autostart = [
         {
-          name = "Konsole — NixOS";
-          exec = konsoleCmd "/etc/nixos";
+          name = "Konsole (sesh) — NixOS";
+          exec = konsoleSeshCmd "nix-config" "/etc/nixos";
+          icon = "utilities-terminal";
+        }
+        {
+          name = "Yakuake — NixOS";
+          exec = toString (yakuakeSessionScript "nixos" "/etc/nixos");
           icon = "utilities-terminal";
         }
       ];
@@ -57,6 +104,7 @@ in rec {
     };
 
     stacks = {
+      uuid = "b4f4e6c4-e52c-1f6b-97f5-567b04283fac";
       name = "Stacks";
       description = "Platform engineering stacks and deployment playbooks.";
       icon = "application-x-yaml";  # YAML/config files - common in GitOps
@@ -71,6 +119,16 @@ in rec {
         (fileUri "~/stacks")
       ];
       autostart = [
+        {
+          name = "Konsole (sesh) — Stacks";
+          exec = konsoleSeshCmd "stacks" "~/stacks";
+          icon = "utilities-terminal";
+        }
+        {
+          name = "Yakuake — Stacks";
+          exec = toString (yakuakeSessionScript "stacks" "~/stacks");
+          icon = "utilities-terminal";
+        }
         {
           name = "Dolphin — Stacks";
           exec = dolphinCmd (expandPath "~/stacks");
@@ -87,6 +145,7 @@ in rec {
     };
 
     backstage = {
+      uuid = "dcc377c8-d627-4d0b-8dd7-27d83f8282b3";
       name = "Backstage";
       description = "Backstage developer portal and CNOE platform.";
       icon = "applications-development";  # Developer portal icon
@@ -102,8 +161,13 @@ in rec {
       ];
       autostart = [
         {
-          name = "Konsole — Backstage";
-          exec = konsoleCmd (expandPath "~/backstage-cnoe");
+          name = "Konsole (sesh) — Backstage";
+          exec = konsoleSeshCmd "backstage" "~/backstage-cnoe";
+          icon = "utilities-terminal";
+        }
+        {
+          name = "Yakuake — Backstage";
+          exec = toString (yakuakeSessionScript "backstage" "~/backstage-cnoe");
           icon = "utilities-terminal";
         }
         {
@@ -118,6 +182,46 @@ in rec {
           what = "documents";
         };
         keepMonths = 3;
+      };
+    };
+
+    dev = {
+      uuid = "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4";
+      name = "Dev";
+      description = "General development workspace and experiments.";
+      icon = "applications-engineering";
+      directory = expandPath "~/dev";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
+      colorScheme = {
+        accentColor = "96,137,204";
+        windowDecorationColor = "40,52,70";
+      };
+      resources = [
+        (fileUri "~/dev")
+      ];
+      autostart = [
+        {
+          name = "Konsole (sesh) — Dev";
+          exec = konsoleSeshCmd "dev" "~/dev";
+          icon = "utilities-terminal";
+        }
+        {
+          name = "Yakuake — Dev";
+          exec = toString (yakuakeSessionScript "dev" "~/dev");
+          icon = "utilities-terminal";
+        }
+        {
+          name = "Dolphin — Dev";
+          exec = dolphinCmd (expandPath "~/dev");
+          icon = "system-file-manager";
+        }
+      ];
+      scoring = {
+        pruneRecent = {
+          count = 120;
+          what = "documents";
+        };
+        keepMonths = 2;
       };
     };
   };

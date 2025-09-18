@@ -11,7 +11,10 @@ let
       hash = builtins.hashString "sha256" id;
     in "${builtins.substring 0 8 hash}-${builtins.substring 8 4 hash}-${builtins.substring 12 4 hash}-${builtins.substring 16 4 hash}-${builtins.substring 20 12 hash}";
 
-  activityUUIDs = lib.mapAttrs (id: _: mkUUID id) activities;
+  activityUUIDs = lib.mapAttrs (
+    id: activity:
+      if activity ? uuid && activity.uuid != "" then activity.uuid else mkUUID id
+  ) activities;
 
   panels = import ./panels.nix { inherit lib activities mkUUID; };
 
