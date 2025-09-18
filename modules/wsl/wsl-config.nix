@@ -15,7 +15,7 @@
   };
 
   # WSL-specific shell configuration
-  programs.bash.initExtra = lib.mkAfter ''
+  programs.bash.interactiveShellInit = lib.mkAfter ''
     # WSL-specific DISPLAY configuration
     if [ -n "$WSL_DISTRO_NAME" ] && [ -z "$DISPLAY" ]; then
       export DISPLAY=:0

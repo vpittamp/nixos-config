@@ -1,5 +1,28 @@
 { config, lib, pkgs, ... }:
 
+let
+  # Import activity data to generate sesh sessions
+  activityData = import ../desktop/project-activities/data.nix { inherit lib config pkgs; };
+
+  # Generate sesh sessions from activity data
+  activitySessions = lib.mapAttrsToList (name: activity:
+    let
+      # Handle directory expansion
+      dir = if builtins.isString activity.directory then
+              activity.directory
+            else
+              activity.directory;
+      expandedDir = if lib.hasPrefix "~/" dir
+                    then dir  # sesh handles ~ expansion
+                    else dir;
+    in {
+      name = lib.toLower activity.name;  # Use lowercase activity name as session name
+      path = expandedDir;
+      startup_command = "";
+      preview_command = "eza --all --git --icons --color=always --group-directories-first --long {}";
+    }
+  ) activityData.rawActivities;
+in
 {
   # Sesh session manager configuration
   # Smart tmux session manager with predefined sessions and directory navigation
@@ -30,8 +53,9 @@
       };
       
       # Session configurations
-      session = [
-        # Nix Configuration Sessions
+      # Generate sessions from activity data plus some additional custom sessions
+      session = activitySessions ++ [
+        # Additional Nix-specific sessions (not tied to activities)
         {
           name = "nix-config";
           path = "/etc/nixos";
@@ -50,44 +74,13 @@
           startup_command = "";
           preview_command = "bat --color=always /etc/nixos/flake.nix";
         }
-        # Quick edit session for all Nix configs
-        {
-          name = "nix-all";
-          path = "/etc/nixos";
-          startup_command = "";
-        }
-        # Development Sessions
-        {
-          name = "workspace";
-          path = "~/workspace";
-          startup_command = "";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
-        }
-        {
-          name = "stacks";
-          path = "~/stacks";
-          startup_command = "";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
-        }
-        {
-          name = "backstage";
-          path = "~/backstage-cnoe";
-          startup_command = "";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
-        }
-        {
-          name = "dev";
-          path = "~/dev";
-          startup_command = "";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
-        }
+        # Additional utility sessions
         {
           name = "dotfiles";
           path = "~/.config";
           startup_command = "";
           preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
         }
-        # Kubernetes/Container Sessions
         {
           name = "k8s-dev";
           path = "~/k8s";

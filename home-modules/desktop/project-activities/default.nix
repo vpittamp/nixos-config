@@ -202,36 +202,11 @@ ${resourceCmds}${pruneRecentCmd}${pruneEarlierCmd}
 
   shellAliases = lib.mapAttrs (id: _: "${qdbus} org.kde.ActivityManager /ActivityManager/Activities org.kde.ActivityManager.Activities.SetCurrentActivity ${activityUUIDs.${id}}") activities;
 
-  perActivitySections = lib.listToAttrs (
-    map (id:
-      let
-        activity = activities.${id};
-        uuid = activityUUIDs.${id};
-      in {
-        name = uuid;
-        value =
-          { Name = activity.name; }
-          // lib.optionalAttrs ((activity.description or "") != "") { Description = activity.description; }
-          // lib.optionalAttrs ((activity.icon or "") != "") { Icon = activity.icon; };
-      }
-    ) activityIds
-  );
-
 in {
   config = {
-    programs.plasma = {
-      configFile."kactivitymanagerdrc" =
-        ({
-          activities = lib.mapAttrs' (id: activity: lib.nameValuePair activityUUIDs.${id} activity.name) activities;
-          main.currentActivity = lib.mkForce activityUUIDs.${defaultActivity};
-        }
-        // perActivitySections);
-      resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];
-
-      configFile."kglobalshortcutsrc".ActivityManager =
-        { "_k_friendly_name" = "Activity Manager"; }
-        // activityShortcuts;
-    };
+    programs.plasma.configFile."kglobalshortcutsrc".ActivityManager =
+      { "_k_friendly_name" = "Activity Manager"; }
+      // activityShortcuts;
 
     programs.bash.shellAliases = shellAliases;
 

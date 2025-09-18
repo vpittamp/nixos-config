@@ -22,7 +22,10 @@ let
     let
       path = expandPath workspacePath;
       quotedPath = lib.escapeShellArg path;
-      launchCmd = lib.escapeShellArg "cd ${path} && sesh connect ${sessionName}";
+      quotedSession = lib.escapeShellArg sessionName;
+      launchCmd = lib.escapeShellArg (
+        "direnv exec ${quotedPath} sesh connect ${quotedSession} || sesh connect ${quotedSession}"
+      );
     in "${pkgs.kdePackages.konsole}/bin/konsole --profile Shell --workdir ${quotedPath} -e ${pkgs.runtimeShell} -lc ${launchCmd}";
 
   yakuakeSessionScript = name: workspacePath:
@@ -63,6 +66,13 @@ let
       quoted = lib.escapeShellArg workspacePath;
     in "${pkgs.kdePackages.dolphin}/bin/dolphin ${quoted}";
 
+  # VS Code with specific directory
+  vscodeCmd = workspacePath:
+    let
+      path = expandPath workspacePath;
+      quoted = lib.escapeShellArg path;
+    in "${pkgs.vscode}/bin/code ${quoted}";
+
 in rec {
   defaultActivity = "nixos";
 
@@ -74,6 +84,7 @@ in rec {
       icon = "nix-snowflake";
       directory = "/etc/nixos";
       wallpaper = "/run/current-system/sw/share/wallpapers/DarkestHour/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+3";  # Activity shortcut
       colorScheme = {
         # Subtle blue accent for NixOS activity
         accentColor = "104,124,201";  # Nix blue (#687CC9)
@@ -82,18 +93,7 @@ in rec {
       resources = [
         (fileUri "/etc/nixos")
       ];
-      autostart = [
-        {
-          name = "Konsole (sesh) — NixOS";
-          exec = konsoleSeshCmd "nix-config" "/etc/nixos";
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Yakuake — NixOS";
-          exec = toString (yakuakeSessionScript "nixos" "/etc/nixos");
-          icon = "utilities-terminal";
-        }
-      ];
+      autostart = [];
       scoring = {
         pruneRecent = {
           count = 250;
@@ -110,6 +110,7 @@ in rec {
       icon = "application-x-yaml";  # YAML/config files - common in GitOps
       directory = expandPath "~/stacks";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+4";  # Activity shortcut
       colorScheme = {
         # Subtle green accent for Stacks activity
         accentColor = "77,150,75";  # Forest green (#4D964B)
@@ -118,23 +119,7 @@ in rec {
       resources = [
         (fileUri "~/stacks")
       ];
-      autostart = [
-        {
-          name = "Konsole (sesh) — Stacks";
-          exec = konsoleSeshCmd "stacks" "~/stacks";
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Yakuake — Stacks";
-          exec = toString (yakuakeSessionScript "stacks" "~/stacks");
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Dolphin — Stacks";
-          exec = dolphinCmd (expandPath "~/stacks");
-          icon = "system-file-manager";
-        }
-      ];
+      autostart = [];
       scoring = {
         pruneRecent = {
           count = 150;
@@ -151,6 +136,7 @@ in rec {
       icon = "applications-development";  # Developer portal icon
       directory = expandPath "~/backstage-cnoe";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cascade/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+1";  # Activity shortcut
       colorScheme = {
         # Subtle purple accent for Backstage activity
         accentColor = "139,92,168";  # Backstage purple (#8B5CA8)
@@ -159,23 +145,7 @@ in rec {
       resources = [
         (fileUri "~/backstage-cnoe")
       ];
-      autostart = [
-        {
-          name = "Konsole (sesh) — Backstage";
-          exec = konsoleSeshCmd "backstage" "~/backstage-cnoe";
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Yakuake — Backstage";
-          exec = toString (yakuakeSessionScript "backstage" "~/backstage-cnoe");
-          icon = "utilities-terminal";
-        }
-        {
-          name = "VS Code — Backstage";
-          exec = "${pkgs.vscode}/bin/code ${expandPath "~/backstage-cnoe"}";
-          icon = "code";
-        }
-      ];
+      autostart = [];
       scoring = {
         pruneRecent = {
           count = 200;
@@ -192,6 +162,7 @@ in rec {
       icon = "applications-engineering";
       directory = expandPath "~/dev";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+2";  # Activity shortcut
       colorScheme = {
         accentColor = "96,137,204";
         windowDecorationColor = "40,52,70";
@@ -199,23 +170,7 @@ in rec {
       resources = [
         (fileUri "~/dev")
       ];
-      autostart = [
-        {
-          name = "Konsole (sesh) — Dev";
-          exec = konsoleSeshCmd "dev" "~/dev";
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Yakuake — Dev";
-          exec = toString (yakuakeSessionScript "dev" "~/dev");
-          icon = "utilities-terminal";
-        }
-        {
-          name = "Dolphin — Dev";
-          exec = dolphinCmd (expandPath "~/dev");
-          icon = "system-file-manager";
-        }
-      ];
+      autostart = [];
       scoring = {
         pruneRecent = {
           count = 120;

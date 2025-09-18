@@ -1,293 +1,164 @@
 { config, pkgs, lib, ... }:
 let
-  # Catppuccin Mocha colors embedded directly
   colors = {
-    base = "#1e1e2e";
-    mantle = "#181825";
-    crust = "#11111b";
-    surface0 = "#313244";
-    surface1 = "#45475a";
-    surface2 = "#585b70";
+    rosewater = "#f5e0dc";
+    flamingo = "#f2cdcd";
+    pink = "#f5c2e7";
+    mauve = "#cba6f7";
+    red = "#f38ba8";
+    maroon = "#eba0ac";
+    peach = "#fab387";
+    yellow = "#f9e2af";
+    green = "#a6e3a1";
+    teal = "#94e2d5";
+    sky = "#89dceb";
+    sapphire = "#74c7ec";
+    blue = "#89b4fa";
+    lavender = "#b4befe";
     text = "#cdd6f4";
     subtext1 = "#bac2de";
     subtext0 = "#a6adc8";
-    lavender = "#b4befe";
-    blue = "#89b4fa";
-    sapphire = "#74c7ec";
-    sky = "#89dceb";
-    teal = "#94e2d5";
-    green = "#a6e3a1";
-    yellow = "#f9e2af";
-    peach = "#fab387";
-    maroon = "#eba0ac";
-    red = "#f38ba8";
-    mauve = "#cba6f7";
-    pink = "#f5c2e7";
-    flamingo = "#f2cdcd";
-    rosewater = "#f5e0dc";
+    surface2 = "#585b70";
+    surface1 = "#45475a";
+    surface0 = "#313244";
+    base = "#1e1e2e";
+    mantle = "#181825";
+    crust = "#11111b";
   };
 in
 {
-  # Modern shell prompt with Starship - Pure ASCII configuration
   programs.starship = {
     enable = true;
     enableBashIntegration = true;
+
     settings = {
-      format = "$username$hostname $custom$nix_shell$directory$git_branch$git_status $kubernetes\n$character ";
-      
+      add_newline = true;
       palette = "catppuccin_mocha";
-      
+      right_format = "$time";
+      continuation_prompt = "⋯ ";
+
       palettes.catppuccin_mocha = {
-        rosewater = "${colors.rosewater}";
-        flamingo = "${colors.flamingo}";
-        pink = "${colors.pink}";
-        mauve = "${colors.mauve}";
-        red = "${colors.red}";
-        maroon = "${colors.maroon}";
-        peach = "${colors.peach}";
-        yellow = "${colors.yellow}";
-        green = "${colors.green}";
-        teal = "${colors.teal}";
-        sky = "${colors.sky}";
-        sapphire = "${colors.sapphire}";
-        blue = "${colors.blue}";
-        lavender = "${colors.lavender}";
-        text = "${colors.text}";
-        subtext1 = "${colors.subtext1}";
-        subtext0 = "${colors.subtext0}";
-        overlay2 = "${colors.surface2}";
-        overlay1 = "${colors.surface1}";
-        overlay0 = "${colors.surface0}";
-        surface2 = "${colors.surface2}";
-        surface1 = "${colors.surface1}";
-        surface0 = "${colors.surface0}";
-        base = "${colors.base}";
-        mantle = "${colors.mantle}";
-        crust = "${colors.crust}";
+        rosewater = colors.rosewater;
+        flamingo = colors.flamingo;
+        pink = colors.pink;
+        mauve = colors.mauve;
+        red = colors.red;
+        maroon = colors.maroon;
+        peach = colors.peach;
+        yellow = colors.yellow;
+        green = colors.green;
+        teal = colors.teal;
+        sky = colors.sky;
+        sapphire = colors.sapphire;
+        blue = colors.blue;
+        lavender = colors.lavender;
+        text = colors.text;
+        subtext1 = colors.subtext1;
+        subtext0 = colors.subtext0;
+        overlay2 = colors.surface2;
+        overlay1 = colors.surface1;
+        overlay0 = colors.surface0;
+        surface2 = colors.surface2;
+        surface1 = colors.surface1;
+        surface0 = colors.surface0;
+        base = colors.base;
+        mantle = colors.mantle;
+        crust = colors.crust;
       };
-      
+
+      format = "$os$username$hostname$custom.tmux$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+
       os = {
-        disabled = true;  # Disable OS to avoid encoding issues
-        style = "fg:${colors.blue}";
-        format = "[$symbol ]($style)";
+        disabled = false;
+        style = "fg:${colors.lavender}";
+        format = "[$name]($style) ";
       };
-      
-      os.symbols = {
-        Ubuntu = "U";
-        Debian = "D";
-        Linux = "L";
-        Arch = "A";
-        Fedora = "F";
-        Alpine = "Al";
-        Amazon = "Am";
-        Android = "An";
-        Macos = "M";
-        Windows = "W";
-      };
-      
+
       username = {
         show_always = true;
-        style_user = "bold fg:${colors.mauve}";
+        style_user = "bold fg:${colors.rosewater}";
         style_root = "bold fg:${colors.red}";
         format = "[$user]($style)";
       };
-      
+
       hostname = {
         ssh_only = false;
-        style = "fg:${colors.blue}";
-        format = "@[$hostname]($style)";
-        # trim_at = "-";  # Removed to show full hostname
+        style = "fg:${colors.sapphire}";
+        format = "@[$hostname]($style) ";
       };
-      
+
+      custom.tmux = {
+        when = "test -n \"$TMUX\"";
+        command = "tmux display-message -p '#S:#I.#P'";
+        style = "fg:${colors.subtext1}";
+        format = "[tmux $output]($style) ";
+      };
+
       directory = {
         style = "bold fg:${colors.green}";
-        format = "[$path]($style)";
+        format = "[$path]($style) ";
         truncation_length = 3;
         truncation_symbol = "…/";
         home_symbol = "~";
+        truncate_to_repo = true;
       };
-      
-      directory.substitutions = {
-        "Documents" = "D";
-        "Downloads" = "DL";
-        "Music" = "M";
-        "Pictures" = "P";
-        "Developer" = "DEV";
-      };
-      
+
       git_branch = {
-        symbol = "⎇";
-        style = "fg:${colors.yellow}";
-        format = " [$symbol $branch]($style)";
+        symbol = "⎇ ";
+        style = "fg:${colors.peach}";
+        format = "[$symbol$branch]($style)";
       };
-      
+
       git_status = {
         style = "fg:${colors.yellow}";
-        format = "[$all_status$ahead_behind]($style)";
-        conflicted = "=";
-        ahead = "⇡";
-        behind = "⇣";
-        diverged = "⇕";
-        untracked = "?";
-        modified = "!";
-        renamed = "»";
-        deleted = "✘";
-        stashed = "\\$";
-        staged = "+";
-        typechanged = "±";
+        format = " [$all_status$ahead_behind]($style)";
       };
-      
-      nodejs = {
-        symbol = "⬢";
-        style = "fg:${colors.green}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["js" "mjs" "cjs" "ts" "tsx"];
-        detect_files = ["package.json" ".node-version"];
-        detect_folders = ["node_modules"];
+
+      git_state = {
+        style = "fg:${colors.maroon}";
+        format = " [$state( $progress_current/$progress_total)]($style)";
       };
-      
-      c = {
-        symbol = "C";
-        style = "fg:${colors.green}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["c" "h"];
-      };
-      
-      rust = {
-        symbol = "R";
-        style = "fg:${colors.peach}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["rs"];
-        detect_files = ["Cargo.toml" "Cargo.lock"];
-      };
-      
+
       nix_shell = {
-        disabled = false;
-        impure_msg = "[NIX]";
-        pure_msg = "[NIX-PURE]";
-        unknown_msg = "[NIX?]";
-        format = "[$state( $name)]($style) ";
-        style = "fg:${colors.blue} bold";
+        symbol = "❄ ";
+        style = "fg:${colors.sky} bold";
+        format = "[$symbol$state( $name)]($style) ";
       };
-      
-      golang = {
-        symbol = "GO";
-        style = "fg:${colors.sapphire}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["go"];
-        detect_files = ["go.mod" "go.sum" "glide.yaml" "Gopkg.yml" "Gopkg.lock"];
-      };
-      
-      php = {
-        symbol = "PHP";
-        style = "fg:${colors.lavender}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["php"];
-        detect_files = ["composer.json" ".php-version"];
-      };
-      
-      java = {
-        symbol = "J";
-        style = "fg:${colors.peach}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["java" "class" "jar"];
-        detect_files = ["pom.xml" "build.gradle.kts" "build.sbt"];
-      };
-      
-      kotlin = {
-        symbol = "K";
-        style = "fg:${colors.lavender}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["kt" "kts"];
-      };
-      
-      haskell = {
-        symbol = "λ";
-        style = "fg:${colors.mauve}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["hs" "lhs"];
-        detect_files = ["stack.yaml" "cabal.project"];
-      };
-      
-      python = {
-        symbol = "PY";
-        style = "fg:${colors.yellow}";
-        format = " [$symbol]($style)";
-        disabled = false;
-        detect_extensions = ["py"];
-        detect_files = ["requirements.txt" "pyproject.toml" "Pipfile" "setup.py"];
-        detect_folders = ["__pycache__" ".venv" "venv"];
-      };
-      
-      docker_context = {
-        symbol = "D";
-        style = "fg:${colors.blue}";
-        format = " [$symbol]($style)";
-        only_with_files = true;
-        detect_files = ["docker-compose.yml" "docker-compose.yaml" "Dockerfile"];
-        disabled = false;
-      };
-      
+
       kubernetes = {
         symbol = "☸";
-        style = "fg:${colors.sapphire}";
+        style = "fg:${colors.teal}";
         format = " [$symbol $context]($style)";
         disabled = false;
-        # Define shorter aliases for long context names
         contexts = [
           { context_pattern = "vcluster_.*_kind-localdev"; context_alias = "vcluster"; }
           { context_pattern = "arn:aws:eks:.*:cluster/(.*)"; context_alias = "$1"; }
           { context_pattern = "gke_.*_(?P<cluster>[\\w-]+)"; context_alias = "gke-$cluster"; }
-          { context_pattern = "(.{15}).*"; context_alias = "$1..."; }  # Truncate to 15 chars
+          { context_pattern = "(.{20}).*"; context_alias = "$1…"; }
         ];
       };
-      
+
+      cmd_duration = {
+        min_time = 2000;
+        style = "fg:${colors.yellow}";
+        format = " [⏱ $duration]($style)";
+      };
+
       fill = {
         symbol = " ";
       };
-      
+
       time = {
-        disabled = true;
+        disabled = false;
         time_format = "%H:%M";
         style = "fg:${colors.subtext0}";
         format = "[$time]($style)";
       };
-      
-      cmd_duration = {
-        min_time = 2000;
-        style = "fg:${colors.yellow}";
-        format = "[took $duration]($style)";
-      };
-      
+
       character = {
-        success_symbol = "[➜](bold fg:${colors.green})";
-        error_symbol = "[➜](bold fg:${colors.red})";
+        success_symbol = "[❯](bold fg:${colors.green})";
+        error_symbol = "[❯](bold fg:${colors.red})";
         vimcmd_symbol = "[❮](bold fg:${colors.green})";
-      };
-      
-      # Tmux session/window/pane indicator
-      env_var.tmux = {
-        variable = "TMUX";
-        format = "[$env_value]($style) ";
-        style = "fg:${colors.teal}";
-        default = "";
-      };
-      
-      # Custom tmux format command substitution
-      custom.tmux = {
-        when = "test -n \"$TMUX\"";
-        command = "tmux display-message -p '#S:#I.#P'";
-        format = "[\\[$output\\]]($style) ";
-        style = "fg:${colors.subtext0}";
-        disabled = false;
       };
     };
   };

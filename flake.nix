@@ -78,7 +78,6 @@
                 users.vpittamp = {
                   imports = [ 
                     ./home-vpittamp.nix
-                    onepassword-shell-plugins.hmModules.default
                     inputs.plasma-manager.homeModules.plasma-manager
                   ];
                   home.enableNixpkgsReleaseCheck = false;

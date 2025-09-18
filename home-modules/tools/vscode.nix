@@ -94,7 +94,17 @@ in
             "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
           };
         };
+        "bash-sesh" = {
+          "path" = "${pkgs.bashInteractive}/bin/bash";
+          "args" = [ "--login" "-c" "if command -v sesh >/dev/null 2>&1; then SESSION=$(basename \"$(pwd)\" | tr '[:upper:]' '[:lower:]'); sesh connect \"$SESSION\" || exec bash -l; else exec bash -l; fi" ];
+          "icon" = "terminal-tmux";
+          "env" = {
+            "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
+          };
+          "overrideName" = true;
+        };
       };
+      "terminal.external.linuxExec" = "${pkgs.kdePackages.konsole}/bin/konsole";
       
       # SSH configuration for 1Password
       "remote.SSH.configFile" = "~/.ssh/config";
@@ -168,6 +178,10 @@ in
         key = "ctrl+shift+s";
         command = "1password.save";
         when = "editorTextFocus && editorHasSelection";
+      }
+      {
+        key = "ctrl+alt+k";
+        command = "workbench.action.terminal.openNativeConsole";
       }
       ];
     };

@@ -191,8 +191,6 @@
         unset COLORTERM
         # Disable problematic OSC sequences
         export STARSHIP_DISABLE_ANSI_INJECTION=1
-        # Suppress OSC 10/11 color queries that cause the rgb: output
-        printf '\033]10;?\007\033]11;?\007' 2>/dev/null | cat > /dev/null
         # Tell applications not to query terminal colors
         export VTE_VERSION="6003"  # Fake VTE version to disable color queries
       else
