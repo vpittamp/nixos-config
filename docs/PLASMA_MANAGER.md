@@ -22,9 +22,19 @@ Generated via `plasma-manager` on 2025-09-18 to capture the live KDE Plasma conf
    ```bash
    plasma-sync
    ```
-   Provides a `gum`-based menu that can run the individual steps or the full pipeline, useful when iterating by hand.
+   Provides a `gum`-based menu with options to capture a snapshot, run the full workflow, inspect the cached diff/raw export/generated module, review git status/diffs, or open these docs—all without leaving the TUI.
+   Use the arrow keys to select an entry and press Enter (Esc cancels).
 
 - For `plasma-sync full`, pass additional Home Manager options after `--hm`, e.g. `plasma-sync full --hm --show-trace`.
+
+### Common CLI shortcuts
+```bash
+plasma-sync snapshot          # capture rc2nix export and stage artifacts
+plasma-sync diff              # view the cached rc2nix diff
+plasma-sync git-diff          # compare working tree against git HEAD
+plasma-sync activate          # run home-manager switch only
+plasma-sync full --hm --show-trace  # snapshot + activation with custom flags
+```
 
 ## Notes
 - `overrideConfig = true` will rewrite Plasma rc files on each activation; rely on git history to revert unwanted changes.
