@@ -64,7 +64,6 @@
         };
         Mouse = {
           cursorSize = 24;
-          cursorTheme = "breeze_cursors";
         };
       };
       kded5rc = {
@@ -88,14 +87,10 @@
           smallestReadableFont = "Noto Sans,8,-1,5,50,0,0,0,0,0";
           toolBarFont = "Noto Sans,10,-1,5,50,0,0,0,0,0";
         };
-        Icons = {
-          Theme = "Papirus-Dark";
-        };
         KDE = {
           AnimationDurationFactor = 1;
           ShowDeleteCommand = false;
           SingleClick = false;
-          widgetStyle = "Breeze";
         };
         "KFileDialog Settings" = {
           "Allow Expansion" = false;
@@ -122,12 +117,12 @@
           UseKWallet = true;
         };
         WM = {
-          activeBackground = "227,229,231";
-          activeBlend = "227,229,231";
-          activeForeground = "35,38,41";
-          inactiveBackground = "239,240,241";
-          inactiveBlend = "239,240,241";
-          inactiveForeground = "112,125,138";
+          activeBackground = "39,44,49";
+          activeBlend = "252,252,252";
+          activeForeground = "252,252,252";
+          inactiveBackground = "32,36,40";
+          inactiveBlend = "161,169,177";
+          inactiveForeground = "161,169,177";
         };
       };
       klipperrc = {
@@ -348,17 +343,11 @@
         "org.kde.kdecoration2" = {
           ButtonsOnLeft = "XAI";
           ButtonsOnRight = "SM";
-          theme = "Breeze";
         };
       };
       plasma-localerc = {
         Formats = {
           LANG = "en_US.UTF-8";
-        };
-      };
-      plasmarc = {
-        Theme = {
-          name = "breeze-dark";
         };
       };
       spectaclerc = {
