@@ -17,36 +17,41 @@ devices: (
     };
     dpi: 1200;
     buttons: (
+      # Thumb button (gesture button)
       {
         cid: 0xc3;
         action = {
           type: "Gestures";
           gestures: (
             {
+              # No movement - show Overview
               direction: "None";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" ];
+                keys: [ "KEY_LEFTMETA" "KEY_W" ];  # Overview
               };
             },
             {
+              # Swipe up - Activity Switcher
               direction: "Up";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_Q" ];
+                keys: [ "KEY_LEFTMETA" "KEY_Q" ];  # Activity Switcher
               };
             },
             {
+              # Swipe down - Show all windows (Present Windows)
               direction: "Down";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_TAB" ];
+                keys: [ "KEY_LEFTMETA" "KEY_TAB" ];  # Window switcher
               };
             },
             {
+              # Swipe left - Previous desktop
               direction: "Left";
               mode: "OnRelease";
               action = {
@@ -55,6 +60,7 @@ devices: (
               };
             },
             {
+              # Swipe right - Next desktop
               direction: "Right";
               mode: "OnRelease";
               action = {
@@ -63,6 +69,22 @@ devices: (
               };
             }
           );
+        };
+      },
+      # Back button
+      {
+        cid: 0x53;
+        action = {
+          type: "Keypress";
+          keys: [ "KEY_LEFTALT" "KEY_LEFT" ];  # Browser back
+        };
+      },
+      # Forward button
+      {
+        cid: 0x56;
+        action = {
+          type: "Keypress";
+          keys: [ "KEY_LEFTALT" "KEY_RIGHT" ];  # Browser forward
         };
       }
     );
