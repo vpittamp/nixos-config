@@ -6,7 +6,10 @@
   imports = [
     # Base configuration
     ./base.nix
-    
+
+    # Environment check
+    ../modules/assertions/hetzner-check.nix
+
     # Hardware
     ../hardware/hetzner.nix
     

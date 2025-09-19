@@ -6,7 +6,10 @@
   imports = [
     # Base configuration
     ./base.nix
-    
+
+    # Environment check
+    ../modules/assertions/wsl-check.nix
+
     # WSL module
     inputs.nixos-wsl.nixosModules.wsl
     

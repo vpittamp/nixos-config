@@ -6,7 +6,10 @@
   imports = [
     # Base configuration
     ./base.nix
-    
+
+    # Environment check
+    ../modules/assertions/m1-check.nix
+
     # Hardware
     ../hardware/m1.nix
     

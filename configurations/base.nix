@@ -3,6 +3,8 @@
 { config, lib, pkgs, ... }:
 
 {
+  # No imports needed - environment check will be in each specific config
+
   # System identification
   system.stateVersion = lib.mkDefault "24.11";
   
