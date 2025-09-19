@@ -11,7 +11,7 @@
     text = ''
       [Appearance]
       ColorScheme=BreezeDark
-      Font=FiraCode Nerd Font,11,-1,5,50,0,0,0,0,0
+      Font=FiraCode Nerd Font,10,-1,5,50,0,0,0,0,0
 
       [Cursor Options]
       CursorShape=0
