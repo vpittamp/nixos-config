@@ -39,6 +39,7 @@ in
     historyLimit = 10000;
     keyMode = "vi";
     mouse = true;  # Enable mouse for scrolling only (clicks disabled in config)
+    aggressiveResize = true;  # Only resize when smaller client is actively viewing
     
     plugins = with pkgs.tmuxPlugins; [
       sensible
@@ -74,6 +75,15 @@ in
       set -g focus-events off
       set -g detach-on-destroy off
       set -g repeat-time 1000
+
+      # Handle VS Code terminal properly
+      if-shell '[ -n "$VSCODE_TERMINAL" ]' {
+        # Don't resize based on other clients when in VS Code
+        set-window-option -g aggressive-resize off
+        # Respect VS Code's terminal size
+        set-window-option -g force-width 0
+        set-window-option -g force-height 0
+      }
       # Allow OSC sequences to pass through but filter problematic ones
       # Setting to 'on' allows color queries to be handled properly
       # Setting to 'off' can cause sequences to appear as text

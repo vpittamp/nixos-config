@@ -84,7 +84,7 @@ in
       "password-store" = "basic";  # Use basic keychain instead of system keychain
       
       # Terminal integration
-      "terminal.integrated.defaultProfile.linux" = "bash";
+      "terminal.integrated.defaultProfile.linux" = "bash-sesh";  # Use bash-sesh as default
       "terminal.integrated.profiles.linux" = {
         "bash" = {
           "path" = "${pkgs.bashInteractive}/bin/bash";
@@ -100,6 +100,7 @@ in
           "icon" = "terminal-tmux";
           "env" = {
             "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
+            "VSCODE_TERMINAL" = "true";  # Signal to tmux that we're in VS Code
           };
           "overrideName" = true;
         };
