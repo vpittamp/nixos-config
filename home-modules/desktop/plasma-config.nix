@@ -124,6 +124,12 @@
         "next activity" = "Meta+Tab";
         "previous activity" = "Meta+Shift+Tab";
       };
+
+      # Activity-aware application shortcuts
+      "services/konsole-activity.desktop"."_launch" = "Ctrl+Alt+T";
+      "services/yakuake-activity.desktop"."_launch" = "F12";
+      "services/dolphin-activity.desktop"."_launch" = "Ctrl+Alt+D";
+      "services/code-activity.desktop"."_launch" = "Ctrl+Alt+E";
     };
   };
 }

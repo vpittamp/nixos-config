@@ -293,6 +293,8 @@ in
       type = "Application";
       categories = [ "System" "TerminalEmulator" ];
       exec = "${konsoleActivityScript}/bin/konsole-activity";
+      # Make visible in KRunner and application menu
+      settings.Keywords = "konsole;terminal;activity;shell;bash;";
     };
 
     # Activity-aware VS Code
@@ -305,6 +307,8 @@ in
       type = "Application";
       categories = [ "Development" "IDE" ];
       exec = "${codeActivityScript}/bin/code-activity";
+      # Make visible in KRunner and application menu
+      settings.Keywords = "vscode;code;editor;activity;development;ide;";
     };
 
     # Activity-aware Dolphin
@@ -317,6 +321,8 @@ in
       type = "Application";
       categories = [ "System" "FileManager" ];
       exec = "${dolphinActivityScript}/bin/dolphin-activity";
+      # Make visible in KRunner and application menu
+      settings.Keywords = "dolphin;files;file manager;activity;explorer;";
     };
 
     # Activity-aware Yakuake
@@ -329,6 +335,8 @@ in
       type = "Application";
       categories = [ "System" "TerminalEmulator" ];
       exec = "${yakuakeActivityScript}/bin/yakuake-activity";
+      # Make visible in KRunner and application menu
+      settings.Keywords = "yakuake;terminal;dropdown;activity;quake;";
     };
 
     # General activity launcher entry (hidden from menu)
