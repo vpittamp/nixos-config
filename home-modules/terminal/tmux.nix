@@ -59,18 +59,23 @@
       # Pane settings
       set -g pane-base-index 1
       set -g renumber-windows on
-      set -g pane-border-lines double  # Use double lines for visual separation
-      set -g pane-border-status bottom
+      set -g pane-border-lines single  # Simple lines for cleaner look
+      set -g pane-border-status off  # Remove pane status labels for cleaner appearance
 
-      # Pane borders with padding effect
-      set -g pane-border-style "fg=colour238 bg=colour235"  # Subtle border with background
-      set -g pane-active-border-style "fg=colour39 bg=colour235 bold"  # Active pane highlight
-      set -g pane-border-format "  #P: #{pane_current_command}  "  # Add spaces for padding
+      # Subtle pane borders - almost invisible
+      set -g pane-border-style "fg=colour234"  # Very dark gray, almost invisible
+      set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
 
-      # Add visual spacing between panes
-      set -g pane-border-indicators both  # Show arrows pointing to active pane
-      set -g display-panes-colour "colour226"  # Bright color for pane numbers
-      set -g display-panes-active-colour "colour39"  # Active pane number color
+      # Visual distinction between active and inactive panes
+      # Active pane: pure black background with normal text
+      set -g window-active-style "fg=colour250 bg=colour16"  # Black background, light gray text
+      # Inactive panes: slightly dimmed with subtle gray background
+      set -g window-style "fg=colour240 bg=colour233"  # Dimmed text, very dark gray background
+
+      # Remove pane indicators for cleaner look
+      set -g pane-border-indicators off
+      set -g display-panes-colour "colour240"  # Subtle pane numbers
+      set -g display-panes-active-colour "colour250"  # Slightly brighter for active
 
       # Status bar styling - simple and functional
       set -g status-position top
