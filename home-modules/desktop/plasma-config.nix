@@ -12,8 +12,8 @@
     configFile = {
       # Virtual Desktop Configuration
       "kwinrc".Desktops = {
-        Number = lib.mkDefault 4;
-        Rows = lib.mkDefault 2;
+        Number = lib.mkDefault 2;  # 2 desktops per activity
+        Rows = lib.mkDefault 1;    # Single row layout
       };
 
       # Desktop navigation behavior
