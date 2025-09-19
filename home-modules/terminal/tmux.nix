@@ -80,9 +80,6 @@ in
       if-shell '[ -n "$VSCODE_TERMINAL" ]' {
         # Don't resize based on other clients when in VS Code
         set-window-option -g aggressive-resize off
-        # Respect VS Code's terminal size
-        set-window-option -g force-width 0
-        set-window-option -g force-height 0
       }
       # Allow OSC sequences to pass through but filter problematic ones
       # Setting to 'on' allows color queries to be handled properly
