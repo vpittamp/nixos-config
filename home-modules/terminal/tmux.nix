@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Tmux configuration
+  # Tmux configuration - force rebuild 2025-09-19
   programs.tmux = {
     enable = true;
     shell = "${pkgs.bash}/bin/bash";
