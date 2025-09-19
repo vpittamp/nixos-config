@@ -59,13 +59,18 @@
       # Pane settings
       set -g pane-base-index 1
       set -g renumber-windows on
-      set -g pane-border-lines heavy
+      set -g pane-border-lines double  # Use double lines for visual separation
       set -g pane-border-status bottom
 
-      # Simple pane borders with good contrast
-      set -g pane-border-style "fg=colour240"
-      set -g pane-active-border-style "fg=colour39 bold"
-      set -g pane-border-format " #P: #{pane_current_command} "
+      # Pane borders with padding effect
+      set -g pane-border-style "fg=colour238 bg=colour235"  # Subtle border with background
+      set -g pane-active-border-style "fg=colour39 bg=colour235 bold"  # Active pane highlight
+      set -g pane-border-format "  #P: #{pane_current_command}  "  # Add spaces for padding
+
+      # Add visual spacing between panes
+      set -g pane-border-indicators both  # Show arrows pointing to active pane
+      set -g display-panes-colour "colour226"  # Bright color for pane numbers
+      set -g display-panes-active-colour "colour39"  # Active pane number color
 
       # Status bar styling - simple and functional
       set -g status-position top
