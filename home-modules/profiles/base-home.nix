@@ -68,6 +68,8 @@ in
 
   programs.home-manager.enable = true;
 
+  # Enable XDG base directories and desktop entries
+  xdg.enable = true;
   xdg.mimeApps.enable = true;
   xdg.mimeApps.defaultApplications = {
     "text/html" = [ "firefox.desktop" ];

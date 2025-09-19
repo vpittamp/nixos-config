@@ -266,6 +266,16 @@ in
     yakuakeActivitySync
   ];
 
+  # Rebuild KDE application cache when desktop files change
+  home.activation.rebuildKdeCache = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    # Rebuild KDE's application cache to register new desktop entries
+    if command -v kbuildsycoca6 >/dev/null 2>&1; then
+      $DRY_RUN_CMD kbuildsycoca6 --noincremental 2>/dev/null || true
+    elif command -v kbuildsycoca5 >/dev/null 2>&1; then
+      $DRY_RUN_CMD kbuildsycoca5 --noincremental 2>/dev/null || true
+    fi
+  '';
+
   # Install the activity mappings file
   home.file.".config/plasma-activities/mappings.json".source = activityMappingFile;
 
@@ -294,7 +304,9 @@ in
       categories = [ "System" "TerminalEmulator" ];
       exec = "${konsoleActivityScript}/bin/konsole-activity";
       # Make visible in KRunner and application menu
-      settings.Keywords = "konsole;terminal;activity;shell;bash;";
+      settings = {
+        Keywords = "konsole;terminal;activity;shell;bash;";
+      };
     };
 
     # Activity-aware VS Code
@@ -308,7 +320,9 @@ in
       categories = [ "Development" "IDE" ];
       exec = "${codeActivityScript}/bin/code-activity";
       # Make visible in KRunner and application menu
-      settings.Keywords = "vscode;code;editor;activity;development;ide;";
+      settings = {
+        Keywords = "vscode;code;editor;activity;development;ide;";
+      };
     };
 
     # Activity-aware Dolphin
@@ -322,7 +336,9 @@ in
       categories = [ "System" "FileManager" ];
       exec = "${dolphinActivityScript}/bin/dolphin-activity";
       # Make visible in KRunner and application menu
-      settings.Keywords = "dolphin;files;file manager;activity;explorer;";
+      settings = {
+        Keywords = "dolphin;files;file manager;activity;explorer;";
+      };
     };
 
     # Activity-aware Yakuake
@@ -336,7 +352,9 @@ in
       categories = [ "System" "TerminalEmulator" ];
       exec = "${yakuakeActivityScript}/bin/yakuake-activity";
       # Make visible in KRunner and application menu
-      settings.Keywords = "yakuake;terminal;dropdown;activity;quake;";
+      settings = {
+        Keywords = "yakuake;terminal;dropdown;activity;quake;";
+      };
     };
 
     # General activity launcher entry (hidden from menu)

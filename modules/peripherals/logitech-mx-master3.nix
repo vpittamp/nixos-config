@@ -24,17 +24,8 @@ devices: (
           type: "Gestures";
           gestures: (
             {
-              # No movement - show Overview
+              # No movement (just press) - Activity Switcher
               direction: "None";
-              mode: "OnRelease";
-              action = {
-                type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_W" ];  # Overview
-              };
-            },
-            {
-              # Swipe up - Activity Switcher
-              direction: "Up";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
@@ -42,30 +33,39 @@ devices: (
               };
             },
             {
-              # Swipe down - Show all windows (Present Windows)
+              # Swipe up - Overview (All Windows)
+              direction: "Up";
+              mode: "OnRelease";
+              action = {
+                type: "Keypress";
+                keys: [ "KEY_LEFTMETA" "KEY_W" ];  # Overview - this should work like the None gesture
+              };
+            },
+            {
+              # Swipe down - Show Desktop
               direction: "Down";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_TAB" ];  # Window switcher
+                keys: [ "KEY_LEFTMETA" "KEY_D" ];  # Show Desktop (this is what's actually working)
               };
             },
             {
-              # Swipe left - Previous desktop
+              # Swipe left - Previous Activity
               direction: "Left";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_LEFTCTRL" "KEY_LEFT" ];
+                keys: [ "KEY_LEFTMETA" "KEY_LEFTSHIFT" "KEY_TAB" ];  # Previous Activity
               };
             },
             {
-              # Swipe right - Next desktop
+              # Swipe right - Next Activity
               direction: "Right";
               mode: "OnRelease";
               action = {
                 type: "Keypress";
-                keys: [ "KEY_LEFTMETA" "KEY_LEFTCTRL" "KEY_RIGHT" ];
+                keys: [ "KEY_LEFTMETA" "KEY_TAB" ];  # Next Activity
               };
             }
           );

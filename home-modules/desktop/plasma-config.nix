@@ -93,11 +93,35 @@
       };
     };
 
+    # Custom hotkey commands for launching activity-aware applications
+    hotkeys.commands = {
+      "launch-konsole-activity" = {
+        name = "Launch Konsole (Activity)";
+        key = "Ctrl+Alt+T";
+        command = "konsole-activity";
+      };
+      "launch-yakuake-activity" = {
+        name = "Launch Yakuake (Activity)";
+        key = "F12";
+        command = "yakuake-activity";
+      };
+      "launch-dolphin-activity" = {
+        name = "Launch Dolphin (Activity)";
+        key = "Ctrl+Alt+D";
+        command = "dolphin-activity";
+      };
+      "launch-code-activity" = {
+        name = "Launch VS Code (Activity)";
+        key = "Ctrl+Alt+E";
+        command = "code-activity";
+      };
+    };
+
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
       # KWin window management shortcuts
       kwin = {
-        "Overview" = ["Meta+W" "Meta+F8"];
+        "Overview" = ["Meta+Tab" "Meta+F8"];
         "Switch to Desktop 1" = "Meta+1";
         "Switch to Desktop 2" = "Meta+2";
         "Switch to Desktop 3" = "Meta+3";
@@ -125,11 +149,6 @@
         "previous activity" = "Meta+Shift+Tab";
       };
 
-      # Activity-aware application shortcuts
-      "services/konsole-activity.desktop"."_launch" = "Ctrl+Alt+T";
-      "services/yakuake-activity.desktop"."_launch" = "F12";
-      "services/dolphin-activity.desktop"."_launch" = "Ctrl+Alt+D";
-      "services/code-activity.desktop"."_launch" = "Ctrl+Alt+E";
     };
   };
 }
