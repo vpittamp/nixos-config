@@ -79,9 +79,22 @@ let
       fi
     }
 
-    start_activity() {
+    create_or_start_activity() {
       local uuid="$1"
-      $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.StartActivity "$uuid" >/dev/null 2>&1 || true
+      # Check if activity exists
+      if $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.ListActivities 2>/dev/null | grep -q "$uuid"; then
+        # Activity exists, just start it
+        $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.StartActivity "$uuid" >/dev/null 2>&1 || true
+      else
+        # Activity doesn't exist, create it with AddActivity (creates with auto-generated UUID)
+        # Note: KDE doesn't support creating activities with specific UUIDs via DBus
+        # The UUID will be managed through the config file
+        local temp_uuid=$($QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.AddActivity "" 2>/dev/null || echo "")
+        if [[ -n "$temp_uuid" ]]; then
+          # We created a new activity, it will be renamed and configured by metadata
+          echo "Created temporary activity: $temp_uuid" >&2
+        fi
+      fi
     }
 
     pin_current_activity() {
@@ -163,7 +176,7 @@ ${lib.concatMapStrings (id: let
     in ''
     ensure_section ${lib.escapeShellArg uuid} ${name}
     set_metadata ${lib.escapeShellArg uuid} ${name} ${description} ${icon}
-    start_activity ${lib.escapeShellArg uuid}
+    create_or_start_activity ${lib.escapeShellArg uuid}
 ${resourceCmds}${pruneRecentCmd}${pruneEarlierCmd}
 '') activityIds}
 
@@ -202,8 +215,31 @@ ${resourceCmds}${pruneRecentCmd}${pruneEarlierCmd}
 
   shellAliases = lib.mapAttrs (id: _: "${qdbus} org.kde.ActivityManager /ActivityManager/Activities org.kde.ActivityManager.Activities.SetCurrentActivity ${activityUUIDs.${id}}") activities;
 
+  perActivitySections = lib.listToAttrs (
+    map (id: let
+      activity = activities.${id};
+      uuid = activityUUIDs.${id};
+    in {
+      name = uuid;
+      value =
+        { Name = activity.name; }
+        // lib.optionalAttrs ((activity.description or "") != "") { Description = activity.description; }
+        // lib.optionalAttrs ((activity.icon or "") != "") { Icon = activity.icon; };
+    }) activityIds
+  );
+
 in {
   config = {
+    programs.plasma.configFile."kactivitymanagerdrc" =
+      ({
+        activities = lib.mapAttrs' (id: activity: lib.nameValuePair activityUUIDs.${id} activity.name) activities;
+        main = {
+          currentActivity = activityUUIDs.${defaultActivity};
+          runningActivities = lib.concatStringsSep "," (map (id: activityUUIDs.${id}) activityIds);
+        };
+      }
+      // perActivitySections);
+
     programs.plasma.configFile."kglobalshortcutsrc".ActivityManager =
       { "_k_friendly_name" = "Activity Manager"; }
       // activityShortcuts;

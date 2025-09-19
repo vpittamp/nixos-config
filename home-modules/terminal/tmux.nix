@@ -74,8 +74,13 @@ in
       set -g focus-events off
       set -g detach-on-destroy off
       set -g repeat-time 1000
-      # Prevent OSC pass-through changing terminal colors (can cause white bg)
-      set -g allow-passthrough off
+      # Allow OSC sequences to pass through but filter problematic ones
+      # Setting to 'on' allows color queries to be handled properly
+      # Setting to 'off' can cause sequences to appear as text
+      set -g allow-passthrough on
+
+      # Strip OSC 11 sequences that query/set background color
+      set -ag terminal-overrides ',*:Ms@'
       
       # Basic terminal features
       set -as terminal-features ',*:RGB'
@@ -85,15 +90,17 @@ in
       # Pane settings
       set -g pane-base-index 1
       set -g renumber-windows on
-      set -g pane-border-lines single
+      set -g pane-border-lines double  # Use double lines for maximum visibility
       # Place per-pane pill at the bottom to avoid any conflict with the top status line
       set -g pane-border-status bottom
-      # Ghost borders: match border color to background so only the label shows
-      set -g pane-border-style "fg=${colors.crust}"
-      set -g pane-active-border-style "fg=${colors.crust}"
-      # Per-pane label (pill) with canonical target; ensure high contrast in dark theme
-      # Active: bold text on Yellow; Inactive: subtle Surface1 on Text
-      set -g pane-border-format  " #{?pane_active,#[bg=${colors.yellow},fg=${colors.crust},bold],#[bg=${colors.surface1},fg=${colors.text}]} [#S:#I.#P] #[default] "
+      # HIGH CONTRAST borders for dark theme visibility
+      # Inactive panes: bright surface color for visibility
+      set -g pane-border-style "fg=${colors.surface2}"
+      # Active pane: BRIGHT cyan/sapphire border that pops on dark background
+      set -g pane-active-border-style "fg=${colors.sapphire},bold"
+      # Per-pane label with maximum contrast
+      # Active: bright background with dark text; Inactive: visible but dimmer
+      set -g pane-border-format "#{?pane_active,#[fg=${colors.crust},bg=${colors.sapphire},bold] ◆ #S:#I.#P #[default],#[fg=${colors.text},bg=${colors.surface1}] ○ #S:#I.#P #[default]}"
       
       # Status bar styling
       set -g status-position top
@@ -103,20 +110,31 @@ in
       set -g status-right-length 150
       
       # Left status with session info (no session/window counts). Shows ⎇ only when alt-screen is OFF.
-      set -g status-left "#{?client_prefix,#[fg=${colors.crust}#,bg=${colors.red}#,bold] PREFIX #[fg=${colors.red}#,bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust}#,bg=${colors.yellow}#,bold] COPY #[fg=${colors.yellow}#,bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust}#,bg=${colors.peach}#,bold] ZOOM #[fg=${colors.peach}#,bg=${colors.mauve}],#[fg=${colors.crust}#,bg=${colors.green}#,bold] TMUX #[fg=${colors.green}#,bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust}#,bg=${colors.sapphire}#,bold]  ⎇  #[fg=${colors.sapphire}#,bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.surface1},bg=${colors.crust}] "
+      set -g status-left "#{?client_prefix,#[fg=${colors.crust},bg=${colors.red},bold] PREFIX #[fg=${colors.red},bg=${colors.mauve}],#{?pane_in_mode,#[fg=${colors.crust},bg=${colors.yellow},bold] COPY #[fg=${colors.yellow},bg=${colors.mauve}],#{?window_zoomed_flag,#[fg=${colors.crust},bg=${colors.peach},bold] ZOOM #[fg=${colors.peach},bg=${colors.mauve}],#[fg=${colors.crust},bg=${colors.green},bold] TMUX #[fg=${colors.green},bg=${colors.mauve}]}}}#{?#{==:#{@altscreen},off},#[fg=${colors.crust},bg=${colors.sapphire},bold]  ⎇  #[fg=${colors.sapphire},bg=${colors.mauve}],}#[fg=${colors.crust},bg=${colors.mauve},bold]  #S #[fg=${colors.mauve},bg=${colors.surface1}]#[fg=${colors.surface1},bg=${colors.crust}] "
       
       # Right status: canonical pane target (session:window.pane)
       set -g status-right "#[fg=${colors.surface0},bg=${colors.crust}]#[fg=${colors.text},bg=${colors.surface0}]  #S:#I.#P "
       
-      # Window status: standard notation (#I:#W) with minimal styling
-      set -g window-status-format "#I:#W"
-      set -g window-status-current-format "#[bold]#I:#W#F"
-      set -g window-status-separator " "
+      # Window status with enhanced visual separation
+      set -g window-status-format "#[fg=${colors.surface1},bg=${colors.crust}]#[fg=${colors.subtext0},bg=${colors.surface1}] #I:#W #[fg=${colors.surface1},bg=${colors.crust}]"
+      set -g window-status-current-format "#[fg=${colors.blue},bg=${colors.crust}]#[fg=${colors.crust},bg=${colors.blue},bold] #I:#W#F #[fg=${colors.blue},bg=${colors.crust}]"
+      set -g window-status-separator ""
       
       # Pane borders handled above (ghost borders + per-pane pills)
       
       # Message styling
       set -g message-style "fg=${colors.crust} bg=${colors.yellow} bold"
+
+      # Additional pane styling for better visual separation
+      # Add padding and visual cues for active pane
+      set -g pane-border-indicators both  # Show arrows pointing to active pane
+      set -g display-panes-colour "${colors.yellow}"  # Bright color for pane numbers
+      set -g display-panes-active-colour "${colors.sapphire}"  # Active pane number color
+      set -g display-panes-time 2000  # Show pane numbers for 2 seconds
+
+      # Make active pane background slightly lighter for visibility
+      set -g window-style "fg=${colors.text},bg=${colors.crust}"
+      set -g window-active-style "fg=${colors.text},bg=${colors.base}"
       
       # Key bindings
       bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"

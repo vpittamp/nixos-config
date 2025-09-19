@@ -97,8 +97,11 @@
               cat <<'USAGE'
       Usage: plasma-sync [options] [command] [-- command-args]
 
+      🔍 PLASMA CONFIGURATION ANALYSIS & SYNC TOOL
+      Note: System uses declarative plasma-manager configuration, not rc2nix output
+
       Commands:
-        snapshot | export   Capture a new Plasma snapshot and rewrite the tracked file
+        snapshot | export   Capture a new Plasma snapshot for analysis
         diff                Show the cached rc2nix diff
         git-diff            Compare the tracked snapshot against git HEAD
         activate            Run home-manager switch for the Plasma profile
@@ -115,9 +118,9 @@
         --                  Treat remaining args as passthrough to the command (rc2nix or home-manager)
 
       Examples:
-        plasma-sync snapshot
-        plasma-sync --no-gum full --hm --show-trace
-        plasma-sync activate -- --impure
+        plasma-sync snapshot           # Analyze current plasma config
+        plasma-sync diff               # View differences
+        plasma-sync activate           # Apply configuration (if using rc2nix)
       USAGE
               exit 0
             fi
@@ -512,7 +515,7 @@
               while true; do
                 local choice
                 choice=$("$GUM_BIN" choose \
-                  --header "🌀 Plasma Manager | Status: $snapshot_status" \
+                  --header "🌀 Plasma Analysis Tool | Status: $snapshot_status" \
                   "📸 Take snapshot (rc2nix)" \
                   "🚀 Run full workflow (snapshot + activate)" \
                   "✨ Activate configuration" \

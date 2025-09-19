@@ -4,7 +4,9 @@
     ../terminal/konsole.nix
     ../desktop/touchpad-gestures.nix
     ../desktop/plasma-config.nix
+    ../desktop/plasma-sync.nix  # Analysis tool for comparing plasma configs
     ../desktop/project-activities
+    ../desktop/activity-aware-apps.nix  # Activity-aware application launchers
     ../apps/headlamp.nix
     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix

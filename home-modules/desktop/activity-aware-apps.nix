@@ -122,6 +122,33 @@ let
       exit 0
     fi
 
+    # Prepare VS Code settings for integrated terminal with sesh
+    if command -v sesh >/dev/null 2>&1; then
+      # Create a workspace-specific settings file if it doesn't exist
+      VSCODE_DIR="$WORK_DIR/.vscode"
+      mkdir -p "$VSCODE_DIR"
+      SETTINGS_FILE="$VSCODE_DIR/settings.json"
+
+      # Create settings to auto-run sesh in terminal if not exists
+      if [ ! -f "$SETTINGS_FILE" ]; then
+        cat > "$SETTINGS_FILE" << EOF
+{
+  "terminal.integrated.defaultProfile.linux": "bash-sesh",
+  "terminal.integrated.profiles.linux": {
+    "bash-sesh": {
+      "path": "bash",
+      "args": ["-l", "-c", "sesh connect $SESSION_NAME || exec bash -l"]
+    },
+    "bash": {
+      "path": "bash",
+      "args": ["-l"]
+    }
+  }
+}
+EOF
+      fi
+    fi
+
     # Check if any VS Code instance is running at all
     if pgrep -f "/.vscode-server/|/.vscode/|/code " >/dev/null 2>&1; then
       # VS Code is running but with different workspace, open in existing window
@@ -147,16 +174,13 @@ let
 
     ${getActivityDirectory}
 
-    # Only proceed if Yakuake is running (check for yakuake in process list)
-    if pgrep -f "yakuake" >/dev/null 2>&1; then
+    # Only proceed if Yakuake is running
+    if pgrep -x "yakuake" >/dev/null 2>&1; then
       WORK_DIR=$(get_activity_directory)
 
-      # Note: The runCommand D-Bus method has security implications
-      # For now, we'll just ensure Yakuake starts in the right directory
-      # Users can manually cd to the directory or we can use the split terminal approach
-
-      # Alternative: Just ensure new terminals open in the right directory
-      # This is handled by the yakuake-activity script when starting Yakuake
+      # Get the active session ID and send cd command
+      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
+      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$${SESSION_ID:-1}" "cd '$WORK_DIR' && clear" 2>/dev/null || true
     fi
   '';
 
@@ -168,15 +192,29 @@ let
 
     WORK_DIR=$(get_activity_directory)
 
-    # Start Yakuake if not running (check for yakuake in process list)
-    if ! pgrep -f "yakuake" >/dev/null 2>&1; then
-      cd "$WORK_DIR"
+    # Check if Yakuake is running
+    if ! pgrep -x "yakuake" >/dev/null 2>&1; then
+      # Start Yakuake
       ${pkgs.kdePackages.yakuake}/bin/yakuake &
-    fi
 
-    # After a short delay, set the working directory
-    sleep 0.5
-    yakuake-activity-sync
+      # Wait for Yakuake to start
+      for i in {1..20}; do
+        if qdbus org.kde.yakuake >/dev/null 2>&1; then
+          break
+        fi
+        sleep 0.25
+      done
+
+      # Get session ID and send cd command to set directory
+      sleep 0.5
+      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
+      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$SESSION_ID" "cd '$WORK_DIR' && clear" 2>/dev/null || true
+    else
+      # Yakuake is running, toggle it and update directory
+      qdbus org.kde.yakuake /yakuake/window org.kde.yakuake.toggleWindowState
+      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
+      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$SESSION_ID" "cd '$WORK_DIR' && clear" 2>/dev/null || true
+    fi
   '';
 in
 {
