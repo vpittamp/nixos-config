@@ -104,7 +104,7 @@ in
       # Inactive panes: subtle border
       set -g pane-border-style "fg=#585b70"
       # Active pane: bright blue border for clear visibility
-      set -g pane-active-border-style "fg=#89b4fa,bold"
+      set -g pane-active-border-style "fg=#89b4fa bold"
       # Per-pane label with cleaner formatting
       # Active: bright indicator; Inactive: dimmer indicator
       set -g pane-border-format "#{?pane_active,#[fg=#11111b,bg=#89b4fa,bold] ◆ #S:#I.#P #[default],#[fg=#cdd6f4,bg=#45475a] ○ #S:#I.#P #[default]}"
@@ -116,8 +116,9 @@ in
       set -g status-left-length 80
       set -g status-right-length 150
 
-      # Left status with session info
-      set -g status-left "#{?client_prefix,#[fg=#11111b,bg=#f38ba8,bold] PREFIX ,#{?pane_in_mode,#[fg=#11111b,bg=#f9e2af,bold] COPY ,#{?window_zoomed_flag,#[fg=#11111b,bg=#fab387,bold] ZOOM ,#[fg=#11111b,bg=#a6e3a1,bold] TMUX }}}#[fg=#11111b,bg=#cba6f7,bold]  #S #[fg=#cba6f7,bg=#11111b] "
+      # Left status - using separate segments for each mode
+      # This avoids nested conditionals which can cause parsing issues
+      set -g status-left "#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,}#{?pane_in_mode,#[fg=#11111b bg=#f9e2af bold] COPY ,}#{?window_zoomed_flag,#[fg=#11111b bg=#fab387 bold] ZOOM ,}#[fg=#11111b bg=#cba6f7 bold]  #S #[fg=#cba6f7 bg=#11111b] "
 
       # Right status: canonical pane target (session:window.pane)
       set -g status-right "#[fg=#313244,bg=#11111b]#[fg=#cdd6f4,bg=#313244]  #S:#I.#P "
@@ -129,7 +130,7 @@ in
       
       # Pane borders handled above (ghost borders + per-pane pills)
       
-      # Message styling
+      # Message styling (using space-separated attributes)
       set -g message-style "fg=#11111b bg=#f9e2af bold"
 
       # Additional pane styling for better visual separation
