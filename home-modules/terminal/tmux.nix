@@ -14,7 +14,7 @@
     aggressiveResize = false;  # Disabled to prevent window distortion between VS Code and Konsole
 
     plugins = with pkgs.tmuxPlugins; [
-      sensible
+      # Removed sensible plugin as it overrides aggressive-resize setting
       {
         plugin = resurrect;
         extraConfig = ''
