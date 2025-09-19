@@ -203,7 +203,8 @@ in
           action.id == "com.onepassword.op.authorizationhelper" ||
           action.id == "com.1password.1password.authprompt") {
         if (subject.user == "vpittamp") {
-          return polkit.Result.AUTH_SELF;
+          // Skip extra authentication challenges for trusted local user
+          return polkit.Result.YES;
         }
       }
     });
