@@ -32,17 +32,27 @@ let
   activityMappingFile = pkgs.writeText "activity-mappings.json" activityMappings;
 
   # Universal function to get activity directory
+  # This now works with any UUID by looking up the activity name first
   getActivityDirectory = ''
     get_activity_directory() {
       local MAPPING_FILE="${config.home.homeDirectory}/.config/plasma-activities/mappings.json"
       local ACTIVITY_ID=$(qdbus org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
 
-      if [ -z "$ACTIVITY_ID" ] || [ ! -f "$MAPPING_FILE" ]; then
+      if [ -z "$ACTIVITY_ID" ]; then
         echo "$HOME"
         return
       fi
 
-      local DIRECTORY=$(${pkgs.jq}/bin/jq -r ".\"$ACTIVITY_ID\".directory // \"$HOME\"" "$MAPPING_FILE" 2>/dev/null)
+      # Get activity name from kactivitymanagerdrc (works with any UUID)
+      local ACTIVITY_NAME=$(grep "^$ACTIVITY_ID=" ~/.config/kactivitymanagerdrc 2>/dev/null | cut -d= -f2 | head -1)
+
+      if [ -z "$ACTIVITY_NAME" ] || [ ! -f "$MAPPING_FILE" ]; then
+        echo "$HOME"
+        return
+      fi
+
+      # Look up directory by activity name instead of UUID
+      local DIRECTORY=$(${pkgs.jq}/bin/jq -r ".[] | select(.name==\"$ACTIVITY_NAME\") | .directory // \"$HOME\"" "$MAPPING_FILE" 2>/dev/null)
 
       # Verify directory exists
       if [ -d "$DIRECTORY" ]; then
@@ -122,33 +132,6 @@ let
       exit 0
     fi
 
-    # Prepare VS Code settings for integrated terminal with sesh
-    if command -v sesh >/dev/null 2>&1; then
-      # Create a workspace-specific settings file if it doesn't exist
-      VSCODE_DIR="$WORK_DIR/.vscode"
-      mkdir -p "$VSCODE_DIR"
-      SETTINGS_FILE="$VSCODE_DIR/settings.json"
-
-      # Create settings to auto-run sesh in terminal if not exists
-      if [ ! -f "$SETTINGS_FILE" ]; then
-        cat > "$SETTINGS_FILE" << EOF
-{
-  "terminal.integrated.defaultProfile.linux": "bash-sesh",
-  "terminal.integrated.profiles.linux": {
-    "bash-sesh": {
-      "path": "bash",
-      "args": ["-l", "-c", "sesh connect $SESSION_NAME || exec bash -l"]
-    },
-    "bash": {
-      "path": "bash",
-      "args": ["-l"]
-    }
-  }
-}
-EOF
-      fi
-    fi
-
     # Check if any VS Code instance is running at all
     if pgrep -f "/.vscode-server/|/.vscode/|/code " >/dev/null 2>&1; then
       # VS Code is running but with different workspace, open in existing window
@@ -168,23 +151,51 @@ EOF
     dolphin "$WORK_DIR"
   '';
 
-  # Simple script to update Yakuake's directory when activity changes
+  # Script to sync Yakuake sessions with activities
   yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync" ''
     #!/usr/bin/env bash
 
     ${getActivityDirectory}
 
     # Only proceed if Yakuake is running
-    if pgrep -x "yakuake" >/dev/null 2>&1; then
+    if pgrep -f "yakuake" >/dev/null 2>&1; then
       WORK_DIR=$(get_activity_directory)
+      ACTIVITY_ID=$(qdbus org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+      ACTIVITY_NAME=$(grep "^$ACTIVITY_ID=" ~/.config/kactivitymanagerdrc 2>/dev/null | cut -d= -f2 | head -1)
 
-      # Get the active session ID and send cd command
-      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
-      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$${SESSION_ID:-1}" "cd '$WORK_DIR' && clear" 2>/dev/null || true
+      # Use activity name as session title for better readability
+      SESSION_TITLE="$ACTIVITY_NAME"
+
+      # Check if a session for this activity already exists
+      EXISTING_SESSION=""
+      for session_id in $(qdbus org.kde.yakuake /yakuake/sessions sessionIdList 2>/dev/null | tr ',' ' '); do
+        # Get session title
+        title=$(qdbus org.kde.yakuake /yakuake/tabs tabTitle "$session_id" 2>/dev/null || echo "")
+        if [[ "$title" == "$SESSION_TITLE" ]]; then
+          EXISTING_SESSION="$session_id"
+          break
+        fi
+      done
+
+      if [ -n "$EXISTING_SESSION" ]; then
+        # Switch to existing session for this activity
+        qdbus org.kde.yakuake /yakuake/sessions raiseSession "$EXISTING_SESSION" 2>/dev/null || true
+      else
+        # Create new session for this activity
+        NEW_SESSION=$(qdbus org.kde.yakuake /yakuake/sessions addSession 2>/dev/null)
+        if [ -n "$NEW_SESSION" ]; then
+          # Set the session title
+          qdbus org.kde.yakuake /yakuake/tabs setTabTitle "$NEW_SESSION" "$SESSION_TITLE" 2>/dev/null || true
+          # Change to activity directory
+          qdbus org.kde.yakuake /yakuake/sessions runCommandInTerminal "$NEW_SESSION" "cd '$WORK_DIR'" 2>/dev/null || true
+          # Switch to the new session
+          qdbus org.kde.yakuake /yakuake/sessions raiseSession "$NEW_SESSION" 2>/dev/null || true
+        fi
+      fi
     fi
   '';
 
-  # Wrapper for Yakuake that sets initial directory based on activity
+  # Wrapper for Yakuake that ensures it starts in activity directory
   yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity" ''
     #!/usr/bin/env bash
 
@@ -192,30 +203,57 @@ EOF
 
     WORK_DIR=$(get_activity_directory)
 
-    # Check if Yakuake is running
-    if ! pgrep -x "yakuake" >/dev/null 2>&1; then
-      # Start Yakuake
+    # Check if Yakuake is already running
+    if pgrep -f "${pkgs.kdePackages.yakuake}/bin/yakuake" >/dev/null 2>&1; then
+      # Yakuake is running, toggle it and sync directory
+      qdbus org.kde.yakuake /yakuake/window toggleWindowState 2>/dev/null || true
+
+      # Wait for window to be visible
+      sleep 0.2
+
+      # Sync the directory for current session
+      yakuake-activity-sync
+    else
+      # Start Yakuake in the activity directory
+      cd "$WORK_DIR"
       ${pkgs.kdePackages.yakuake}/bin/yakuake &
 
       # Wait for Yakuake to start
-      for i in {1..20}; do
-        if qdbus org.kde.yakuake >/dev/null 2>&1; then
-          break
-        fi
-        sleep 0.25
-      done
+      sleep 1
 
-      # Get session ID and send cd command to set directory
-      sleep 0.5
-      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
-      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$SESSION_ID" "cd '$WORK_DIR' && clear" 2>/dev/null || true
-    else
-      # Yakuake is running, toggle it and update directory
-      qdbus org.kde.yakuake /yakuake/window org.kde.yakuake.toggleWindowState
-      SESSION_ID=$(qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.activeSessionId 2>/dev/null || echo "1")
-      qdbus org.kde.yakuake /yakuake/sessions org.kde.yakuake.runCommandInTerminal "$SESSION_ID" "cd '$WORK_DIR' && clear" 2>/dev/null || true
+      # Sync directory after startup
+      yakuake-activity-sync
     fi
   '';
+
+  # Yakuake wrapper that replaces the default yakuake command
+  yakuakeWrapper = pkgs.symlinkJoin {
+    name = "yakuake";
+    paths = [ pkgs.kdePackages.yakuake ];
+    postBuild = ''
+      # Remove the original yakuake binary
+      rm $out/bin/yakuake
+
+      # Create our wrapper script that includes activity awareness
+      cat > $out/bin/yakuake << 'EOF'
+      #!/usr/bin/env bash
+
+      ${getActivityDirectory}
+
+      # If this is the first start, set the initial directory
+      if ! pgrep -f "${pkgs.kdePackages.yakuake}/bin/yakuake" >/dev/null 2>&1; then
+        WORK_DIR=$(get_activity_directory)
+        cd "$WORK_DIR"
+        exec ${pkgs.kdePackages.yakuake}/bin/yakuake "$@"
+      else
+        # Yakuake is already running, just forward the command
+        exec ${pkgs.kdePackages.yakuake}/bin/yakuake "$@"
+      fi
+      EOF
+
+      chmod +x $out/bin/yakuake
+    '';
+  };
 in
 {
   # Install the scripts

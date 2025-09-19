@@ -11,17 +11,15 @@ let
       hash = builtins.hashString "sha256" id;
     in "${builtins.substring 0 8 hash}-${builtins.substring 8 4 hash}-${builtins.substring 12 4 hash}-${builtins.substring 16 4 hash}-${builtins.substring 20 12 hash}";
 
-  activityUUIDs = lib.mapAttrs (
-    id: activity:
-      if activity ? uuid && activity.uuid != "" then activity.uuid else mkUUID id
-  ) activities;
+  # Use the explicit UUIDs from data.nix
+  activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
   panels = import ./panels.nix { inherit lib activities mkUUID; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
 
-  activityShortcut = idx: "Meta+Ctrl+${toString (idx + 1)}";
+  activityShortcut = idx: "Meta+${toString (idx + 1)}";
 
   activityShortcuts =
     lib.listToAttrs (
@@ -30,7 +28,7 @@ let
         name = activities.${id}.name;
       in {
         name = "switch-to-activity-${uuid}";
-        value = "${activityShortcut idx},none,Switch to activity \"${name}\"";
+        value = lib.mkForce "${activityShortcut idx},none,Switch to activity \"${name}\"";
       }) activityIds
     );
 
@@ -39,6 +37,8 @@ let
 
     QDBUS=${lib.escapeShellArg qdbus}
     SERVICE="org.kde.ActivityManager"
+    CONFIG_FILE="$HOME/.config/kactivitymanagerdrc"
+    MAPPING_FILE="$HOME/.config/plasma-activities/mappings.json"
 
     wait_for_service() {
       local max_attempts="$1"
@@ -79,20 +79,22 @@ let
       fi
     }
 
-    create_or_start_activity() {
+    create_or_ensure_activity() {
       local uuid="$1"
-      # Check if activity exists
+      local name="$2"
+
+      # Check if activity with this UUID already exists
       if $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.ListActivities 2>/dev/null | grep -q "$uuid"; then
-        # Activity exists, just start it
+        echo "Activity $name ($uuid) already exists"
         $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.StartActivity "$uuid" >/dev/null 2>&1 || true
       else
-        # Activity doesn't exist, create it with AddActivity (creates with auto-generated UUID)
-        # Note: KDE doesn't support creating activities with specific UUIDs via DBus
-        # The UUID will be managed through the config file
-        local temp_uuid=$($QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.AddActivity "" 2>/dev/null || echo "")
+        echo "Creating activity: $name"
+        # Create new activity (gets temporary UUID)
+        local temp_uuid=$($QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.AddActivity "$name" 2>/dev/null || echo "")
+
         if [[ -n "$temp_uuid" ]]; then
-          # We created a new activity, it will be renamed and configured by metadata
-          echo "Created temporary activity: $temp_uuid" >&2
+          echo "Created temporary activity $temp_uuid, will be remapped via config"
+          # The config file will handle the UUID mapping
         fi
       fi
     }
@@ -141,25 +143,25 @@ let
       scoring_available=1
     fi
 
-    # Ensure daemon picks up declarative config
-    ${kactivitymanagerd} --replace >/dev/null 2>&1 &
-    sleep 2
-    if ! wait_for_service 60; then
-      echo "[project-activities] ActivityManager did not return after restart; skipping bootstrap" >&2
-      exit 0
-    fi
+    echo "[project-activities] Starting activity bootstrap"
 
-    desired_activities='${lib.concatMapStrings (id: "${activityUUIDs.${id}}\n") activityIds}'
+    # Clean up any incorrect activities first
+    echo "Cleaning up incorrect activities..."
+    desired_activities='${lib.concatMapStrings (id: "${activities.${id}.uuid}\n") activityIds}'
     current_activities=$($QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.ListActivities 2>/dev/null || true)
+
     for candidate in $current_activities; do
       if ! grep -qx "$candidate" <<<"$desired_activities"; then
+        echo "Removing unwanted activity: $candidate"
+        $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.StopActivity "$candidate" >/dev/null 2>&1 || true
         $QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.RemoveActivity "$candidate" >/dev/null 2>&1 || true
       fi
     done
 
+    echo "Creating/ensuring activities..."
 ${lib.concatMapStrings (id: let
       activity = activities.${id};
-      uuid = activityUUIDs.${id};
+      uuid = activity.uuid;
       name = lib.escapeShellArg activity.name;
       description = lib.escapeShellArg (activity.description or "");
       icon = lib.escapeShellArg (activity.icon or "");
@@ -174,13 +176,34 @@ ${lib.concatMapStrings (id: let
       pruneEarlierCmd = lib.optionalString (keepMonths != null)
         "    if (( scoring_available )); then\n      prune_earlier ${lib.escapeShellArg uuid} ${toString keepMonths}\n    fi\n";
     in ''
-    ensure_section ${lib.escapeShellArg uuid} ${name}
+    echo "Processing activity: ${activity.name}"
+    create_or_ensure_activity ${lib.escapeShellArg uuid} ${name}
     set_metadata ${lib.escapeShellArg uuid} ${name} ${description} ${icon}
-    create_or_start_activity ${lib.escapeShellArg uuid}
 ${resourceCmds}${pruneRecentCmd}${pruneEarlierCmd}
 '') activityIds}
 
-    pin_current_activity ${lib.escapeShellArg activityUUIDs.${defaultActivity}}
+    # The plasma configuration will be applied through home-manager activation
+    echo "Declarative configuration will be applied by home-manager..."
+
+    # Restart activity manager to load the correct configuration
+    echo "Restarting activity manager to apply configuration..."
+    ${kactivitymanagerd} --replace >/dev/null 2>&1 &
+    sleep 3
+
+    if ! wait_for_service 30; then
+      echo "[project-activities] Warning: ActivityManager restart took longer than expected" >&2
+    fi
+
+    # Set the default activity
+    echo "Setting default activity to ${activities.${defaultActivity}.name}..."
+    pin_current_activity ${lib.escapeShellArg activities.${defaultActivity}.uuid}
+
+    # Verify activities were created
+    echo "Verifying activities..."
+    final_activities=$($QDBUS "$SERVICE" /ActivityManager/Activities org.kde.ActivityManager.Activities.ListActivities 2>/dev/null || true)
+    echo "Active activities: $final_activities"
+
+    echo "[project-activities] Bootstrap complete"
   '';
 
   autostartFiles =
@@ -215,34 +238,85 @@ ${resourceCmds}${pruneRecentCmd}${pruneEarlierCmd}
 
   shellAliases = lib.mapAttrs (id: _: "${qdbus} org.kde.ActivityManager /ActivityManager/Activities org.kde.ActivityManager.Activities.SetCurrentActivity ${activityUUIDs.${id}}") activities;
 
-  perActivitySections = lib.listToAttrs (
-    map (id: let
-      activity = activities.${id};
-      uuid = activityUUIDs.${id};
-    in {
-      name = uuid;
-      value =
-        { Name = activity.name; }
-        // lib.optionalAttrs ((activity.description or "") != "") { Description = activity.description; }
-        // lib.optionalAttrs ((activity.icon or "") != "") { Icon = activity.icon; };
-    }) activityIds
-  );
-
 in {
   config = {
-    programs.plasma.configFile."kactivitymanagerdrc" =
-      ({
-        activities = lib.mapAttrs' (id: activity: lib.nameValuePair activityUUIDs.${id} activity.name) activities;
-        main = {
-          currentActivity = activityUUIDs.${defaultActivity};
-          runningActivities = lib.concatStringsSep "," (map (id: activityUUIDs.${id}) activityIds);
-        };
-      }
-      // perActivitySections);
+    programs.plasma.configFile."kactivitymanagerdrc" = {
+      # Define all activities
+      activities = lib.mapAttrs' (id: activity:
+        lib.nameValuePair activity.uuid activity.name
+      ) activities;
 
-    programs.plasma.configFile."kglobalshortcutsrc".ActivityManager =
-      { "_k_friendly_name" = "Activity Manager"; }
-      // activityShortcuts;
+      # Main configuration
+      main = {
+        currentActivity = lib.mkForce activities.${defaultActivity}.uuid;
+        runningActivities = lib.mkForce (lib.concatStringsSep "," (map (id: activities.${id}.uuid) activityIds));
+      };
+    } // (
+      # Activity-specific sections with metadata
+      lib.listToAttrs (
+        map (id: let
+          activity = activities.${id};
+        in {
+          name = activity.uuid;
+          value = {
+            Name = activity.name;
+            Description = activity.description or "";
+            Icon = activity.icon or "";
+          };
+        }) activityIds
+      )
+    );
+
+    programs.plasma.configFile."kglobalshortcutsrc" = {
+      # Activity Manager with comprehensive shortcuts
+      ActivityManager = lib.mkForce (
+        {
+          "_k_friendly_name" = "Activity Manager";
+          # Global activity management
+          "switch to next activity" = "Meta+Tab,none,Switch to Next Activity";
+          "switch to previous activity" = "Meta+Shift+Tab,none,Switch to Previous Activity";
+          "manage activities" = "Meta+Q,Meta+Q,Manage Activities";
+        }
+        // activityShortcuts
+      );
+
+      # Override plasmashell task manager shortcuts to free up Meta+1-4 for activities
+      plasmashell = lib.mkForce {
+        "_k_friendly_name" = "plasmashell";
+        "activate task manager entry 1" = "none,Meta+1,Activate Task Manager Entry 1";
+        "activate task manager entry 2" = "none,Meta+2,Activate Task Manager Entry 2";
+        "activate task manager entry 3" = "none,Meta+3,Activate Task Manager Entry 3";
+        "activate task manager entry 4" = "none,Meta+4,Activate Task Manager Entry 4";
+        "activate task manager entry 5" = "none,Meta+5,Activate Task Manager Entry 5";
+        "activate task manager entry 6" = "none,Meta+6,Activate Task Manager Entry 6";
+        "activate task manager entry 7" = "none,Meta+7,Activate Task Manager Entry 7";
+        "activate task manager entry 8" = "none,Meta+8,Activate Task Manager Entry 8";
+        "activate task manager entry 9" = "none,Meta+9,Activate Task Manager Entry 9";
+        "activate task manager entry 10" = "none,Meta+0,Activate Task Manager Entry 10";
+      };
+
+      # Keyboard shortcuts for activity-aware applications
+      "services/konsole-activity.desktop" = {
+        _launch = lib.mkForce "Ctrl+Alt+T,none,Launch Konsole in Activity Directory";
+      };
+      "services/code-activity.desktop" = {
+        _launch = lib.mkForce "Ctrl+Alt+C,none,Launch VS Code in Activity Directory";
+      };
+      "services/dolphin-activity.desktop" = {
+        _launch = lib.mkForce "Ctrl+Alt+F,none,Launch Dolphin in Activity Directory";
+      };
+
+      # Override the entire yakuake section to disable default F12
+      yakuake = lib.mkForce {
+        _k_friendly_name = "Yakuake";
+        toggle-window-state = "none,none,Open/Retract Yakuake";
+      };
+
+      # Set our activity-aware Yakuake to use F12
+      "services/yakuake-activity.desktop" = {
+        _launch = lib.mkForce "F12,none,Toggle Yakuake in Activity Directory";
+      };
+    };
 
     programs.bash.shellAliases = shellAliases;
 
@@ -255,18 +329,22 @@ in {
         };
       };
 
+    # Bootstrap service to ensure activities are created with correct UUIDs
     systemd.user.services."project-activities-bootstrap" = {
       Unit = {
-        Description = "Ensure KDE project activities exist and are configured";
+        Description = "Bootstrap KDE project activities with correct UUIDs";
         After = [ "plasma-workspace.target" "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
       };
       Service = {
         Type = "oneshot";
         ExecStart = bootstrapScript;
-        Environment = [ "QT_QPA_PLATFORM=offscreen" ];
+        RemainAfterExit = true;
+        StandardOutput = "journal";
+        StandardError = "journal";
       };
       Install = {
-        WantedBy = [ "plasma-workspace.target" "graphical-session.target" ];
+        WantedBy = [ "plasma-workspace.target" ];
       };
     };
   };

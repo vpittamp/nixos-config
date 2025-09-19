@@ -2,18 +2,77 @@
   generated = {
     configFile = {
       baloofilerc = {
+        "Basic Settings" = {
+          Indexing-Enabled = true;
+          "only basic indexing" = false;
+        };
         General = {
           dbVersion = 2;
-          "exclude filters" = "*~,*.part,*.o,*.la,*.lo,*.loT,*.moc,moc_*.cpp,qrc_*.cpp,ui_*.h,cmake_install.cmake,CMakeCache.txt,CTestTestfile.cmake,libtool,config.status,confdefs.h,autom4te,conftest,confstat,Makefile.am,*.gcode,.ninja_deps,.ninja_log,build.ninja,*.csproj,*.m4,*.rej,*.gmo,*.pc,*.omf,*.aux,*.tmp,*.po,*.vm*,*.nvram,*.rcore,*.swp,*.swap,lzo,litmain.sh,*.orig,.histfile.*,.xsession-errors*,*.map,*.so,*.a,*.db,*.qrc,*.ini,*.init,*.img,*.vdi,*.vbox*,vbox.log,*.qcow2,*.vmdk,*.vhd,*.vhdx,*.sql,*.sql.gz,*.ytdl,*.tfstate*,*.class,*.pyc,*.pyo,*.elc,*.qmlc,*.jsc,*.fastq,*.fq,*.gb,*.fasta,*.fna,*.gbff,*.faa,po,CVS,.svn,.git,_darcs,.bzr,.hg,CMakeFiles,CMakeTmp,CMakeTmpQmake,.moc,.obj,.pch,.uic,.npm,.yarn,.yarn-cache,__pycache__,node_modules,node_packages,nbproject,.terraform,.venv,venv,core-dumps,lost+found";
-          "exclude filters version" = 9;
+          "exclude filters" = "*.log,*.tmp,node_modules/,target/,.git/";
+          "exclude filters version" = 8;
+        };
+      };
+      dolphinrc = {
+        "KFileDialog Settings" = {
+          "Places Icons Auto-resize" = false;
+          "Places Icons Static Size" = 22;
         };
       };
       kactivitymanagerdrc = {
+        "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = {
+          Description = "General development workspace and experiments.";
+          Icon = "applications-engineering";
+          Name = "Dev";
+        };
+        "6ed332bc-fa61-5381-511d-4d5ba44a293b" = {
+          Description = "System configuration, infra-as-code, and declarative desktop tweaks.";
+          Icon = "nix-snowflake";
+          Name = "NixOS";
+        };
         activities = {
-          "9407befb-12cd-4127-8552-7ab56c6d6a5a" = "Default";
+          "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = "Dev";
+          "6ed332bc-fa61-5381-511d-4d5ba44a293b" = "NixOS";
+          b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Stacks";
+          dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Backstage";
+        };
+        activities-descriptions = {
+          "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = "General development workspace and experiments.";
+          "6ed332bc-fa61-5381-511d-4d5ba44a293b" = "System configuration, infra-as-code, and declarative desktop tweaks.";
+          b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Platform engineering stacks and deployment playbooks.";
+          dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Backstage developer portal and CNOE platform.";
+        };
+        activities-icons = {
+          "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = "applications-engineering";
+          "6ed332bc-fa61-5381-511d-4d5ba44a293b" = "nix-snowflake";
+          b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "application-x-yaml";
+          dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "applications-development";
+        };
+        b4f4e6c4-e52c-1f6b-97f5-567b04283fac = {
+          Description = "Platform engineering stacks and deployment playbooks.";
+          Icon = "application-x-yaml";
+          Name = "Stacks";
+        };
+        dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = {
+          Description = "Backstage developer portal and CNOE platform.";
+          Icon = "applications-development";
+          Name = "Backstage";
         };
         main = {
-          currentActivity = "9407befb-12cd-4127-8552-7ab56c6d6a5a";
+          currentActivity = "6ed332bc-fa61-5381-511d-4d5ba44a293b";
+          runningActivities = "b4f4e6c4-e52c-1f6b-97f5-567b04283fac,dcc377c8-d627-4d0b-8dd7-27d83f8282b3,0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4,6ed332bc-fa61-5381-511d-4d5ba44a293b";
+          stoppedActivities = "";
+        };
+      };
+      kcminputrc = {
+        Keyboard = {
+          KeyboardRepeating = 0;
+          NumLock = 0;
+          RepeatDelay = 600;
+          RepeatRate = 25;
+        };
+        Mouse = {
+          cursorSize = 24;
+          cursorTheme = "breeze_cursors";
         };
       };
       kded5rc = {
@@ -22,13 +81,114 @@
         };
       };
       kdeglobals = {
+        General = {
+          AccentColor = "128,178,230";
+          TerminalApplication = "konsole";
+          TerminalService = "org.kde.konsole.desktop";
+          XftAntialias = true;
+          XftHintStyle = "hintslight";
+          XftSubPixel = "rgb";
+          fixed = "FiraCode Nerd Font Mono,11,-1,5,50,0,0,0,0,0";
+          font = "Noto Sans,10,-1,5,50,0,0,0,0,0";
+          menuFont = "Noto Sans,10,-1,5,50,0,0,0,0,0";
+          smallestReadableFont = "Noto Sans,8,-1,5,50,0,0,0,0,0";
+          toolBarFont = "Noto Sans,10,-1,5,50,0,0,0,0,0";
+        };
+        Icons = {
+          Theme = "Papirus-Dark";
+        };
+        KDE = {
+          AnimationDurationFactor = 1;
+          ShowDeleteCommand = false;
+          SingleClick = false;
+          widgetStyle = "Breeze";
+        };
+        KScreen = {
+          ScreenScaleFactors = "XORGXRDP0=1.15;";
+        };
+        Passwords = {
+          UseKWallet = true;
+        };
         WM = {
-          activeBackground = "227,229,231";
-          activeBlend = "227,229,231";
-          activeForeground = "35,38,41";
-          inactiveBackground = "239,240,241";
-          inactiveBlend = "239,240,241";
-          inactiveForeground = "112,125,138";
+          activeBackground = "39,44,49";
+          activeBlend = "252,252,252";
+          activeForeground = "252,252,252";
+          inactiveBackground = "32,36,40";
+          inactiveBlend = "161,169,177";
+          inactiveForeground = "161,169,177";
+        };
+      };
+      klipperrc = {
+        General = {
+          KeepClipboardContents = true;
+          MaxClipItems = 100;
+          PreventEmptyClipboard = true;
+          SyncClipboards = true;
+        };
+      };
+      krunnerrc = {
+        General = {
+          ActivateWhenTypingOnDesktop = true;
+          FreeFloating = true;
+          HistoryEnabled = true;
+          RetainPriorSearch = false;
+        };
+        Plugins = {
+          baloosearchEnabled = true;
+          calculatorEnabled = true;
+          "org.kde.datetime" = true;
+          "org.kde.windowedwidgets" = false;
+          recentdocumentsEnabled = true;
+          servicesEnabled = true;
+          shellEnabled = true;
+          webshortcutsEnabled = true;
+        };
+      };
+      kscreenlockerrc = {
+        Daemon = {
+          Autolock = true;
+          LockGrace = 5;
+          LockOnResume = true;
+          Timeout = 10;
+        };
+      };
+      ksmserverrc = {
+        General = {
+          confirmLogout = true;
+          excludeApps = "";
+          loginMode = "default";
+          offerShutdown = true;
+          shutdownType = 2;
+        };
+        "SubSession: 2051858d-90bf-40ba-9f0c-183a9f266df0" = {
+          count = 0;
+        };
+        "SubSession: 2e03af40-7a66-4052-be6c-4bb22790625a" = {
+          count = 0;
+        };
+        "SubSession: 46d5b60f-26f7-4eeb-a478-c127edbd6880" = {
+          count = 0;
+        };
+        "SubSession: 8d6c6639-7ffd-4e70-92d1-9c87fb3e4c55" = {
+          count = 0;
+        };
+        "SubSession: 9208007a-b52d-4548-9593-cef43dbdda5f" = {
+          count = 0;
+        };
+        "SubSession: 98b93db7-e611-468d-a18e-2db116e7c246" = {
+          count = 0;
+        };
+        "SubSession: a105b4a3-5257-407e-8111-aa8bdd272eb6" = {
+          count = 0;
+        };
+        "SubSession: d3ecf427-d25f-4c48-b233-0495fb6d01fe" = {
+          count = 0;
+        };
+        "SubSession: ee09d5b7-4647-4a5e-b1b7-5934e793becc" = {
+          count = 0;
+        };
+        "org.kde.klipper" = {
+          autostart = true;
         };
       };
       kuriikwsfilterrc = {
@@ -64,15 +224,148 @@
         };
       };
       kwalletrc = {
+        AccessControl = {
+          "1Password" = "*";
+          "1password" = "*";
+          op = "*";
+        };
+        "Auto Allow" = {
+          "1Password" = true;
+          "1password" = true;
+          op = true;
+        };
         Wallet = {
+          "Auto Allow" = true;
+          "Auto Deny" = false;
+          Cipher = "Blowfish";
+          "Close When Idle" = false;
+          "Close on Screensaver" = false;
+          "Default Wallet" = "kdewallet";
+          Enabled = true;
           "First Use" = false;
+          "Leave Manager Open" = false;
+          "Leave Open" = true;
+          "Password Length" = 32;
+          "Prompt on Open" = false;
+          "Show Manager" = false;
+          "Use One Wallet" = true;
         };
       };
       kwinrc = {
+        Compositing = {
+          Backend = "OpenGL";
+          Enabled = true;
+          GLCore = true;
+          GLPreferBufferSwap = "a";
+          HiddenPreviews = 5;
+          OpenGLIsUnsafe = false;
+          WindowsBlockCompositing = true;
+        };
         Desktops = {
-          Id_1 = "5ce8a17c-4bba-4ed9-b9ec-2b87a2000ee2";
-          Number = 1;
-          Rows = 1;
+          Id_1 = "68e1c320-3d23-41ac-aac6-f7f92da7bcbd";
+          Id_2 = "3e4c7f2d-c428-4587-861a-43fac2ba47b5";
+          Id_3 = "94c23eba-0cfc-4020-afe2-a50d33386599";
+          Id_4 = "d55470a1-67df-4668-9714-3f7e5f4466d0";
+          Number = 4;
+          Rows = 2;
+        };
+        Effect-PresentWindows = {
+          BorderActivate = 0;
+          BorderActivateAll = 0;
+          BorderActivateClass = 0;
+        };
+        Effect-desktopgrid = {
+          BorderActivate = 0;
+          DesktopNameAlignment = 0;
+          LayoutMode = 1;
+          ShowAddRemove = true;
+        };
+        Effect-overview = {
+          BorderActivate = 0;
+          BorderActivateAll = 0;
+        };
+        ElectricBorders = {
+          Bottom = "None";
+          BottomLeft = "None";
+          BottomRight = "None";
+          Left = "None";
+          Right = "None";
+          Top = "None";
+          TopLeft = "None";
+          TopRight = "None";
+        };
+        MouseBindings = {
+          CommandActiveTitlebar1 = "Raise";
+          CommandActiveTitlebar2 = "Nothing";
+          CommandActiveTitlebar3 = "Operations menu";
+          CommandAll1 = "Move";
+          CommandAll2 = "Toggle raise and lower";
+          CommandAll3 = "Resize";
+          CommandAllKey = "Meta";
+          CommandAllWheel = "Nothing";
+          CommandInactiveTitlebar1 = "Activate and raise";
+          CommandInactiveTitlebar2 = "Nothing";
+          CommandInactiveTitlebar3 = "Operations menu";
+          CommandTitlebarWheel = "Nothing";
+          CommandWindow1 = "Activate, raise and pass click";
+          CommandWindow2 = "Activate and pass click";
+          CommandWindow3 = "Activate and pass click";
+          CommandWindowWheel = "Scroll";
+        };
+        Plugins = {
+          blurEnabled = true;
+          contrastEnabled = true;
+          desktopgridEnabled = true;
+          highlightwindowEnabled = true;
+          kwin4_effect_dimscreenEnabled = true;
+          kwin4_effect_translucencyEnabled = false;
+          magiclampEnabled = true;
+          overviewEnabled = false;
+          slideEnabled = true;
+          wobblywindowsEnabled = false;
+          zoomEnabled = true;
+        };
+        "SubSession: 2051858d-90bf-40ba-9f0c-183a9f266df0" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: 2e03af40-7a66-4052-be6c-4bb22790625a" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: 46d5b60f-26f7-4eeb-a478-c127edbd6880" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: 9208007a-b52d-4548-9593-cef43dbdda5f" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: 98b93db7-e611-468d-a18e-2db116e7c246" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: d3ecf427-d25f-4c48-b233-0495fb6d01fe" = {
+          active = "-1";
+          count = 0;
+        };
+        "SubSession: ee09d5b7-4647-4a5e-b1b7-5934e793becc" = {
+          active = "-1";
+          count = 0;
+        };
+        TabBox = {
+          ActivitiesMode = 1;
+          ApplicationsMode = 0;
+          BorderActivate = 0;
+          BorderAlternativeActivate = 0;
+          DesktopMode = 1;
+          HighlightWindows = true;
+          LayoutName = "thumbnail_grid";
+          MinimizedMode = 0;
+          MultiScreenMode = 1;
+          ShowDesktopMode = 0;
+          ShowTabBox = true;
+          SwitchingMode = 0;
         };
         Tiling = {
           padding = 4;
@@ -80,13 +373,33 @@
         "Tiling/7672d168-2ff3-5755-8864-62ce0326032c" = {
           tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
         };
+        "Tiling/a941f271-1df2-5896-9240-4f1a4693889e" = {
+          tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
+        };
         "Tiling/bf638f19-0052-5377-bbec-c3966fb73cc5" = {
           tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
+        };
+        Windows = {
+          ActiveMouseScreen = false;
+          AutoRaise = false;
+          AutoRaiseInterval = 750;
+          ClickRaise = true;
+          DelayFocusInterval = 300;
+          FocusPolicy = "ClickToFocus";
+          FocusStealingPreventionLevel = 1;
+          NextFocusPrefersMouse = false;
+          RollOverDesktops = true;
+          SeparateScreenFocus = false;
         };
       };
       plasma-localerc = {
         Formats = {
           LANG = "en_US.UTF-8";
+        };
+      };
+      plasmarc = {
+        Theme = {
+          name = "breeze-dark";
         };
       };
       spectaclerc = {
@@ -240,11 +553,10 @@
     };
     shortcuts = {
       ActivityManager = {
-        switch-to-activity-0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4 = "Meta+Ctrl+2,none,Switch to activity \"Dev\"";
-        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = "Meta+Ctrl+3,none,Switch to activity \"NixOS\"";
-        switch-to-activity-9407befb-12cd-4127-8552-7ab56c6d6a5a = [];
-        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Meta+Ctrl+4,none,Switch to activity \"Stacks\"";
-        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Meta+Ctrl+1,none,Switch to activity \"Backstage\"";
+        switch-to-activity-0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4 = [];
+        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = [];
+        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = [];
+        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = [];
       };
       "KDE Keyboard Layout Switcher" = {
         "Switch to Last-Used Keyboard Layout" = "Meta+Alt+L,none,Switch to Last-Used Keyboard Layout";
@@ -283,8 +595,6 @@
       };
       kwin = {
         "Activate Window Demanding Attention" = "Meta+Ctrl+A";
-        "Cycle Overview" = [];
-        "Cycle Overview Opposite" = [];
         "Decrease Opacity" = [];
         "Edit Tiles" = "Meta+T";
         Expose = "Ctrl+F9";
@@ -295,7 +605,6 @@
         ];
         ExposeClass = "Ctrl+F7";
         ExposeClassCurrentDesktop = [];
-        "Grid View" = "Meta+G";
         "Increase Opacity" = [];
         "Kill Window" = "Meta+Ctrl+Esc";
         MoveMouseToCenter = "Meta+F6";
@@ -304,7 +613,6 @@
         MoveZoomLeft = [];
         MoveZoomRight = [];
         MoveZoomUp = [];
-        Overview = "Meta+W";
         "Setup Window Shortcut" = [];
         "Show Desktop" = "Meta+D";
         "Suspend Compositing" = "Alt+Shift+F12";
@@ -527,7 +835,7 @@
         "toggle do not disturb" = [];
       };
       yakuake = {
-        toggle-window-state = "F12";
+        toggle-window-state = "none,F12,Open/Retract Yakuake";
       };
     };
   };

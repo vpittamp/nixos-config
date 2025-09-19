@@ -122,6 +122,10 @@
       ta = "tmux attach -t";
       ts = "tmux new-session -s";
       tl = "tmux list-sessions";
+
+      # Session management
+      klogout = "qdbus org.kde.Shutdown /Shutdown logout";
+      session-logout = "qdbus org.kde.Shutdown /Shutdown logout";
       
       # Tmux pane information for LLM interaction
       tpane = "tmux display-message -p 'Current pane: #{session_name}:#{window_index}.#{pane_index} | Command: #{pane_current_command} | Path: #{pane_current_path}'";
