@@ -47,9 +47,7 @@
       set -g repeat-time 1000
 
       # Handle VS Code terminal properly
-      if-shell '[ -n "$VSCODE_TERMINAL" ]' {
-        set-window-option -g aggressive-resize off
-      }
+      # Note: aggressive-resize is already disabled globally above
 
       # Allow passthrough for proper color handling
       set -g allow-passthrough on
