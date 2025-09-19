@@ -1,46 +1,18 @@
 { config, pkgs, lib, ... }:
 
-let
-  # Catppuccin Mocha colors embedded directly
-  colors = {
-    base = "#1e1e2e";
-    mantle = "#181825";
-    crust = "#11111b";
-    surface0 = "#313244";
-    surface1 = "#45475a";
-    surface2 = "#585b70";
-    text = "#cdd6f4";
-    subtext1 = "#bac2de";
-    subtext0 = "#a6adc8";
-    lavender = "#b4befe";
-    blue = "#89b4fa";
-    sapphire = "#74c7ec";
-    sky = "#89dceb";
-    teal = "#94e2d5";
-    green = "#a6e3a1";
-    yellow = "#f9e2af";
-    peach = "#fab387";
-    maroon = "#eba0ac";
-    red = "#f38ba8";
-    mauve = "#cba6f7";
-    pink = "#f5c2e7";
-    flamingo = "#f2cdcd";
-    rosewater = "#f5e0dc";
-  };
-in
 {
   # Tmux configuration
   programs.tmux = {
     enable = true;
     shell = "${pkgs.bash}/bin/bash";
-    terminal = "tmux-256color";  # Better compatibility with modern terminals
+    terminal = "tmux-256color";
     prefix = "`";
     baseIndex = 1;
     historyLimit = 10000;
     keyMode = "vi";
-    mouse = true;  # Enable mouse for scrolling only (clicks disabled in config)
-    aggressiveResize = true;  # Only resize when smaller client is actively viewing
-    
+    mouse = true;
+    aggressiveResize = true;
+
     plugins = with pkgs.tmuxPlugins; [
       sensible
       {
@@ -61,10 +33,8 @@ in
       prefix-highlight
       tmux-fzf
     ];
-    
-    extraConfig = ''
-      # Prefix is set via programs.tmux.prefix
 
+    extraConfig = ''
       # General settings
       set -g default-command "${pkgs.bash}/bin/bash"
       set -g default-terminal "tmux-256color"
@@ -78,94 +48,52 @@ in
 
       # Handle VS Code terminal properly
       if-shell '[ -n "$VSCODE_TERMINAL" ]' {
-        # Don't resize based on other clients when in VS Code
         set-window-option -g aggressive-resize off
       }
-      # Allow OSC sequences to pass through but filter problematic ones
-      # Setting to 'on' allows color queries to be handled properly
-      # Setting to 'off' can cause sequences to appear as text
-      set -g allow-passthrough on
 
-      # Strip OSC 11 sequences that query/set background color
+      # Allow passthrough for proper color handling
+      set -g allow-passthrough on
       set -ag terminal-overrides ',*:Ms@'
-      
+
       # Basic terminal features
       set -as terminal-features ',*:RGB'
-      # Track alternate-screen state via user option (window-scoped)
-      setw -g @altscreen on
-      
+
       # Pane settings
       set -g pane-base-index 1
       set -g renumber-windows on
-      set -g pane-border-lines double  # Use double lines for maximum visibility
-      # Place per-pane pill at the bottom to avoid any conflict with the top status line
+      set -g pane-border-lines heavy
       set -g pane-border-status bottom
-      # HIGH CONTRAST borders for dark theme visibility
-      # Inactive panes: subtle border
-      set -g pane-border-style "fg=#585b70"
-      # Active pane: bright blue border for clear visibility
-      set -g pane-active-border-style "fg=#89b4fa bold"
-      # Per-pane label with cleaner formatting
-      # Active: bright indicator; Inactive: dimmer indicator
-      set -g pane-border-format "#{?pane_active,#[fg=#11111b,bg=#89b4fa,bold] ◆ #S:#I.#P #[default],#[fg=#cdd6f4,bg=#45475a] ○ #S:#I.#P #[default]}"
-      
-      # Status bar styling
+
+      # Simple pane borders with good contrast
+      set -g pane-border-style "fg=colour240"
+      set -g pane-active-border-style "fg=colour39 bold"
+      set -g pane-border-format " #P: #{pane_current_command} "
+
+      # Status bar styling - simple and functional
       set -g status-position top
       set -g status-justify left
-      set -g status-style "bg=#11111b fg=#cdd6f4"
-      set -g status-left-length 80
-      set -g status-right-length 150
+      set -g status-style "bg=colour235 fg=colour248"
+      set -g status-left-length 40
+      set -g status-right-length 60
 
-      # Left status - using separate segments for each mode
-      # This avoids nested conditionals which can cause parsing issues
-      set -g status-left "#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,}#{?pane_in_mode,#[fg=#11111b bg=#f9e2af bold] COPY ,}#{?window_zoomed_flag,#[fg=#11111b bg=#fab387 bold] ZOOM ,}#[fg=#11111b bg=#cba6f7 bold]  #S #[fg=#cba6f7 bg=#11111b] "
+      # Simple status left showing session name and mode
+      set -g status-left "#{?client_prefix,#[fg=colour235 bg=colour203 bold] PREFIX ,#[fg=colour235 bg=colour40 bold] TMUX }#[fg=colour248 bg=colour237] #S #[default] "
 
-      # Right status: canonical pane target (session:window.pane)
-      set -g status-right "#[fg=#313244,bg=#11111b]#[fg=#cdd6f4,bg=#313244]  #S:#I.#P "
+      # Status right showing basic info
+      set -g status-right "#[fg=colour248 bg=colour237] #H | %H:%M #[default]"
 
-      # Window status with enhanced visual separation
-      set -g window-status-format "#[fg=#45475a,bg=#11111b]#[fg=#a6adc8,bg=#45475a] #I:#W #[fg=#45475a,bg=#11111b]"
-      set -g window-status-current-format "#[fg=#89b4fa,bg=#11111b]#[fg=#11111b,bg=#89b4fa,bold] #I:#W#F #[fg=#89b4fa,bg=#11111b]"
+      # Window status - clean and simple
+      set -g window-status-format "#[fg=colour248] #I:#W "
+      set -g window-status-current-format "#[fg=colour235 bg=colour39 bold] #I:#W #[default]"
       set -g window-status-separator ""
-      
-      # Pane borders handled above (ghost borders + per-pane pills)
-      
-      # Message styling (using space-separated attributes)
-      set -g message-style "fg=#11111b bg=#f9e2af bold"
 
-      # Additional pane styling for better visual separation
-      # Add padding and visual cues for active pane
-      set -g pane-border-indicators both  # Show arrows pointing to active pane
-      set -g display-panes-colour "#f9e2af"  # Bright color for pane numbers
-      set -g display-panes-active-colour "#74c7ec"  # Active pane number color
-      set -g display-panes-time 2000  # Show pane numbers for 2 seconds
+      # Message styling
+      set -g message-style "fg=colour235 bg=colour226 bold"
 
-      # Pane padding for visual separation (using borders)
-      set -g pane-border-lines heavy  # Use heavy lines for better separation
-
-      # Keep default black background for all panes
-      # Remove the active pane background distinction
-      set -g window-style "fg=#cdd6f4"
-      set -g window-active-style "fg=#cdd6f4"
-      
       # Key bindings
       bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
-      
-      # Basic copy mode
-      bind Enter copy-mode
-      bind -T copy-mode-vi v send-keys -X begin-selection
-      bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
-      bind -T copy-mode-vi Escape send-keys -X cancel
-      bind -T copy-mode-vi H send-keys -X start-of-line
-      bind -T copy-mode-vi L send-keys -X end-of-line
-      
-      # Basic paste
-      bind ] paste-buffer
-      bind p paste-buffer
-      bind P choose-buffer
-      
-      # Window management
+
+      # Window and pane management
       bind c new-window -c "#{pane_current_path}"
       bind v split-window -v -c "#{pane_current_path}"
       bind - split-window -v -c "#{pane_current_path}"
@@ -174,91 +102,53 @@ in
       bind f resize-pane -Z
       bind x kill-pane
       bind X kill-window
-      
+
       # Pane navigation (without prefix)
       bind -n C-h select-pane -L
       bind -n C-j select-pane -D
       bind -n C-k select-pane -U
       bind -n C-l select-pane -R
-      
+
       # Pane resizing
       bind -r H resize-pane -L 5
       bind -r J resize-pane -D 5
+      bind -r K resize-pane -U 5
       bind -r L resize-pane -R 5
-      
+
       # Quick window switching
       bind -n M-1 select-window -t 1
       bind -n M-2 select-window -t 2
       bind -n M-3 select-window -t 3
       bind -n M-4 select-window -t 4
       bind -n M-5 select-window -t 5
-      
+
+      # Copy mode
+      bind Enter copy-mode
+      bind -T copy-mode-vi v send-keys -X begin-selection
+      bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
+      bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+      bind -T copy-mode-vi Escape send-keys -X cancel
+      bind -T copy-mode-vi H send-keys -X start-of-line
+      bind -T copy-mode-vi L send-keys -X end-of-line
+
+      # Paste
+      bind ] paste-buffer
+      bind p paste-buffer
+      bind P choose-buffer
+
       # Toggles
       bind S setw synchronize-panes \; display-message "Synchronize panes: #{?pane_synchronized,ON,OFF}"
       bind m set -g mouse \; display-message "Mouse: #{?mouse,ON,OFF}"
-      
-      # Mouse behavior:
-      # - Normal click/drag: tmux handles (selection, copy mode, scrolling)
-      # - Shift + click/drag: native terminal selection (bypasses tmux)
-      # Disable right-click context menu since we don't use it
+
+      # Mouse behavior
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
-      # Keep selection anchor when finishing a mouse drag in copy mode so the
-      # view doesn't snap back to the live pane
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
 
       # Sesh session management
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"
       bind-key "T" run-shell "sesh connect \"\$(sesh list --icons | fzf-tmux -p 80%,70% --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' --header '  ^a all ^t tmux ^g configs ^x zoxide ^d tmux kill ^f find' --bind 'tab:down,btab:up' --bind 'ctrl-a:change-prompt(⚡  )+reload(sesh list --icons)' --bind 'ctrl-t:change-prompt(🪟  )+reload(sesh list -t --icons)' --bind 'ctrl-g:change-prompt(⚙️  )+reload(sesh list -c --icons)' --bind 'ctrl-x:change-prompt(📁  )+reload(sesh list -z --icons)' --bind 'ctrl-f:change-prompt(🔎  )+reload(fd -H -d 2 -t d -E .Trash . ~)' --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(sesh list --icons)' --preview-window 'right:55%' --preview 'sesh preview {}')\""
-      # Claude in scrollable windows (scoped alt-screen off)
-      # - These bindings open Claude in a regular tmux window and disable
-      #   the alternate screen only for that window, so tmux history/mouse
-      #   scrolling works as expected.
-      bind g new-window -n "Claude" "claude" \; setw alternate-screen off \; setw @altscreen off
-      bind G new-window -n "Claude*" "claude --continue" \; setw alternate-screen off \; setw @altscreen off
-
-      # Optional: launch in the current pane (no new window)
-      # Use prefix + a / A to start Claude here with alt-screen disabled.
-      bind a setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude" C-m
-      bind A setw alternate-screen off \; setw @altscreen off \; send-keys -t ! "claude --continue" C-m
-      # Toggle alternate-screen for current window and update indicator
-      bind M if -F '#{==:#{@altscreen},off}' \
-        "setw alternate-screen on \; setw @altscreen on \; display-message \"ALT screen: ON\"" \
-        "setw alternate-screen off \; setw @altscreen off \; display-message \"ALT screen: OFF\""
-      # Help menu
-      bind ? display-menu -T "Tmux Quick Help" -x C -y C \
-        "Window Operations"  w "display-menu -T 'Window Operations' \
-          'New Window (c)'           c 'new-window' \
-          'Kill Window (X)'          X 'kill-window' \
-          'Rename Window (,)'        , 'command-prompt -I \"#W\" \"rename-window %%\"' \
-          'List Windows (w)'         w 'choose-window' \
-          'Next Window (n)'          n 'next-window' \
-          'Previous Window (p)'      p 'previous-window' \
-          'Last Window (l)'          l 'last-window'" \
-        "Pane Operations"    p "display-menu -T 'Pane Operations' \
-          'Split Horizontal (|)'     | 'split-window -h' \
-          'Split Vertical (-)'       - 'split-window -v' \
-          'Kill Pane (x)'            x 'kill-pane' \
-          'Zoom Pane (f)'            f 'resize-pane -Z' \
-          'Rotate Panes (C-o)'       C-o 'rotate-window' \
-          'Break Pane (!)'           ! 'break-pane' \
-          'Swap Panes (})'           } 'swap-pane -D'" \
-        "Session Operations" s "display-menu -T 'Session Operations' \
-          'New Session'              N 'new-session' \
-          'Choose Session (s)'       s 'choose-session' \
-          'Detach (d)'               d 'detach-client' \
-          'Rename Session ($)'       $ 'command-prompt -I \"#S\" \"rename-session %%\"' \
-          'Kill Session'             K 'kill-session'" \
-        "Copy Mode"          m "display-menu -T 'Copy Mode' \
-          'Enter Copy Mode ([)'      [ 'copy-mode' \
-          'Paste Buffer (])'         ] 'paste-buffer' \
-          'List Buffers (=)'         = 'choose-buffer' \
-          'Save Buffer'              S 'command-prompt -p \"Save to:\" \"save-buffer %%\"'" \
-        "" \
-        "Search Keys (/)"    / "command-prompt -p 'Search for command:' 'new-window -n \"Keys\" \"sh -lc \"tmux list-keys | grep -i %% | less\"\"'" \
-        "List All Keys"      a "new-window -n 'Keys' 'sh -lc "tmux list-keys | less"'" \
-        "Reload Config (r)"  r "source-file ~/.config/tmux/tmux.conf"
     '';
   };
 }
