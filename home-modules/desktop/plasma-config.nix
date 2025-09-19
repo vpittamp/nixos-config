@@ -101,40 +101,43 @@
       "services/dolphin-activity.desktop"."_launch" = "Ctrl+Alt+D";
       "services/code-activity.desktop"."_launch" = "Ctrl+Alt+E";
 
-      # Activity switcher
-      "plasmashell"."manage activities" = "Ctrl+Alt+A,Meta+Q,Show Activity Switcher";
+      # Activity management shortcuts
+      "plasmashell"."manage activities" = ["Meta+Q" "Ctrl+Alt+A"];
+      "plasmashell"."next activity" = ["Meta+Tab"];
+      "plasmashell"."previous activity" = ["Meta+Shift+Tab"];
+      "plasmashell"."stop current activity" = [];  # Disabled
 
       # Desktop switching
-      "kwin"."Switch to Desktop 1" = "Meta+1";
-      "kwin"."Switch to Desktop 2" = "Meta+2";
-      "kwin"."Switch to Desktop 3" = "Meta+3";
-      "kwin"."Switch to Desktop 4" = "Meta+4";
+      "kwin"."Switch to Desktop 1" = ["Meta+1"];
+      "kwin"."Switch to Desktop 2" = ["Meta+2"];
+      "kwin"."Switch to Desktop 3" = ["Meta+3"];
+      "kwin"."Switch to Desktop 4" = ["Meta+4"];
 
       # Window movement to desktops
-      "kwin"."Window to Desktop 1" = "Meta+Shift+1";
-      "kwin"."Window to Desktop 2" = "Meta+Shift+2";
-      "kwin"."Window to Desktop 3" = "Meta+Shift+3";
-      "kwin"."Window to Desktop 4" = "Meta+Shift+4";
+      "kwin"."Window to Desktop 1" = ["Meta+Shift+1"];
+      "kwin"."Window to Desktop 2" = ["Meta+Shift+2"];
+      "kwin"."Window to Desktop 3" = ["Meta+Shift+3"];
+      "kwin"."Window to Desktop 4" = ["Meta+Shift+4"];
 
       # Desktop navigation
-      "kwin"."Switch One Desktop Down" = "Meta+Ctrl+Down";
-      "kwin"."Switch One Desktop Up" = "Meta+Ctrl+Up";
-      "kwin"."Switch One Desktop to the Left" = "Meta+Ctrl+Left";
-      "kwin"."Switch One Desktop to the Right" = "Meta+Ctrl+Right";
+      "kwin"."Switch One Desktop Down" = ["Meta+Ctrl+Down"];
+      "kwin"."Switch One Desktop Up" = ["Meta+Ctrl+Up"];
+      "kwin"."Switch One Desktop to the Left" = ["Meta+Ctrl+Left"];
+      "kwin"."Switch One Desktop to the Right" = ["Meta+Ctrl+Right"];
 
       # Overview (replaces desktop grid)
-      "kwin"."Overview" = "Meta+F8,Meta+W,Toggle Overview";
+      "kwin"."Overview" = ["Meta+W" "Meta+F8"];
 
       # Window management
-      "kwin"."Window Maximize" = "Meta+PgUp";
-      "kwin"."Window Minimize" = "Meta+PgDn";
-      "kwin"."Window Close" = "Alt+F4";
-      "kwin"."Window Fullscreen" = "none";
-      "kwin"."Window Operations Menu" = "Alt+F3";
-      "kwin"."Window Quick Tile Left" = "Meta+Left";
-      "kwin"."Window Quick Tile Right" = "Meta+Right";
-      "kwin"."Window Quick Tile Top" = "Meta+Up";
-      "kwin"."Window Quick Tile Bottom" = "Meta+Down";
+      "kwin"."Window Maximize" = ["Meta+PgUp"];
+      "kwin"."Window Minimize" = ["Meta+PgDn"];
+      "kwin"."Window Close" = ["Alt+F4"];
+      "kwin"."Window Fullscreen" = [];  # Disabled
+      "kwin"."Window Operations Menu" = ["Alt+F3"];
+      "kwin"."Window Quick Tile Left" = ["Meta+Left"];
+      "kwin"."Window Quick Tile Right" = ["Meta+Right"];
+      "kwin"."Window Quick Tile Top" = ["Meta+Up"];
+      "kwin"."Window Quick Tile Bottom" = ["Meta+Down"];
     };
   };
 }
