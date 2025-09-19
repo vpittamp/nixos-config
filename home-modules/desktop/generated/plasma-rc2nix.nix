@@ -13,6 +13,9 @@
         };
       };
       dolphinrc = {
+        General = {
+          ViewPropsTimestamp = "2025,9,19,10,21,1.124";
+        };
         "KFileDialog Settings" = {
           "Places Icons Auto-resize" = false;
           "Places Icons Static Size" = 22;
@@ -105,6 +108,9 @@
         };
         KScreen = {
           ScreenScaleFactors = "XORGXRDP0=1.15;";
+        };
+        "KShortcutsDialog Settings" = {
+          "Dialog Size" = "600,480";
         };
         Passwords = {
           UseKWallet = true;
@@ -553,10 +559,10 @@
     };
     shortcuts = {
       ActivityManager = {
-        switch-to-activity-0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4 = [];
-        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = [];
-        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = [];
-        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = [];
+        switch-to-activity-0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4 = "Meta+4,none,Switch to activity \"Dev\"";
+        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = "Meta+1,none,Switch to activity \"NixOS\"";
+        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Meta+2,none,Switch to activity \"Stacks\"";
+        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Meta+3,none,Switch to activity \"Backstage\"";
       };
       "KDE Keyboard Layout Switcher" = {
         "Switch to Last-Used Keyboard Layout" = "Meta+Alt+L,none,Switch to Last-Used Keyboard Layout";
@@ -580,22 +586,22 @@
         mute = "Volume Mute";
       };
       ksmserver = {
-        "Halt Without Confirmation" = [];
+        "Halt Without Confirmation" = "none,,Shut Down Without Confirmation";
         "Lock Session" = [
           "Meta+L"
           "Screensaver,Meta+L"
           "Screensaver,Lock Session"
         ];
         "Log Out" = "Ctrl+Alt+Del";
-        "Log Out Without Confirmation" = [];
-        LogOut = [];
-        Reboot = [];
-        "Reboot Without Confirmation" = [];
-        "Shut Down" = [];
+        "Log Out Without Confirmation" = "none,,Log Out Without Confirmation";
+        LogOut = "none,,Log Out";
+        Reboot = "none,,Reboot";
+        "Reboot Without Confirmation" = "none,,Reboot Without Confirmation";
+        "Shut Down" = "none,,Shut Down";
       };
       kwin = {
         "Activate Window Demanding Attention" = "Meta+Ctrl+A";
-        "Decrease Opacity" = [];
+        "Decrease Opacity" = "none,,Decrease Opacity of Active Window by 5%";
         "Edit Tiles" = "Meta+T";
         Expose = "Ctrl+F9";
         ExposeAll = [
@@ -605,7 +611,7 @@
         ];
         ExposeClass = "Ctrl+F7";
         ExposeClassCurrentDesktop = [];
-        "Increase Opacity" = [];
+        "Increase Opacity" = "none,,Increase Opacity of Active Window by 5%";
         "Kill Window" = "Meta+Ctrl+Esc";
         MoveMouseToCenter = "Meta+F6";
         MoveMouseToFocus = "Meta+F5";
@@ -613,7 +619,7 @@
         MoveZoomLeft = [];
         MoveZoomRight = [];
         MoveZoomUp = [];
-        "Setup Window Shortcut" = [];
+        "Setup Window Shortcut" = "none,,Setup Window Shortcut";
         "Show Desktop" = "Meta+D";
         "Suspend Compositing" = "Alt+Shift+F12";
         "Switch One Desktop Down" = "Meta+Ctrl+Down";
@@ -625,43 +631,43 @@
         "Switch Window Right" = "Meta+Alt+Right";
         "Switch Window Up" = "Meta+Alt+Up";
         "Switch to Desktop 1" = "Ctrl+F1";
-        "Switch to Desktop 10" = [];
-        "Switch to Desktop 11" = [];
-        "Switch to Desktop 12" = [];
-        "Switch to Desktop 13" = [];
-        "Switch to Desktop 14" = [];
-        "Switch to Desktop 15" = [];
-        "Switch to Desktop 16" = [];
-        "Switch to Desktop 17" = [];
-        "Switch to Desktop 18" = [];
-        "Switch to Desktop 19" = [];
+        "Switch to Desktop 10" = "none,,Switch to Desktop 10";
+        "Switch to Desktop 11" = "none,,Switch to Desktop 11";
+        "Switch to Desktop 12" = "none,,Switch to Desktop 12";
+        "Switch to Desktop 13" = "none,,Switch to Desktop 13";
+        "Switch to Desktop 14" = "none,,Switch to Desktop 14";
+        "Switch to Desktop 15" = "none,,Switch to Desktop 15";
+        "Switch to Desktop 16" = "none,,Switch to Desktop 16";
+        "Switch to Desktop 17" = "none,,Switch to Desktop 17";
+        "Switch to Desktop 18" = "none,,Switch to Desktop 18";
+        "Switch to Desktop 19" = "none,,Switch to Desktop 19";
         "Switch to Desktop 2" = "Ctrl+F2";
-        "Switch to Desktop 20" = [];
+        "Switch to Desktop 20" = "none,,Switch to Desktop 20";
         "Switch to Desktop 3" = "Ctrl+F3";
         "Switch to Desktop 4" = "Ctrl+F4";
-        "Switch to Desktop 5" = [];
-        "Switch to Desktop 6" = [];
-        "Switch to Desktop 7" = [];
-        "Switch to Desktop 8" = [];
-        "Switch to Desktop 9" = [];
-        "Switch to Next Desktop" = [];
-        "Switch to Next Screen" = [];
-        "Switch to Previous Desktop" = [];
-        "Switch to Previous Screen" = [];
-        "Switch to Screen 0" = [];
-        "Switch to Screen 1" = [];
-        "Switch to Screen 2" = [];
-        "Switch to Screen 3" = [];
-        "Switch to Screen 4" = [];
-        "Switch to Screen 5" = [];
-        "Switch to Screen 6" = [];
-        "Switch to Screen 7" = [];
-        "Switch to Screen Above" = [];
-        "Switch to Screen Below" = [];
-        "Switch to Screen to the Left" = [];
-        "Switch to Screen to the Right" = [];
+        "Switch to Desktop 5" = "none,,Switch to Desktop 5";
+        "Switch to Desktop 6" = "none,,Switch to Desktop 6";
+        "Switch to Desktop 7" = "none,,Switch to Desktop 7";
+        "Switch to Desktop 8" = "none,,Switch to Desktop 8";
+        "Switch to Desktop 9" = "none,,Switch to Desktop 9";
+        "Switch to Next Desktop" = "none,,Switch to Next Desktop";
+        "Switch to Next Screen" = "none,,Switch to Next Screen";
+        "Switch to Previous Desktop" = "none,,Switch to Previous Desktop";
+        "Switch to Previous Screen" = "none,,Switch to Previous Screen";
+        "Switch to Screen 0" = "none,,Switch to Screen 0";
+        "Switch to Screen 1" = "none,,Switch to Screen 1";
+        "Switch to Screen 2" = "none,,Switch to Screen 2";
+        "Switch to Screen 3" = "none,,Switch to Screen 3";
+        "Switch to Screen 4" = "none,,Switch to Screen 4";
+        "Switch to Screen 5" = "none,,Switch to Screen 5";
+        "Switch to Screen 6" = "none,,Switch to Screen 6";
+        "Switch to Screen 7" = "none,,Switch to Screen 7";
+        "Switch to Screen Above" = "none,,Switch to Screen Above";
+        "Switch to Screen Below" = "none,,Switch to Screen Below";
+        "Switch to Screen to the Left" = "none,,Switch to Screen to the Left";
+        "Switch to Screen to the Right" = "none,,Switch to Screen to the Right";
         "Toggle Night Color" = [];
-        "Toggle Window Raise/Lower" = [];
+        "Toggle Window Raise/Lower" = "none,,Toggle Window Raise/Lower";
         "Walk Through Windows" = [
           "Meta+Tab"
           "Alt+Tab,Meta+Tab"
@@ -686,83 +692,83 @@
         ];
         "Walk Through Windows of Current Application Alternative" = [];
         "Walk Through Windows of Current Application Alternative (Reverse)" = [];
-        "Window Above Other Windows" = [];
-        "Window Below Other Windows" = [];
+        "Window Above Other Windows" = "none,,Keep Window Above Others";
+        "Window Below Other Windows" = "none,,Keep Window Below Others";
         "Window Close" = "Alt+F4";
-        "Window Custom Quick Tile Bottom" = [];
-        "Window Custom Quick Tile Left" = [];
-        "Window Custom Quick Tile Right" = [];
-        "Window Custom Quick Tile Top" = [];
-        "Window Fullscreen" = [];
-        "Window Grow Horizontal" = [];
-        "Window Grow Vertical" = [];
-        "Window Lower" = [];
+        "Window Custom Quick Tile Bottom" = "none,,Custom Quick Tile Window to the Bottom";
+        "Window Custom Quick Tile Left" = "none,,Custom Quick Tile Window to the Left";
+        "Window Custom Quick Tile Right" = "none,,Custom Quick Tile Window to the Right";
+        "Window Custom Quick Tile Top" = "none,,Custom Quick Tile Window to the Top";
+        "Window Fullscreen" = "none,,Make Window Fullscreen";
+        "Window Grow Horizontal" = "none,,Expand Window Horizontally";
+        "Window Grow Vertical" = "none,,Expand Window Vertically";
+        "Window Lower" = "none,,Lower Window";
         "Window Maximize" = "Meta+PgUp";
-        "Window Maximize Horizontal" = [];
-        "Window Maximize Vertical" = [];
+        "Window Maximize Horizontal" = "none,,Maximize Window Horizontally";
+        "Window Maximize Vertical" = "none,,Maximize Window Vertically";
         "Window Minimize" = "Meta+PgDown";
-        "Window Move" = [];
-        "Window Move Center" = [];
-        "Window No Border" = [];
-        "Window On All Desktops" = [];
+        "Window Move" = "none,,Move Window";
+        "Window Move Center" = "none,,Move Window to the Center";
+        "Window No Border" = "none,,Toggle Window Titlebar and Frame";
+        "Window On All Desktops" = "none,,Keep Window on All Desktops";
         "Window One Desktop Down" = "Meta+Ctrl+Shift+Down";
         "Window One Desktop Up" = "Meta+Ctrl+Shift+Up";
         "Window One Desktop to the Left" = "Meta+Ctrl+Shift+Left";
         "Window One Desktop to the Right" = "Meta+Ctrl+Shift+Right";
-        "Window One Screen Down" = [];
-        "Window One Screen Up" = [];
-        "Window One Screen to the Left" = [];
-        "Window One Screen to the Right" = [];
+        "Window One Screen Down" = "none,,Move Window One Screen Down";
+        "Window One Screen Up" = "none,,Move Window One Screen Up";
+        "Window One Screen to the Left" = "none,,Move Window One Screen to the Left";
+        "Window One Screen to the Right" = "none,,Move Window One Screen to the Right";
         "Window Operations Menu" = "Alt+F3";
-        "Window Pack Down" = [];
-        "Window Pack Left" = [];
-        "Window Pack Right" = [];
-        "Window Pack Up" = [];
+        "Window Pack Down" = "none,,Move Window Down";
+        "Window Pack Left" = "none,,Move Window Left";
+        "Window Pack Right" = "none,,Move Window Right";
+        "Window Pack Up" = "none,,Move Window Up";
         "Window Quick Tile Bottom" = "Meta+Down";
-        "Window Quick Tile Bottom Left" = [];
-        "Window Quick Tile Bottom Right" = [];
+        "Window Quick Tile Bottom Left" = "none,,Quick Tile Window to the Bottom Left";
+        "Window Quick Tile Bottom Right" = "none,,Quick Tile Window to the Bottom Right";
         "Window Quick Tile Left" = "Meta+Left";
         "Window Quick Tile Right" = "Meta+Right";
         "Window Quick Tile Top" = "Meta+Up";
-        "Window Quick Tile Top Left" = [];
-        "Window Quick Tile Top Right" = [];
-        "Window Raise" = [];
-        "Window Resize" = [];
-        "Window Shade" = [];
-        "Window Shrink Horizontal" = [];
-        "Window Shrink Vertical" = [];
-        "Window to Desktop 1" = [];
-        "Window to Desktop 10" = [];
-        "Window to Desktop 11" = [];
-        "Window to Desktop 12" = [];
-        "Window to Desktop 13" = [];
-        "Window to Desktop 14" = [];
-        "Window to Desktop 15" = [];
-        "Window to Desktop 16" = [];
-        "Window to Desktop 17" = [];
-        "Window to Desktop 18" = [];
-        "Window to Desktop 19" = [];
-        "Window to Desktop 2" = [];
-        "Window to Desktop 20" = [];
-        "Window to Desktop 3" = [];
-        "Window to Desktop 4" = [];
-        "Window to Desktop 5" = [];
-        "Window to Desktop 6" = [];
-        "Window to Desktop 7" = [];
-        "Window to Desktop 8" = [];
-        "Window to Desktop 9" = [];
-        "Window to Next Desktop" = [];
+        "Window Quick Tile Top Left" = "none,,Quick Tile Window to the Top Left";
+        "Window Quick Tile Top Right" = "none,,Quick Tile Window to the Top Right";
+        "Window Raise" = "none,,Raise Window";
+        "Window Resize" = "none,,Resize Window";
+        "Window Shade" = "none,,Shade Window";
+        "Window Shrink Horizontal" = "none,,Shrink Window Horizontally";
+        "Window Shrink Vertical" = "none,,Shrink Window Vertically";
+        "Window to Desktop 1" = "none,,Window to Desktop 1";
+        "Window to Desktop 10" = "none,,Window to Desktop 10";
+        "Window to Desktop 11" = "none,,Window to Desktop 11";
+        "Window to Desktop 12" = "none,,Window to Desktop 12";
+        "Window to Desktop 13" = "none,,Window to Desktop 13";
+        "Window to Desktop 14" = "none,,Window to Desktop 14";
+        "Window to Desktop 15" = "none,,Window to Desktop 15";
+        "Window to Desktop 16" = "none,,Window to Desktop 16";
+        "Window to Desktop 17" = "none,,Window to Desktop 17";
+        "Window to Desktop 18" = "none,,Window to Desktop 18";
+        "Window to Desktop 19" = "none,,Window to Desktop 19";
+        "Window to Desktop 2" = "none,,Window to Desktop 2";
+        "Window to Desktop 20" = "none,,Window to Desktop 20";
+        "Window to Desktop 3" = "none,,Window to Desktop 3";
+        "Window to Desktop 4" = "none,,Window to Desktop 4";
+        "Window to Desktop 5" = "none,,Window to Desktop 5";
+        "Window to Desktop 6" = "none,,Window to Desktop 6";
+        "Window to Desktop 7" = "none,,Window to Desktop 7";
+        "Window to Desktop 8" = "none,,Window to Desktop 8";
+        "Window to Desktop 9" = "none,,Window to Desktop 9";
+        "Window to Next Desktop" = "none,,Window to Next Desktop";
         "Window to Next Screen" = "Meta+Shift+Right";
-        "Window to Previous Desktop" = [];
+        "Window to Previous Desktop" = "none,,Window to Previous Desktop";
         "Window to Previous Screen" = "Meta+Shift+Left";
-        "Window to Screen 0" = [];
-        "Window to Screen 1" = [];
-        "Window to Screen 2" = [];
-        "Window to Screen 3" = [];
-        "Window to Screen 4" = [];
-        "Window to Screen 5" = [];
-        "Window to Screen 6" = [];
-        "Window to Screen 7" = [];
+        "Window to Screen 0" = "none,,Move Window to Screen 0";
+        "Window to Screen 1" = "none,,Move Window to Screen 1";
+        "Window to Screen 2" = "none,,Move Window to Screen 2";
+        "Window to Screen 3" = "none,,Move Window to Screen 3";
+        "Window to Screen 4" = "none,,Move Window to Screen 4";
+        "Window to Screen 5" = "none,,Move Window to Screen 5";
+        "Window to Screen 6" = "none,,Move Window to Screen 6";
+        "Window to Screen 7" = "none,,Move Window to Screen 7";
         view_actual_size = "Meta+0";
         view_zoom_in = [
           "Meta++"
@@ -772,11 +778,11 @@
         view_zoom_out = "Meta+-";
       };
       mediacontrol = {
-        mediavolumedown = [];
-        mediavolumeup = [];
+        mediavolumedown = "none,,Media volume down";
+        mediavolumeup = "none,,Media volume up";
         nextmedia = "Media Next";
         pausemedia = "Media Pause";
-        playmedia = [];
+        playmedia = "none,,Play media playback";
         playpausemedia = "Media Play";
         previousmedia = "Media Previous";
         stopmedia = "Media Stop";
@@ -806,33 +812,60 @@
           "Alt+F1,Meta"
           "Alt+F1,Activate Application Launcher"
         ];
-        "activate task manager entry 1" = "Meta+1";
-        "activate task manager entry 10" = [];
-        "activate task manager entry 2" = "Meta+2";
-        "activate task manager entry 3" = "Meta+3";
-        "activate task manager entry 4" = "Meta+4";
+        "activate task manager entry 1" = "none,Meta+1,Activate Task Manager Entry 1";
+        "activate task manager entry 10" = "none,,Activate Task Manager Entry 10";
+        "activate task manager entry 2" = "none,Meta+2,Activate Task Manager Entry 2";
+        "activate task manager entry 3" = "none,Meta+3,Activate Task Manager Entry 3";
+        "activate task manager entry 4" = "none,Meta+4,Activate Task Manager Entry 4";
         "activate task manager entry 5" = "Meta+5";
         "activate task manager entry 6" = "Meta+6";
         "activate task manager entry 7" = "Meta+7";
         "activate task manager entry 8" = "Meta+8";
         "activate task manager entry 9" = "Meta+9";
-        clear-history = [];
+        clear-history = "none,,Clear Clipboard History";
         clipboard_action = "Meta+Ctrl+X";
         cycle-panels = "Meta+Alt+P";
-        cycleNextAction = [];
-        cyclePrevAction = [];
-        edit_clipboard = [];
+        cycleNextAction = "none,,Next History Item";
+        cyclePrevAction = "none,,Previous History Item";
+        edit_clipboard = "none,,Edit Contents…";
         "manage activities" = "Meta+Q";
         "next activity" = "Meta+A,none,Walk through activities";
         "previous activity" = "Meta+Shift+A,none,Walk through activities (Reverse)";
-        repeat_action = [];
+        repeat_action = "none,,Manually Invoke Action on Current Clipboard";
         "show dashboard" = "Ctrl+F12";
-        show-barcode = [];
+        show-barcode = "none,,Show Barcode…";
         show-on-mouse-pos = "Meta+V";
         "stop current activity" = "Meta+S";
-        "switch to next activity" = [];
-        "switch to previous activity" = [];
-        "toggle do not disturb" = [];
+        "switch to next activity" = "none,,Switch to Next Activity";
+        "switch to previous activity" = "none,,Switch to Previous Activity";
+        "toggle do not disturb" = "none,,Toggle do not disturb";
+      };
+      "services/code-activity.desktop" = {
+        _launch = "Ctrl+Alt+C";
+      };
+      "services/dolphin-activity.desktop" = {
+        _launch = "Ctrl+Alt+F";
+      };
+      "services/konsole-activity.desktop" = {
+        _launch = "Ctrl+Alt+T";
+      };
+      "services/org.kde.konsole.desktop" = {
+        _launch = [];
+      };
+      "services/services\\/code-activity.desktop" = {
+        _launch = "Ctrl+Alt+C";
+      };
+      "services/services\\/dolphin-activity.desktop" = {
+        _launch = "Ctrl+Alt+F";
+      };
+      "services/services\\/konsole-activity.desktop" = {
+        _launch = "Ctrl+Alt+T";
+      };
+      "services/services\\/yakuake-activity.desktop" = {
+        _launch = "F12";
+      };
+      "services/yakuake-activity.desktop" = {
+        _launch = [];
       };
       yakuake = {
         toggle-window-state = "none,F12,Open/Retract Yakuake";
