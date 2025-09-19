@@ -2,8 +2,8 @@
 
 {
   programs.plasma = {
-    # Make shortcuts immutable to ensure they're applied
-    immutableByDefault = true;
+    # Keep GUI editable while still managing shortcuts declaratively
+    immutableByDefault = false;
 
     # Global theme settings
     workspace.theme = "breeze-dark";
@@ -91,39 +91,39 @@
         "Default Wallet" = "kdewallet";
         "Prompt on Open" = false;
       };
-
-      # Global shortcuts configuration
-      "kglobalshortcutsrc" = {
-        "plasmashell" = {
-          "manage activities" = "Meta+Q,Ctrl+Alt+A,Show Activity Switcher";
-          "next activity" = "Meta+Tab,none,Switch to Next Activity";
-          "previous activity" = "Meta+Shift+Tab,none,Switch to Previous Activity";
-        };
-
-        "kwin" = {
-          "Overview" = "Meta+W\tMeta+F8,Meta+W,Toggle Overview";
-          "Switch to Desktop 1" = "Meta+1,Meta+1,Switch to Desktop 1";
-          "Switch to Desktop 2" = "Meta+2,Meta+2,Switch to Desktop 2";
-          "Switch to Desktop 3" = "Meta+3,Meta+3,Switch to Desktop 3";
-          "Switch to Desktop 4" = "Meta+4,Meta+4,Switch to Desktop 4";
-          "Window to Desktop 1" = "Meta+Shift+1,Meta+Shift+1,Window to Desktop 1";
-          "Window to Desktop 2" = "Meta+Shift+2,Meta+Shift+2,Window to Desktop 2";
-          "Window to Desktop 3" = "Meta+Shift+3,Meta+Shift+3,Window to Desktop 3";
-          "Window to Desktop 4" = "Meta+Shift+4,Meta+Shift+4,Window to Desktop 4";
-          "Switch One Desktop Down" = "Meta+Ctrl+Down,Meta+Ctrl+Down,Switch One Desktop Down";
-          "Switch One Desktop Up" = "Meta+Ctrl+Up,Meta+Ctrl+Up,Switch One Desktop Up";
-          "Switch One Desktop to the Left" = "Meta+Ctrl+Left,Meta+Ctrl+Left,Switch One Desktop to the Left";
-          "Switch One Desktop to the Right" = "Meta+Ctrl+Right,Meta+Ctrl+Right,Switch One Desktop to the Right";
-          "Window Maximize" = "Meta+PgUp,Meta+PgUp,Maximize Window";
-          "Window Minimize" = "Meta+PgDn,Meta+PgDn,Minimize Window";
-          "Window Quick Tile Left" = "Meta+Left,Meta+Left,Quick Tile Window to the Left";
-          "Window Quick Tile Right" = "Meta+Right,Meta+Right,Quick Tile Window to the Right";
-          "Window Quick Tile Top" = "Meta+Up,Meta+Up,Quick Tile Window to the Top";
-          "Window Quick Tile Bottom" = "Meta+Down,Meta+Down,Quick Tile Window to the Bottom";
-        };
-      };
     };
 
-    # Shortcuts are now defined in configFile.kglobalshortcutsrc above
+    # Keyboard shortcuts using plasma-manager's shortcuts module
+    shortcuts = {
+      # KWin window management shortcuts
+      kwin = {
+        "Overview" = ["Meta+W" "Meta+F8"];
+        "Switch to Desktop 1" = "Meta+1";
+        "Switch to Desktop 2" = "Meta+2";
+        "Switch to Desktop 3" = "Meta+3";
+        "Switch to Desktop 4" = "Meta+4";
+        "Window to Desktop 1" = "Meta+Shift+1";
+        "Window to Desktop 2" = "Meta+Shift+2";
+        "Window to Desktop 3" = "Meta+Shift+3";
+        "Window to Desktop 4" = "Meta+Shift+4";
+        "Switch One Desktop Down" = "Meta+Ctrl+Down";
+        "Switch One Desktop Up" = "Meta+Ctrl+Up";
+        "Switch One Desktop to the Left" = "Meta+Ctrl+Left";
+        "Switch One Desktop to the Right" = "Meta+Ctrl+Right";
+        "Window Maximize" = "Meta+PgUp";
+        "Window Minimize" = "Meta+PgDn";
+        "Window Quick Tile Left" = "Meta+Left";
+        "Window Quick Tile Right" = "Meta+Right";
+        "Window Quick Tile Top" = "Meta+Up";
+        "Window Quick Tile Bottom" = "Meta+Down";
+      };
+
+      # Plasma shell shortcuts for activities
+      plasmashell = {
+        "manage activities" = ["Meta+Q" "Ctrl+Alt+A"];
+        "next activity" = "Meta+Tab";
+        "previous activity" = "Meta+Shift+Tab";
+      };
+    };
   };
 }

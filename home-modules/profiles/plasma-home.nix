@@ -15,8 +15,8 @@
 
   programs.plasma = {
     enable = true;
-    overrideConfig = true;
-    resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];
+    overrideConfig = false;  # Don't delete KDE config files, just manage specified settings
+    # resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];  # Not needed with overrideConfig = false
   };
 
   programs.konsole = {
