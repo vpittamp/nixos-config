@@ -10,19 +10,15 @@ let
     (builtins.pathExists /sys/devices/virtual/dmi/id/sys_vendor &&
      builtins.elem (builtins.readFile /sys/devices/virtual/dmi/id/sys_vendor) ["QEMU\n" "KVM\n"]) ||
     (builtins.pathExists /sys/devices/virtual/dmi/id/product_name &&
-     let product = builtins.readFile /sys/devices/virtual/dmi/id/product_name;
-     in builtins.elem product [
-       "Standard PC (Q35 + ICH9, 2009)\n"
-       "Standard PC (i440FX + PIIX, 1996)\n"
-     ]);
+     (let product = builtins.readFile /sys/devices/virtual/dmi/id/product_name;
+      in builtins.elem product [
+        "Standard PC (Q35 + ICH9, 2009)\n"
+        "Standard PC (i440FX + PIIX, 1996)\n"
+      ]));
 
-  # Check hostname
-  currentHostname =
-    if builtins.pathExists /proc/sys/kernel/hostname
-    then lib.removeSuffix "\n" (builtins.readFile /proc/sys/kernel/hostname)
-    else "unknown";
-
-  isCorrectHost = currentHostname == "nixos-hetzner" || currentHostname == config.networking.hostName;
+  # We check configuration hostname, not runtime hostname
+  # (runtime hostname may not be accessible during build)
+  isCorrectHost = config.networking.hostName == "nixos-hetzner";
 in
 {
   assertions = [
@@ -46,9 +42,9 @@ in
         ERROR: Hostname mismatch!
 
         Expected hostname: nixos-hetzner
-        Current hostname: ${currentHostname}
+        Current config hostname: ${config.networking.hostName}
 
-        This might not be the correct system for this configuration.
+        This configuration is intended for the Hetzner server.
         ═══════════════════════════════════════════════════════════════
       '';
     }
