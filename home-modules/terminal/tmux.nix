@@ -11,7 +11,7 @@
     historyLimit = 10000;
     keyMode = "vi";
     mouse = true;
-    aggressiveResize = true;
+    aggressiveResize = false;  # Disabled to prevent window distortion between VS Code and Konsole
 
     plugins = with pkgs.tmuxPlugins; [
       sensible
