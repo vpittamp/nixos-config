@@ -96,7 +96,11 @@ in
         };
         "bash-sesh" = {
           "path" = "${pkgs.bashInteractive}/bin/bash";
-          "args" = [ "--login" "-c" "if command -v sesh >/dev/null 2>&1; then SESSION=$(basename \"$(pwd)\" | tr '[:upper:]' '[:lower:]'); sesh connect \"$SESSION\" || exec bash -l; else exec bash -l; fi" ];
+          "args" = [
+            "--login"
+            "-c"
+            "if command -v sesh >/dev/null 2>&1; then SESSION=$(basename \"$(pwd)\" | tr '[:upper:]' '[:lower:]'); tmux set -g aggressive-resize off 2>/dev/null; tmux setw -g aggressive-resize off 2>/dev/null; sesh connect \"$SESSION\" || exec bash -l; else exec bash -l; fi"
+          ];
           "icon" = "terminal-tmux";
           "env" = {
             "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
