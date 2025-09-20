@@ -112,7 +112,7 @@ in
           "args" = [
             "--login"
             "-c"
-            "if command -v sesh >/dev/null 2>&1; then SESSION=$(basename \"$(pwd)\" | tr '[:upper:]' '[:lower:]'); tmux set -g aggressive-resize off 2>/dev/null; tmux setw -g aggressive-resize off 2>/dev/null; sesh connect \"$SESSION\" || exec bash -l; else exec bash -l; fi"
+            "if command -v sesh >/dev/null 2>&1; then SESSION=$(basename \"$(pwd)\" | tr '[:upper:]' '[:lower:]'); sesh connect \"$SESSION\" || exec bash -l; else exec bash -l; fi"
           ];
           "icon" = "terminal-tmux";
           "env" = {
@@ -122,22 +122,14 @@ in
           "overrideName" = true;
         };
       };
-      "terminal.external.linuxExec" = "${pkgs.kdePackages.konsole}/bin/konsole";
+      # Use regular bash instead of konsole for external terminal
+      "terminal.external.linuxExec" = "${pkgs.bashInteractive}/bin/bash";
 
       # Terminal sizing and rendering fixes for tmux compatibility
-      "terminal.integrated.inheritEnv" = false;  # Don't inherit env vars that might affect sizing
-      "terminal.integrated.gpuAcceleration" = "off";  # Disable GPU acceleration for better compatibility
-      "terminal.integrated.lineHeight" = 1.2;  # Consistent line height
-      "terminal.integrated.rendererType" = "canvas";  # Use canvas renderer for consistency
       "terminal.integrated.scrollback" = 10000;  # Adequate scrollback buffer
-      "terminal.integrated.detectLocale" = "off";  # Disable locale detection that can affect rendering
-      "terminal.integrated.unicodeVersion" = "11";  # Unicode version for consistent character width
-      "terminal.integrated.allowChords" = false;  # Disable chord shortcuts that might interfere
-      "terminal.integrated.drawBoldTextInBrightColors" = false;  # Consistent text rendering
-      "terminal.integrated.minimumContrastRatio" = 1;  # Disable contrast adjustments
-      "terminal.integrated.windowsEnableConpty" = false;  # Not relevant for Linux but ensure it's off
-      "terminal.integrated.cursorStyle" = "block";  # Consistent cursor style
-      "terminal.integrated.cursorBlinking" = true;
+      "terminal.integrated.localEchoExcludePrograms" = [ "tmux" "screen" ];  # Disable local echo for tmux
+      "terminal.integrated.environmentChangesRelaunch" = false;  # Don't relaunch on env changes
+      "terminal.integrated.persistentSessionScrollback" = 100;  # Limit persistent scrollback
 
       # SSH configuration for 1Password
       "remote.SSH.configFile" = "~/.ssh/config";

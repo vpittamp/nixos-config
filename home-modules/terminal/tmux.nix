@@ -11,7 +11,7 @@
     historyLimit = 10000;
     keyMode = "vi";
     mouse = true;
-    aggressiveResize = false;  # Disabled to prevent window distortion between VS Code and Konsole
+    aggressiveResize = true;  # Enable for better dynamic resizing with window-size latest
 
     plugins = with pkgs.tmuxPlugins; [
       # Removed sensible plugin as it overrides aggressive-resize setting
@@ -47,15 +47,18 @@
       set -g repeat-time 1000
 
       # Handle VS Code terminal properly
-      # Note: aggressive-resize is already disabled globally above
-      # Additional checks for VS Code environment
-      if-shell '[ -n "$VSCODE_TERMINAL" ]' \
-        'set -g aggressive-resize off; setw -g aggressive-resize off' \
-        'set -g aggressive-resize off'
+      # Use 'latest' window-size to track most recent active client
+      # This fixes the issue where tmux limits to smallest client (VSCode)
+      set -g window-size latest
 
-      # Ensure window size is handled correctly
-      setw -g window-size smallest
-      set -g window-size smallest
+      # Enable aggressive-resize for better window handling
+      setw -g aggressive-resize on
+
+      # Force refresh on attach
+      set-hook -g client-attached 'run-shell "tmux refresh-client -S"'
+
+      # Bind key for manual window resize when needed
+      bind R run-shell "tmux resize-window -A"
 
       # Allow passthrough for proper color handling
       set -g allow-passthrough on
