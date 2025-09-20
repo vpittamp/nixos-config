@@ -172,7 +172,7 @@
       bind -T copy-mode-vi L send-keys -X end-of-line
 
       # Paste
-      bind ] paste-buffer
+      bind ']' paste-buffer
       bind p paste-buffer
       bind P choose-buffer
 
