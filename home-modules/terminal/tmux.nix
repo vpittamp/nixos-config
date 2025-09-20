@@ -184,10 +184,10 @@
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
 
       # Sesh session management
-      # bind -n C-t new-window sesh
-      # bind l switch-client -l
+      bind -n C-t new-window sesh
+      bind l switch-client -l
       # Simplified sesh connect binding
-      # bind-key T new-window sesh
+      bind-key T new-window sesh
     '';
   };
 }
