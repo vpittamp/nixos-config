@@ -186,7 +186,7 @@
 
       # Sesh session management
       bind -n C-t new-window sesh
-      bind l run-shell "sesh last"
+      bind l switch-client -l
       # Simplified sesh connect binding
       bind-key T new-window sesh
     '';
