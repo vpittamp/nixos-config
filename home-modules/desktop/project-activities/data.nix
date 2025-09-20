@@ -179,6 +179,32 @@ in rec {
         keepMonths = 2;
       };
     };
+
+    monitoring = {
+      uuid = "645bcfb7-e769-4000-93be-ad31eb77ea2e";
+      name = "Monitoring";
+      description = "System resource monitoring and performance dashboards.";
+      icon = "utilities-system-monitor";  # System monitor icon
+      directory = expandPath "~/monitoring";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Flow/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+5";  # Activity shortcut
+      colorScheme = {
+        # Orange/amber accent for monitoring activity
+        accentColor = "255,152,0";  # Material Design amber (#FF9800)
+        windowDecorationColor = "60,48,36";  # Dark amber-gray
+      };
+      resources = [
+        (fileUri "~/monitoring")
+      ];
+      autostart = [];
+      scoring = {
+        pruneRecent = {
+          count = 100;
+          what = "documents";
+        };
+        keepMonths = 1;
+      };
+    };
   };
 
   defaultIcons = [

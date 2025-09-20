@@ -141,6 +141,114 @@ AppletOrder=411;412;437;436;438;413;414;427;428
 
 '';
 
+  # Monitoring activity panel with system monitoring widgets
+  monitoringPanelIni = ''
+[Containments][500]
+activityId=645bcfb7-e769-4000-93be-ad31eb77ea2e
+formfactor=2
+immutability=1
+lastScreen[$i]=0
+location=3
+plugin=org.kde.panel
+wallpaperplugin=org.kde.image
+
+[Containments][500][Applets][501]
+immutability=1
+plugin=org.kde.plasma.systemmonitor.cpu
+
+[Containments][500][Applets][501][Configuration][Appearance]
+title=CPU Usage
+chartFace=org.kde.ksysguard.barchart
+
+[Containments][500][Applets][501][Configuration][SensorColors]
+cpu/all/usage=61,174,233
+
+[Containments][500][Applets][501][Configuration][Sensors]
+highPrioritySensorIds=["cpu/all/usage"]
+totalSensors=["cpu/all/usage"]
+
+[Containments][500][Applets][502]
+immutability=1
+plugin=org.kde.plasma.systemmonitor.memory
+
+[Containments][500][Applets][502][Configuration][Appearance]
+title=Memory
+chartFace=org.kde.ksysguard.piechart
+
+[Containments][500][Applets][502][Configuration][SensorColors]
+memory/physical/used=233,120,61
+memory/physical/free=61,233,140
+
+[Containments][500][Applets][502][Configuration][Sensors]
+highPrioritySensorIds=["memory/physical/used","memory/physical/free"]
+totalSensors=["memory/physical/used","memory/physical/free"]
+
+[Containments][500][Applets][503]
+immutability=1
+plugin=org.kde.plasma.systemmonitor.net
+
+[Containments][500][Applets][503][Configuration][Appearance]
+title=Network
+chartFace=org.kde.ksysguard.linechart
+
+[Containments][500][Applets][503][Configuration][SensorColors]
+network/all/download=61,233,61
+network/all/upload=233,61,61
+
+[Containments][500][Applets][503][Configuration][Sensors]
+highPrioritySensorIds=["network/all/download","network/all/upload"]
+
+[Containments][500][Applets][504]
+immutability=1
+plugin=org.kde.plasma.systemmonitor.diskactivity
+
+[Containments][500][Applets][504][Configuration][Appearance]
+title=Disk I/O
+chartFace=org.kde.ksysguard.linechart
+
+[Containments][500][Applets][504][Configuration][SensorColors]
+disk/all/read=61,120,233
+disk/all/write=233,174,61
+
+[Containments][500][Applets][504][Configuration][Sensors]
+highPrioritySensorIds=["disk/all/read","disk/all/write"]
+
+[Containments][500][Applets][505]
+immutability=1
+plugin=org.kde.plasma.systemmonitor
+
+[Containments][500][Applets][505][Configuration][Appearance]
+title=System Load
+chartFace=org.kde.ksysguard.linechart
+
+[Containments][500][Applets][505][Configuration][SensorColors]
+cpu/system/loadAverage1=174,61,233
+cpu/system/loadAverage5=120,61,233
+cpu/system/loadAverage15=61,61,233
+
+[Containments][500][Applets][505][Configuration][Sensors]
+highPrioritySensorIds=["cpu/system/loadAverage1","cpu/system/loadAverage5","cpu/system/loadAverage15"]
+
+[Containments][500][Applets][506]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][500][Applets][506][Configuration][General]
+expanding=false
+length=20
+
+[Containments][500][Applets][507]
+immutability=1
+plugin=org.kde.plasma.digitalclock
+
+[Containments][500][Applets][507][Configuration][Appearance]
+showDate=true
+
+[Containments][500][General]
+AppletOrder=501;502;503;504;505;506;507
+
+'';
+
   secondaryPanelsIni = ''
 [Containments][429]
 activityId=
@@ -261,5 +369,5 @@ screenMapping=
 '';
 
 in {
-  panelIniText = primaryPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
+  panelIniText = primaryPanelIni + monitoringPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
 }
