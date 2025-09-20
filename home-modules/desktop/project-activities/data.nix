@@ -107,7 +107,7 @@ in rec {
       uuid = "b4f4e6c4-e52c-1f6b-97f5-567b04283fac";
       name = "Stacks";
       description = "Platform engineering stacks and deployment playbooks.";
-      icon = "application-x-yaml";  # YAML/config files - common in GitOps
+      icon = "folder-git";  # GitOps folder icon - perfect for infrastructure as code
       directory = expandPath "~/stacks";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
       shortcut = "Meta+Ctrl+4";  # Activity shortcut
