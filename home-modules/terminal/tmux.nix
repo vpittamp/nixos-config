@@ -48,6 +48,14 @@
 
       # Handle VS Code terminal properly
       # Note: aggressive-resize is already disabled globally above
+      # Additional checks for VS Code environment
+      if-shell '[ -n "$VSCODE_TERMINAL" ]' \
+        'set -g aggressive-resize off; setw -g aggressive-resize off' \
+        'set -g aggressive-resize off'
+
+      # Ensure window size is handled correctly
+      setw -g window-size smallest
+      set -g window-size smallest
 
       # Allow passthrough for proper color handling
       set -g allow-passthrough on

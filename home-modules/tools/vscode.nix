@@ -96,7 +96,7 @@ in
       # Disable KDE Wallet integration - use 1Password instead
       "password-store" = "basic";  # Use basic keychain instead of system keychain
 
-      # Terminal integration
+      # Terminal integration with tmux sizing fixes
       "terminal.integrated.defaultProfile.linux" = "bash-sesh";  # Use bash-sesh as default
       "terminal.integrated.profiles.linux" = {
         "bash" = {
@@ -123,6 +123,21 @@ in
         };
       };
       "terminal.external.linuxExec" = "${pkgs.kdePackages.konsole}/bin/konsole";
+
+      # Terminal sizing and rendering fixes for tmux compatibility
+      "terminal.integrated.inheritEnv" = false;  # Don't inherit env vars that might affect sizing
+      "terminal.integrated.gpuAcceleration" = "off";  # Disable GPU acceleration for better compatibility
+      "terminal.integrated.lineHeight" = 1.2;  # Consistent line height
+      "terminal.integrated.rendererType" = "canvas";  # Use canvas renderer for consistency
+      "terminal.integrated.scrollback" = 10000;  # Adequate scrollback buffer
+      "terminal.integrated.detectLocale" = "off";  # Disable locale detection that can affect rendering
+      "terminal.integrated.unicodeVersion" = "11";  # Unicode version for consistent character width
+      "terminal.integrated.allowChords" = false;  # Disable chord shortcuts that might interfere
+      "terminal.integrated.drawBoldTextInBrightColors" = false;  # Consistent text rendering
+      "terminal.integrated.minimumContrastRatio" = 1;  # Disable contrast adjustments
+      "terminal.integrated.windowsEnableConpty" = false;  # Not relevant for Linux but ensure it's off
+      "terminal.integrated.cursorStyle" = "block";  # Consistent cursor style
+      "terminal.integrated.cursorBlinking" = true;
 
       # SSH configuration for 1Password
       "remote.SSH.configFile" = "~/.ssh/config";
