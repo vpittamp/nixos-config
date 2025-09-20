@@ -30,6 +30,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/onepassword-automation.nix
     
     # Kubernetes modules
     ../modules/kubernetes/agentgateway.nix
@@ -86,6 +87,12 @@
     enable = true;
     autoDeployOnBoot = false;  # Manual deployment for now
     enableAIBackends = true;   # Enable AI routing capabilities
+  };
+
+  # Enable 1Password automation with service account
+  services.onepassword-automation = {
+    enable = true;
+    user = "vpittamp";
   };
 
   # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim

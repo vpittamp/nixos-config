@@ -46,7 +46,9 @@ in
   # System-wide environment variables for 1Password
   environment.sessionVariables = {
     SSH_AUTH_SOCK = "/home/vpittamp/.1password/agent.sock";
-    OP_BIOMETRIC_UNLOCK_ENABLED = "true";
+    OP_BIOMETRIC_UNLOCK_ENABLED = if hasGui then "true" else "false";
+    # For headless environments, use device mode
+    OP_DEVICE = if hasGui then null else "hetzner-server";
   };
   
   # Polkit configuration is merged below with other polkit rules
@@ -196,7 +198,7 @@ in
   security.polkit.enable = true;
   
   # Polkit rules for 1Password system authentication and SSH agent
-  security.polkit.extraConfig = ''
+  security.polkit.extraConfig = lib.mkIf hasGui ''
     // Allow 1Password to use system authentication service
     polkit.addRule(function(action, subject) {
       if (action.id == "com.1password.1Password.authorizationhelper" ||
