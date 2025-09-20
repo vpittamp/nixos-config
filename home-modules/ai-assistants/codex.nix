@@ -39,6 +39,16 @@
       auto_save = true;
       theme = "dark";
       vim_mode = false;
+
+      mcp_servers = {
+        playwright = {
+          command = "npx";
+          args = [
+            "-y"
+            "@playwright/mcp@latest"
+          ];
+        };
+      };
     };
   };
 }
