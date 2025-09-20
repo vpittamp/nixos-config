@@ -188,7 +188,7 @@
       bind -n C-t run-shell "bash -ic 'sesh_connect'"
       bind -N "last-session (via sesh)" l run-shell "sesh last"
       # Simplified sesh connect binding
-      bind-key T display-popup -E -w 80% -h 70% "sesh connect"
+      bind-key T display-popup -E -w 80 -h 20 "sesh connect"
     '';
   };
 }
