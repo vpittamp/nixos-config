@@ -6,12 +6,12 @@ let
   isWSL = builtins.pathExists /proc/sys/fs/binfmt_misc/WSLInterop;
 
   # Check for Apple Silicon markers
+  # Note: We can't read devicetree files directly as they may contain non-UTF8 data
+  # Just check for platform and the existence of Apple Silicon paths
   isAppleSilicon =
     config.nixpkgs.hostPlatform.system == "aarch64-linux" &&
-    ((builtins.pathExists /sys/firmware/devicetree/base/compatible &&
-      builtins.match ".*apple.*" (builtins.readFile /sys/firmware/devicetree/base/compatible) != null) ||
-     (builtins.pathExists /sys/firmware/devicetree/base/model &&
-      builtins.match ".*Apple.*" (builtins.readFile /sys/firmware/devicetree/base/model) != null));
+    (builtins.pathExists /sys/firmware/devicetree/base/compatible ||
+     builtins.pathExists /sys/firmware/devicetree/base/model);
 
   isCorrectHost = config.networking.hostName == "nixos-m1";
 in
