@@ -39,6 +39,7 @@ in
     ../tools/direnv.nix
     ../tools/fzf.nix
     ../tools/chromium.nix
+    ../tools/firefox.nix
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
