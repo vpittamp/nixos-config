@@ -31,6 +31,7 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/onepassword-automation.nix
+    ../modules/services/speech-to-text.nix
     
     # Kubernetes modules
     ../modules/kubernetes/agentgateway.nix
@@ -93,6 +94,14 @@
   services.onepassword-automation = {
     enable = true;
     user = "vpittamp";
+  };
+
+  # Enable Speech-to-Text services
+  services.speech-to-text = {
+    enable = true;
+    model = "base.en";  # Good balance of speed and accuracy
+    language = "en";
+    enableGlobalShortcut = true;
   };
 
   # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim

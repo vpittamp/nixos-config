@@ -115,6 +115,26 @@
         key = "Ctrl+Alt+E";
         command = "code-activity";
       };
+      "toggle-speech-dictation" = {
+        name = "Toggle Speech Dictation";
+        key = "Meta+Alt+D";
+        command = "nerd-dictation-toggle";
+      };
+      "speech-to-clipboard" = {
+        name = "Speech to Clipboard";
+        key = "Meta+Alt+C";
+        command = "${pkgs.writeShellScript "whisper-clipboard" ''
+          AUDIO_FILE="/tmp/whisper-recording.wav"
+          # Record 10 seconds of audio
+          ${pkgs.sox}/bin/rec -c 1 -r 16000 "$AUDIO_FILE" trim 0 10
+          # Transcribe with Whisper
+          TEXT=$(${pkgs.openai-whisper}/bin/whisper "$AUDIO_FILE" --model base.en --output_format txt --output_dir /tmp 2>/dev/null | tail -1)
+          # Copy to clipboard
+          echo "$TEXT" | ${pkgs.wl-clipboard}/bin/wl-copy
+          ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Text copied to clipboard" -i edit-copy
+          rm -f "$AUDIO_FILE"
+        ''}";
+      };
     };
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
