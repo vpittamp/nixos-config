@@ -185,10 +185,10 @@
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
 
       # Sesh session management
-      bind -n C-t run-shell "bash -ic sesh_connect"
-      bind l run-shell "sesh last"  # last-session via sesh
+      bind -n C-t run-shell 'bash -ic sesh_connect'
+      bind l run-shell 'sesh last'  # last-session via sesh
       # Simplified sesh connect binding
-      bind-key T display-popup -E -w 80 -h 20 "sesh connect"
+      bind-key T display-popup -E -w 80 -h 20 'sesh connect'
     '';
   };
 }
