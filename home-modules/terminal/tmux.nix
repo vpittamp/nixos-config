@@ -81,7 +81,7 @@
         ''
 
       # Basic terminal features
-      set -as terminal-features ',*:RGB'
+      set -as terminal-features ",*:RGB"
 
       # Pane settings
       set -g pane-base-index 1
