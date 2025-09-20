@@ -130,7 +130,7 @@
       set -g message-style "fg=colour235 bg=colour226 bold"
 
       # Key bindings
-      bind r source-file ~/.config/tmux/tmux.conf \; display "Config reloaded!"
+      bind r source-file $HOME/.config/tmux/tmux.conf \; display "Config reloaded!"
 
       # Window and pane management
       bind c new-window -c "#{pane_current_path}"
