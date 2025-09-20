@@ -369,5 +369,5 @@ screenMapping=
 '';
 
 in {
-  panelIniText = primaryPanelIni + monitoringPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
+  panelIniText = primaryPanelIni + secondaryPanelsIni + activityContainmentsIni + screenMappingIni;
 }
