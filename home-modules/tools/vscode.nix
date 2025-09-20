@@ -118,6 +118,7 @@ in
           "env" = {
             "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
             "VSCODE_TERMINAL" = "true";  # Signal to tmux that we're in VS Code
+            "TERM" = "xterm-256color";  # Ensure consistent TERM variable
           };
           "overrideName" = true;
         };

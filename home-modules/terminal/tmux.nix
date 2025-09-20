@@ -46,7 +46,7 @@
       set -g detach-on-destroy off
       set -g repeat-time 1000
 
-      # Handle VS Code terminal properly
+      # Handle different terminal emulators properly
       # Use 'latest' window-size to track most recent active client
       # This fixes the issue where tmux limits to smallest client (VSCode)
       set -g window-size latest
@@ -60,9 +60,25 @@
       # Bind key for manual window resize when needed
       bind R run-shell "tmux resize-window -A"
 
+      # Terminal-specific overrides for proper rendering
+      # Konsole-specific settings
+      set -ga terminal-overrides ',konsole*:Tc'
+      set -ga terminal-overrides ',konsole*:Ms@'
+
+      # VSCode terminal settings
+      set -ga terminal-overrides ',vscode*:Tc'
+
+      # General xterm settings
+      set -ga terminal-overrides ',xterm*:Tc'
+      set -ga terminal-overrides ',xterm-256color:Tc'
+
       # Allow passthrough for proper color handling
       set -g allow-passthrough on
-      set -ag terminal-overrides ',*:Ms@'
+
+      # Handle Konsole-specific environment
+      if-shell '[ -n "$KONSOLE_VERSION" ]' \
+        'set -g aggressive-resize on; set -g window-size latest' \
+        ''
 
       # Basic terminal features
       set -as terminal-features ',*:RGB'

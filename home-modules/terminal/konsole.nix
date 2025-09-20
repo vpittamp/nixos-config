@@ -19,9 +19,13 @@
 
       [General]
       Command=/run/current-system/sw/bin/bash -l
+      Environment=TERM=xterm-256color,KONSOLE_VERSION=1
       Name=Improved Selection
       Parent=FALLBACK/
       StartInCurrentSessionDir=false
+      TerminalColumns=80
+      TerminalRows=24
+      TerminalMargin=1
 
       [Interaction Options]
       AutoCopySelectedText=true
