@@ -77,8 +77,7 @@
 
       # Handle Konsole-specific environment
       if-shell '[ -n "$KONSOLE_VERSION" ]' \
-        'set -g aggressive-resize on; set -g window-size latest' \
-        ''
+        'set -g aggressive-resize on; set -g window-size latest'
 
       # Basic terminal features
       set -as terminal-features ",*:RGB"
