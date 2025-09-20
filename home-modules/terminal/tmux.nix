@@ -171,8 +171,8 @@
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
 
-      # Paste
-      bind ']' paste-buffer
+      # Paste - using ']' for paste-buffer
+      bind \] paste-buffer
       bind p paste-buffer
       bind P choose-buffer
 
