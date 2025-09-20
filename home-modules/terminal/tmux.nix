@@ -176,8 +176,8 @@
       bind P choose-buffer
 
       # Toggles
-      bind S setw synchronize-panes \; display-message "Synchronize panes: #{?pane_synchronized,ON,OFF}"
-      bind m set -g mouse \; display-message "Mouse: #{?mouse,ON,OFF}"
+      bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
+      bind m run-shell "tmux set -g mouse && tmux display-message 'Mouse: #{?mouse,ON,OFF}'"
 
       # Mouse behavior
       unbind -n MouseDown3Pane
