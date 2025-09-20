@@ -6,7 +6,7 @@
     ../desktop/plasma-config.nix
     ../desktop/plasma-sync.nix  # Analysis tool for comparing plasma configs
     ../desktop/project-activities
-    ../desktop/activity-aware-apps.nix  # Activity-aware application launchers
+    ../desktop/activity-aware-apps-native.nix  # Native KDE activity management
     ../apps/headlamp.nix
     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix

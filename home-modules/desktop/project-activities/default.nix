@@ -20,16 +20,55 @@ let
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
 
-  activityShortcut = idx: "Meta+${toString (idx + 1)}";
+  deriveShortcutPair = idx: activity:
+    let
+      fallback = "Meta+${toString (idx + 1)}";
+      raw = activity.shortcut or null;
+      sanitizeList = shortcuts:
+        lib.filter (s: s != null && s != "") shortcuts;
+    in if raw == null then {
+      primary = fallback;
+      secondary = "none";
+    } else if builtins.isList raw then
+      let
+        sanitized = sanitizeList raw;
+        primaryCandidate =
+          if sanitized == [] then fallback
+          else if builtins.elemAt sanitized 0 == "none" then fallback
+          else builtins.elemAt sanitized 0;
+        secondaryCandidate =
+          if builtins.length sanitized > 1 then builtins.elemAt sanitized 1 else fallback;
+        secondary =
+          if secondaryCandidate == primaryCandidate || secondaryCandidate == "" then "none" else secondaryCandidate;
+      in {
+        primary = primaryCandidate;
+        secondary = secondary;
+      }
+    else if builtins.isString raw then
+      let
+        primaryCandidate = if raw == "" then fallback else raw;
+        secondaryCandidate = if primaryCandidate == fallback then "none" else fallback;
+        secondary =
+          if secondaryCandidate == primaryCandidate || secondaryCandidate == "" then "none" else secondaryCandidate;
+      in {
+        primary = primaryCandidate;
+        secondary = secondary;
+      }
+    else {
+      primary = fallback;
+      secondary = "none";
+    };
 
   activityShortcuts =
     lib.listToAttrs (
       lib.imap0 (idx: id: let
+        activity = activities.${id};
         uuid = activityUUIDs.${id};
-        name = activities.${id}.name;
+        name = activity.name;
+        shortcutPair = deriveShortcutPair idx activity;
       in {
         name = "switch-to-activity-${uuid}";
-        value = lib.mkForce "${activityShortcut idx},none,Switch to activity \"${name}\"";
+        value = lib.mkForce "${shortcutPair.primary},${shortcutPair.secondary},Switch to activity \"${name}\"";
       }) activityIds
     );
 
