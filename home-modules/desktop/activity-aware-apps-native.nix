@@ -88,54 +88,18 @@ let
     dolphin "$WORK_DIR"
   '';
 
-  yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync" ''
+  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
+  yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync-disabled" ''
     #!/usr/bin/env bash
-    ${getActivityDirectory}
-
-    if pgrep -f "yakuake" >/dev/null 2>&1; then
-      WORK_DIR=$(get_activity_directory)
-      ACTIVITY_ID=$(qdbus org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
-      ACTIVITY_NAME=$(grep "^$ACTIVITY_ID=" ~/.config/kactivitymanagerdrc 2>/dev/null | cut -d= -f2 | head -1)
-      SESSION_TITLE="$ACTIVITY_NAME"
-
-      # Check if a session for this activity already exists
-      EXISTING_SESSION=""
-      for session_id in $(qdbus org.kde.yakuake /yakuake/sessions sessionIdList 2>/dev/null | tr ',' ' '); do
-        title=$(qdbus org.kde.yakuake /yakuake/tabs tabTitle "$session_id" 2>/dev/null || echo "")
-        if [[ "$title" == "$SESSION_TITLE" ]]; then
-          EXISTING_SESSION="$session_id"
-          break
-        fi
-      done
-
-      if [ -n "$EXISTING_SESSION" ]; then
-        qdbus org.kde.yakuake /yakuake/sessions raiseSession "$EXISTING_SESSION" 2>/dev/null || true
-      else
-        NEW_SESSION=$(qdbus org.kde.yakuake /yakuake/sessions addSession 2>/dev/null)
-        if [ -n "$NEW_SESSION" ]; then
-          qdbus org.kde.yakuake /yakuake/tabs setTabTitle "$NEW_SESSION" "$SESSION_TITLE" 2>/dev/null || true
-          qdbus org.kde.yakuake /yakuake/sessions runCommandInTerminal "$NEW_SESSION" "cd '$WORK_DIR'" 2>/dev/null || true
-          qdbus org.kde.yakuake /yakuake/sessions raiseSession "$NEW_SESSION" 2>/dev/null || true
-        fi
-      fi
-    fi
+    echo "Yakuake is disabled due to Wayland crashes"
+    exit 1
   '';
 
-  yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity" ''
+  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
+  yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity-disabled" ''
     #!/usr/bin/env bash
-    ${getActivityDirectory}
-    WORK_DIR=$(get_activity_directory)
-
-    if pgrep -f "${pkgs.kdePackages.yakuake}/bin/yakuake" >/dev/null 2>&1; then
-      qdbus org.kde.yakuake /yakuake/window toggleWindowState 2>/dev/null || true
-      sleep 0.2
-      yakuake-activity-sync
-    else
-      cd "$WORK_DIR"
-      ${pkgs.kdePackages.yakuake}/bin/yakuake &
-      sleep 1
-      yakuake-activity-sync
-    fi
+    echo "Yakuake is disabled due to Wayland crashes"
+    exit 1
   '';
 
   # Generate KWin window rules for activity management
@@ -202,8 +166,9 @@ in
     konsoleActivityScript
     codeActivityScript
     dolphinActivityScript
-    yakuakeActivityScript
-    yakuakeActivitySync
+    # DISABLED: Yakuake crashes with SIGSEGV on Wayland
+    # yakuakeActivityScript
+    # yakuakeActivitySync
   ];
 
   # KWin window rules configuration using plasma-manager
@@ -282,20 +247,20 @@ in
       };
     };
 
-    # Activity-aware Yakuake
-    yakuake-activity = {
-      name = "Yakuake (Activity)";
-      genericName = "Drop-down Terminal";
-      comment = "Opens Yakuake with sesh session for current activity";
-      icon = "yakuake";
-      terminal = false;
-      type = "Application";
-      categories = [ "System" "TerminalEmulator" ];
-      exec = "${yakuakeActivityScript}/bin/yakuake-activity";
-      settings = {
-        Keywords = "yakuake;terminal;dropdown;activity;quake;";
-      };
-    };
+    # DISABLED: Yakuake crashes with SIGSEGV on Wayland
+    # yakuake-activity = {
+      # name = "Yakuake (Activity)";
+    #   genericName = "Drop-down Terminal";
+    #   comment = "Opens Yakuake with sesh session for current activity";
+    #   icon = "yakuake";
+    #   terminal = false;
+    #   type = "Application";
+    #   categories = [ "System" "TerminalEmulator" ];
+    #   exec = "${yakuakeActivityScript}/bin/yakuake-activity";
+    #   settings = {
+    #     Keywords = "yakuake;terminal;dropdown;activity;quake;";
+    #   };
+    # };
 
     # VS Code with activity-specific jumplist actions
     "code-activities" = {
@@ -338,17 +303,17 @@ in
     };
   };
 
-  # Autostart Yakuake with activity awareness
-  home.file.".config/autostart/yakuake.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Exec=yakuake-activity
-    Hidden=false
-    NoDisplay=false
-    X-GNOME-Autostart-enabled=true
-    Name=Yakuake
-    Comment=Drop-down terminal with activity awareness
-  '';
+  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
+  # home.file.".config/autostart/yakuake.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Exec=yakuake-activity
+  #   Hidden=false
+  #   NoDisplay=false
+  #   X-GNOME-Autostart-enabled=true
+  #   Name=Yakuake
+  #   Comment=Drop-down terminal with activity awareness
+  # '';
 
   # Rebuild KDE application cache when desktop files change
   home.activation.rebuildKdeCache = lib.hm.dag.entryAfter ["writeBoundary"] ''
