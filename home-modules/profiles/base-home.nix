@@ -73,9 +73,17 @@ in
   xdg.enable = true;
   xdg.mimeApps.enable = true;
   xdg.mimeApps.defaultApplications = {
-    "text/html" = [ "firefox.desktop" ];
-    "x-scheme-handler/http" = [ "firefox.desktop" ];
-    "x-scheme-handler/https" = [ "firefox.desktop" ];
+    # Browser defaults - using Chromium as primary
+    "application/pdf" = [ "chromium-browser.desktop" "okularApplication_pdf.desktop" ];
+    "text/html" = [ "chromium-browser.desktop" "firefox.desktop" ];
+    "x-scheme-handler/http" = [ "chromium-browser.desktop" "firefox.desktop" ];
+    "x-scheme-handler/https" = [ "chromium-browser.desktop" "firefox.desktop" ];
+    "application/x-extension-htm" = [ "chromium-browser.desktop" ];
+    "application/x-extension-html" = [ "chromium-browser.desktop" ];
+    "application/x-extension-shtml" = [ "chromium-browser.desktop" ];
+    "application/xhtml+xml" = [ "chromium-browser.desktop" ];
+    "application/x-extension-xhtml" = [ "chromium-browser.desktop" ];
+    "application/x-extension-xht" = [ "chromium-browser.desktop" ];
   };
 
   home.sessionVariables = sessionConfig;

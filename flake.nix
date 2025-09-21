@@ -65,7 +65,7 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                backupFileExtension = null;
+                backupFileExtension = "hm-backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
@@ -163,7 +163,7 @@
                 ({ config, pkgsUnstable, ... }:
                   {
                     home-manager = {
-                      backupFileExtension = null;
+                      backupFileExtension = "hm-backup";
                       useGlobalPkgs = true;
                       useUserPackages = true;
                       extraSpecialArgs = {
