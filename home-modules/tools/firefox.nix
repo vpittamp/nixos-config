@@ -81,7 +81,7 @@ in
           "browser.uidensity" = 0;  # Normal UI density (0=normal, 1=compact, 2=touch)
 
           # Display settings for HiDPI Retina display
-          "layout.css.devPixelsPerPx" = "1.5";  # 150% scaling for better readability on Retina
+          "layout.css.devPixelsPerPx" = "2.0";  # 200% scaling for HiDPI Retina display
           
           # Performance and Wayland support
           "gfx.webrender.all" = true;
@@ -130,4 +130,18 @@ in
       };
     };
   };
+
+  # Force Firefox to use our user.js settings by cleaning prefs.js
+  home.activation.firefoxPrefs = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    FIREFOX_PROFILE="$HOME/.mozilla/firefox/default"
+    if [ -d "$FIREFOX_PROFILE" ]; then
+      # Remove any cached scaling preference
+      ${pkgs.gnused}/bin/sed -i '/devPixelsPerPx/d' "$FIREFOX_PROFILE/prefs.js" 2>/dev/null || true
+
+      # Ensure user.js exists and has correct permissions
+      if [ -e "$FIREFOX_PROFILE/user.js" ]; then
+        chmod 644 "$FIREFOX_PROFILE/user.js" 2>/dev/null || true
+      fi
+    fi
+  '';
 }
