@@ -122,15 +122,18 @@
     QT_AUTO_SCREEN_SCALE_FACTOR = "1";  # Enable Qt auto-scaling
     PLASMA_USE_QT_SCALING = "1";        # Let Plasma handle Qt scaling
 
-    # GTK scaling for Wayland - DISABLED for testing native sizing
-    # GDK_SCALE = "2";             # Integer scaling for GTK apps
-    # GDK_DPI_SCALE = "0.5";       # Fine-tune GTK DPI
+    # IMPORTANT: Don't set GDK_SCALE globally - KDE already handles 2x scaling
+    # Setting it causes double-scaling for Electron apps
+    # Applications should detect scaling from Wayland/KDE directly
 
-    # Cursor size for HiDPI
+    # Cursor size for HiDPI (at 2x scaling)
     XCURSOR_SIZE = "48";
 
-    # Java applications - keeping this as Java apps may not handle HiDPI well
+    # Java applications need explicit scaling
     _JAVA_OPTIONS = "-Dsun.java2d.uiScale=2";
+
+    # Force Electron apps to detect scale from display, not GDK
+    ELECTRON_FORCE_IS_PACKAGED = "true";
   };
   
   # Touchpad configuration with natural scrolling (Apple-style)

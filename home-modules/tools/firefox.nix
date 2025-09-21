@@ -80,8 +80,8 @@ in
           "browser.tabs.inTitlebar" = 1;
           "browser.uidensity" = 0;  # Normal UI density (0=normal, 1=compact, 2=touch)
 
-          # Display settings for HiDPI Retina display
-          "layout.css.devPixelsPerPx" = "2.0";  # 200% scaling for HiDPI Retina display
+          # Display settings - let Wayland/KDE handle scaling
+          "layout.css.devPixelsPerPx" = "-1.0";  # Auto-detect from system (KDE is at 2x)
           
           # Performance and Wayland support
           "gfx.webrender.all" = true;

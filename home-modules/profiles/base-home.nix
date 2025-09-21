@@ -6,12 +6,18 @@ let
     else null;
   isM1 = hostName == "nixos-m1";
   sessionConfig = {
-    GDK_DPI_SCALE = if isM1 then "0.5" else "1.0";
-    QT_AUTO_SCREEN_SCALE_FACTOR = "0";
-    QT_ENABLE_HIGHDPI_SCALING = "0";
-    PLASMA_USE_QT_SCALING = "1";
-    GDK_SCALE = if isM1 then "2" else "1";
-    XCURSOR_SIZE = if isM1 then "48" else "28";
+    # Don't set GDK_SCALE - KDE Wayland already handles 200% scaling
+    # Setting both causes double-scaling for Electron apps
+    # GDK_DPI_SCALE = if isM1 then "0.5" else "1.0";  # Not needed with Wayland
+    # GDK_SCALE = if isM1 then "2" else "1";  # Causes double-scaling
+
+    # Qt settings for KDE
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1";  # Let Qt detect from Wayland
+    QT_ENABLE_HIGHDPI_SCALING = "1";    # Enable HiDPI support
+    PLASMA_USE_QT_SCALING = "1";        # Let Plasma handle Qt scaling
+
+    # Cursor size
+    XCURSOR_SIZE = if isM1 then "48" else "24";  # 48 for 200% scaling
   };
 in
 {
