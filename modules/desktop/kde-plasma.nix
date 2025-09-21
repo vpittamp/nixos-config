@@ -20,27 +20,27 @@
   services.displayManager = {
     sddm = {
       enable = true;
-      wayland.enable = false; # Disable Wayland due to Mesa/GPU issues on Apple Silicon
+      wayland.enable = true; # Enable Wayland as recommended by Asahi Linux
 
-      # Workaround for black screen on logout on Apple Silicon
+      # Workaround for black screen on logout
       settings = {
         General = {
-          # Don't halt the X server on logout - helps prevent black screen
+          # Don't halt the display server on logout - helps prevent black screen
           HaltCommand = "";
           RebootCommand = "";
         };
       };
     };
-    defaultSession = lib.mkForce "plasmax11"; # Force X11 session (stable on Apple Silicon)
+    defaultSession = lib.mkDefault "plasma"; # Use Wayland session by default (can override per-target)
   };
 
   # Desktop environment
   services.desktopManager.plasma6.enable = true;
 
-  # Enable touchegg for X11 gesture support
-  services.touchegg.enable = true;
+  # Touchegg for X11 gesture support (only enable for X11 sessions)
+  services.touchegg.enable = lib.mkDefault false; # Disabled by default, Wayland has native gestures
 
-  # Configure touchegg gestures for KDE
+  # Configure touchegg gestures for KDE (only used if touchegg is enabled)
   environment.etc."touchegg/touchegg.conf".text = ''
     <touchégg>
       <settings>
@@ -155,14 +155,14 @@
     kdePackages.gwenview
     kdePackages.kdeconnect-kde # Phone/device integration
 
-    # Clipboard management - using native Klipper instead of CopyQ
+    # Clipboard management - using native Klipper
     # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
-    wl-clipboard # Wayland clipboard utilities
-    xclip # X11 clipboard utilities (fallback)
+    wl-clipboard # Wayland clipboard utilities (primary)
+    xclip # X11 clipboard utilities (for XWayland apps)
     xorg.libxcb # XCB library for Qt
     libxkbcommon # Keyboard handling for Qt
 
-    # QDBus for touchpad gestures (touchegg needs this)
+    # QDBus for system integration
     libsForQt5.qttools # Provides qdbus command
 
     # Browsers
@@ -208,19 +208,19 @@
   security.pam.services.sddm.enableKwallet = true;
   security.pam.services.login.enableKwallet = true;
 
-  # Yakuake dropdown terminal autostart
-  # Creates an XDG autostart entry for Yakuake to start with KDE Plasma
-  environment.etc."xdg/autostart/yakuake.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Yakuake
-    Comment=Drop-down terminal emulator
-    Exec=${pkgs.kdePackages.yakuake}/bin/yakuake
-    Icon=yakuake
-    Terminal=false
-    Categories=Qt;KDE;System;TerminalEmulator;
-    X-KDE-autostart-after=panel
-    X-GNOME-Autostart-enabled=true
-  '';
+  # Yakuake dropdown terminal autostart - DISABLED due to issues
+  # Uncomment the following block to re-enable Yakuake autostart
+  # environment.etc."xdg/autostart/yakuake.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=Yakuake
+  #   Comment=Drop-down terminal emulator
+  #   Exec=${pkgs.kdePackages.yakuake}/bin/yakuake
+  #   Icon=yakuake
+  #   Terminal=false
+  #   Categories=Qt;KDE;System;TerminalEmulator;
+  #   X-KDE-autostart-after=panel
+  #   X-GNOME-Autostart-enabled=true
+  # '';
 
 }

@@ -5,14 +5,14 @@ let
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
 
   # Declarative VSCode package with proper flags for M1/ARM64
-  # Using makeWrapper to add command-line flags
+  # Using makeWrapper to add command-line flags for Wayland
   vscodeWithFlags = pkgs.vscode.overrideAttrs (oldAttrs: {
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or []) ++ [ pkgs.makeWrapper ];
     postFixup = (oldAttrs.postFixup or "") + ''
       wrapProgram $out/bin/code \
-        --add-flags "--disable-gpu-sandbox" \
-        --add-flags "--ozone-platform=x11" \
-        --set ELECTRON_OZONE_PLATFORM_HINT "x11"
+        --add-flags "--ozone-platform=wayland" \
+        --add-flags "--enable-features=WaylandWindowDecorations" \
+        --set ELECTRON_OZONE_PLATFORM_HINT "auto"
     '';
   });
 in
@@ -151,9 +151,9 @@ in
       "editor.rulers" = [ 80 120 ];
       "editor.renderWhitespace" = "trailing";
 
-      # Display settings - let system scaling handle it
-      "window.zoomLevel" = 0;  # Default zoom level
-      "terminal.integrated.fontSize" = 14;
+      # Display settings - adjust for Wayland HiDPI
+      "window.zoomLevel" = 0;  # Default zoom level for Wayland
+      "terminal.integrated.fontSize" = 14;  # Standard terminal font
 
       # File associations
       "files.associations" = {
@@ -226,8 +226,5 @@ in
   home.sessionVariables = {
     # Use 1Password SSH agent in VSCode terminal
     VSCODE_SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
-  } // lib.optionalAttrs isM1 {
-    # Electron/Chromium flags for better stability on M1
-    ELECTRON_OZONE_PLATFORM_HINT = "x11";
   };
 }

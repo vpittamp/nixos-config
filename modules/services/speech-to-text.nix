@@ -174,7 +174,7 @@ in
     environment.systemPackages = with pkgs; [
       # Core STT packages
       openai-whisper
-      ffmpeg-full  # Required by Whisper for audio processing
+      ffmpeg  # Required by Whisper for audio processing
 
       # Nerd Dictation and dependencies
       (python3.withPackages (ps: with ps; [

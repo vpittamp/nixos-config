@@ -167,6 +167,11 @@ nix flake lock --update-input nixpkgs
 ## ⚠️ Important Notes
 
 ### Recent Updates (2025-09)
+- **Migrated M1 MacBook Pro from X11 to Wayland** - Following Asahi Linux recommendations
+  - Enabled Wayland in KDE Plasma 6 for better HiDPI and gesture support
+  - Removed X11-specific workarounds and touchegg (Wayland has native gestures)
+  - Updated environment variables for Wayland compatibility
+  - Note: Experimental GPU driver options available if needed (see m1.nix comments)
 - Added comprehensive 1Password integration
 - Fixed M1 display scaling and memory issues
 - Implemented conditional module features (GUI vs headless)

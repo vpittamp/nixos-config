@@ -24,10 +24,14 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/speech-to-text.nix
   ];
 
   # System identification
   networking.hostName = "nixos-m1";
+
+  # Enable speech-to-text service
+  services.speech-to-text.enable = true;
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
@@ -98,43 +102,35 @@
   networking.wireless.iwd.enable = false;
   
   # Display configuration for Retina display
-  # Following NixOS HiDPI recommendations: use integer scaling with higher DPI
+  # Wayland handles HiDPI much better than X11
   services.xserver = {
-    dpi = 180;  # Recommended DPI for Retina displays
-    
-    # Force proper DPI in X11 server
+    dpi = 180;  # Still useful for XWayland applications
+
+    # Keep X11 server config for XWayland apps
     serverFlagsSection = ''
       Option "DPI" "180 x 180"
     '';
-    
-    
-    # X11-specific scaling configuration
-    displayManager.sessionCommands = ''
-      # GTK applications - integer scaling only (GDK_SCALE must be integer)
-      export GDK_SCALE=2
-      export GDK_DPI_SCALE=0.5  # Inverse of GDK_SCALE for fine-tuning
-      
-      # Qt applications - DISABLE auto-scaling to prevent double-scaling with KDE
-      export QT_AUTO_SCREEN_SCALE_FACTOR=0  # Critical: prevents double-scaling
-      export QT_ENABLE_HIGHDPI_SCALING=0    # Disable Qt's HiDPI handling
-      export PLASMA_USE_QT_SCALING=1        # Let Plasma handle Qt scaling
-      unset QT_SCALE_FACTOR                 # Don't force any Qt scaling
-      
-      # Java applications
-      export _JAVA_OPTIONS="-Dsun.java2d.uiScale=2"
-      
-      # Cursor size for HiDPI
-      export XCURSOR_SIZE=48
-      
-      # Firefox-specific scaling
-      export MOZ_ENABLE_WAYLAND=0  # Force X11 for Firefox
-      export MOZ_USE_XINPUT2=1
-      
-      # Let KDE handle its own scaling based on DPI
-      kwriteconfig5 --file kcmfonts --group General --key forceFontDPI 180 || true
-      kwriteconfig5 --file kdeglobals --group KScreen --key ScaleFactor 2 || true
-      kwriteconfig5 --file kdeglobals --group KScreen --key ScreenScaleFactors "eDP-1=2;" || true
-    '';
+  };
+
+  # Wayland and display scaling configuration
+  environment.sessionVariables = {
+    # Enable Wayland for compatible applications
+    MOZ_ENABLE_WAYLAND = "1";  # Enable Wayland for Firefox
+    NIXOS_OZONE_WL = "1";      # Enable Wayland for Electron apps (VSCode, 1Password)
+
+    # Qt scaling - let KDE Plasma handle it under Wayland
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1";  # Enable Qt auto-scaling
+    PLASMA_USE_QT_SCALING = "1";        # Let Plasma handle Qt scaling
+
+    # GTK scaling for Wayland - DISABLED for testing native sizing
+    # GDK_SCALE = "2";             # Integer scaling for GTK apps
+    # GDK_DPI_SCALE = "0.5";       # Fine-tune GTK DPI
+
+    # Cursor size for HiDPI
+    XCURSOR_SIZE = "48";
+
+    # Java applications - keeping this as Java apps may not handle HiDPI well
+    _JAVA_OPTIONS = "-Dsun.java2d.uiScale=2";
   };
   
   # Touchpad configuration with natural scrolling (Apple-style)
@@ -146,8 +142,14 @@
       clickMethod = "clickfinger";  # Two-finger right-click
       disableWhileTyping = true;
       scrollMethod = "twofinger";
+      # Additional Wayland-friendly settings
+      accelProfile = "adaptive";  # Better acceleration curve
+      accelSpeed = "0.0";         # Default acceleration
     };
   };
+
+  # Override default session to use Wayland
+  services.displayManager.defaultSession = lib.mkForce "plasma";  # Wayland session for KDE Plasma
   
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
@@ -157,6 +159,10 @@
   
   # Hardware acceleration support
   hardware.graphics.enable = true;
+
+  # Asahi GPU driver configuration (optional - uncomment if needed)
+  # hardware.asahi.useExperimentalGPUDriver = true;
+  # hardware.asahi.experimentalGPUInstallMode = "replace";  # Use Asahi Mesa
   
   # Firmware updates
   hardware.enableRedistributableFirmware = true;
@@ -175,6 +181,9 @@
   
   # Disable services that don't work well on Apple Silicon
   services.xrdp.enable = lib.mkForce false;  # RDP doesn't work well on M1
+
+  # Enable touchegg only for X11 sessions (Wayland has native gestures)
+  services.touchegg.enable = lib.mkForce false;
   
   # Additional packages for Apple Silicon
   environment.systemPackages = with pkgs; [

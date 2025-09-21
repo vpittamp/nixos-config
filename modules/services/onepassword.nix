@@ -9,7 +9,7 @@ in
 {
   # 1Password packages - GUI only if desktop is available
   environment.systemPackages = with pkgs; [
-    _1password        # CLI tool (always needed)
+    _1password-cli     # CLI tool (always needed)
   ] ++ lib.optionals hasGui [
     _1password-gui    # Desktop application (only with GUI)
   ];
