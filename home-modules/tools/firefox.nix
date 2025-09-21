@@ -78,11 +78,10 @@ in
           # UI settings
           "browser.toolbars.bookmarks.visibility" = "always";
           "browser.tabs.inTitlebar" = 1;
-          "browser.uidensity" = 0;
-          
-          # Display settings - let Wayland handle scaling
-          "layout.css.devPixelsPerPx" = "-1.0";  # Let Firefox auto-detect from system DPI
-          # Removed manual DPI and zoom settings for native Wayland scaling
+          "browser.uidensity" = 0;  # Normal UI density (0=normal, 1=compact, 2=touch)
+
+          # Display settings for HiDPI Retina display
+          "layout.css.devPixelsPerPx" = "1.5";  # 150% scaling for better readability on Retina
           
           # Performance and Wayland support
           "gfx.webrender.all" = true;
