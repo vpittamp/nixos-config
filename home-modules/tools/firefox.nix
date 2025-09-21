@@ -1,5 +1,8 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, osConfig, ... }:
 
+let
+  isM1 = osConfig.networking.hostName or "" == "nixos-m1";
+in
 {
   # Firefox browser configuration - simplified without extensions
   # Extensions can be installed manually from the browser
@@ -23,7 +26,7 @@
         
         # Search engines configuration
         search = {
-          default = "DuckDuckGo";
+          default = "ddg";  # Use id instead of name
           force = true;
           engines = {
             "Nix Packages" = {
@@ -77,14 +80,14 @@
           "browser.tabs.inTitlebar" = 1;
           "browser.uidensity" = 0;
           
-          # Display scaling for HiDPI Retina display (180 DPI)
+          # Display settings - let Wayland handle scaling
           "layout.css.devPixelsPerPx" = "-1.0";  # Let Firefox auto-detect from system DPI
-          "layout.css.dpi" = 0;  # Disable automatic DPI detection
-          "browser.zoom.full" = true;  # Zoom text and images together
-          "browser.zoom.updateBackgroundTabs" = false;
+          # Removed manual DPI and zoom settings for native Wayland scaling
           
-          # Performance
+          # Performance and Wayland support
           "gfx.webrender.all" = true;
+          "widget.use-xdg-desktop-portal.file-picker" = 1;  # Use native file picker on Wayland
+          "widget.use-xdg-desktop-portal.mime-handler" = 1;  # Use XDG portal for mime handling
           "media.ffmpeg.vaapi.enabled" = true;
           "media.hardware-video-decoding.force-enabled" = true;
           
@@ -102,26 +105,29 @@
         };
         
         # Bookmarks
-        bookmarks = [
-          {
-            name = "Nix Sites";
-            toolbar = true;
-            bookmarks = [
-              {
-                name = "1Password";
-                url = "https://my.1password.com";
-              }
-              {
-                name = "NixOS Search";
-                url = "https://search.nixos.org";
-              }
-              {
-                name = "Home Manager Options";
-                url = "https://nix-community.github.io/home-manager/options.html";
-              }
-            ];
-          }
-        ];
+        bookmarks = {
+          force = true;  # Required for declarative bookmarks
+          settings = [
+            {
+              name = "Nix Sites";
+              toolbar = true;
+              bookmarks = [
+                {
+                  name = "1Password";
+                  url = "https://my.1password.com";
+                }
+                {
+                  name = "NixOS Search";
+                  url = "https://search.nixos.org";
+                }
+                {
+                  name = "Home Manager Options";
+                  url = "https://nix-community.github.io/home-manager/options.html";
+                }
+              ];
+            }
+          ];
+        };
       };
     };
   };
