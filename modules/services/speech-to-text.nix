@@ -15,6 +15,20 @@ let
     stripRoot = true;
   };
 
+  # Declarative Whisper models for Speech Note
+  whisperModels = {
+    base = pkgs.fetchurl {
+      url = "https://huggingface.co/mukowaty/ggml-whisper/resolve/2fa88871ca40917bace4f1121760db0aee0763a2/multilang/ggml-base-q5_0.bin";
+      sha256 = "0cfp97yh8qxas16vm584c50flc601almvxf7qfw4micsbxk7q540";
+      name = "ggml-base-q5_0.bin";
+    };
+    small = pkgs.fetchurl {
+      url = "https://huggingface.co/mukowaty/ggml-whisper/resolve/2fa88871ca40917bace4f1121760db0aee0763a2/multilang/ggml-small-q5_0.bin";
+      sha256 = "0by8hzrj6mhy8gn0xmyrd7jmr8v0q351vlh8c7yr75d561klz4aj";
+      name = "ggml-small-q5_0.bin";
+    };
+  };
+
   # Note: Additional models can be downloaded through Speech Note GUI
   # Recommended Whisper models for comparison:
   # - Whisper tiny.en (39MB) - fastest, good for real-time
@@ -39,6 +53,7 @@ let
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation started - Speak now!" -i audio-input-microphone
     fi
   '';
+
 
   # Setup script for Whisper models
   whisperSetup = pkgs.writeScriptBin "whisper-setup" ''
@@ -102,10 +117,15 @@ let
     # Check if 1Password CLI is available and signed in
     if command -v op &> /dev/null && op whoami &> /dev/null; then
       echo "Starting Speech Note with OpenAI API key from 1Password..."
-      # Using item ID for service account compatibility
-      exec op run \
-        --env-file=<(echo "OPENAI_API_KEY=op://pb26ok6vdihb7udkl7uunp7kd4/credential") \
-        -- flatpak run net.mkiol.SpeechNote --app-standalone "$@"
+      # Get the API key using op read from CLI vault
+      OPENAI_API_KEY=$(op read "op://CLI/OPENAI_API_KEY/credential" 2>/dev/null || echo "")
+      if [ -n "$OPENAI_API_KEY" ]; then
+        export OPENAI_API_KEY
+        echo "OpenAI API key loaded successfully"
+      else
+        echo "Warning: Could not retrieve OpenAI API key from 1Password"
+      fi
+      exec flatpak run net.mkiol.SpeechNote --app-standalone "$@"
     else
       echo "Starting Speech Note without API key (1Password not available)"
       exec flatpak run net.mkiol.SpeechNote --app-standalone "$@"
@@ -123,6 +143,7 @@ let
     startupNotify = true;
     terminal = false;
   };
+
 
 in
 {
@@ -215,6 +236,47 @@ in
       fi
     '';
 
+    # Declaratively install Whisper models for Speech Note
+    system.activationScripts.speechNoteModels = ''
+      # Create models directory for all users who might use Speech Note
+      for user_home in /home/*; do
+        if [ -d "$user_home" ]; then
+          user_name=$(basename "$user_home")
+          MODEL_DIR="$user_home/.var/app/net.mkiol.SpeechNote/data/net.mkiol/dsnote/models"
+
+          # Create directory if it doesn't exist
+          if [ ! -d "$MODEL_DIR" ]; then
+            mkdir -p "$MODEL_DIR"
+            chown -R "$user_name:users" "$user_home/.var/app/net.mkiol.SpeechNote" 2>/dev/null || true
+          fi
+
+          # Install Whisper Base model
+          if [ ! -f "$MODEL_DIR/ggml-base-q5_0.bin" ]; then
+            echo "Installing Whisper Base model for $user_name..."
+            cp -f ${whisperModels.base} "$MODEL_DIR/ggml-base-q5_0.bin"
+            chown "$user_name:users" "$MODEL_DIR/ggml-base-q5_0.bin"
+          fi
+
+          # Install Whisper Small model
+          if [ ! -f "$MODEL_DIR/ggml-small-q5_0.bin" ]; then
+            echo "Installing Whisper Small model for $user_name..."
+            cp -f ${whisperModels.small} "$MODEL_DIR/ggml-small-q5_0.bin"
+            chown "$user_name:users" "$MODEL_DIR/ggml-small-q5_0.bin"
+          fi
+
+          # Create cache directory and symlinks for Speech Note to recognize models
+          CACHE_DIR="$user_home/.var/app/net.mkiol.SpeechNote/cache/net.mkiol/dsnote/speech-models"
+          mkdir -p "$CACHE_DIR"
+
+          # Create symlinks with Speech Note expected naming
+          ln -sf "$MODEL_DIR/ggml-base-q5_0.bin" "$CACHE_DIR/multilang_whisper_base.bin" 2>/dev/null
+          ln -sf "$MODEL_DIR/ggml-small-q5_0.bin" "$CACHE_DIR/multilang_whisper_small.bin" 2>/dev/null
+
+          chown -R "$user_name:users" "$CACHE_DIR" 2>/dev/null || true
+        fi
+      done
+    '';
+
     # Create systemd user service for nerd-dictation
     systemd.user.services.nerd-dictation = {
       description = "Nerd Dictation Speech-to-Text Service";
@@ -246,7 +308,7 @@ in
         # Use op run to inject the OpenAI API key from 1Password
         ExecStartPre = ''${pkgs.bash}/bin/bash -c "mkdir -p $HOME/.var/app/net.mkiol.SpeechNote/config/net.mkiol/dsnote && cp -n ${speechNoteConfig} $HOME/.var/app/net.mkiol.SpeechNote/config/net.mkiol/dsnote/dsnote.conf || true"'';
         ExecStart = ''
-          ${pkgs.bash}/bin/bash -c 'op run --env-file=<(echo "OPENAI_API_KEY=op://pb26ok6vdihb7udkl7uunp7kd4/credential") -- flatpak run net.mkiol.SpeechNote --app-standalone'
+          ${pkgs.bash}/bin/bash -c 'OPENAI_API_KEY=$(op read "op://CLI/OPENAI_API_KEY/credential" 2>/dev/null) flatpak run net.mkiol.SpeechNote --app-standalone'
         '';
         Restart = "on-failure";
         RestartSec = 5;
