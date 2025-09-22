@@ -26,9 +26,20 @@ in
         
         # Search engines configuration
         search = {
-          default = "ddg";  # Use id instead of name
+          default = "google";  # Use Google as default search engine (use lowercase id)
           force = true;
           engines = {
+            "Google" = {
+              urls = [{
+                template = "https://www.google.com/search";
+                params = [
+                  { name = "q"; value = "{searchTerms}"; }
+                ];
+              }];
+              icon = "https://www.google.com/favicon.ico";
+              definedAliases = [ "@g" ];
+            };
+
             "Nix Packages" = {
               urls = [{
                 template = "https://search.nixos.org/packages";
@@ -39,7 +50,7 @@ in
               }];
               definedAliases = [ "@np" ];
             };
-            
+
             "NixOS Wiki" = {
               urls = [{ template = "https://nixos.wiki/index.php?search={searchTerms}"; }];
               definedAliases = [ "@nw" ];
@@ -49,6 +60,13 @@ in
         
         # Firefox settings with 1Password support
         settings = {
+          # Homepage and startup settings
+          "browser.startup.homepage" = "https://www.google.com";
+          "browser.startup.page" = 1;  # 0=blank, 1=home, 2=last visited, 3=resume previous session
+          "browser.newtabpage.enabled" = true;
+          "browser.newtabpage.activity-stream.showSearch" = true;
+          "browser.newtabpage.activity-stream.default.sites" = "";  # Clear default sites
+
           # Enable native messaging for 1Password
           "signon.rememberSignons" = false;
           
