@@ -9,10 +9,12 @@ in
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
+    nativeMessagingHosts = [ pkgs.firefoxpwa ];  # Add PWA native messaging host for user profile
     policies = {
       Extensions = {
         Install = [
           "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+          "https://addons.mozilla.org/firefox/downloads/latest/pwas-for-firefox/latest.xpi"
         ];
       };
       PasswordManagerEnabled = false;
@@ -73,9 +75,51 @@ in
           # Enable native messaging for 1Password
           "extensions.1Password.native-messaging-hosts" = true;
           "dom.event.clipboardevents.enabled" = true; # Required for 1Password
+
+          # Enable native messaging for PWAsForFirefox
+          "extensions.firefoxpwa.native-messaging-hosts" = true;
+
+          # Auto-accept extension permissions
+          "extensions.autoDisableScopes" = 0;  # Don't disable any scopes
+          "extensions.enabledScopes" = 15;  # Enable all scopes (1+2+4+8)
+
+          # Ensure extensions are active immediately
+          "extensions.webextensions.restrictedDomains" = "";  # Allow on all domains
           
           # Show extension buttons on toolbar (not unified menu)
           "extensions.unifiedExtensions.enabled" = false;
+
+          # Force extensions to be visible on toolbar
+          "browser.compactmode.show" = false;  # Don't show compact mode option
+          "extensions.pocket.enabled" = false;  # Disable Pocket to save space
+
+          # Auto-pin PWAsForFirefox extension to toolbar
+          # This ensures the extension button is visible immediately after installation
+          "browser.uiCustomization.state" = builtins.toJSON {
+            placements = {
+              widget-overflow-fixed-list = [];
+              unified-extensions-area = [];
+              nav-bar = [
+                "back-button"
+                "forward-button"
+                "stop-reload-button"
+                "customizableui-special-spring1"
+                "urlbar-container"
+                "customizableui-special-spring2"
+                "firefoxpwa_filips_si-browser-action"  # PWAsForFirefox extension - visible
+                "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action"  # 1Password extension - visible
+                "downloads-button"
+                "fxa-toolbar-menu-button"
+              ];
+              toolbar-menubar = [ "menubar-items" ];
+              TabsToolbar = [ "tabbrowser-tabs" "new-tab-button" "alltabs-button" ];
+              PersonalToolbar = [ "import-button" "personal-bookmarks" ];
+            };
+            seen = [ "firefoxpwa_filips_si-browser-action" "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action" "developer-button" ];
+            dirtyAreaCache = [ "nav-bar" "toolbar-menubar" "TabsToolbar" "PersonalToolbar" ];
+            currentVersion = 20;
+            newElementCount = 5;
+          };
           
           # WebAuthn/Passkeys
           "security.webauth.webauthn" = true;
@@ -194,4 +238,9 @@ in
     DEFAULT_BROWSER = "${pkgs.firefox}/bin/firefox";
     BROWSER = "${pkgs.firefox}/bin/firefox";
   };
+
+  # Create symlink for firefoxpwa native messaging host
+  # This ensures the extension can find the native component
+  home.file.".mozilla/native-messaging-hosts/firefoxpwa.json".source =
+    "${pkgs.firefoxpwa}/lib/mozilla/native-messaging-hosts/firefoxpwa.json";
 }

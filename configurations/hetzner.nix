@@ -19,6 +19,7 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
+    ../modules/desktop/firefox-pwa.nix
     ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
     # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
@@ -37,10 +38,10 @@
     ../modules/kubernetes/agentgateway.nix
 
     # Tmux Supervisor Dashboard
-    ../modules/tmux-supervisor.nix
+    # ../modules/tmux-supervisor.nix  # Disabled - missing scripts
 
     # Multi-Agent Orchestrator
-    ../modules/claude-orchestrator.nix
+    # ../modules/claude-orchestrator.nix  # Disabled - missing scripts
   ];
 
   # System identification
@@ -84,6 +85,11 @@
     iotop
     nethogs
     neofetch
+
+    # Audio utilities (for testing and management)
+    pulseaudio  # For pactl, pacmd, and other audio management tools
+    pavucontrol # GUI audio control
+    alsa-utils  # For alsamixer and other ALSA utilities
   ];
   
   # Performance tuning for cloud server
@@ -113,42 +119,54 @@
     enableGlobalShortcut = true;
   };
 
-  # Audio configuration
-  # Note: PipeWire is required for Wayland screen sharing (KRFB, KRDP)
-  # But PulseAudio works better with XRDP
-  # Since we want Wayland remote access, enable PipeWire
-  services.pipewire = {
+  # Enable Firefox PWA support
+  services.firefox-pwa = {
     enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;  # PipeWire provides PulseAudio compatibility
-    jack.enable = true;
+    autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
   };
 
-  # Disable standalone PulseAudio since PipeWire provides compatibility
-  services.pulseaudio.enable = lib.mkForce false;
+  # Audio configuration for XRDP
+  # IMPORTANT: PulseAudio works better with XRDP audio redirection
+  # Disable PipeWire and use PulseAudio instead for proper RDP audio
+  services.pipewire.pulse.enable = lib.mkForce false;
+  services.pipewire.enable = lib.mkForce false;
+
+  services.pulseaudio = {
+    enable = lib.mkForce true;
+    package = pkgs.pulseaudioFull;
+    extraModules = [ pkgs.pulseaudio-module-xrdp ];
+    extraConfig = ''
+      .ifexists module-xrdp-sink.so
+      load-module module-xrdp-sink
+      .endif
+      .ifexists module-xrdp-source.so
+      load-module module-xrdp-source
+      .endif
+    '';
+  };
 
   # Enable rtkit for better audio performance
   security.rtkit.enable = true;
 
-  # Tmux Supervisor Dashboard configuration
-  programs.tmuxSupervisor = {
-    enable = true;
-    enableKonsoleIntegration = true;
-    enableSystemdService = false;  # Don't auto-start, launch manually
-  };
+  # Tmux Supervisor Dashboard configuration - DISABLED
+  # programs.tmuxSupervisor = {
+  #   enable = true;
+  #   enableKonsoleIntegration = true;
+  #   enableSystemdService = false;  # Don't auto-start, launch manually
+  # };
 
-  # Multi-Agent Claude Orchestrator configuration
-  programs.claudeOrchestrator = {
-    enable = true;
-    cliTool = "claude";  # or "codex-cli"
-    defaultModel = "opus";
-    defaultManagers = [ "nixos" "backstage" "stacks" ];
-    engineersPerManager = 2;
-    enableKonsoleIntegration = true;
-    enableSystemdService = false;  # Launch manually
-  };
-  users.users.vpittamp.extraGroups = lib.mkAfter [ "audio" ];
+  # Multi-Agent Claude Orchestrator configuration - DISABLED
+  # programs.claudeOrchestrator = {
+  #   enable = true;
+  #   cliTool = "claude";  # or "codex-cli"
+  #   defaultModel = "opus";
+  #   defaultManagers = [ "nixos" "backstage" "stacks" ];
+  #   engineersPerManager = 2;
+  #   enableKonsoleIntegration = true;
+  #   enableSystemdService = false;  # Launch manually
+  # };
+  # Ensure user is in audio group for audio access
+  users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" ];
   
   # System state version
   system.stateVersion = "24.11";

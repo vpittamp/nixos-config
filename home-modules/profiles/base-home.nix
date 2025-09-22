@@ -46,6 +46,7 @@ in
     ../tools/fzf.nix
     # ../tools/chromium.nix  # Disabled - using Firefox as default browser
     ../tools/firefox.nix
+    ../tools/firefox-pwas-declarative.nix
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
@@ -86,4 +87,11 @@ in
   };
 
   home.sessionVariables = sessionConfig;
+
+  # Firefox PWAs configuration
+  programs.firefox-pwas = {
+    enable = true;
+    pwas = [ "google" "youtube" ];  # Declaratively install Google and YouTube PWAs
+    pinToTaskbar = true;  # Pin them to KDE taskbar
+  };
 }
