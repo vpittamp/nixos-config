@@ -133,14 +133,18 @@
     </touchégg>
   '';
 
-  # Sound system
-  services.pulseaudio.enable = false;
+  # Sound system - Default to PipeWire (can be overridden per-target)
+  # Note: Hetzner overrides this to use PulseAudio for XRDP compatibility
+  services.pulseaudio.enable = lib.mkDefault false;
   services.pipewire = {
-    enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
-    jack.enable = true;
+    enable = lib.mkDefault true;
+    alsa.enable = lib.mkDefault true;
+    alsa.support32Bit = lib.mkDefault true;
+    pulse.enable = lib.mkDefault true;
+    jack.enable = lib.mkDefault true;
+
+    # Enable WirePlumber session manager (required for PipeWire)
+    wireplumber.enable = lib.mkDefault true;
   };
 
   # Enable hardware acceleration

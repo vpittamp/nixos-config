@@ -10,14 +10,15 @@ in
     enable = true;
     package = pkgs.firefox;
     nativeMessagingHosts = [
-      pkgs.firefoxpwa  # Add PWA native messaging host for user profile
-      pkgs.kdePackages.plasma-browser-integration  # Add Plasma browser integration for KDE 6
+      pkgs.firefoxpwa  # PWA native messaging host
+      pkgs.kdePackages.plasma-browser-integration  # KDE Plasma 6 browser integration
     ];
     policies = {
       Extensions = {
         Install = [
           "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
           "https://addons.mozilla.org/firefox/downloads/latest/pwas-for-firefox/latest.xpi"
+          "https://addons.mozilla.org/firefox/downloads/latest/plasma-integration/latest.xpi"
         ];
       };
       PasswordManagerEnabled = false;
@@ -130,6 +131,7 @@ in
                 "customizableui-special-spring2"
                 "firefoxpwa_filips_si-browser-action"  # PWAsForFirefox extension - visible
                 "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action"  # 1Password extension - visible
+                "plasma-browser-integration_kde_org-browser-action"  # Plasma Integration - visible
                 "downloads-button"
                 "fxa-toolbar-menu-button"
               ];
@@ -137,7 +139,7 @@ in
               TabsToolbar = [ "tabbrowser-tabs" "new-tab-button" "alltabs-button" ];
               PersonalToolbar = [ "import-button" "personal-bookmarks" ];
             };
-            seen = [ "firefoxpwa_filips_si-browser-action" "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action" "developer-button" ];
+            seen = [ "firefoxpwa_filips_si-browser-action" "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action" "plasma-browser-integration_kde_org-browser-action" "developer-button" ];
             dirtyAreaCache = [ "nav-bar" "toolbar-menubar" "TabsToolbar" "PersonalToolbar" ];
             currentVersion = 20;
             newElementCount = 5;
