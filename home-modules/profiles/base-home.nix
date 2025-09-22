@@ -44,14 +44,16 @@ in
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
-    ../tools/chromium.nix
+    # ../tools/chromium.nix  # Disabled - using Firefox as default browser
     ../tools/firefox.nix
+    ../tools/firefox-pwas-declarative.nix
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
     ../tools/vscode.nix
     ../tools/gitkraken.nix
     ../tools/cluster-management.nix
+    ../tools/konsole-profiles.nix
 
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
@@ -78,19 +80,18 @@ in
   # Enable XDG base directories and desktop entries
   xdg.enable = true;
   xdg.mimeApps.enable = true;
-  xdg.mimeApps.defaultApplications = {
-    # Browser defaults - using Chromium as primary
-    "application/pdf" = [ "chromium-browser.desktop" "okularApplication_pdf.desktop" ];
-    "text/html" = [ "chromium-browser.desktop" "firefox.desktop" ];
-    "x-scheme-handler/http" = [ "chromium-browser.desktop" "firefox.desktop" ];
-    "x-scheme-handler/https" = [ "chromium-browser.desktop" "firefox.desktop" ];
-    "application/x-extension-htm" = [ "chromium-browser.desktop" ];
-    "application/x-extension-html" = [ "chromium-browser.desktop" ];
-    "application/x-extension-shtml" = [ "chromium-browser.desktop" ];
-    "application/xhtml+xml" = [ "chromium-browser.desktop" ];
-    "application/x-extension-xhtml" = [ "chromium-browser.desktop" ];
-    "application/x-extension-xht" = [ "chromium-browser.desktop" ];
+  # Firefox as default browser is configured in ../tools/firefox.nix
+  # This section just provides fallback entries
+  xdg.mimeApps.defaultApplications = lib.mkDefault {
+    "application/pdf" = [ "firefox.desktop" "okularApplication_pdf.desktop" ];
   };
 
   home.sessionVariables = sessionConfig;
+
+  # Firefox PWAs configuration
+  programs.firefox-pwas = {
+    enable = true;
+    pwas = [ "google" "youtube" ];  # Declaratively install Google and YouTube PWAs
+    pinToTaskbar = true;  # Pin them to KDE taskbar
+  };
 }

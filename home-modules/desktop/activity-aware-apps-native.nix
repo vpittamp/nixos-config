@@ -88,18 +88,85 @@ let
     dolphin "$WORK_DIR"
   '';
 
-  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
-  yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync-disabled" ''
+  # Yakuake Activity Sync - monitors activity changes and updates Yakuake
+  yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync" ''
     #!/usr/bin/env bash
-    echo "Yakuake is disabled due to Wayland crashes"
-    exit 1
+
+    # Check if we're on Wayland (disabled for Wayland due to crashes)
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+      echo "Yakuake is disabled on Wayland due to crashes"
+      exit 0
+    fi
+
+    ACTIVITY_FILE="$HOME/.config/plasma-current-activity"
+
+    while true; do
+      if [ -f "$ACTIVITY_FILE" ]; then
+        ACTIVITY=$(cat "$ACTIVITY_FILE")
+
+        # Get the workspace for this activity
+        WORKSPACE=""
+        case "$ACTIVITY" in
+          "nixos") WORKSPACE="/etc/nixos" ;;
+          *) WORKSPACE="$HOME/projects/$ACTIVITY" ;;
+        esac
+
+        if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ]; then
+          # Update Yakuake's working directory
+          qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
+        fi
+      fi
+
+      sleep 2
+    done
   '';
 
-  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
-  yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity-disabled" ''
+  # Yakuake Activity Script - launches Yakuake with activity awareness
+  yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity" ''
     #!/usr/bin/env bash
-    echo "Yakuake is disabled due to Wayland crashes"
-    exit 1
+
+    # Check if we're on Wayland (disabled for Wayland due to crashes)
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+      echo "Yakuake is disabled on Wayland due to crashes"
+      echo "Please use Konsole instead"
+      konsole &
+      exit 0
+    fi
+
+    ACTIVITY_FILE="$HOME/.config/plasma-current-activity"
+
+    # Read current activity
+    if [ -f "$ACTIVITY_FILE" ]; then
+      ACTIVITY=$(cat "$ACTIVITY_FILE")
+    else
+      ACTIVITY="default"
+    fi
+
+    # Get the workspace for this activity
+    case "$ACTIVITY" in
+      "nixos") WORKSPACE="/etc/nixos" ;;
+      *) WORKSPACE="$HOME/projects/$ACTIVITY" ;;
+    esac
+
+    # Start Yakuake if not running
+    if ! pgrep -x yakuake >/dev/null; then
+      # Start Yakuake but don't toggle (it will open automatically)
+      yakuake &
+      sleep 1
+
+      # Set working directory for first run
+      if [ -d "$WORKSPACE" ]; then
+        qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
+      fi
+    else
+      # Yakuake is already running, just toggle the window
+      qdbus org.kde.yakuake /yakuake/window toggleWindowState 2>/dev/null || true
+
+      # Update working directory
+      if [ -d "$WORKSPACE" ]; then
+        qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
+      fi
+    fi
   '';
 
   # Generate KWin window rules for activity management
@@ -166,9 +233,9 @@ in
     konsoleActivityScript
     codeActivityScript
     dolphinActivityScript
-    # DISABLED: Yakuake crashes with SIGSEGV on Wayland
-    # yakuakeActivityScript
-    # yakuakeActivitySync
+    # Yakuake (enabled for X11, disabled for Wayland)
+    yakuakeActivityScript
+    yakuakeActivitySync
   ];
 
   # KWin window rules configuration using plasma-manager
@@ -247,20 +314,20 @@ in
       };
     };
 
-    # DISABLED: Yakuake crashes with SIGSEGV on Wayland
-    # yakuake-activity = {
-      # name = "Yakuake (Activity)";
-    #   genericName = "Drop-down Terminal";
-    #   comment = "Opens Yakuake with sesh session for current activity";
-    #   icon = "yakuake";
-    #   terminal = false;
-    #   type = "Application";
-    #   categories = [ "System" "TerminalEmulator" ];
-    #   exec = "${yakuakeActivityScript}/bin/yakuake-activity";
-    #   settings = {
-    #     Keywords = "yakuake;terminal;dropdown;activity;quake;";
-    #   };
-    # };
+    # Yakuake (enabled for X11, disabled for Wayland)
+    yakuake-activity = {
+      name = "Yakuake (Activity)";
+      genericName = "Drop-down Terminal";
+      comment = "Opens Yakuake with sesh session for current activity (X11 only)";
+      icon = "yakuake";
+      terminal = false;
+      type = "Application";
+      categories = [ "System" "TerminalEmulator" ];
+      exec = "${yakuakeActivityScript}/bin/yakuake-activity";
+      settings = {
+        Keywords = "yakuake;terminal;dropdown;activity;quake;";
+      };
+    };
 
     # VS Code with activity-specific jumplist actions
     "code-activities" = {
@@ -303,17 +370,17 @@ in
     };
   };
 
-  # DISABLED: Yakuake crashes with SIGSEGV on Wayland
-  # home.file.".config/autostart/yakuake.desktop".text = ''
-  #   [Desktop Entry]
-  #   Type=Application
-  #   Exec=yakuake-activity
-  #   Hidden=false
-  #   NoDisplay=false
-  #   X-GNOME-Autostart-enabled=true
-  #   Name=Yakuake
-  #   Comment=Drop-down terminal with activity awareness
-  # '';
+  # Yakuake autostart (only runs on X11 sessions)
+  home.file.".config/autostart/yakuake.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Exec=yakuake-activity
+    Hidden=false
+    NoDisplay=false
+    X-GNOME-Autostart-enabled=true
+    Name=Yakuake (X11 only)
+    Comment=Drop-down terminal with activity awareness (disabled on Wayland)
+  '';
 
   # Rebuild KDE application cache when desktop files change
   home.activation.rebuildKdeCache = lib.hm.dag.entryAfter ["writeBoundary"] ''

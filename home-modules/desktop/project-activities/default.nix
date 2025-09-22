@@ -4,8 +4,8 @@ let
   data = import ./data.nix { inherit lib config pkgs; };
   inherit (data) activities defaultActivity;
 
-  # Order activities to match keyboard shortcuts: Meta+1=NixOS, Meta+2=Stacks, Meta+3=Backstage, Meta+4=Dev, Meta+5=Monitoring
-  activityIds = [ "nixos" "stacks" "backstage" "dev" "monitoring" ];
+  # Order activities to match keyboard shortcuts: Meta+1=Monitoring, Meta+2=NixOS, Meta+3=Stacks, Meta+4=Backstage
+  activityIds = [ "monitoring" "nixos" "stacks" "backstage" ];
 
   mkUUID = id:
     let
@@ -315,10 +315,16 @@ in {
           # Global activity management
           "switch to next activity" = "Meta+Tab,none,Switch to Next Activity";
           "switch to previous activity" = "Meta+Shift+Tab,none,Switch to Previous Activity";
-          "manage activities" = "Meta+Q,Meta+Q,Manage Activities";
+          "manage activities" = "Meta+W,Meta+W,Manage Activities";
         }
         // activityShortcuts
       );
+
+      # Override kwin shortcuts to prevent conflicts with activity shortcuts
+      kwin = {
+        # Remove Meta+W from Overview to allow activity manager to use it
+        "Overview" = lib.mkForce "Meta+F8,none,Toggle Overview";
+      };
 
       # Override plasmashell task manager shortcuts to free up Meta+1-4 for activities
       plasmashell = lib.mkForce {

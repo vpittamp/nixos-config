@@ -315,6 +315,8 @@
           )"
         fi
       }
+      # Export the function so it's available in subshells (including tmux)
+      export -f sesh_connect
       
       # Bind sesh_connect to Ctrl+T (works both inside and outside tmux)
       # Only bind if we're in an interactive shell with line editing enabled
@@ -395,6 +397,11 @@
         fi
         # Ensure our prompt is still active
         export STARSHIP_CONFIG="$HOME/.config/starship.toml"
+      fi
+
+      # Load tmux popup configuration if in tmux
+      if [[ -n "$TMUX" ]] && [[ -f ~/.tmux-popups.conf ]]; then
+        tmux source-file ~/.tmux-popups.conf 2>/dev/null
       fi
     '';
   };

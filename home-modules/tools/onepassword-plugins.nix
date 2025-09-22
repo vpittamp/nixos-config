@@ -17,6 +17,7 @@
       gh          # GitHub CLI - creates gh() function
       awscli2     # AWS CLI - creates aws() function
       cachix      # Cachix binary cache - creates cachix() function
+      openai      # OpenAI CLI - creates openai() function
       # Note: Only packages that have 1Password plugins can be added here
       # Check available plugins with: op plugin list
     ];
@@ -70,10 +71,11 @@
       local plugin="$1"
       if [ -z "$plugin" ]; then
         echo "Usage: op-init <plugin-name>"
-        echo "Available plugins: gh, aws, cachix, tea, hcloud, psql, argocd"
+        echo "Available plugins: gh, aws, cachix, openai, tea, hcloud, psql, argocd"
         echo ""
         echo "Examples:"
         echo "  op-init gh       # Initialize GitHub CLI"
+        echo "  op-init openai   # Initialize OpenAI CLI"
         echo "  op-init hcloud   # Initialize Hetzner Cloud CLI (correct name: hcloud)"
         echo "  op-init argocd   # Initialize Argo CD CLI"
         echo ""
@@ -112,7 +114,23 @@
       shift
       op plugin clear "$plugin" "$@"
     }
-    
+
+    # OpenAI CLI with 1Password authentication
+    # The API key will be securely retrieved from 1Password
+    openai-init() {
+      echo "Initializing OpenAI CLI with 1Password..."
+      op plugin init openai
+    }
+
+    # Use OpenAI without 1Password plugin wrapper for non-interactive operations
+    openai-direct() {
+      command openai "$@"
+    }
+
+    # Helper to test OpenAI connection
+    openai-test() {
+      op plugin run -- openai api models.list 2>/dev/null | head -5
+    }
     # For non-interactive git operations, use direct gh command
     export GIT_CREDENTIAL_HELPER_GITHUB="command gh auth git-credential"
   '';
