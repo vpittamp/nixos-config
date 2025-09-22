@@ -64,7 +64,7 @@
   networking.firewall.allowedTCPPorts = [
     3389   # RDP
   ];
-  
+
   networking.firewall.allowedUDPPorts = [
     3389   # RDP
   ];

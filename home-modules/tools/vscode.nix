@@ -137,6 +137,13 @@ in
       "remote.SSH.showLoginTerminal" = true;
       "remote.SSH.useLocalServer" = false;
 
+      # Tailscale extension configuration
+      "tailscale.portDiscovery.enabled" = true;
+      "tailscale.ssh.defaultUsername" = "vpittamp";
+      "tailscale.ssh.connectionTimeout" = 30000;
+      "tailscale.socketPath" = "/run/tailscale/tailscaled.sock";
+      "tailscale.fileExplorer.showDotFiles" = true;
+
       # Git integration
       "git.enableSmartCommit" = true;
       "git.autofetch" = true;

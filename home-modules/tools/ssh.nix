@@ -30,6 +30,29 @@
         IdentityAgent ~/.1password/agent.sock
         ForwardAgent yes
         IdentitiesOnly no
+
+      # Tailscale hosts - generic pattern
+      Host nixos-* *.tail*.ts.net
+        User vpittamp
+        IdentityAgent ~/.1password/agent.sock
+        ForwardAgent yes
+        IdentitiesOnly no
+        StrictHostKeyChecking accept-new
+
+      # Specific Tailscale machines for better compatibility
+      Host nixos-hetzner
+        HostName nixos-hetzner
+        User vpittamp
+        IdentityAgent ~/.1password/agent.sock
+        ForwardAgent yes
+        IdentitiesOnly no
+
+      Host nixos-wsl
+        HostName nixos-wsl
+        User vpittamp
+        IdentityAgent ~/.1password/agent.sock
+        ForwardAgent yes
+        IdentitiesOnly no
     '';
     onChange = ''
       # Create a writable SSH config from the source

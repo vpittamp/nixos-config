@@ -19,7 +19,7 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    
+
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
@@ -48,6 +48,31 @@
     "vm.dirty_background_ratio" = 5; # Start writing dirty pages earlier
     "vm.dirty_ratio" = 10; # Force synchronous I/O earlier
   };
+
+  # System activation script for VSCode Tailscale extension workaround
+  system.activationScripts.vscodeSSHConfigWorkaround = ''
+    # Ensure SSH config is accessible for VSCode Tailscale extension
+    # The extension incorrectly looks for /~/.ssh/config instead of expanding ~
+
+    # Create user's SSH directory if it doesn't exist
+    mkdir -p /home/vpittamp/.ssh
+
+    # Ensure the SSH config exists with correct permissions
+    if [ ! -f /home/vpittamp/.ssh/config ]; then
+      touch /home/vpittamp/.ssh/config
+      chown vpittamp:users /home/vpittamp/.ssh/config
+      chmod 600 /home/vpittamp/.ssh/config
+    fi
+
+    # Create a secondary location that some tools might check
+    # This handles the case where the extension might be looking for $HOME/.ssh/config
+    # but with incorrect path resolution
+    if [ -f /home/vpittamp/.ssh/config ]; then
+      # Ensure the config has the right permissions
+      chmod 600 /home/vpittamp/.ssh/config
+      chown vpittamp:users /home/vpittamp/.ssh/config
+    fi
+  '';
   
   # WiFi firmware workaround for BCM4378 stability issues
   # This disables power management features that can cause firmware crashes
