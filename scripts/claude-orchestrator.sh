@@ -223,9 +223,9 @@ Update work registry at: $COORDINATION_DIR/active_work_registry.json
     # Launch the CLI tool with the orchestrator prompt
     local launch_cmd
     if [[ "$ORCHESTRATOR_CLI" == "claude" ]]; then
-        launch_cmd="claude --model $DEFAULT_ORCHESTRATOR_MODEL --system-prompt '$orchestrator_prompt'"
+        launch_cmd="claude --model $DEFAULT_ORCHESTRATOR_MODEL --dangerously-skip-permissions --system-prompt '$orchestrator_prompt'"
     elif [[ "$ORCHESTRATOR_CLI" == "codex-cli" ]]; then
-        launch_cmd="codex-cli --prompt '$orchestrator_prompt'"
+        launch_cmd="codex-cli --yolo --prompt '$orchestrator_prompt'"
     else
         log_error "Unknown CLI tool: $ORCHESTRATOR_CLI"
         return 1
@@ -273,9 +273,9 @@ Update work registry at: $COORDINATION_DIR/active_work_registry.json
     # Launch the CLI tool with the manager prompt
     local launch_cmd
     if [[ "$ORCHESTRATOR_CLI" == "claude" ]]; then
-        launch_cmd="claude --model $DEFAULT_MANAGER_MODEL --system-prompt '$manager_prompt'"
+        launch_cmd="claude --model $DEFAULT_MANAGER_MODEL --dangerously-skip-permissions --system-prompt '$manager_prompt'"
     elif [[ "$ORCHESTRATOR_CLI" == "codex-cli" ]]; then
-        launch_cmd="codex-cli --prompt '$manager_prompt'"
+        launch_cmd="codex-cli --yolo --prompt '$manager_prompt'"
     else
         log_error "Unknown CLI tool: $ORCHESTRATOR_CLI"
         return 1
@@ -332,9 +332,9 @@ Update work registry at: $COORDINATION_DIR/active_work_registry.json
     # Launch the CLI tool with the engineer prompt
     local launch_cmd
     if [[ "$ORCHESTRATOR_CLI" == "claude" ]]; then
-        launch_cmd="claude --model $DEFAULT_ENGINEER_MODEL --system-prompt '$engineer_prompt'"
+        launch_cmd="claude --model $DEFAULT_ENGINEER_MODEL --dangerously-skip-permissions --system-prompt '$engineer_prompt'"
     elif [[ "$ORCHESTRATOR_CLI" == "codex-cli" ]]; then
-        launch_cmd="codex-cli --prompt '$engineer_prompt'"
+        launch_cmd="codex-cli --yolo --prompt '$engineer_prompt'"
     else
         log_error "Unknown CLI tool: $ORCHESTRATOR_CLI"
         return 1

@@ -29,7 +29,7 @@ tmux send-keys -t test-orchestrator:orchestrator "echo '═══ ORCHESTRATOR (
 tmux send-keys -t test-orchestrator:orchestrator "echo 'Role: Master coordinator'" Enter
 tmux send-keys -t test-orchestrator:orchestrator "echo 'Model: claude-opus-4-1-20250805'" Enter
 tmux send-keys -t test-orchestrator:orchestrator "echo ''" Enter
-tmux send-keys -t test-orchestrator:orchestrator "echo 'Would run: claude --model claude-opus-4-1-20250805 --system-prompt ...'" Enter
+tmux send-keys -t test-orchestrator:orchestrator "echo 'Would run: claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --system-prompt ...'" Enter
 tmux send-keys -t test-orchestrator:orchestrator "echo ''" Enter
 tmux send-keys -t test-orchestrator:orchestrator "echo 'Monitoring all projects...'" Enter
 
@@ -40,7 +40,7 @@ tmux send-keys -t test-orchestrator:nixos-manager "echo '═══ MANAGER: NixO
 tmux send-keys -t test-orchestrator:nixos-manager "echo 'Role: Project manager for NixOS'" Enter
 tmux send-keys -t test-orchestrator:nixos-manager "echo 'Model: claude-opus-4-1-20250805'" Enter
 tmux send-keys -t test-orchestrator:nixos-manager "echo ''" Enter
-tmux send-keys -t test-orchestrator:nixos-manager "echo 'Would run: claude --model claude-opus-4-1-20250805 --system-prompt ...'" Enter
+tmux send-keys -t test-orchestrator:nixos-manager "echo 'Would run: claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --system-prompt ...'" Enter
 tmux send-keys -t test-orchestrator:nixos-manager "echo ''" Enter
 tmux send-keys -t test-orchestrator:nixos-manager "echo 'Managing NixOS engineers...'" Enter
 
@@ -51,7 +51,7 @@ tmux send-keys -t test-orchestrator:nixos-eng-1 "echo '═══ ENGINEER 1: Nix
 tmux send-keys -t test-orchestrator:nixos-eng-1 "echo 'Role: Engineer for NixOS project'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1 "echo 'Model: claude-sonnet-4-20250522'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1 "echo ''" Enter
-tmux send-keys -t test-orchestrator:nixos-eng-1 "echo 'Would run: claude --model claude-sonnet-4-20250522 --system-prompt ...'" Enter
+tmux send-keys -t test-orchestrator:nixos-eng-1 "echo 'Would run: claude --model claude-sonnet-4-20250522 --dangerously-skip-permissions --system-prompt ...'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1 "echo ''" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1 "echo 'Awaiting task assignment...'" Enter
 
@@ -62,7 +62,7 @@ tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo '═══ ENGINEER 2: N
 tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo 'Role: Engineer for NixOS project'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo 'Model: claude-sonnet-4-20250522'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo ''" Enter
-tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo 'Would run: claude --model claude-sonnet-4-20250522 --system-prompt ...'" Enter
+tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo 'Would run: claude --model claude-sonnet-4-20250522 --dangerously-skip-permissions --system-prompt ...'" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo ''" Enter
 tmux send-keys -t test-orchestrator:nixos-eng-1.2 "echo 'Awaiting task assignment...'" Enter
 

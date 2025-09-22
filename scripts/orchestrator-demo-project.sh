@@ -354,7 +354,7 @@ launch_demo_orchestrator() {
     tmux send-keys -t "$ORCHESTRATOR_SESSION:orchestrator" "echo '  3. Ensuring code quality'" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:orchestrator" "echo ''" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:orchestrator" "echo 'Ready to launch with:'" Enter
-    tmux send-keys -t "$ORCHESTRATOR_SESSION:orchestrator" "echo 'claude --model claude-opus-4-1-20250805 --dir $PROJECT_DIR'" Enter
+    tmux send-keys -t "$ORCHESTRATOR_SESSION:orchestrator" "echo 'claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --dir $PROJECT_DIR'" Enter
 
     # Manager window
     tmux new-window -t "$ORCHESTRATOR_SESSION" -n "manager-todoapp"
@@ -368,7 +368,7 @@ launch_demo_orchestrator() {
     tmux send-keys -t "$ORCHESTRATOR_SESSION:manager-todoapp" "echo '  Engineer-2: API validation (api.ts)'" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:manager-todoapp" "echo ''" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:manager-todoapp" "echo 'Ready to launch with:'" Enter
-    tmux send-keys -t "$ORCHESTRATOR_SESSION:manager-todoapp" "echo 'claude --model claude-opus-4-1-20250805 --dir $PROJECT_DIR'" Enter
+    tmux send-keys -t "$ORCHESTRATOR_SESSION:manager-todoapp" "echo 'claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --dir $PROJECT_DIR'" Enter
 
     # Engineers window (split)
     tmux new-window -t "$ORCHESTRATOR_SESSION" -n "engineers"
@@ -383,7 +383,7 @@ launch_demo_orchestrator() {
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'Status: Ready'" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo ''" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'Ready to launch with:'" Enter
-    tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'claude --model claude-sonnet-4-20250522 --dir $PROJECT_DIR'" Enter
+    tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'claude --model claude-sonnet-4-20250522 --dangerously-skip-permissions --dir $PROJECT_DIR'" Enter
 
     # Engineer 2 (split pane)
     tmux split-window -t "$ORCHESTRATOR_SESSION:engineers" -h
@@ -396,7 +396,7 @@ launch_demo_orchestrator() {
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'Status: Ready'" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo ''" Enter
     tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'Ready to launch with:'" Enter
-    tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'claude --model claude-sonnet-4-20250522 --dir $PROJECT_DIR'" Enter
+    tmux send-keys -t "$ORCHESTRATOR_SESSION:engineers" "echo 'claude --model claude-sonnet-4-20250522 --dangerously-skip-permissions --dir $PROJECT_DIR'" Enter
 
     # Code review window
     tmux new-window -t "$ORCHESTRATOR_SESSION" -n "code-review"
@@ -495,9 +495,9 @@ main() {
     echo "  • Detach from tmux: Ctrl-b + d"
     echo ""
     echo -e "${GREEN}To start actual Claude agents:${NC}"
-    echo "  1. In orchestrator window: claude --model claude-opus-4-1-20250805 --dir $PROJECT_DIR"
-    echo "  2. In manager window: claude --model claude-opus-4-1-20250805 --dir $PROJECT_DIR"
-    echo "  3. In engineer panes: claude --model claude-sonnet-4-20250522 --dir $PROJECT_DIR"
+    echo "  1. In orchestrator window: claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --dir $PROJECT_DIR"
+    echo "  2. In manager window: claude --model claude-opus-4-1-20250805 --dangerously-skip-permissions --dir $PROJECT_DIR"
+    echo "  3. In engineer panes: claude --model claude-sonnet-4-20250522 --dangerously-skip-permissions --dir $PROJECT_DIR"
     echo ""
     echo -e "${MAGENTA}Monitor Features:${NC}"
     echo "  • Window 1 (agents): Live agent status"

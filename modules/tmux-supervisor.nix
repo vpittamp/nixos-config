@@ -8,13 +8,13 @@ let
   # Enhanced supervisor script
   tmuxSupervisorScript = pkgs.writeScriptBin "tmux-supervisor" ''
     #!${pkgs.bash}/bin/bash
-    exec ${pkgs.bash}/bin/bash ${../scripts/tmux-supervisor-enhanced.sh} "$@"
+    exec ${pkgs.bash}/bin/bash ${../scripts/tmux-supervisor/tmux-supervisor-enhanced.sh} "$@"
   '';
 
   # Simple supervisor script
   tmuxSupervisorSimpleScript = pkgs.writeScriptBin "tmux-supervisor-simple" ''
     #!${pkgs.bash}/bin/bash
-    exec ${pkgs.bash}/bin/bash ${../scripts/tmux-supervisor-simple.sh} "$@"
+    exec ${pkgs.bash}/bin/bash ${../scripts/tmux-supervisor/tmux-supervisor-simple.sh} "$@"
   '';
 
   # Konsole launcher for supervisor

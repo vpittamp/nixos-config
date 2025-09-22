@@ -10,7 +10,7 @@
       Font=FiraCode Nerd Font,8
 
       [General]
-      Command=${pkgs.bash}/bin/bash -l -c '${pkgs.tmux}/bin/tmux attach -t supervisor-dashboard || /etc/nixos/scripts/tmux-supervisor-enhanced.sh'
+      Command=${pkgs.bash}/bin/bash -l -c '${pkgs.tmux}/bin/tmux attach -t supervisor-dashboard || /etc/nixos/scripts/tmux-supervisor/tmux-supervisor-enhanced.sh'
       Name=Supervisor
       Parent=FALLBACK/
 

@@ -320,6 +320,12 @@ in {
         // activityShortcuts
       );
 
+      # Override kwin shortcuts to prevent conflicts with activity shortcuts
+      kwin = {
+        # Remove Meta+W from Overview to allow activity manager to use it
+        "Overview" = lib.mkForce "Meta+F8,none,Toggle Overview";
+      };
+
       # Override plasmashell task manager shortcuts to free up Meta+1-4 for activities
       plasmashell = lib.mkForce {
         "_k_friendly_name" = "plasmashell";

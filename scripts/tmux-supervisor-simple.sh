@@ -44,7 +44,7 @@ tmux split-window -t "$SUPERVISOR_SESSION:main" -v -l 5
 cmd_pane=$(tmux list-panes -t "$SUPERVISOR_SESSION:main" -F '#{pane_index}' | tail -1)
 
 tmux send-keys -t "$SUPERVISOR_SESSION:main.$cmd_pane" "echo '═══ COMMAND CENTER ═══'" Enter
-tmux send-keys -t "$SUPERVISOR_SESSION:main.$cmd_pane" "echo 'Use: /etc/nixos/scripts/tmux-supervisor-simple.sh broadcast \"message\"'" Enter
+tmux send-keys -t "$SUPERVISOR_SESSION:main.$cmd_pane" "echo 'Use: /etc/nixos/scripts/tmux-supervisor/tmux-supervisor-simple.sh broadcast \"message\"'" Enter
 tmux send-keys -t "$SUPERVISOR_SESSION:main.$cmd_pane" "echo 'Ready...'" Enter
 
 # Rebalance layout
