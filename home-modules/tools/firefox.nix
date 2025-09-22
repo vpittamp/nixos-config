@@ -9,7 +9,10 @@ in
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
-    nativeMessagingHosts = [ pkgs.firefoxpwa ];  # Add PWA native messaging host for user profile
+    nativeMessagingHosts = [
+      pkgs.firefoxpwa  # Add PWA native messaging host for user profile
+      pkgs.kdePackages.plasma-browser-integration  # Add Plasma browser integration for KDE 6
+    ];
     policies = {
       Extensions = {
         Install = [
@@ -18,6 +21,15 @@ in
         ];
       };
       PasswordManagerEnabled = false;
+      # Grant permissions to the Plasma Browser Integration extension
+      ExtensionSettings = {
+        "plasma-browser-integration@kde.org" = {
+          installation_mode = "allowed";
+          allowed_types = ["extension"];
+        };
+      };
+      # Allow native messaging host for Plasma integration
+      EnableNativeMessagingHosts = true;
     };
     
     profiles = {
@@ -78,6 +90,16 @@ in
 
           # Enable native messaging for PWAsForFirefox
           "extensions.firefoxpwa.native-messaging-hosts" = true;
+
+          # Enable native messaging for Plasma Browser Integration
+          "extensions.plasma-browser-integration.native-messaging-hosts" = true;
+
+          # Grant history access permissions for Plasma Integration
+          "privacy.history.enabled" = true;
+          "places.history.enabled" = true;
+
+          # Allow Plasma extension to access browsing data
+          "extensions.webextensions.ExtensionStorageIDB.migrated.plasma-browser-integration@kde.org" = true;
 
           # Auto-accept extension permissions
           "extensions.autoDisableScopes" = 0;  # Don't disable any scopes

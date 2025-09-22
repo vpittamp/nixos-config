@@ -37,6 +37,9 @@
   # Desktop environment
   services.desktopManager.plasma6.enable = true;
 
+  # Enable Plasma browser integration
+  programs.firefox.nativeMessagingHosts.packages = [ pkgs.kdePackages.plasma-browser-integration ];
+
   # Touchegg for X11 gesture support (only enable for X11 sessions)
   services.touchegg.enable = lib.mkDefault false; # Disabled by default, Wayland has native gestures
 
@@ -154,6 +157,7 @@
     kdePackages.okular
     kdePackages.gwenview
     kdePackages.kdeconnect-kde # Phone/device integration
+    kdePackages.plasma-browser-integration # Browser integration for KDE
 
     # Clipboard management - using native Klipper
     # copyq  # Advanced clipboard manager with history (disabled - using Klipper)
