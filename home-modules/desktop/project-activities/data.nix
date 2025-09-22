@@ -169,7 +169,7 @@ in rec {
         windowDecorationColor = "60,48,36";  # Dark amber-gray
       };
       resources = [
-        (fileUri "~/monitoring")
+        (fileUri "~/coordination")
       ];
       autostart = [];
       scoring = {

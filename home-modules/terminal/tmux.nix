@@ -184,9 +184,10 @@
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
 
       # Sesh session management
-      bind -n C-t new-window sesh
+      # Removed 'bind -n C-t' to allow bash's sesh_connect function to handle Ctrl+T
+      # This enables the interactive sesh picker to work both inside and outside tmux
       bind l switch-client -l
-      # Simplified sesh connect binding
+      # Alternative sesh binding using prefix + T (backtick + T) if needed
       bind-key T new-window sesh
 
       # Tmux Popup Windows - Using UPPERCASE to avoid conflicts

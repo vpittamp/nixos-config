@@ -315,6 +315,8 @@
           )"
         fi
       }
+      # Export the function so it's available in subshells (including tmux)
+      export -f sesh_connect
       
       # Bind sesh_connect to Ctrl+T (works both inside and outside tmux)
       # Only bind if we're in an interactive shell with line editing enabled
