@@ -10,6 +10,10 @@
     workspace.iconTheme = "Papirus-Dark";
 
     configFile = {
+      # Disable Yakuake's native F12 binding to prevent conflicts
+      "yakuakerc".Shortcuts = {
+        "toggle-window-state" = "none";
+      };
       # Virtual Desktop Configuration
       "kwinrc".Desktops = {
         Number = lib.mkDefault 2;  # 2 desktops per activity
@@ -99,11 +103,6 @@
         name = "Launch Konsole (Activity)";
         key = "Ctrl+Alt+T";
         command = "konsole-activity";
-      };
-      "launch-yakuake-activity" = {
-        name = "Launch Yakuake (Activity)";
-        key = "F12";
-        command = "yakuake-activity";
       };
       "launch-dolphin-activity" = {
         name = "Launch Dolphin (Activity)";

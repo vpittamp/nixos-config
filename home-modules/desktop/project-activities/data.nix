@@ -74,7 +74,7 @@ let
     in "${pkgs.vscode}/bin/code ${quoted}";
 
 in rec {
-  defaultActivity = "nixos";
+  defaultActivity = "monitoring";
 
   rawActivities = {
     nixos = {
@@ -84,7 +84,7 @@ in rec {
       icon = "nix-snowflake";
       directory = "/etc/nixos";
       wallpaper = "/run/current-system/sw/share/wallpapers/DarkestHour/contents/images/1920x1080.png";
-      shortcut = "Meta+Ctrl+3";  # Activity shortcut
+      shortcut = "Meta+Ctrl+2";  # Activity shortcut
       colorScheme = {
         # Subtle blue accent for NixOS activity
         accentColor = "104,124,201";  # Nix blue (#687CC9)
@@ -110,7 +110,7 @@ in rec {
       icon = "folder-git";  # GitOps folder icon - perfect for infrastructure as code
       directory = expandPath "~/stacks";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
-      shortcut = "Meta+Ctrl+4";  # Activity shortcut
+      shortcut = "Meta+Ctrl+3";  # Activity shortcut
       colorScheme = {
         # Subtle green accent for Stacks activity
         accentColor = "77,150,75";  # Forest green (#4D964B)
@@ -136,7 +136,7 @@ in rec {
       icon = "applications-development";  # Developer portal icon
       directory = expandPath "~/backstage-cnoe";
       wallpaper = "/run/current-system/sw/share/wallpapers/Cascade/contents/images/1920x1080.png";
-      shortcut = "Meta+Ctrl+1";  # Activity shortcut
+      shortcut = "Meta+Ctrl+4";  # Activity shortcut
       colorScheme = {
         # Subtle purple accent for Backstage activity
         accentColor = "139,92,168";  # Backstage purple (#8B5CA8)
@@ -155,39 +155,14 @@ in rec {
       };
     };
 
-    dev = {
-      uuid = "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4";
-      name = "Dev";
-      description = "General development workspace and experiments.";
-      icon = "applications-engineering";
-      directory = expandPath "~/dev";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
-      shortcut = "Meta+Ctrl+2";  # Activity shortcut
-      colorScheme = {
-        accentColor = "96,137,204";
-        windowDecorationColor = "40,52,70";
-      };
-      resources = [
-        (fileUri "~/dev")
-      ];
-      autostart = [];
-      scoring = {
-        pruneRecent = {
-          count = 120;
-          what = "documents";
-        };
-        keepMonths = 2;
-      };
-    };
-
     monitoring = {
       uuid = "645bcfb7-e769-4000-93be-ad31eb77ea2e";
       name = "Monitoring";
       description = "System resource monitoring and performance dashboards.";
       icon = "utilities-system-monitor";  # System monitor icon
-      directory = expandPath "~/monitoring";
+      directory = expandPath "~/coordination";
       wallpaper = "/run/current-system/sw/share/wallpapers/Flow/contents/images/1920x1080.png";
-      shortcut = "Meta+Ctrl+5";  # Activity shortcut
+      shortcut = "Meta+Ctrl+1";  # Activity shortcut
       colorScheme = {
         # Orange/amber accent for monitoring activity
         accentColor = "255,152,0";  # Material Design amber (#FF9800)

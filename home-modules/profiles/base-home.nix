@@ -52,6 +52,7 @@ in
     ../tools/vscode.nix
     ../tools/gitkraken.nix
     ../tools/cluster-management.nix
+    ../tools/konsole-profiles.nix
 
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix

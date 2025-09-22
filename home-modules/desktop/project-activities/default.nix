@@ -315,7 +315,7 @@ in {
           # Global activity management
           "switch to next activity" = "Meta+Tab,none,Switch to Next Activity";
           "switch to previous activity" = "Meta+Shift+Tab,none,Switch to Previous Activity";
-          "manage activities" = "Meta+Q,Meta+Q,Manage Activities";
+          "manage activities" = "Meta+W,Meta+W,Manage Activities";
         }
         // activityShortcuts
       );

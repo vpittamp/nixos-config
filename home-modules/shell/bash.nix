@@ -396,6 +396,11 @@
         # Ensure our prompt is still active
         export STARSHIP_CONFIG="$HOME/.config/starship.toml"
       fi
+
+      # Load tmux popup configuration if in tmux
+      if [[ -n "$TMUX" ]] && [[ -f ~/.tmux-popups.conf ]]; then
+        tmux source-file ~/.tmux-popups.conf 2>/dev/null
+      fi
     '';
   };
 }

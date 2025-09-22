@@ -35,6 +35,12 @@
     
     # Kubernetes modules
     ../modules/kubernetes/agentgateway.nix
+
+    # Tmux Supervisor Dashboard
+    ../modules/tmux-supervisor.nix
+
+    # Multi-Agent Orchestrator
+    ../modules/claude-orchestrator.nix
   ];
 
   # System identification
@@ -82,6 +88,9 @@
   
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
+
+  # Use X11 session by default for XRDP compatibility
+  services.displayManager.defaultSession = lib.mkForce "plasmax11";
   
   # AgentGateway configuration
   services.agentgateway = {
@@ -104,21 +113,40 @@
     enableGlobalShortcut = true;
   };
 
-  # Audio: prefer PulseAudio for XRDP redirection; disable PipeWire's Pulse shim
-  services.pipewire.pulse.enable = lib.mkForce false;
-  services.pipewire.enable = lib.mkForce false;
-  services.pulseaudio = {
-    enable = lib.mkForce true;
-    package = pkgs.pulseaudioFull;
-    extraModules = [ pkgs.pulseaudio-module-xrdp ];
-    extraConfig = ''
-      .ifexists module-xrdp-sink.so
-      load-module module-xrdp-sink
-      .endif
-      .ifexists module-xrdp-source.so
-      load-module module-xrdp-source
-      .endif
-    '';
+  # Audio configuration
+  # Note: PipeWire is required for Wayland screen sharing (KRFB, KRDP)
+  # But PulseAudio works better with XRDP
+  # Since we want Wayland remote access, enable PipeWire
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;  # PipeWire provides PulseAudio compatibility
+    jack.enable = true;
+  };
+
+  # Disable standalone PulseAudio since PipeWire provides compatibility
+  services.pulseaudio.enable = lib.mkForce false;
+
+  # Enable rtkit for better audio performance
+  security.rtkit.enable = true;
+
+  # Tmux Supervisor Dashboard configuration
+  programs.tmuxSupervisor = {
+    enable = true;
+    enableKonsoleIntegration = true;
+    enableSystemdService = false;  # Don't auto-start, launch manually
+  };
+
+  # Multi-Agent Claude Orchestrator configuration
+  programs.claudeOrchestrator = {
+    enable = true;
+    cliTool = "claude";  # or "codex-cli"
+    defaultModel = "opus";
+    defaultManagers = [ "nixos" "backstage" "stacks" ];
+    engineersPerManager = 2;
+    enableKonsoleIntegration = true;
+    enableSystemdService = false;  # Launch manually
   };
   users.users.vpittamp.extraGroups = lib.mkAfter [ "audio" ];
   

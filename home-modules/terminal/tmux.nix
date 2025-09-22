@@ -100,7 +100,6 @@
 
       # Alternative color settings for better inactive pane dimming
       # The 'dim' attribute affects all output including ANSI colors from applications
-      set -g pane-border-dim true
 
       # Remove pane indicators for cleaner look
       set -g pane-border-indicators off
@@ -172,11 +171,12 @@
 
       # Paste
       bind p paste-buffer
-      bind P choose-buffer
+      bind B choose-buffer  # Changed from P to B to avoid conflict with popup
 
       # Toggles
       bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
       bind m run-shell "tmux set -g mouse && tmux display-message 'Mouse: #{?mouse,ON,OFF}'"
+
 
       # Mouse behavior
       unbind -n MouseDown3Pane
@@ -188,6 +188,24 @@
       bind l switch-client -l
       # Simplified sesh connect binding
       bind-key T new-window sesh
+
+      # Tmux Popup Windows - Using UPPERCASE to avoid conflicts
+      # Terminal popup (backtick + P)
+      bind-key P display-popup -E -h 70% -w 80%
+      # Git status popup (backtick + G)
+      bind-key G display-popup -E -h 80% -w 90% 'git status; git log --oneline -10; read -p "Press ENTER"'
+      # File picker popup (backtick + F)
+      bind-key F display-popup -E -h 80% -w 80% 'find . -type f 2>/dev/null | fzf'
+      # Note popup (backtick + N)
+      bind-key N display-popup -E -h 60% -w 70% "nvim ~/notes/quick-$(date +%Y%m%d-%H%M%S).md"
+      # System info popup (backtick + I)
+      bind-key I display-popup -E -h 70% -w 80% 'uname -a; free -h; df -h | head -10; read -p "Press ENTER"'
+      # Docker status popup (backtick + D)
+      bind-key D display-popup -E -h 80% -w 90% 'docker ps -a 2>/dev/null || echo "Docker not running"; read -p "Press ENTER"'
+      # Process viewer (backtick + H)
+      bind-key H display-popup -E -h 90% -w 90% 'htop || top'
+      # Log viewer (backtick + L)
+      bind-key L display-popup -E -h 80% -w 90% 'journalctl -xe --no-pager | tail -100; read -p "Press ENTER"'
     '';
   };
 }
