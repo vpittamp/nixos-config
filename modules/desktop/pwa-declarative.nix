@@ -11,7 +11,7 @@ let
     google-ai = {
       name = "Google AI";
       url = "https://www.google.com/search?udm=50";
-      icon = ./../../assets/icons/pwas/google-ai.png;  # Using PNG for now
+      icon = ./../../assets/icons/pwas/google-ai.png;  # Keep PNG until we get SVG
       categories = ["Network" "WebBrowser"];
       keywords = ["search" "ai" "google"];
     };
@@ -19,7 +19,7 @@ let
     youtube = {
       name = "YouTube";
       url = "https://www.youtube.com";
-      icon = ./../../assets/icons/pwas/youtube.png;  # Will download/create
+      icon = ./../../assets/icons/pwas/youtube.png;  # Keep PNG until we get SVG
       categories = ["AudioVideo" "Video"];
       keywords = ["video" "streaming"];
     };
@@ -27,7 +27,7 @@ let
     argocd = {
       name = "ArgoCD";
       url = "https://argocd.cnoe.localtest.me:8443";
-      icon = ./../../assets/icons/pwas/ArgoCD.png;  # Note: capital letters in filename
+      icon = ./../../assets/icons/pwas/ArgoCD.svg;  # SVG version
       categories = ["Development" "Utility"];
       keywords = ["kubernetes" "gitops" "deployment"];
     };
@@ -35,7 +35,7 @@ let
     gitea = {
       name = "Gitea";
       url = "https://gitea.cnoe.localtest.me:8443";
-      icon = ./../../assets/icons/pwas/Gitea.png;
+      icon = ./../../assets/icons/pwas/Gitea.svg;  # SVG version
       categories = ["Development"];
       keywords = ["git" "repository" "code"];
     };
@@ -43,7 +43,7 @@ let
     backstage = {
       name = "Backstage";
       url = "https://backstage.cnoe.localtest.me:8443";
-      icon = ./../../assets/icons/pwas/Backstage.png;
+      icon = ./../../assets/icons/pwas/Backstage.svg;  # SVG version
       categories = ["Development"];
       keywords = ["platform" "developer" "portal"];
     };
@@ -51,7 +51,7 @@ let
     headlamp = {
       name = "Headlamp";
       url = "https://headlamp.cnoe.localtest.me:8443";
-      icon = ./../../assets/icons/pwas/Headlamp.png;
+      icon = ./../../assets/icons/pwas/Headlamp.svg;  # SVG version
       categories = ["Development" "System"];
       keywords = ["kubernetes" "dashboard"];
     };
@@ -59,7 +59,7 @@ let
     kargo = {
       name = "Kargo";
       url = "https://kargo.cnoe.localtest.me:8443";
-      icon = ./../../assets/icons/pwas/Kargo.png;
+      icon = ./../../assets/icons/pwas/Kargo.svg;  # SVG version
       categories = ["Development"];
       keywords = ["deployment" "promotion" "gitops"];
     };
