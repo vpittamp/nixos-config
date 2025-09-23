@@ -18,6 +18,7 @@
     
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
+    ../modules/desktop/kde-panel-primary.nix  # Ensure primary panel always shows
     ../modules/desktop/remote-access.nix
     # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
     # ../modules/desktop/pwa-extensions.nix  # No longer needed with declarative approach
@@ -173,7 +174,7 @@
   #   enableSystemdService = false;  # Launch manually
   # };
   # Ensure user is in audio group for audio access
-  users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" ];
+  users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" "docker" "libvirtd" ];
   
   # System state version
   system.stateVersion = "24.11";
