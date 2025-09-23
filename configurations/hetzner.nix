@@ -20,6 +20,8 @@
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
     ../modules/desktop/firefox-pwa.nix
+    ../modules/desktop/pwa-extensions.nix  # 1Password for PWAs
+    ../modules/desktop/pwa-icons.nix  # Custom PWA icons
     ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
     # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
@@ -105,6 +107,18 @@
     enableAIBackends = true;   # Enable AI routing capabilities
   };
 
+  # Firefox PWA configuration
+  services.firefox-pwa = {
+    enable = true;
+    autoInstallPWAs = false;  # We manage PWAs manually
+  };
+
+  # Firefox PWA custom icons
+  services.firefox-pwa-icons = {
+    enable = true;
+    autoUpdate = true;
+  };
+
   # Enable 1Password automation with service account
   services.onepassword-automation = {
     enable = true;
@@ -119,10 +133,10 @@
     enableGlobalShortcut = true;
   };
 
-  # Enable Firefox PWA support
-  services.firefox-pwa = {
+  # Enable PWA extensions (1Password) support
+  services.pwa-extensions = {
     enable = true;
-    autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
+    autoInstall = true;
   };
 
   # Audio configuration for XRDP

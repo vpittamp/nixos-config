@@ -59,6 +59,48 @@ let
       description = "Google AI Studio";
       display = "standalone";
     };
+
+    # CNOE Developer Tools
+    argocd = {
+      name = "ArgoCD";
+      url = "https://argocd.cnoe.localtest.me:8443/";
+      icon = "https://argocd.cnoe.localtest.me:8443/assets/images/argo.png";
+      categories = ["Development" "Deployment" "CNOE"];
+      description = "Declarative GitOps CD for Kubernetes";
+      display = "standalone";
+    };
+    gitea = {
+      name = "Gitea";
+      url = "https://gitea.cnoe.localtest.me:8443/";
+      icon = "https://gitea.cnoe.localtest.me:8443/assets/img/logo.svg";
+      categories = ["Development" "VersionControl" "CNOE"];
+      description = "Self-hosted Git service";
+      display = "standalone";
+    };
+    backstage = {
+      name = "Backstage";
+      url = "https://backstage.cnoe.localtest.me:8443/";
+      icon = "https://backstage.cnoe.localtest.me:8443/favicon.ico";
+      categories = ["Development" "Documentation" "CNOE"];
+      description = "Open platform for building developer portals";
+      display = "standalone";
+    };
+    headlamp = {
+      name = "Headlamp";
+      url = "https://headlamp.cnoe.localtest.me:8443/";
+      icon = "https://headlamp.cnoe.localtest.me:8443/favicon.ico";
+      categories = ["Development" "Monitoring" "CNOE"];
+      description = "Kubernetes web UI";
+      display = "standalone";
+    };
+    kargo = {
+      name = "Kargo";
+      url = "https://kargo.cnoe.localtest.me:8443/";
+      icon = "https://kargo.cnoe.localtest.me:8443/favicon.ico";
+      categories = ["Development" "Deployment" "CNOE"];
+      description = "Progressive delivery for Kubernetes";
+      display = "standalone";
+    };
   };
 
   # Base Firefox preferences for PWA profiles
@@ -85,6 +127,17 @@ let
     user_pref("toolkit.telemetry.unified", false);
     user_pref("toolkit.telemetry.archive.enabled", false);
 
+    // 1Password Extension Support
+    user_pref("extensions.autoDisableScopes", 0);
+    user_pref("extensions.enabledScopes", 15);
+    user_pref("extensions.update.autoUpdateDefault", true);
+    user_pref("extensions.1Password.native-messaging-hosts", true);
+    user_pref("dom.event.clipboardevents.enabled", true);
+    user_pref("signon.rememberSignons", false);
+
+    // Certificate handling for self-signed certs
+    user_pref("security.tls.insecure_fallback_hosts", "argocd.cnoe.localtest.me,gitea.cnoe.localtest.me,backstage.cnoe.localtest.me,headlamp.cnoe.localtest.me,kargo.cnoe.localtest.me");
+    user_pref("network.stricttransportsecurity.preloadlist", false);
   '';
 
   # Generate manifest JSON
