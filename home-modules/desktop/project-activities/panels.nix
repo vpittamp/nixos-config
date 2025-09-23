@@ -1,6 +1,17 @@
 { lib, activities, mkUUID }:
 
 let
+  # Generate PWA launcher paths
+  pwaLaunchers =
+    let
+      # These IDs must match what's generated in firefox-pwas-declarative.nix
+      googleId = "01D12288367E14F3D20D5C3274";
+      youtubeId = "019DB7F7C8868D4C4FA0121E19";
+      homeDir = "/home/vpittamp";  # This should ideally come from config
+    in
+      ",file://${homeDir}/.local/share/applications/FFPWA-${googleId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${youtubeId}.desktop";
+
   primaryPanelIni = ''
 [Containments][410]
 activityId=
@@ -23,6 +34,7 @@ immutability=1
 plugin=org.kde.plasma.icontasks
 
 [Containments][410][Applets][412][Configuration][General]
+launchers=applications:firefox.desktop,applications:org.kde.dolphin.desktop,applications:org.kde.konsole.desktop${pwaLaunchers}
 showOnlyCurrentActivity=true
 showOnlyCurrentDesktop=false
 showOnlyCurrentScreen=true

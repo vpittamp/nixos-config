@@ -12,13 +12,14 @@
 
     # Hardware
     ../hardware/m1.nix
-    
+
     # Apple Silicon support - CRITICAL for hardware functionality
     inputs.nixos-apple-silicon.nixosModules.default
-    
+
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
+    ../modules/desktop/firefox-pwa.nix
 
     # Services
     ../modules/services/development.nix
@@ -32,6 +33,12 @@
 
   # Enable speech-to-text service
   services.speech-to-text.enable = true;
+
+  # Enable Firefox PWA support
+  services.firefox-pwa = {
+    enable = true;
+    autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
+  };
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [

@@ -16,8 +16,8 @@
 
   programs.plasma = {
     enable = true;
-    overrideConfig = false;  # Don't delete KDE config files, just manage specified settings
-    # resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];  # Not needed with overrideConfig = false
+    overrideConfig = true;  # Let Nix fully manage KDE config files
+    # resetFilesExclude = lib.mkBefore [ "plasma-org.kde.plasma.desktop-appletsrc" ];  # Not needed with overrideConfig = true
   };
 
   programs.konsole = {

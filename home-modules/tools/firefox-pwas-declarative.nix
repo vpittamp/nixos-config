@@ -7,19 +7,15 @@ with lib;
 let
   cfg = config.programs.firefox-pwas;
 
-  # Generate deterministic ULID-like IDs
+  # Generate deterministic ULID-like IDs based on PWA name
   generateId = name: seed:
     let
+      # Create a proper hash from the name and seed
       hash = builtins.hashString "sha256" "${name}-${seed}";
-      # Convert to ULID-like format (26 chars, alphanumeric uppercase)
-      chars = lib.stringToCharacters "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-      hashChars = lib.stringToCharacters hash;
-      mapChar = c:
-        let
-          code = builtins.fromJSON (builtins.toJSON c);
-        in lib.elemAt chars (lib.mod (lib.stringLength code) 32);
-      id = lib.concatStrings (lib.take 24 (map mapChar hashChars));
-    in "01" + lib.toUpper id;
+      # Take first 24 characters of the hex hash and pad with 0s if needed
+      hexChars = lib.stringToCharacters hash;
+      idPart = lib.concatStrings (lib.take 24 hexChars);
+    in "01" + lib.toUpper idPart;
 
   # PWA definitions with all required metadata
   pwaDefinitions = {
@@ -34,7 +30,7 @@ let
     youtube = {
       name = "YouTube";
       url = "https://www.youtube.com/";
-      icon = "https://www.youtube.com/s/desktop/ef159f37/img/favicon_144x144.png";
+      icon = "https://www.youtube.com/yts/img/favicon_144-vfliLAfaB.png";
       categories = ["AudioVideo" "Video"];
       description = "YouTube Video Platform";
       display = "standalone";
@@ -88,6 +84,7 @@ let
     user_pref("toolkit.telemetry.enabled", false);
     user_pref("toolkit.telemetry.unified", false);
     user_pref("toolkit.telemetry.archive.enabled", false);
+
   '';
 
   # Generate manifest JSON
@@ -235,17 +232,13 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # Install firefoxpwa package
-    home.packages = [ pkgs.firefoxpwa ];
+    # Install firefoxpwa package and 1Password extension
+    home.packages = [
+      pkgs.firefoxpwa
+    ];
 
     # Create all necessary files and directories
-    home.file = {
-      # Main configuration file
-      ".local/share/firefoxpwa/config.json" = {
-        text = builtins.toJSON (generatePWAConfig cfg.pwas);
-        force = true;
-      };
-    } // lib.listToAttrs (
+    home.file = lib.listToAttrs (
       # Desktop files for each PWA
       map (name:
         let siteId = generateId name "site";
@@ -288,14 +281,15 @@ in {
       ) cfg.pwas)
     );
 
-    # Create icon files in activation
+    # Create icon files and install PWAs in activation
     home.activation.firefoxPwaSetup = lib.hm.dag.entryAfter ["writeBoundary"] ''
       # Create necessary directories
       mkdir -p $HOME/.local/share/firefoxpwa/profiles
+      mkdir -p $HOME/.local/share/firefoxpwa/sites
       mkdir -p $HOME/.local/share/icons/hicolor/512x512/apps
       mkdir -p $HOME/.cache/firefoxpwa
 
-      # Download and convert icons
+      # Install each PWA
       ${lib.concatMapStringsSep "\n" (name:
         let
           pwa = pwaDefinitions.${name};
@@ -305,10 +299,33 @@ in {
           # Create profile directory structure
           mkdir -p "$HOME/.local/share/firefoxpwa/profiles/${profileId}"
 
+          # Create site JSON file for firefoxpwa
+          SITE_DIR="$HOME/.local/share/firefoxpwa/sites/${siteId}"
+          mkdir -p "$SITE_DIR"
+
+          cat > "$SITE_DIR/site.json" << 'EOF'
+          {
+            "id": "${siteId}",
+            "name": "${pwa.name}",
+            "description": "${pwa.description or pwa.name}",
+            "start_url": "${pwa.url}",
+            "manifest_url": "${pwa.manifestUrl or (pwa.url + "/manifest.json")}",
+            "document_url": "${pwa.url}",
+            "icon": {
+              "src": "${pwa.icon}",
+              "type": "image/png"
+            },
+            "profile_id": "${profileId}",
+            "categories": ["Network", "WebBrowser"],
+            "keywords": [],
+            "enabled": true
+          }
+          EOF
+
           # Download and convert icon
           ICON_FILE="$HOME/.local/share/icons/hicolor/512x512/apps/FFPWA-${siteId}.png"
           if [ ! -f "$ICON_FILE" ]; then
-            echo "Downloading icon for ${pwa.name}..."
+            echo "Installing PWA: ${pwa.name}..."
             ${pkgs.curl}/bin/curl -sL "${pwa.icon}" -o "/tmp/icon-${siteId}" 2>/dev/null || true
             if [ -f "/tmp/icon-${siteId}" ]; then
               ${pkgs.imagemagick}/bin/convert "/tmp/icon-${siteId}" \
@@ -321,11 +338,69 @@ in {
               rm -f "/tmp/icon-${siteId}"
             fi
           fi
+
+          # Copy icon to site directory
+          if [ -f "$ICON_FILE" ]; then
+            cp "$ICON_FILE" "$SITE_DIR/icon.png"
+          fi
+
+          # Create extensions directory and install 1Password extension
+          EXTENSIONS_DIR="$HOME/.local/share/firefoxpwa/profiles/${profileId}/extensions"
+          mkdir -p "$EXTENSIONS_DIR"
+
+          # Download and install 1Password extension XPI
+          ONEPASS_URL="https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+          echo "Installing 1Password extension for ${pwa.name} PWA..."
+          ${pkgs.curl}/bin/curl -sL "$ONEPASS_URL" -o "$EXTENSIONS_DIR/{d634138d-c276-4fc8-924b-40a0ea21d284}.xpi" 2>/dev/null || true
+
+          # Add extensions.json for auto-loading
+          cat > "$HOME/.local/share/firefoxpwa/profiles/${profileId}/extensions.json" << 'EOF'
+          {
+            "addons": [
+              {
+                "id": "{d634138d-c276-4fc8-924b-40a0ea21d284}",
+                "location": "app-profile",
+                "path": "{d634138d-c276-4fc8-924b-40a0ea21d284}.xpi",
+                "active": true,
+                "visible": true,
+                "userDisabled": false
+              }
+            ]
+          }
+          EOF
+
+          # Create user.js for additional extension preferences (doesn't modify symlinked prefs.js)
+          cat > "$HOME/.local/share/firefoxpwa/profiles/${profileId}/user-overrides.js" << 'EOF'
+          user_pref("extensions.autoDisableScopes", 0);
+          user_pref("extensions.enabledScopes", 15);
+          user_pref("browser.tabs.warnOnClose", false);
+          user_pref("extensions.webextensions.ExtensionStorageIDB.migrated.{d634138d-c276-4fc8-924b-40a0ea21d284}", true);
+          EOF
         ''
       ) cfg.pwas}
 
       # Update icon cache
       ${pkgs.gtk3}/bin/gtk-update-icon-cache -f -t $HOME/.local/share/icons/hicolor || true
+
+      # Create writable config.json (not a symlink)
+      cat > "$HOME/.local/share/firefoxpwa/config.json" << 'EOF'
+      ${builtins.toJSON (generatePWAConfig cfg.pwas)}
+      EOF
+
+      # Update firefoxpwa runtime config
+      cat > "$HOME/.local/share/firefoxpwa/runtime.json" << 'EOF'
+      {
+        "runtime_path": "${pkgs.firefox}/bin/firefox",
+        "profile_template": "",
+        "browser": "firefox",
+        "sites": [
+          ${lib.concatMapStringsSep ",\n    " (name:
+            let siteId = generateId name "site";
+            in ''"${siteId}"''
+          ) cfg.pwas}
+        ]
+      }
+      EOF
     '';
 
     # Configure KDE Plasma taskbar if enabled
@@ -336,23 +411,79 @@ in {
           # Backup
           cp "$PLASMA_CONFIG" "$PLASMA_CONFIG.backup-pwas" 2>/dev/null || true
 
-          # Build launcher list
-          LAUNCHERS="applications:firefox.desktop,applications:org.kde.dolphin.desktop,applications:org.kde.konsole.desktop"
+          # Build launcher list with PWA shortcuts
+          PWA_LAUNCHERS=""
           ${lib.concatMapStringsSep "\n" (name:
             let siteId = generateId name "site";
             in ''
-              LAUNCHERS="$LAUNCHERS,file://$HOME/.local/share/applications/FFPWA-${siteId}.desktop"
+              if [ -f "$HOME/.local/share/applications/FFPWA-${siteId}.desktop" ]; then
+                PWA_LAUNCHERS="$PWA_LAUNCHERS,file://$HOME/.local/share/applications/FFPWA-${siteId}.desktop"
+              fi
             ''
           ) cfg.pwas}
 
-          # Update configuration
-          ${pkgs.gnused}/bin/sed -i '
-            /\[Containments\]\[410\]\[Applets\]\[412\]\[Configuration\]\[General\]/,/^$/ {
-              /^launchers=/d
-              /showOnlyCurrentActivity=/s/=.*/=false/
-              /\[General\]/a launchers='"$LAUNCHERS"'
+          # Find and update all icontasks applets
+          echo "Looking for Icon-only Task Manager widgets..."
+
+          # First, find all containments with icontasks applets
+          ${pkgs.gawk}/bin/awk '
+            /^\[Containments\]\[[0-9]+\]\[Applets\]\[[0-9]+\]$/ {
+              containment = $0
+              gsub(/.*\[Containments\]\[/, "", containment)
+              gsub(/\].*/, "", containment)
+              applet = $0
+              gsub(/.*\[Applets\]\[/, "", applet)
+              gsub(/\]$/, "", applet)
             }
-          ' "$PLASMA_CONFIG" 2>/dev/null || true
+            /^plugin=org\.kde\.plasma\.icontasks$/ && containment {
+              print containment, applet
+            }
+          ' "$PLASMA_CONFIG" | while read CONT_ID APP_ID; do
+            echo "Found icontasks widget: Containment[$CONT_ID] Applet[$APP_ID]"
+
+            # Check if this applet already has launchers configured
+            if ${pkgs.gnugrep}/bin/grep -q "^\[Containments\]\[$CONT_ID\]\[Applets\]\[$APP_ID\]\[Configuration\]\[General\]" "$PLASMA_CONFIG"; then
+              # Extract existing launchers if any
+              EXISTING_LAUNCHERS=$(${pkgs.gawk}/bin/awk '
+                /^\[Containments\]\['$CONT_ID'\]\[Applets\]\['$APP_ID'\]\[Configuration\]\[General\]/ { in_section=1 }
+                in_section && /^launchers=/ {
+                  sub(/^launchers=/, "")
+                  print
+                  exit
+                }
+                in_section && /^\[/ { exit }
+              ' "$PLASMA_CONFIG")
+
+              # Merge with PWA launchers (avoid duplicates)
+              if [ -n "$EXISTING_LAUNCHERS" ]; then
+                # Keep existing launchers and append PWAs if not already present
+                for pwa in $(echo "$PWA_LAUNCHERS" | tr ',' ' '); do
+                  if [ -n "$pwa" ] && ! echo "$EXISTING_LAUNCHERS" | ${pkgs.gnugrep}/bin/grep -q "$pwa"; then
+                    EXISTING_LAUNCHERS="$EXISTING_LAUNCHERS,$pwa"
+                  fi
+                done
+                NEW_LAUNCHERS="$EXISTING_LAUNCHERS"
+              else
+                # No existing launchers, add default + PWAs
+                NEW_LAUNCHERS="applications:firefox.desktop,applications:org.kde.dolphin.desktop,applications:org.kde.konsole.desktop$PWA_LAUNCHERS"
+              fi
+
+              # Update the launchers
+              ${pkgs.gnused}/bin/sed -i '
+                /^\[Containments\]\['$CONT_ID'\]\[Applets\]\['$APP_ID'\]\[Configuration\]\[General\]/,/^\[/ {
+                  /^launchers=/d
+                  /showOnlyCurrentActivity=/s/=.*/=false/
+                  /^\[Configuration\]\[General\]/a launchers='"$NEW_LAUNCHERS"'
+                }
+              ' "$PLASMA_CONFIG"
+            else
+              # No [Configuration][General] section exists, create it
+              echo "" >> "$PLASMA_CONFIG"
+              echo "[Containments][$CONT_ID][Applets][$APP_ID][Configuration][General]" >> "$PLASMA_CONFIG"
+              echo "launchers=applications:firefox.desktop,applications:org.kde.dolphin.desktop,applications:org.kde.konsole.desktop$PWA_LAUNCHERS" >> "$PLASMA_CONFIG"
+              echo "showOnlyCurrentActivity=false" >> "$PLASMA_CONFIG"
+            fi
+          done
 
           echo "KDE taskbar updated with PWAs"
         fi
