@@ -91,7 +91,17 @@ in
   # Firefox PWAs configuration
   programs.firefox-pwas = {
     enable = true;
-    pwas = [ "google" "youtube" ];  # Declaratively install Google and YouTube PWAs
+    pwas = [
+      # CNOE Developer Tools
+      "argocd"
+      "gitea"
+      "backstage"
+      "headlamp"
+      "kargo"
+      # Other PWAs
+      "google"
+      "youtube"
+    ];
     pinToTaskbar = true;  # Pin them to KDE taskbar
   };
 }
