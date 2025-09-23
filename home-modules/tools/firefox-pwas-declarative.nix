@@ -22,7 +22,7 @@ let
     google = {
       name = "Google";
       url = "https://www.google.com/";
-      icon = "https://www.gstatic.com/images/branding/searchlogo/ico/favicon.ico";
+      icon = "/etc/nixos/assets/icons/pwas/google-ai.png";
       categories = ["Network" "WebBrowser"];
       description = "Google Search";
       display = "standalone";
@@ -30,7 +30,7 @@ let
     youtube = {
       name = "YouTube";
       url = "https://www.youtube.com/";
-      icon = "https://www.youtube.com/yts/img/favicon_144-vfliLAfaB.png";
+      icon = "/etc/nixos/assets/icons/pwas/youtube.png";
       categories = ["AudioVideo" "Video"];
       description = "YouTube Video Platform";
       display = "standalone";
@@ -375,20 +375,36 @@ in {
           }
           EOF
 
-          # Download and convert icon
+          # Copy or download icon
           ICON_FILE="$HOME/.local/share/icons/hicolor/512x512/apps/FFPWA-${siteId}.png"
           if [ ! -f "$ICON_FILE" ]; then
             echo "Installing PWA: ${pwa.name}..."
-            ${pkgs.curl}/bin/curl -sL "${pwa.icon}" -o "/tmp/icon-${siteId}" 2>/dev/null || true
-            if [ -f "/tmp/icon-${siteId}" ]; then
-              ${pkgs.imagemagick}/bin/convert "/tmp/icon-${siteId}" \
-                -resize 512x512 \
-                -background transparent \
-                -gravity center \
-                -extent 512x512 \
-                "$ICON_FILE" 2>/dev/null || \
-              cp "/tmp/icon-${siteId}" "$ICON_FILE" || true
-              rm -f "/tmp/icon-${siteId}"
+
+            # Check if icon is a local file or URL
+            if [[ "${pwa.icon}" == /* ]]; then
+              # Local file - copy it
+              if [ -f "${pwa.icon}" ]; then
+                ${pkgs.imagemagick}/bin/convert "${pwa.icon}" \
+                  -resize 512x512 \
+                  -background transparent \
+                  -gravity center \
+                  -extent 512x512 \
+                  "$ICON_FILE" 2>/dev/null || \
+                cp "${pwa.icon}" "$ICON_FILE" || true
+              fi
+            else
+              # URL - download it
+              ${pkgs.curl}/bin/curl -sL "${pwa.icon}" -o "/tmp/icon-${siteId}" 2>/dev/null || true
+              if [ -f "/tmp/icon-${siteId}" ]; then
+                ${pkgs.imagemagick}/bin/convert "/tmp/icon-${siteId}" \
+                  -resize 512x512 \
+                  -background transparent \
+                  -gravity center \
+                  -extent 512x512 \
+                  "$ICON_FILE" 2>/dev/null || \
+                cp "/tmp/icon-${siteId}" "$ICON_FILE" || true
+                rm -f "/tmp/icon-${siteId}"
+              fi
             fi
           fi
 

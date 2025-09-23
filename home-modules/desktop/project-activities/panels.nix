@@ -7,17 +7,28 @@ let
       # These IDs must match what's generated in firefox-pwas-declarative.nix
       googleId = "01D12288367E14F3D20D5C3274";
       youtubeId = "019DB7F7C8868D4C4FA0121E19";
-      homeDir = "/home/vpittamp";  # This should ideally come from config
+      kargoId = "01738C30F3A05DAB2C1BC16C0A";
+      argoCDId = "01CBD2EC47D2F8D8CF86034280";
+      backstageId = "0199D501A20B94AE3BB038B6BC";
+      giteaId = "01FEA664E5984E1A3E85E944F6";
+      headlampId = "0167D0420CC8C9DFCD3751D068";
+      # Use file:// URLs to ensure KDE finds them
+      homeDir = "/home/vpittamp";
     in
       ",file://${homeDir}/.local/share/applications/FFPWA-${googleId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${youtubeId}.desktop";
+      ",file://${homeDir}/.local/share/applications/FFPWA-${youtubeId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${kargoId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${argoCDId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${backstageId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${giteaId}.desktop" +
+      ",file://${homeDir}/.local/share/applications/FFPWA-${headlampId}.desktop";
 
   primaryPanelIni = ''
 [Containments][410]
 activityId=
 formfactor=2
 immutability=1
-lastScreen[$i]=0
+lastScreen=0
 location=4
 plugin=org.kde.panel
 wallpaperplugin=org.kde.image
@@ -159,7 +170,7 @@ AppletOrder=411;412;437;436;438;413;414;427;428
 activityId=645bcfb7-e769-4000-93be-ad31eb77ea2e
 formfactor=2
 immutability=1
-lastScreen[$i]=0
+lastScreen=0
 location=3
 plugin=org.kde.panel
 wallpaperplugin=org.kde.image
@@ -266,7 +277,7 @@ AppletOrder=501;502;503;504;505;506;507
 activityId=
 formfactor=2
 immutability=1
-lastScreen[$i]=1
+lastScreen=1
 location=4
 plugin=org.kde.panel
 wallpaperplugin=org.kde.image
@@ -306,7 +317,7 @@ AppletOrder=430;442;440;443
 activityId=
 formfactor=2
 immutability=1
-lastScreen[$i]=2
+lastScreen=2
 location=4
 plugin=org.kde.panel
 wallpaperplugin=org.kde.image
