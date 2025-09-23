@@ -41,7 +41,7 @@ plugin=org.kde.plasma.icontasks
 
 [Containments][$PANEL_ID][Applets][$((PANEL_ID + 1))][Configuration][General]
 launchers=
-showOnlyCurrentActivity=false
+showOnlyCurrentActivity=true
 showOnlyCurrentDesktop=false
 showOnlyCurrentScreen=true
 
