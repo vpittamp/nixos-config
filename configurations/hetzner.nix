@@ -19,9 +19,10 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    ../modules/desktop/firefox-pwa.nix
-    ../modules/desktop/pwa-extensions.nix  # 1Password for PWAs
-    ../modules/desktop/pwa-icons.nix  # Custom PWA icons
+    # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
+    # ../modules/desktop/pwa-extensions.nix  # No longer needed with declarative approach
+    # ../modules/desktop/pwa-icons-v2.nix  # Replaced by pwa-declarative
+    ../modules/desktop/pwa-declarative.nix  # Fully declarative PWA system
     ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
     # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
@@ -107,16 +108,11 @@
     enableAIBackends = true;   # Enable AI routing capabilities
   };
 
-  # Firefox PWA configuration
-  services.firefox-pwa = {
+  # Fully declarative PWA configuration
+  programs.firefox-pwas-declarative = {
     enable = true;
-    autoInstallPWAs = false;  # We manage PWAs manually
-  };
-
-  # Firefox PWA custom icons
-  services.firefox-pwa-icons = {
-    enable = true;
-    autoUpdate = true;
+    # PWAs are defined in the module itself for now
+    # Can override here if needed: pwas = { ... };
   };
 
   # Enable 1Password automation with service account
@@ -133,11 +129,8 @@
     enableGlobalShortcut = true;
   };
 
-  # Enable PWA extensions (1Password) support
-  services.pwa-extensions = {
-    enable = true;
-    autoInstall = true;
-  };
+  # PWA extensions are handled by regular Firefox profile now
+  # (1Password and other extensions work normally in Firefox windows)
 
   # Audio configuration for XRDP
   # IMPORTANT: PulseAudio works better with XRDP audio redirection
