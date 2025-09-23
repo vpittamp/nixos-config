@@ -18,7 +18,7 @@
     
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
-    ../modules/desktop/kde-panel-primary.nix  # Ensure primary panel always shows
+    ../modules/desktop/kde-multi-panel.nix  # Multi-monitor panel support
     ../modules/desktop/remote-access.nix
     # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
     # ../modules/desktop/pwa-extensions.nix  # No longer needed with declarative approach
