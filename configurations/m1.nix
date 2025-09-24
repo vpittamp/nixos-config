@@ -27,6 +27,7 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/speech-to-text.nix
+    ../modules/services/home-assistant.nix
   ];
 
   # System identification

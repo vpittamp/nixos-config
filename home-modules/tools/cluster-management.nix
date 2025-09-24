@@ -766,11 +766,12 @@ let
     #   echo "🎯 Cluster functions loaded: cluster-synth, cluster-deploy, cluster-recreate, cluster-status, cluster-menu"
     # fi
   '';
+  idpbuilder = pkgs.callPackage ./idpbuilder.nix {};
 in
 {
   programs.bash.initExtra = lib.mkAfter clusterFunctions;
   programs.zsh.initExtra = lib.mkAfter clusterFunctions;
-  
+
   programs.bash.shellAliases = {
     cls = "cluster-synth";
     cld = "cluster-deploy";
@@ -784,8 +785,8 @@ in
   };
   
   programs.zsh.shellAliases = config.programs.bash.shellAliases;
-  
-  home.packages = with pkgs; [ gum ];
+
+  home.packages = with pkgs; [ gum idpbuilder ];
   
   home.sessionVariables = {
     STACKS_DIR = "$HOME/stacks";

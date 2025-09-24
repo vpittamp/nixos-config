@@ -35,9 +35,11 @@
     allowedTCPPorts = [
       22     # SSH
       41641  # Tailscale
+      # Home Assistant ports are configured in home-assistant.nix when enabled
     ];
     allowedUDPPorts = [
       41641  # Tailscale
+      # Home Assistant ports are configured in home-assistant.nix when enabled
     ];
     # Log dropped packets for debugging
     logRefusedConnections = false;
