@@ -37,7 +37,6 @@
     ../modules/services/onepassword.nix
     ../modules/services/onepassword-automation.nix
     ../modules/services/speech-to-text.nix
-    ../modules/services/home-assistant.nix
     
     # Kubernetes modules
     ../modules/kubernetes/agentgateway.nix
