@@ -127,7 +127,12 @@
     options hid_apple iso_layout=0
   '';
   # Use firmware from boot partition (requires --impure flag)
-  hardware.asahi.peripheralFirmwareDirectory = /boot/asahi;
+  # Made conditional to allow evaluation on non-M1 systems (e.g., for CI/testing)
+  hardware.asahi.peripheralFirmwareDirectory =
+    if builtins.pathExists /boot/asahi
+    then /boot/asahi
+    else builtins.trace "WARNING: /boot/asahi not found - using dummy for evaluation only (not deployable!)"
+         (pkgs.runCommand "dummy-asahi-firmware" {} "mkdir -p $out");
   
   # Use NetworkManager with wpa_supplicant for WiFi (more stable on Apple Silicon)
   networking.networkmanager = {
