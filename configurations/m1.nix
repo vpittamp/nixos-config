@@ -28,6 +28,10 @@
     ../modules/services/onepassword.nix
     ../modules/services/speech-to-text.nix
     ../modules/services/home-assistant.nix
+
+    # Browser integrations with 1Password
+    ../modules/desktop/firefox-1password.nix
+    ../modules/desktop/chromium-1password.nix
   ];
 
   # System identification

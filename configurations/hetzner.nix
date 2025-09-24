@@ -37,6 +37,10 @@
     ../modules/services/onepassword.nix
     ../modules/services/onepassword-automation.nix
     ../modules/services/speech-to-text.nix
+
+    # Browser integrations with 1Password
+    ../modules/desktop/firefox-1password.nix
+    ../modules/desktop/chromium-1password.nix
     
     # Kubernetes modules
     ../modules/kubernetes/agentgateway.nix
