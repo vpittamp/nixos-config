@@ -32,7 +32,15 @@ let
   getActivityDirectory = ''
     get_activity_directory() {
       local MAPPING_FILE="${config.home.homeDirectory}/.config/plasma-activities/mappings.json"
-      local ACTIVITY_ID=$(qdbus org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+      local QDBUS_BIN
+      QDBUS_BIN=$(command -v qdbus6 || command -v qdbus || true)
+
+      if [ -z "$QDBUS_BIN" ]; then
+        echo "$HOME"
+        return
+      fi
+
+      local ACTIVITY_ID=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
 
       if [ -z "$ACTIVITY_ID" ]; then
         echo "$HOME"
@@ -88,84 +96,66 @@ let
     dolphin "$WORK_DIR"
   '';
 
-  # Yakuake Activity Sync - monitors activity changes and updates Yakuake
+  # Helper snippet reused by the Yakuake scripts to locate qdbus(6)
+  qdbusLocator = ''
+    QDBUS_BIN="$(command -v qdbus6 || command -v qdbus || true)"
+  '';
+
+  # Yakuake Activity Sync - keeps the drop-down session aligned with the active activity
   yakuakeActivitySync = pkgs.writeScriptBin "yakuake-activity-sync" ''
     #!/usr/bin/env bash
+    set -euo pipefail
 
-    # Check if we're on Wayland (disabled for Wayland due to crashes)
-    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-      echo "Yakuake is disabled on Wayland due to crashes"
+    ${getActivityDirectory}
+    ${qdbusLocator}
+
+    if [ -z "$QDBUS_BIN" ] || ! command -v yakuake >/dev/null 2>&1; then
       exit 0
     fi
 
-    ACTIVITY_FILE="$HOME/.config/plasma-current-activity"
-
     while true; do
-      if [ -f "$ACTIVITY_FILE" ]; then
-        ACTIVITY=$(cat "$ACTIVITY_FILE")
-
-        # Get the workspace for this activity
-        WORKSPACE=""
-        case "$ACTIVITY" in
-          "nixos") WORKSPACE="/etc/nixos" ;;
-          *) WORKSPACE="$HOME/projects/$ACTIVITY" ;;
-        esac
-
-        if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ]; then
-          # Update Yakuake's working directory
-          qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
+      if pgrep -x yakuake >/dev/null 2>&1; then
+        WORK_DIR="$(get_activity_directory)"
+        if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+          "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions runCommand "cd $WORK_DIR" >/dev/null 2>&1 || true
         fi
       fi
-
       sleep 2
     done
   '';
 
-  # Yakuake Activity Script - launches Yakuake with activity awareness
+  # Yakuake Activity Script - launches or toggles Yakuake using the current activity directory
   yakuakeActivityScript = pkgs.writeScriptBin "yakuake-activity" ''
     #!/usr/bin/env bash
+    set -euo pipefail
 
-    # Check if we're on Wayland (disabled for Wayland due to crashes)
-    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-      echo "Yakuake is disabled on Wayland due to crashes"
-      echo "Please use Konsole instead"
-      konsole &
-      exit 0
+    ${getActivityDirectory}
+    ${qdbusLocator}
+
+    WORK_DIR="$(get_activity_directory)"
+
+    if ! command -v yakuake >/dev/null 2>&1; then
+      exec konsole --workdir "$WORK_DIR"
     fi
 
-    ACTIVITY_FILE="$HOME/.config/plasma-current-activity"
-
-    # Read current activity
-    if [ -f "$ACTIVITY_FILE" ]; then
-      ACTIVITY=$(cat "$ACTIVITY_FILE")
-    else
-      ACTIVITY="default"
+    if [ -z "$QDBUS_BIN" ]; then
+      exec yakuake "$@"
     fi
 
-    # Get the workspace for this activity
-    case "$ACTIVITY" in
-      "nixos") WORKSPACE="/etc/nixos" ;;
-      *) WORKSPACE="$HOME/projects/$ACTIVITY" ;;
-    esac
-
-    # Start Yakuake if not running
-    if ! pgrep -x yakuake >/dev/null; then
-      # Start Yakuake but don't toggle (it will open automatically)
+    if ! pgrep -x yakuake >/dev/null 2>&1; then
       yakuake &
-      sleep 1
-
-      # Set working directory for first run
-      if [ -d "$WORKSPACE" ]; then
-        qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
-      fi
+      for _ in $(seq 1 30); do
+        sleep 0.2
+        if "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions sessionIdList >/dev/null 2>&1; then
+          break
+        fi
+      done
     else
-      # Yakuake is already running, just toggle the window
-      qdbus org.kde.yakuake /yakuake/window toggleWindowState 2>/dev/null || true
+      "$QDBUS_BIN" org.kde.yakuake /yakuake/window toggleWindowState >/dev/null 2>&1 || true
+    fi
 
-      # Update working directory
-      if [ -d "$WORKSPACE" ]; then
-        qdbus org.kde.yakuake /yakuake/sessions runCommand "cd $WORKSPACE" 2>/dev/null || true
-      fi
+    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+      "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions runCommand "cd $WORK_DIR" >/dev/null 2>&1 || true
     fi
   '';
 
@@ -233,7 +223,7 @@ in
     konsoleActivityScript
     codeActivityScript
     dolphinActivityScript
-    # Yakuake (enabled for X11, disabled for Wayland)
+    # Yakuake drop-down terminal with activity-aware defaults
     yakuakeActivityScript
     yakuakeActivitySync
   ];
@@ -314,11 +304,11 @@ in
       };
     };
 
-    # Yakuake (enabled for X11, disabled for Wayland)
+    # Activity-aware Yakuake launcher
     yakuake-activity = {
       name = "Yakuake (Activity)";
       genericName = "Drop-down Terminal";
-      comment = "Opens Yakuake with sesh session for current activity (X11 only)";
+      comment = "Opens Yakuake in the current activity directory";
       icon = "yakuake";
       terminal = false;
       type = "Application";
@@ -370,7 +360,7 @@ in
     };
   };
 
-  # Yakuake autostart (only runs on X11 sessions)
+  # Yakuake autostart (works on X11 and Wayland)
   home.file.".config/autostart/yakuake.desktop".text = ''
     [Desktop Entry]
     Type=Application
@@ -378,8 +368,8 @@ in
     Hidden=false
     NoDisplay=false
     X-GNOME-Autostart-enabled=true
-    Name=Yakuake (X11 only)
-    Comment=Drop-down terminal with activity awareness (disabled on Wayland)
+    Name=Yakuake
+    Comment=Drop-down terminal with activity awareness
   '';
 
   # Rebuild KDE application cache when desktop files change
@@ -404,6 +394,7 @@ in
       ExecStart = pkgs.writeScript "activity-sync" ''
         #!/usr/bin/env bash
         ${getActivityDirectory}
+        ${qdbusLocator}
 
         # Monitor activity changes
         dbus-monitor --session "type='signal',interface='org.kde.ActivityManager',member='CurrentActivityChanged'" |
@@ -414,7 +405,9 @@ in
             systemctl --user set-environment ACTIVITY_WORK_DIR="$WORK_DIR"
 
             # Apply KWin rules to ensure proper window assignment
-            qdbus org.kde.KWin /KWin reconfigure 2>/dev/null || true
+            if [ -n "$QDBUS_BIN" ]; then
+              "$QDBUS_BIN" org.kde.KWin /KWin reconfigure 2>/dev/null || true
+            fi
           fi
         done
       '';

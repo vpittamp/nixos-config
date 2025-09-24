@@ -15,6 +15,22 @@
       "homekit"
       "tailscale"
 
+      # Climate control
+      "ecobee"
+      "homekit_controller"  # To import HomeKit devices
+
+      # Apple services
+      "icloud"
+
+      # Smart home platforms
+      "smartthings"
+
+      # AI/LLM integrations
+      "openai_conversation"
+      "google_generative_ai_conversation"
+      "conversation"
+      "assist_pipeline"
+
       # Network discovery
       "zeroconf"
       "ssdp"
@@ -60,9 +76,31 @@
       pyqrcode
       base36
       HAP-python
+      python-otbr-api  # Required for HomeKit controller
+
+      # Apple ecosystem support
+      pyatv  # Apple TV integration
+      pyicloud  # iCloud integration
+
+      # Device discovery
+      getmac  # Samsung TV and other integrations
+      ibeacon-ble  # iBeacon support
+
+      # SmartThings support
+      pysmartthings
+
+      # AI/LLM support
+      openai
+      anthropic
+      google-generativeai
+      tiktoken  # For token counting
 
       # Tailscale support
       tailscale
+
+      # Performance optimization libraries
+      # Note: zlib-ng packages may not be available in nixpkgs
+      # The warning is harmless and Home Assistant will fall back to standard zlib
     ];
 
     # Configuration
@@ -70,18 +108,22 @@
       # Basic configuration
       homeassistant = {
         name = "Home";
-        latitude = "!secret latitude";
-        longitude = "!secret longitude";
-        elevation = "!secret elevation";
+        # Default coordinates - update these via UI or secrets.yaml
+        latitude = 40.7128;
+        longitude = -74.0060;
+        elevation = 10;
         unit_system = "metric";
         temperature_unit = "C";
         time_zone = config.time.timeZone or "America/New_York";
         external_url = "https://homeassistant.vpittamp.tailnet.ts.net:8123";
-        internal_url = "http://localhost:8123";
+        internal_url = "http://192.168.1.214:8123";
       };
 
       # Enable the default set of integrations
       default_config = {};
+
+      # Enable packages for modular configuration
+      homeassistant.packages = "!include_dir_named packages";
 
       # HTTP configuration
       http = {
@@ -130,31 +172,90 @@
       # Backup
       backup = {};
 
+      # Note: LLM integrations (OpenAI, Google AI, Anthropic) are configured via UI
+      # API keys are stored in secrets.yaml for use in UI configuration
+
       # HomeKit Bridge configuration
+      # This creates bridges that expose Home Assistant devices to Apple HomeKit
       homekit = [
         {
-          name = "Home Assistant Bridge";
+          # Bridge 1: Current Home (where you are now)
+          name = "HA Current Home";
           port = 51827;
+          advertise_ip = "192.168.1.214";
+          mode = "bridge";
+
+          # Filter for current home devices
           filter = {
-            # Include domains to expose to HomeKit
             include_domains = [
               "light"
               "switch"
               "sensor"
               "binary_sensor"
               "cover"
-              "climate"
               "fan"
               "lock"
               "media_player"
+              "vacuum"
             ];
-            # Optionally exclude specific entities
-            # exclude_entities = [
-            #   "sensor.internal_temperature"
-            # ];
+
+            # Exclude devices that belong to the other home
+            exclude_entities = [
+              # Add Ecobee and other remote home devices here
+              "climate.ecobee"
+              "climate.ecobee_thermostat"
+              # Add Circle View cameras if they're at other home
+              # "camera.circle_view_0ye8"
+              # "camera.circle_view_2848"
+            ];
           };
-          # Entity configuration for better HomeKit compatibility
+
           entity_config = {};
+        }
+
+        {
+          # Bridge 2: Other Home (remote location)
+          name = "HA Other Home";
+          port = 51828;
+          advertise_ip = "192.168.1.214";
+          mode = "bridge";
+
+          # Filter for other home devices only
+          filter = {
+            include_domains = [
+              "climate"  # Ecobee thermostat
+              "camera"   # Circle View cameras
+              "sensor"
+              "binary_sensor"
+              "alarm_control_panel"
+            ];
+
+            # Only include specific entities for the other home
+            include_entities = [
+              "climate.ecobee"
+              "climate.ecobee_thermostat"
+              # Ecobee sensors
+              "sensor.ecobee_temperature"
+              "sensor.ecobee_humidity"
+              "binary_sensor.ecobee_occupancy"
+              # Circle View cameras (if at other home)
+              # "camera.circle_view_0ye8"
+              # "camera.circle_view_2848"
+              # Add other remote home devices here
+            ];
+
+            # Exclude local devices
+            exclude_entities = [
+              # Add current home devices to exclude
+            ];
+          };
+
+          entity_config = {
+            # Configure Ecobee for better HomeKit compatibility
+            "climate.ecobee" = {
+              name = "Thermostat";
+            };
+          };
         }
       ];
     };
@@ -166,6 +267,7 @@
   # Enable mDNS for device discovery
   services.avahi = {
     enable = true;
+    nssmdns = true;
     nssmdns4 = true;
     publish = {
       enable = true;
@@ -173,6 +275,7 @@
       workstation = true;
       hinfo = true;
       domain = true;
+      userServices = true;
     };
     extraServiceFiles = {
       homeassistant = ''
@@ -193,12 +296,15 @@
   networking.firewall = {
     allowedTCPPorts = [
       8123  # Home Assistant web interface
+      51827 # HomeKit Bridge 1 (Current Home)
+      51828 # HomeKit Bridge 2 (Other Home)
       1883  # MQTT (optional, for local MQTT broker)
       5353  # mDNS
     ];
     allowedUDPPorts = [
       5353  # mDNS
-      51827 # HomeKit
+      51827 # HomeKit Bridge 1
+      51828 # HomeKit Bridge 2
     ];
   };
 

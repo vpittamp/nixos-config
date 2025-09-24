@@ -34,3 +34,7 @@ full
 logs/
 *.log
 
+
+# Home Assistant secrets
+/var/lib/hass/secrets.yaml
+secrets.yaml

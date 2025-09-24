@@ -36,16 +36,20 @@ let
 
       TARGET=${lib.escapeShellArg path}
 
-      QDBUS=${lib.escapeShellArg "${pkgs.libsForQt5.qttools.bin}/bin/qdbus"}
+      QDBUS_BIN=$(command -v qdbus6 || command -v qdbus || true)
       YAKUAKE=${lib.escapeShellArg "${pkgs.kdePackages.yakuake}/bin/yakuake"}
       PGREP=${lib.escapeShellArg "${pkgs.procps}/bin/pgrep"}
+
+      if [ -z "$QDBUS_BIN" ]; then
+        exit 0
+      fi
 
       if ! $PGREP -x yakuake >/dev/null 2>&1; then
         nohup $YAKUAKE >/dev/null 2>&1 &
       fi
 
       for attempt in $(seq 1 40); do
-        if $QDBUS org.kde.yakuake /yakuake/sessions >/dev/null 2>&1; then
+        if "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions >/dev/null 2>&1; then
           break
         fi
         sleep 0.25
@@ -54,12 +58,12 @@ let
         fi
       done
 
-      if [ -z "$($QDBUS org.kde.yakuake /yakuake/sessions sessionIdList 2>/dev/null)" ]; then
-        $QDBUS org.kde.yakuake /yakuake/sessions addSession >/dev/null 2>&1 || true
+      if [ -z "$("$QDBUS_BIN" org.kde.yakuake /yakuake/sessions sessionIdList 2>/dev/null)" ]; then
+        "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions addSession >/dev/null 2>&1 || true
       fi
 
       CMD=$(printf 'cd %q && clear' "$TARGET")
-      $QDBUS org.kde.yakuake /yakuake/sessions runCommand "$CMD"
+      "$QDBUS_BIN" org.kde.yakuake /yakuake/sessions runCommand "$CMD"
     '';
   dolphinCmd = workspacePath:
     let
