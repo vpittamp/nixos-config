@@ -13,6 +13,7 @@
       "met"
       "esphome"
       "homekit"
+      "tailscale"
 
       # Network discovery
       "zeroconf"
@@ -39,9 +40,6 @@
       "mobile_app"
       "webhook"
       "http"
-
-      # Tailscale integration
-      "tailscale"
     ];
 
     # Extra packages available to Home Assistant
@@ -55,6 +53,16 @@
       paho-mqtt
       pyserial
       zeroconf
+
+      # HomeKit support
+      aiohomekit
+      fnv-hash-fast
+      pyqrcode
+      base36
+      HAP-python
+
+      # Tailscale support
+      tailscale
     ];
 
     # Configuration
@@ -122,8 +130,33 @@
       # Backup
       backup = {};
 
-      # Tailscale integration (will be configured through UI)
-      tailscale = {};
+      # HomeKit Bridge configuration
+      homekit = [
+        {
+          name = "Home Assistant Bridge";
+          port = 51827;
+          filter = {
+            # Include domains to expose to HomeKit
+            include_domains = [
+              "light"
+              "switch"
+              "sensor"
+              "binary_sensor"
+              "cover"
+              "climate"
+              "fan"
+              "lock"
+              "media_player"
+            ];
+            # Optionally exclude specific entities
+            # exclude_entities = [
+            #   "sensor.internal_temperature"
+            # ];
+          };
+          # Entity configuration for better HomeKit compatibility
+          entity_config = {};
+        }
+      ];
     };
 
     # Open firewall for Home Assistant
