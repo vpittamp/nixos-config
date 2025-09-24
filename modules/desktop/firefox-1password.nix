@@ -6,13 +6,6 @@
   programs.firefox = {
     enable = true;
 
-    # Package with native messaging support
-    package = pkgs.firefox.override {
-      nativeMessagingHosts = [
-        pkgs._1password-gui  # Enable 1Password native messaging
-      ];
-    };
-
     # Global policies for all Firefox profiles
     policies = {
       # Extensions configuration
@@ -74,8 +67,6 @@
       };
     };
 
-    # Native messaging hosts for 1Password
-    nativeMessagingHosts = [ pkgs._1password-gui ];
   };
 
   # Create Firefox native messaging manifests for 1Password
@@ -132,4 +123,6 @@
     # Enable 1Password integration
     MOZ_ALLOW_ADDON_SIDELOAD = "1";
   };
+
+  # Firefox package is enabled through programs.firefox.enable above
 }
