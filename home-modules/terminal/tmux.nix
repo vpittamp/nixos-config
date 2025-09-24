@@ -160,11 +160,27 @@
       bind -n M-4 select-window -t 4
       bind -n M-5 select-window -t 5
 
-      # Copy mode
+      # Copy mode with KDE clipboard integration
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
-      bind -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+
+      # 'y' key copies to KDE clipboard and exits copy mode
+      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "\
+        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          wl-copy; \
+        else \
+          xclip -selection clipboard -in; \
+        fi"
+
+      # 'Y' copies to clipboard but stays in copy mode (for multiple selections)
+      bind -T copy-mode-vi Y send-keys -X copy-pipe "\
+        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          wl-copy; \
+        else \
+          xclip -selection clipboard -in; \
+        fi"
+
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
       bind -T copy-mode-vi L send-keys -X end-of-line
@@ -173,15 +189,54 @@
       bind p paste-buffer
       bind B choose-buffer  # Changed from P to B to avoid conflict with popup
 
+      # Paste from system clipboard (KDE Plasma clipboard)
+      # Use Ctrl+Shift+V or prefix + V to paste from system clipboard
+      bind V run-shell "\
+        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          wl-paste | tmux load-buffer - && tmux paste-buffer; \
+        else \
+          xclip -selection clipboard -out | tmux load-buffer - && tmux paste-buffer; \
+        fi"
+
       # Toggles
       bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
       bind m run-shell "tmux set -g mouse && tmux display-message 'Mouse: #{?mouse,ON,OFF}'"
 
 
-      # Mouse behavior
+      # Mouse behavior with KDE Plasma clipboard integration
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection
+
+      # Enhanced mouse copy that integrates with KDE clipboard
+      # This preserves the smooth selection experience while adding clipboard sync
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-no-clear "\
+        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          wl-copy; \
+        else \
+          xclip -selection clipboard -in; \
+        fi"
+
+      # Double-click to select word and copy to clipboard
+      bind -T copy-mode-vi DoubleClick1Pane \
+        select-pane \; \
+        send-keys -X select-word \; \
+        send-keys -X copy-pipe-no-clear "\
+          if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+            wl-copy; \
+          else \
+            xclip -selection clipboard -in; \
+          fi"
+
+      # Triple-click to select line and copy to clipboard
+      bind -T copy-mode-vi TripleClick1Pane \
+        select-pane \; \
+        send-keys -X select-line \; \
+        send-keys -X copy-pipe-no-clear "\
+          if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+            wl-copy; \
+          else \
+            xclip -selection clipboard -in; \
+          fi"
 
       # Sesh session management
       # Removed 'bind -n C-t' to allow bash's sesh_connect function to handle Ctrl+T
