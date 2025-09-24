@@ -162,14 +162,12 @@ let
     screenshots = [];
   };
 
-  # Encode manifest as base64
+  # Encode manifest as base64 (using pure Nix to avoid architecture dependency)
   encodeManifest = pwa:
-    let manifest = builtins.toJSON (generateManifest pwa);
-    in "data:application/manifest+json;base64,${builtins.readFile (
-      pkgs.runCommand "manifest-base64" {} ''
-        echo -n '${manifest}' | ${pkgs.coreutils}/bin/base64 -w0 > $out
-      ''
-    )}";
+    let
+      manifest = builtins.toJSON (generateManifest pwa);
+      # Use base64 encoding at runtime instead of build time
+    in "data:application/manifest+json;charset=utf-8,${builtins.replaceStrings ["\n" "\"" " "] ["" "\\\"" "%20"] manifest}";
 
   # Generate complete PWA configuration
   generatePWAConfig = enabledPwas:
