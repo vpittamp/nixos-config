@@ -766,7 +766,6 @@ let
     #   echo "🎯 Cluster functions loaded: cluster-synth, cluster-deploy, cluster-recreate, cluster-status, cluster-menu"
     # fi
   '';
-  idpbuilder = pkgs.callPackage ./idpbuilder.nix {};
 in
 {
   programs.bash.initExtra = lib.mkAfter clusterFunctions;
@@ -783,10 +782,11 @@ in
     clm = "cluster-menu";  # Interactive menu
     clb = "chromium";  # Cluster browser (certificates handled by NSS)
   };
-  
+
   programs.zsh.shellAliases = config.programs.bash.shellAliases;
 
-  home.packages = with pkgs; [ gum idpbuilder ];
+  # idpbuilder is provided by the system through development.nix
+  home.packages = with pkgs; [ gum ];
   
   home.sessionVariables = {
     STACKS_DIR = "$HOME/stacks";
