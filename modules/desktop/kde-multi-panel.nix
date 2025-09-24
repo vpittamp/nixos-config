@@ -47,10 +47,24 @@ showOnlyCurrentScreen=true
 
 [Containments][$PANEL_ID][Applets][$((PANEL_ID + 2))]
 immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][$PANEL_ID][Applets][$((PANEL_ID + 2))][Configuration][General]
+expanding=true
+
+[Containments][$PANEL_ID][Applets][$((PANEL_ID + 3))]
+immutability=1
 plugin=org.kde.plasma.showActivityManager
 
+[Containments][$PANEL_ID][Applets][$((PANEL_ID + 4))]
+immutability=1
+plugin=org.kde.plasma.panelspacer
+
+[Containments][$PANEL_ID][Applets][$((PANEL_ID + 4))][Configuration][General]
+expanding=true
+
 [Containments][$PANEL_ID][General]
-AppletOrder=$((PANEL_ID + 1));$((PANEL_ID + 2))
+AppletOrder=$((PANEL_ID + 1));$((PANEL_ID + 2));$((PANEL_ID + 3));$((PANEL_ID + 4))
 thickness=48
 EOF
     }
