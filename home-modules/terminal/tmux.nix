@@ -245,23 +245,62 @@
       # Alternative sesh binding using prefix + T (backtick + T) if needed
       bind-key T new-window sesh
 
-      # Tmux Popup Windows - Using UPPERCASE to avoid conflicts
-      # Terminal popup (backtick + P)
-      bind-key P display-popup -E -h 70% -w 80%
-      # Git status popup (backtick + G)
-      bind-key G display-popup -E -h 80% -w 90% 'git status; git log --oneline -10; read -p "Press ENTER"'
-      # File picker popup (backtick + F)
-      bind-key F display-popup -E -h 80% -w 80% 'find . -type f 2>/dev/null | fzf'
-      # Note popup (backtick + N)
+      # Tmux Popup Windows with Enhanced Copy Support
+      # Using UPPERCASE to avoid conflicts
+      # Tips: Use 'less' for scrollable output, mouse selection works in most popups
+
+      # Terminal popup (backtick + P) - Full tmux session for copy support
+      bind-key P display-popup -E -h 70% -w 80% 'tmux new-session -s popup-$$ "bash -l"'
+
+      # Git status popup (backtick + G) - Scrollable with less
+      bind-key G display-popup -E -h 80% -w 90% 'bash -c "{ echo \"=== GIT STATUS ===\"; git status; echo; echo \"=== RECENT COMMITS ===\"; git log --oneline -20; } | less -R"'
+
+      # File picker popup (backtick + F) - Auto-copies selected path
+      bind-key F display-popup -E -h 80% -w 80% 'file=$(find . -type f 2>/dev/null | fzf --preview="head -50 {}"); \
+        if [ -n "$file" ]; then \
+          echo -n "$file" | if [ -n "$WAYLAND_DISPLAY" ]; then wl-copy; else xclip -selection clipboard; fi; \
+          echo "Copied: $file"; \
+          sleep 1; \
+        fi'
+
+      # Note popup (backtick + N) - nvim has its own copy support
       bind-key N display-popup -E -h 60% -w 70% "nvim ~/notes/quick-$(date +%Y%m%d-%H%M%S).md"
-      # System info popup (backtick + I)
-      bind-key I display-popup -E -h 70% -w 80% 'uname -a; free -h; df -h | head -10; read -p "Press ENTER"'
-      # Docker status popup (backtick + D)
-      bind-key D display-popup -E -h 80% -w 90% 'docker ps -a 2>/dev/null || echo "Docker not running"; read -p "Press ENTER"'
-      # Process viewer (backtick + H)
+
+      # System info popup (backtick + I) - Scrollable with less
+      bind-key I display-popup -E -h 70% -w 80% 'bash -c "{ echo \"=== SYSTEM INFO ===\"; uname -a; echo; echo \"=== MEMORY ===\"; free -h; echo; echo \"=== DISK USAGE ===\"; df -h | head -10; echo; echo \"=== TOP PROCESSES ===\"; ps aux --sort=-%cpu | head -10; } | less"'
+
+      # Docker status popup (backtick + D) - Table format, scrollable
+      bind-key D display-popup -E -h 80% -w 90% 'bash -c "docker ps -a --format \"table {{.Names}}\t{{.Status}}\t{{.Image}}\" 2>/dev/null || echo \"Docker not running\"" | less'
+
+      # Process viewer (backtick + H) - htop has built-in selection
       bind-key H display-popup -E -h 90% -w 90% 'htop || top'
-      # Log viewer (backtick + L)
-      bind-key L display-popup -E -h 80% -w 90% 'journalctl -xe --no-pager | tail -100; read -p "Press ENTER"'
+
+      # Log viewer (backtick + L) - Scrollable, starts at end
+      bind-key L display-popup -E -h 80% -w 90% 'journalctl -xe --no-pager | tail -500 | less +G'
+
+      # Quick copy popup (backtick + C) - Show current tmux buffer
+      bind-key C display-popup -E -h 60% -w 70% 'echo "=== TMUX BUFFER ==="; tmux show-buffer | less'
+
+      # Clipboard history popup (backtick + Q) - Show KDE clipboard items
+      bind-key Q display-popup -E -h 70% -w 80% 'bash -c "\
+        if command -v qdbus &>/dev/null 2>&1; then \
+          echo \"=== CLIPBOARD HISTORY (press q to quit) ===\"; \
+          echo; \
+          for i in {0..9}; do \
+            item=$(qdbus org.kde.klipper /klipper getClipboardHistoryItem $i 2>/dev/null | head -3); \
+            if [ -n \"$item\" ]; then \
+              echo \"[$i] ----------------------------------------\"; \
+              echo \"$item\" | head -3; \
+              echo; \
+            fi; \
+          done; \
+        else \
+          if [ -n \"$WAYLAND_DISPLAY\" ]; then \
+            echo \"Current clipboard:\"; wl-paste; \
+          else \
+            echo \"Current clipboard:\"; xclip -selection clipboard -o; \
+          fi; \
+        fi" | less'
     '';
   };
 }
