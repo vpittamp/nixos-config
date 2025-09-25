@@ -234,20 +234,31 @@
     user = "vpittamp";
   };
 
-  # Disable cluster-cert-sync service that's causing boot hangs
-  # The service definition might still exist from previous generations
-  systemd.services.cluster-cert-sync = lib.mkForce {
-    enable = false;
+  # Completely mask cluster-cert-sync service to prevent it from running
+  # Using systemd masking which is the strongest way to disable a service
+  systemd.services."cluster-cert-sync" = {
+    enable = lib.mkForce false;
+    # Create a masked unit that does nothing
+    serviceConfig = lib.mkForce {
+      Type = "oneshot";
+      ExecStart = lib.mkForce "${pkgs.coreutils}/bin/true";
+      RemainAfterExit = false;
+    };
     wantedBy = lib.mkForce [];
-    wants = lib.mkForce [];
-    after = lib.mkForce [];
-    before = lib.mkForce [];
-    unitConfig.ConditionPathExists = "!/tmp/never-exists-disable-this-service";
+    unitConfig = lib.mkForce {
+      Description = "Masked service (does nothing)";
+      ConditionPathExists = "!/tmp/never-run-this-service";
+      RefuseManualStart = true;
+      RefuseManualStop = true;
+    };
   };
 
-  systemd.paths.cluster-cert-sync = lib.mkForce {
-    enable = false;
+  systemd.paths."cluster-cert-sync" = {
+    enable = lib.mkForce false;
     wantedBy = lib.mkForce [];
+    pathConfig = lib.mkForce {
+      PathExists = "/tmp/never-exists-path";
+    };
   };
 
   # Enable Speech-to-Text services
