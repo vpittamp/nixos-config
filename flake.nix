@@ -97,6 +97,15 @@
           modules = [ ./configurations/hetzner.nix ];
         };
         
+        # Minimal Hetzner for nixos-anywhere deployment
+        hetzner-minimal = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-minimal.nix
+          ];
+        };
+        
         # Secondary: M1 MacBook Pro (aarch64)
         m1 = mkSystem {
           hostname = "nixos-m1";
