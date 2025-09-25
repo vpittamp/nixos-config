@@ -16,6 +16,10 @@
         content = {
           type = "gpt";
           partitions = {
+            boot = {
+              size = "1M";
+              type = "EF02";  # BIOS boot partition for GRUB
+            };
             ESP = {
               size = "512M";
               type = "EF00";
@@ -42,7 +46,7 @@
 
   # Boot configuration
   boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/sda";
+  boot.loader.grub.devices = [ "/dev/sda" ];  # Use devices array instead of device
   boot.initrd.availableKernelModules = [ "ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod" ];
 
   # Basic networking
