@@ -32,16 +32,13 @@
     "boot.shell_on_fail"  # Drop to shell on boot failure
   ];
 
-  # Ensure critical tools are in initrd
-  boot.initrd.extraUtilsCommands = ''
-    # Copy filesystem check tools
-    copy_bin_and_libs ${pkgs.e2fsprogs}/bin/fsck.ext4
-    copy_bin_and_libs ${pkgs.dosfstools}/bin/fsck.vfat
-  '';
-
   # Add boot debug information
   boot.initrd.verbose = lib.mkDefault false;  # Set to true for debugging
 
-  # Failsafe: Ensure modprobe is available
-  boot.initrd.systemd.enable = lib.mkDefault true;
+  # Include filesystem check tools in system packages
+  # (systemd stage 1 handles these differently)
+  environment.systemPackages = with pkgs; [
+    e2fsprogs
+    dosfstools
+  ];
 }
