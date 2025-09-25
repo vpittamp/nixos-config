@@ -54,6 +54,14 @@
       # Enable aggressive-resize for better window handling
       setw -g aggressive-resize on
 
+      # Text wrapping settings
+      setw -g wrap-search on
+      setw -g automatic-rename on
+
+      # Force UTF-8 (fixes wrapping with special characters)
+      set -q -g utf8 on
+      setw -q -g utf8 on
+
       # Force refresh on attach
       set-hook -g client-attached 'run-shell "tmux refresh-client -S"'
 
@@ -249,16 +257,14 @@
       # Using UPPERCASE to avoid conflicts
       # Tips: Use 'less' for scrollable output, mouse selection works in most popups
 
-      # Terminal popup (backtick + P) - Simple bash shell with natural mouse selection
-      # No nested tmux to avoid mouse event capture issues
-      # Mouse selection works naturally, copies only popup content
-      bind-key P display-popup -E -h 70% -w 80% -d "#{pane_current_path}" \
-        'bash --rcfile <(cat ~/.bashrc; echo "PS1=\"[popup] \\w $ \"")'
+      # Terminal popup (backtick + P) - Simple bash shell with proper quoting
+      bind-key P display-popup -E -h 70% -w 80% -d "#{pane_current_path}" 'bash --rcfile <(cat ~/.bashrc; echo "PS1=\"[popup] \\w $ \"")'
 
-      # Alternative: Terminal popup with screen/script for better output capture (backtick + O)
-      # Records all output for easy copying
-      bind-key O display-popup -E -h 70% -w 80% -d "#{pane_current_path}" \
-        'script -q -c "bash -l" /tmp/popup-output-$$; echo "Session saved to /tmp/popup-output-$$"; sleep 2'
+      # Alternative with script command (backtick + O) - Creates PTY boundary
+      bind-key O display-popup -E -h 70% -w 80% -d "#{pane_current_path}" 'script -qc bash /dev/null'
+
+      # Floating pane alternative (backtick + U) - True pane with selection
+      bind-key U new-window -n float -c "#{pane_current_path}" bash
 
       # Git status popup (backtick + G) - Scrollable with less
       bind-key G display-popup -E -h 80% -w 90% 'bash -c "{ echo \"=== GIT STATUS ===\"; git status; echo; echo \"=== RECENT COMMITS ===\"; git log --oneline -20; } | less -R"'
