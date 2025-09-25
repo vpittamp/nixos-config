@@ -208,45 +208,45 @@ in
     # We'll add an activation script to install Speech Note declaratively
 
     # Install nerd-dictation from GitHub (not in nixpkgs yet)
-    #     system.activationScripts.nerdDictation = ''
-    #       NERD_DIR="/opt/nerd-dictation"
-    #       if [ ! -d "$NERD_DIR" ]; then
-    #         echo "Installing nerd-dictation..."
-    #         ${pkgs.git}/bin/git clone https://github.com/ideasman42/nerd-dictation.git "$NERD_DIR" || true
-    #       else
-    #         echo "Updating nerd-dictation..."
-    #         cd "$NERD_DIR" && ${pkgs.git}/bin/git pull || true
-    #       fi
-    # 
-    #       # Create symlink to system PATH
-    #       ln -sf "$NERD_DIR/nerd-dictation" /usr/local/bin/nerd-dictation 2>/dev/null || true
-    #     '';
-    # 
+    system.activationScripts.nerdDictation = ''
+      NERD_DIR="/opt/nerd-dictation"
+      if [ ! -d "$NERD_DIR" ]; then
+        echo "Installing nerd-dictation..."
+        ${pkgs.git}/bin/git clone https://github.com/ideasman42/nerd-dictation.git "$NERD_DIR" || true
+      else
+        echo "Updating nerd-dictation..."
+        cd "$NERD_DIR" && ${pkgs.git}/bin/git pull || true
+      fi
+
+      # Create symlink to system PATH
+      ln -sf "$NERD_DIR/nerd-dictation" /usr/local/bin/nerd-dictation 2>/dev/null || true
+    '';
+
     # Declaratively install Speech Note Flatpak application
-    #     system.activationScripts.speechNoteFlatpak = ''
-    #       # Ensure Flathub repository is added
-    #       ${pkgs.flatpak}/bin/flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
-    # 
-    #       # Check if Speech Note is installed
-    #       if ! ${pkgs.flatpak}/bin/flatpak list --system | grep -q "net.mkiol.SpeechNote"; then
-    #         echo "Installing Speech Note (GUI speech recognition app)..."
-    #         ${pkgs.flatpak}/bin/flatpak install --system -y flathub net.mkiol.SpeechNote || true
-    #       else
-    #         echo "Speech Note is already installed"
-    #       fi
-    #     '';
-    # 
+    system.activationScripts.speechNoteFlatpak = ''
+      # Ensure Flathub repository is added
+      ${pkgs.flatpak}/bin/flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || true
+
+      # Check if Speech Note is installed
+      if ! ${pkgs.flatpak}/bin/flatpak list --system | grep -q "net.mkiol.SpeechNote"; then
+        echo "Installing Speech Note (GUI speech recognition app)..."
+        ${pkgs.flatpak}/bin/flatpak install --system -y flathub net.mkiol.SpeechNote || true
+      else
+        echo "Speech Note is already installed"
+      fi
+    '';
+
     # Declaratively install Whisper models for Speech Note
-    #     system.activationScripts.speechNoteModels = ''
-    #       # Create models directory for all users who might use Speech Note
-    #       for user_home in /home/*; do
-    #         if [ -d "$user_home" ]; then
-    #           user_name=$(basename "$user_home")
-    #           MODEL_DIR="$user_home/.var/app/net.mkiol.SpeechNote/data/net.mkiol/dsnote/models"
-    # 
-    #           # Create directory if it doesn't exist
-    #           if [ ! -d "$MODEL_DIR" ]; then
-    #             mkdir -p "$MODEL_DIR"
+    system.activationScripts.speechNoteModels = ''
+      # Create models directory for all users who might use Speech Note
+      for user_home in /home/*; do
+        if [ -d "$user_home" ]; then
+          user_name=$(basename "$user_home")
+          MODEL_DIR="$user_home/.var/app/net.mkiol.SpeechNote/data/net.mkiol/dsnote/models"
+
+          # Create directory if it doesn't exist
+          if [ ! -d "$MODEL_DIR" ]; then
+            mkdir -p "$MODEL_DIR"
             chown -R "$user_name:users" "$user_home/.var/app/net.mkiol.SpeechNote" 2>/dev/null || true
           fi
 

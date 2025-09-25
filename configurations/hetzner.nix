@@ -243,7 +243,7 @@
 
   # Enable Speech-to-Text services
   services.speech-to-text = {
-    enable = true;
+    enable = false;
     model = "base.en";  # Good balance of speed and accuracy
     language = "en";
     enableGlobalShortcut = true;

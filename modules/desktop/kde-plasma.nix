@@ -180,7 +180,7 @@
   ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [ pkgs.gitkraken ];
 
   # Enable flatpak for additional apps
-  services.flatpak.enable = true;
+  services.flatpak.enable = false;
   xdg.portal = {
     enable = true;
     extraPortals = [ pkgs.kdePackages.xdg-desktop-portal-kde ];
