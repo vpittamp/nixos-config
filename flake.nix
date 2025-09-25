@@ -106,6 +106,15 @@
           ];
         };
         
+        # Hetzner example with our SSH key
+        hetzner-example = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-example.nix
+          ];
+        };
+        
         # Secondary: M1 MacBook Pro (aarch64)
         m1 = mkSystem {
           hostname = "nixos-m1";

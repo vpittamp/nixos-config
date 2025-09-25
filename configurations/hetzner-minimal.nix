@@ -44,9 +44,7 @@
     };
   };
 
-  # Boot configuration
-  boot.loader.grub.enable = true;
-  boot.loader.grub.devices = [ "/dev/sda" ];  # Use devices array instead of device
+  # Boot configuration - let disko handle GRUB setup
   boot.initrd.availableKernelModules = [ "ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod" ];
 
   # Basic networking
