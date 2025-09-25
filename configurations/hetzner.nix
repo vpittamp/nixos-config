@@ -27,7 +27,7 @@
     ../modules/desktop/xrdp-with-sound.nix  # Custom XRDP with --enable-sound flag
     # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
     # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
-    ../modules/desktop/cluster-certificates.nix
+    # ../modules/desktop/cluster-certificates.nix  # DISABLED - causing infinite restart loop at boot
     ../modules/desktop/rdp-display.nix
     ../modules/peripherals/logitech-mx-master3.nix
     
