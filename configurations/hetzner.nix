@@ -234,6 +234,22 @@
     user = "vpittamp";
   };
 
+  # Disable cluster-cert-sync service that's causing boot hangs
+  # The service definition might still exist from previous generations
+  systemd.services.cluster-cert-sync = lib.mkForce {
+    enable = false;
+    wantedBy = lib.mkForce [];
+    wants = lib.mkForce [];
+    after = lib.mkForce [];
+    before = lib.mkForce [];
+    unitConfig.ConditionPathExists = "!/tmp/never-exists-disable-this-service";
+  };
+
+  systemd.paths.cluster-cert-sync = lib.mkForce {
+    enable = false;
+    wantedBy = lib.mkForce [];
+  };
+
   # Enable Speech-to-Text services
   services.speech-to-text = {
     enable = true;
