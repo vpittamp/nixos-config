@@ -2,9 +2,10 @@
 
 {
   # Yakuake dropdown terminal
-  home.packages = with pkgs; [
-    kdePackages.yakuake
-  ];
+  # Disabled due to crash loop
+  # home.packages = with pkgs; [
+    # kdePackages.yakuake
+  # ];
 
   # Konsole profile with improved settings
   home.file.".local/share/konsole/improved.profile" = {
