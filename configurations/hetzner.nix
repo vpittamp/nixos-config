@@ -234,32 +234,9 @@
     user = "vpittamp";
   };
 
-  # Completely mask cluster-cert-sync service to prevent it from running
-  # Using systemd masking which is the strongest way to disable a service
-  systemd.services."cluster-cert-sync" = {
-    enable = lib.mkForce false;
-    # Create a masked unit that does nothing
-    serviceConfig = lib.mkForce {
-      Type = "oneshot";
-      ExecStart = lib.mkForce "${pkgs.coreutils}/bin/true";
-      RemainAfterExit = false;
-    };
-    wantedBy = lib.mkForce [];
-    unitConfig = lib.mkForce {
-      Description = "Masked service (does nothing)";
-      ConditionPathExists = "!/tmp/never-run-this-service";
-      RefuseManualStart = true;
-      RefuseManualStop = true;
-    };
-  };
-
-  systemd.paths."cluster-cert-sync" = {
-    enable = lib.mkForce false;
-    wantedBy = lib.mkForce [];
-    pathConfig = lib.mkForce {
-      PathExists = "/tmp/never-exists-path";
-    };
-  };
+  # Note: Certificate sync is handled once at cluster creation via
+  # ~/stacks/ref-implementation/recreate-cluster-with-ssh.sh
+  # The cluster-certificates.nix module is disabled to prevent ongoing sync issues
 
   # Enable Speech-to-Text services
   services.speech-to-text = {
