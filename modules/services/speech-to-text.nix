@@ -247,35 +247,35 @@ in
     #           # Create directory if it doesn't exist
     #           if [ ! -d "$MODEL_DIR" ]; then
     #             mkdir -p "$MODEL_DIR"
-            chown -R "$user_name:users" "$user_home/.var/app/net.mkiol.SpeechNote" 2>/dev/null || true
-          fi
+    #             chown -R "$user_name:users" "$user_home/.var/app/net.mkiol.SpeechNote" 2>/dev/null || true
+    #           fi
 
-          # Install Whisper Base model
-          if [ ! -f "$MODEL_DIR/ggml-base-q5_0.bin" ]; then
-            echo "Installing Whisper Base model for $user_name..."
-            cp -f ${whisperModels.base} "$MODEL_DIR/ggml-base-q5_0.bin"
-            chown "$user_name:users" "$MODEL_DIR/ggml-base-q5_0.bin"
-          fi
-
-          # Install Whisper Small model
-          if [ ! -f "$MODEL_DIR/ggml-small-q5_0.bin" ]; then
-            echo "Installing Whisper Small model for $user_name..."
-            cp -f ${whisperModels.small} "$MODEL_DIR/ggml-small-q5_0.bin"
-            chown "$user_name:users" "$MODEL_DIR/ggml-small-q5_0.bin"
-          fi
-
-          # Create cache directory and symlinks for Speech Note to recognize models
-          CACHE_DIR="$user_home/.var/app/net.mkiol.SpeechNote/cache/net.mkiol/dsnote/speech-models"
-          mkdir -p "$CACHE_DIR"
-
-          # Create symlinks with Speech Note expected naming
-          ln -sf "$MODEL_DIR/ggml-base-q5_0.bin" "$CACHE_DIR/multilang_whisper_base.bin" 2>/dev/null
-          ln -sf "$MODEL_DIR/ggml-small-q5_0.bin" "$CACHE_DIR/multilang_whisper_small.bin" 2>/dev/null
-
-          chown -R "$user_name:users" "$CACHE_DIR" 2>/dev/null || true
-        fi
-      done
-    '';
+    #       # Install Whisper Base model
+    #       if [ ! -f "$MODEL_DIR/ggml-base-q5_0.bin" ]; then
+    #         echo "Installing Whisper Base model for $user_name..."
+    #         cp -f ${whisperModels.base} "$MODEL_DIR/ggml-base-q5_0.bin"
+    #         chown "$user_name:users" "$MODEL_DIR/ggml-base-q5_0.bin"
+    #       fi
+    #
+    #       # Install Whisper Small model
+    #       if [ ! -f "$MODEL_DIR/ggml-small-q5_0.bin" ]; then
+    #         echo "Installing Whisper Small model for $user_name..."
+    #         cp -f ${whisperModels.small} "$MODEL_DIR/ggml-small-q5_0.bin"
+    #         chown "$user_name:users" "$MODEL_DIR/ggml-small-q5_0.bin"
+    #       fi
+    #
+    #       # Create cache directory and symlinks for Speech Note to recognize models
+    #       CACHE_DIR="$user_home/.var/app/net.mkiol.SpeechNote/cache/net.mkiol/dsnote/speech-models"
+    #       mkdir -p "$CACHE_DIR"
+    #
+    #       # Create symlinks with Speech Note expected naming
+    #       ln -sf "$MODEL_DIR/ggml-base-q5_0.bin" "$CACHE_DIR/multilang_whisper_base.bin" 2>/dev/null
+    #       ln -sf "$MODEL_DIR/ggml-small-q5_0.bin" "$CACHE_DIR/multilang_whisper_small.bin" 2>/dev/null
+    #
+    #       chown -R "$user_name:users" "$CACHE_DIR" 2>/dev/null || true
+    #     fi
+    #   done
+    # '';
 
     # Create systemd user service for nerd-dictation
     systemd.user.services.nerd-dictation = {
