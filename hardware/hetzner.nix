@@ -16,7 +16,13 @@
     "sr_mod" 
   ];
   
-  boot.initrd.kernelModules = [ ];
+  # CRITICAL: Include filesystem modules for boot partition
+  # Without these, the system will fail to mount /boot and drop to emergency mode
+  boot.initrd.kernelModules = [
+    "vfat"           # Required for EFI /boot partition
+    "nls_cp437"      # Character encoding for FAT
+    "nls_iso8859-1"  # ISO character encoding for FAT
+  ];
   boot.kernelModules = [ "kvm-amd" ];  # Hetzner uses AMD EPYC CPUs
   boot.extraModulePackages = [ ];
 

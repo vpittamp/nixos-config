@@ -12,6 +12,9 @@
 
     # Hardware
     ../hardware/hetzner.nix
+
+    # Boot safety - CRITICAL: Prevents boot failures
+    ../modules/boot-safety.nix
     
     # QEMU guest optimizations
     (modulesPath + "/profiles/qemu-guest.nix")
