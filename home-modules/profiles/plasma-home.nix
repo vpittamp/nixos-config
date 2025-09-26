@@ -9,8 +9,8 @@
     ../desktop/project-activities
     ../desktop/activity-aware-apps-native.nix  # Native KDE activity management
     ../desktop/monitoring-desktop-widgets.nix  # Monitoring activity widgets
-    ../apps/headlamp.nix
-    ../apps/headlamp-config.nix
+    #     ../apps/headlamp.nix
+    #     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix
     inputs.plasma-manager.homeModules.plasma-manager
   ];

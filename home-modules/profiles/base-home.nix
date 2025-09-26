@@ -102,6 +102,6 @@ in
   #     "google"
   #     "youtube"
   #   ];
-    pinToTaskbar = true;  # Pin them to KDE taskbar
-  };
+#     pinToTaskbar = true;  # Pin them to KDE taskbar
+#   };
 }
