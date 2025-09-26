@@ -7,15 +7,12 @@
     # Base configuration
     ./base.nix
 
+    # Disk configuration for nixos-anywhere compatibility
+    ../disk-config.nix
+
     # Environment check
     ../modules/assertions/hetzner-check.nix
 
-    # Hardware
-    ../hardware/hetzner.nix
-
-    # Boot safety - CRITICAL: Prevents boot failures
-    ../modules/boot-safety.nix
-    
     # QEMU guest optimizations
     (modulesPath + "/profiles/qemu-guest.nix")
     
@@ -58,9 +55,13 @@
   # System identification
   networking.hostName = "nixos-hetzner";
   
-  # Boot configuration for Hetzner
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
+  # Boot configuration for Hetzner - GRUB for nixos-anywhere compatibility
+  boot.loader.grub = {
+    enable = true;
+    device = "/dev/sda";
+    efiSupport = true;
+    efiInstallAsRemovable = true;
+  };
   
   # Kernel modules for virtualization
   boot.initrd.availableKernelModules = [ "ahci" "xhci_pci" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod" ];
