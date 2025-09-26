@@ -115,12 +115,12 @@
   # Use X11 session by default for XRDP compatibility
   services.displayManager.defaultSession = lib.mkForce "plasmax11";
   
-  # AgentGateway configuration
-  services.agentgateway = {
-    enable = true;
-    autoDeployOnBoot = false;  # Manual deployment for now
-    enableAIBackends = true;   # Enable AI routing capabilities
-  };
+  # AgentGateway configuration - Disabled due to missing module
+  # services.agentgateway = {
+  #   enable = true;
+  #   autoDeployOnBoot = false;  # Manual deployment for now
+  #   enableAIBackends = true;   # Enable AI routing capabilities
+  # };
 
   # Fully Automated PWA Configuration - Phase 3
   # programs.firefoxpwa-auto = {
