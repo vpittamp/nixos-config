@@ -94,7 +94,10 @@
         hetzner = mkSystem {
           hostname = "nixos-hetzner";
           system = "x86_64-linux";
-          modules = [ ./configurations/hetzner.nix ];
+          modules = [ 
+            disko.nixosModules.disko
+            ./configurations/hetzner.nix 
+          ];
         };
         
         # Minimal Hetzner for nixos-anywhere deployment

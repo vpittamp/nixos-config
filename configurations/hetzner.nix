@@ -16,6 +16,11 @@
     # QEMU guest optimizations
     (modulesPath + "/profiles/qemu-guest.nix")
     
+    # Phase 1: Core Services
+    ../modules/services/development.nix
+    ../modules/services/networking.nix
+    ../modules/services/onepassword.nix
+    
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/kde-multi-panel.nix  # Multi-monitor panel support
