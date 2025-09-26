@@ -11,16 +11,17 @@
 - ✅ Basic networking (DHCP)
 - ✅ SSH access
 
-## Phase 1: Core Services (Add First)
-- [ ] services/development.nix
-- [ ] services/networking.nix
-- [ ] services/onepassword.nix (without automation initially)
+## Phase 1: Core Services (Add First) ✅ COMPLETED
+- [x] services/development.nix
+- [x] services/networking.nix
+- [x] services/onepassword.nix (without automation initially)
 
-## Phase 2: Desktop Environment
-- [ ] desktop/kde-plasma.nix
-- [ ] desktop/kde-multi-panel.nix
-- [ ] desktop/remote-access.nix
-- [ ] desktop/xrdp-with-sound.nix
+## Phase 2: Desktop Environment ✅ COMPLETED
+- [x] desktop/kde-plasma.nix
+- [x] desktop/kde-multi-panel.nix
+- [x] desktop/remote-access.nix
+- [x] desktop/xrdp-with-sound.nix
+- [x] desktop/rdp-display.nix
 
 ## Phase 3: Browser Integration
 - [ ] desktop/firefox-1password.nix
