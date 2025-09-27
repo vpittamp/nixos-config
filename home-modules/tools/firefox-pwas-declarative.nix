@@ -400,12 +400,20 @@ in {
       ${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | grep "^- " || echo "  None"
     '')
     (pkgs.writeShellScriptBin "pwa-update-panels" ''
-      # Update KDE taskbar with installed PWA icons
-      if [ -f /etc/nixos/scripts/pwa-update-panels.sh ]; then
-        /etc/nixos/scripts/pwa-update-panels.sh
+      # Check PWA panel status (safe version that doesn't modify panels)
+      if [ -f /etc/nixos/scripts/pwa-update-panels-fixed.sh ]; then
+        /etc/nixos/scripts/pwa-update-panels-fixed.sh
+      elif [ -f /etc/nixos/scripts/pwa-update-panels.sh ]; then
+        echo "Warning: Using old panel update script. This may cause issues."
+        echo "Showing status only..."
+        echo ""
+        # Just show PWA status, don't modify anything
+        firefoxpwa profile list 2>/dev/null | grep "^- " || echo "No PWAs installed"
+        echo ""
+        echo "To update panels, edit panels.nix with the IDs above and rebuild."
       else
-        echo "Error: Panel update script not found at /etc/nixos/scripts/pwa-update-panels.sh"
-        echo "Please ensure the script exists or run from within /etc/nixos"
+        echo "Error: Panel update script not found"
+        echo "Please run from within /etc/nixos"
         exit 1
       fi
     '')
