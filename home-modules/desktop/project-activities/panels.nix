@@ -1,19 +1,46 @@
-{ lib, activities, mkUUID }:
+{ lib, config, activities, mkUUID, ... }@args:
 
 let
+  # Machine-specific PWA IDs
+  # Each machine generates unique IDs when PWAs are installed
+  # Run 'pwa-get-ids' on each machine after installing PWAs to get these IDs
+
+  # Detect current hostname (use config if available, otherwise empty)
+  hostname = args.config.networking.hostName or "";
+
+  # Hetzner server PWA IDs (updated 2025-09-27)
+  hetznerIds = {
+    googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
+    youtubeId = "01K665SQJBZ9AXWT48RQD12DFC";
+    giteaId = "01K665SRSVT5KS6ZG7QKCRW2WG";
+    backstageId = "01K665ST3HWBRW19VGNPXAT4ZP";
+    kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
+    argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
+    headlampId = "01K665SYBT3VHKC13SSQYQPQKZ";
+  };
+
+  # M1 MacBook PWA IDs (to be updated after M1 PWA installation)
+  # Run 'pwa-get-ids' on M1 and update these
+  m1Ids = {
+    googleId = "";  # TODO: Update after M1 PWA installation
+    youtubeId = "";
+    giteaId = "";
+    backstageId = "";
+    kargoId = "";
+    argoCDId = "";
+    headlampId = "";
+  };
+
+  # Select appropriate IDs based on hostname
+  pwaIds =
+    if hostname == "nixos-hetzner" then hetznerIds
+    else if hostname == "nixos-m1" then m1Ids
+    else hetznerIds;  # Default to Hetzner for now
+
   # Generate PWA launcher paths
   pwaLaunchers =
     let
-      # These are the actual stable IDs from firefoxpwa profile list
-      # Retrieved via: firefoxpwa profile list | grep "^- " | awk -F'[()]' '{print $2}'
-      # Updated: 2025-09-27 - Fresh install after update
-      googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
-      youtubeId = "01K665SQJBZ9AXWT48RQD12DFC";
-      giteaId = "01K665SRSVT5KS6ZG7QKCRW2WG";
-      backstageId = "01K665ST3HWBRW19VGNPXAT4ZP";
-      kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
-      argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
-      headlampId = "01K665SYBT3VHKC13SSQYQPQKZ";
+      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId headlampId;
     in
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +

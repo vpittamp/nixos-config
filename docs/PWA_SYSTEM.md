@@ -304,13 +304,57 @@ The system respects standard XDG variables:
 - `XDG_CONFIG_HOME` (default: `~/.config`)
 - `XDG_CACHE_HOME` (default: `~/.cache`)
 
+## Multi-Machine Configuration
+
+Since PWA IDs are unique per machine installation, the system supports different IDs for Hetzner and M1:
+
+### Setting Up PWAs on Multiple Machines
+
+1. **Install PWAs on Hetzner**:
+   ```bash
+   ssh nixos-hetzner
+   pwa-install-all
+   pwa-get-ids  # Copy these IDs
+   ```
+
+2. **Update panels.nix with Hetzner IDs**:
+   ```nix
+   hetznerIds = {
+     googleId = "01K665SPD8EPMP3JTW02JM1M0Z";
+     # ... paste other IDs
+   };
+   ```
+
+3. **Install PWAs on M1**:
+   ```bash
+   ssh nixos-m1
+   pwa-install-all
+   pwa-get-ids  # Copy these IDs
+   ```
+
+4. **Update panels.nix with M1 IDs**:
+   ```nix
+   m1Ids = {
+     googleId = "01K6XXXXXXXXXXXXXXXXXX";  # M1's unique ID
+     # ... paste other IDs
+   };
+   ```
+
+5. **Rebuild both systems**:
+   ```bash
+   sudo nixos-rebuild switch --flake .#hetzner  # On Hetzner
+   sudo nixos-rebuild switch --flake .#m1       # On M1
+   ```
+
+The configuration automatically detects the hostname and uses the appropriate IDs.
+
 ## Best Practices
 
 1. **Always use custom icons** - Default favicons are often low quality
 2. **Test PWA installation** - Run `pwa-install-all` before rebuilding panels
-3. **Backup panel config** - Keep a copy of working `panels.nix` with IDs
-4. **Use meaningful names** - PWA names should be clear and consistent
-5. **Document changes** - Update this file when adding new PWAs
+3. **Keep machine IDs separate** - Don't mix Hetzner and M1 PWA IDs
+4. **Document both sets of IDs** - Update panels.nix when installing on new machines
+5. **Use meaningful names** - PWA names should be clear and consistent
 6. **Regular maintenance** - Run `pwa-list` periodically to check status
 
 ## Migration from Old System

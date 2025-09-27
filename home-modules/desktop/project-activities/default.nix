@@ -15,7 +15,7 @@ let
   # Use the explicit UUIDs from data.nix
   activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
-  panels = import ./panels.nix { inherit lib activities mkUUID; };
+  panels = import ./panels.nix { inherit lib config activities mkUUID; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
