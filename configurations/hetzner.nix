@@ -40,7 +40,7 @@
     # ../modules/services/development.nix
     # ../modules/services/networking.nix
     # ../modules/services/onepassword.nix
-    # ../modules/services/onepassword-automation.nix  # Phase 1 - without automation initially
+    ../modules/services/onepassword-automation.nix  # Phase 1 - without automation initially
     # ../modules/services/speech-to-text.nix  # Avoid - caused issues
 
     # Phase 3: Browser integrations with 1Password
@@ -96,6 +96,13 @@
   
   # Additional packages specific to Hetzner
   environment.systemPackages = with pkgs; [
+    # Firefox PWA support
+    # Image processing for PWA icons
+    imagemagick  # For converting and manipulating images
+    librsvg      # For SVG to PNG conversion
+
+    firefoxpwa  # Native component for Progressive Web Apps
+
     # System monitoring
     htop
     btop
@@ -109,6 +116,12 @@
     alsa-utils  # For alsamixer and other ALSA utilities
   ];
   
+  # Firefox configuration with PWA support
+  programs.firefox = {
+    enable = lib.mkDefault true;
+    nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
+  };
+
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
 
@@ -238,10 +251,10 @@
   # };
 
   # Enable 1Password automation with service account - Phase 1 without automation
-  # services.onepassword-automation = {
-  #   enable = true;
-  #   user = "vpittamp";
-  # };
+  services.onepassword-automation = {
+    enable = true;
+    user = "vpittamp";
+  };
 
   # Note: Certificate sync is handled once at cluster creation via
   # ~/stacks/ref-implementation/recreate-cluster-with-ssh.sh

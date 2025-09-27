@@ -4,24 +4,25 @@ let
   # Generate PWA launcher paths
   pwaLaunchers =
     let
-      # These IDs must match what's generated in firefox-pwas-declarative.nix
-      googleId = "01D12288367E14F3D20D5C3274";
-      youtubeId = "019DB7F7C8868D4C4FA0121E19";
-      kargoId = "01738C30F3A05DAB2C1BC16C0A";
-      argoCDId = "01CBD2EC47D2F8D8CF86034280";
-      backstageId = "0199D501A20B94AE3BB038B6BC";
-      giteaId = "01FEA664E5984E1A3E85E944F6";
-      headlampId = "0167D0420CC8C9DFCD3751D068";
-      # Use file:// URLs to ensure KDE finds them
-      homeDir = "/home/vpittamp";
+      # These are the actual stable IDs from firefoxpwa profile list
+      # Retrieved via: firefoxpwa profile list | grep "^- " | awk -F'[()]' '{print $2}'
+      claudeId = "01K63FXC9HKD0AS81V3P07NBC1";
+      chatgptId = "01K63FXEJ8B7AV6A3CJB7W9DN2";
+      geminiId = "01K63FXAWFH80XQX260RP8FPGE";
+      githubId = "01K63FX9NK39YJS6DXX4WKBD32";
+      gmailId = "01K63FXMC4X923P036TRXDPFJ2";
+      argoCDId = "01K63FX8DD5YH7V19VZQ6PNR5F";
+      backstageId = "01K63FXHP54ADP56PFRTBHB1VV";
+      youtubeId = "01K63FXJYHTC0FYYQ80364P1TE";
     in
-      ",file://${homeDir}/.local/share/applications/FFPWA-${googleId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${youtubeId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${kargoId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${argoCDId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${backstageId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${giteaId}.desktop" +
-      ",file://${homeDir}/.local/share/applications/FFPWA-${headlampId}.desktop";
+      ",applications:FFPWA-${claudeId}.desktop" +
+      ",applications:FFPWA-${chatgptId}.desktop" +
+      ",applications:FFPWA-${geminiId}.desktop" +
+      ",applications:FFPWA-${githubId}.desktop" +
+      ",applications:FFPWA-${gmailId}.desktop" +
+      ",applications:FFPWA-${argoCDId}.desktop" +
+      ",applications:FFPWA-${backstageId}.desktop" +
+      ",applications:FFPWA-${youtubeId}.desktop";
 
   primaryPanelIni = ''
 [Containments][410]

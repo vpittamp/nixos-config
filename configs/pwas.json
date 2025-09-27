@@ -1,0 +1,183 @@
+{
+  "pwas": [
+    {
+      "name": "Claude",
+      "url": "https://claude.ai",
+      "description": "AI assistant by Anthropic",
+      "icon_url": "https://claude.ai/favicon.ico",
+      "categories": [
+        "Development",
+        "Office"
+      ],
+      "keywords": [
+        "ai",
+        "assistant",
+        "anthropic"
+      ],
+      "custom_id": "claude",
+      "pin": true,
+      "activities": "all"
+    },
+    {
+      "name": "ChatGPT",
+      "url": "https://chatgpt.com",
+      "description": "OpenAI ChatGPT",
+      "icon_url": "https://chatgpt.com/favicon.ico",
+      "categories": [
+        "Development",
+        "Office"
+      ],
+      "keywords": [
+        "ai",
+        "chat",
+        "openai"
+      ],
+      "custom_id": "chatgpt",
+      "pin": true,
+      "activities": "all"
+    },
+    {
+      "name": "Google Gemini",
+      "url": "https://gemini.google.com",
+      "description": "Google AI assistant",
+      "icon_url": "https://gemini.google.com/app/favicon.ico",
+      "categories": [
+        "Development",
+        "Office"
+      ],
+      "keywords": [
+        "ai",
+        "google",
+        "gemini"
+      ],
+      "custom_id": "gemini",
+      "pin": true,
+      "activities": "all"
+    },
+    {
+      "name": "GitHub",
+      "url": "https://github.com",
+      "description": "Code hosting platform",
+      "icon_url": "https://github.com/favicon.ico",
+      "categories": [
+        "Development"
+      ],
+      "keywords": [
+        "git",
+        "code",
+        "repository"
+      ],
+      "custom_id": "github",
+      "pin": true,
+      "activities": "Development"
+    },
+    {
+      "name": "Gmail",
+      "url": "https://mail.google.com",
+      "description": "Google Mail",
+      "icon_url": "https://mail.google.com/favicon.ico",
+      "categories": [
+        "Office",
+        "Email"
+      ],
+      "keywords": [
+        "email",
+        "mail",
+        "google"
+      ],
+      "custom_id": "gmail",
+      "pin": true,
+      "activities": "all"
+    },
+    {
+      "name": "ArgoCD",
+      "url": "https://argocd.jasonmadigan.dev",
+      "description": "GitOps continuous delivery",
+      "icon_url": "https://argo-cd.readthedocs.io/en/stable/assets/favicon.png",
+      "categories": [
+        "Development",
+        "System"
+      ],
+      "keywords": [
+        "kubernetes",
+        "gitops",
+        "deployment"
+      ],
+      "custom_id": "argocd",
+      "pin": false,
+      "activities": "Stacks"
+    },
+    {
+      "name": "Backstage",
+      "url": "https://demo.backstage.io",
+      "description": "Developer portal",
+      "icon_url": "https://backstage.io/favicon.ico",
+      "categories": [
+        "Development"
+      ],
+      "keywords": [
+        "portal",
+        "catalog",
+        "developer"
+      ],
+      "custom_id": "backstage",
+      "pin": false,
+      "activities": "Stacks"
+    },
+    {
+      "name": "YouTube",
+      "url": "https://youtube.com",
+      "description": "Video streaming platform",
+      "icon_url": "https://www.youtube.com/favicon.ico",
+      "categories": [
+        "AudioVideo",
+        "Video"
+      ],
+      "keywords": [
+        "video",
+        "streaming",
+        "media"
+      ],
+      "custom_id": "youtube",
+      "pin": true,
+      "activities": "Personal"
+    }
+  ],
+  "extensions": [
+    {
+      "name": "1Password",
+      "id": "{d634138d-c276-4fc8-924b-40a0ea21d284}",
+      "url": "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+    },
+    {
+      "name": "uBlock Origin",
+      "id": "uBlock0@raymondhill.net",
+      "url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+    }
+  ],
+  "settings": {
+    "icon_sizes": [
+      16,
+      32,
+      48,
+      64,
+      128,
+      256
+    ],
+    "enable_extensions": true,
+    "auto_start_services": false,
+    "profile_id": "00000000000000000000000000",
+    "auto_pin_taskbar": true,
+    "activities": {
+      "enabled": true,
+      "default": "all",
+      "available": [
+        "Development",
+        "Personal",
+        "Stacks",
+        "Work",
+        "all"
+      ]
+    }
+  }
+}

@@ -78,7 +78,7 @@ let
     in "${pkgs.vscode}/bin/code ${quoted}";
 
 in rec {
-  defaultActivity = "monitoring";
+  defaultActivity = "nixos";
 
   rawActivities = {
     nixos = {

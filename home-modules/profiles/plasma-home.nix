@@ -5,29 +5,25 @@
     ../desktop/touchpad-gestures.nix
     ../desktop/plasma-config.nix
     ../desktop/plasma-sync.nix  # Analysis tool for comparing plasma configs
-    # ../desktop/plasma-pwa-taskbar.nix  # DISABLED - conflicts with plasma-manager when overrideConfig=false
+    # ../desktop/plasma-pwa-taskbar.nix  # Disabled - conflicts with plasma-manager
     ../desktop/project-activities
     ../desktop/activity-aware-apps-native.nix  # Native KDE activity management
     ../desktop/monitoring-desktop-widgets.nix  # Monitoring activity widgets
     #     ../apps/headlamp.nix
     #     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix
+    ../tools/firefox-pwas-managed.nix  # Declarative PWA management
     inputs.plasma-manager.homeModules.plasma-manager
   ];
 
   programs.plasma = {
     enable = true;
-    overrideConfig = false;  # Allow plasma to modify its own config files
-    # We need this false for plasma-pwa-taskbar to work
+    overrideConfig = false;  # Keep false to allow manual customization
   };
 
-  # Enable PWA taskbar integration
-  # DISABLED - conflicts with plasma-manager configuration
+  # Disable PWA taskbar module - causes conflicts
   # programs.plasma-pwa-taskbar = {
-  #   enable = true;
-  #   # PWAs will be automatically pulled from system configuration
-  #   primaryScreen = true;
-  #   additionalScreens = [];  # Add screen numbers if multiple monitors
+  #   enable = false;
   # };
 
   programs.konsole = {
