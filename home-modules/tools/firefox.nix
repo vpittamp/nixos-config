@@ -246,7 +246,7 @@ in
 
   # Set Firefox as the default browser for all browser-based activities
   xdg.mimeApps = {
-    enable = true;
+    enable = true;  # Single source of truth for MIME associations
     defaultApplications = {
       # Web browsers
       "text/html" = [ "firefox.desktop" ];
@@ -262,7 +262,7 @@ in
       "application/xhtml+xml" = [ "firefox.desktop" ];
       "application/x-extension-xhtml" = [ "firefox.desktop" ];
       "application/x-extension-xht" = [ "firefox.desktop" ];
-      "application/pdf" = [ "firefox.desktop" ];  # Open PDFs in Firefox
+      "application/pdf" = [ "firefox.desktop" "okularApplication_pdf.desktop" ];  # Firefox first, Okular as fallback
 
       # Web content
       "x-scheme-handler/webcal" = [ "firefox.desktop" ];

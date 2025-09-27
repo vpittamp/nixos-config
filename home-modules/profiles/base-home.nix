@@ -79,12 +79,8 @@ in
 
   # Enable XDG base directories and desktop entries
   xdg.enable = true;
-  xdg.mimeApps.enable = true;
-  # Firefox as default browser is configured in ../tools/firefox.nix
-  # This section just provides fallback entries
-  xdg.mimeApps.defaultApplications = lib.mkDefault {
-    "application/pdf" = [ "firefox.desktop" "okularApplication_pdf.desktop" ];
-  };
+  # MIME associations are fully managed in firefox.nix when Firefox is enabled
+  # No need for duplicate configuration here
 
   home.sessionVariables = sessionConfig;
 
