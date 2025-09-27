@@ -14,13 +14,13 @@ let
       argoCDId = "01K65QHZY8BMA6KNEHQ7Q45FSS";
       headlampId = "01K65QJ1Y1PF898B19YWY3HBN8";
     in
-      ",applications:FFPWA-${googleId}.desktop" +
-      ",applications:FFPWA-${youtubeId}.desktop" +
-      ",applications:FFPWA-${giteaId}.desktop" +
-      ",applications:FFPWA-${backstageId}.desktop" +
-      ",applications:FFPWA-${kargoId}.desktop" +
-      ",applications:FFPWA-${argoCDId}.desktop" +
-      ",applications:FFPWA-${headlampId}.desktop";
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${giteaId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${backstageId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${kargoId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${argoCDId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${headlampId}.desktop";
 
   primaryPanelIni = ''
 [Containments][410]
