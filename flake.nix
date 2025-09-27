@@ -65,8 +65,8 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                # Disable backups - we have version control
-                backupFileExtension = null;
+                # Enable automatic backups to prevent conflicts
+                backupFileExtension = "backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
