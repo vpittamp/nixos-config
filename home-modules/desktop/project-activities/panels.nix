@@ -6,23 +6,21 @@ let
     let
       # These are the actual stable IDs from firefoxpwa profile list
       # Retrieved via: firefoxpwa profile list | grep "^- " | awk -F'[()]' '{print $2}'
-      claudeId = "01K63FXC9HKD0AS81V3P07NBC1";
-      chatgptId = "01K63FXEJ8B7AV6A3CJB7W9DN2";
-      geminiId = "01K63FXAWFH80XQX260RP8FPGE";
-      githubId = "01K63FX9NK39YJS6DXX4WKBD32";
-      gmailId = "01K63FXMC4X923P036TRXDPFJ2";
-      argoCDId = "01K63FX8DD5YH7V19VZQ6PNR5F";
-      backstageId = "01K63FXHP54ADP56PFRTBHB1VV";
-      youtubeId = "01K63FXJYHTC0FYYQ80364P1TE";
+      googleId = "01K65QHPR1G9PYP1FTNPV7XJ8B";
+      youtubeId = "01K65QHRDRDQQJ31HZJ3FXTTH8";
+      giteaId = "01K65QHT8EV1XW8A16DJKVJH0P";
+      backstageId = "01K65QHW1ZWE6G6BC689R0R8ZA";
+      kargoId = "01K65QHXYMRA834X84JAWAMP78";
+      argoCDId = "01K65QHZY8BMA6KNEHQ7Q45FSS";
+      headlampId = "01K65QJ1Y1PF898B19YWY3HBN8";
     in
-      ",applications:FFPWA-${claudeId}.desktop" +
-      ",applications:FFPWA-${chatgptId}.desktop" +
-      ",applications:FFPWA-${geminiId}.desktop" +
-      ",applications:FFPWA-${githubId}.desktop" +
-      ",applications:FFPWA-${gmailId}.desktop" +
-      ",applications:FFPWA-${argoCDId}.desktop" +
+      ",applications:FFPWA-${googleId}.desktop" +
+      ",applications:FFPWA-${youtubeId}.desktop" +
+      ",applications:FFPWA-${giteaId}.desktop" +
       ",applications:FFPWA-${backstageId}.desktop" +
-      ",applications:FFPWA-${youtubeId}.desktop";
+      ",applications:FFPWA-${kargoId}.desktop" +
+      ",applications:FFPWA-${argoCDId}.desktop" +
+      ",applications:FFPWA-${headlampId}.desktop";
 
   primaryPanelIni = ''
 [Containments][410]
