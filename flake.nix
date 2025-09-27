@@ -65,7 +65,8 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                backupFileExtension = "backup";
+                # Disable backups - we have version control
+                backupFileExtension = null;
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
@@ -184,7 +185,8 @@
                 ({ config, pkgsUnstable, ... }:
                   {
                     home-manager = {
-                      backupFileExtension = "backup";
+                      # Disable backups - we have version control
+                      backupFileExtension = null;
                       useGlobalPkgs = true;
                       useUserPackages = true;
                       extraSpecialArgs = {
