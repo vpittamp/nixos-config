@@ -19,8 +19,6 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    ../modules/desktop/firefox-pwa.nix
-    ../modules/desktop/pwa-shortcuts.nix
     ../modules/desktop/wireless-display.nix
 
     # Services
@@ -56,15 +54,6 @@
 
   # Enable speech-to-text service
   services.speech-to-text.enable = true;
-
-  # Enable Firefox PWA support
-  services.firefox-pwa = {
-    enable = true;
-    autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
-  };
-
-  # Enable PWA desktop shortcuts
-  services.pwa-shortcuts.enable = true;
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
