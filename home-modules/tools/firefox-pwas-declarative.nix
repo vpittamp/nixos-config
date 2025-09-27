@@ -61,7 +61,7 @@ let
     {
       name = "Headlamp";
       url = "https://headlamp.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/headlamp.png";  # Official Headlamp logo
+      icon = "file:///etc/nixos/assets/pwa-icons/headlamp.png";  # Official Headlamp logo (updated)
       description = "Kubernetes Dashboard";
       categories = "Development;System;";
       keywords = "kubernetes;k8s;dashboard;monitoring;";
@@ -73,6 +73,14 @@ let
       description = "Home Automation Platform";
       categories = "Network;RemoteAccess;";
       keywords = "home;automation;smart;iot;assistant;";
+    }
+    {
+      name = "Uber Eats";
+      url = "https://www.ubereats.com";
+      icon = "file:///etc/nixos/assets/pwa-icons/uber-eats.png";  # Official Uber Eats logo
+      description = "Food Delivery Service";
+      categories = "Network;Office;";
+      keywords = "food;delivery;restaurant;uber;";
     }
   ];
 
