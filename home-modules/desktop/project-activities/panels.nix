@@ -6,14 +6,14 @@ let
     let
       # These are the actual stable IDs from firefoxpwa profile list
       # Retrieved via: firefoxpwa profile list | grep "^- " | awk -F'[()]' '{print $2}'
-      # Updated: 2025-09-27
-      googleId = "01K664F9E8KXZPXYF4V1Q8A93V";  # Google AI mode
-      youtubeId = "01K663E3K8FMGTFVQ6Z6Q2RX7X";
-      giteaId = "01K663E4T77WRVG5SVE0WQQPT0";
-      backstageId = "01K663E623PJ5W8R659HGSCXBS";
-      kargoId = "01K663E79AJG7Z2PSRWF0SXFBE";
-      argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
-      headlampId = "01K663EA6GPY4AYYH39956ZMYP";
+      # Updated: 2025-09-27 - Fresh install after update
+      googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
+      youtubeId = "01K665SQJBZ9AXWT48RQD12DFC";
+      giteaId = "01K665SRSVT5KS6ZG7QKCRW2WG";
+      backstageId = "01K665ST3HWBRW19VGNPXAT4ZP";
+      kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
+      argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
+      headlampId = "01K665SYBT3VHKC13SSQYQPQKZ";
     in
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +

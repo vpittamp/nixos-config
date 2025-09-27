@@ -404,8 +404,9 @@ in {
       if [ -f /etc/nixos/scripts/pwa-update-panels.sh ]; then
         /etc/nixos/scripts/pwa-update-panels.sh
       else
-        echo "Panel update script not found. Trying inline version..."
-        ${builtins.readFile /etc/nixos/scripts/pwa-update-panels.sh}
+        echo "Error: Panel update script not found at /etc/nixos/scripts/pwa-update-panels.sh"
+        echo "Please ensure the script exists or run from within /etc/nixos"
+        exit 1
       fi
     '')
     (pkgs.writeShellScriptBin "pwa-get-ids" ''
