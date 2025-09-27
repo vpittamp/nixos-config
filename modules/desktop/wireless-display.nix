@@ -6,9 +6,18 @@
   environment.systemPackages = with pkgs; [
     # AirPlay server - receive AirPlay streams from iOS/macOS
     uxplay
-    
+
     # Miracast sender - send to TVs/displays (GNOME app works in KDE)
     gnome-network-displays
+
+    # Miracast command-line implementation
+    miraclecast
+
+    # Web-based screen sharing (any device with browser)
+    deskreen
+
+    # Control and mirror Android devices
+    scrcpy
   ];
   
   # Open firewall for AirPlay

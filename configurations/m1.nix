@@ -21,6 +21,7 @@
     ../modules/desktop/remote-access.nix
     ../modules/desktop/firefox-pwa.nix
     ../modules/desktop/pwa-shortcuts.nix
+    ../modules/desktop/wireless-display.nix
 
     # Services
     ../modules/services/development.nix
