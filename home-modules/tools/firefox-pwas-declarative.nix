@@ -225,6 +225,15 @@ let
     fi
 
     echo "PWA management completed"
+
+    # Optional: Pin to taskbar if the script exists
+    if command -v pwa-pin-taskbar >/dev/null 2>&1; then
+      echo "Updating taskbar pins..."
+      pwa-pin-taskbar 2>/dev/null || echo "Taskbar pinning not configured"
+    elif [ -x /etc/nixos/scripts/pwa-taskbar-pin.sh ]; then
+      echo "Updating taskbar pins..."
+      /etc/nixos/scripts/pwa-taskbar-pin.sh 2>/dev/null || echo "Taskbar pinning not configured"
+    fi
   '';
 
   # Script to auto-install PWAs (idempotent)
