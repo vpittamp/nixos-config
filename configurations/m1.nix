@@ -25,12 +25,12 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/speech-to-text.nix
+    # ../modules/services/speech-to-text.nix  # Disabled - caused issues on Hetzner
     ../modules/services/home-assistant.nix
 
     # Browser integrations with 1Password
-    ../modules/desktop/firefox-1password.nix
-    ../modules/desktop/chromium-1password.nix
+    # ../modules/desktop/firefox-1password.nix  # Disabled - not tested yet
+    # ../modules/desktop/chromium-1password.nix  # Disabled - not tested yet
   ];
 
   # Provide DisplayLink binaries automatically by fetching from Synaptics.
@@ -248,7 +248,27 @@
     # Tools that work well on ARM
     neovim
     alacritty
+
+    # Firefox PWA support (same as Hetzner)
+    firefoxpwa  # Native component for Progressive Web Apps
+
+    # Image processing for PWA icons
+    imagemagick  # For converting and manipulating images
+    librsvg      # For SVG to PNG conversion
   ];
+
+  # Firefox configuration with PWA support (same as Hetzner)
+  programs.firefox = {
+    enable = lib.mkDefault true;
+    nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
+  };
+
+  # Note: PWA installation and management:
+  # - The firefoxpwa package and Firefox native messaging are configured
+  # - To install PWAs: firefoxpwa site install <url>
+  # - To list PWAs: firefoxpwa profile list
+  # - For declarative PWA management, use home-manager with firefox-pwas-managed.nix module
+  # - Desktop entries will be created in ~/.local/share/applications/
   
   # System state version
   system.stateVersion = "25.11";
