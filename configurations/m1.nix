@@ -19,19 +19,19 @@
     # Desktop environment
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
-    ../modules/desktop/firefox-pwa.nix
-    ../modules/desktop/pwa-shortcuts.nix
+    # ../modules/desktop/firefox-pwa.nix  # Removed - module doesn't exist
+    # ../modules/desktop/pwa-shortcuts.nix  # Removed - module doesn't exist
 
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/speech-to-text.nix
+    # ../modules/services/speech-to-text.nix  # Disabled - caused issues on Hetzner
     ../modules/services/home-assistant.nix
 
     # Browser integrations with 1Password
-    ../modules/desktop/firefox-1password.nix
-    ../modules/desktop/chromium-1password.nix
+    # ../modules/desktop/firefox-1password.nix  # Disabled - not tested yet
+    # ../modules/desktop/chromium-1password.nix  # Disabled - not tested yet
   ];
 
   # Provide DisplayLink binaries automatically by fetching from Synaptics.
@@ -53,17 +53,17 @@
   # System identification
   networking.hostName = "nixos-m1";
 
-  # Enable speech-to-text service
-  services.speech-to-text.enable = true;
+  # Speech-to-text service - disabled due to issues
+  # services.speech-to-text.enable = true;
 
-  # Enable Firefox PWA support
-  services.firefox-pwa = {
-    enable = true;
-    autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
-  };
+  # Firefox PWA support - removed (modules don't exist)
+  # services.firefox-pwa = {
+  #   enable = true;
+  #   autoInstallPWAs = true;  # Automatically install YouTube and Google AI PWAs
+  # };
 
-  # Enable PWA desktop shortcuts
-  services.pwa-shortcuts.enable = true;
+  # PWA desktop shortcuts - removed (module doesn't exist)
+  # services.pwa-shortcuts.enable = true;
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
