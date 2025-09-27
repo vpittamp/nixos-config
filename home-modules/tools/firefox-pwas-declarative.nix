@@ -66,6 +66,14 @@ let
       categories = "Development;System;";
       keywords = "kubernetes;k8s;dashboard;monitoring;";
     }
+    {
+      name = "Home Assistant";
+      url = "http://localhost:8123";
+      icon = "file:///etc/nixos/assets/pwa-icons/home-assistant.png";  # Official Home Assistant logo
+      description = "Home Automation Platform";
+      categories = "Network;RemoteAccess;";
+      keywords = "home;automation;smart;iot;assistant;";
+    }
   ];
 
   # Script to install and manage PWAs

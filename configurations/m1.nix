@@ -29,7 +29,8 @@
     ../modules/services/home-assistant.nix
 
     # Browser integrations with 1Password
-    # ../modules/desktop/firefox-1password.nix  # Disabled - not tested yet
+    ../modules/desktop/firefox-1password.nix  # Enable 1Password for Firefox and PWAs
+    ../modules/desktop/firefox-pwa-1password.nix  # Enable 1Password in PWAs
     # ../modules/desktop/chromium-1password.nix  # Disabled - not tested yet
   ];
 

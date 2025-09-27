@@ -28,6 +28,7 @@ let
     kargoId = "01K663E79AJG7Z2PSRWF0SXFBE";
     argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
     headlampId = "01K663EA6GPY4AYYH39956ZMYP";
+    homeAssistantId = "01K66AGFCPXE13NK7YXFEF78BN";  # Home Assistant
   };
 
   # Select appropriate IDs based on hostname
@@ -40,6 +41,7 @@ let
   pwaLaunchers =
     let
       inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId headlampId;
+      homeAssistantId = pwaIds.homeAssistantId or "";  # Use empty string if not defined
     in
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +
@@ -47,7 +49,8 @@ let
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${backstageId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${kargoId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${argoCDId}.desktop" +
-      ",file:///home/vpittamp/.local/share/applications/FFPWA-${headlampId}.desktop";
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${headlampId}.desktop" +
+      (if homeAssistantId != "" then ",file:///home/vpittamp/.local/share/applications/FFPWA-${homeAssistantId}.desktop" else "");
 
   primaryPanelIni = ''
 [Containments][410]
