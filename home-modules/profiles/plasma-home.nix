@@ -13,7 +13,7 @@
     #     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix
     ../tools/firefox-pwas-declarative.nix  # Declaratively install and manage PWAs
-    ../tools/pwa-taskbar-pins.nix  # Auto-pin PWAs to taskbar
+    # ../tools/pwa-taskbar-pins.nix  # Disabled - using panels.nix instead
     inputs.plasma-manager.homeModules.plasma-manager
   ];
 
@@ -22,11 +22,11 @@
     overrideConfig = false;  # Keep false to allow manual customization
   };
 
-  # Enable PWA taskbar pinning
-  programs.pwa-taskbar-pins = {
-    enable = true;
-    autoPin = true;  # Automatically pin PWAs after installation
-  };
+  # Disabled - using panels.nix for permanent pins instead
+  # programs.pwa-taskbar-pins = {
+  #   enable = true;
+  #   autoPin = true;  # Automatically pin PWAs after installation
+  # };
 
   # Disable PWA taskbar module - causes conflicts
   # programs.plasma-pwa-taskbar = {

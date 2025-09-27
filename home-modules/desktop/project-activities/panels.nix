@@ -6,13 +6,14 @@ let
     let
       # These are the actual stable IDs from firefoxpwa profile list
       # Retrieved via: firefoxpwa profile list | grep "^- " | awk -F'[()]' '{print $2}'
-      googleId = "01K65QHPR1G9PYP1FTNPV7XJ8B";
-      youtubeId = "01K65QHRDRDQQJ31HZJ3FXTTH8";
-      giteaId = "01K65QHT8EV1XW8A16DJKVJH0P";
-      backstageId = "01K65QHW1ZWE6G6BC689R0R8ZA";
-      kargoId = "01K65QHXYMRA834X84JAWAMP78";
-      argoCDId = "01K65QHZY8BMA6KNEHQ7Q45FSS";
-      headlampId = "01K65QJ1Y1PF898B19YWY3HBN8";
+      # Updated: 2025-09-27
+      googleId = "01K664F9E8KXZPXYF4V1Q8A93V";  # Google AI mode
+      youtubeId = "01K663E3K8FMGTFVQ6Z6Q2RX7X";
+      giteaId = "01K663E4T77WRVG5SVE0WQQPT0";
+      backstageId = "01K663E623PJ5W8R659HGSCXBS";
+      kargoId = "01K663E79AJG7Z2PSRWF0SXFBE";
+      argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
+      headlampId = "01K663EA6GPY4AYYH39956ZMYP";
     in
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +

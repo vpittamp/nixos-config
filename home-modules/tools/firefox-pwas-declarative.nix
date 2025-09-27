@@ -11,12 +11,12 @@ let
   # Define PWAs to be installed
   pwas = [
     {
-      name = "Google";
-      url = "https://www.google.com";
+      name = "Google AI";
+      url = "https://www.google.com/search?udm=50";  # AI mode enabled
       icon = "file:///etc/nixos/assets/pwa-icons/google.png";  # Custom high-res icon
-      description = "Google Search";
+      description = "Google AI Search";
       categories = "Network;WebBrowser;";
-      keywords = "search;web;";
+      keywords = "search;web;ai;";
     }
     {
       name = "YouTube";
@@ -225,6 +225,12 @@ let
     fi
 
     echo "PWA management completed"
+
+    # Apply dialog fixes for Wayland compatibility
+    if [ -x /etc/nixos/scripts/fix-pwa-dialogs.sh ]; then
+      echo "Applying dialog fixes..."
+      /etc/nixos/scripts/fix-pwa-dialogs.sh >/dev/null 2>&1 || echo "Dialog fixes not available"
+    fi
 
     # Optional: Pin to taskbar if the script exists
     if command -v pwa-pin-taskbar >/dev/null 2>&1; then
