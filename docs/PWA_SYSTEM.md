@@ -44,7 +44,7 @@ This document describes the declarative PWA management system for NixOS with KDE
 │       └── project-activities/
 │           └── panels.nix                 # KDE panel configuration with PWA pins
 ├── scripts/
-│   ├── pwa-update-panels.sh              # Dynamic panel updater
+│   ├── pwa-update-panels-fixed.sh        # Safe panel status checker
 │   └── fix-pwa-icons.sh                  # Icon processing script
 ├── assets/
 │   └── pwa-icons/                        # Custom PWA icons (512x512 PNG)
@@ -88,7 +88,7 @@ PWAs are declared in `/etc/nixos/home-modules/tools/firefox-pwas-declarative.nix
 
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `pwa-update-panels` | Update taskbar with current PWAs | Immediate but temporary update |
+| `pwa-update-panels` | Check PWA panel status and show required updates | Shows IDs for manual panels.nix update |
 | `plasmashell --replace` | Restart Plasma shell | Apply panel changes |
 
 ### Maintenance Commands
@@ -127,14 +127,11 @@ sudo nixos-rebuild switch --flake .#hetzner
 # Step 4: Install PWA
 pwa-install-all
 
-# Step 5: Update panels (choose one):
-# Option A: Quick update (temporary)
-pwa-update-panels
-
-# Option B: Permanent update
-pwa-get-ids  # Copy the output
+# Step 5: Update panels for permanent pinning
+pwa-update-panels  # Shows current status and IDs
+# Copy the suggested panel configuration
 vim /etc/nixos/home-modules/desktop/project-activities/panels.nix
-# Add the new ID and update launcher list
+# Update the appropriate machine's IDs (hetznerIds or m1Ids)
 sudo nixos-rebuild switch --flake .#hetzner
 ```
 
@@ -241,13 +238,14 @@ cat ~/.local/share/applications/FFPWA-*.desktop | grep Icon
 
 #### Taskbar Pins Lost
 ```bash
-# Get current IDs
-pwa-get-ids
+# Check current status and get IDs
+pwa-update-panels
 
-# Update panels.nix with IDs
+# The command will show the exact panel configuration needed
+# Copy the suggested IDs to panels.nix
 vim /etc/nixos/home-modules/desktop/project-activities/panels.nix
 
-# Rebuild
+# Rebuild to apply permanent pins
 sudo nixos-rebuild switch --flake .#hetzner
 ```
 
@@ -289,7 +287,7 @@ journalctl --user -u manage-pwas.service
 
 | Name | URL | Purpose |
 |------|-----|---------|
-| Google | https://www.google.com | Search engine |
+| Google AI | https://www.google.com/search?udm=50 | Google AI mode search |
 | YouTube | https://www.youtube.com | Video platform |
 | Gitea | https://gitea.cnoe.localtest.me:8443 | Git repository |
 | Backstage | https://backstage.cnoe.localtest.me:8443 | Developer portal |
@@ -356,6 +354,8 @@ The configuration automatically detects the hostname and uses the appropriate ID
 4. **Document both sets of IDs** - Update panels.nix when installing on new machines
 5. **Use meaningful names** - PWA names should be clear and consistent
 6. **Regular maintenance** - Run `pwa-list` periodically to check status
+7. **Use safe panel updates** - The `pwa-update-panels` command only shows status, never modifies read-only files
+8. **Always rebuild after panel changes** - Panel configuration is managed by home-manager and requires rebuild
 
 ## Migration from Old System
 
@@ -375,6 +375,6 @@ If migrating from the old imperative PWA system:
 
 ---
 
-*System Version: 2.0 (Declarative)*
+*System Version: 2.1 (Declarative with safe panel updates)*
 *Last Updated: 2025-09-27*
 *Maintainer: NixOS Configuration*
