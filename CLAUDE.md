@@ -131,6 +131,30 @@ Controlled by environment variables or module imports:
 2. **User-specific** - Edit `user/packages.nix`
 3. **Target-specific** - Add to specific configuration in `configurations/`
 
+## 🌐 PWA Management
+
+### Installing PWAs
+```bash
+# Install all declared PWAs
+pwa-install-all
+
+# Update taskbar with PWA icons
+pwa-update-panels
+
+# Get PWA IDs for permanent pinning
+pwa-get-ids
+
+# List configured and installed PWAs
+pwa-list
+```
+
+### Adding New PWAs
+1. Edit `home-modules/tools/firefox-pwas-declarative.nix`
+2. Add PWA definition with name, URL, and icon
+3. Rebuild: `sudo nixos-rebuild switch --flake .#<target>`
+4. Install: `pwa-install-all`
+5. Update panels: `pwa-update-panels` or update `panels.nix` with IDs
+
 ## 🔧 Common Tasks
 
 ### Testing Changes
@@ -172,6 +196,11 @@ nix flake lock --update-input nixpkgs
   - Removed X11-specific workarounds and touchegg (Wayland has native gestures)
   - Updated environment variables for Wayland compatibility
   - Note: Experimental GPU driver options available if needed (see m1.nix comments)
+- **Implemented Declarative PWA System** - Firefox PWAs with KDE integration
+  - Declarative PWA configuration in `firefox-pwas-declarative.nix`
+  - Automatic taskbar pinning with `panels.nix`
+  - Custom icon support in `/etc/nixos/assets/pwa-icons/`
+  - Helper commands: `pwa-install-all`, `pwa-update-panels`, `pwa-get-ids`
 - Added comprehensive 1Password integration
 - Fixed M1 display scaling and memory issues
 - Implemented conditional module features (GUI vs headless)
@@ -203,6 +232,7 @@ nix flake lock --update-input nixpkgs
 
 - `README.md` - Project overview and quick start
 - `docs/ARCHITECTURE.md` - Detailed architecture documentation
+- `docs/PWA_SYSTEM.md` - PWA (Progressive Web App) management system
 - `docs/M1_SETUP.md` - Apple Silicon setup and troubleshooting
 - `docs/ONEPASSWORD.md` - 1Password integration guide
 - `docs/ONEPASSWORD_SSH.md` - 1Password SSH and Git authentication guide

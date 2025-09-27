@@ -378,7 +378,7 @@ in {
     };
   };
 
-  # Provide installation helper script
+  # Provide installation helper scripts
   home.packages = [
     pkgs.firefoxpwa
     (pkgs.writeShellScriptBin "pwa-install-all" ''
@@ -392,6 +392,30 @@ in {
       echo ""
       echo "Installed PWAs:"
       ${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | grep "^- " || echo "  None"
+    '')
+    (pkgs.writeShellScriptBin "pwa-update-panels" ''
+      # Update KDE taskbar with installed PWA icons
+      if [ -f /etc/nixos/scripts/pwa-update-panels.sh ]; then
+        /etc/nixos/scripts/pwa-update-panels.sh
+      else
+        echo "Panel update script not found. Trying inline version..."
+        ${builtins.readFile /etc/nixos/scripts/pwa-update-panels.sh}
+      fi
+    '')
+    (pkgs.writeShellScriptBin "pwa-get-ids" ''
+      # Get current PWA IDs for updating panels.nix
+      echo "Current PWA IDs (for panels.nix):"
+      echo ""
+      firefoxpwa profile list 2>/dev/null | grep "^- " | while IFS=: read -r name_part rest; do
+        name=$(echo "$name_part" | sed 's/^- //' | xargs)
+        id=$(echo "$rest" | awk -F'[()]' '{print $2}' | xargs)
+        if [ ! -z "$id" ]; then
+          varname=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
+          echo "      ''${varname}Id = \"$id\";  # $name"
+        fi
+      done
+      echo ""
+      echo "Copy these IDs to panels.nix and rebuild to make permanent."
     '')
   ];
 }
