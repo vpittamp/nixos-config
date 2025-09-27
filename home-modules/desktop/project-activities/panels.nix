@@ -17,6 +17,8 @@ let
     kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
     argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
     headlampId = "01K666N65ZWMJ8T780CZST37CA";  # Headlamp with proper icon
+    homeAssistantId = "01K66QAZXGDH3SBWPPNPV1YGRH";  # Home Assistant
+    uberEatsId = "01K66QB12CHJDWAET5M9BKPEF5";  # Uber Eats
   };
 
   # M1 MacBook PWA IDs (updated 2025-09-27)
@@ -41,9 +43,7 @@ let
   # Generate PWA launcher paths
   pwaLaunchers =
     let
-      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId headlampId;
-      homeAssistantId = pwaIds.homeAssistantId or "";  # Use empty string if not defined
-      uberEatsId = pwaIds.uberEatsId or "";  # Use empty string if not defined
+      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId headlampId homeAssistantId uberEatsId;
     in
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop" +
@@ -52,8 +52,8 @@ let
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${kargoId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${argoCDId}.desktop" +
       ",file:///home/vpittamp/.local/share/applications/FFPWA-${headlampId}.desktop" +
-      (if homeAssistantId != "" then ",file:///home/vpittamp/.local/share/applications/FFPWA-${homeAssistantId}.desktop" else "") +
-      (if uberEatsId != "" then ",file:///home/vpittamp/.local/share/applications/FFPWA-${uberEatsId}.desktop" else "");
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${homeAssistantId}.desktop" +
+      ",file:///home/vpittamp/.local/share/applications/FFPWA-${uberEatsId}.desktop";
 
   primaryPanelIni = ''
 [Containments][410]
