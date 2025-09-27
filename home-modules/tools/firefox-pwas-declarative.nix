@@ -4,55 +4,73 @@
 with lib;
 
 let
+  # Custom icons can be placed in /etc/nixos/assets/pwa-icons/
+  # Use format: "file:///etc/nixos/assets/pwa-icons/name.png" for local icons
+  # Or use URLs for remote icons
+
   # Define PWAs to be installed
   pwas = [
     {
       name = "Google";
       url = "https://www.google.com";
-      icon = "https://www.google.com/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/google.png";  # Custom high-res icon
       description = "Google Search";
+      categories = "Network;WebBrowser;";
+      keywords = "search;web;";
     }
     {
       name = "YouTube";
       url = "https://www.youtube.com";
-      icon = "https://www.youtube.com/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/youtube.png";  # Custom high-res icon
       description = "YouTube Video Platform";
+      categories = "AudioVideo;Video;";
+      keywords = "video;streaming;";
     }
     {
       name = "Gitea";
       url = "https://gitea.cnoe.localtest.me:8443";
       icon = "https://gitea.cnoe.localtest.me:8443/assets/img/favicon.png";
       description = "Git Repository Management";
+      categories = "Development;";
+      keywords = "git;code;repository;";
     }
     {
       name = "Backstage";
       url = "https://backstage.cnoe.localtest.me:8443";
       icon = "https://backstage.cnoe.localtest.me:8443/favicon.ico";
       description = "Developer Portal";
+      categories = "Development;";
+      keywords = "portal;platform;developer;";
     }
     {
       name = "Kargo";
       url = "https://kargo.cnoe.localtest.me:8443";
       icon = "https://kargo.cnoe.localtest.me:8443/favicon.ico";
       description = "GitOps Promotion";
+      categories = "Development;";
+      keywords = "gitops;deployment;kubernetes;";
     }
     {
       name = "ArgoCD";
       url = "https://argocd.cnoe.localtest.me:8443";
-      icon = "https://argocd.cnoe.localtest.me:8443/assets/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/argocd.png";  # Custom ArgoCD logo
       description = "GitOps Continuous Delivery";
+      categories = "Development;";
+      keywords = "gitops;cd;kubernetes;deployment;";
     }
     {
       name = "Headlamp";
       url = "https://headlamp.cnoe.localtest.me:8443";
       icon = "https://headlamp.cnoe.localtest.me:8443/favicon.ico";
       description = "Kubernetes Dashboard";
+      categories = "Development;System;";
+      keywords = "kubernetes;k8s;dashboard;monitoring;";
     }
   ];
 
   # Script to install and manage PWAs
   managePWAsScript = pkgs.writeShellScript "manage-pwas" ''
-    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:$PATH"
+    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:${pkgs.imagemagick}/bin:$PATH"
     FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
     DESKTOP_DIR="$HOME/.local/share/applications"
     STATE_FILE="$HOME/.config/firefoxpwa/installed-pwas.json"
@@ -136,6 +154,52 @@ let
     MimeType=x-scheme-handler/https;x-scheme-handler/http;
     DESKTOP
           chmod 644 "$DESKTOP_DIR/FFPWA-$PWA_ID.desktop"
+
+          # Process icon for proper KRunner display
+          ICON_PATH="${pwa.icon}"
+          if [[ "$ICON_PATH" == file://* ]]; then
+            ICON_FILE="''${ICON_PATH#file://}"
+            if [ -f "$ICON_FILE" ]; then
+              echo "  Processing custom icon for ${pwa.name}"
+
+              # Create all required icon sizes for KDE integration
+              for size in 16 22 24 32 48 64 128 256 512; do
+                icon_dir="$HOME/.local/share/icons/hicolor/''${size}x''${size}/apps"
+                mkdir -p "$icon_dir"
+
+                # Check if icon is square and resize appropriately
+                dimensions=$(identify "$ICON_FILE" 2>/dev/null | awk '{print $3}' || echo "")
+                if [ ! -z "$dimensions" ]; then
+                  width=$(echo $dimensions | cut -dx -f1)
+                  height=$(echo $dimensions | cut -dx -f2)
+
+                  if [ "$width" != "$height" ]; then
+                    # Convert to square format
+                    magick "$ICON_FILE" \
+                      -resize ''${size}x''${size} \
+                      -gravity center \
+                      -background transparent \
+                      -extent ''${size}x''${size} \
+                      "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
+                    convert "$ICON_FILE" \
+                      -resize ''${size}x''${size} \
+                      -gravity center \
+                      -background transparent \
+                      -extent ''${size}x''${size} \
+                      "$icon_dir/FFPWA-$PWA_ID.png"
+                  else
+                    # Just resize
+                    magick "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
+                    convert "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png"
+                  fi
+                else
+                  # Fallback if identify fails
+                  magick "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
+                  convert "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png"
+                fi
+              done
+            fi
+          fi
         fi
       fi
 
@@ -144,6 +208,20 @@ let
     # Update desktop database
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+    fi
+
+    # Clear old icon cache for KRunner
+    rm -rf ~/.cache/icon-cache.kcache 2>/dev/null || true
+
+    # Update XDG menu
+    if command -v xdg-desktop-menu >/dev/null 2>&1; then
+      xdg-desktop-menu forceupdate 2>/dev/null || true
+    fi
+
+    # Rebuild KDE cache for KRunner icon visibility
+    if command -v kbuildsycoca6 >/dev/null 2>&1; then
+      kbuildsycoca6 --noincremental 2>/dev/null || true
+      echo "KDE cache rebuilt for icon visibility"
     fi
 
     echo "PWA management completed"
@@ -206,11 +284,19 @@ let
         SERVER_PID=$!
         sleep 1
 
-        # Try to install using local manifest
+        # Try to install using local manifest with proper icon
+        ICON_ARG=""
+        if [ ! -z "${pwa.icon}" ]; then
+          ICON_ARG="--icon-url ${pwa.icon}"
+        fi
+
         if $FFPWA site install "http://localhost:$PORT/$(basename $MANIFEST_FILE)" \
              --document-url "${pwa.url}" \
              --name "${pwa.name}" \
              --description "${pwa.description}" \
+             $ICON_ARG \
+             ${if (pwa.categories or null) != null then "--categories \"${pwa.categories}\"" else ""} \
+             ${if (pwa.keywords or null) != null then "--keywords \"${pwa.keywords}\"" else ""} \
              2>&1 | tee /tmp/pwa-install.log | grep -q "Web app installed"; then
           echo "✓ ${pwa.name} - successfully installed"
           INSTALLED_COUNT=$((INSTALLED_COUNT + 1))

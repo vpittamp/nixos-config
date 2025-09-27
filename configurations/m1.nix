@@ -52,8 +52,8 @@
   # System identification
   networking.hostName = "nixos-m1";
 
-  # Enable speech-to-text service
-  services.speech-to-text.enable = true;
+  # Speech-to-text service - disabled (module doesn't exist)
+  # services.speech-to-text.enable = true;
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
