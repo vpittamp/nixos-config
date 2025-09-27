@@ -7,6 +7,7 @@ with lib;
 let
   # Script to generate desktop files for all installed PWAs
   updatePWAsScript = pkgs.writeShellScript "update-pwas" ''
+    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:$PATH"
     FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
     DESKTOP_DIR="$HOME/.local/share/applications"
 
