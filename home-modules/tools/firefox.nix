@@ -32,13 +32,13 @@ in
       # Allow native messaging host for Plasma integration
       EnableNativeMessagingHosts = true;
     };
-    
+
     profiles = {
       default = {
         id = 0;
         name = "Default";
         isDefault = true;
-        
+
         # Search engines configuration
         search = {
           default = "google";  # Use Google as default search engine (use lowercase id)
@@ -72,7 +72,7 @@ in
             };
           };
         };
-        
+
         # Firefox settings with 1Password support
         settings = {
           # Homepage and startup settings
@@ -84,7 +84,7 @@ in
 
           # Enable native messaging for 1Password
           "signon.rememberSignons" = false;
-          
+
           # Enable native messaging for 1Password
           "extensions.1Password.native-messaging-hosts" = true;
           "dom.event.clipboardevents.enabled" = true; # Required for 1Password
@@ -108,7 +108,7 @@ in
 
           # Ensure extensions are active immediately
           "extensions.webextensions.restrictedDomains" = "";  # Allow on all domains
-          
+
           # Show extension buttons on toolbar (not unified menu)
           "extensions.unifiedExtensions.enabled" = false;
 
@@ -144,23 +144,36 @@ in
             currentVersion = 20;
             newElementCount = 5;
           };
-          
+
           # WebAuthn/Passkeys
           "security.webauth.webauthn" = true;
           "security.webauth.u2f" = true;
-          
-          # Privacy settings
+
+          # Privacy settings optimized for OAuth compatibility
           "browser.send_pings" = false;
           "browser.urlbar.speculativeConnect.enabled" = false;
           "media.eme.enabled" = true;
           "media.gmp-widevinecdm.enabled" = true;
           "media.navigator.enabled" = false;
-          "network.cookie.cookieBehavior" = 1;
-          "network.http.referer.XOriginPolicy" = 2;
-          "network.http.referer.XOriginTrimmingPolicy" = 2;
-          "privacy.firstparty.isolate" = true;
+
+          # Cookie and tracking protection settings optimized for OAuth compatibility
+          # Standard mode (1) instead of Strict to prevent OAuth issues
+          "network.cookie.cookieBehavior" = 1;  # 1=Standard, 4=Strict, 5=ETP Strict
+          "network.cookie.sameSite.laxByDefault" = false;  # Allow cross-site cookies for OAuth
+          "network.cookie.sameSite.noneRequiresSecure" = true;  # Require secure for SameSite=None
+
+          # Referer settings - less strict to avoid OAuth issues
+          "network.http.referer.XOriginPolicy" = 1;  # 0=always, 1=same-origin, 2=cross-origin
+          "network.http.referer.XOriginTrimmingPolicy" = 1;  # 0=full, 1=scheme+host+port, 2=scheme+host
+
+          # Disable first party isolation as it breaks OAuth flows
+          "privacy.firstparty.isolate" = false;
+
+          # Enhanced Tracking Protection - use Standard mode for OAuth compatibility
           "privacy.trackingprotection.enabled" = true;
-          
+          "privacy.trackingprotection.socialtracking.enabled" = false;  # Disable social tracking blocking
+          "browser.contentblocking.category" = "standard";  # Use standard instead of strict
+
           # UI settings
           "browser.toolbars.bookmarks.visibility" = "always";
           "browser.tabs.inTitlebar" = 1;
@@ -168,19 +181,19 @@ in
 
           # Display settings - let Wayland/KDE handle scaling
           "layout.css.devPixelsPerPx" = "-1.0";  # Auto-detect from system (KDE is at 2x)
-          
+
           # Performance and Wayland support
           "gfx.webrender.all" = true;
           "widget.use-xdg-desktop-portal.file-picker" = 1;  # Use native file picker on Wayland
           "widget.use-xdg-desktop-portal.mime-handler" = 1;  # Use XDG portal for mime handling
           "media.ffmpeg.vaapi.enabled" = true;
           "media.hardware-video-decoding.force-enabled" = true;
-          
+
           # Developer settings
           "devtools.theme" = "dark";
           "devtools.debugger.remote-enabled" = true;
           "devtools.chrome.enabled" = true;
-          
+
           # Disable telemetry
           "browser.newtabpage.activity-stream.telemetry" = false;
           "browser.ping-centre.telemetry" = false;
@@ -188,7 +201,7 @@ in
           "toolkit.telemetry.enabled" = false;
           "toolkit.telemetry.unified" = false;
         };
-        
+
         # Bookmarks
         bookmarks = {
           force = true;  # Required for declarative bookmarks

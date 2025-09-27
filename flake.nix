@@ -94,7 +94,28 @@
         hetzner = mkSystem {
           hostname = "nixos-hetzner";
           system = "x86_64-linux";
-          modules = [ ./configurations/hetzner.nix ];
+          modules = [ 
+            disko.nixosModules.disko
+            ./configurations/hetzner.nix 
+          ];
+        };
+        
+        # Minimal Hetzner for nixos-anywhere deployment
+        hetzner-minimal = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-minimal.nix
+          ];
+        };
+        
+        # Hetzner example with our SSH key
+        hetzner-example = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-example.nix
+          ];
         };
         
         # Secondary: M1 MacBook Pro (aarch64)

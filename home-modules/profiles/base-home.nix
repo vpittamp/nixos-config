@@ -46,7 +46,7 @@ in
     ../tools/fzf.nix
     # ../tools/chromium.nix  # Disabled - using Firefox as default browser
     ../tools/firefox.nix
-    ../tools/firefox-pwas-declarative.nix
+    # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
@@ -88,20 +88,20 @@ in
 
   home.sessionVariables = sessionConfig;
 
-  # Firefox PWAs configuration
-  programs.firefox-pwas = {
-    enable = true;
-    pwas = [
-      # CNOE Developer Tools
-      "argocd"
-      "gitea"
-      "backstage"
-      "headlamp"
-      "kargo"
-      # Other PWAs
-      "google"
-      "youtube"
-    ];
-    pinToTaskbar = true;  # Pin them to KDE taskbar
-  };
+  # Firefox PWAs configuration - DISABLED (causing boot hang)
+  # programs.firefox-pwas = {
+  #   enable = true;
+  #   pwas = [
+  #     # CNOE Developer Tools
+  #     "argocd"
+  #     "gitea"
+  #     "backstage"
+  #     "headlamp"
+  #     "kargo"
+  #     # Other PWAs
+  #     "google"
+  #     "youtube"
+  #   ];
+#     pinToTaskbar = true;  # Pin them to KDE taskbar
+#   };
 }
