@@ -12,7 +12,7 @@
     #     ../apps/headlamp.nix
     #     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix
-    ../tools/firefox-pwas-managed.nix  # Declarative PWA management
+    ../tools/firefox-pwas-auto.nix  # Auto-detect and manage installed PWAs
     inputs.plasma-manager.homeModules.plasma-manager
   ];
 
