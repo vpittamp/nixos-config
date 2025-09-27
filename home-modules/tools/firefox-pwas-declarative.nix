@@ -29,7 +29,7 @@ let
     {
       name = "Gitea";
       url = "https://gitea.cnoe.localtest.me:8443";
-      icon = "https://gitea.cnoe.localtest.me:8443/assets/img/favicon.png";
+      icon = "file:///etc/nixos/assets/pwa-icons/gitea.png";  # Official Gitea logo
       description = "Git Repository Management";
       categories = "Development;";
       keywords = "git;code;repository;";
@@ -37,7 +37,7 @@ let
     {
       name = "Backstage";
       url = "https://backstage.cnoe.localtest.me:8443";
-      icon = "https://backstage.cnoe.localtest.me:8443/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/backstage.png";  # Official Backstage logo
       description = "Developer Portal";
       categories = "Development;";
       keywords = "portal;platform;developer;";
@@ -45,7 +45,7 @@ let
     {
       name = "Kargo";
       url = "https://kargo.cnoe.localtest.me:8443";
-      icon = "https://kargo.cnoe.localtest.me:8443/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/kargo.png";  # Official Akuity Kargo logo
       description = "GitOps Promotion";
       categories = "Development;";
       keywords = "gitops;deployment;kubernetes;";
@@ -53,7 +53,7 @@ let
     {
       name = "ArgoCD";
       url = "https://argocd.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/argocd.png";  # Custom ArgoCD logo
+      icon = "file:///etc/nixos/assets/pwa-icons/argocd.png";  # Official CNCF ArgoCD logo
       description = "GitOps Continuous Delivery";
       categories = "Development;";
       keywords = "gitops;cd;kubernetes;deployment;";
@@ -61,7 +61,7 @@ let
     {
       name = "Headlamp";
       url = "https://headlamp.cnoe.localtest.me:8443";
-      icon = "https://headlamp.cnoe.localtest.me:8443/favicon.ico";
+      icon = "file:///etc/nixos/assets/pwa-icons/headlamp.png";  # Official Headlamp logo
       description = "Kubernetes Dashboard";
       categories = "Development;System;";
       keywords = "kubernetes;k8s;dashboard;monitoring;";
