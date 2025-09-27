@@ -8,53 +8,48 @@ with lib;
 let
   # Define all PWAs with their stable IDs and icon URLs
   pwas = {
-    claude = {
-      name = "Claude";
-      url = "https://claude.ai";
-      id = "01K63FXC9HKD0AS81V3P07NBC1";
-      icon = "https://claude.ai/apple-touch-icon.png";
-    };
-    chatgpt = {
-      name = "ChatGPT";
-      url = "https://chatgpt.com";
-      id = "01K63FXEJ8B7AV6A3CJB7W9DN2";
-      icon = "https://cdn.oaistatic.com/_next/static/media/apple-touch-icon.82af6fe1.png";
-    };
-    gemini = {
-      name = "Google Gemini";
-      url = "https://gemini.google.com";
-      id = "01K63FXAWFH80XQX260RP8FPGE";
-      icon = "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06b.png";
-    };
-    github = {
-      name = "GitHub";
-      url = "https://github.com";
-      id = "01K63FX9NK39YJS6DXX4WKBD32";
-      icon = "https://github.githubassets.com/favicons/favicon-dark.png";
-    };
-    gmail = {
-      name = "Gmail";
-      url = "https://mail.google.com";
-      id = "01K63FXMC4X923P036TRXDPFJ2";
-      icon = "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico";
-    };
-    argocd = {
-      name = "ArgoCD";
-      url = "https://argocd.tarnhelm.cloud";
-      id = "01K63FX8DD5YH7V19VZQ6PNR5F";
-      icon = "https://raw.githubusercontent.com/argoproj/argo-cd/master/docs/assets/logo.png";
-    };
-    backstage = {
-      name = "Backstage";
-      url = "https://backstage.tarnhelm.cloud";
-      id = "01K63FXHP54ADP56PFRTBHB1VV";
-      icon = "https://backstage.io/logo_assets/png/Icon_Teal.png";
+    # These IDs must match the installed PWAs from firefoxpwa profile list
+    google = {
+      name = "Google";
+      url = "https://www.google.com";
+      id = "01D12288367E14F3D20D5C3274";  # From Google profile
+      icon = "https://www.google.com/favicon.ico";
     };
     youtube = {
       name = "YouTube";
-      url = "https://youtube.com";
-      id = "01K63FXJYHTC0FYYQ80364P1TE";
-      icon = "https://www.youtube.com/s/desktop/12d6b690/img/favicon_144x144.png";
+      url = "https://www.youtube.com";
+      id = "019DB7F7C8868D4C4FA0121E19";  # From YouTube profile
+      icon = "https://www.youtube.com/favicon.ico";
+    };
+    gitea = {
+      name = "Gitea";
+      url = "https://gitea.cnoe.localtest.me:8443";
+      id = "01FEA664E5984E1A3E85E944F6";  # From Gitea profile
+      icon = "https://raw.githubusercontent.com/go-gitea/gitea/main/assets/logo.png";
+    };
+    backstage = {
+      name = "Backstage";
+      url = "https://backstage.cnoe.localtest.me:8443";
+      id = "0199D501A20B94AE3BB038B6BC";  # From Backstage profile
+      icon = "https://backstage.io/img/logo-gradient-on-dark.svg";
+    };
+    kargo = {
+      name = "Kargo";
+      url = "https://kargo.cnoe.localtest.me:8443";
+      id = "01738C30F3A05DAB2C1BC16C0A";  # From Kargo profile
+      icon = "https://raw.githubusercontent.com/akuity/kargo/main/ui/public/kargo-icon.png";
+    };
+    argocd = {
+      name = "ArgoCD";
+      url = "https://argocd.cnoe.localtest.me:8443";
+      id = "01CBD2EC47D2F8D8CF86034280";  # From ArgoCD profile
+      icon = "https://raw.githubusercontent.com/argoproj/argo-cd/master/docs/assets/logo.png";
+    };
+    headlamp = {
+      name = "Headlamp";
+      url = "https://headlamp.cnoe.localtest.me:8443";
+      id = "0167D0420CC8C9DFCD3751D068";  # From Headlamp profile
+      icon = "https://backstage.io/logo_assets/png/Icon_Teal.png";
     };
   };
 
