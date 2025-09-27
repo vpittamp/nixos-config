@@ -25,8 +25,9 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    # ../modules/services/speech-to-text.nix  # Disabled - caused issues on Hetzner
+    ../modules/services/speech-to-text-safe.nix  # Safe version without network dependencies
     ../modules/services/home-assistant.nix
+    ../modules/services/scrypted.nix  # Bridge for Circle View cameras and HomeKit devices
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix  # Enable 1Password for Firefox and PWAs
@@ -53,8 +54,8 @@
   # System identification
   networking.hostName = "nixos-m1";
 
-  # Speech-to-text service - disabled (module doesn't exist)
-  # services.speech-to-text.enable = true;
+  # Speech-to-text service - safe version enabled
+  services.speech-to-text.enable = true;
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [

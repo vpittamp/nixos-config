@@ -208,12 +208,13 @@ in
 
       # Python packages for speech processing
       (python3.withPackages (ps: with ps; [
-        vosk
+        # vosk  # Not in nixpkgs - will be installed manually
         pyaudio
         soundfile
         numpy
-        torch
-        torchaudio
+        # torch and torchaudio are large - install manually if needed
+        # torch
+        # torchaudio
       ]))
 
       # Input simulation
@@ -251,14 +252,7 @@ in
       VOSK_MODEL_PATH = "${voskModelPath}";
     };
 
-    # KDE Plasma shortcut configuration (if desktop is enabled)
-    home-manager.users.vpittamp = mkIf config.services.xserver.desktopManager.plasma6.enable {
-      # Add shortcut configuration for KDE
-      xdg.configFile."kglobalshortcutsrc".text = mkAfter ''
-        [nerd-dictation]
-        _k_friendly_name=Speech to Text
-        toggle=Meta+Alt+D,none,Toggle Dictation
-      '';
-    };
+    # Note: KDE shortcuts can be configured manually via System Settings
+    # or by adding to home-manager configuration separately
   };
 }
