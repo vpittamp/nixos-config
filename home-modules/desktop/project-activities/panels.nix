@@ -1,12 +1,12 @@
-{ lib, config, activities, mkUUID, ... }@args:
+{ lib, config, osConfig, activities, mkUUID, ... }@args:
 
 let
   # Machine-specific PWA IDs
   # Each machine generates unique IDs when PWAs are installed
   # Run 'pwa-get-ids' on each machine after installing PWAs to get these IDs
 
-  # Detect current hostname (use config if available, otherwise empty)
-  hostname = args.config.networking.hostName or "";
+  # Get hostname from osConfig which is passed from NixOS to home-manager
+  hostname = osConfig.networking.hostName or "";
 
   # Hetzner server PWA IDs (updated 2025-09-27 with new icons)
   hetznerIds = {
@@ -19,16 +19,15 @@ let
     headlampId = "01K666N65ZWMJ8T780CZST37CA";  # Headlamp with proper icon
   };
 
-  # M1 MacBook PWA IDs (to be updated after M1 PWA installation)
-  # Run 'pwa-get-ids' on M1 and update these
+  # M1 MacBook PWA IDs (updated 2025-09-27)
   m1Ids = {
-    googleId = "";  # TODO: Update after M1 PWA installation
-    youtubeId = "";
-    giteaId = "";
-    backstageId = "";
-    kargoId = "";
-    argoCDId = "";
-    headlampId = "";
+    googleId = "01K664F9E8KXZPXYF4V1Q8A93V";  # Google AI mode
+    youtubeId = "01K663E3K8FMGTFVQ6Z6Q2RX7X";
+    giteaId = "01K663E4T77WRVG5SVE0WQQPT0";
+    backstageId = "01K663E623PJ5W8R659HGSCXBS";
+    kargoId = "01K663E79AJG7Z2PSRWF0SXFBE";
+    argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
+    headlampId = "01K663EA6GPY4AYYH39956ZMYP";
   };
 
   # Select appropriate IDs based on hostname

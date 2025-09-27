@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig, ... }:
 
 let
   data = import ./data.nix { inherit lib config pkgs; };
@@ -15,7 +15,7 @@ let
   # Use the explicit UUIDs from data.nix
   activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
-  panels = import ./panels.nix { inherit lib config activities mkUUID; };
+  panels = import ./panels.nix { inherit lib config osConfig activities mkUUID; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
