@@ -36,7 +36,7 @@ let
     }
     {
       name = "Backstage";
-      url = "https://backstage.cnoe.localtest.me:8443";
+      url = "https://backstage-dev.cnoe.localtest.me:8443";
       icon = "file:///etc/nixos/assets/pwa-icons/backstage.png";  # Official Backstage logo
       description = "Developer Portal";
       categories = "Development;";

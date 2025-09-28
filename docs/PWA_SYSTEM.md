@@ -290,7 +290,7 @@ journalctl --user -u manage-pwas.service
 | Google AI | https://www.google.com/search?udm=50 | Google AI mode search |
 | YouTube | https://www.youtube.com | Video platform |
 | Gitea | https://gitea.cnoe.localtest.me:8443 | Git repository |
-| Backstage | https://backstage.cnoe.localtest.me:8443 | Developer portal |
+| Backstage | https://backstage-dev.cnoe.localtest.me:8443 | Developer portal |
 | Kargo | https://kargo.cnoe.localtest.me:8443 | GitOps promotion |
 | ArgoCD | https://argocd.cnoe.localtest.me:8443 | Continuous delivery |
 | Headlamp | https://headlamp.cnoe.localtest.me:8443 | Kubernetes dashboard |
