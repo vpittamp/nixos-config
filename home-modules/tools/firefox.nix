@@ -6,6 +6,8 @@ in
 {
   # Firefox browser configuration - simplified without extensions
   # Extensions can be installed manually from the browser
+  # Firefox is the PRIMARY/DEFAULT system browser
+  # Chromium is installed separately for MCP server and development use
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;

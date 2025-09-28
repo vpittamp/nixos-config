@@ -184,6 +184,32 @@ in rec {
         keepMonths = 1;
       };
     };
+
+    devcontainer = {
+      uuid = "9c8675d0-9a96-4139-ba77-f4855e74e485";
+      name = "Devcontainer";
+      description = "Ubuntu Nix development container environment.";
+      icon = "utilities-terminal";  # Terminal icon for development container
+      directory = expandPath "~/ubuntu-nix-devcontainer";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Next/contents/images/1920x1080.png";
+      shortcut = "Meta+Ctrl+5";  # Activity shortcut
+      colorScheme = {
+        # Ubuntu orange accent for Devcontainer activity
+        accentColor = "233,84,32";  # Ubuntu orange (#E95420)
+        windowDecorationColor = "58,42,38";  # Dark orange-gray
+      };
+      resources = [
+        (fileUri "~/ubuntu-nix-devcontainer")
+      ];
+      autostart = [];
+      scoring = {
+        pruneRecent = {
+          count = 150;
+          what = "documents";
+        };
+        keepMonths = 2;
+      };
+    };
   };
 
   defaultIcons = [

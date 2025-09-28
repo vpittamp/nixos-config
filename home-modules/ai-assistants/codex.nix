@@ -1,5 +1,9 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
+let
+  chromiumBin = "${pkgs.chromium}/bin/chromium";
+in
+
 {
   # Codex - Lightweight coding agent (using native home-manager module with unstable package)
   programs.codex = {
@@ -46,7 +50,17 @@
           args = [
             "-y"
             "@playwright/mcp@latest"
+            "--isolated"
+            "--browser"
+            "chromium"
+            "--executable-path"
+            chromiumBin
           ];
+          env = {
+            # Skip downloading Chromium since we use system package
+            PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          };
         };
       };
     };

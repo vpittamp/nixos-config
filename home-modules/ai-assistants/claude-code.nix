@@ -1,12 +1,10 @@
 { config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
 
 let
-  # Check if we're on Darwin
-  isDarwin = pkgs.stdenv.isDarwin or false;
-
   # Use claude-code from nixpkgs-unstable
   # Note: Version 1.0.105-1.0.107 have TTY issues, latest is 1.0.112
   claudeCodePackage = pkgs-unstable.claude-code or pkgs.claude-code;
+  chromiumBin = "${pkgs.chromium}/bin/chromium";
 in
 {
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -48,26 +46,26 @@ in
         ];
       };
 
-      # Using npx for cross-platform compatibility
-      puppeteer = {
+      # Playwright MCP server for browser automation
+      playwright = {
         transport = "stdio";
         command = "npx";
         args = [
           "-y"
           "@playwright/mcp@latest"
+          "--isolated"
+          "--browser"
+          "chromium"
+          "--executable-path"
+          chromiumBin
         ];
         env = {
-          # Use Chromium on Linux, system Chrome on macOS
-          # PUPPETEER_EXECUTABLE_PATH = if isDarwin 
-          #   then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-          #   else "${pkgs.chromium}/bin/chromium";
-          # # Launch options for containerized environments
-          # PUPPETEER_LAUNCH_OPTIONS = ''{"headless": true, "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]}'';
-          # PUPPETEER_ALLOW_DANGEROUS = "true";
-          # PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true";  # Use system chromium
-          # # Redirect logs to temp directory to avoid cluttering project directories
-          # NODE_ENV = "production";
-          # LOG_DIR = "/tmp/mcp-puppeteer-logs";
+          # Skip downloading Chromium since we use system package
+          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          # Redirect logs to temp directory to avoid cluttering project directories
+          NODE_ENV = "production";
+          LOG_DIR = "/tmp/mcp-puppeteer-logs";
         };
       };
     };

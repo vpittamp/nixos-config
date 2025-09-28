@@ -3,9 +3,16 @@
 let
   # Detect if we're on M1 or Hetzner based on hostname
   isM1 = config.networking.hostName or "" == "nixos-m1";
+  # Use Nix package reference for 1Password browser support
+  onePasswordBrowserSupport = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
+  chromiumBin = "${pkgs.chromium}/bin/chromium";
 in
 {
   # Chromium browser configuration with 1Password and other extensions
+  # This is installed as a secondary browser for specific use cases:
+  # - Playwright MCP server for browser automation
+  # - Testing and development
+  # Firefox remains the default system browser for general use
   programs.chromium = {
     enable = true;
     package = pkgs.chromium;
@@ -59,32 +66,9 @@ in
     ];
   };
 
-  # Set Chromium as the default browser for all URL types
-  xdg.mimeApps = {
-    enable = true;
-    defaultApplications = {
-      "text/html" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/http" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/https" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/ftp" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/chrome" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/about" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/unknown" = [ "chromium-browser.desktop" ];
-      "application/x-extension-htm" = [ "chromium-browser.desktop" ];
-      "application/x-extension-html" = [ "chromium-browser.desktop" ];
-      "application/x-extension-shtml" = [ "chromium-browser.desktop" ];
-      "application/xhtml+xml" = [ "chromium-browser.desktop" ];
-      "application/x-extension-xhtml" = [ "chromium-browser.desktop" ];
-      "application/x-extension-xht" = [ "chromium-browser.desktop" ];
-      "application/pdf" = [ "chromium-browser.desktop" ];
-    };
-    associations.added = {
-      "text/html" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/http" = [ "chromium-browser.desktop" ];
-      "x-scheme-handler/https" = [ "chromium-browser.desktop" ];
-      "application/pdf" = [ "chromium-browser.desktop" ];
-    };
-  };
+  # Chromium is installed as a secondary browser alongside Firefox
+  # Firefox handles the xdg.mimeApps configuration to avoid conflicts
+  # Users can choose their default browser in KDE System Settings
 
   # Configure Chromium master preferences for first run
   # This ensures extensions are installed and pinned on first launch
@@ -129,7 +113,7 @@ in
         "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
       ];
       # Path to the 1Password browser support binary
-      path = "/run/current-system/sw/share/1password/1Password-BrowserSupport";
+      path = onePasswordBrowserSupport;
     };
   };
 
@@ -142,7 +126,7 @@ in
       allowed_origins = [
         "chrome-extension://aeblfdkhhhdcdjpifhhbdiojplfjncoa/"
       ];
-      path = "/run/current-system/sw/share/1password/1Password-BrowserSupport";
+      path = onePasswordBrowserSupport;
     };
   };
 
@@ -163,10 +147,11 @@ in
   };
 
   # Environment variables for default browser
-  home.sessionVariables = {
-    DEFAULT_BROWSER = "chromium";
-    BROWSER = "chromium";
-  };
+  # Commented out to avoid conflict with Firefox settings
+  # home.sessionVariables = {
+  #   DEFAULT_BROWSER = "chromium";
+  #   BROWSER = "chromium";
+  # };
 
   # Shell aliases for convenience
   home.shellAliases = {

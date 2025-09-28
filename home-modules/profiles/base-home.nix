@@ -44,7 +44,7 @@ in
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
-    # ../tools/chromium.nix  # Disabled - using Firefox as default browser
+    ../tools/chromium.nix  # Enabled for Playwright MCP support
     ../tools/firefox.nix
     # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
     ../tools/k9s.nix

@@ -13,7 +13,7 @@ let
     googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
     youtubeId = "01K666N2V6BQMDSBMX3AY74TY7";  # YouTube with proper icon
     giteaId = "01K665SRSVT5KS6ZG7QKCRW2WG";
-    backstageId = "01K666N4FPRC2WME2TDTXETQCC";  # Backstage with proper icon
+    backstageId = "01K685KQMCNWGNN6PYGTAYGMNQ";  # Backstage Dev with proper icon
     kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
     argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
     headlampId = "01K666N65ZWMJ8T780CZST37CA";  # Headlamp with proper icon

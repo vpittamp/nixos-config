@@ -4,8 +4,8 @@ let
   data = import ./data.nix { inherit lib config pkgs; };
   inherit (data) activities defaultActivity;
 
-  # Order activities to match keyboard shortcuts: Meta+1=Monitoring, Meta+2=NixOS, Meta+3=Stacks, Meta+4=Backstage
-  activityIds = [ "monitoring" "nixos" "stacks" "backstage" ];
+  # Order activities to match keyboard shortcuts: Meta+1=Monitoring, Meta+2=NixOS, Meta+3=Stacks, Meta+4=Backstage, Meta+5=Devcontainer
+  activityIds = [ "monitoring" "nixos" "stacks" "backstage" "devcontainer" ];
 
   mkUUID = id:
     let

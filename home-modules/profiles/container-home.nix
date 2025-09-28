@@ -27,9 +27,9 @@
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
-    ../tools/vscode.nix
+    # ../tools/vscode.nix  # GUI app - excluded for container
     ../tools/cluster-management.nix
-    ../tools/konsole-profiles.nix
+    # ../tools/konsole-profiles.nix  # KDE-specific - excluded for container
 
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix
@@ -72,8 +72,5 @@
   };
 
   # Container-specific configurations
-  # Disable GUI applications that don't work in containers
-  programs.chromium.enable = lib.mkForce false;
-  programs.firefox.enable = lib.mkForce false;
-  programs.gitkraken.enable = lib.mkForce false;
+  # Note: GUI applications are already excluded from imports above
 }
