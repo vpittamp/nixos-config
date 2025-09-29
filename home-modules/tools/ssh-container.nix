@@ -56,11 +56,16 @@
   programs.ssh = {
     enable = true;
 
-    # Use the system SSH agent
-    extraConfig = ''
-      AddKeysToAgent yes
-      IdentitiesOnly no
-    '';
+    # Disable deprecated default config to avoid warnings
+    enableDefaultConfig = false;
+
+    # Explicitly set the defaults we want
+    matchBlocks."*" = {
+      extraOptions = {
+        AddKeysToAgent = "yes";
+        IdentitiesOnly = "no";
+      };
+    };
   };
 
   # Set up SSH config management script
