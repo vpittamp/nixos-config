@@ -73,4 +73,7 @@
 
   # Container-specific configurations
   # Note: GUI applications are already excluded from imports above
+
+  # Disable systemd user services in containers
+  systemd.user.startServices = "suggest";
 }
