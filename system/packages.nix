@@ -70,7 +70,7 @@ let
     nssTools  # Provides certutil for managing NSS certificate database
 
     # Web browsers
-    chromium  # Chromium browser (open-source version of Chrome)
+    chromium  # Chromium browser (open-source version of Chrome, better ARM64 support)
   ];
 
   # Development tools that work better at system level
