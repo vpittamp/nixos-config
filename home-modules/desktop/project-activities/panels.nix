@@ -8,12 +8,12 @@ let
   # Get hostname from osConfig which is passed from NixOS to home-manager
   hostname = osConfig.networking.hostName or "";
 
-  # Hetzner server PWA IDs (updated 2025-09-27 with new icons)
+  # Hetzner server PWA IDs (updated 2025-09-28 with new Backstage URL)
   hetznerIds = {
     googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
     youtubeId = "01K666N2V6BQMDSBMX3AY74TY7";  # YouTube with proper icon
     giteaId = "01K665SRSVT5KS6ZG7QKCRW2WG";
-    backstageId = "01K685KQMCNWGNN6PYGTAYGMNQ";  # Backstage Dev with proper icon
+    backstageId = "01K6BFEMQCS9JFJKWPAB2N2RB4";  # Backstage at cnoe.localtest.me:8443
     kargoId = "01K665SVEFF313F0BEWFJ8S9PE";
     argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
     headlampId = "01K666N65ZWMJ8T780CZST37CA";  # Headlamp with proper icon
