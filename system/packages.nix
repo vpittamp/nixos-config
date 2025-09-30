@@ -53,21 +53,24 @@ let
     which
     file
     ncurses
-    
+
     # Clipboard utilities (Wayland/X11)
     wl-clipboard  # Wayland clipboard
     xclip         # X11 clipboard
-    
+
     # Nix tools
     nix
     cachix
     nh  # Nix Helper - Yet another nix cli helper
-    
+
     # VPN tools
     tailscale
-    
+
     # Certificate management tools
     nssTools  # Provides certutil for managing NSS certificate database
+
+    # Web browsers
+    google-chrome  # Google Chrome browser
   ];
 
   # Development tools that work better at system level
