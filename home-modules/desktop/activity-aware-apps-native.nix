@@ -161,8 +161,48 @@ let
 
   # Generate KWin window rules for activity management
   generateKWinRules = activities: let
+    # Rules for PWAs that should appear in all activities
+    allActivitiesRules = [
+      # Headlamp - Kubernetes Dashboard
+      {
+        Description = "Headlamp - All Activities";
+        clientmachine = "localhost";
+        wmclass = "firefoxpwa";
+        wmclassmatch = 1; # Substring
+        title = "Headlamp";
+        titlematch = 1; # Substring
+        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
+        activitiesrule = 2; # Force
+        types = 1; # Normal window
+      }
+      # YouTube
+      {
+        Description = "YouTube - All Activities";
+        clientmachine = "localhost";
+        wmclass = "firefoxpwa";
+        wmclassmatch = 1; # Substring
+        title = "YouTube";
+        titlematch = 1; # Substring
+        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
+        activitiesrule = 2; # Force
+        types = 1; # Normal window
+      }
+      # Google AI
+      {
+        Description = "Google AI - All Activities";
+        clientmachine = "localhost";
+        wmclass = "firefoxpwa";
+        wmclassmatch = 1; # Substring
+        title = "Google AI";
+        titlematch = 1; # Substring
+        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
+        activitiesrule = 2; # Force
+        types = 1; # Normal window
+      }
+    ];
+
     # Create a flat list of rules
-    rulesList = lib.flatten (lib.mapAttrsToList (name: activity:
+    activitySpecificRules = lib.flatten (lib.mapAttrsToList (name: activity:
       let
         # Get clean directory name for matching
         dirName = lib.last (lib.splitString "/" activity.directory);
@@ -211,6 +251,9 @@ let
         }
       ]
     ) activities);
+
+    # Combine all rules: PWAs for all activities + activity-specific rules
+    rulesList = allActivitiesRules ++ activitySpecificRules;
   in rulesList;
 
 in
