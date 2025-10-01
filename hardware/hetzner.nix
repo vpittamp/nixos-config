@@ -38,7 +38,15 @@
     options = [ "fmask=0022" "dmask=0022" ];
   };
 
-  swapDevices = [ ];
+  # Swap configuration - 8GB swap file
+  # NixOS will auto-create this file when 'size' is specified
+  swapDevices = [
+    {
+      device = "/var/lib/swapfile";
+      size = 8192; # 8GB in MiB (megabytes)
+      # priority = 10; # Optional: lower values = higher priority
+    }
+  ];
   
   # Networking
   networking.usePredictableInterfaceNames = false;
