@@ -29,9 +29,18 @@ in
       ms-vscode-remote.remote-containers
       # ms-vscode.remote-server  # May not be available in nixpkgs
 
+      # AI Assistants
+      anthropic.claude-code
+      github.copilot
+      github.copilot-chat
+      Google.gemini-cli-vscode-ide-companion
+
       # Git integration
       eamodio.gitlens
       mhutchie.git-graph
+
+      # Container tools
+      ms-azuretools.vscode-docker
 
       # Nix support
       bbenoist.nix
@@ -47,6 +56,8 @@ in
       # Theme and UI
       pkief.material-icon-theme
       zhuangtongfa.material-theme
+      catppuccin.catppuccin-vsc
+      catppuccin.catppuccin-vsc-icons
 
       # Productivity
       vscodevim.vim
@@ -54,21 +65,56 @@ in
     ]) ++ [
       # 1Password extension (special syntax due to naming)
       pkgs.vscode-extensions."1Password".op-vscode
+    ] ++ [
+      # Playwright Test extension (not yet in nixpkgs, fetched from marketplace)
+      (pkgs.vscode-utils.buildVscodeMarketplaceExtension {
+        mktplcRef = {
+          name = "playwright";
+          publisher = "ms-playwright";
+          version = "1.1.12";
+          sha256 = "sha256-B6RYsDp1UKZmBRT/GdTPqxGOyCz2wJYKAqYqSLsez+w=";
+        };
+        meta = {
+          description = "Playwright Test for VS Code";
+          license = lib.licenses.mit;
+        };
+      })
+    ] ++ [
+      # OpenAI ChatGPT/Codex extension (fetched from marketplace)
+      (pkgs.vscode-utils.buildVscodeMarketplaceExtension {
+        mktplcRef = {
+          name = "chatgpt";
+          publisher = "openai";
+          version = "0.5.15";
+          sha256 = "sha256-NwkWKf86C56G9InKDEdZAKCW8wfmvXjnoqU8GD/mFEI=";
+        };
+        meta = {
+          description = "OpenAI ChatGPT and Codex integration for VS Code";
+          license = lib.licenses.mit;
+        };
+      })
     ];
       # User settings for VSCode
       userSettings = {
-      # 1Password integration settings
+      # 1Password integration settings - Best practices from official docs
+
+      # Core functionality
       "1password.items.cacheValues" = true;  # Cache CLI values for performance
       "1password.items.useSecretReferences" = true;  # Enable secret reference syntax
       "1password.editor.suggestStorage" = true;  # Auto-detect and suggest saving secrets
+
+      # Interactive features
       "1password.hover.enableHover" = true;  # Show secret details on hover
       "1password.hover.enableUnlock" = true;  # Allow unlocking secrets inline
       "1password.codeLens.enable" = true;  # Show CodeLens for detected secrets
       "1password.contextMenu.enable" = true;  # Add 1Password to context menu
 
+      # Inline suggestions for secret references
+      "1password.editor.enableInlineSuggestions" = true;  # Suggest secret references while typing
+
       # Default account configuration
       "1password.account" = "vinod@pittampalli.com";  # Default account email
-      "1password.defaultVault" = "Personal";  # Default vault name
+      "1password.defaultVault" = "Personal";  # Default vault name for new items
       "1password.signInAddress" = "https://my.1password.com/";  # Sign-in address
 
       # Password generation recipe for new secrets
@@ -80,17 +126,40 @@ in
         "includeLowercase" = true;
       };
 
-      # Secret reference format preference
+      # Secret reference format preference (op://vault/item/field)
       "1password.secretReferenceFormat" = "op://vault/item/field";
+
+      # Secret reference suggestions
+      "1password.suggestions.enabled" = true;  # Enable autocomplete for secret references
+      "1password.suggestions.triggerCharacters" = [ "\"" "'" "=" ];  # Trigger on quotes and equals
 
       # Automatic secret detection patterns
       "1password.detection.enableAutomaticDetection" = true;
       "1password.detection.filePatterns" = [
         "**/.env*"
+        "**/.envrc"  # direnv configuration
         "**/config.json"
+        "**/config.yaml"
+        "**/config.yml"
         "**/settings.json"
         "**/*.config.js"
         "**/*.config.ts"
+        "**/docker-compose.yml"
+        "**/docker-compose.yaml"
+        "**/.aws/credentials"
+        "**/*.tfvars"  # Terraform variables
+        "**/*.tfvars.json"
+      ];
+
+      # Additional patterns to detect secrets in code
+      "1password.detection.patterns" = [
+        "password"
+        "secret"
+        "api_key"
+        "apiKey"
+        "token"
+        "access_key"
+        "private_key"
       ];
 
       # Disable KDE Wallet integration - use 1Password instead
@@ -166,6 +235,20 @@ in
       "files.associations" = {
         "*.nix" = "nix";
         "flake.lock" = "json";
+        ".env*" = "dotenv";
+        ".envrc" = "shellscript";
+      };
+
+      # Exclude sensitive files from search and Git
+      "files.exclude" = {
+        "**/.env" = true;  # Hide actual .env files (keep .env.example visible)
+      };
+
+      # Warn when opening files that might contain secrets
+      "files.watcherExclude" = {
+        "**/.git/objects/**" = true;
+        "**/.git/subtree-cache/**" = true;
+        "**/node_modules/**" = true;
       };
 
       # Workspace
@@ -195,26 +278,33 @@ in
       };
       };
 
-      # Keybindings
+      # Keybindings - aligned with documentation recommendations
       keybindings = [
       {
         key = "ctrl+shift+p";
         command = "workbench.action.showCommands";
       }
+      # 1Password keybindings (matching docs/1PASSWORD_VSCODE.md)
       {
-        key = "ctrl+shift+o";
+        key = "ctrl+alt+o";
         command = "1password.open";
         when = "editorTextFocus";
       }
       {
-        key = "ctrl+shift+l";
+        key = "ctrl+alt+g";
         command = "1password.generate";
         when = "editorTextFocus";
       }
       {
-        key = "ctrl+shift+s";
+        key = "ctrl+alt+s";
         command = "1password.save";
         when = "editorTextFocus && editorHasSelection";
+      }
+      # Additional 1Password commands
+      {
+        key = "ctrl+alt+i";
+        command = "1password.insertSecretReference";
+        when = "editorTextFocus";
       }
       {
         key = "ctrl+alt+k";
