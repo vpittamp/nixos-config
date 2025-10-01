@@ -24,6 +24,7 @@ in
       { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }  # Dark Reader
       { id = "dbepggeogbaibhgnhhndojpepiihcmeb"; }  # Vimium
       { id = "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"; }  # Privacy Badger
+      { id = "fcoeoabgfenejglbffodgkkbkcdhcgfn"; }  # Claude - Anthropic AI assistant
     ];
     
     # Command line arguments for better performance and privacy
@@ -85,10 +86,14 @@ in
         # Pin extensions to toolbar
         toolbar = [
           "aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password
+          "fcoeoabgfenejglbffodgkkbkcdhcgfn"  # Claude
         ];
         # Settings for specific extensions
         settings = {
           "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
+            toolbar_pin = "force_pinned";
+          };
+          "fcoeoabgfenejglbffodgkkbkcdhcgfn" = {
             toolbar_pin = "force_pinned";
           };
         };

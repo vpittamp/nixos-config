@@ -18,6 +18,8 @@
       awscli2     # AWS CLI - creates aws() function
       cachix      # Cachix binary cache - creates cachix() function
       openai      # OpenAI CLI - creates openai() function
+      # hcloud requires app integration (biometric unlock) which may not be available
+      # We'll use a manual wrapper instead
       # Note: Only packages that have 1Password plugins can be added here
       # Check available plugins with: op plugin list
     ];
@@ -50,10 +52,25 @@
     
     # Manual plugin wrappers for tools not in the plugins list
     # These need to be initialized with: op plugin init <name>
-    
-    # Hetzner Cloud CLI wrapper (initialize with: op plugin init hcloud)
+
+    # Hetzner Cloud CLI wrapper - using direct token retrieval
+    # Note: Shell plugins require app integration, so we use direct token access
     hcloud() {
-      op plugin run -- hcloud "$@"
+      # Check if signed into 1Password CLI first
+      if ! op whoami &>/dev/null; then
+        echo "Error: Not signed into 1Password. Run: eval \$(op signin)" >&2
+        return 1
+      fi
+
+      # Get token with timeout to prevent hanging
+      local token
+      if ! token=$(timeout 2s op read 'op://CLI/Hetzner Cloud API/token' 2>/dev/null); then
+        echo "Error: Failed to retrieve Hetzner token from 1Password" >&2
+        echo "Make sure the 'Hetzner Cloud API' item exists in the CLI vault with a 'token' field" >&2
+        return 1
+      fi
+
+      HCLOUD_TOKEN="$token" command hcloud "$@"
     }
     
     # PostgreSQL wrappers (initialize with: op plugin init psql)
@@ -71,12 +88,12 @@
       local plugin="$1"
       if [ -z "$plugin" ]; then
         echo "Usage: op-init <plugin-name>"
-        echo "Available plugins: gh, aws, cachix, openai, tea, hcloud, psql, argocd"
+        echo "Available plugins: gh, aws, cachix, openai, hcloud, psql, argocd"
         echo ""
         echo "Examples:"
         echo "  op-init gh       # Initialize GitHub CLI"
         echo "  op-init openai   # Initialize OpenAI CLI"
-        echo "  op-init hcloud   # Initialize Hetzner Cloud CLI (correct name: hcloud)"
+        echo "  op-init hcloud   # Initialize Hetzner Cloud CLI"
         echo "  op-init argocd   # Initialize Argo CD CLI"
         echo ""
         echo "Note: Use exact plugin names from 'op plugin list'"

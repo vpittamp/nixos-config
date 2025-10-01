@@ -156,7 +156,7 @@
       ops = "eval $(op signin --account my)";
       opv = "op vault list";
       opi = "op item list";
-      
+
       # ArgoCD with 1Password
       argo-login = "op plugin init argocd";
       

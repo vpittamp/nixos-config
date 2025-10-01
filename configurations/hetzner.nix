@@ -26,6 +26,7 @@
     ../modules/desktop/kde-multi-panel.nix
     ../modules/desktop/remote-access.nix
     ../modules/desktop/xrdp-with-sound.nix
+    ../modules/desktop/firefox-virtual-optimization.nix  # Virtual environment optimizations
     # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
     # ../modules/desktop/pwa-extensions.nix  # No longer needed with declarative approach
     # ../modules/desktop/pwa-icons-v2.nix  # Replaced by pwa-declarative

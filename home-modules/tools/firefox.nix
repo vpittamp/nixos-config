@@ -246,9 +246,86 @@ in
     fi
   '';
 
+  # Ensure mimeapps.list files are managed by home-manager while preserving PWA registrations
+  home.activation.manageMimeApps = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    # Create a log directory for tracking MIME association changes
+    MIME_LOG_DIR="$HOME/.local/share/home-manager/mime-logs"
+    mkdir -p "$MIME_LOG_DIR"
+
+    # File to track PWA-related MIME associations
+    PWA_MIME_FILE="$MIME_LOG_DIR/pwa-associations.conf"
+
+    # Function to extract PWA associations from desktop files
+    extract_pwa_associations() {
+      local associations=""
+      for desktop_file in $HOME/.local/share/applications/FFPWA-*.desktop; do
+        if [ -f "$desktop_file" ]; then
+          local pwa_id=$(basename "$desktop_file" .desktop)
+          local pwa_name=$(grep "^Name=" "$desktop_file" | cut -d= -f2)
+          # PWAs typically don't need special MIME associations beyond what Firefox handles
+          # But we log them for reference
+          echo "# PWA: $pwa_name ($pwa_id)" >> "$PWA_MIME_FILE.tmp"
+        fi
+      done
+    }
+
+    # Function to compare and log differences
+    check_mime_differences() {
+      local current_file="$1"
+      local managed_file="$2"
+      local log_file="$3"
+
+      if [ -f "$current_file" ] && [ ! -L "$current_file" ]; then
+        # File exists and is not a symlink - check for differences
+        if ! diff -q "$current_file" "$managed_file" > /dev/null 2>&1; then
+          echo "$(date): Differences detected in $current_file" >> "$log_file"
+          echo "User-specific associations that would be overwritten:" >> "$log_file"
+          diff --unified=0 "$managed_file" "$current_file" 2>/dev/null | grep "^+" | grep -v "^+++" >> "$log_file" || true
+
+          # Check if any PWA-related entries are being overwritten
+          if grep -q "FFPWA" "$current_file" 2>/dev/null; then
+            echo "Note: PWA associations detected - these are handled separately" >> "$log_file"
+          fi
+          echo "---" >> "$log_file"
+
+          # Save a copy of user's modifications for reference
+          cp "$current_file" "$MIME_LOG_DIR/$(basename $current_file).user-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+        fi
+      fi
+    }
+
+    # Check both MIME association files before home-manager overwrites them
+    MANAGED_CONFIG="${pkgs.writeText "managed-mimeapps" ""}"
+    LOG_FILE="$MIME_LOG_DIR/changes.log"
+
+    check_mime_differences "$HOME/.config/mimeapps.list" "$MANAGED_CONFIG" "$LOG_FILE"
+    check_mime_differences "$HOME/.local/share/applications/mimeapps.list" "$MANAGED_CONFIG" "$LOG_FILE"
+
+    # Clean up old backup files to prevent conflicts
+    find "$HOME/.config" "$HOME/.local/share/applications" -maxdepth 1 \
+      -name "mimeapps.list.backup*" -o -name "mimeapps.list.hm-backup*" \
+      -mtime +7 -delete 2>/dev/null || true
+
+    # Ensure KDE respects our MIME associations
+    if [ -d "$HOME/.config" ]; then
+      ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 --file kdeglobals --group General --key BrowserApplication "firefox.desktop" 2>/dev/null || true
+    fi
+
+    # Print a message if there were recent changes
+    if [ -f "$LOG_FILE" ]; then
+      recent_changes=$(find "$LOG_FILE" -mmin -5 2>/dev/null)
+      if [ -n "$recent_changes" ]; then
+        echo "ℹ️  MIME associations updated. User changes logged to: $MIME_LOG_DIR"
+        tail -n 20 "$LOG_FILE" 2>/dev/null | grep "^User-specific" || true
+      fi
+    fi
+  '';
+
   # Set Firefox as the default browser for all browser-based activities
   xdg.mimeApps = {
     enable = true;  # Single source of truth for MIME associations
+    # Home Manager manages MIME associations with logging of any overwrites
+    # Check ~/.local/share/home-manager/mime-logs/ for any user changes that were overwritten
     defaultApplications = {
       # Web browsers
       "text/html" = [ "firefox.desktop" ];

@@ -56,7 +56,7 @@
   outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
     let
       # Helper function to create a system configuration
-      mkSystem = { hostname, system, modules }: 
+      mkSystem = { hostname, system, modules }:
         nixpkgs.lib.nixosSystem {
           inherit system;
           specialArgs = { inherit inputs; };
@@ -65,8 +65,8 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                # Enable automatic backups to prevent conflicts
-                backupFileExtension = "backup";
+                # Use unique backup extension to prevent conflicts
+                backupFileExtension = nixpkgs.lib.mkForce "hm-backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = { 
