@@ -38,3 +38,7 @@ logs/
 # Home Assistant secrets
 /var/lib/hass/secrets.yaml
 secrets.yaml
+
+# AI Assistant runtime directories
+.gemini/
+.playwright-mcp/
