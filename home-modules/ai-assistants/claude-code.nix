@@ -1,9 +1,9 @@
 { config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
 
 let
-  # Use claude-code from nixpkgs-unstable
-  # Note: Version 1.0.105-1.0.107 have TTY issues, latest is 1.0.112
-  claudeCodePackage = pkgs-unstable.claude-code or pkgs.claude-code;
+  # Use claude-code from the dedicated flake for latest version (2.0.1)
+  # Fall back to nixpkgs-unstable if flake not available
+  claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
   chromiumBin = "${pkgs.chromium}/bin/chromium";
 in
 {
@@ -18,7 +18,7 @@ in
 
     # Settings for Claude Code
     settings = {
-      model = "opus";
+      # Model selection removed - will use default or user's choice
       theme = "dark";
       editorMode = "vim";
       autoCompactEnabled = true;
@@ -67,6 +67,19 @@ in
           NODE_ENV = "production";
           LOG_DIR = "/tmp/mcp-puppeteer-logs";
         };
+      };
+
+      # Chrome DevTools MCP server for browser debugging and performance analysis
+      chrome-devtools = {
+        command = "npx";
+        args = [
+          "-y"
+          "chrome-devtools-mcp@latest"
+          "--isolated"
+          "--headless"
+          "--executablePath"
+          chromiumBin
+        ];
       };
     };
   };

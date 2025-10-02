@@ -1,22 +1,59 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
+let
+  chromiumBin = "${pkgs.chromium}/bin/chromium";
+in
 {
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
   programs.gemini-cli = {
     enable = true;
     package = pkgs-unstable.gemini-cli or pkgs.gemini-cli;  # Use unstable if available, fallback to stable
-    
+
     # Default model to use (Gemini 2.5 Pro is now available)
     defaultModel = "gemini-2.5-pro";
-    
+
     # Settings for gemini-cli
     settings = {
       theme = "Default";
       vimMode = false;
       preferredEditor = "nvim";
       autoAccept = false;
+
+      # MCP Servers configuration
+      mcpServers = {
+        # Chrome DevTools MCP server for browser debugging and performance analysis
+        chrome-devtools = {
+          command = "npx";
+          args = [
+            "-y"
+            "chrome-devtools-mcp@latest"
+            "--isolated"
+            "--headless"  # Run without GUI (learned from Codex fix)
+            "--executablePath"
+            chromiumBin
+          ];
+        };
+
+        # Playwright MCP server for reliable browser automation
+        playwright = {
+          command = "npx";
+          args = [
+            "-y"
+            "@playwright/mcp@latest"
+            "--isolated"
+            "--browser"
+            "chromium"
+            "--executable-path"
+            chromiumBin
+          ];
+          env = {
+            PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+            PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          };
+        };
+      };
     };
-    
+
     # Custom commands for common workflows
     commands = {
       # Git commit helper

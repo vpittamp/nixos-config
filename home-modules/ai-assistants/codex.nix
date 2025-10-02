@@ -62,6 +62,21 @@ in
             PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
           };
         };
+
+        # Chrome DevTools MCP server for browser debugging and performance analysis
+        chrome-devtools = {
+          command = "npx";
+          args = [
+            "-y"
+            "chrome-devtools-mcp@latest"
+            "--isolated"
+            "--headless"
+            "--executablePath"
+            chromiumBin
+          ];
+          startup_timeout_ms = 30000;  # 30 seconds for browser startup
+          tool_timeout_sec = 60;        # 60 seconds for tool operations
+        };
       };
     };
   };
