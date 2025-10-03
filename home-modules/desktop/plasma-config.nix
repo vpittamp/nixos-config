@@ -104,6 +104,12 @@
         key = "Ctrl+Alt+T";
         command = "konsole-activity";
       };
+      # DISABLED: Yakuake crashes on Wayland/ARM64
+      # "launch-yakuake-activity" = {
+      #   name = "Launch Yakuake (Activity)";
+      #   key = "F12";
+      #   command = "yakuake-activity";
+      # };
       "launch-dolphin-activity" = {
         name = "Launch Dolphin (Activity)";
         key = "Ctrl+Alt+D";

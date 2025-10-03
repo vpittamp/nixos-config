@@ -928,16 +928,25 @@
       "services/org.kde.konsole.desktop" = {
         _launch = [];
       };
-      "services/plasma-manager-commands.desktop" = {
-        launch-code-activity = "Ctrl+Alt+E";
-        launch-dolphin-activity = "Ctrl+Alt+D";
-        launch-konsole-activity = "Ctrl+Alt+T";
-        speech-to-clipboard = "Meta+Alt+C";
-        toggle-speech-dictation = "Meta+Alt+D";
+      "services/services\\/code-activity.desktop" = {
+        _launch = "Ctrl+Alt+C";
       };
-      yakuake = {
-        toggle-window-state = "none,F12,Open/Retract Yakuake";
+      "services/services\\/dolphin-activity.desktop" = {
+        _launch = "Ctrl+Alt+F";
       };
+      "services/services\\/konsole-activity.desktop" = {
+        _launch = "Ctrl+Alt+T";
+      };
+      # DISABLED: Yakuake crashes on Wayland/ARM64
+      # "services/services\\/yakuake-activity.desktop" = {
+      #   _launch = "F12";
+      # };
+      # "services/yakuake-activity.desktop" = {
+      #   _launch = [];
+      # };
+      # yakuake = {
+      #   toggle-window-state = "none,F12,Open/Retract Yakuake";
+      # };
     };
   };
 in {
