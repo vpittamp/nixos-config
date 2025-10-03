@@ -67,6 +67,17 @@ let
     }
   '';
 
+  # All-activities launcher scripts (open in all activities, no specific directory)
+  firefoxAllActivities = pkgs.writeScriptBin "firefox-all-activities" ''
+    #!/usr/bin/env bash
+    firefox "$@"
+  '';
+
+  gitkrakenAllActivities = pkgs.writeScriptBin "gitkraken-all-activities" ''
+    #!/usr/bin/env bash
+    gitkraken "$@"
+  '';
+
   # Simplified launcher scripts that just set working directory
   # KWin rules will handle activity assignment
   konsoleActivityScript = pkgs.writeScriptBin "konsole-activity" ''
@@ -161,43 +172,45 @@ let
 
   # Generate KWin window rules for activity management
   generateKWinRules = activities: let
-    # Rules for PWAs that should appear in all activities
+    # Explicit rules for applications that should appear in all activities
+    # Matches the structure created by KDE GUI: Settings → Window Rules → Activities → Force → All Activities
+    # NOTE: These rules work with regular application launchers - no special launchers needed
     allActivitiesRules = [
-      # Headlamp - Kubernetes Dashboard
       {
-        Description = "Headlamp - All Activities";
-        clientmachine = "localhost";
-        wmclass = "firefoxpwa";
-        wmclassmatch = 1; # Substring
-        title = "Headlamp";
-        titlematch = 1; # Substring
-        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
-        activitiesrule = 2; # Force
-        types = 1; # Normal window
+        Description = "Firefox - All Activities";
+        wmclass = "firefox";
+        wmclassmatch = 1;  # Substring match
+        wmclasscomplete = false;
+        activities = "";  # Empty = all activities
+        activitiesrule = 2;  # Force
+        types = 1;
       }
-      # YouTube
       {
-        Description = "YouTube - All Activities";
-        clientmachine = "localhost";
-        wmclass = "firefoxpwa";
-        wmclassmatch = 1; # Substring
-        title = "YouTube";
-        titlematch = 1; # Substring
-        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
-        activitiesrule = 2; # Force
-        types = 1; # Normal window
+        Description = "GitKraken - All Activities";
+        wmclass = "gitkraken";
+        wmclassmatch = 1;  # Substring match
+        wmclasscomplete = false;
+        activities = "";  # Empty = all activities
+        activitiesrule = 2;  # Force
+        types = 1;
       }
-      # Google AI
       {
-        Description = "Google AI - All Activities";
-        clientmachine = "localhost";
-        wmclass = "firefoxpwa";
-        wmclassmatch = 1; # Substring
-        title = "Google AI";
-        titlematch = 1; # Substring
-        activities = "00000000-0000-0000-0000-000000000000"; # All activities UUID
-        activitiesrule = 2; # Force
-        types = 1; # Normal window
+        Description = "Firefox PWAs - All Activities";
+        wmclass = "FFPWA";  # PWAs start with FFPWA (includes Headlamp PWA, Google AI PWA, YouTube, etc.)
+        wmclassmatch = 1;  # Substring match
+        wmclasscomplete = false;
+        activities = "";  # Empty = all activities
+        activitiesrule = 2;  # Force
+        types = 1;
+      }
+      {
+        Description = "Chromium - All Activities";
+        wmclass = "chromium-browser";
+        wmclassmatch = 1;  # Substring match
+        wmclasscomplete = false;
+        activities = "";  # Empty = all activities
+        activitiesrule = 2;  # Force
+        types = 1;
       }
     ];
 
@@ -220,7 +233,7 @@ let
           titlematch = 1; # Substring
           types = 1; # Normal window
           activity = activity.uuid;
-          activityrule = 2; # Force
+          activityrule = 2; # Force (overrides default all-activities rule)
           wmclasscomplete = false;
         }
         # Rule for Konsole windows
@@ -261,47 +274,64 @@ in
   # Install the activity mappings file
   home.file.".config/plasma-activities/mappings.json".source = activityMappingFile;
 
-  # Install the simplified launcher scripts
+  # Install the launcher scripts
   home.packages = [
+    # Activity-specific launchers
     konsoleActivityScript
     codeActivityScript
     dolphinActivityScript
     # Yakuake drop-down terminal with activity-aware defaults
     yakuakeActivityScript
     yakuakeActivitySync
+    # All-activities launchers
+    firefoxAllActivities
+    gitkrakenAllActivities
   ];
 
-  # KWin window rules configuration using plasma-manager
-  # These rules automatically assign windows to activities based on their properties
-  programs.plasma.configFile."kwinrulesrc" = let
-    rules = generateKWinRules activityData.rawActivities;
-    ruleCount = lib.length rules;
-    ruleIndices = lib.genList (i: toString (i + 1)) ruleCount;
+  # KWin window rules configuration
+  # NOTE: KDE dynamically manages kwinrulesrc and may modify/remove rules
+  # The current rules (GitKraken, Firefox PWAs) work when manually configured via KDE GUI
+  # Firefox main browser rule is consistently removed by KDE - needs manual configuration
+  #
+  # To manually add Firefox all-activities rule:
+  # 1. System Settings → Window Management → Window Rules
+  # 2. Add New → Window class: firefox, substring match
+  # 3. Add Property → Activities → Force → All Activities
 
-    # Generate rule sections
-    ruleSections = lib.concatStringsSep "\n\n" (
-      lib.imap1 (idx: rule: ''
-        [${toString idx}]
-        ${lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (key: value:
-            "${key}=${toString value}"
-          ) rule
-        )}''
-      ) rules
-    );
-  in {
-    General = {
-      count = toString ruleCount;
-      rules = lib.concatStringsSep "," ruleIndices;
-    };
-  } // lib.listToAttrs (
-    lib.imap1 (idx: rule:
-      lib.nameValuePair (toString idx) rule
-    ) rules
-  );
-
-  # Create desktop entries with simple launchers
+  # Create desktop entries with launchers
   xdg.desktopEntries = {
+    # Firefox for all activities
+    firefox-all-activities = {
+      name = "Firefox (All Activities)";
+      genericName = "Web Browser";
+      comment = "Appears in all activities";
+      icon = "firefox";
+      terminal = false;
+      type = "Application";
+      categories = [ "Network" "WebBrowser" ];
+      exec = "${firefoxAllActivities}/bin/firefox-all-activities %u";
+      settings = {
+        Keywords = "firefox;browser;web;all;activities;";
+        StartupWMClass = "firefox";
+      };
+    };
+
+    # GitKraken for all activities
+    gitkraken-all-activities = {
+      name = "GitKraken (All Activities)";
+      genericName = "Git Client";
+      comment = "Appears in all activities";
+      icon = "gitkraken";
+      terminal = false;
+      type = "Application";
+      categories = [ "Development" "RevisionControl" ];
+      exec = "${gitkrakenAllActivities}/bin/gitkraken-all-activities";
+      settings = {
+        Keywords = "git;gitkraken;version;control;all;activities;";
+        StartupWMClass = "gitkraken";
+      };
+    };
+
     # Activity-aware Konsole
     konsole-activity = {
       name = "Konsole (Activity)";

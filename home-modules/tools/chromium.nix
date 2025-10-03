@@ -68,44 +68,8 @@ in
   };
 
   # Chromium is installed as a secondary browser alongside Firefox
-  # Firefox handles the xdg.mimeApps configuration to avoid conflicts
-  # Users can choose their default browser in KDE System Settings
-
-  # Configure Chromium master preferences for first run
-  # This ensures extensions are installed and pinned on first launch
-  home.file.".config/chromium/initial_preferences.json" = {
-    text = builtins.toJSON {
-      browser = {
-        show_home_button = true;
-        check_default_browser = false;
-      };
-      bookmark_bar = {
-        show_on_all_tabs = true;
-      };
-      extensions = {
-        # Pin extensions to toolbar
-        toolbar = [
-          "aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password
-          "fcoeoabgfenejglbffodgkkbkcdhcgfn"  # Claude
-        ];
-        # Settings for specific extensions
-        settings = {
-          "aeblfdkhhhdcdjpifhhbdiojplfjncoa" = {
-            toolbar_pin = "force_pinned";
-          };
-          "fcoeoabgfenejglbffodgkkbkcdhcgfn" = {
-            toolbar_pin = "force_pinned";
-          };
-        };
-      };
-      # Disable Chrome's password manager since we use 1Password
-      credentials_enable_service = false;
-      credentials_enable_autosignon = false;
-    };
-  };
-  
-  # Extensions are already installed via home.file declarations above
-  # No need for an activation script since home-manager handles the files
+  # Extensions are managed declaratively by home-manager
+  # No complex scripts or manual installation needed
 
   # Native messaging host manifest for 1Password
   # This allows the browser extension to communicate with the desktop app
@@ -163,4 +127,7 @@ in
     chrome = "chromium";
     browser = "chromium";
   };
+
+  # Home-manager handles extension installation automatically
+  # No activation scripts needed - this is the proper NixOS way
 }

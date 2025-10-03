@@ -168,6 +168,7 @@ let
     StartupWMClass=FFPWA-$PWA_ID
     Categories=Network;
     MimeType=x-scheme-handler/https;x-scheme-handler/http;
+    X-KDE-Activities=00000000-0000-0000-0000-000000000000
     DESKTOP
           chmod 644 "$DESKTOP_DIR/FFPWA-$PWA_ID.desktop"
 

@@ -17,7 +17,7 @@ The following settings must be configured manually through the 1Password GUI:
    - This allows the `op` command-line tool to communicate with the desktop app
 
 2. **System Authentication** (Required for biometric/password unlock)
-   - Navigate to: Settings → Security  
+   - Navigate to: Settings → Security
    - Enable: "Unlock using system authentication service"
    - This allows using system authentication (including KDE Wallet) instead of master password
 

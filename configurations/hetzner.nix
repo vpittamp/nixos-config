@@ -25,6 +25,7 @@
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/kde-multi-panel.nix
     ../modules/desktop/remote-access.nix
+    # ../modules/desktop/chromium-extensions.nix  # Disabled - using home-manager instead
     ../modules/desktop/xrdp-with-sound.nix
     ../modules/desktop/firefox-virtual-optimization.nix  # Virtual environment optimizations
     # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
@@ -42,7 +43,8 @@
     # ../modules/services/networking.nix
     # ../modules/services/onepassword.nix
     ../modules/services/onepassword-automation.nix  # Phase 1 - without automation initially
-    # ../modules/services/speech-to-text.nix  # Avoid - caused issues
+    # ../modules/services/speech-to-text.nix  # Avoid - caused issues (network downloads during build)
+    ../modules/services/speech-to-text-safe.nix  # Safe version - no network ops during build
 
     # Phase 3: Browser integrations with 1Password
     # ../modules/desktop/firefox-1password.nix
@@ -261,13 +263,13 @@
   # ~/stacks/ref-implementation/recreate-cluster-with-ssh.sh
   # The cluster-certificates.nix module is disabled to prevent ongoing sync issues
 
-  # Enable Speech-to-Text services - Avoid, caused issues
-  # services.speech-to-text = {
-  #   enable = false;
-  #   model = "base.en";  # Good balance of speed and accuracy
-  #   language = "en";
-  #   enableGlobalShortcut = true;
-  # };
+  # Enable Speech-to-Text services using safe module
+  services.speech-to-text = {
+    enable = true;
+    model = "base.en";  # Good balance of speed and accuracy
+    language = "en";
+    enableGlobalShortcut = true;
+  };
 
   # PWA extensions are handled by regular Firefox profile now
   # (1Password and other extensions work normally in Firefox windows)

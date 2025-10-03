@@ -2,13 +2,25 @@
 
 {
   # System-level Chromium configuration to force-install extensions
+  # Note: There's a known issue where Chromium doesn't always auto-install from ExtensionInstallForcelist
+  # Extensions may need to be manually installed on first run, but will persist after that
   programs.chromium = {
     enable = true;
 
-    # Force-install extensions via enterprise policy
+    # Extensions list - NixOS will automatically create ExtensionInstallForcelist policy
+    extensions = [
+      { id = "aeblfdkhhhdcdjpifhhbdiojplfjncoa"; }  # 1Password - Password Manager
+      { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; }  # uBlock Origin
+      { id = "eimadpbcbfnmbkopoojfekhnkhdbieeh"; }  # Dark Reader
+      { id = "dbepggeogbaibhgnhhndojpepiihcmeb"; }  # Vimium
+      { id = "pkehgijcmpdhfbdbbnkijodmdjhbjlgp"; }  # Privacy Badger
+      { id = "fcoeoabgfenejglbffodgkkbkcdhcgfn"; }  # Claude - AI Assistant
+    ];
+
+    # Additional enterprise policies
     extraOpts = {
-      # Force installation of extensions
-      "ExtensionInstallForcelist" = [
+      # Toolbar pinning for specific extensions
+      "ExtensionSettings" = {
         "aeblfdkhhhdcdjpifhhbdiojplfjncoa;https://clients2.google.com/service/update2/crx"  # 1Password
         "cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx"  # uBlock Origin
         "eimadpbcbfnmbkopoojfekhnkhdbieeh;https://clients2.google.com/service/update2/crx"  # Dark Reader

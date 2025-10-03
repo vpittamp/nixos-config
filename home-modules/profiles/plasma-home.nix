@@ -9,6 +9,7 @@
     ../desktop/project-activities
     ../desktop/activity-aware-apps-native.nix  # Native KDE activity management
     ../desktop/monitoring-desktop-widgets.nix  # Monitoring activity widgets
+    ../desktop/speech-to-text-shortcuts.nix  # Speech-to-text keyboard shortcuts
     #     ../apps/headlamp.nix
     #     ../apps/headlamp-config.nix
     ../tools/kwallet-config.nix

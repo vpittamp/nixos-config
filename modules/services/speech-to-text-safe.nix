@@ -11,12 +11,17 @@ let
   # VOSK model path (to be downloaded manually)
   voskModelPath = "/var/cache/vosk/model";
 
-  # Note: nerd-dictation will be installed manually after build
-  # to avoid network dependencies during build
+  # Package nerd-dictation from separate file (properly packaged from GitHub)
+  nerdDictation = pkgs.callPackage ../../pkgs/nerd-dictation.nix {};
 
   # Toggle script for nerd-dictation
   nerdDictationToggle = pkgs.writeScriptBin "nerd-dictation-toggle" ''
     #!${pkgs.bash}/bin/bash
+
+    # Set up environment for vosk Python package
+    # Note: vosk is installed via pip to /var/lib/vosk-python (manual setup required)
+    export PYTHONPATH="/var/lib/vosk-python:$PYTHONPATH"
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
 
     # Check if VOSK model is installed
     if [ ! -d "${voskModelPath}" ]; then
@@ -26,22 +31,17 @@ let
       exit 1
     fi
 
-    # Check if nerd-dictation is installed
-    if ! command -v nerd-dictation &> /dev/null; then
-      ${pkgs.libnotify}/bin/notify-send "Speech to Text" "nerd-dictation not found! Run: speech-model-setup for instructions" -i dialog-error
-      echo "Error: nerd-dictation not found"
-      echo "Please install it manually after running: speech-model-setup"
-      exit 1
-    fi
+    # Use the properly packaged nerd-dictation from Nix store
+    NERD_DICTATION="${nerdDictation}/bin/nerd-dictation"
 
     # Check if nerd-dictation is running
     if pgrep -f "nerd-dictation begin" > /dev/null; then
       # Stop dictation
-      nerd-dictation end
+      "$NERD_DICTATION" end
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation stopped" -i microphone-sensitivity-muted
     else
       # Start dictation with VOSK model
-      nerd-dictation begin \
+      "$NERD_DICTATION" begin \
         --vosk-model-dir "${voskModelPath}" \
         --continuous \
         --output SIMULATE_INPUT &
@@ -208,10 +208,15 @@ in
 
       # Python packages for speech processing
       (python3.withPackages (ps: with ps; [
-        # vosk  # Not in nixpkgs - will be installed manually
         pyaudio
         soundfile
         numpy
+        cffi
+        requests
+        tqdm
+        srt
+        websockets
+        pip
         # torch and torchaudio are large - install manually if needed
         # torch
         # torchaudio
@@ -229,7 +234,8 @@ in
       # Notifications
       libnotify
 
-      # Helper scripts
+      # Nerd-dictation and helper scripts
+      nerdDictation  # Properly packaged from GitHub
       nerdDictationToggle
       whisperHelper
       whisperLive
