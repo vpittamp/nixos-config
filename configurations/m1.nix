@@ -55,7 +55,12 @@
   networking.hostName = "nixos-m1";
 
   # Speech-to-text service - safe version enabled
-  services.speech-to-text.enable = true;
+  services.speech-to-text = {
+    enable = true;
+    model = "base.en";  # Good balance of speed and accuracy
+    language = "en";
+    enableGlobalShortcut = true;
+  };
   
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
