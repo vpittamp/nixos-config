@@ -41,6 +41,11 @@
       "zha"
       "zwave_js"
 
+      # Bluetooth devices
+      "bluetooth"
+      "bluetooth_le_tracker"
+      "bluetooth_adapters"
+
       # Cloud services
       "google_translate"
       "radio_browser"
@@ -85,6 +90,11 @@
       # Device discovery
       getmac  # Samsung TV and other integrations
       ibeacon-ble  # iBeacon support
+
+      # Bluetooth device support
+      bleak  # Bluetooth Low Energy support
+      bleak-retry-connector  # Bluetooth connection reliability
+      pycups  # For Ember Mug integration
 
       # SmartThings support
       pysmartthings
