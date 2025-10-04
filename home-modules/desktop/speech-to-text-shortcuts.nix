@@ -48,4 +48,31 @@ in
       ''}";
     };
   };
+
+  # Create visible desktop entries for KRunner
+  xdg.desktopEntries = {
+    "toggle-speech-dictation" = {
+      name = "Toggle Speech Dictation";
+      comment = "Start/stop speech-to-text keyboard dictation";
+      icon = "audio-input-microphone";
+      exec = "${toggleWrapper}/bin/nerd-dictation-toggle-kde";
+      categories = [ "Utility" "Accessibility" ];
+      terminal = false;
+    };
+    "speech-to-clipboard" = {
+      name = "Speech to Clipboard";
+      comment = "Record audio and transcribe to clipboard";
+      icon = "edit-copy";
+      exec = "${pkgs.writeShellScript "whisper-clipboard" ''
+        AUDIO_FILE="/tmp/whisper-recording.wav"
+        ${pkgs.sox}/bin/rec -c 1 -r 16000 "$AUDIO_FILE" trim 0 10
+        TEXT=$(${pkgs.openai-whisper}/bin/whisper "$AUDIO_FILE" --model base.en --output_format txt --output_dir /tmp 2>/dev/null | tail -1)
+        echo "$TEXT" | ${pkgs.wl-clipboard}/bin/wl-copy
+        ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Text copied to clipboard" -i edit-copy
+        rm -f "$AUDIO_FILE"
+      ''}";
+      categories = [ "Utility" "Accessibility" ];
+      terminal = false;
+    };
+  };
 }
