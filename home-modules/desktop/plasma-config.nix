@@ -127,9 +127,11 @@
         command = "code-activity";
       };
       # Spectacle screenshot tool - GUI mode
+      # MX Keys camera button may send different scancodes through RDP
+      # Trying: Print, F13, F14, Pause (common RDP mappings for special keys)
       "launch-spectacle-gui" = {
         name = "Launch Spectacle (Screenshot Tool)";
-        key = "Print,Meta+Shift+S";
+        key = "Print,Meta+Shift+S,F13,F14,Pause";
         command = "spectacle --launchonly";
       };
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
