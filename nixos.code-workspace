@@ -5,13 +5,12 @@
 			"path": "/etc/nixos"
 		},
 		{
-			"name": "Home Directory (~)",
+			"name": "Home (Home Manager Files Only)",
 			"path": "/home/vpittamp"
 		}
 	],
 	"settings": {
 		"files.exclude": {
-			"**/.git": false,
 			"**/node_modules": true
 		},
 		"search.exclude": {
@@ -19,6 +18,11 @@
 			"**/.git/objects": true,
 			"**/.git/subtree-cache": true
 		},
+		"git.ignoredRepositories": [
+			"/home/vpittamp/stacks",
+			"/home/vpittamp/nixos-config",
+			"/home/vpittamp/backstage-cnoe"
+		],
 		"nixEnvSelector.nixFile": "${workspaceFolder:NixOS Config}/flake.nix",
 		"nix.enableLanguageServer": true,
 		"nix.serverPath": "nil",
