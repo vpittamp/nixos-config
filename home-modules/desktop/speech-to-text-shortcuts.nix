@@ -19,14 +19,14 @@ in
     # Custom shortcuts for speech-to-text
     "speech-to-text" = {
       "_k_friendly_name" = "Speech to Text";
-      "toggle-dictation" = "Ctrl+Space,none,Toggle Speech Dictation";
+      "toggle-dictation" = "Meta+Shift+Space,none,Toggle Speech Dictation";
     };
   };
 
   # Custom KDE hotkey configuration for the actual command
   programs.plasma.hotkeys.commands."toggle-dictation" = {
     name = "Toggle Speech Dictation";
-    key = "Ctrl+Space";
+    key = "Meta+Shift+Space";
     comment = "Start/stop speech-to-text keyboard dictation";
     command = "${toggleWrapper}/bin/nerd-dictation-toggle-kde";
   };
