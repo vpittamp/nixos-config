@@ -95,6 +95,12 @@
         "Default Wallet" = "kdewallet";
         "Prompt on Open" = false;
       };
+
+      # Session Management - Start with empty session
+      "ksmserverrc".General = {
+        loginMode = "emptySession";  # Start with an empty session (don't restore apps)
+        confirmLogout = true;  # Ask for confirmation on shutdown/logout
+      };
     };
 
     # Custom hotkey commands for launching activity-aware applications
