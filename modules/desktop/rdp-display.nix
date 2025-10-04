@@ -35,16 +35,31 @@ in
       kwriteconfig5 --file kcmfonts --group General --key forceFontDPI 180 || true
       kwriteconfig5 --file kdeglobals --group KScreen --key ScreenScaleFactors "XORGXRDP0=2;" || true
 
-      # Ensure panel is on primary screen for RDP sessions
+      # Ensure panel is on center screen for RDP sessions with 3 monitors
       # This handles dynamic monitor configurations
       (
         sleep 2
-        # Get primary display info
+        # Get display info
         if command -v xrandr >/dev/null 2>&1; then
-          PRIMARY=$(xrandr --query 2>/dev/null | grep " connected" | head -1 | awk '{print $1}')
-          echo "RDP Primary display detected: $PRIMARY" >> /tmp/rdp-display.log
+          # For 3-monitor setup, find the center monitor (position ~1920)
+          CENTER_SCREEN=$(xrandr --query 2>/dev/null | grep " connected" | \
+            awk '{
+              # Extract position (e.g., "1920x1200+1920+0" -> x_pos=1920)
+              if (match($0, /\+([0-9]+)\+/, pos)) {
+                x_pos = pos[1]
+                # Center monitor is typically at x=1920 for 3x1920 setup
+                if (x_pos > 1000 && x_pos < 2500) {
+                  print NR-1  # Screen number (0-indexed)
+                  exit
+                }
+              }
+            }')
 
-          # Update panel to primary screen (screen 0)
+          # Fallback to screen 1 if detection fails
+          CENTER_SCREEN=${CENTER_SCREEN:-1}
+          echo "RDP Center screen detected: $CENTER_SCREEN" >> /tmp/rdp-display.log
+
+          # Update panel to center screen
           CONFIG_FILE="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
           if [ -f "$CONFIG_FILE" ]; then
             # Find and update panel configuration
@@ -58,9 +73,9 @@ in
                       done)
 
             if [ -n "$PANEL_ID" ]; then
-              # Use kwriteconfig to update panel screen
-              kwriteconfig5 --file "$CONFIG_FILE" --group "Containments" --group "$PANEL_ID" --key lastScreen 0
-              echo "Updated panel $PANEL_ID to screen 0" >> /tmp/rdp-display.log
+              # Use kwriteconfig to update panel screen to center
+              kwriteconfig5 --file "$CONFIG_FILE" --group "Containments" --group "$PANEL_ID" --key lastScreen $CENTER_SCREEN
+              echo "Updated panel $PANEL_ID to screen $CENTER_SCREEN" >> /tmp/rdp-display.log
             fi
           fi
         fi
