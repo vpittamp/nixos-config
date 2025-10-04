@@ -161,6 +161,20 @@
         "previous activity" = "Meta+Shift+Tab";
       };
 
+      # Spectacle (screenshot tool) shortcuts
+      "org.kde.spectacle.desktop" = {
+        # Launch Spectacle with camera/screenshot key
+        # - Hetzner (MX Keys): Camera button = Print key
+        # - M1 MacBook: Meta+Shift+S (similar to macOS Cmd+Shift+4)
+        "_launch" = ["Print" "Meta+Shift+S"];
+        # Capture active window
+        "ActiveWindowScreenShot" = "Meta+Print";
+        # Capture full screen
+        "FullScreenScreenShot" = ["Shift+Print" "Meta+Shift+3"];
+        # Capture rectangular region
+        "RectangularRegionScreenShot" = ["Meta+Shift+Print" "Meta+Shift+4"];
+      };
+
     };
   };
 }
