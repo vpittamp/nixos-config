@@ -18,11 +18,14 @@
     text = ''
       #!/usr/bin/env bash
       # 1Password initialization script
-      
+
       # Ensure 1Password agent socket is available
-      export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+      # Only set if not already set by SSH agent forwarding
+      if [ -z "$SSH_AUTH_SOCK" ] || [ ! -S "$SSH_AUTH_SOCK" ]; then
+        export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+      fi
       export OP_BIOMETRIC_UNLOCK_ENABLED="true"
-      
+
       # Don't auto-start 1Password - it should be started by the desktop environment
       # or manually by the user when needed. Auto-starting causes segfaults.
       # if [ -n "$DISPLAY" ] && ! pgrep -x "1password" > /dev/null; then
@@ -30,7 +33,7 @@
       #   1password --silent &
       #   sleep 2
       # fi
-      
+
       # Verify agent is working (silently)
       if [ -S "$SSH_AUTH_SOCK" ]; then
         # Test the agent silently
@@ -45,13 +48,17 @@
   # Enhanced bash configuration
   programs.bash.initExtra = ''
     # Set SSH_AUTH_SOCK for 1Password
-    export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
-    
+    # IMPORTANT: Only set if not already set by SSH agent forwarding
+    # When SSH'ing in with -A, SSH_AUTH_SOCK will be set to forwarded agent
+    if [ -z "$SSH_AUTH_SOCK" ] || [ ! -S "$SSH_AUTH_SOCK" ]; then
+      export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+    fi
+
     # Initialize 1Password environment
     if [ -f "$HOME/.config/1Password/init.sh" ]; then
       source "$HOME/.config/1Password/init.sh" 2>/dev/null
     fi
-    
+
     # DO NOT source plugins.sh as it creates aliases that conflict with functions
     # The 1Password shell-plugins module handles function creation automatically
   '';

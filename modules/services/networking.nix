@@ -20,12 +20,18 @@
       UseDns = false;
       StrictModes = true;
     };
-    # Extra config for better security
+    # Extra config for better security and agent forwarding
     extraConfig = ''
       MaxAuthTries 3
       MaxSessions 10
       ClientAliveInterval 300
       ClientAliveCountMax 2
+
+      # SSH Agent Forwarding - allows remote git operations with local 1Password agent
+      AllowAgentForwarding yes
+
+      # Allow Unix domain socket forwarding for agent
+      StreamLocalBindUnlink yes
     '';
   };
 
