@@ -30,8 +30,8 @@ let
     # Use the properly packaged nerd-dictation from Nix store
     NERD_DICTATION="${nerdDictation}/bin/nerd-dictation"
 
-    # Check if nerd-dictation is running
-    if pgrep -f "nerd-dictation begin" > /dev/null; then
+    # Check if nerd-dictation is running (match the wrapped process)
+    if pgrep -f "\.nerd-dictation-wrapped begin" > /dev/null; then
       # Stop dictation
       "$NERD_DICTATION" end
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation stopped" -i microphone-sensitivity-muted
