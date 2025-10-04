@@ -2,7 +2,7 @@
 
 pkgs.stdenv.mkDerivation {
   pname = "speech-to-text-indicator";
-  version = "1.0";
+  version = "1.1";
 
   src = pkgs.writeTextFile {
     name = "speech-to-text-indicator.py";
@@ -12,7 +12,7 @@ pkgs.stdenv.mkDerivation {
       import subprocess
       import time
       from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-      from PyQt6.QtGui import QIcon, QAction
+      from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
       from PyQt6.QtCore import QTimer, Qt
 
       class SpeechIndicator:
@@ -22,6 +22,12 @@ pkgs.stdenv.mkDerivation {
 
               # Create system tray icon
               self.tray = QSystemTrayIcon()
+
+              # Animation state for blinking
+              self.blink_state = True
+              self.blink_timer = QTimer()
+              self.blink_timer.timeout.connect(self.toggle_blink)
+
               self.update_icon()
 
               # Create menu
@@ -67,14 +73,38 @@ pkgs.stdenv.mkDerivation {
               except:
                   return False
 
+          def create_red_icon(self, blink_on=True):
+              """Create a red microphone icon"""
+              # Get the base microphone icon
+              base_icon = QIcon.fromTheme("audio-input-microphone")
+              pixmap = base_icon.pixmap(64, 64)
+
+              # Create a red overlay
+              if blink_on:
+                  painter = QPainter(pixmap)
+                  painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+                  painter.fillRect(pixmap.rect(), QColor(255, 0, 0, 180))  # Red with transparency
+                  painter.end()
+
+              return QIcon(pixmap)
+
+          def toggle_blink(self):
+              """Toggle blink state for animation"""
+              self.blink_state = not self.blink_state
+              self.update_icon()
+
           def update_icon(self):
               active = self.is_active()
               if active:
-                  # Red microphone icon when active
-                  self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
-                  self.tray.setToolTip("Speech-to-Text: RECORDING")
+                  # Red blinking microphone icon when active
+                  self.tray.setIcon(self.create_red_icon(self.blink_state))
+                  self.tray.setToolTip("Speech-to-Text: 🔴 RECORDING")
+                  # Start blinking if not already started
+                  if not self.blink_timer.isActive():
+                      self.blink_timer.start(500)  # Blink every 500ms
               else:
-                  # Muted microphone when inactive
+                  # Stop blinking and show muted icon
+                  self.blink_timer.stop()
                   self.tray.setIcon(QIcon.fromTheme("microphone-sensitivity-muted"))
                   self.tray.setToolTip("Speech-to-Text: Off")
 
