@@ -1,0 +1,20 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "NixOS Config"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Shows speech-to-text dictation status",
+        "EnabledByDefault": true,
+        "Icon": "audio-input-microphone",
+        "Id": "org.nixos.speechToTextIndicator",
+        "Name": "Speech-to-Text Indicator",
+        "Version": "1.0",
+        "Website": ""
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-MainScript": "code/main.qml"
+}

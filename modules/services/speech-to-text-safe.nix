@@ -14,6 +14,9 @@ let
   # Package nerd-dictation from separate file (properly packaged from GitHub)
   nerdDictation = pkgs.callPackage ../../pkgs/nerd-dictation.nix {};
 
+  # System tray indicator for speech-to-text status
+  speechIndicator = pkgs.callPackage ../../pkgs/speech-to-text-indicator.nix {};
+
   # Toggle script for nerd-dictation (updated 2025-10-04 with timeout fix)
   # Note: PYTHONPATH and LD_LIBRARY_PATH are now set in the nerd-dictation package wrapper
   nerdDictationToggle = pkgs.writeScriptBin "nerd-dictation-toggle" ''
@@ -234,6 +237,7 @@ in
       # Nerd-dictation and helper scripts
       nerdDictation  # Properly packaged from GitHub
       nerdDictationToggle
+      speechIndicator  # System tray status indicator
       whisperHelper
       whisperLive
       modelSetup  # Manual model download helper
@@ -247,6 +251,19 @@ in
 
     # No systemd services - everything is manual to avoid activation issues
     # The nerd-dictation-toggle script handles starting/stopping
+
+    # XDG autostart for system tray indicator
+    environment.etc."xdg/autostart/speech-to-text-indicator.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Speech-to-Text Indicator
+      Comment=System tray indicator showing dictation status
+      Exec=${speechIndicator}/bin/speech-to-text-indicator
+      Icon=audio-input-microphone
+      Terminal=false
+      X-KDE-autostart-after=panel
+      X-KDE-StartupNotify=false
+    '';
 
     # Environment variables
     environment.sessionVariables = {
