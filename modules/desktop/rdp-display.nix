@@ -68,14 +68,14 @@ in
                       sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/')
 
             if [ -n "$PANEL_ID" ]; then
-              # Use kwriteconfig to update panel screen to center
-              kwriteconfig5 --file "$CONFIG_FILE" --group "Containments" --group "$PANEL_ID" --key lastScreen $CENTER_SCREEN
+              # Use sed to update panel screen (more reliable than kwriteconfig)
+              sed -i "/^\[Containments\]\[$PANEL_ID\]/,/^\[/ s/^lastScreen=.*/lastScreen=$CENTER_SCREEN/" "$CONFIG_FILE"
               echo "Updated panel $PANEL_ID to screen $CENTER_SCREEN" >> /tmp/rdp-display.log
 
               # Restart plasmashell to apply changes
-              kquitapp6 plasmashell 2>/dev/null || kquitapp5 plasmashell 2>/dev/null || true
-              sleep 1
-              plasmashell --replace >/dev/null 2>&1 &
+              kquitapp6 plasmashell 2>/dev/null || kquitapp5 plasmashell 2>/dev/null || pkill plasmashell || true
+              sleep 2
+              plasmashell &
             fi
           fi
         fi
