@@ -118,23 +118,23 @@
     };
   };
   
-  # Also create XDG autostart entry as a fallback
-  # This ensures touchegg starts even if systemd user service fails
-  home.file.".config/autostart/touchegg-client.desktop" = {
-    text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Touchegg Client
-      Comment=Multi-touch gesture client
-      Exec=${pkgs.touchegg}/bin/touchegg --client
-      Hidden=false
-      NoDisplay=true
-      X-GNOME-Autostart-enabled=true
-      X-KDE-autostart-after=panel
-      X-KDE-autostart-phase=2
-      StartupNotify=false
-      Terminal=false
-      Categories=Utility;
-    '';
-  };
+  # XDG autostart disabled - systemd user service is sufficient
+  # and avoids creating autostart entries on systems where touchegg is disabled
+  # home.file.".config/autostart/touchegg-client.desktop" = {
+  #   text = ''
+  #     [Desktop Entry]
+  #     Type=Application
+  #     Name=Touchegg Client
+  #     Comment=Multi-touch gesture client
+  #     Exec=${pkgs.touchegg}/bin/touchegg --client
+  #     Hidden=false
+  #     NoDisplay=true
+  #     X-GNOME-Autostart-enabled=true
+  #     X-KDE-autostart-after=panel
+  #     X-KDE-autostart-phase=2
+  #     StartupNotify=false
+  #     Terminal=false
+  #     Categories=Utility;
+  #   '';
+  # };
 }

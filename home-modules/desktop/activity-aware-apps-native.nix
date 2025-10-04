@@ -433,17 +433,17 @@ in
     };
   };
 
-  # Yakuake autostart (works on X11 and Wayland)
-  home.file.".config/autostart/yakuake.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Exec=yakuake-activity
-    Hidden=false
-    NoDisplay=false
-    X-GNOME-Autostart-enabled=true
-    Name=Yakuake
-    Comment=Drop-down terminal with activity awareness
-  '';
+  # Yakuake autostart disabled - manual launch preferred
+  # home.file.".config/autostart/yakuake.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Exec=yakuake-activity
+  #   Hidden=false
+  #   NoDisplay=false
+  #   X-GNOME-Autostart-enabled=true
+  #   Name=Yakuake
+  #   Comment=Drop-down terminal with activity awareness
+  # '';
 
   # Rebuild KDE application cache when desktop files change
   home.activation.rebuildKdeCache = lib.hm.dag.entryAfter ["writeBoundary"] ''
