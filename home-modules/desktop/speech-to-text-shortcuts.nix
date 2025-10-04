@@ -3,11 +3,10 @@
 { config, lib, pkgs, ... }:
 
 let
-  # Wrapper script that sets up environment and calls nerd-dictation-toggle
+  # Note: Environment variables are now set in the nerd-dictation package wrapper
+  # This just provides a convenient name for KDE integration
   toggleWrapper = pkgs.writeScriptBin "nerd-dictation-toggle-kde" ''
     #!${pkgs.bash}/bin/bash
-    export PYTHONPATH=/var/lib/vosk-python:$PYTHONPATH
-    export LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH
     exec /run/current-system/sw/bin/nerd-dictation-toggle
   '';
 in

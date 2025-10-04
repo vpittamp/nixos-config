@@ -21,7 +21,7 @@ stdenv.mkDerivation {
     chmod +x $out/bin/nerd-dictation
 
     wrapProgram $out/bin/nerd-dictation \
-      --prefix PYTHONPATH : "${python3.withPackages (ps: with ps; [ sounddevice ])}/lib/python${python3.version}/site-packages" \
+      --prefix PYTHONPATH : "/var/lib/vosk-python:${python3.withPackages (ps: with ps; [ sounddevice ])}/lib/python${python3.version}/site-packages" \
       --prefix LD_LIBRARY_PATH : "${stdenv.cc.cc.lib}/lib"
   '';
 

@@ -15,13 +15,9 @@ let
   nerdDictation = pkgs.callPackage ../../pkgs/nerd-dictation.nix {};
 
   # Toggle script for nerd-dictation
+  # Note: PYTHONPATH and LD_LIBRARY_PATH are now set in the nerd-dictation package wrapper
   nerdDictationToggle = pkgs.writeScriptBin "nerd-dictation-toggle" ''
     #!${pkgs.bash}/bin/bash
-
-    # Set up environment for vosk Python package
-    # Note: vosk is installed via pip to /var/lib/vosk-python (manual setup required)
-    export PYTHONPATH="/var/lib/vosk-python:$PYTHONPATH"
-    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
 
     # Check if VOSK model is installed
     if [ ! -d "${voskModelPath}" ]; then
