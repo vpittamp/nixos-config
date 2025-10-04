@@ -130,7 +130,7 @@
 
   # Use X11 session by default for XRDP compatibility
   services.displayManager.defaultSession = lib.mkForce "plasmax11";
-  
+
   # AgentGateway configuration - Disabled due to missing module
   # services.agentgateway = {
   #   enable = true;

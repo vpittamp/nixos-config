@@ -14,10 +14,11 @@ let
   # Package nerd-dictation from separate file (properly packaged from GitHub)
   nerdDictation = pkgs.callPackage ../../pkgs/nerd-dictation.nix {};
 
-  # Toggle script for nerd-dictation
+  # Toggle script for nerd-dictation (updated 2025-10-04 with timeout fix)
   # Note: PYTHONPATH and LD_LIBRARY_PATH are now set in the nerd-dictation package wrapper
   nerdDictationToggle = pkgs.writeScriptBin "nerd-dictation-toggle" ''
     #!${pkgs.bash}/bin/bash
+    # Version: 2.0 - Fixed toggle detection and added timeout
 
     # Check if VOSK model is installed
     if [ ! -d "${voskModelPath}" ]; then
