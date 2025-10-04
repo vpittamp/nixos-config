@@ -235,12 +235,14 @@ in
       libnotify
 
       # Nerd-dictation and helper scripts
-      nerdDictation  # Properly packaged from GitHub
-      nerdDictationToggle
-      speechIndicator  # System tray status indicator
       whisperHelper
       whisperLive
       modelSetup  # Manual model download helper
+    ] ++ [
+      # Custom packages defined in let block
+      nerdDictation  # Properly packaged from GitHub
+      nerdDictationToggle
+      speechIndicator  # System tray status indicator
     ];
 
     # Create directory for models
