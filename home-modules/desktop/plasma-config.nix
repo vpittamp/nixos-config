@@ -169,7 +169,8 @@
 
       # Spectacle (screenshot tool) shortcuts
       "org.kde.spectacle.desktop" = {
-        # Launch Spectacle GUI is configured in hotkeys.commands
+        # Disable default launch shortcut - using custom hotkeys.commands instead
+        "_launch" = "none";
         # Capture active window
         "ActiveWindowScreenShot" = "Meta+Print";
         # Capture full screen
