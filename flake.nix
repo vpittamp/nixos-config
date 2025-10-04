@@ -28,17 +28,12 @@
       url = "github:1Password/shell-plugins";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    opnix = {
-      url = "github:mrjones2014/opnix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
+    
     vscode-server = {
       url = "github:nix-community/nixos-vscode-server";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
+    
     claude-code-nix = {
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -58,7 +53,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, opnix, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
     let
       # Helper function to create a system configuration
       mkSystem = { hostname, system, modules }:
@@ -82,10 +77,9 @@
                   };
                 };
                 users.vpittamp = {
-                  imports = [
+                  imports = [ 
                     ./home-vpittamp.nix
                     inputs.plasma-manager.homeModules.plasma-manager
-                    inputs.opnix.homeManagerModules.default
                   ];
                   home.enableNixpkgsReleaseCheck = false;
                 };
