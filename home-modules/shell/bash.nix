@@ -66,19 +66,22 @@
       # Forcing DISPLAY to :0 breaks apps like VS Code under XRDP or non-:0 seats.
       # Disable OSC color queries - commented out to allow colors
       # NO_COLOR = "";  # Don't set this as it disables colors in many programs
-      
+
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
-      
+
       # SSL Certificate configuration
       NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
       SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
       REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
-      
+
       # AI/LLM API Keys (set these in your environment or use a secrets manager)
       # AVANTE_ANTHROPIC_API_KEY = "your-api-key-here"; # Uncomment and set your Claude API key
       # Or use a command to retrieve from password manager:
       # AVANTE_ANTHROPIC_API_KEY = "$(op read 'op://Private/Anthropic API Key/api_key')"; # Example with 1Password
+
+      # NOTE: BROWSER environment variable is configured in firefox.nix
+      # to ensure proper OAuth flows for VSCode GitHub auth, Claude CLI, etc.
     };
     
     shellAliases = {

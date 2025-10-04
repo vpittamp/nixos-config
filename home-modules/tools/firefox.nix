@@ -43,7 +43,7 @@ in
 
         # Search engines configuration
         search = {
-          default = "google";  # Use Google as default search engine (use lowercase id)
+          default = "google";  # Default search engine ID (lowercase per deprecation warning)
           force = true;
           engines = {
             "Google" = {
@@ -171,10 +171,12 @@ in
           # Disable first party isolation as it breaks OAuth flows
           "privacy.firstparty.isolate" = false;
 
-          # Enhanced Tracking Protection - use Standard mode for OAuth compatibility
-          "privacy.trackingprotection.enabled" = true;
+          # Enhanced Tracking Protection - DISABLED for OAuth compatibility (VSCode, Claude, etc.)
+          # Custom URL schemes like vscode:// are blocked by tracking protection
+          "privacy.trackingprotection.enabled" = false;  # Disable to allow vscode:// redirects
+          "privacy.trackingprotection.pbmode.enabled" = false;  # Also disable in private browsing
           "privacy.trackingprotection.socialtracking.enabled" = false;  # Disable social tracking blocking
-          "browser.contentblocking.category" = "standard";  # Use standard instead of strict
+          "browser.contentblocking.category" = "custom";  # Use custom mode with tracking protection disabled
 
           # UI settings
           "browser.toolbars.bookmarks.visibility" = "always";
@@ -338,23 +340,29 @@ in
   '';
 
   # Set Firefox as the default browser for all browser-based activities
-  # Using associations.added instead of defaultApplications to merge with user changes
-  # This allows PWAs and manual preferences to coexist with declarative config
+  # Using both defaultApplications (enforced) and associations.added (preferences)
+  # This ensures OAuth flows work while allowing PWAs to register themselves
   xdg.mimeApps = {
     enable = true;
+
+    # Enforced defaults - critical for OAuth/authentication flows
+    defaultApplications = {
+      "text/html" = "firefox.desktop";
+      "x-scheme-handler/http" = "firefox.desktop";
+      "x-scheme-handler/https" = "firefox.desktop";
+      "x-scheme-handler/about" = "firefox.desktop";
+      "x-scheme-handler/unknown" = "firefox.desktop";
+      "application/xhtml+xml" = "firefox.desktop";
+    };
+
+    # Additional associations - preferences, not enforced defaults
     associations.added = {
-      # Web browsers - preferences, not enforced defaults
-      "text/html" = [ "firefox.desktop" ];
-      "x-scheme-handler/http" = [ "firefox.desktop" ];
-      "x-scheme-handler/https" = [ "firefox.desktop" ];
-      "x-scheme-handler/about" = [ "firefox.desktop" ];
-      "x-scheme-handler/unknown" = [ "firefox.desktop" ];
+      # Web browsers - additional file types
       "x-scheme-handler/ftp" = [ "firefox.desktop" ];
       "x-scheme-handler/chrome" = [ "firefox.desktop" ];
       "application/x-extension-htm" = [ "firefox.desktop" ];
       "application/x-extension-html" = [ "firefox.desktop" ];
       "application/x-extension-shtml" = [ "firefox.desktop" ];
-      "application/xhtml+xml" = [ "firefox.desktop" ];
       "application/x-extension-xhtml" = [ "firefox.desktop" ];
       "application/x-extension-xht" = [ "firefox.desktop" ];
       "application/pdf" = [ "firefox.desktop" "okularApplication_pdf.desktop" ];  # Firefox first, Okular as fallback
