@@ -32,15 +32,15 @@ let
 
     # Check if nerd-dictation is running (match the wrapped process)
     if pgrep -f "\.nerd-dictation-wrapped begin" > /dev/null; then
-      # Stop dictation
-      "$NERD_DICTATION" end
+      # Stop dictation (run in background to avoid hanging)
+      "$NERD_DICTATION" end > /dev/null 2>&1 &
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation stopped" -i microphone-sensitivity-muted
     else
-      # Start dictation with VOSK model
+      # Start dictation with VOSK model (run in background)
       "$NERD_DICTATION" begin \
         --vosk-model-dir "${voskModelPath}" \
         --continuous \
-        --output SIMULATE_INPUT &
+        --output SIMULATE_INPUT > /dev/null 2>&1 &
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation started - Speak now!" -i audio-input-microphone
     fi
   '';
