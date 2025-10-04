@@ -338,12 +338,12 @@ in
   '';
 
   # Set Firefox as the default browser for all browser-based activities
+  # Using associations.added instead of defaultApplications to merge with user changes
+  # This allows PWAs and manual preferences to coexist with declarative config
   xdg.mimeApps = {
-    enable = true;  # Single source of truth for MIME associations
-    # Home Manager manages MIME associations with logging of any overwrites
-    # Check ~/.local/share/home-manager/mime-logs/ for any user changes that were overwritten
-    defaultApplications = {
-      # Web browsers
+    enable = true;
+    associations.added = {
+      # Web browsers - preferences, not enforced defaults
       "text/html" = [ "firefox.desktop" ];
       "x-scheme-handler/http" = [ "firefox.desktop" ];
       "x-scheme-handler/https" = [ "firefox.desktop" ];
