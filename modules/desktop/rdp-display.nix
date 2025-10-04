@@ -81,9 +81,9 @@ in
                           sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/')
 
             # Find all panel IDs
-            ALL_PANELS=$(grep -E "^plugin=org.kde.panel$" "$CONFIG_FILE" -B 5 | \
+            ALL_PANELS=$(grep -B 10 "^plugin=org.kde.panel$" "$CONFIG_FILE" | \
                         grep -E "^\[Containments\]\[[0-9]+\]$" | \
-                        sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/')
+                        sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/' | sort -u)
 
             # Move primary panel to center screen
             if [ -n "$PRIMARY_PANEL" ]; then
