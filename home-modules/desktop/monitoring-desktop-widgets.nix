@@ -53,16 +53,15 @@ in {
     categories = [ "System" "Monitor" ];
   };
 
-  # Add plasma-systemmonitor to autostart for the monitoring activity
-  # This will open the system monitor app when switching to the activity
-  home.file.".config/autostart/monitoring-dashboard.desktop" = {
-    text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=System Monitor
-      Exec=${pkgs.kdePackages.plasma-systemmonitor}/bin/plasma-systemmonitor
-      Icon=utilities-system-monitor
-      X-KDE-autostart-condition=kactivitymanagerdrc:main:currentActivity:645bcfb7-e769-4000-93be-ad31eb77ea2e
-    '';
-  };
+  # System Monitor autostart disabled - manual launch preferred
+  # home.file.".config/autostart/monitoring-dashboard.desktop" = {
+  #   text = ''
+  #     [Desktop Entry]
+  #     Type=Application
+  #     Name=System Monitor
+  #     Exec=${pkgs.kdePackages.plasma-systemmonitor}/bin/plasma-systemmonitor
+  #     Icon=utilities-system-monitor
+  #     X-KDE-autostart-condition=kactivitymanagerdrc:main:currentActivity:645bcfb7-e769-4000-93be-ad31eb77ea2e
+  #   '';
+  # };
 }
