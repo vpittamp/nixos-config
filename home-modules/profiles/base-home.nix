@@ -41,6 +41,7 @@ in
     ../tools/onepassword-env.nix
     ../tools/onepassword-plugins.nix
     ../tools/onepassword-autostart.nix
+    ../tools/opnix-secrets.nix  # Declarative 1Password secret management
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
