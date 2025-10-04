@@ -68,9 +68,9 @@ in
           done <<< "$MONITOR_INFO"
 
           # Fallbacks
-          CENTER_SCREEN=${CENTER_SCREEN:-2}
-          LEFT_SCREEN=${LEFT_SCREEN:-1}
-          RIGHT_SCREEN=${RIGHT_SCREEN:-0}
+          CENTER_SCREEN=''${CENTER_SCREEN:-2}
+          LEFT_SCREEN=''${LEFT_SCREEN:-1}
+          RIGHT_SCREEN=''${RIGHT_SCREEN:-0}
 
           echo "Screen mapping: Left=$LEFT_SCREEN, Center=$CENTER_SCREEN, Right=$RIGHT_SCREEN" >> /tmp/rdp-display.log
 

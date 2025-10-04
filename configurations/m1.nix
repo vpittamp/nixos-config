@@ -30,9 +30,8 @@
     ../modules/services/scrypted.nix  # Bridge for Circle View cameras and HomeKit devices
 
     # Browser integrations with 1Password
-    ../modules/desktop/firefox-1password.nix  # Enable 1Password for Firefox and PWAs
-    ../modules/desktop/firefox-pwa-1password.nix  # Enable 1Password in PWAs
-    # ../modules/desktop/chromium-1password.nix  # Disabled - not tested yet
+    ../modules/desktop/firefox-1password.nix
+    ../modules/desktop/firefox-pwa-1password.nix
   ];
 
   # Provide DisplayLink binaries automatically by fetching from Synaptics.

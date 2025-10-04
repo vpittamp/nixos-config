@@ -25,39 +25,13 @@
     ../modules/desktop/kde-plasma.nix
     ../modules/desktop/kde-multi-panel.nix
     ../modules/desktop/remote-access.nix
-    # ../modules/desktop/chromium-extensions.nix  # Disabled - using home-manager instead
     ../modules/desktop/xrdp-with-sound.nix
-    ../modules/desktop/firefox-virtual-optimization.nix  # Virtual environment optimizations
-    # ../modules/desktop/firefox-pwa.nix  # Old firefoxpwa-based approach
-    # ../modules/desktop/pwa-extensions.nix  # No longer needed with declarative approach
-    # ../modules/desktop/pwa-icons-v2.nix  # Replaced by pwa-declarative
-    # ../modules/desktop/firefoxpwa-full-auto.nix  # To be added in Phase 3
-    # ../modules/desktop/xrdp-audio.nix  # Not needed - using services.xrdp.audio.enable instead
-    # ../modules/desktop/chromium-policies.nix  # Disabled - reverting certificate handling
-    # ../modules/desktop/cluster-certificates.nix  # DISABLED - causing infinite restart loop at boot
+    ../modules/desktop/firefox-virtual-optimization.nix
     ../modules/desktop/rdp-display.nix
-    # ../modules/peripherals/logitech-mx-master3.nix  # Phase 4
-    
-    # Services (already included above)
-    # ../modules/services/development.nix
-    # ../modules/services/networking.nix
-    # ../modules/services/onepassword.nix
-    ../modules/services/onepassword-automation.nix  # Phase 1 - without automation initially
-    # ../modules/services/speech-to-text.nix  # Avoid - caused issues (network downloads during build)
-    ../modules/services/speech-to-text-safe.nix  # Safe version - no network ops during build
 
-    # Phase 3: Browser integrations with 1Password
-    # ../modules/desktop/firefox-1password.nix
-    # ../modules/desktop/chromium-1password.nix
-    
-    # Phase 4: Development Tools
-    # ../modules/kubernetes/agentgateway.nix
-
-    # Tmux Supervisor Dashboard
-    # ../modules/tmux-supervisor.nix  # Disabled - missing scripts
-
-    # Multi-Agent Orchestrator
-    # ../modules/claude-orchestrator.nix  # Disabled - missing scripts
+    # Services
+    ../modules/services/onepassword-automation.nix
+    ../modules/services/speech-to-text-safe.nix
   ];
 
   # System identification
@@ -130,13 +104,6 @@
 
   # Use X11 session by default for XRDP compatibility
   services.displayManager.defaultSession = lib.mkForce "plasmax11";
-
-  # AgentGateway configuration - Disabled due to missing module
-  # services.agentgateway = {
-  #   enable = true;
-  #   autoDeployOnBoot = false;  # Manual deployment for now
-  #   enableAIBackends = true;   # Enable AI routing capabilities
-  # };
 
   # Fully Automated PWA Configuration - Phase 3
   # programs.firefoxpwa-auto = {
@@ -297,23 +264,6 @@
   # Enable rtkit for better audio performance
   security.rtkit.enable = true;
 
-  # Tmux Supervisor Dashboard configuration - DISABLED
-  # programs.tmuxSupervisor = {
-  #   enable = true;
-  #   enableKonsoleIntegration = true;
-  #   enableSystemdService = false;  # Don't auto-start, launch manually
-  # };
-
-  # Multi-Agent Claude Orchestrator configuration - DISABLED
-  # programs.claudeOrchestrator = {
-  #   enable = true;
-  #   cliTool = "claude";  # or "codex-cli"
-  #   defaultModel = "opus";
-  #   defaultManagers = [ "nixos" "backstage" "stacks" ];
-  #   engineersPerManager = 2;
-  #   enableKonsoleIntegration = true;
-  #   enableSystemdService = false;  # Launch manually
-  # };
   # Ensure user is in audio group for audio access
   users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" "docker" "libvirtd" ];
   
