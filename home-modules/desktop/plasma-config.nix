@@ -126,6 +126,12 @@
         key = "Ctrl+Alt+E";
         command = "code-activity";
       };
+      # Spectacle screenshot tool - GUI mode
+      "launch-spectacle-gui" = {
+        name = "Launch Spectacle (Screenshot Tool)";
+        key = "Print,Meta+Shift+S";
+        command = "spectacle --launchonly";
+      };
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
@@ -163,10 +169,7 @@
 
       # Spectacle (screenshot tool) shortcuts
       "org.kde.spectacle.desktop" = {
-        # Launch Spectacle with camera/screenshot key
-        # - Hetzner (MX Keys): Camera button = Print key
-        # - M1 MacBook: Meta+Shift+S (similar to macOS Cmd+Shift+4)
-        "_launch" = ["Print" "Meta+Shift+S"];
+        # Launch Spectacle GUI is configured in hotkeys.commands
         # Capture active window
         "ActiveWindowScreenShot" = "Meta+Print";
         # Capture full screen
