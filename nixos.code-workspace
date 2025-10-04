@@ -1,0 +1,37 @@
+{
+	"folders": [
+		{
+			"name": "NixOS Config",
+			"path": "/etc/nixos"
+		},
+		{
+			"name": "Home Directory (~)",
+			"path": "/home/vpittamp"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/.git": false,
+			"**/node_modules": true
+		},
+		"search.exclude": {
+			"**/node_modules": true,
+			"**/.git/objects": true,
+			"**/.git/subtree-cache": true
+		},
+		"nixEnvSelector.nixFile": "${workspaceFolder:NixOS Config}/flake.nix",
+		"nix.enableLanguageServer": true,
+		"nix.serverPath": "nil",
+		"editor.formatOnSave": false,
+		"files.associations": {
+			"*.nix": "nix"
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"jnoortheen.nix-ide",
+			"bbenoist.nix",
+			"arrterian.nix-env-selector"
+		]
+	}
+}

@@ -256,6 +256,12 @@ let
     "git.autofetch" = true;
     "git.confirmSync" = false;
 
+    # GitHub authentication - use system credential helper
+    "github.gitAuthentication" = true;
+    "github.gitProtocol" = "https";
+    # Use gh CLI for authentication
+    "git.terminalAuthentication" = true;
+
     # Editor settings - use system scaling
     "editor.fontSize" = 14;
     "editor.fontFamily" = "'JetBrains Mono', 'Fira Code', monospace";
@@ -268,6 +274,10 @@ let
     # Display settings - adjust for Wayland HiDPI
     "window.zoomLevel" = 0; # Default zoom level for Wayland
     "terminal.integrated.fontSize" = 14; # Standard terminal font
+
+    # Auto-save configuration
+    "files.autoSave" = "afterDelay";
+    "files.autoSaveDelay" = 1000;
 
     # File associations
     "files.associations" = {

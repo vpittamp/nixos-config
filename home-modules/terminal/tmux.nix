@@ -73,15 +73,18 @@
       set -ga terminal-overrides ',konsole*:Tc'
       set -ga terminal-overrides ',konsole*:Ms@'
 
-      # VSCode terminal settings
+      # VSCode terminal settings - disable OSC queries that cause escape sequences
       set -ga terminal-overrides ',vscode*:Tc'
+      set -ga terminal-overrides ',vscode*:Ms@:XT@'
 
       # General xterm settings
       set -ga terminal-overrides ',xterm*:Tc'
       set -ga terminal-overrides ',xterm-256color:Tc'
 
-      # Allow passthrough for proper color handling
-      set -g allow-passthrough on
+      # Allow passthrough for proper color handling, but disable for VSCode
+      if-shell '[ -z "$VSCODE_TERMINAL" ]' \
+        'set -g allow-passthrough on' \
+        'set -g allow-passthrough off'
 
       # Handle Konsole-specific environment
       if-shell '[ -n "$KONSOLE_VERSION" ]' \
