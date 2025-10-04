@@ -23,11 +23,29 @@ in
     };
   };
 
-  # Custom KDE hotkey configuration for the actual command
-  programs.plasma.hotkeys.commands."toggle-dictation" = {
-    name = "Toggle Speech Dictation";
-    key = "Meta+Shift+Space";
-    comment = "Start/stop speech-to-text keyboard dictation";
-    command = "${toggleWrapper}/bin/nerd-dictation-toggle-kde";
+  # Custom KDE hotkey commands (visible in KRunner)
+  programs.plasma.hotkeys.commands = {
+    "toggle-speech-dictation" = {
+      name = "Toggle Speech Dictation";
+      key = "Meta+Shift+Space";
+      comment = "Start/stop speech-to-text keyboard dictation with VOSK";
+      command = "${toggleWrapper}/bin/nerd-dictation-toggle-kde";
+    };
+    "speech-to-clipboard" = {
+      name = "Speech to Clipboard";
+      key = "Meta+Alt+C";
+      comment = "Record 10 seconds of audio and transcribe to clipboard with Whisper";
+      command = "${pkgs.writeShellScript "whisper-clipboard" ''
+        AUDIO_FILE="/tmp/whisper-recording.wav"
+        # Record 10 seconds of audio
+        ${pkgs.sox}/bin/rec -c 1 -r 16000 "$AUDIO_FILE" trim 0 10
+        # Transcribe with Whisper
+        TEXT=$(${pkgs.openai-whisper}/bin/whisper "$AUDIO_FILE" --model base.en --output_format txt --output_dir /tmp 2>/dev/null | tail -1)
+        # Copy to clipboard
+        echo "$TEXT" | ${pkgs.wl-clipboard}/bin/wl-copy
+        ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Text copied to clipboard" -i edit-copy
+        rm -f "$AUDIO_FILE"
+      ''}";
+    };
   };
 }
