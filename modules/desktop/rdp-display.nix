@@ -62,20 +62,20 @@ in
           # Update panel to center screen
           CONFIG_FILE="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
           if [ -f "$CONFIG_FILE" ]; then
-            # Find and update panel configuration
-            PANEL_ID=$(grep -E "^\[Containments\]\[[0-9]+\]$" "$CONFIG_FILE" | \
-                      while read line; do
-                        id=$(echo "$line" | sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/')
-                        if grep -A 3 "\[Containments\]\[$id\]" "$CONFIG_FILE" | grep -q "plugin=org.kde.panel"; then
-                          echo "$id"
-                          break
-                        fi
-                      done)
+            # Find the PRIMARY panel (one with systemtray AND kickoff/icontasks)
+            PANEL_ID=$(grep -B 200 "plugin=org.kde.plasma.systemtray" "$CONFIG_FILE" | \
+                      grep -E "^\[Containments\]\[[0-9]+\]$" | tail -1 | \
+                      sed 's/\[Containments\]\[\([0-9]\+\)\]/\1/')
 
             if [ -n "$PANEL_ID" ]; then
               # Use kwriteconfig to update panel screen to center
               kwriteconfig5 --file "$CONFIG_FILE" --group "Containments" --group "$PANEL_ID" --key lastScreen $CENTER_SCREEN
               echo "Updated panel $PANEL_ID to screen $CENTER_SCREEN" >> /tmp/rdp-display.log
+
+              # Restart plasmashell to apply changes
+              kquitapp6 plasmashell 2>/dev/null || kquitapp5 plasmashell 2>/dev/null || true
+              sleep 1
+              plasmashell --replace >/dev/null 2>&1 &
             fi
           fi
         fi
