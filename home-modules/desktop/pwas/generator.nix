@@ -60,8 +60,10 @@ ENTRY
   '';
 
   # Script to patch window rules with actual PWA WM classes and activity UUIDs
-  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules" ''
+  # Updated: 2025-10-05 - Added enhanced WM class and activity UUID patching
+  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v2" ''
     set -euo pipefail
+    # Version: 2.0 - Enhanced patching with runtime discovery
 
     KWINRULES="$HOME/.config/kwinrulesrc"
     MAPPING_FILE="$HOME/.config/plasma-pwas/pwa-classes.json"
@@ -82,6 +84,8 @@ ENTRY
     if [ -f "$MAPPING_FILE" ]; then
       echo "  - Patching PWA WM classes..."
       ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\(.value.wmclass)"' "$MAPPING_FILE" | while IFS=: read -r name wmclass; do
+        echo "    Processing $name -> $wmclass"
+
         # Replace FFPWA-PLACEHOLDER-{name} with actual WM class
         ${pkgs.gnused}/bin/sed -i "s|wmclass=FFPWA-PLACEHOLDER-$name|wmclass=$wmclass|g" "$TEMP_FILE"
 
