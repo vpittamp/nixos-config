@@ -3,10 +3,6 @@
 		{
 			"name": "NixOS Config",
 			"path": "/etc/nixos"
-		},
-		{
-			"name": "Home (Home Manager Files Only)",
-			"path": "/home/vpittamp"
 		}
 	],
 	"settings": {

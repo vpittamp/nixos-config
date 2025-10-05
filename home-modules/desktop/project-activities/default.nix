@@ -16,7 +16,7 @@ let
   activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
   panelsConfig = import ./panels.nix { inherit lib config osConfig activities mkUUID; };
-  desktopWidgetsConfig = import ./desktop-widgets.nix { inherit lib config activities; };
+  desktopWidgets = import ./desktop-widgets.nix { inherit lib config activities; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
@@ -373,7 +373,7 @@ in {
     programs.plasma.panels = panelsConfig.panels;
 
     # Add desktop folder widgets for each activity
-    programs.plasma.desktop.widgets = desktopWidgetsConfig;
+    programs.plasma.desktop.widgets = desktopWidgets;
 
     # Bootstrap service to ensure activities are created with correct UUIDs
     systemd.user.services."project-activities-bootstrap" = {
