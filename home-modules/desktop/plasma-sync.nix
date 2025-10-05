@@ -407,6 +407,7 @@
               local repo="$1"; shift || true
               local rel="$SNAPSHOT_RELATIVE"
               local snapshot="$repo/$rel"
+              mkdir -p "$(dirname "$snapshot")"
               local workdir
               workdir="$(mktemp -d)"
               trap 'rm -rf "''${workdir:-}"' EXIT

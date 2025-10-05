@@ -196,7 +196,16 @@ let
       }
       {
         Description = "Firefox PWAs - All Activities";
-        wmclass = "FFPWA";  # PWAs start with FFPWA (includes Headlamp PWA, Google AI PWA, YouTube, etc.)
+        wmclass = "FFPWA";  # Legacy X11 WM_CLASS prefix for Firefox PWAs
+        wmclassmatch = 1;  # Substring match
+        wmclasscomplete = false;
+        activities = "";  # Empty = all activities
+        activitiesrule = 2;  # Force
+        types = 1;
+      }
+      {
+        Description = "Firefox PWAs (Wayland) - All Activities";
+        wmclass = "firefoxpwa";  # Wayland WM_CLASS reported by firefoxpwa launcher
         wmclassmatch = 1;  # Substring match
         wmclasscomplete = false;
         activities = "";  # Empty = all activities
