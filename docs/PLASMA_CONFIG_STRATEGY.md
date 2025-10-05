@@ -142,10 +142,12 @@ Consider managing these based on your needs:
    - ✅ **Already handled**: Uses transformer to map UUIDs
    - Imports snapshot, replaces machine-specific UUIDs with canonical ones from data.nix
 
-3. **Panel Configurations** ([project-activities/panels.nix](../home-modules/desktop/project-activities/panels.nix:1-100))
-   - Complex: Contains widget instance IDs
-   - Current: Managed declaratively but requires manual PWA ID updates
-   - Alternative: Keep as reference-only, configure via GUI
+3. **Panel Configurations** ([project-activities/panels.nix](../home-modules/desktop/project-activities/panels.nix:1-316))
+   - ✅ **Managed declaratively** using plasma-manager's `programs.plasma.panels` API
+   - High-level Nix options (location, widgets, config) instead of raw INI
+   - Automatic JavaScript/layout.js generation and cleanup
+   - PWA IDs still require machine-specific mapping (as expected)
+   - Much cleaner than previous 400+ line INI approach
 
 4. **Notification Settings**
    - Consider managing if you want consistent behavior
@@ -165,6 +167,8 @@ Consider managing these based on your needs:
 plasma-export  # or: plasma-sync snapshot
 
 # This runs: scripts/plasma-rc2nix.sh > generated/plasma-rc2nix.nix
+# Note: rc2nix does NOT export panel configurations
+# Panels are managed via programs.plasma.panels in panels.nix
 ```
 
 ### Step 3: Analyze Changes

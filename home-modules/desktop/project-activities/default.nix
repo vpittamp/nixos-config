@@ -15,7 +15,7 @@ let
   # Use the explicit UUIDs from data.nix
   activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
-  panels = import ./panels.nix { inherit lib config osConfig activities mkUUID; };
+  panelsConfig = import ./panels.nix { inherit lib config osConfig activities mkUUID; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
@@ -366,14 +366,10 @@ in {
 
     programs.bash.shellAliases = shellAliases;
 
-    home.file =
-      autostartFiles //
-      {
-        ".config/plasma-org.kde.plasma.desktop-appletsrc" = {
-          force = true;
-          text = panels.panelIniText;
-        };
-      };
+    home.file = autostartFiles;
+
+    # Use plasma-manager's declarative panel configuration
+    programs.plasma.panels = panelsConfig.panels;
 
     # Bootstrap service to ensure activities are created with correct UUIDs
     systemd.user.services."project-activities-bootstrap" = {
