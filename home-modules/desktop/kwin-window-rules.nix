@@ -24,7 +24,7 @@ let
   activityData = import ./project-activities/data.nix { inherit lib config; pkgs = null; };
 
   # Import raw generated window rules from plasma-rc2nix
-  generatedConfig = import ./generated/plasma-rc2nix.nix { inherit lib; };
+  generatedConfig = import ./generated/plasma-rc2nix.nix;
   rawRules = generatedConfig.programs.plasma.configFile.kwinrulesrc;
 
   # Build mapping from activity names to their canonical UUIDs

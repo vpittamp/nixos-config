@@ -16,7 +16,7 @@ let
   activityUUIDs = lib.mapAttrs (id: activity: activity.uuid) activities;
 
   panelsConfig = import ./panels.nix { inherit lib config osConfig activities mkUUID; };
-  desktopWidgets = import ./desktop-widgets.nix { inherit lib config activities; };
+  desktopWidgetsConfig = import ./desktop-widgets.nix { inherit lib config activities mkUUID; };
 
   qdbus = "${pkgs.libsForQt5.qttools.bin}/bin/qdbus";
   kactivitymanagerd = "${pkgs.kdePackages.kactivitymanagerd}/bin/kactivitymanagerd";
@@ -372,8 +372,10 @@ in {
     # Use plasma-manager's declarative panel configuration
     programs.plasma.panels = panelsConfig.panels;
 
-    # Add desktop folder widgets for each activity
-    programs.plasma.desktop.widgets = desktopWidgets;
+    # Add desktop folder containments via configFile (INI format)
+    # These are full-screen folder views per activity, not floating widgets
+    programs.plasma.configFile."plasma-org.kde.plasma.desktop-appletsrc".text =
+      lib.mkAfter desktopWidgetsConfig.iniText;
 
     # Bootstrap service to ensure activities are created with correct UUIDs
     systemd.user.services."project-activities-bootstrap" = {
