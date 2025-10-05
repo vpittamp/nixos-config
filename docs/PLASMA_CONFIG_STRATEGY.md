@@ -163,21 +163,32 @@ Consider managing these based on your needs:
 
 ### Step 2: Export Snapshot
 ```bash
-# Export current state to snapshot file
-plasma-export  # or: plasma-sync snapshot
+# Export current KDE config to snapshot file
+plasma-export
 
-# This runs: scripts/plasma-rc2nix.sh > generated/plasma-rc2nix.nix
+# This automatically:
+#  - Runs scripts/plasma-rc2nix.sh
+#  - Saves to home-modules/desktop/generated/plasma-rc2nix.nix
+#  - Creates timestamped backup of previous version
+#  - Shows next steps
+
 # Note: rc2nix does NOT export panel configurations
 # Panels are managed via programs.plasma.panels in panels.nix
 ```
 
 ### Step 3: Analyze Changes
 ```bash
-# View what changed in the snapshot
-plasma-sync diff
+# Quick summary of what changed
+plasma-diff-summary
 
-# Or compare with git
+# View full diff
+plasma-diff
+
+# Or use git directly
 git diff home-modules/desktop/generated/plasma-rc2nix.nix
+
+# See which config files changed
+/etc/nixos/scripts/plasma-diff.sh --config-files
 ```
 
 ### Step 4: Decide What to Adopt
@@ -258,10 +269,18 @@ git commit -m "chore: Update plasma snapshot"
 
 ### Snapshot Management
 ```bash
-# Export current KDE config to snapshot
+# Export current KDE config to snapshot (recommended workflow)
 plasma-export
+# - Exports to generated/plasma-rc2nix.nix
+# - Creates timestamped backup
+# - Shows next steps
 
-# Full workflow with plasma-sync
+# View changes in snapshot
+plasma-diff-summary           # Quick summary
+plasma-diff                   # Full diff
+/etc/nixos/scripts/plasma-diff.sh --config-files  # List changed files
+
+# Alternative: Full workflow with plasma-sync
 plasma-sync                    # Interactive TUI menu
 plasma-sync snapshot          # Take snapshot only
 plasma-sync diff              # View snapshot diff

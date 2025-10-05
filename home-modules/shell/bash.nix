@@ -170,7 +170,9 @@
       pbpaste = "pbpaste";
 
       # Plasma config export with analysis
-      plasma-export = "cd /etc/nixos && ./scripts/plasma-rc2nix.sh > home-modules/desktop/generated/plasma-rc2nix.nix && echo 'Snapshot exported. Run: plasma-sync diff' && cd -";
+      plasma-export = "/etc/nixos/scripts/plasma-rc2nix.sh";
+      plasma-diff = "/etc/nixos/scripts/plasma-diff.sh";
+      plasma-diff-summary = "/etc/nixos/scripts/plasma-diff.sh --summary";
     };
     
     initExtra = ''
