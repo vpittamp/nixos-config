@@ -60,12 +60,12 @@ ENTRY
   '';
 
   # Script to patch window rules with actual PWA WM classes and activity UUIDs
-  # Updated: 2025-10-05 - Remove title matching from PWA rules
-  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v4" ''
+  # Updated: 2025-10-05 - Support null activity for all-activities assignment
+  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v5" ''
     set -euo pipefail
-    # Version: 4.0 - Remove title matching for PWA rules
+    # Version: 5.0 - Support null activity assignment for all-activities
 
-    echo "=== PWA Window Rules Patching - v4.0 ==="
+    echo "=== PWA Window Rules Patching - v5.0 ==="
     echo "Timestamp: $(date)"
     echo "User: $USER"
     echo "Home: $HOME"
@@ -138,18 +138,28 @@ ENTRY
       # Apply PWA->Activity mappings from declarative config
       ${lib.concatMapStrings (pwaName: let
         pwa = pwaData.pwas.${pwaName};
-      in ''
-        # ${pwa.name} -> ${pwa.activity} activity
-        if [ -n "''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]:-}" ]; then
-          activity_uuid="''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]}"
-          # Find and replace activity UUID for ${pwa.name} window rules
-          # Match "Description=PWA Name" or "Description=PWA Name - ..."
+      in
+        if pwa.activity == null then ''
+          # ${pwa.name} -> all activities (null activity assignment)
+          # Set to all-activities UUID (all zeros)
           ${pkgs.gnused}/bin/sed -i "/^Description=${lib.escapeShellArg pwa.name}\\( -\\|$\\)/,/^\[/ {
-            s|^activity=.*|activity=$activity_uuid|
-            s|^activities=.*|activities=$activity_uuid|
+            s|^activity=.*|activity=00000000-0000-0000-0000-000000000000|
+            s|^activities=.*|activities=00000000-0000-0000-0000-000000000000|
           }" "$TEMP_FILE"
-        fi
-      '') (lib.attrNames pwaData.pwas)}
+        ''
+        else ''
+          # ${pwa.name} -> ${pwa.activity} activity
+          if [ -n "''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]:-}" ]; then
+            activity_uuid="''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]}"
+            # Find and replace activity UUID for ${pwa.name} window rules
+            # Match "Description=PWA Name" or "Description=PWA Name - ..."
+            ${pkgs.gnused}/bin/sed -i "/^Description=${lib.escapeShellArg pwa.name}\\( -\\|$\\)/,/^\[/ {
+              s|^activity=.*|activity=$activity_uuid|
+              s|^activities=.*|activities=$activity_uuid|
+            }" "$TEMP_FILE"
+          fi
+        ''
+      ) (lib.attrNames pwaData.pwas)}
     fi
 
     # Only update if changes were made

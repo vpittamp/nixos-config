@@ -10,13 +10,13 @@ rec {
   pwas = {
     googleai = {
       name = "Google AI";
-      activity = "nixos";  # Reference to activity in project-activities/data.nix
+      activity = null;  # null = all activities
       url = "https://www.google.com/search?udm=50";
     };
 
     youtube = {
       name = "YouTube";
-      activity = "monitoring";
+      activity = null;  # null = all activities
       url = "https://www.youtube.com";
     };
 
