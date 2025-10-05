@@ -1,6 +1,11 @@
 { config, lib, pkgs, osConfig, ... }:
 
 {
+  # Import PWA mapping generator
+  imports = [
+    ./pwas/generator.nix
+  ];
+
   programs.plasma = {
     # Keep GUI editable while still managing shortcuts declaratively
     immutableByDefault = false;

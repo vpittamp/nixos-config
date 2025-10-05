@@ -1,0 +1,72 @@
+{ lib, config, ... }:
+
+# PWA (Progressive Web App) Definitions
+# This module defines which PWAs exist and which activities they belong to.
+# The actual PWA IDs are dynamically discovered at activation time.
+
+rec {
+  # PWA to Activity mappings
+  # Each PWA definition specifies which activity it should open in
+  pwas = {
+    googleai = {
+      name = "Google AI";
+      activity = "nixos";  # Reference to activity in project-activities/data.nix
+      url = "https://www.google.com/search?udm=50";
+    };
+
+    youtube = {
+      name = "YouTube";
+      activity = "monitoring";
+      url = "https://www.youtube.com";
+    };
+
+    gitea = {
+      name = "Gitea";
+      activity = "backstage";
+      url = "https://gitea.cnoe.localtest.me:8443";
+    };
+
+    backstage = {
+      name = "Backstage";
+      activity = "backstage";
+      url = "https://cnoe.localtest.me:8443";
+    };
+
+    kargo = {
+      name = "Kargo";
+      activity = "backstage";
+      url = "https://kargo.cnoe.localtest.me:8443";
+    };
+
+    argocd = {
+      name = "ArgoCD";
+      activity = "backstage";
+      url = "https://argocd.cnoe.localtest.me:8443";
+    };
+
+    headlamp = {
+      name = "Headlamp";
+      activity = "backstage";
+      url = "https://headlamp.cnoe.localtest.me:8443";
+    };
+
+    homeassistant = {
+      name = "Home Assistant";
+      activity = "monitoring";
+      url = "http://localhost:8123";
+    };
+
+    ubereats = {
+      name = "Uber Eats";
+      activity = "nixos";  # Default activity
+      url = "https://www.ubereats.com";
+    };
+  };
+
+  # Helper: Get PWA names as a list
+  pwaNames = lib.attrNames pwas;
+
+  # Helper: Get all PWAs for a specific activity
+  pwasForActivity = activityName:
+    lib.filterAttrs (name: pwa: pwa.activity == activityName) pwas;
+}

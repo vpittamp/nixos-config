@@ -449,5 +449,25 @@ in {
       echo ""
       echo "Copy these IDs to panels.nix and rebuild to make permanent."
     '')
+    (pkgs.writeShellScriptBin "pwa-show-mappings" ''
+      # Show PWA WM class mappings for window rules
+      MAPPING_FILE="$HOME/.config/plasma-pwas/pwa-classes.json"
+
+      echo "PWA Window Class Mappings (for KWin rules):"
+      echo "=============================================="
+      echo ""
+
+      if [ ! -f "$MAPPING_FILE" ]; then
+        echo "Mapping file not found: $MAPPING_FILE"
+        echo "Run 'home-manager switch' to generate it."
+        exit 1
+      fi
+
+      ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\n  WM Class: \(.value.wmclass)\n  URL: \(.value.url)\n"' "$MAPPING_FILE"
+
+      echo ""
+      echo "These WM classes can be used in KWin window rules for reliable matching."
+      echo "Location: $MAPPING_FILE"
+    '')
   ];
 }

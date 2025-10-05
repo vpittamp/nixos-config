@@ -12,6 +12,7 @@
 # 2. Imports raw rules from generated/plasma-rc2nix.nix (unchanged by exports)
 # 3. Builds UUID and path mappings
 # 4. Transforms each rule to use canonical UUIDs and expanded paths
+# 5. For PWA rules: Replaces title-based matching with WM class matching
 #
 # Workflow:
 # 1. Edit KDE window rules via GUI
@@ -22,6 +23,9 @@
 let
   # Import activity definitions (source of truth for UUIDs and paths)
   activityData = import ./project-activities/data.nix { inherit lib config; pkgs = null; };
+
+  # Import PWA definitions (source of truth for PWA → Activity mappings)
+  pwaData = import ./pwas/data.nix { inherit lib config; };
 
   # Import raw generated window rules from plasma-rc2nix
   generatedConfig = import ./generated/plasma-rc2nix.nix;
@@ -72,16 +76,46 @@ let
       base = baseName;
     };
 
+  # Helper: Load PWA WM class mappings from runtime file (if exists)
+  # This file is generated at activation time by pwas/generator.nix
+  pwaRuntimeMappingPath = "${config.home.homeDirectory}/.config/plasma-pwas/pwa-classes.json";
+
+  # Helper: Check if rule appears to be for a PWA
+  # PWAs typically have wmclass="firefoxpwa" and a title matching a PWA name
+  isPWARule = rule:
+    (rule.wmclass or "") == "firefoxpwa" &&
+    (rule.title or "") != "";
+
+  # Helper: Find PWA config by title
+  findPWAByTitle = title:
+    let
+      matchingPWAs = lib.filterAttrs (id: pwa: pwa.name == title) pwaData.pwas;
+    in
+      if builtins.length (lib.attrNames matchingPWAs) > 0
+      then builtins.head (lib.attrValues matchingPWAs)
+      else null;
+
   # Transform a single window rule to use canonical activity UUIDs
   transformRule = ruleName: rule:
     let
-      # Try to determine activity from various sources
+      # Check if this is a PWA rule
+      isPWA = isPWARule rule;
+      pwaConfig = if isPWA then findPWAByTitle (rule.title or "") else null;
+
+      # For PWA rules, get activity from PWA config
+      # For other rules, try to determine from title/description
       activityFromTitle = extractActivityFromTitle (rule.title or "");
       activityFromDesc = extractActivityFromTitle (rule.Description or "");
+      activityFromPWA = if pwaConfig != null && activityNameToUuid ? ${pwaConfig.activity}
+                        then pwaConfig.activity
+                        else null;
 
       # Get canonical UUID based on activity name
+      # Priority: PWA config > title > description > existing
       canonicalUuid =
-        if activityFromTitle != null then
+        if activityFromPWA != null then
+          activityNameToUuid.${activityFromPWA}
+        else if activityFromTitle != null then
           activityNameToUuid.${activityFromTitle}
         else if activityFromDesc != null then
           activityNameToUuid.${activityFromDesc}
@@ -105,6 +139,11 @@ let
         else
           rule.title or "";
 
+      # For PWA rules, add note about WM class matching
+      pwaNote = if isPWA && pwaConfig != null
+                then "\n# NOTE: At runtime, WM class matching will use: FFPWA-{ID}\n# The actual ID is dynamically discovered from desktop files"
+                else "";
+
     in
       rule // lib.optionalAttrs (canonicalUuid != null) {
         # Update activity UUID to canonical value
@@ -115,6 +154,10 @@ let
       } // {
         # Update title with transformed path
         title = transformedTitle;
+      } // lib.optionalAttrs isPWA {
+        # For PWA rules, we keep the title for identification
+        # but note that wmclass matching would be more reliable
+        # The actual WM class (FFPWA-{ID}) is in the runtime mapping file
       };
 
   # Transform all rules in the General section
@@ -135,5 +178,11 @@ in {
     inherit activityNameToUuid activityUuidToPath pathToActivityUuid;
     originalRuleCount = builtins.length (lib.attrNames rawRules) - 1;
     transformedRuleCount = builtins.length (lib.attrNames transformedRules);
+    pwaCount = builtins.length (lib.attrNames pwaData.pwas);
+    pwaNames = lib.attrNames pwaData.pwas;
   };
+
+  # Export PWA data for other modules to use
+  inherit pwaData;
 }
+
