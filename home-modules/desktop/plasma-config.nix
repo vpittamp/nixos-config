@@ -82,14 +82,14 @@
 
       "kdeglobals".KScreen.ScreenScaleFactors =
         if osConfig.networking.hostName == "nixos-m1"
-        then "eDP-1=1.5;"
+        then "eDP-1=1.75;"
         else "XORGXRDP0=1.15;";
 
       # XWayland scaling - only for M1 with native Retina display
       # This ensures XWayland apps (X11 apps running on Wayland) scale correctly
-      # Using 1.5x for better balance between screen real estate and readability
+      # Using 1.75x for better balance between screen real estate and readability
       "kwinrc".Xwayland = lib.mkIf (osConfig.networking.hostName == "nixos-m1") {
-        Scale = 1.5;
+        Scale = 1.75;
       };
 
       # Configure KDE Wallet
