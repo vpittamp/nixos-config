@@ -136,6 +136,55 @@
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
+    # KWin window rules for activity management
+    window-rules = [
+      {
+        description = "YouTube - All Activities";
+        match = {
+          title = {
+            value = "YouTube";
+            type = "exact";
+          };
+        };
+        apply = {
+          activities = {
+            value = "00000000-0000-0000-0000-000000000000";
+            apply = "force";
+          };
+        };
+      }
+      {
+        description = "Google AI - All Activities";
+        match = {
+          title = {
+            value = "Google AI";
+            type = "exact";
+          };
+        };
+        apply = {
+          activities = {
+            value = "00000000-0000-0000-0000-000000000000";
+            apply = "force";
+          };
+        };
+      }
+      {
+        description = "Firefox - All Activities";
+        match = {
+          window-class = {
+            value = "firefox";
+            type = "substring";
+          };
+        };
+        apply = {
+          activities = {
+            value = "00000000-0000-0000-0000-000000000000";
+            apply = "force";
+          };
+        };
+      }
+    ];
+
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
       # KWin window management shortcuts
