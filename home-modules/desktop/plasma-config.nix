@@ -101,6 +101,41 @@
         loginMode = "emptySession";  # Start with an empty session (don't restore apps)
         confirmLogout = true;  # Ask for confirmation on shutdown/logout
       };
+
+      # Baloo File Indexing - Disable for performance
+      # Baloo indexes files for search but can be resource-intensive
+      "baloofilerc"."Basic Settings" = {
+        "Indexing-Enabled" = false;  # Disable file indexing
+      };
+
+      # Dolphin File Manager Preferences
+      "dolphinrc".General = {
+        # ViewPropsTimestamp is system-generated, not managed here
+      };
+      "dolphinrc"."KFileDialog Settings" = {
+        "Places Icons Auto-resize" = false;
+        "Places Icons Static Size" = 22;
+      };
+      "dolphinrc".Search = {
+        Location = "Everywhere";  # Search in all locations by default
+      };
+
+      # Kate Text Editor Preferences
+      "katerc".General = {
+        "Days Meta Infos" = 30;  # Keep file metadata for 30 days
+        "Save Meta Infos" = true;  # Save cursor position, etc.
+        "Show Full Path in Title" = false;
+        "Show Menu Bar" = true;
+        "Show Status Bar" = true;
+        "Show Tab Bar" = true;
+        "Show Url Nav Bar" = true;
+      };
+
+      # Spectacle Screenshot Tool
+      "spectaclerc".General = {
+        # Screenshot preferences can be added here as needed
+        # Most spectacle config is done via shortcuts in this file
+      };
     };
 
     # Custom hotkey commands for launching activity-aware applications
@@ -136,10 +171,10 @@
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
-    # KWin window rules - imported from generated snapshot
-    # Import just the kwinrulesrc section from the generated config
+    # KWin window rules - transformed from generated snapshot with canonical activity UUIDs
+    # The transformer replaces system-generated UUIDs with canonical ones from data.nix
     configFile."kwinrulesrc" =
-      (import ./generated/plasma-rc2nix.nix { inherit lib; }).programs.plasma.configFile.kwinrulesrc;
+      (import ./kwin-window-rules.nix { inherit lib config; }).kwinrulesrc;
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {

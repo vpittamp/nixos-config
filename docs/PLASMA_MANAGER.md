@@ -3,9 +3,12 @@
 Generated via `plasma-manager` on 2025-09-18 to capture the live KDE Plasma configuration for `vpittamp`.
 
 ## Current State
-- Declarative snapshot lives at `home-modules/desktop/generated/plasma-rc2nix.nix`.
-- The module is imported by `home-modules/profiles/plasma-home.nix` alongside hand-authored overrides.
-- The curated overrides in `home-modules/desktop/plasma-config.nix` now only set high-level workspace defaults; all low-level details come from the generated module.
+- **Snapshot** lives at `home-modules/desktop/generated/plasma-rc2nix.nix` (reference/analysis only)
+- **Declarative config** in `home-modules/desktop/plasma-config.nix` manages portable settings
+- **Hybrid approach**: Snapshots are used for discovery, not direct application
+- **Smart filtering**: System-generated IDs (UUIDs, timestamps) are filtered by `plasma-snapshot-analysis.nix`
+
+**📚 See [PLASMA_CONFIG_STRATEGY.md](PLASMA_CONFIG_STRATEGY.md) for the complete configuration strategy.**
 
 ## Refresh Workflow
 1. **Take a snapshot**
@@ -36,7 +39,47 @@ plasma-sync activate          # run home-manager switch only
 plasma-sync full --hm --show-trace  # snapshot + activation with custom flags
 ```
 
+## Configuration Philosophy
+
+### Snapshot vs Declarative
+
+**Snapshots** (`plasma-sync snapshot`):
+- Capture **all** KDE settings to `generated/plasma-rc2nix.nix`
+- Include system-generated UUIDs, timestamps, runtime state
+- Used for **analysis and discovery**, not direct application
+- Help identify settings to adopt into declarative config
+
+**Declarative Config** (`plasma-config.nix`):
+- Manages **portable, reproducible** settings only
+- Keyboard shortcuts, themes, window behavior
+- No system-generated IDs or runtime state
+- Works consistently across machines
+
+**When to use each**:
+- Made GUI change → Export snapshot → Review diff → Adopt into declarative config
+- Want reproducible setup → Add to declarative config directly
+- Complex panel layouts → Keep in GUI, reference snapshot for backup
+
+### What NOT to Manage Declaratively
+
+❌ Don't manage these (system-generated, let KDE handle):
+- Virtual desktop UUIDs (`Id_1`, `Id_2`, etc.)
+- Activity runtime state (`currentActivity`, `runningActivities`)
+- Tiling layout UUIDs (`Tiling/*`)
+- Timestamps (`ViewPropsTimestamp`)
+- Subsession IDs
+
+✅ Manage these declaratively:
+- Keyboard shortcuts (portable)
+- Themes and appearance (consistent)
+- Window behavior (reproducible)
+- Application preferences (Kate, Dolphin)
+- Window rules (via UUID transformer)
+
+See [PLASMA_CONFIG_STRATEGY.md](PLASMA_CONFIG_STRATEGY.md) for complete guidelines.
+
 ## Notes
-- `overrideConfig = true` will rewrite Plasma rc files on each activation; rely on git history to revert unwanted changes.
-- If rc2nix reports parse failures, prefer fixing them upstream or add minimal overrides in separate modules instead of editing the generated snapshot directly.
-- Retain previous snapshots when making large changes so you can diff between versions.
+- We use `immutableByDefault = false` - GUI changes are preserved, declarative config provides defaults
+- If rc2nix reports parse failures, fix upstream or add minimal overrides in separate modules
+- Retain snapshots in git history to track configuration evolution
+- The transformer (`kwin-window-rules.nix`) automatically maps activity UUIDs from snapshot to canonical values

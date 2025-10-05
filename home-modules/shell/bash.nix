@@ -168,6 +168,9 @@
       # Keep short aliases for convenience
       pbcopy = "pbcopy";
       pbpaste = "pbpaste";
+
+      # Plasma config export with analysis
+      plasma-export = "cd /etc/nixos && ./scripts/plasma-rc2nix.sh > home-modules/desktop/generated/plasma-rc2nix.nix && echo 'Snapshot exported. Run: plasma-sync diff' && cd -";
     };
     
     initExtra = ''

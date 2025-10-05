@@ -5,6 +5,7 @@
     ../desktop/touchpad-gestures.nix
     ../desktop/plasma-config.nix
     ../desktop/plasma-sync.nix
+    ../desktop/plasma-snapshot-analysis.nix
     ../desktop/project-activities
     ../desktop/activity-aware-apps-native.nix
     ../desktop/monitoring-desktop-widgets.nix

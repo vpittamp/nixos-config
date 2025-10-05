@@ -2,6 +2,9 @@
   generated = {
     configFile = {
       baloofilerc = {
+        "Basic Settings" = {
+          Indexing-Enabled = false;
+        };
         General = {
           dbVersion = 2;
           "exclude filters" = "*~,*.part,*.o,*.la,*.lo,*.loT,*.moc,moc_*.cpp,qrc_*.cpp,ui_*.h,cmake_install.cmake,CMakeCache.txt,CTestTestfile.cmake,libtool,config.status,confdefs.h,autom4te,conftest,confstat,Makefile.am,*.gcode,.ninja_deps,.ninja_log,build.ninja,*.csproj,*.m4,*.rej,*.gmo,*.pc,*.omf,*.aux,*.tmp,*.po,*.vm*,*.nvram,*.rcore,*.swp,*.swap,lzo,litmain.sh,*.orig,.histfile.*,.xsession-errors*,*.map,*.so,*.a,*.db,*.qrc,*.ini,*.init,*.img,*.vdi,*.vbox*,vbox.log,*.qcow2,*.vmdk,*.vhd,*.vhdx,*.sql,*.sql.gz,*.ytdl,*.tfstate*,*.class,*.pyc,*.pyo,*.elc,*.qmlc,*.jsc,*.fastq,*.fq,*.gb,*.fasta,*.fna,*.gbff,*.faa,po,CVS,.svn,.git,_darcs,.bzr,.hg,CMakeFiles,CMakeTmp,CMakeTmpQmake,.moc,.obj,.pch,.uic,.npm,.yarn,.yarn-cache,__pycache__,node_modules,node_packages,nbproject,.terraform,.venv,venv,core-dumps,lost+found";
@@ -10,19 +13,17 @@
       };
       dolphinrc = {
         General = {
-          ViewPropsTimestamp = "2025,9,25,11,15,29.5";
+          ViewPropsTimestamp = "2025,9,27,10,23,24.483";
         };
         "KFileDialog Settings" = {
           "Places Icons Auto-resize" = false;
           "Places Icons Static Size" = 22;
         };
+        Search = {
+          Location = "Everywhere";
+        };
       };
       kactivitymanagerdrc = {
-        "0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = {
-          Description = "General development workspace and experiments.";
-          Icon = "applications-engineering";
-          Name = "Dev";
-        };
         "645bcfb7-e769-4000-93be-ad31eb77ea2e" = {
           Description = "System resource monitoring and performance dashboards.";
           Icon = "utilities-system-monitor";
@@ -36,6 +37,11 @@
         "9c8675d0-9a96-4139-ba77-f4855e74e485" = {
           Description = "Ubuntu Nix development container environment.";
           Icon = "utilities-terminal";
+          Name = "Devcontainer";
+        };
+        a8f3c9d2-7b4e-4d6f-9e2a-1c5b8d3f6a9e = {
+          Description = "Ubuntu Nix development container environment.";
+          Icon = "folder-development";
           Name = "Devcontainer";
         };
         activities = {
@@ -82,7 +88,7 @@
           "Show Full Path in Title" = false;
           "Show Menu Bar" = true;
           "Show Status Bar" = true;
-          "Show Tab Bar" = false;
+          "Show Tab Bar" = true;
           "Show Url Nav Bar" = true;
         };
         filetree = {
@@ -96,6 +102,31 @@
           sortRole = 0;
           viewShade = "211,190,222";
         };
+        lspclient = {
+          AllowedServerCommandLines = "/etc/profiles/per-user/vpittamp/bin/nil";
+          AutoHover = true;
+          AutoImport = true;
+          BlockedServerCommandLines = "";
+          CompletionDocumentation = true;
+          CompletionParens = true;
+          Diagnostics = true;
+          FormatOnSave = false;
+          HighlightGoto = true;
+          HighlightSymbol = true;
+          IncrementalSync = false;
+          InlayHints = false;
+          Messages = true;
+          ReferencesDeclaration = true;
+          SemanticHighlighting = true;
+          ServerConfiguration = "";
+          ShowCompletions = true;
+          SignatureHelp = true;
+          SymbolDetails = false;
+          SymbolExpand = true;
+          SymbolSort = false;
+          SymbolTree = true;
+          TypeFormatting = false;
+        };
       };
       kded5rc = {
         Module-browserintegrationreminder = {
@@ -107,7 +138,7 @@
       };
       kdeglobals = {
         "DirSelect Dialog" = {
-          "DirSelectDialog Size" = "853,533";
+          "DirSelectDialog Size" = "820,584";
           "Splitter State" = "x00x00x00xffx00x00x00x01x00x00x00x02x00x00x00x8cx00x00x02xa8x00xffxffxffxffx01x00x00x00x01x00";
         };
         General = {
@@ -119,7 +150,7 @@
         "KFileDialog Settings" = {
           "Allow Expansion" = false;
           "Automatically select filename extension" = true;
-          "Breadcrumb Navigation" = false;
+          "Breadcrumb Navigation" = true;
           "Decoration position" = 2;
           "LocationCombo Completionmode" = 5;
           "PathCombo Completionmode" = 5;
@@ -136,10 +167,7 @@
           "View Style" = "DetailTree";
         };
         KScreen = {
-          ScreenScaleFactors = "eDP-1=2;";
-        };
-        "KShortcutsDialog Settings" = {
-          "Dialog Size" = "600,480";
+          ScreenScaleFactors = "XORGXRDP0x3d1.15;";
         };
         WM = {
           activeBackground = "227,229,231";
@@ -155,16 +183,13 @@
           confirmLogout = true;
           loginMode = "emptySession";
         };
-        "SubSession: 0857dad8-f3dc-41ff-ae49-ba4c7c0a6fe4" = {
+        "SubSession: 8bc6a029-29d0-4f6e-b649-03a94de89549" = {
           count = 0;
         };
-        "SubSession: 5d22db55-9c2e-492b-9b5e-fa20259c2dd2" = {
+        "SubSession: a8f3c9d2-7b4e-4d6f-9e2a-1c5b8d3f6a9e" = {
           count = 0;
         };
-        "SubSession: 9c8675d0-9a96-4139-ba77-f4855e74e485" = {
-          count = 0;
-        };
-        "SubSession: a3f91377-036f-4c9f-a81d-ec864f4ff453" = {
+        "SubSession: b2ebea23-ff95-46b3-a625-fc8cbd2b3e5d" = {
           count = 0;
         };
       };
@@ -181,7 +206,7 @@
       };
       kwinrc = {
         "Activities/LastVirtualDesktop" = {
-          "6ed332bc-fa61-5381-511d-4d5ba44a293b" = "54fd0e49-0df2-464c-a5a9-074e4fe6a36c";
+          "6ed332bc-fa61-5381-511d-4d5ba44a293b" = "7ab21e99-fc7d-4bd5-9b79-230e9288af1e";
         };
         Compositing = {
           Backend = "OpenGL";
@@ -193,8 +218,8 @@
           WindowsBlockCompositing = true;
         };
         Desktops = {
-          Id_1 = "54fd0e49-0df2-464c-a5a9-074e4fe6a36c";
-          Id_2 = "4d14cc20-d92f-466f-90b9-0f4d65aee1f4";
+          Id_1 = "591120e4-308d-4d9e-8ebb-5ea1c30f227d";
+          Id_2 = "91e013fb-57bf-4e10-8849-e176e71ba3e5";
           Number = 2;
           Rows = 1;
         };
@@ -207,6 +232,7 @@
           BorderActivateClass = 9;
         };
         Plugins = {
+          all-activities-windowsEnabled = true;
           blurEnabled = true;
           contrastEnabled = true;
           desktopgridEnabled = false;
@@ -219,6 +245,10 @@
           wobblywindowsEnabled = false;
           zoomEnabled = true;
         };
+        "SubSession: a8f3c9d2-7b4e-4d6f-9e2a-1c5b8d3f6a9e" = {
+          active = "-1";
+          count = 0;
+        };
         TabBox = {
           BorderActivate = 9;
           BorderAlternativeActivate = 9;
@@ -226,10 +256,13 @@
         Tiling = {
           padding = 4;
         };
-        "Tiling/4d14cc20-d92f-466f-90b9-0f4d65aee1f4/88336bbc-97c5-47bd-af59-5392f0852817" = {
+        "Tiling/7672d168-2ff3-5755-8864-62ce0326032c" = {
           tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
         };
-        "Tiling/54fd0e49-0df2-464c-a5a9-074e4fe6a36c/88336bbc-97c5-47bd-af59-5392f0852817" = {
+        "Tiling/a941f271-1df2-5896-9240-4f1a4693889e" = {
+          tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
+        };
+        "Tiling/bf638f19-0052-5377-bbec-c3966fb73cc5" = {
           tiles = "{\"layoutDirection\":\"horizontal\",\"tiles\":[{\"width\":0.25},{\"width\":0.5},{\"width\":0.25}]}";
         };
         Windows = {
@@ -244,14 +277,11 @@
           RollOverDesktops = true;
           SeparateScreenFocus = false;
         };
-        Xwayland = {
-          Scale = 2;
-        };
       };
       kwinrulesrc = {
         "1" = {
           Description = "Headlamp - All Activities";
-          activities = "00000000-0000-0000-0000-000000000000";
+          activities = "dcc377c8-d627-4d0b-8dd7-27d83f8282b3";
           activitiesrule = 2;
           activity = "dcc377c8-d627-4d0b-8dd7-27d83f8282b3";
           activityrule = 2;
@@ -316,7 +346,7 @@
           activity = "6ed332bc-fa61-5381-511d-4d5ba44a293b";
           activityrule = 2;
           clientmachine = "localhost";
-          title = "nixos";
+          title = "/etc/nixos";
           titlematch = 1;
           types = 1;
           wmclass = "konsole";
@@ -328,7 +358,7 @@
           activity = "6ed332bc-fa61-5381-511d-4d5ba44a293b";
           activityrule = 2;
           clientmachine = "localhost";
-          title = "nixos";
+          title = "/etc/nixos";
           titlematch = 1;
           types = 1;
           wmclass = "dolphin";
@@ -352,7 +382,7 @@
           activity = "b4f4e6c4-e52c-1f6b-97f5-567b04283fac";
           activityrule = 2;
           clientmachine = "localhost";
-          title = "stacks";
+          title = "/home/vpittamp/stacks";
           titlematch = 1;
           types = 1;
           wmclass = "konsole";
@@ -364,7 +394,7 @@
           activity = "b4f4e6c4-e52c-1f6b-97f5-567b04283fac";
           activityrule = 2;
           clientmachine = "localhost";
-          title = "stacks";
+          title = "/home/vpittamp/stacks";
           titlematch = 1;
           types = 1;
           wmclass = "dolphin";
@@ -381,7 +411,18 @@
           title = "YouTube";
           titlematch = 1;
           types = 1;
+          wmclass = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";
           wmclasscomplete = false;
+          wmclassmatch = 1;
+        };
+        "20" = {
+          Description = "Chromium - All Activities";
+          activities = "";
+          activitiesrule = 2;
+          types = 1;
+          wmclass = "chromium-browser";
+          wmclasscomplete = false;
+          wmclassmatch = 1;
         };
         "3" = {
           Description = "Google AI - All Activities";
@@ -393,7 +434,9 @@
           title = "Google AI";
           titlematch = 1;
           types = 1;
+          wmclass = "FFPWA";
           wmclasscomplete = false;
+          wmclassmatch = 1;
         };
         "4" = {
           Description = "VS Code - Backstage";
@@ -417,6 +460,15 @@
           types = 1;
           wmclass = "konsole";
           wmclasscomplete = false;
+          wmclassmatch = 1;
+        };
+        "54bb9c02-5b0e-41d1-9926-f57599645915" = {
+          Description = "Firefox - All Activities";
+          activity = "00000000-0000-0000-0000-000000000000";
+          activityrule = 2;
+          clientmachine = "localhost";
+          types = 1;
+          wmclass = "firefox";
           wmclassmatch = 1;
         };
         "6" = {
@@ -478,6 +530,9 @@
         };
       };
       plasmanotifyrc = {
+        "Applications/chromium-browser" = {
+          Seen = true;
+        };
         "Applications/firefox" = {
           Seen = true;
         };
@@ -489,6 +544,7 @@
       };
       spectaclerc = {
         ImageSave = {
+          lastImageSaveLocation = "file:///home/vpittamp/Pictures/Screenshots/Screenshot_20251004_161927.png";
           translatedScreenshotsFolder = "Screenshots";
         };
         VideoSave = {
@@ -499,7 +555,7 @@
     dataFile = {
       "kate/anonymous.katesession" = {
         "Document 0" = {
-          URL = "";
+          URL = "file:///home/vpittamp/Documents/shortcuts.kksrc";
         };
         "Kate Plugins" = {
           bookmarksplugin = false;
@@ -539,23 +595,23 @@
         };
         MainWindow0 = {
           "Active ViewSpace" = 0;
-          Kate-MDI-H-Splitter = "200,1034,0";
+          Kate-MDI-H-Splitter = "200,1597,0";
           Kate-MDI-Sidebar-0-Bar-0-TvList = "kate_private_plugin_katefiletreeplugin,kateproject,kateprojectgit,lspclient_symbol_outline";
           Kate-MDI-Sidebar-0-LastSize = 200;
           Kate-MDI-Sidebar-0-SectSizes = 0;
-          Kate-MDI-Sidebar-0-Splitter = 633;
+          Kate-MDI-Sidebar-0-Splitter = 986;
           Kate-MDI-Sidebar-1-Bar-0-TvList = "";
           Kate-MDI-Sidebar-1-LastSize = 200;
           Kate-MDI-Sidebar-1-SectSizes = 0;
-          Kate-MDI-Sidebar-1-Splitter = 633;
+          Kate-MDI-Sidebar-1-Splitter = 371;
           Kate-MDI-Sidebar-2-Bar-0-TvList = "";
           Kate-MDI-Sidebar-2-LastSize = 200;
           Kate-MDI-Sidebar-2-SectSizes = 0;
-          Kate-MDI-Sidebar-2-Splitter = 1235;
+          Kate-MDI-Sidebar-2-Splitter = 394;
           Kate-MDI-Sidebar-3-Bar-0-TvList = "output,diagnostics,kate_plugin_katesearch,kateprojectinfo,kate_private_plugin_katekonsoleplugin";
           Kate-MDI-Sidebar-3-LastSize = 204;
           Kate-MDI-Sidebar-3-SectSizes = 0;
-          Kate-MDI-Sidebar-3-Splitter = 973;
+          Kate-MDI-Sidebar-3-Splitter = 1551;
           Kate-MDI-Sidebar-Style = 2;
           Kate-MDI-Sidebar-Visible = true;
           Kate-MDI-ToolView-diagnostics-Position = 3;
@@ -575,17 +631,17 @@
           Kate-MDI-ToolView-kateproject-Visible = false;
           Kate-MDI-ToolView-kateprojectgit-Position = 0;
           Kate-MDI-ToolView-kateprojectgit-Show-Button-In-Sidebar = true;
-          Kate-MDI-ToolView-kateprojectgit-Visible = true;
+          Kate-MDI-ToolView-kateprojectgit-Visible = false;
           Kate-MDI-ToolView-kateprojectinfo-Position = 3;
           Kate-MDI-ToolView-kateprojectinfo-Show-Button-In-Sidebar = true;
           Kate-MDI-ToolView-kateprojectinfo-Visible = false;
           Kate-MDI-ToolView-lspclient_symbol_outline-Position = 0;
           Kate-MDI-ToolView-lspclient_symbol_outline-Show-Button-In-Sidebar = true;
-          Kate-MDI-ToolView-lspclient_symbol_outline-Visible = false;
+          Kate-MDI-ToolView-lspclient_symbol_outline-Visible = true;
           Kate-MDI-ToolView-output-Position = 3;
           Kate-MDI-ToolView-output-Show-Button-In-Sidebar = true;
           Kate-MDI-ToolView-output-Visible = false;
-          Kate-MDI-V-Splitter = "0,428,204";
+          Kate-MDI-V-Splitter = "0,781,204";
         };
         "MainWindow0 Settings" = {
           WindowState = 10;
@@ -593,17 +649,13 @@
         "MainWindow0-Splitter 0" = {
           Children = "MainWindow0-ViewSpace 0";
           Orientation = 1;
-          Sizes = 1034;
+          Sizes = 1597;
         };
         "MainWindow0-ViewSpace 0" = {
           "Active View" = 0;
           Count = 1;
           Documents = 0;
           "View 0" = 0;
-        };
-        "MainWindow0-ViewSpace 0 0" = {
-          CursorColumn = 527;
-          CursorLine = 2;
         };
         "Open Documents" = {
           Count = 1;
@@ -645,15 +697,15 @@
         "manage activities" = "Meta+W";
         "switch to next activity" = "Meta+Tab,none,Switch to Next Activity";
         "switch to previous activity" = "Meta+Shift+Tab,none,Switch to Previous Activity";
-        switch-to-activity-645bcfb7-e769-4000-93be-ad31eb77ea2e = "Meta+Ctrl+1,none,Switch to activity \"Monitoring\"";
-        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = "Meta+Ctrl+2,none,Switch to activity \"NixOS\"";
-        switch-to-activity-9c8675d0-9a96-4139-ba77-f4855e74e485 = "Meta+Ctrl+5,none,Switch to activity \"Devcontainer\"";
-        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Meta+Ctrl+3,none,Switch to activity \"Stacks\"";
-        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Meta+Ctrl+4,none,Switch to activity \"Backstage\"";
+        switch-to-activity-645bcfb7-e769-4000-93be-ad31eb77ea2e = "Meta+Ctrl+1,Meta+1,Switch to activity \"Monitoring\"";
+        switch-to-activity-6ed332bc-fa61-5381-511d-4d5ba44a293b = "Meta+Ctrl+2,Meta+2,Switch to activity \"NixOS\"";
+        switch-to-activity-9c8675d0-9a96-4139-ba77-f4855e74e485 = "Meta+Ctrl+5,Meta+5,Switch to activity \"Devcontainer\"";
+        switch-to-activity-b4f4e6c4-e52c-1f6b-97f5-567b04283fac = "Meta+Ctrl+3,Meta+3,Switch to activity \"Stacks\"";
+        switch-to-activity-dcc377c8-d627-4d0b-8dd7-27d83f8282b3 = "Meta+Ctrl+4,Meta+4,Switch to activity \"Backstage\"";
       };
       "KDE Keyboard Layout Switcher" = {
-        "Switch to Last-Used Keyboard Layout" = "Meta+Alt+L";
-        "Switch to Next Keyboard Layout" = "Meta+Alt+K";
+        "Switch to Last-Used Keyboard Layout" = "Meta+Alt+L,none,Switch to Last-Used Keyboard Layout";
+        "Switch to Next Keyboard Layout" = "Meta+Alt+K,none,Switch to Next Keyboard Layout";
       };
       kaccess = {
         "Toggle Screen Reader On and Off" = "Meta+Alt+S";
@@ -703,16 +755,16 @@
         "Grid View" = "Meta+G";
         "Increase Opacity" = "none,,Increase Opacity of Active Window by 5%";
         "Kill Window" = "Meta+Ctrl+Esc";
-        "Move Tablet to Next Output" = [];
         MoveMouseToCenter = "Meta+F6";
         MoveMouseToFocus = "Meta+F5";
         MoveZoomDown = [];
         MoveZoomLeft = [];
         MoveZoomRight = [];
         MoveZoomUp = [];
-        Overview = "Meta+F8,Meta+W,Toggle Overview";
+        Overview = "Meta+F8,none,Toggle Overview";
         "Setup Window Shortcut" = "none,,Setup Window Shortcut";
         "Show Desktop" = "Meta+D";
+        "Suspend Compositing" = "Alt+Shift+F12";
         "Switch One Desktop Down" = "Meta+Ctrl+Down";
         "Switch One Desktop Up" = "Meta+Ctrl+Up";
         "Switch One Desktop to the Left" = "Meta+Ctrl+Left";
@@ -721,7 +773,7 @@
         "Switch Window Left" = "Meta+Alt+Left";
         "Switch Window Right" = "Meta+Alt+Right";
         "Switch Window Up" = "Meta+Alt+Up";
-        "Switch to Desktop 1" = "Meta+1,Ctrl+F1,Switch to Desktop 1";
+        "Switch to Desktop 1" = "Meta+1";
         "Switch to Desktop 10" = "none,,Switch to Desktop 10";
         "Switch to Desktop 11" = "none,,Switch to Desktop 11";
         "Switch to Desktop 12" = "none,,Switch to Desktop 12";
@@ -732,10 +784,10 @@
         "Switch to Desktop 17" = "none,,Switch to Desktop 17";
         "Switch to Desktop 18" = "none,,Switch to Desktop 18";
         "Switch to Desktop 19" = "none,,Switch to Desktop 19";
-        "Switch to Desktop 2" = "Meta+2,Ctrl+F2,Switch to Desktop 2";
+        "Switch to Desktop 2" = "Meta+2";
         "Switch to Desktop 20" = "none,,Switch to Desktop 20";
-        "Switch to Desktop 3" = "Meta+3,Ctrl+F3,Switch to Desktop 3";
-        "Switch to Desktop 4" = "Meta+4,Ctrl+F4,Switch to Desktop 4";
+        "Switch to Desktop 3" = "Meta+3";
+        "Switch to Desktop 4" = "Meta+4";
         "Switch to Desktop 5" = "none,,Switch to Desktop 5";
         "Switch to Desktop 6" = "none,,Switch to Desktop 6";
         "Switch to Desktop 7" = "none,,Switch to Desktop 7";
@@ -795,7 +847,7 @@
         "Window Maximize" = "Meta+PgUp";
         "Window Maximize Horizontal" = "none,,Maximize Window Horizontally";
         "Window Maximize Vertical" = "none,,Maximize Window Vertically";
-        "Window Minimize" = ",Meta+PgDown,Minimize Window";
+        "Window Minimize" = "Meta+PgDn";
         "Window Move" = "none,,Move Window";
         "Window Move Center" = "none,,Move Window to the Center";
         "Window No Border" = "none,,Toggle Window Titlebar and Frame";
@@ -826,7 +878,7 @@
         "Window Shade" = "none,,Shade Window";
         "Window Shrink Horizontal" = "none,,Shrink Window Horizontally";
         "Window Shrink Vertical" = "none,,Shrink Window Vertically";
-        "Window to Desktop 1" = "Meta+Shift+1,,Window to Desktop 1";
+        "Window to Desktop 1" = "Meta+Shift+1";
         "Window to Desktop 10" = "none,,Window to Desktop 10";
         "Window to Desktop 11" = "none,,Window to Desktop 11";
         "Window to Desktop 12" = "none,,Window to Desktop 12";
@@ -837,10 +889,10 @@
         "Window to Desktop 17" = "none,,Window to Desktop 17";
         "Window to Desktop 18" = "none,,Window to Desktop 18";
         "Window to Desktop 19" = "none,,Window to Desktop 19";
-        "Window to Desktop 2" = "Meta+Shift+2,,Window to Desktop 2";
+        "Window to Desktop 2" = "Meta+Shift+2";
         "Window to Desktop 20" = "none,,Window to Desktop 20";
-        "Window to Desktop 3" = "Meta+Shift+3,,Window to Desktop 3";
-        "Window to Desktop 4" = "Meta+Shift+4,,Window to Desktop 4";
+        "Window to Desktop 3" = "Meta+Shift+3";
+        "Window to Desktop 4" = "Meta+Shift+4";
         "Window to Desktop 5" = "none,,Window to Desktop 5";
         "Window to Desktop 6" = "none,,Window to Desktop 6";
         "Window to Desktop 7" = "none,,Window to Desktop 7";
@@ -858,7 +910,6 @@
         "Window to Screen 5" = "none,,Move Window to Screen 5";
         "Window to Screen 6" = "none,,Move Window to Screen 6";
         "Window to Screen 7" = "none,,Move Window to Screen 7";
-        disableInputCapture = "Meta+Shift+Esc";
         view_actual_size = "Meta+0";
         view_zoom_in = [
           "Meta++"
@@ -876,6 +927,18 @@
         playpausemedia = "Media Play";
         previousmedia = "Media Previous";
         stopmedia = "Media Stop";
+      };
+      "org.kde.spectacle.desktop" = {
+        ActiveWindowScreenShot = "Meta+Print";
+        FullScreenScreenShot = [
+          "Shift+Print"
+          "Meta+Shift+3"
+        ];
+        RectangularRegionScreenShot = [
+          "Meta+Shift+Print"
+          "Meta+Shift+4"
+        ];
+        _launch = "none";
       };
       org_kde_powerdevil = {
         "Decrease Keyboard Brightness" = "Keyboard Brightness Down";
@@ -896,6 +959,14 @@
           "Meta+B,Switch Power Profile"
         ];
       };
+      "plasma-manager-commands.desktop" = {
+        launch-code-activity = "Ctrl+Alt+E,,launch-code-activity";
+        launch-dolphin-activity = "Ctrl+Alt+D,,launch-dolphin-activity";
+        launch-konsole-activity = "Ctrl+Alt+T,,launch-konsole-activity";
+        launch-spectacle-gui = "Print\\,Meta+Shift+S,,launch-spectacle-gui";
+        speech-to-clipboard = "Meta+Alt+C,,Record 10 seconds of audio and transcribe to clipboard with Whisper";
+        toggle-speech-dictation = "Meta+Shift+Space,,Start/stop speech-to-text keyboard dictation with VOSK";
+      };
       plasmashell = {
         "activate application launcher" = [
           "Meta"
@@ -903,7 +974,7 @@
           "Alt+F1,Activate Application Launcher"
         ];
         "activate task manager entry 1" = "none,Meta+1,Activate Task Manager Entry 1";
-        "activate task manager entry 10" = "none,,Activate Task Manager Entry 10";
+        "activate task manager entry 10" = "none,Meta+0,Activate Task Manager Entry 10";
         "activate task manager entry 2" = "none,Meta+2,Activate Task Manager Entry 2";
         "activate task manager entry 3" = "none,Meta+3,Activate Task Manager Entry 3";
         "activate task manager entry 4" = "none,Meta+4,Activate Task Manager Entry 4";
@@ -918,7 +989,7 @@
         cycleNextAction = "none,,Next History Item";
         cyclePrevAction = "none,,Previous History Item";
         edit_clipboard = "none,,Edit Contents…";
-        "manage activities" = "none,Meta+Q,Show Activity Switcher";
+        "manage activities" = "Meta+Q";
         "next activity" = "Meta+A,none,Walk through activities";
         "previous activity" = "Meta+Shift+A,none,Walk through activities (Reverse)";
         repeat_action = "none,,Manually Invoke Action on Current Clipboard";
@@ -931,13 +1002,13 @@
         "toggle do not disturb" = "none,,Toggle do not disturb";
       };
       "services/code-activity.desktop" = {
-        _launch = [];
+        _launch = "Ctrl+Alt+C,none,Launch VS Code in Activity Directory";
       };
       "services/dolphin-activity.desktop" = {
-        _launch = [];
+        _launch = "Ctrl+Alt+F,none,Launch Dolphin in Activity Directory";
       };
       "services/konsole-activity.desktop" = {
-        _launch = [];
+        _launch = "Ctrl+Alt+T,none,Launch Konsole in Activity Directory";
       };
       "services/org.kde.konsole.desktop" = {
         _launch = [];
@@ -960,11 +1031,17 @@
         speech-to-clipboard = "Meta+Alt+C";
         toggle-speech-dictation = [];
       };
+      "services/toggle-speech-dictation.desktop" = {
+        _launch = "Shift+Space";
+      };
       "services/yakuake-activity.desktop" = {
-        _launch = [];
+        _launch = "F12,none,Toggle Yakuake in Activity Directory";
       };
       speech-to-text = {
         toggle-dictation = "Meta+Shift+Space,none,Toggle Speech Dictation";
+      };
+      speech-to-text-dictation = {
+        toggle-dictation = [];
       };
       yakuake = {
         toggle-window-state = [];
