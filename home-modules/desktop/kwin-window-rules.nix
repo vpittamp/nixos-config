@@ -107,8 +107,11 @@ let
       # For other rules, try to determine from title/description
       activityFromTitle = extractActivityFromTitle (rule.title or "");
       activityFromDesc = extractActivityFromTitle (rule.Description or "");
-      activityFromPWA = if pwaConfig != null && activityNameToUuid ? ${pwaConfig.activity}
-                        then pwaConfig.activity
+      # Handle PWA config: null activity means "all activities", otherwise use the specified activity
+      activityFromPWA = if pwaConfig != null then
+                          (if pwaConfig.activity == null then "all-activities"
+                           else if activityNameToUuid ? ${pwaConfig.activity} then pwaConfig.activity
+                           else null)
                         else null;
 
       # Check if existing activity is "all activities" (zeros UUID)
@@ -118,7 +121,9 @@ let
       # Get canonical UUID based on activity name
       # Priority: PWA config > title > description > existing (if not "all activities")
       canonicalUuid =
-        if activityFromPWA != null then
+        if activityFromPWA == "all-activities" then
+          "00000000-0000-0000-0000-000000000000"
+        else if activityFromPWA != null then
           activityNameToUuid.${activityFromPWA}
         else if activityFromTitle != null then
           activityNameToUuid.${activityFromTitle}
