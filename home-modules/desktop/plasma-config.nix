@@ -136,54 +136,10 @@
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
-    # KWin window rules for activity management
-    window-rules = [
-      {
-        description = "YouTube - All Activities";
-        match = {
-          title = {
-            value = "YouTube";
-            type = "exact";
-          };
-        };
-        apply = {
-          activities = {
-            value = "00000000-0000-0000-0000-000000000000";
-            apply = "force";
-          };
-        };
-      }
-      {
-        description = "Google AI - All Activities";
-        match = {
-          title = {
-            value = "Google AI";
-            type = "exact";
-          };
-        };
-        apply = {
-          activities = {
-            value = "00000000-0000-0000-0000-000000000000";
-            apply = "force";
-          };
-        };
-      }
-      {
-        description = "Firefox - All Activities";
-        match = {
-          window-class = {
-            value = "firefox";
-            type = "substring";
-          };
-        };
-        apply = {
-          activities = {
-            value = "00000000-0000-0000-0000-000000000000";
-            apply = "force";
-          };
-        };
-      }
-    ];
+    # KWin window rules - imported from generated snapshot
+    # Import just the kwinrulesrc section from the generated config
+    configFile."kwinrulesrc" =
+      (import ./generated/plasma-rc2nix.nix { inherit lib; }).programs.plasma.configFile.kwinrulesrc;
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
