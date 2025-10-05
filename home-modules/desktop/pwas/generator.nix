@@ -61,19 +61,30 @@ ENTRY
 
   # Script to patch window rules with actual PWA WM classes and activity UUIDs
   # Updated: 2025-10-05 - Added enhanced WM class and activity UUID patching
-  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v2" ''
+  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v3" ''
     set -euo pipefail
-    # Version: 2.0 - Enhanced patching with runtime discovery
+    # Version: 3.0 - Enhanced patching with detailed logging
+
+    echo "=== PWA Window Rules Patching - v3.0 ==="
+    echo "Timestamp: $(date)"
+    echo "User: $USER"
+    echo "Home: $HOME"
 
     KWINRULES="$HOME/.config/kwinrulesrc"
     MAPPING_FILE="$HOME/.config/plasma-pwas/pwa-classes.json"
     ACTIVITY_CONFIG="$HOME/.config/kactivitymanagerdrc"
+
+    echo "Checking configuration files..."
+    echo "  - KWin rules: $KWINRULES $([ -f "$KWINRULES" ] && echo "[EXISTS]" || echo "[MISSING]")"
+    echo "  - PWA mappings: $MAPPING_FILE $([ -f "$MAPPING_FILE" ] && echo "[EXISTS]" || echo "[MISSING]")"
+    echo "  - Activities: $ACTIVITY_CONFIG $([ -f "$ACTIVITY_CONFIG" ] && echo "[EXISTS]" || echo "[MISSING]")"
 
     if [ ! -f "$KWINRULES" ]; then
       echo "KWin rules file not found, skipping patching"
       exit 0
     fi
 
+    echo ""
     echo "Patching window rules with runtime-discovered IDs..."
 
     # Create temporary file for modifications
@@ -135,16 +146,23 @@ ENTRY
     fi
 
     # Only update if changes were made
+    echo ""
+    echo "Comparing original and patched versions..."
     if ! diff -q "$KWINRULES" "$TEMP_FILE" >/dev/null 2>&1; then
+      echo "Changes detected - applying patches..."
+      echo "Diff summary:"
+      diff -u "$KWINRULES" "$TEMP_FILE" | head -30 || true
       mv "$TEMP_FILE" "$KWINRULES"
-      echo "Window rules patched successfully"
+      echo "✓ Window rules patched successfully"
 
       # Reconfigure KWin to reload rules
+      echo "Reloading KWin configuration..."
       ${pkgs.kdePackages.qttools}/bin/qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
     else
       rm "$TEMP_FILE"
-      echo "No changes needed to window rules"
+      echo "✓ No changes needed to window rules (already up to date)"
     fi
+    echo "=== PWA Window Rules Patching Complete ==="
   '';
 
 in {
@@ -157,8 +175,12 @@ in {
   # Patch window rules AFTER plasma-manager writes kwinrulesrc
   # Must run after configure-plasma to avoid race condition where plasma-manager overwrites our patches
   home.activation.patchPWAWindowRules = lib.hm.dag.entryAfter ["writeBoundary" "linkGeneration" "configure-plasma"] ''
-    echo "Patching PWA window rules with runtime IDs..."
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Running PWA Window Rules Patching..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ${patchWindowRules} || echo "Warning: Window rule patching failed (kwinrulesrc may not exist yet)"
+    echo ""
   '';
 
   # Ensure the directory exists
