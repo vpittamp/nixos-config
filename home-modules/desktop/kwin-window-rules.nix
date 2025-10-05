@@ -81,10 +81,11 @@ let
   pwaRuntimeMappingPath = "${config.home.homeDirectory}/.config/plasma-pwas/pwa-classes.json";
 
   # Helper: Check if rule appears to be for a PWA
-  # PWAs typically have wmclass="firefoxpwa" and a title matching a PWA name
+  # PWAs can have wmclass="firefoxpwa" or wmclass="FFPWA" (GUI export) and a title matching a PWA name
   isPWARule = rule:
-    (rule.wmclass or "") == "firefoxpwa" &&
-    (rule.title or "") != "";
+    let wmclass = rule.wmclass or "";
+    in (wmclass == "firefoxpwa" || wmclass == "FFPWA") &&
+       (rule.title or "") != "";
 
   # Helper: Find PWA config by title
   findPWAByTitle = title:

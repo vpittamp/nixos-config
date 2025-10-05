@@ -84,6 +84,13 @@ ENTRY
       ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\(.value.wmclass)"' "$MAPPING_FILE" | while IFS=: read -r name wmclass; do
         # Replace FFPWA-PLACEHOLDER-{name} with actual WM class
         ${pkgs.gnused}/bin/sed -i "s|wmclass=FFPWA-PLACEHOLDER-$name|wmclass=$wmclass|g" "$TEMP_FILE"
+
+        # Also patch rules that have generic wmclass=FFPWA or wmclass=firefoxpwa with matching Description
+        # This handles cases where plasma-manager preserves the original export value
+        ${pkgs.gnused}/bin/sed -i "/^Description=$name\\( -\\|$\\)/,/^\[/ {
+          s|^wmclass=FFPWA$|wmclass=$wmclass|
+          s|^wmclass=firefoxpwa$|wmclass=$wmclass|
+        }" "$TEMP_FILE"
       done
     fi
 
@@ -137,13 +144,17 @@ ENTRY
   '';
 
 in {
-  # Run the generator on activation
+  # Run the mapping generator early
   home.activation.generatePWAMappings = lib.hm.dag.entryAfter ["writeBoundary"] ''
     echo "Generating PWA WM class mappings..."
     ${generatePWAMappings}
+  '';
 
-    # Patch window rules with actual WM classes
-    ${patchWindowRules}
+  # Patch window rules AFTER plasma-manager writes kwinrulesrc
+  # Must run after configure-plasma to avoid race condition where plasma-manager overwrites our patches
+  home.activation.patchPWAWindowRules = lib.hm.dag.entryAfter ["writeBoundary" "linkGeneration" "configure-plasma"] ''
+    echo "Patching PWA window rules with runtime IDs..."
+    ${patchWindowRules} || echo "Warning: Window rule patching failed (kwinrulesrc may not exist yet)"
   '';
 
   # Ensure the directory exists
