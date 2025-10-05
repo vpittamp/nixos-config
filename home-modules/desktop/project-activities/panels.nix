@@ -93,6 +93,8 @@ in {
             showOnlyCurrentActivity = true;
             showOnlyCurrentDesktop = false;
             showOnlyCurrentScreen = true;
+            # Icon size for M1 at 1.75x scaling
+            iconSize = lib.mkIf (hostname == "nixos-m1") 16;
           };
         }
 

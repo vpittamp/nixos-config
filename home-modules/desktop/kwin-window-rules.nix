@@ -110,8 +110,12 @@ let
                         then pwaConfig.activity
                         else null;
 
+      # Check if existing activity is "all activities" (zeros UUID)
+      isAllActivities = act: act == "00000000-0000-0000-0000-000000000000";
+      existingActivity = rule.activity or rule.activities or null;
+
       # Get canonical UUID based on activity name
-      # Priority: PWA config > title > description > existing
+      # Priority: PWA config > title > description > existing (if not "all activities")
       canonicalUuid =
         if activityFromPWA != null then
           activityNameToUuid.${activityFromPWA}
@@ -119,8 +123,10 @@ let
           activityNameToUuid.${activityFromTitle}
         else if activityFromDesc != null then
           activityNameToUuid.${activityFromDesc}
+        else if existingActivity != null && !(isAllActivities existingActivity) then
+          existingActivity
         else
-          rule.activity or rule.activities or null;
+          null;
 
       # Transform path in title if it references a home directory
       transformedTitle =
@@ -155,9 +161,13 @@ let
         # Update title with transformed path
         title = transformedTitle;
       } // lib.optionalAttrs isPWA {
-        # For PWA rules, we keep the title for identification
-        # but note that wmclass matching would be more reliable
-        # The actual WM class (FFPWA-{ID}) is in the runtime mapping file
+        # For PWA rules, use WM class matching instead of title
+        # The wmclass will be dynamically updated at activation time
+        # Format: FFPWA-{ID} where ID is machine-specific
+        wmclass = "FFPWA-PLACEHOLDER-${rule.title or "unknown"}";
+        wmclassmatch = 1;  # Exact match
+        # Keep title for reference but don't match on it
+        titlematch = 0;  # Don't match on title
       };
 
   # Transform all rules in the General section
