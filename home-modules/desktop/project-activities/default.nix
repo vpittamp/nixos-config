@@ -372,10 +372,21 @@ in {
     # Use plasma-manager's declarative panel configuration
     programs.plasma.panels = panelsConfig.panels;
 
-    # Add desktop folder containments via configFile (INI format)
-    # These are full-screen folder views per activity, not floating widgets
-    programs.plasma.configFile."plasma-org.kde.plasma.desktop-appletsrc".text =
-      lib.mkAfter desktopWidgetsConfig.iniText;
+    # Desktop folder containments are added via activation script
+    # We need to append our activity containments to what plasma-manager creates
+    home.activation.addDesktopContainments = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      # Add desktop folder containments to plasma appletsrc
+      APPLETSRC="$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc"
+      CONTAINMENTS_FILE="${pkgs.writeText "desktop-containments.ini" desktopWidgetsConfig.iniText}"
+
+      # Append containments if appletsrc exists and doesn't already have them
+      if [ -f "$APPLETSRC" ]; then
+        if ! grep -q "\[Containments\]\[600\]" "$APPLETSRC" 2>/dev/null; then
+          echo "Adding desktop folder containments..."
+          cat "$CONTAINMENTS_FILE" >> "$APPLETSRC"
+        fi
+      fi
+    '';
 
     # Bootstrap service to ensure activities are created with correct UUIDs
     systemd.user.services."project-activities-bootstrap" = {
