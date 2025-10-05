@@ -151,25 +151,30 @@ let
                 then "\n# NOTE: At runtime, WM class matching will use: FFPWA-{ID}\n# The actual ID is dynamically discovered from desktop files"
                 else "";
 
-    in
-      rule // lib.optionalAttrs (canonicalUuid != null) {
+      baseRule = rule // lib.optionalAttrs (canonicalUuid != null) {
         # Update activity UUID to canonical value
         activity = canonicalUuid;
       } // lib.optionalAttrs (rule ? activities && canonicalUuid != null) {
         # Also update activities field if present
         activities = canonicalUuid;
-      } // {
-        # Update title with transformed path
+      } // lib.optionalAttrs (!isPWA) {
+        # For non-PWA rules, update title with transformed path
         title = transformedTitle;
-      } // lib.optionalAttrs isPWA {
-        # For PWA rules, use WM class matching instead of title
-        # The wmclass will be dynamically updated at activation time
-        # Format: FFPWA-{ID} where ID is machine-specific
-        wmclass = "FFPWA-PLACEHOLDER-${rule.title or "unknown"}";
-        wmclassmatch = 1;  # Exact match
-        # Keep title for reference but don't match on it
-        titlematch = 0;  # Don't match on title
       };
+
+      # For PWA rules, remove title matching and use only WM class matching
+      pwaRule = if isPWA then
+        (builtins.removeAttrs baseRule ["title" "titlematch"]) // {
+          # The wmclass will be dynamically updated at activation time
+          # Format: FFPWA-{ID} where ID is machine-specific
+          wmclass = "FFPWA-PLACEHOLDER-${rule.title or "unknown"}";
+          wmclassmatch = 1;  # Exact match
+          wmclasscomplete = false;  # Substring match
+        }
+      else
+        baseRule;
+    in
+      pwaRule;
 
   # Transform all rules in the General section
   transformedGeneral = rawRules.General or {};

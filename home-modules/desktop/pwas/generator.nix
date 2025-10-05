@@ -60,12 +60,12 @@ ENTRY
   '';
 
   # Script to patch window rules with actual PWA WM classes and activity UUIDs
-  # Updated: 2025-10-05 - Added enhanced WM class and activity UUID patching
-  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v3" ''
+  # Updated: 2025-10-05 - Remove title matching from PWA rules
+  patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules-v4" ''
     set -euo pipefail
-    # Version: 3.0 - Enhanced patching with detailed logging
+    # Version: 4.0 - Remove title matching for PWA rules
 
-    echo "=== PWA Window Rules Patching - v3.0 ==="
+    echo "=== PWA Window Rules Patching - v4.0 ==="
     echo "Timestamp: $(date)"
     echo "User: $USER"
     echo "Home: $HOME"
@@ -105,6 +105,13 @@ ENTRY
         ${pkgs.gnused}/bin/sed -i "/^Description=$name\\( -\\|$\\)/,/^\[/ {
           s|^wmclass=FFPWA$|wmclass=$wmclass|
           s|^wmclass=firefoxpwa$|wmclass=$wmclass|
+        }" "$TEMP_FILE"
+
+        # Remove title matching for PWA rules - only use WM class matching
+        # Find the section for this PWA and remove title/titlematch fields
+        ${pkgs.gnused}/bin/sed -i "/^Description=$name\\( -\\|$\\)/,/^\[/ {
+          /^title=/d
+          /^titlematch=/d
         }" "$TEMP_FILE"
       done
     fi
