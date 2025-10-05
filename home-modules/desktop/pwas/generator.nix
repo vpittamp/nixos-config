@@ -59,39 +59,74 @@ ENTRY
     echo "Generated PWA mappings: $OUTPUT_FILE"
   '';
 
-  # Script to patch window rules with actual PWA WM classes
+  # Script to patch window rules with actual PWA WM classes and activity UUIDs
   patchWindowRules = pkgs.writeShellScript "patch-pwa-window-rules" ''
     set -euo pipefail
 
     KWINRULES="$HOME/.config/kwinrulesrc"
     MAPPING_FILE="$HOME/.config/plasma-pwas/pwa-classes.json"
-
-    if [ ! -f "$MAPPING_FILE" ]; then
-      echo "PWA mapping file not found, skipping window rule patching"
-      exit 0
-    fi
+    ACTIVITY_CONFIG="$HOME/.config/kactivitymanagerdrc"
 
     if [ ! -f "$KWINRULES" ]; then
       echo "KWin rules file not found, skipping patching"
       exit 0
     fi
 
-    echo "Patching PWA window rules with actual WM classes..."
+    echo "Patching window rules with runtime-discovered IDs..."
 
     # Create temporary file for modifications
     TEMP_FILE=$(mktemp)
     cp "$KWINRULES" "$TEMP_FILE"
 
-    # Read each PWA mapping and patch the corresponding rule
-    ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\(.value.wmclass)"' "$MAPPING_FILE" | while IFS=: read -r name wmclass; do
-      # Replace FFPWA-PLACEHOLDER-{name} with actual WM class
-      ${pkgs.gnused}/bin/sed -i "s|wmclass=FFPWA-PLACEHOLDER-$name|wmclass=$wmclass|g" "$TEMP_FILE"
-    done
+    # Patch PWA WM classes
+    if [ -f "$MAPPING_FILE" ]; then
+      echo "  - Patching PWA WM classes..."
+      ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\(.value.wmclass)"' "$MAPPING_FILE" | while IFS=: read -r name wmclass; do
+        # Replace FFPWA-PLACEHOLDER-{name} with actual WM class
+        ${pkgs.gnused}/bin/sed -i "s|wmclass=FFPWA-PLACEHOLDER-$name|wmclass=$wmclass|g" "$TEMP_FILE"
+      done
+    fi
+
+    # Patch activity UUIDs from runtime activity manager config
+    if [ -f "$ACTIVITY_CONFIG" ]; then
+      echo "  - Patching activity UUIDs..."
+
+      # Build mapping from activity names to runtime UUIDs
+      # The config has sections like [6ed332bc-fa61-5381-511d-4d5ba44a293b] with Name=NixOS
+      declare -A ACTIVITY_MAP
+
+      # Parse activity config to get name->UUID mapping
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^\[([a-f0-9-]+)\]$ ]]; then
+          current_uuid="''${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^Name=(.+)$ ]] && [ -n "''${current_uuid:-}" ]; then
+          activity_name="''${BASH_REMATCH[1]}"
+          ACTIVITY_MAP["$activity_name"]="$current_uuid"
+          current_uuid=""
+        fi
+      done < "$ACTIVITY_CONFIG"
+
+      # Apply PWA->Activity mappings from declarative config
+      ${lib.concatMapStrings (pwaName: let
+        pwa = pwaData.pwas.${pwaName};
+      in ''
+        # ${pwa.name} -> ${pwa.activity} activity
+        if [ -n "''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]:-}" ]; then
+          activity_uuid="''${ACTIVITY_MAP[${lib.escapeShellArg activityData.activities.${pwa.activity}.name}]}"
+          # Find and replace activity UUID for ${pwa.name} window rules
+          # Match "Description=PWA Name" or "Description=PWA Name - ..."
+          ${pkgs.gnused}/bin/sed -i "/^Description=${lib.escapeShellArg pwa.name}\\( -\\|$\\)/,/^\[/ {
+            s|^activity=.*|activity=$activity_uuid|
+            s|^activities=.*|activities=$activity_uuid|
+          }" "$TEMP_FILE"
+        fi
+      '') (lib.attrNames pwaData.pwas)}
+    fi
 
     # Only update if changes were made
     if ! diff -q "$KWINRULES" "$TEMP_FILE" >/dev/null 2>&1; then
       mv "$TEMP_FILE" "$KWINRULES"
-      echo "PWA window rules patched successfully"
+      echo "Window rules patched successfully"
 
       # Reconfigure KWin to reload rules
       ${pkgs.kdePackages.qttools}/bin/qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
