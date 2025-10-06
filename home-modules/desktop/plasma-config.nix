@@ -81,6 +81,11 @@
         BorderAlternativeActivate = 9;  # None
       };
 
+      # Set Firefox as default browser for KDE
+      "kdeglobals".General = {
+        BrowserApplication = "firefox.desktop";
+      };
+
       # Configure font DPI based on system
       "kcmfonts".General.forceFontDPI =
         if osConfig.networking.hostName == "nixos-m1" then 180 else 100;
@@ -118,6 +123,21 @@
       # Baloo indexes files for search in KRunner and Dolphin
       "baloofilerc"."Basic Settings" = {
         "Indexing-Enabled" = true;  # Enable file indexing
+      };
+
+      # KRunner Configuration
+      # Enable Firefox integration and search plugins
+      "krunnerrc".Plugins = {
+        # Enable Firefox bookmarks and history search
+        "browsertabsEnabled" = true;  # Search open browser tabs
+        "placesEnabled" = true;  # Search places (bookmarks, etc.)
+        "baloosearchEnabled" = true;  # Enable file search via Baloo
+        "webshortcutsEnabled" = true;  # Web search shortcuts
+      };
+
+      "krunnerrc".General = {
+        "FreeFloating" = true;  # Modern centered search
+        "RetainPriorSearch" = false;  # Clear search after selection
       };
 
       # Dolphin File Manager Preferences

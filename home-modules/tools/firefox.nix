@@ -161,22 +161,6 @@ in
           "media.ffmpeg.vaapi.enabled" = true;
           "media.hardware-video-decoding.force-enabled" = true;
 
-          # Theme and color settings
-          # Force Firefox to use system theme detection
-          "ui.systemUsesDarkTheme" = -1;  # -1 = auto-detect, 0 = light, 1 = dark
-          "browser.theme.content-theme" = 0;  # 0 = auto/system, 1 = light, 2 = dark
-          "browser.theme.toolbar-theme" = 0;  # 0 = auto/system, 1 = light, 2 = dark
-
-          # Improve form field visibility
-          "browser.display.use_system_colors" = false;  # Don't use system colors for form controls
-          "browser.display.document_color_use" = 2;  # 0=always use page colors, 1=never, 2=only with high contrast themes
-          "browser.display.background_color" = "#ffffff";  # White background for better contrast
-          "browser.display.foreground_color" = "#000000";  # Black text for better contrast
-
-          # Disable forced colors that might interfere with websites
-          "layout.css.prefers-color-scheme.content-override" = 2;  # 0=dark, 1=light, 2=follow system
-          "layout.css.forced-colors.enabled" = false;  # Don't force high contrast colors
-
           # Developer settings
           "devtools.theme" = "dark";
           "devtools.debugger.remote-enabled" = true;
