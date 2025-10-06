@@ -96,8 +96,35 @@ let
   codeActivityScript = pkgs.writeScriptBin "code-activity" ''
     #!/usr/bin/env bash
     ${getActivityDirectory}
+    ${qdbusLocator}
+
     WORK_DIR=$(get_activity_directory)
-    code "$WORK_DIR"
+
+    # Determine activity name from directory for profile matching
+    MAPPING_FILE="${config.home.homeDirectory}/.config/plasma-activities/mappings.json"
+    ACTIVITY_ID=""
+    ACTIVITY_NAME=""
+
+    if [ -n "$QDBUS_BIN" ]; then
+      ACTIVITY_ID=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+    fi
+
+    if [ -n "$ACTIVITY_ID" ]; then
+      # Get activity name from kactivitymanagerdrc
+      ACTIVITY_NAME=$(grep "^$ACTIVITY_ID=" ~/.config/kactivitymanagerdrc 2>/dev/null | cut -d= -f2 | head -1)
+    fi
+
+    # Convert activity name to lowercase profile name (e.g., "NixOS" -> "nixos")
+    PROFILE_NAME=$(echo "$ACTIVITY_NAME" | tr '[:upper:]' '[:lower:]')
+
+    # Launch VSCode with activity-specific profile for reliable window rule matching
+    # The --profile flag sets a unique WM_CLASS that KWin can match immediately
+    if [ -n "$PROFILE_NAME" ]; then
+      code --profile "$PROFILE_NAME" "$WORK_DIR"
+    else
+      # Fallback to regular launch if activity name not found
+      code "$WORK_DIR"
+    fi
   '';
 
   dolphinActivityScript = pkgs.writeScriptBin "dolphin-activity" ''
@@ -422,6 +449,7 @@ in
         );
       };
       # Add action entries for each activity
+      # Uses --profile flag to set unique WM_CLASS for reliable window rule matching
       actions = lib.mapAttrs' (name: activity:
         lib.nameValuePair "open-${name}" {
           name = "Open in ${activity.name}";
@@ -430,7 +458,9 @@ in
             expandedDir = if lib.hasPrefix "~/" activity.directory
                          then "${config.home.homeDirectory}/${lib.removePrefix "~/" activity.directory}"
                          else activity.directory;
-          in "code ${expandedDir}";
+            # Use lowercase activity name as profile (matches window rule)
+            profileName = lib.toLower name;
+          in "code --profile ${profileName} ${expandedDir}";
         }
       ) activityData.rawActivities // {
         "new-window" = {

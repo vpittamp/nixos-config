@@ -24,17 +24,37 @@ let
       else dir;
 
   # Generate window rules for VS Code
+  # Uses both WM_CLASS (via --profile flag) and title matching for reliability
+  # This prevents race conditions where VSCode's title may not be set immediately
   mkVSCodeRules = activityId: activity:
     let
       basename = getFolderBasename (getActivityDirectory activity);
       fullPath = getActivityDirectory activity;
+      # VSCode --profile flag creates unique WM_CLASS: "code-${profileName}"
+      # Using activity name as profile name for consistency
+      profileWmClass = "code-${activityId}";
     in {
       "vscode-${activityId}" = {
-        Description = "VS Code - ${activity.name}";
-        wmclass = "code";
-        wmclassmatch = 1;  # Substring match
+        Description = "VS Code - ${activity.name} (Profile)";
+        # Primary matching: WM_CLASS from --profile flag
+        wmclass = profileWmClass;
+        wmclassmatch = 2;  # Exact match for reliability
         wmclasscomplete = false;
-        # Match either the basename OR the full path in title
+        # Secondary matching: Title (fallback for non-profile launches)
+        title = basename;
+        titlematch = 1;  # Substring match
+        activity = activity.uuid;
+        activityrule = 2;  # Force
+        types = 1;  # Normal windows
+        clientmachine = "localhost";
+      };
+      # Fallback rule for legacy VSCode windows without profile
+      "vscode-${activityId}-fallback" = {
+        Description = "VS Code - ${activity.name} (Legacy)";
+        wmclass = "code";
+        wmclassmatch = 2;  # Exact match
+        wmclasscomplete = true;
+        # Must match title to disambiguate from other VSCode windows
         title = basename;
         titlematch = 1;  # Substring match
         activity = activity.uuid;

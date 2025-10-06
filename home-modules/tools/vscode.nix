@@ -379,6 +379,17 @@ let
     };
     keybindings = baseKeybindings;
   };
+
+  # Activity-specific profiles for reliable window rule matching
+  # Each profile creates a unique WM_CLASS that KWin can match immediately
+  activityProfiles = {
+    # All activity profiles share the same configuration
+    # The profile name is used to set unique WM_CLASS for window rules
+    monitoring = nixosProfile;
+    stacks = nixosProfile;
+    backstage = nixosProfile;
+    devcontainer = nixosProfile;
+  };
 in
 {
   programs.vscode = {
@@ -388,7 +399,7 @@ in
     profiles = {
       default = defaultProfile;
       nixos = nixosProfile;
-    };
+    } // activityProfiles;
   };
 
   # Create VSCode settings directory and SSH config for 1Password
