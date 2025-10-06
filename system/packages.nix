@@ -115,6 +115,9 @@ let
     kind
   ];
 
+  # Headlamp - custom package for Kubernetes web UI
+  headlamp = pkgs.callPackage ../packages/headlamp.nix { };
+
 in {
   # Export different package sets
   custom = [ azure-cli-bin ];
@@ -128,7 +131,7 @@ in {
   kubernetes = kubernetesTools;
   
   # All system packages
-  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin ];
+  all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp ];
   
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [

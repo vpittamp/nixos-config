@@ -18,7 +18,7 @@ in
     # Custom shortcuts for speech-to-text
     "speech-to-text" = {
       "_k_friendly_name" = "Speech to Text";
-      "toggle-dictation" = "Meta+Shift+Space,none,Toggle Speech Dictation";
+      "toggle-dictation" = "Meta+Alt+D,none,Toggle Speech Dictation";
     };
   };
 
@@ -26,7 +26,7 @@ in
   programs.plasma.hotkeys.commands = {
     "toggle-speech-dictation" = {
       name = "Toggle Speech Dictation";
-      key = "Meta+Shift+Space";
+      key = "Meta+Alt+D";
       comment = "Start/stop speech-to-text keyboard dictation with VOSK";
       command = "${toggleWrapper}/bin/nerd-dictation-toggle-kde";
     };

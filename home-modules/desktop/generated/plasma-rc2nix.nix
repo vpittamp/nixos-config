@@ -246,9 +246,9 @@
       "services/plasma-manager-commands.desktop"."launch-konsole-activity" = "Ctrl+Alt+T";
       "services/plasma-manager-commands.desktop"."speech-to-clipboard" = "Meta+Alt+C";
       "services/plasma-manager-commands.desktop"."toggle-speech-dictation" = [ ];
-      "services/toggle-speech-dictation.desktop"."_launch" = "Shift+Space";
+      "services/toggle-speech-dictation.desktop"."_launch" = "Meta+Alt+D";
       "services/yakuake-activity.desktop"."_launch" = [ ];
-      "speech-to-text"."toggle-dictation" = "Meta+Shift+Space,none,Toggle Speech Dictation";
+      "speech-to-text"."toggle-dictation" = "Meta+Alt+D,none,Toggle Speech Dictation";
       "speech-to-text-dictation"."toggle-dictation" = [ ];
       "yakuake"."toggle-window-state" = [ ];
     };

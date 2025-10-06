@@ -90,6 +90,12 @@ let
     delta
     diff-so-fancy
     lazygit
+    gitkraken  # Git GUI client
+  ];
+
+  # Kubernetes tools
+  kubernetesTools = with pkgs; [
+    k9s  # Terminal UI for Kubernetes
   ];
 
   # Documentation and help
@@ -118,6 +124,7 @@ in {
   packageManagers = packageManagers;
   fileManagers = fileManagers;
   git = gitTools;
+  kubernetes = kubernetesTools;
   docs = documentation;
   nix = nixTools;
   
@@ -130,13 +137,13 @@ in {
     pkgs.yarn    # JavaScript package manager
   ];
   
-  development = terminalTools ++ shellTools ++ editors ++ 
-    languageServers ++ packageManagers ++ gitTools ++ nixTools;
+  development = terminalTools ++ shellTools ++ editors ++
+    languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ nixTools;
   
   # All user packages
-  all = terminalTools ++ shellTools ++ editors ++ 
-    languageServers ++ packageManagers ++ fileManagers ++ 
-    gitTools ++ documentation ++ nixTools;
+  all = terminalTools ++ shellTools ++ editors ++
+    languageServers ++ packageManagers ++ fileManagers ++
+    gitTools ++ kubernetesTools ++ documentation ++ nixTools;
   
   # Minimal for testing
   minimal = with pkgs; [

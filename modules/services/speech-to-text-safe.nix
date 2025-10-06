@@ -8,8 +8,18 @@ with lib;
 let
   cfg = config.services.speech-to-text;
 
-  # VOSK model path (to be downloaded manually)
-  voskModelPath = "/var/cache/vosk/model";
+  # Default KDE accelerator for toggling dictation
+  defaultShortcut = "Meta+Alt+D";
+  shortcutBinding = cfg.globalShortcut or defaultShortcut;
+
+  # High-accuracy VOSK English model packaged via Nix (available for opt-in use)
+  bundledVoskModel = pkgs.callPackage ../../pkgs/vosk-model-en-us-0.22-lgraph.nix {};
+
+  defaultVoskModelPath = "/var/cache/vosk/model";
+
+  effectiveVoskModelPath =
+    if cfg.voskModelPath != null then cfg.voskModelPath else
+    (if cfg.voskModelPackage != null then "${cfg.voskModelPackage}" else defaultVoskModelPath);
 
   # Package nerd-dictation from separate file (properly packaged from GitHub)
   nerdDictation = pkgs.callPackage ../../pkgs/nerd-dictation.nix {};
@@ -24,10 +34,10 @@ let
     # Version: 2.0 - Fixed toggle detection and added timeout
 
     # Check if VOSK model is installed
-    if [ ! -d "${voskModelPath}" ]; then
-      ${pkgs.libnotify}/bin/notify-send "Speech to Text" "VOSK model not found! Run: speech-model-setup" -i dialog-error
-      echo "Error: VOSK model not found at ${voskModelPath}"
-      echo "Please run: speech-model-setup"
+    if [ ! -d "${effectiveVoskModelPath}" ]; then
+      ${pkgs.libnotify}/bin/notify-send "Speech to Text" "VOSK model not found! Check services.speech-to-text settings" -i dialog-error
+      echo "Error: VOSK model not found at ${effectiveVoskModelPath}"
+      echo "Please adjust services.speech-to-text.voskModelPath or run: speech-model-setup"
       exit 1
     fi
 
@@ -42,7 +52,7 @@ let
     else
       # Start dictation with VOSK model (run in background)
       "$NERD_DICTATION" begin \
-        --vosk-model-dir "${voskModelPath}" \
+        --vosk-model-dir "${effectiveVoskModelPath}" \
         --continuous \
         --output SIMULATE_INPUT > /dev/null 2>&1 &
       ${pkgs.libnotify}/bin/notify-send "Speech to Text" "Dictation started - Speak now!" -i audio-input-microphone
@@ -61,21 +71,33 @@ let
 
     # VOSK model setup
     echo "1. VOSK Model (for offline dictation)"
-    echo "   Download location: ${voskModelPath}"
+    echo "   Active model path: ${effectiveVoskModelPath}"
     echo ""
 
-    if [ ! -d "${voskModelPath}" ]; then
-      echo "   Status: NOT INSTALLED"
-      echo ""
-      echo "   To install VOSK model (40MB):"
-      echo "   sudo mkdir -p /var/cache/vosk"
-      echo "   cd /var/cache/vosk"
-      echo "   sudo wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-      echo "   sudo unzip vosk-model-small-en-us-0.15.zip"
-      echo "   sudo mv vosk-model-small-en-us-0.15 model"
-      echo "   sudo rm vosk-model-small-en-us-0.15.zip"
-    else
+    if [ -d "${effectiveVoskModelPath}" ]; then
       echo "   Status: INSTALLED ✓"
+      ${if cfg.voskModelPath != null then ''
+        echo "   Source: ${cfg.voskModelPath}"
+      '' else if cfg.voskModelPackage != null then ''
+        echo "   Source: Bundled high-accuracy English model (vosk-model-en-us-0.22-lgraph)"
+      '' else ''
+        echo "   Source: Custom provisioning"
+      ''}
+    else
+      echo "   Status: NOT FOUND"
+      echo ""
+      ${if cfg.voskModelPath != null then ''
+        echo "   Populate ${cfg.voskModelPath} with a compatible VOSK model directory."
+        ${optionalString (cfg.voskModelPackage != null) ''
+        echo "   To copy the bundled model offline, run:"
+        echo "     sudo mkdir -p ${cfg.voskModelPath}"
+        echo "     sudo cp -a ${cfg.voskModelPackage}/. ${cfg.voskModelPath}/"
+        ''}
+      '' else if cfg.voskModelPackage != null then ''
+        echo "   Bundled model missing from the Nix store. Rebuild with network access or switch to a local path."
+      '' else ''
+        echo "   Provide a model directory via services.speech-to-text.voskModelPath."
+      ''}
     fi
 
     echo ""
@@ -108,20 +130,16 @@ let
     fi
     echo ""
 
-    # Check if user wants to download VOSK now
-    if [ ! -d "${voskModelPath}" ]; then
-      read -p "Download VOSK model now? (y/n) " -n 1 -r
-      echo
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo "Downloading VOSK model..."
-        sudo mkdir -p /var/cache/vosk
-        cd /var/cache/vosk
-        sudo wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-        sudo unzip vosk-model-small-en-us-0.15.zip
-        sudo mv vosk-model-small-en-us-0.15 model
-        sudo rm vosk-model-small-en-us-0.15.zip
-        echo "VOSK model installed successfully!"
-      fi
+    # Provide guidance if the VOSK model is still missing
+    if [ ! -d "${effectiveVoskModelPath}" ]; then
+      ${optionalString (cfg.voskModelPath != null && cfg.voskModelPackage != null) ''
+      echo "Tip: you can copy the bundled model into ${cfg.voskModelPath} with:"
+      echo "  sudo mkdir -p ${cfg.voskModelPath}"
+      echo "  sudo cp -a ${cfg.voskModelPackage}/. ${cfg.voskModelPath}/"
+      ''}
+      echo ""
+      echo "For other languages or updates, download a VOSK archive manually and extract it"
+      echo "into the configured directory, then rerun this script to verify installation."
     fi
   '';
 
@@ -149,7 +167,7 @@ let
     echo "  whisper recording.wav --model small.en --output_format txt"
     echo ""
     echo "To use with microphone:"
-    echo "  Press Super+Alt+D to toggle dictation (using nerd-dictation)"
+    echo "  Press ${shortcutBinding} to toggle dictation (using nerd-dictation)"
   '';
 
   # Simple speech recognition script using whisper
@@ -197,9 +215,37 @@ in
       default = true;
       description = "Enable KDE global shortcut for dictation toggle";
     };
+
+    globalShortcut = mkOption {
+      type = types.str;
+      default = defaultShortcut;
+      example = "Meta+Alt+D";
+      description = ''Default KDE shortcut to launch the dictation toggle script. Set alongside enableGlobalShortcut.'';
+    };
+
+    voskModelPackage = mkOption {
+      type = types.nullOr types.package;
+      default = null;
+      example = literalExpression "pkgs.callPackage ../../pkgs/vosk-model-en-us-0.22-lgraph.nix {}";
+      description = ''Optional Nix-packaged VOSK model. Set this to pkgs.callPackage ../../pkgs/vosk-model-en-us-0.22-lgraph.nix {} to use the bundled high-accuracy English model without hitting the network at runtime.'';
+    };
+
+    voskModelPath = mkOption {
+      type = types.nullOr types.str;
+      default = defaultVoskModelPath;
+      example = "/var/cache/vosk/model";
+      description = "Filesystem directory containing a VOSK model. Leave at the default when staging models outside the Nix store. Set to null to rely solely on voskModelPackage.";
+    };
   };
 
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.voskModelPath != null || cfg.voskModelPackage != null;
+        message = "services.speech-to-text requires either voskModelPath or voskModelPackage to be set.";
+      }
+    ];
+
     # Install required packages
     environment.systemPackages = with pkgs; [
       # Core STT packages
@@ -243,7 +289,7 @@ in
       nerdDictation  # Properly packaged from GitHub
       nerdDictationToggle
       speechIndicator  # System tray status indicator
-    ];
+    ] ++ (optional (cfg.voskModelPackage != null) cfg.voskModelPackage);
 
     # Create directory for models
     systemd.tmpfiles.rules = [
@@ -251,27 +297,46 @@ in
       "d /var/cache/vosk 0755 root root -"
     ];
 
+    system.activationScripts.installVoskModel = optionalString (cfg.voskModelPath != null && cfg.voskModelPackage != null) ''
+      if [ ! -f "${cfg.voskModelPath}/conf/model.conf" ]; then
+        echo "[speech-to-text] Installing VOSK model into ${cfg.voskModelPath}"
+        rm -rf "${cfg.voskModelPath}"
+        mkdir -p "${cfg.voskModelPath}"
+        cp -a "${cfg.voskModelPackage}/." "${cfg.voskModelPath}/"
+        chown -R root:root "${cfg.voskModelPath}"
+      fi
+    '';
+
     # No systemd services - everything is manual to avoid activation issues
     # The nerd-dictation-toggle script handles starting/stopping
 
     # XDG autostart for system tray indicator
-    environment.etc."xdg/autostart/speech-to-text-indicator.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Speech-to-Text Indicator
-      Comment=System tray indicator showing dictation status
-      Exec=${speechIndicator}/bin/speech-to-text-indicator
-      Icon=audio-input-microphone
-      Terminal=false
-      X-KDE-autostart-after=panel
-      X-KDE-StartupNotify=false
-    '';
+    environment.etc =
+      {
+        "xdg/autostart/speech-to-text-indicator.desktop".text = ''
+          [Desktop Entry]
+          Type=Application
+          Name=Speech-to-Text Indicator
+          Comment=System tray indicator showing dictation status
+          Exec=${speechIndicator}/bin/speech-to-text-indicator
+          Icon=audio-input-microphone
+          Terminal=false
+          X-KDE-autostart-after=panel
+          X-KDE-StartupNotify=false
+        '';
+      }
+      // (mkIf cfg.enableGlobalShortcut {
+        "xdg/kglobalshortcutsrc".text = ''
+          [speech-to-text]
+          toggle-dictation=${shortcutBinding},none,Toggle Speech Dictation
+        '';
+      });
 
     # Environment variables
     environment.sessionVariables = {
       WHISPER_MODEL = cfg.model;
       WHISPER_LANGUAGE = cfg.language;
-      VOSK_MODEL_PATH = "${voskModelPath}";
+      VOSK_MODEL_PATH = "${effectiveVoskModelPath}";
     };
 
     # Note: KDE shortcuts can be configured manually via System Settings

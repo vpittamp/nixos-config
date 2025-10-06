@@ -87,7 +87,7 @@ in rec {
       description = "System configuration, infra-as-code, and declarative desktop tweaks.";
       icon = "nix-snowflake";
       directory = "/etc/nixos";
-      wallpaper = "/run/current-system/sw/share/wallpapers/DarkestHour/contents/images/1920x1080.png";
+      wallpaper = "/run/current-system/sw/share/wallpapers/IceCold/contents/images/1920x1080.jpg";  # Cool blue theme for NixOS
       shortcut = "Meta+Ctrl+2";  # Activity shortcut
       colorScheme = {
         # Subtle blue accent for NixOS activity
@@ -113,7 +113,7 @@ in rec {
       description = "Platform engineering stacks and deployment playbooks.";
       icon = "folder-git";  # GitOps folder icon - perfect for infrastructure as code
       directory = expandPath "~/stacks";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Cluster/contents/images/1920x1080.png";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Canopee/contents/images/1920x1080.jpg";  # Green forest theme for Stacks
       shortcut = "Meta+Ctrl+3";  # Activity shortcut
       colorScheme = {
         # Subtle green accent for Stacks activity
@@ -139,7 +139,7 @@ in rec {
       description = "Backstage developer portal and CNOE platform.";
       icon = "applications-development";  # Developer portal icon
       directory = expandPath "~/backstage-cnoe";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Cascade/contents/images/1920x1080.png";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Kokkini/contents/images/1920x1080.jpg";  # Purple/magenta theme for Backstage
       shortcut = "Meta+Ctrl+4";  # Activity shortcut
       colorScheme = {
         # Subtle purple accent for Backstage activity
@@ -165,7 +165,7 @@ in rec {
       description = "System resource monitoring and performance dashboards.";
       icon = "utilities-system-monitor";  # System monitor icon
       directory = expandPath "~/coordination";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Flow/contents/images/1920x1080.png";
+      wallpaper = "/run/current-system/sw/share/wallpapers/EveningGlow/contents/images/1920x1080.jpg";  # Warm orange/amber theme for Monitoring
       shortcut = "Meta+Ctrl+1";  # Activity shortcut
       colorScheme = {
         # Orange/amber accent for monitoring activity
@@ -191,7 +191,7 @@ in rec {
       description = "Ubuntu Nix development container environment.";
       icon = "utilities-terminal";  # Terminal icon for development container
       directory = expandPath "~/ubuntu-nix-devcontainer";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Next/contents/images/1920x1080.png";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Autumn/contents/images/1920x1080.jpg";  # Warm red/orange theme for Devcontainer
       shortcut = "Meta+Ctrl+5";  # Activity shortcut
       colorScheme = {
         # Ubuntu orange accent for Devcontainer activity

@@ -38,15 +38,41 @@ in {
       wmclassmatch = 1;  # Substring match
     };
 
-    # Add more browser/application rules here as needed
-    # Example:
-    # "brave" = {
-    #   Description = "Brave Browser - All Activities";
-    #   activity = allActivitiesUuid;
-    #   activityrule = 2;
-    #   types = 1;
-    #   wmclass = "brave-browser";
-    #   wmclassmatch = 1;
-    # };
+    # GitKraken - All activities
+    "gitkraken" = {
+      Description = "GitKraken - All Activities";
+      activity = allActivitiesUuid;
+      activityrule = 2;  # Force
+      types = 1;  # Normal windows
+      wmclass = "gitkraken";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Substring match
+    };
+
+    # K9s - All activities
+    # K9s runs in Konsole with window title format: "~ : k9s — Konsole"
+    # We match Konsole windows with "k9s" substring in the title
+    "k9s" = {
+      Description = "K9s - All Activities";
+      activity = allActivitiesUuid;
+      activityrule = 2;  # Force
+      types = 1;  # Normal windows
+      wmclass = "konsole";
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Substring match
+      title = "k9s";
+      titlematch = 1;  # Substring match (matches "~ : k9s — Konsole")
+    };
+
+    # Headlamp - All activities
+    "headlamp" = {
+      Description = "Headlamp - All Activities";
+      activity = allActivitiesUuid;
+      activityrule = 2;  # Force
+      types = 1;  # Normal windows
+      wmclass = "Headlamp";  # Note: Capitalized window class
+      wmclasscomplete = false;
+      wmclassmatch = 1;  # Substring match
+    };
   };
 }

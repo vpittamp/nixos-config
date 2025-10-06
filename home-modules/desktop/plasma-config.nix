@@ -114,10 +114,10 @@
         confirmLogout = true;  # Ask for confirmation on shutdown/logout
       };
 
-      # Baloo File Indexing - Disable for performance
-      # Baloo indexes files for search but can be resource-intensive
+      # Baloo File Indexing - Enable for KRunner search
+      # Baloo indexes files for search in KRunner and Dolphin
       "baloofilerc"."Basic Settings" = {
-        "Indexing-Enabled" = false;  # Disable file indexing
+        "Indexing-Enabled" = true;  # Enable file indexing
       };
 
       # Dolphin File Manager Preferences

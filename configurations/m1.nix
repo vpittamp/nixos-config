@@ -59,6 +59,7 @@
     model = "base.en";  # Good balance of speed and accuracy
     language = "en";
     enableGlobalShortcut = true;
+    voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix {};
   };
   
   # Swap configuration - 8GB swap file for memory pressure relief

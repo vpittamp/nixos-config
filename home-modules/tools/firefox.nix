@@ -112,40 +112,8 @@ in
           "extensions.webextensions.restrictedDomains" = "";  # Allow on all domains
 
           # Show extension buttons on toolbar (not unified menu)
-          "extensions.unifiedExtensions.enabled" = false;
-
-          # Force extensions to be visible on toolbar
-          "browser.compactmode.show" = false;  # Don't show compact mode option
-          "extensions.pocket.enabled" = false;  # Disable Pocket to save space
-
-          # Auto-pin PWAsForFirefox extension to toolbar
-          # This ensures the extension button is visible immediately after installation
-          "browser.uiCustomization.state" = builtins.toJSON {
-            placements = {
-              widget-overflow-fixed-list = [];
-              unified-extensions-area = [];
-              nav-bar = [
-                "back-button"
-                "forward-button"
-                "stop-reload-button"
-                "customizableui-special-spring1"
-                "urlbar-container"
-                "customizableui-special-spring2"
-                "firefoxpwa_filips_si-browser-action"  # PWAsForFirefox extension - visible
-                "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action"  # 1Password extension - visible
-                "plasma-browser-integration_kde_org-browser-action"  # Plasma Integration - visible
-                "downloads-button"
-                "fxa-toolbar-menu-button"
-              ];
-              toolbar-menubar = [ "menubar-items" ];
-              TabsToolbar = [ "tabbrowser-tabs" "new-tab-button" "alltabs-button" ];
-              PersonalToolbar = [ "import-button" "personal-bookmarks" ];
-            };
-            seen = [ "firefoxpwa_filips_si-browser-action" "_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-browser-action" "plasma-browser-integration_kde_org-browser-action" "developer-button" ];
-            dirtyAreaCache = [ "nav-bar" "toolbar-menubar" "TabsToolbar" "PersonalToolbar" ];
-            currentVersion = 20;
-            newElementCount = 5;
-          };
+          # Extension configuration
+          "extensions.pocket.enabled" = false;  # Disable Pocket
 
           # WebAuthn/Passkeys
           "security.webauth.webauthn" = true;

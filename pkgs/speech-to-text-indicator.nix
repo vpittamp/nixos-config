@@ -39,7 +39,7 @@ pkgs.stdenv.mkDerivation {
 
               self.menu.addSeparator()
 
-              toggle_action = QAction("Toggle Dictation (Meta+Shift+Space)")
+              toggle_action = QAction("Toggle Dictation (Meta+Alt+D)")
               toggle_action.triggered.connect(self.toggle_dictation)
               self.menu.addAction(toggle_action)
 

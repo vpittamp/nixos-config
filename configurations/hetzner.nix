@@ -236,6 +236,7 @@
     model = "base.en";  # Good balance of speed and accuracy
     language = "en";
     enableGlobalShortcut = true;
+    voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix {};
   };
 
   # PWA extensions are handled by regular Firefox profile now

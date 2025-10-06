@@ -122,7 +122,7 @@ PlasmoidItem {
 
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignHCenter
-                text: "Shortcut: Meta+Shift+Space"
+                text: "Shortcut: Meta+Alt+D"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
                 opacity: 0.7
             }

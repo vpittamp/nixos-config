@@ -52,6 +52,7 @@ in
     ../tools/nix.nix
     ../tools/vscode.nix
     ../tools/gitkraken.nix
+    ../tools/kubernetes-apps.nix
     ../tools/cluster-management.nix
     ../tools/konsole-profiles.nix
 
