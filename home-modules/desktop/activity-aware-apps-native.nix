@@ -336,6 +336,66 @@ in
 
   # Override default desktop entries to use activity-aware launchers
   # This ensures ALL launches (KRunner, menu, shortcuts) use our activity-aware behavior
+  # Using home.file instead of xdg.desktopEntries to ensure they're actually created
+  home.file = {
+    ".local/share/applications/org.kde.konsole.desktop".text = ''
+      [Desktop Entry]
+      Name=Konsole
+      GenericName=Terminal
+      Comment=Command line terminal (activity-aware)
+      Icon=utilities-terminal
+      Type=Application
+      Categories=Qt;KDE;System;TerminalEmulator;
+      Exec=${konsoleActivityScript}/bin/konsole-activity
+      Terminal=false
+      Keywords=shell;prompt;command;commandline;cmd;
+    '';
+
+    ".local/share/applications/code.desktop".text = ''
+      [Desktop Entry]
+      Name=Visual Studio Code
+      GenericName=Text Editor
+      Comment=Code Editing. Redefined. (activity-aware)
+      Icon=vscode
+      Type=Application
+      Categories=Utility;TextEditor;Development;IDE;
+      Exec=${codeActivityScript}/bin/code-activity %F
+      Terminal=false
+      MimeType=text/plain;inode/directory;
+      StartupNotify=true
+      StartupWMClass=Code
+      Keywords=vscode;
+    '';
+
+    ".local/share/applications/org.kde.dolphin.desktop".text = ''
+      [Desktop Entry]
+      Name=Dolphin
+      GenericName=File Manager
+      Comment=File Manager (activity-aware)
+      Icon=system-file-manager
+      Type=Application
+      Categories=Qt;KDE;System;FileManager;
+      Exec=${dolphinActivityScript}/bin/dolphin-activity %u
+      Terminal=false
+      MimeType=inode/directory;
+      Keywords=file manager;filemanager;browser;explorer;
+    '';
+
+    ".local/share/applications/org.kde.yakuake.desktop".text = ''
+      [Desktop Entry]
+      Name=Yakuake
+      GenericName=Drop-down Terminal
+      Comment=A drop-down terminal emulator (activity-aware)
+      Icon=yakuake
+      Type=Application
+      Categories=Qt;KDE;System;TerminalEmulator;
+      Exec=${yakuakeActivityScript}/bin/yakuake-activity
+      Terminal=false
+      Keywords=terminal;console;
+    '';
+  };
+
+  # DEPRECATED: Keeping xdg.desktopEntries for reference, but home.file takes precedence
   xdg.desktopEntries = {
     # Override Konsole to always use activity-aware launcher
     "org.kde.konsole" = {
