@@ -43,10 +43,10 @@ in
 
         # Search engines configuration
         search = {
-          default = "google";  # Default search engine ID (lowercase per deprecation warning)
+          default = "google";  # Default search engine ID
           force = true;
           engines = {
-            "Google" = {
+            "google" = {  # Use ID instead of name (lowercase)
               urls = [{
                 template = "https://www.google.com/search";
                 params = [

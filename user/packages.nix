@@ -90,7 +90,8 @@ let
     delta
     diff-so-fancy
     lazygit
-    gitkraken  # Git GUI client
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
+    gitkraken  # Git GUI client (x86_64 only)
   ];
 
   # Kubernetes tools
