@@ -183,10 +183,21 @@
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
-    # KWin window rules - transformed from generated snapshot with canonical activity UUIDs
-    # The transformer replaces system-generated UUIDs with canonical ones from data.nix
+    # KWin window rules - use activity-based rules generated from data.nix
+    # These rules match folder basenames that apps actually show in titles
+    # (e.g., "nixos" instead of "/etc/nixos")
     configFile."kwinrulesrc" =
-      (import ./kwin-window-rules.nix { inherit lib config; }).kwinrulesrc;
+      let
+        # Get activity definitions from project-activities
+        activityData = import ./project-activities/data.nix { inherit lib config; pkgs = null; };
+
+        # Generate activity-based rules for VS Code, Konsole, Dolphin
+        activityRules = import ./project-activities/window-rules.nix {
+          inherit lib config;
+          activities = activityData.activities;
+        };
+      in
+        activityRules.kwinrulesrc;
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
