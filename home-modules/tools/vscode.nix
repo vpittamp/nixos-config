@@ -55,6 +55,9 @@ let
     ms-vscode-remote.remote-containers
     # ms-vscode.remote-server  # May not be available in nixpkgs
 
+    # Networking
+    tailscale.vscode-tailscale
+
     # AI Assistants
     anthropic.claude-code
     github.copilot
@@ -96,6 +99,7 @@ let
   baseExtensionIds = [
     "ms-vscode-remote.remote-ssh"
     "ms-vscode-remote.remote-containers"
+    "tailscale.vscode-tailscale"
     "anthropic.claude-code"
     "github.copilot"
     "github.copilot-chat"
@@ -200,8 +204,8 @@ let
     # Disable KDE Wallet integration - use 1Password instead
     "password-store" = "basic"; # Use basic keychain instead of system keychain
 
-    # Terminal integration with tmux sizing fixes
-    "terminal.integrated.defaultProfile.linux" = "bash-sesh"; # Use bash-sesh as default
+    # Terminal integration with bash as default
+    "terminal.integrated.defaultProfile.linux" = "bash"; # Use bash as default
     "terminal.integrated.profiles.linux" = {
       "bash" = {
         "path" = "${pkgs.bashInteractive}/bin/bash";
