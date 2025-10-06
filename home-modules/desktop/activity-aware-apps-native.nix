@@ -334,122 +334,46 @@ in
   # 2. Add New → Window class: firefox, substring match
   # 3. Add Property → Activities → Force → All Activities
 
-  # Create desktop entries with launchers
+  # Override default desktop entries to use activity-aware launchers
+  # This ensures ALL launches (KRunner, menu, shortcuts) use our activity-aware behavior
   xdg.desktopEntries = {
-    # Firefox for all activities
-    firefox-all-activities = {
-      name = "Firefox (All Activities)";
-      genericName = "Web Browser";
-      comment = "Appears in all activities";
-      icon = "firefox";
-      terminal = false;
-      type = "Application";
-      categories = [ "Network" "WebBrowser" ];
-      exec = "${firefoxAllActivities}/bin/firefox-all-activities %u";
-      settings = {
-        Keywords = "firefox;browser;web;all;activities;";
-        StartupWMClass = "firefox";
-      };
-    };
-
-    # GitKraken for all activities
-    gitkraken-all-activities = {
-      name = "GitKraken (All Activities)";
-      genericName = "Git Client";
-      comment = "Appears in all activities";
-      icon = "gitkraken";
-      terminal = false;
-      type = "Application";
-      categories = [ "Development" "RevisionControl" ];
-      exec = "${gitkrakenAllActivities}/bin/gitkraken-all-activities";
-      settings = {
-        Keywords = "git;gitkraken;version;control;all;activities;";
-        StartupWMClass = "gitkraken";
-      };
-    };
-
-    # Activity-aware Konsole
-    konsole-activity = {
-      name = "Konsole (Activity)";
+    # Override Konsole to always use activity-aware launcher
+    "org.kde.konsole" = {
+      name = "Konsole";
       genericName = "Terminal";
-      comment = "Opens in current activity's directory";
+      comment = "Command line terminal (activity-aware)";
       icon = "utilities-terminal";
       terminal = false;
       type = "Application";
-      categories = [ "System" "TerminalEmulator" ];
+      categories = [ "Qt" "KDE" "System" "TerminalEmulator" ];
       exec = "${konsoleActivityScript}/bin/konsole-activity";
       settings = {
-        Keywords = "konsole;terminal;activity;shell;bash;";
+        Keywords = "shell;prompt;command;commandline;cmd;";
       };
     };
 
-    # Activity-aware VS Code
-    code-activity = {
-      name = "VS Code (Activity)";
-      genericName = "Code Editor";
-      comment = "Opens in current activity's directory";
-      icon = "code";
-      terminal = false;
-      type = "Application";
-      categories = [ "Development" "IDE" ];
-      exec = "${codeActivityScript}/bin/code-activity";
-      settings = {
-        Keywords = "vscode;code;editor;activity;development;ide;";
-      };
-    };
-
-    # Activity-aware Dolphin
-    dolphin-activity = {
-      name = "Dolphin (Activity)";
-      genericName = "File Manager";
-      comment = "Opens in current activity's directory";
-      icon = "system-file-manager";
-      terminal = false;
-      type = "Application";
-      categories = [ "System" "FileManager" ];
-      exec = "${dolphinActivityScript}/bin/dolphin-activity";
-      settings = {
-        Keywords = "dolphin;files;file manager;activity;explorer;";
-      };
-    };
-
-    # Activity-aware Yakuake launcher
-    yakuake-activity = {
-      name = "Yakuake (Activity)";
-      genericName = "Drop-down Terminal";
-      comment = "Opens Yakuake in the current activity directory";
-      icon = "yakuake";
-      terminal = false;
-      type = "Application";
-      categories = [ "System" "TerminalEmulator" ];
-      exec = "${yakuakeActivityScript}/bin/yakuake-activity";
-      settings = {
-        Keywords = "yakuake;terminal;dropdown;activity;quake;";
-      };
-    };
-
-    # VS Code with activity-specific jumplist actions
-    "code-activities" = {
-      name = "VS Code (Activities)";
-      genericName = "Code Editor";
-      comment = "Code Editing with Activity Support";
+    # Override VS Code to always use activity-aware launcher
+    "code" = {
+      name = "Visual Studio Code";
+      genericName = "Text Editor";
+      comment = "Code Editing. Redefined. (activity-aware)";
       icon = "vscode";
       terminal = false;
       type = "Application";
-      categories = [ "Development" "IDE" ];
-      exec = "code";
+      categories = [ "Utility" "TextEditor" "Development" "IDE" ];
+      exec = "${codeActivityScript}/bin/code-activity %F";
+      mimeType = [ "text/plain" "inode/directory" ];
       startupNotify = true;
       settings = {
         StartupWMClass = "Code";
-        Keywords = "vscode;code;editor;development;ide;";
-        # Define jumplist actions for each activity
+        Keywords = "vscode;";
+        # Keep jumplist actions for per-activity launches
         Actions = lib.concatStringsSep ";" (
           (lib.mapAttrsToList (name: activity: "open-${name}") activityData.rawActivities) ++
           ["new-window"]
         );
       };
       # Add action entries for each activity
-      # Uses --profile flag to set unique WM_CLASS for reliable window rule matching
       actions = lib.mapAttrs' (name: activity:
         lib.nameValuePair "open-${name}" {
           name = "Open in ${activity.name}";
@@ -458,7 +382,6 @@ in
             expandedDir = if lib.hasPrefix "~/" activity.directory
                          then "${config.home.homeDirectory}/${lib.removePrefix "~/" activity.directory}"
                          else activity.directory;
-            # Use lowercase activity name as profile (matches window rule)
             profileName = lib.toLower name;
           in "code --profile ${profileName} ${expandedDir}";
         }
@@ -468,6 +391,37 @@ in
           icon = "vscode";
           exec = "code --new-window";
         };
+      };
+    };
+
+    # Override Dolphin to always use activity-aware launcher
+    "org.kde.dolphin" = {
+      name = "Dolphin";
+      genericName = "File Manager";
+      comment = "File Manager (activity-aware)";
+      icon = "system-file-manager";
+      terminal = false;
+      type = "Application";
+      categories = [ "Qt" "KDE" "System" "FileManager" ];
+      exec = "${dolphinActivityScript}/bin/dolphin-activity %u";
+      mimeType = [ "inode/directory" ];
+      settings = {
+        Keywords = "file manager;filemanager;browser;explorer;";
+      };
+    };
+
+    # Override Yakuake to always use activity-aware launcher
+    "org.kde.yakuake" = {
+      name = "Yakuake";
+      genericName = "Drop-down Terminal";
+      comment = "A drop-down terminal emulator (activity-aware)";
+      icon = "yakuake";
+      terminal = false;
+      type = "Application";
+      categories = [ "Qt" "KDE" "System" "TerminalEmulator" ];
+      exec = "${yakuakeActivityScript}/bin/yakuake-activity";
+      settings = {
+        Keywords = "terminal;console;";
       };
     };
   };

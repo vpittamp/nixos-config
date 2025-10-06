@@ -22,43 +22,43 @@ rec {
 
     gitea = {
       name = "Gitea";
-      activity = "backstage";
+      activity = "stacks";
       url = "https://gitea.cnoe.localtest.me:8443";
     };
 
     backstage = {
       name = "Backstage";
-      activity = "backstage";
+      activity = "stacks";
       url = "https://cnoe.localtest.me:8443";
     };
 
     kargo = {
       name = "Kargo";
-      activity = "backstage";
+      activity = "stacks";
       url = "https://kargo.cnoe.localtest.me:8443";
     };
 
     argocd = {
       name = "ArgoCD";
-      activity = "backstage";
+      activity = "stacks";
       url = "https://argocd.cnoe.localtest.me:8443";
     };
 
     headlamp = {
       name = "Headlamp";
-      activity = "backstage";
+      activity = "stacks";
       url = "https://headlamp.cnoe.localtest.me:8443";
     };
 
     homeassistant = {
       name = "Home Assistant";
-      activity = "monitoring";
+      activity = null;
       url = "http://localhost:8123";
     };
 
     ubereats = {
       name = "Uber Eats";
-      activity = "nixos";  # Default activity
+      activity = null;  # Default activity
       url = "https://www.ubereats.com";
     };
   };
