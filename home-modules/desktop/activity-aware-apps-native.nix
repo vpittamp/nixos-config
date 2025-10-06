@@ -83,8 +83,33 @@ let
   konsoleActivityScript = pkgs.writeScriptBin "konsole-activity" ''
     #!/usr/bin/env bash
     ${getActivityDirectory}
+    ${qdbusLocator}
+
     WORK_DIR=$(get_activity_directory)
     SESSION_NAME=$(basename "$WORK_DIR" | tr '[:upper:]' '[:lower:]')
+
+    # Get activity metadata for environment variables
+    ACTIVITY_ID=""
+    ACTIVITY_NAME=""
+    ACTIVITY_ICON=""
+    ACTIVITY_DESC=""
+
+    if [ -n "$QDBUS_BIN" ]; then
+      ACTIVITY_ID=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+
+      if [ -n "$ACTIVITY_ID" ]; then
+        ACTIVITY_NAME=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityName "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_ICON=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityIcon "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_DESC=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityDescription "$ACTIVITY_ID" 2>/dev/null)
+      fi
+    fi
+
+    # Export activity metadata for shell sessions
+    export CURRENT_ACTIVITY_UUID="$ACTIVITY_ID"
+    export CURRENT_ACTIVITY_NAME="$ACTIVITY_NAME"
+    export CURRENT_ACTIVITY_DIR="$WORK_DIR"
+    export CURRENT_ACTIVITY_ICON="$ACTIVITY_ICON"
+    export CURRENT_ACTIVITY_DESCRIPTION="$ACTIVITY_DESC"
 
     if command -v sesh >/dev/null 2>&1; then
       konsole --workdir "$WORK_DIR" --profile "Improved Selection" -e bash -lc "sesh connect $SESSION_NAME || exec bash -l"
@@ -100,19 +125,31 @@ let
 
     WORK_DIR=$(get_activity_directory)
 
-    # Determine activity name from directory for profile matching
+    # Determine activity metadata for environment variables and profile matching
     MAPPING_FILE="${config.home.homeDirectory}/.config/plasma-activities/mappings.json"
     ACTIVITY_ID=""
     ACTIVITY_NAME=""
+    ACTIVITY_ICON=""
+    ACTIVITY_DESC=""
 
     if [ -n "$QDBUS_BIN" ]; then
       ACTIVITY_ID=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+
+      if [ -n "$ACTIVITY_ID" ]; then
+        # Get metadata from DBus
+        ACTIVITY_NAME=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityName "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_ICON=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityIcon "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_DESC=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityDescription "$ACTIVITY_ID" 2>/dev/null)
+      fi
     fi
 
-    if [ -n "$ACTIVITY_ID" ]; then
-      # Get activity name from kactivitymanagerdrc
-      ACTIVITY_NAME=$(grep "^$ACTIVITY_ID=" ~/.config/kactivitymanagerdrc 2>/dev/null | cut -d= -f2 | head -1)
-    fi
+    # Export activity metadata as environment variables for child processes
+    # These can be used by shell prompts, scripts, git hooks, etc.
+    export CURRENT_ACTIVITY_UUID="$ACTIVITY_ID"
+    export CURRENT_ACTIVITY_NAME="$ACTIVITY_NAME"
+    export CURRENT_ACTIVITY_DIR="$WORK_DIR"
+    export CURRENT_ACTIVITY_ICON="$ACTIVITY_ICON"
+    export CURRENT_ACTIVITY_DESCRIPTION="$ACTIVITY_DESC"
 
     # Convert activity name to lowercase profile name (e.g., "NixOS" -> "nixos")
     PROFILE_NAME=$(echo "$ACTIVITY_NAME" | tr '[:upper:]' '[:lower:]')
