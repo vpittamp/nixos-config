@@ -201,8 +201,12 @@ let
       "private_key"
     ];
 
-    # Disable KDE Wallet integration - use 1Password instead
-    "password-store" = "basic"; # Use basic keychain instead of system keychain
+    # Use libsecret for persistent credential storage (GitHub OAuth tokens, etc.)
+    # 1Password continues to handle git credentials via git-credential-op
+    # Using gnome-libsecret as it provides better compatibility with KWallet via Secret Service API
+    # Direct kwallet5/kwallet6 options have compatibility issues with VS Code on KDE 6
+    # See: https://code.visualstudio.com/docs/configure/settings-sync#_troubleshooting-keychain-issues
+    "password-store" = "gnome-libsecret"; # Use libsecret for encrypted, persistent token storage
 
     # Terminal integration with bash as default
     "terminal.integrated.defaultProfile.linux" = "bash"; # Use bash as default
