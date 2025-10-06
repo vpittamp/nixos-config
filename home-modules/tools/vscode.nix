@@ -6,6 +6,7 @@ let
 
   # Declarative VSCode package with proper flags for M1/ARM64
   # Using makeWrapper to add command-line flags for Wayland
+  # Remove desktop files since we provide our own activity-aware versions
   vscodeWithFlags = pkgs.vscode.overrideAttrs (oldAttrs: {
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
     postFixup = (oldAttrs.postFixup or "") + ''
@@ -14,6 +15,9 @@ let
         --add-flags "--ozone-platform=wayland" \
         --add-flags "--enable-features=WaylandWindowDecorations" \
         --set ELECTRON_OZONE_PLATFORM_HINT "auto"
+
+      # Remove desktop files to prevent duplicate entries
+      rm -rf $out/share/applications
     '';
   });
 
@@ -390,11 +394,19 @@ let
     backstage = nixosProfile;
     devcontainer = nixosProfile;
   };
+
+  # Override standard vscode package to remove desktop files
+  vscodeNoDesktop = pkgs.vscode.overrideAttrs (oldAttrs: {
+    postFixup = (oldAttrs.postFixup or "") + ''
+      # Remove desktop files to prevent duplicate entries
+      rm -rf $out/share/applications
+    '';
+  });
 in
 {
   programs.vscode = {
     enable = true;
-    package = if isM1 then vscodeWithFlags else pkgs.vscode;
+    package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
 
     profiles = {
       default = defaultProfile;
@@ -403,9 +415,18 @@ in
   };
 
   # Create VSCode settings directory and SSH config for 1Password
-  home.file.".vscode-server/data/Machine/settings.json" = {
-    text = builtins.toJSON config.programs.vscode.profiles.${primaryProfile}.userSettings;
-  };
+  # Pre-create globalStorage directories for all profiles to prevent SQLITE_CANTOPEN errors
+  home.file = {
+    ".vscode-server/data/Machine/settings.json" = {
+      text = builtins.toJSON config.programs.vscode.profiles.${primaryProfile}.userSettings;
+    };
+  } // lib.listToAttrs (
+    # Dynamically generate globalStorage/.keep for all configured VS Code profiles
+    map (profileName: {
+      name = ".config/Code/User/profiles/${profileName}/globalStorage/.keep";
+      value = { text = ""; };
+    }) (builtins.attrNames config.programs.vscode.profiles)
+  );
 
   # Environment variables for VSCode
   home.sessionVariables = {

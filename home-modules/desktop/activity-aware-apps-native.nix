@@ -342,31 +342,37 @@ in
     # These will persist until next logout/login, so hide them explicitly
     ".local/share/applications/code-activity.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
     ".local/share/applications/code-activities.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
     ".local/share/applications/konsole-activity.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
     ".local/share/applications/dolphin-activity.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
     ".local/share/applications/yakuake-activity.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
     ".local/share/applications/code-url-handler.desktop".text = ''
       [Desktop Entry]
+      Type=Application
       NoDisplay=true
       Hidden=true
     '';
