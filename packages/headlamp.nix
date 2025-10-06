@@ -3,17 +3,22 @@
 
 let
   pname = "headlamp";
-  version = "0.35.0";
-  
-  # Use the AppImage for simplicity on x86_64
-  src = fetchurl {
-    url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-x64.AppImage";
-    sha256 = "02iqwnm0jivgv06h8wv2gslp3sf2jd9x19g9wxrljv58i6yplyzn";
-  };
+  version = "0.36.0";
+
+  # Select architecture-specific source
+  src = fetchurl (
+    if stdenv.isx86_64 then {
+      url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-x64.AppImage";
+      sha256 = "1scfp1c7y7sx2c9n9gxw2mg1gq2lj2ip0c06k7mv55rnh0mb6ksb";
+    } else if stdenv.isAarch64 then {
+      url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-arm64.AppImage";
+      sha256 = "16d7w7hc31cqw42pj56b58nfxj0yqinqi3w6d8j71zj179gv53kg";
+    } else throw "Unsupported platform for headlamp"
+  );
 
   appimageContents = appimageTools.extractType2 { inherit pname version src; };
 in
-if stdenv.isLinux && stdenv.isx86_64 then
+if stdenv.isLinux then
   appimageTools.wrapType2 {
     inherit pname version src;
     
@@ -35,49 +40,9 @@ if stdenv.isLinux && stdenv.isx86_64 then
       homepage = "https://headlamp.dev/";
       license = licenses.asl20;
       maintainers = with maintainers; [ ];
-      platforms = [ "x86_64-linux" ];
+      platforms = [ "x86_64-linux" "aarch64-linux" ];
       mainProgram = "headlamp";
     };
   }
 else
-  # Alternative: Build from tarball for other architectures
-  stdenv.mkDerivation rec {
-    inherit pname version;
-    
-    src = fetchurl {
-      url = "https://github.com/kubernetes-sigs/headlamp/releases/download/v${version}/Headlamp-${version}-linux-x64.tar.gz";
-      sha256 = "1lpg9vmyw5k6dijkij4ffay73431dvyrb69dcaibczc65k8mhcrq";
-    };
-    
-    nativeBuildInputs = [ makeWrapper ];
-    
-    installPhase = ''
-      mkdir -p $out/opt/headlamp
-      cp -r * $out/opt/headlamp/
-      
-      makeWrapper $out/opt/headlamp/headlamp $out/bin/headlamp \
-        --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [ stdenv.cc.cc.lib ]}"
-      
-      # Install desktop file
-      mkdir -p $out/share/applications
-      cat > $out/share/applications/headlamp.desktop <<EOF
-      [Desktop Entry]
-      Name=Headlamp
-      Comment=Kubernetes Dashboard
-      Exec=$out/bin/headlamp %U
-      Terminal=false
-      Type=Application
-      Icon=headlamp
-      Categories=Development;
-      EOF
-    '';
-    
-    meta = with lib; {
-      description = "A Kubernetes web UI that is fully-featured, user-friendly and extensible";
-      homepage = "https://headlamp.dev/";
-      license = licenses.asl20;
-      maintainers = with maintainers; [ ];
-      platforms = [ "x86_64-linux" ];
-      mainProgram = "headlamp";
-    };
-  }
+  throw "Headlamp is only available on Linux (x86_64 and aarch64)"

@@ -112,9 +112,11 @@
     postman
     jq
     yq
+
+    # Kubernetes Dashboard
+    headlamp    # Kubernetes Dashboard UI (now supports both x86_64 and aarch64)
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     idpbuilder  # IDP builder tool (x86_64 only)
-    headlamp    # Kubernetes Dashboard UI (x86_64 only)
   ];
 
   # Firewall ports for development services
