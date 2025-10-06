@@ -183,21 +183,51 @@
       # Speech-to-text commands moved to speech-to-text-shortcuts.nix
     };
 
-    # KWin window rules - use activity-based rules generated from data.nix
-    # These rules match folder basenames that apps actually show in titles
-    # (e.g., "nixos" instead of "/etc/nixos")
+    # KWin window rules - merged from three auto-generated sources:
+    # 1. Activity-based rules (VS Code, Konsole, Dolphin) - from project-activities/window-rules.nix
+    # 2. PWA rules (YouTube, Google AI, Headlamp, etc.) - from pwas/window-rules.nix
+    # 3. Browser rules (Firefox, Chromium) - from browser-window-rules.nix
+    #
+    # All rules are auto-generated from declarative data sources:
+    # - Activities: project-activities/data.nix
+    # - PWAs: pwas/data.nix
+    # - Browsers: browser-window-rules.nix (manually maintained)
     configFile."kwinrulesrc" =
       let
         # Get activity definitions from project-activities
         activityData = import ./project-activities/data.nix { inherit lib config; pkgs = null; };
 
-        # Generate activity-based rules for VS Code, Konsole, Dolphin
+        # 1. Generate activity-based rules for VS Code, Konsole, Dolphin
         activityRules = import ./project-activities/window-rules.nix {
           inherit lib config;
           activities = activityData.activities;
         };
+
+        # 2. Generate PWA rules from pwas/data.nix
+        pwaRules = import ./pwas/window-rules.nix { inherit lib config; };
+
+        # 3. Get browser rules (manually maintained)
+        browserRules = import ./browser-window-rules.nix { inherit lib config; };
+
+        # Extract just the rules (without General sections)
+        activityRulesOnly = lib.filterAttrs (name: _: name != "General") activityRules.kwinrulesrc;
+        pwaRulesOnly = lib.filterAttrs (name: _: name != "General") pwaRules.kwinrulesrc;
+        browserRulesOnly = lib.filterAttrs (name: _: name != "General") browserRules.kwinrulesrc;
+
+        # Merge all rule sets
+        # Order: PWA → Browser → Activity (first has precedence for duplicate names)
+        allRules = pwaRulesOnly // browserRulesOnly // activityRulesOnly;
+
+        # Get all rule names for General section
+        allRuleNames = lib.attrNames allRules;
+        ruleCount = builtins.length allRuleNames;
       in
-        activityRules.kwinrulesrc;
+        allRules // {
+          General = {
+            count = ruleCount;
+            rules = lib.concatStringsSep "," allRuleNames;
+          };
+        };
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
