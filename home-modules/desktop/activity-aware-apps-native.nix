@@ -338,6 +338,40 @@ in
   # This ensures ALL launches (KRunner, menu, shortcuts) use our activity-aware behavior
   # Using home.file instead of xdg.desktopEntries to ensure they're actually created
   home.file = {
+    # Hide old xdg.desktopEntries entries that are still in nix store profile
+    # These will persist until next logout/login, so hide them explicitly
+    ".local/share/applications/code-activity.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+    ".local/share/applications/code-activities.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+    ".local/share/applications/konsole-activity.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+    ".local/share/applications/dolphin-activity.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+    ".local/share/applications/yakuake-activity.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+    ".local/share/applications/code-url-handler.desktop".text = ''
+      [Desktop Entry]
+      NoDisplay=true
+      Hidden=true
+    '';
+
+    # Main desktop entry overrides
     ".local/share/applications/org.kde.konsole.desktop".text = ''
       [Desktop Entry]
       Name=Konsole
