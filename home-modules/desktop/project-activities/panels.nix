@@ -70,7 +70,7 @@ in {
     # Main panel (bottom, all activities)
     {
       location = "bottom";
-      height = 44;
+      height = 36;
       lengthMode = "fill";
       alignment = "center";
       hiding = "none";
@@ -139,7 +139,7 @@ in {
     # Monitoring activity panel (top, monitoring activity only)
     {
       location = "top";
-      height = 44;
+      height = 36;
       lengthMode = "fill";
       alignment = "center";
       hiding = "none";
@@ -251,7 +251,7 @@ in {
     # Secondary screen panel 1 (screen 1)
     {
       location = "bottom";
-      height = 44;
+      height = 36;
       screen = 1;
       lengthMode = "fill";
 
@@ -283,7 +283,7 @@ in {
     # Secondary screen panel 2 (screen 2)
     {
       location = "bottom";
-      height = 44;
+      height = 36;
       screen = 2;
       lengthMode = "fill";
 
