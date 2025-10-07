@@ -50,16 +50,18 @@ in {
     };
 
     # K9s - All activities
-    # K9s launches in a dedicated Konsole instance with WM class "k9s-terminal"
-    # This allows it to appear as a standalone app in the taskbar
+    # K9s launches via custom desktop file with title "K9s"
+    # Match on Konsole + title to group as standalone app
     "k9s" = {
       Description = "K9s - All Activities";
       activity = allActivitiesUuid;
       activityrule = 2;  # Force
       types = 1;  # Normal windows
-      wmclass = "k9s-terminal";
+      wmclass = "konsole";
       wmclasscomplete = false;
-      wmclassmatch = 2;  # Exact match
+      wmclassmatch = 1;  # Substring match
+      title = "K9s";
+      titlematch = 2;  # Exact match
     };
 
     # Headlamp - All activities
