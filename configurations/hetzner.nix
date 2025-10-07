@@ -23,7 +23,6 @@
     
     # Phase 2: Desktop Environment
     ../modules/desktop/kde-plasma.nix
-    ../modules/desktop/kde-multi-panel.nix
     ../modules/desktop/remote-access.nix
     ../modules/desktop/xrdp-with-sound.nix
     ../modules/desktop/firefox-virtual-optimization.nix
