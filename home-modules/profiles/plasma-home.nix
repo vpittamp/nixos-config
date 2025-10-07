@@ -10,6 +10,7 @@
     ../desktop/activity-aware-apps-native.nix
     ../desktop/monitoring-desktop-widgets.nix
     ../desktop/speech-to-text-shortcuts.nix
+    ../desktop/kubernetes/k9s-desktop.nix
     ../tools/kwallet-config.nix
     ../tools/firefox-pwas-declarative.nix
     inputs.plasma-manager.homeModules.plasma-manager

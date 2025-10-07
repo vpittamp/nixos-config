@@ -58,6 +58,7 @@ let
     "applications:firefox.desktop"
     "applications:org.kde.dolphin.desktop"
     "applications:org.kde.konsole.desktop"
+    "applications:k9s.desktop"
   ];
 
   # Combined launcher list

@@ -50,18 +50,16 @@ in {
     };
 
     # K9s - All activities
-    # K9s runs in Konsole with window title format: "~ : k9s — Konsole"
-    # We match Konsole windows with "k9s" substring in the title
+    # K9s launches in a dedicated Konsole instance with WM class "k9s-terminal"
+    # This allows it to appear as a standalone app in the taskbar
     "k9s" = {
       Description = "K9s - All Activities";
       activity = allActivitiesUuid;
       activityrule = 2;  # Force
       types = 1;  # Normal windows
-      wmclass = "konsole";
+      wmclass = "k9s-terminal";
       wmclasscomplete = false;
-      wmclassmatch = 1;  # Substring match
-      title = "k9s";
-      titlematch = 1;  # Substring match (matches "~ : k9s — Konsole")
+      wmclassmatch = 2;  # Exact match
     };
 
     # Headlamp - All activities
