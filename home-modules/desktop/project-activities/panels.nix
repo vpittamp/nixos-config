@@ -66,6 +66,11 @@ let
 
   # Multi-monitor configuration
   # Determine number of screens - can be overridden per machine
+  # NOTE: Plasma-manager has a bug where panel screen assignments may not be
+  # correctly applied on first run. If panels appear on wrong screens, run:
+  #   rm ~/.local/share/plasma-manager/last_run_desktop_script_panels
+  #   systemctl --user restart plasma-plasmashell.service
+  # Or use the fix-panel-screens script (TODO: create this)
   numScreens =
     if hostname == "nixos-hetzner" then 3
     else if hostname == "nixos-m1" then 1
