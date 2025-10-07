@@ -32,11 +32,11 @@ in
     GenericName=Kubernetes CLI Manager
     Comment=Kubernetes CLI to manage your clusters in style
     Exec=${k9sLauncher}/bin/k9s-launcher
-    Icon=file:///etc/nixos/assets/pwa-icons/k9s.png
+    Icon=/etc/nixos/assets/pwa-icons/k9s.png
     Terminal=false
     Categories=System;Monitor;Development;
     Keywords=kubernetes;k8s;cluster;pods;containers;
-    StartupWMClass=k9s
+    StartupWMClass=konsole
     X-KDE-SubstituteUID=false
   '';
 
