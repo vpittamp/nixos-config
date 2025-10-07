@@ -52,6 +52,7 @@ in {
     # K9s - All activities
     # K9s launches via custom desktop file with title "K9s"
     # Match on Konsole + title to group as standalone app
+    # Force custom icon to show in taskbar
     "k9s" = {
       Description = "K9s - All Activities";
       activity = allActivitiesUuid;
@@ -62,6 +63,8 @@ in {
       wmclassmatch = 1;  # Substring match
       title = "K9s";
       titlematch = 2;  # Exact match
+      icon = "file:///etc/nixos/assets/pwa-icons/k9s.png";
+      iconrule = 2;  # Force
     };
 
     # Headlamp - All activities
