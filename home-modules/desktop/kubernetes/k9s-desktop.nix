@@ -15,10 +15,11 @@
 # window rule in browser-window-rules.nix.
 
 let
-  # Create a wrapper script that launches k9s in Konsole with proper title
+  # Create a wrapper script that launches k9s in Konsole with proper window title
+  # Using --qwindowtitle to set the actual window title for KWin matching
   k9sLauncher = pkgs.writeScriptBin "k9s-launcher" ''
     #!/usr/bin/env bash
-    exec ${pkgs.kdePackages.konsole}/bin/konsole --separate -p tabtitle="K9s" -e ${pkgs.k9s}/bin/k9s
+    exec ${pkgs.kdePackages.konsole}/bin/konsole --separate --qwindowtitle "K9s" -e ${pkgs.k9s}/bin/k9s
   '';
 in
 {
