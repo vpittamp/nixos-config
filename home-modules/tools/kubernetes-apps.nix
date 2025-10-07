@@ -8,7 +8,7 @@
     name = "K9s";
     comment = "Kubernetes CLI to manage your clusters in style";
     exec = "${pkgs.kdePackages.konsole}/bin/konsole -e ${pkgs.k9s}/bin/k9s";
-    icon = "network-server";  # Network server icon (appropriate for Kubernetes cluster management)
+    icon = "/etc/nixos/assets/pwa-icons/k9s.png";  # Custom k9s icon
     terminal = false;  # We're launching konsole explicitly
     type = "Application";
     categories = [ "Development" "System" "Utility" ];

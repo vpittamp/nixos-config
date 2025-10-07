@@ -242,12 +242,17 @@
         allRuleNames = lib.attrNames allRules;
         ruleCount = builtins.length allRuleNames;
       in
-        allRules // {
+        # Mark all rules as persistent and immutable to ensure they're applied correctly
+        lib.mapAttrs (name: value:
+          if name == "General"
+          then value
+          else lib.mapAttrs (_: v: lib.mkOverride 50 v) value
+        ) (allRules // {
           General = {
             count = ruleCount;
             rules = lib.concatStringsSep "," allRuleNames;
           };
-        };
+        });
 
     # Keyboard shortcuts using plasma-manager's shortcuts module
     shortcuts = {
