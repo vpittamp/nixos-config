@@ -71,6 +71,7 @@ in {
     {
       location = "bottom";
       height = 36;
+      screen = 0;
       lengthMode = "fill";
       alignment = "center";
       hiding = "none";
