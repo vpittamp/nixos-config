@@ -33,6 +33,9 @@
 
     # Headlamp package with desktop entry and icon
     headlamp = pkgs.callPackage ../../packages/headlamp.nix { };
+
+    # Azure CLI from stable nixpkgs for Python 3.11 compatibility
+    azure-cli-bin = pkgs.callPackage ../../packages/azure-cli-bin.nix { };
   in
   [
     # Version control and GitHub
@@ -55,7 +58,7 @@
     # Cloud tools
     terraform
     awscli2
-    azure-cli
+    azure-cli-bin # Using pinned version with Python 3.11
     google-cloud-sdk
     hcloud # Hetzner Cloud CLI
 
