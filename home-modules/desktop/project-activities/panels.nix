@@ -64,18 +64,35 @@ let
   # Combined launcher list
   allLaunchers = baseLaunchers ++ pwaLaunchers;
 
-in {
-  # Primary panel configuration using plasma-manager declarative API
-  panels = [
-    # Main panel (bottom, all activities)
-    {
-      location = "bottom";
-      height = 36;
-      screen = 0;
-      lengthMode = "fill";
-      alignment = "center";
-      hiding = "none";
-      floating = false;
+  # Multi-monitor configuration
+  # Determine number of screens - can be overridden per machine
+  numScreens =
+    if hostname == "nixos-hetzner" then 3
+    else if hostname == "nixos-m1" then 1
+    else 1;  # Default to single screen
+
+  # Calculate primary screen based on number of screens
+  # - 1 screen: primary = 0 (only screen)
+  # - 2 screens: primary = 0 (left screen)
+  # - 3 screens: primary = 1 (middle screen)
+  # - 4+ screens: primary = floor(numScreens / 2) (middle screen)
+  primaryScreen =
+    if numScreens == 1 then 0
+    else if numScreens == 2 then 0
+    else builtins.div numScreens 2;  # Integer division for middle screen
+
+  # Generate secondary screen list (all screens except primary)
+  secondaryScreens = lib.filter (s: s != primaryScreen) (lib.range 0 (numScreens - 1));
+
+  # Main panel configuration (full taskbar)
+  mainPanel = {
+    location = "bottom";
+    height = 36;
+    screen = primaryScreen;
+    lengthMode = "fill";
+    alignment = "center";
+    hiding = "none";
+    floating = false;
 
       widgets = [
         # Application launcher
@@ -135,70 +152,49 @@ in {
         # Show desktop
         "org.kde.plasma.showdesktop"
       ];
-    }
+  };
 
-    # Secondary screen panel 1 (screen 1)
-    {
-      location = "bottom";
-      height = 36;
-      screen = 1;
-      lengthMode = "fill";
+  # Secondary panel configuration (minimal taskbar for non-primary screens)
+  mkSecondaryPanel = screenNum: {
+    location = "bottom";
+    height = 36;
+    screen = screenNum;
+    lengthMode = "fill";
 
-      widgets = [
-        {
-          name = "org.kde.plasma.icontasks";
-          config.General = {
-            launchers = [];
-            showOnlyCurrentActivity = true;
-            showOnlyCurrentDesktop = false;
-            showOnlyCurrentScreen = true;
-          };
-        }
+    widgets = [
+      {
+        name = "org.kde.plasma.icontasks";
+        config.General = {
+          launchers = [];
+          showOnlyCurrentActivity = true;
+          showOnlyCurrentDesktop = false;
+          showOnlyCurrentScreen = true;
+        };
+      }
 
-        {
-          name = "org.kde.plasma.panelspacer";
-          config.General.expanding = true;
-        }
+      {
+        name = "org.kde.plasma.panelspacer";
+        config.General.expanding = true;
+      }
 
-        "org.kde.plasma.showActivityManager"
+      "org.kde.plasma.showActivityManager"
 
-        {
-          name = "org.kde.plasma.panelspacer";
-          config.General.expanding = true;
-        }
-      ];
-    }
+      {
+        name = "org.kde.plasma.panelspacer";
+        config.General.expanding = true;
+      }
+    ];
+  };
 
-    # Secondary screen panel 2 (screen 2)
-    {
-      location = "bottom";
-      height = 36;
-      screen = 2;
-      lengthMode = "fill";
+  # Generate secondary panels for all non-primary screens
+  secondaryPanels = map mkSecondaryPanel secondaryScreens;
 
-      widgets = [
-        {
-          name = "org.kde.plasma.icontasks";
-          config.General = {
-            launchers = [];
-            showOnlyCurrentActivity = true;
-            showOnlyCurrentDesktop = false;
-            showOnlyCurrentScreen = true;
-          };
-        }
-
-        {
-          name = "org.kde.plasma.panelspacer";
-          config.General.expanding = true;
-        }
-
-        "org.kde.plasma.showActivityManager"
-
-        {
-          name = "org.kde.plasma.panelspacer";
-          config.General.expanding = true;
-        }
-      ];
-    }
-  ];
+in {
+  # Primary panel configuration using plasma-manager declarative API
+  # Dynamically generates panels based on number of screens:
+  # - 1 screen: main panel on screen 0
+  # - 2 screens: main panel on screen 0, secondary on screen 1
+  # - 3 screens: main panel on screen 1 (middle), secondary on screens 0 and 2
+  # - 4+ screens: main panel on middle screen, secondary on all others
+  panels = [ mainPanel ] ++ secondaryPanels;
 }
