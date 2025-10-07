@@ -59,14 +59,6 @@ let
       keywords = "gitops;cd;kubernetes;deployment;";
     }
     {
-      name = "Headlamp";
-      url = "https://headlamp.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/headlamp.png";  # Official Headlamp logo (updated)
-      description = "Kubernetes Dashboard";
-      categories = "Development;System;";
-      keywords = "kubernetes;k8s;dashboard;monitoring;";
-    }
-    {
       name = "Home Assistant";
       url = "http://localhost:8123";
       icon = "file:///etc/nixos/assets/pwa-icons/home-assistant.png";  # Official Home Assistant logo

@@ -44,12 +44,6 @@ rec {
       url = "https://argocd.cnoe.localtest.me:8443";
     };
 
-    headlamp = {
-      name = "Headlamp";
-      activity = "stacks";
-      url = "https://headlamp.cnoe.localtest.me:8443";
-    };
-
     homeassistant = {
       name = "Home Assistant";
       activity = null;
