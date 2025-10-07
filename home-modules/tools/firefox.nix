@@ -146,14 +146,6 @@ in
           "privacy.trackingprotection.socialtracking.enabled" = false;  # Disable social tracking blocking
           "browser.contentblocking.category" = "custom";  # Use custom mode with tracking protection disabled
 
-          # UI settings
-          "browser.toolbars.bookmarks.visibility" = "always";
-          "browser.tabs.inTitlebar" = 1;
-          "browser.uidensity" = 0;  # Normal UI density (0=normal, 1=compact, 2=touch)
-
-          # Display settings - let Wayland/KDE handle scaling
-          "layout.css.devPixelsPerPx" = "-1.0";  # Auto-detect from system (KDE is at 2x)
-
           # Performance and Wayland support
           "gfx.webrender.all" = true;
           "widget.use-xdg-desktop-portal.file-picker" = 1;  # Use native file picker on Wayland
@@ -206,8 +198,17 @@ in
   home.activation.firefoxPrefs = lib.hm.dag.entryAfter ["writeBoundary"] ''
     FIREFOX_PROFILE="$HOME/.mozilla/firefox/default"
     if [ -d "$FIREFOX_PROFILE" ]; then
-      # Remove any cached scaling preference
-      ${pkgs.gnused}/bin/sed -i '/devPixelsPerPx/d' "$FIREFOX_PROFILE/prefs.js" 2>/dev/null || true
+      for pref_file in "$FIREFOX_PROFILE/prefs.js" "$FIREFOX_PROFILE/user.js"; do
+        if [ -f "$pref_file" ]; then
+          # Drop legacy UI overrides so Firefox falls back to defaults
+          ${pkgs.gnused}/bin/sed -i \
+            -e '/devPixelsPerPx/d' \
+            -e '/browser\.toolbars\.bookmarks\.visibility/d' \
+            -e '/browser\.tabs\.inTitlebar/d' \
+            -e '/browser\.uidensity/d' \
+            "$pref_file" 2>/dev/null || true
+        fi
+      done
 
       # Ensure user.js exists and has correct permissions
       if [ -e "$FIREFOX_PROFILE/user.js" ]; then

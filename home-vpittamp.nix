@@ -13,7 +13,11 @@
     echo "Cleaning home-manager backup conflicts..."
     # Only clean specific files that home-manager manages
     # Note: mimeapps.list removed - now using associations.added to merge instead of overwrite
-    for file in .codex/config.toml .mozilla/firefox/default/search.json.mozlz4 .config/plasma-org.kde.plasma.desktop-appletsrc; do
+    for file in \
+      .codex/config.toml \
+      .mozilla/firefox/default/search.json.mozlz4 \
+      .config/plasma-org.kde.plasma.desktop-appletsrc \
+      .config/mimeapps.list; do
       if [ -f "$HOME/$file.backup" ]; then
         echo "Removing conflict: $HOME/$file.backup"
         rm -f "$HOME/$file.backup"

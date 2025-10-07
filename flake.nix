@@ -5,45 +5,45 @@
     # Core
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-bleeding.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    
+
     # Platform support
     nixos-wsl = {
       url = "github:nix-community/NixOS-WSL";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     nixos-apple-silicon = {
       url = "github:tpwrules/nixos-apple-silicon";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     # Home Manager
     home-manager = {
       url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     # Additional tools
     onepassword-shell-plugins = {
       url = "github:1Password/shell-plugins";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     vscode-server = {
       url = "github:nix-community/nixos-vscode-server";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     claude-code-nix = {
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    
+
     flake-utils.url = "github:numtide/flake-utils";
 
     # Plasma (KDE) user configuration via Home Manager
@@ -65,11 +65,11 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                # Use unique backup extension to prevent conflicts
-                backupFileExtension = nixpkgs.lib.mkForce "hm-backup";
+                # Use unique backup extension to prevent conflicts and avoid collisions with legacy backups
+                backupFileExtension = nixpkgs.lib.mkForce "hm-backup-2025";
                 useGlobalPkgs = true;
                 useUserPackages = true;
-                extraSpecialArgs = { 
+                extraSpecialArgs = {
                   inherit inputs;
                   pkgs-unstable = import nixpkgs-bleeding {
                     inherit system;
@@ -77,7 +77,7 @@
                   };
                 };
                 users.vpittamp = {
-                  imports = [ 
+                  imports = [
                     ./home-vpittamp.nix
                     inputs.plasma-manager.homeModules.plasma-manager
                   ];
@@ -95,12 +95,12 @@
         hetzner = mkSystem {
           hostname = "nixos-hetzner";
           system = "x86_64-linux";
-          modules = [ 
+          modules = [
             disko.nixosModules.disko
-            ./configurations/hetzner.nix 
+            ./configurations/hetzner.nix
           ];
         };
-        
+
         # Minimal Hetzner for nixos-anywhere deployment
         hetzner-minimal = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
@@ -109,7 +109,7 @@
             ./configurations/hetzner-minimal.nix
           ];
         };
-        
+
         # Hetzner example with our SSH key
         hetzner-example = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
@@ -118,14 +118,14 @@
             ./configurations/hetzner-example.nix
           ];
         };
-        
+
         # Secondary: M1 MacBook Pro (aarch64)
         m1 = mkSystem {
           hostname = "nixos-m1";
           system = "aarch64-linux";
           modules = [ ./configurations/m1.nix ];
         };
-        
+
         # Legacy: WSL2 (x86_64)
         wsl = mkSystem {
           hostname = "nixos-wsl";
@@ -133,34 +133,36 @@
           modules = [ ./configurations/wsl.nix ];
         };
       };
-      
-      homeConfigurations = let
-        currentSystem = if builtins ? currentSystem then builtins.currentSystem else "x86_64-linux";
-        pkgsFor = system: import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
-        };
-        unstableFor = system: import nixpkgs-bleeding {
-          inherit system;
-          config.allowUnfree = true;
-        };
-        osConfigFor = system:
-          if system == "aarch64-linux" then self.nixosConfigurations.m1.config
-          else self.nixosConfigurations.hetzner.config;
-        mkHome = modulePath: home-manager.lib.homeManagerConfiguration {
-          pkgs = pkgsFor currentSystem;
-          extraSpecialArgs = {
-            inherit inputs;
-            osConfig = osConfigFor currentSystem;
-            pkgs-unstable = unstableFor currentSystem;
+
+      homeConfigurations =
+        let
+          currentSystem = if builtins ? currentSystem then builtins.currentSystem else "x86_64-linux";
+          pkgsFor = system: import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
           };
-          modules = [ modulePath ];
+          unstableFor = system: import nixpkgs-bleeding {
+            inherit system;
+            config.allowUnfree = true;
+          };
+          osConfigFor = system:
+            if system == "aarch64-linux" then self.nixosConfigurations.m1.config
+            else self.nixosConfigurations.hetzner.config;
+          mkHome = modulePath: home-manager.lib.homeManagerConfiguration {
+            pkgs = pkgsFor currentSystem;
+            extraSpecialArgs = {
+              inherit inputs;
+              osConfig = osConfigFor currentSystem;
+              pkgs-unstable = unstableFor currentSystem;
+            };
+            modules = [ modulePath ];
+          };
+        in
+        {
+          vpittamp = mkHome ./home-vpittamp.nix;
+          code = mkHome ./home-code.nix;
         };
-      in {
-        vpittamp = mkHome ./home-vpittamp.nix;
-        code = mkHome ./home-code.nix;
-      };
-      
+
       # Container configurations
       packages = flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
         let
@@ -213,7 +215,7 @@
               Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
             };
           };
-          
+
           # Development container
           container-dev = pkgs.dockerTools.buildLayeredImage {
             name = "nixos-container";
@@ -224,11 +226,11 @@
               Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=development" ];
             };
           };
-          
+
           # Default container output
           default = container-minimal;
         });
-      
+
       # Development shells
       devShells = flake-utils.lib.eachDefaultSystem (system:
         let
@@ -246,18 +248,18 @@
               nixfmt
               statix
               deadnix
-              
+
               # Development tools
               git
               vim
               tmux
-              
+
               # Container tools
               docker
               docker-compose
               kubectl
             ];
-            
+
             shellHook = ''
               echo "NixOS Development Shell"
               echo "Available configurations:"

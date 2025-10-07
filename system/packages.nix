@@ -1,38 +1,11 @@
 # System-level packages that require root/build permissions
 # These packages contain custom derivations, chmod operations, or other
 # operations that fail in restricted container environments
-{ pkgs, lib, ... }:
+{ pkgs, ... }:
 
 let
   # Custom packages
-  idpbuilder = pkgs.stdenv.mkDerivation rec {
-    pname = "idpbuilder";
-    version = "0.10.1";
-    
-    src = pkgs.fetchurl {
-      url = "https://github.com/cnoe-io/idpbuilder/releases/download/v${version}/idpbuilder-linux-amd64.tar.gz";
-      sha256 = "1w1h6zbr0vzczk1clddn7538qh59zn6cwr37y2vn8mjzhqv8dpsr";
-    };
-    
-    sourceRoot = ".";
-    dontBuild = true;
-    
-    nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-    
-    installPhase = ''
-      mkdir -p $out/bin
-      cp idpbuilder $out/bin/
-      chmod +x $out/bin/idpbuilder
-    '';
-    
-    meta = with lib; {
-      description = "Build Internal Developer Platforms (IDPs) declaratively";
-      homepage = "https://github.com/cnoe-io/idpbuilder";
-      license = licenses.asl20;
-      platforms = [ "x86_64-linux" ];
-      mainProgram = "idpbuilder";
-    };
-  };
+  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
 
   # Azure CLI from stable nixpkgs for Python 3.11 compatibility
   azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
@@ -55,22 +28,22 @@ let
     ncurses
 
     # Clipboard utilities (Wayland/X11)
-    wl-clipboard  # Wayland clipboard
-    xclip         # X11 clipboard
+    wl-clipboard # Wayland clipboard
+    xclip # X11 clipboard
 
     # Nix tools
     nix
     cachix
-    nh  # Nix Helper - Yet another nix cli helper
+    nh # Nix Helper - Yet another nix cli helper
 
     # VPN tools
     tailscale
 
     # Certificate management tools
-    nssTools  # Provides certutil for managing NSS certificate database
+    nssTools # Provides certutil for managing NSS certificate database
 
     # Web browsers
-    chromium  # Chromium browser (open-source version of Chrome, better ARM64 support)
+    chromium # Chromium browser (open-source version of Chrome, better ARM64 support)
   ];
 
   # Development tools that work better at system level
@@ -80,29 +53,29 @@ let
     devpod
     devcontainer
     devspace
-    
+
     # IDP tools
     idpbuilder
-    
+
     # Version control
     git
     gh
     lazygit
-    
+
     # Build tools
     gnumake
     gcc
     pkg-config
-    
+
     # Language support
     nodejs_20
     python3
     go
     rustc
     cargo
-  ]) ++ [ 
+  ]) ++ [
     # Cloud tools (custom packages)
-    azure-cli-bin 
+    azure-cli-bin
   ];
 
   # Kubernetes tools (often need system access)
@@ -118,21 +91,22 @@ let
   # Headlamp - custom package for Kubernetes web UI
   headlamp = pkgs.callPackage ../packages/headlamp.nix { };
 
-in {
+in
+{
   # Export different package sets
   custom = [ azure-cli-bin ];
-  
+
   # Plugins moved to home-manager
-  tmuxPlugins = [];
-  vimPlugins = [];
-  
+  tmuxPlugins = [ ];
+  vimPlugins = [ ];
+
   system = systemTools;
   development = developmentTools;
   kubernetes = kubernetesTools;
-  
+
   # All system packages
   all = systemTools ++ developmentTools ++ kubernetesTools ++ [ azure-cli-bin headlamp ];
-  
+
   # Essential system packages only
   essential = systemTools ++ (with pkgs; [
     git
@@ -140,7 +114,7 @@ in {
     nodejs_20
     python3
   ]);
-  
+
   # Minimal for containers
   minimal = with pkgs; [
     coreutils

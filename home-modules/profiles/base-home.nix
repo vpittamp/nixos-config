@@ -1,7 +1,8 @@
 { config, pkgs, lib, inputs, osConfig, ... }:
 
 let
-  hostName = if osConfig ? networking && osConfig.networking ? hostName
+  hostName =
+    if osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else null;
   isM1 = hostName == "nixos-m1";
@@ -12,12 +13,16 @@ let
     # GDK_SCALE = if isM1 then "2" else "1";  # Causes double-scaling
 
     # Qt settings for KDE
-    QT_AUTO_SCREEN_SCALE_FACTOR = "1";  # Let Qt detect from Wayland
-    QT_ENABLE_HIGHDPI_SCALING = "1";    # Enable HiDPI support
-    PLASMA_USE_QT_SCALING = "1";        # Let Plasma handle Qt scaling
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1"; # Let Qt detect from Wayland
+    QT_ENABLE_HIGHDPI_SCALING = "1"; # Enable HiDPI support
+    PLASMA_USE_QT_SCALING = "1"; # Let Plasma handle Qt scaling
 
     # Cursor size
-    XCURSOR_SIZE = if isM1 then "48" else "24";  # 48 for 200% scaling
+    XCURSOR_SIZE = if isM1 then "48" else "24"; # 48 for 200% scaling
+
+    # UV (Python package manager) configuration for NixOS
+    # Use system Python instead of downloading pre-built binaries
+    UV_PYTHON_PREFERENCE = "only-system";
   };
 in
 {
@@ -44,7 +49,7 @@ in
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
-    ../tools/chromium.nix  # Enabled for Playwright MCP support
+    ../tools/chromium.nix # Enabled for Playwright MCP support
     ../tools/firefox.nix
     # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
     ../tools/k9s.nix
@@ -53,7 +58,6 @@ in
     ../tools/vscode.nix
     ../tools/gitkraken.nix
     ../tools/kubernetes-apps.nix
-    ../tools/cluster-management.nix
     ../tools/konsole-profiles.nix
 
     # AI Assistant configurations
@@ -68,10 +72,11 @@ in
   home.stateVersion = "25.05";
   home.enableNixpkgsReleaseCheck = false;
 
-  home.packages = let
-    userPackages = import ../../user/packages.nix { inherit pkgs lib; };
-    packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
-  in
+  home.packages =
+    let
+      userPackages = import ../../user/packages.nix { inherit pkgs lib; };
+      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
+    in
     packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
 
   modules.tools.yazi.enable = true;
@@ -99,6 +104,6 @@ in
   #     "google"
   #     "youtube"
   #   ];
-#     pinToTaskbar = true;  # Pin them to KDE taskbar
-#   };
+  #     pinToTaskbar = true;  # Pin them to KDE taskbar
+  #   };
 }

@@ -34,7 +34,7 @@ let
     curl
     wget
     gum
-    tailscale  # VPN CLI tool
+    tailscale # VPN CLI tool
   ];
 
   # Shell enhancements
@@ -51,19 +51,19 @@ let
     nodePackages.typescript-language-server
     nodePackages.prettier
     nodePackages.eslint
-    
+
     # Python
     pyright
     black
     ruff
-    
+
     # Nix
     nil
     nixpkgs-fmt
-    
+
     # Go
     gopls
-    
+
     # Rust
     rust-analyzer
     rustfmt
@@ -74,6 +74,7 @@ let
     yarn
     nodePackages.pnpm
     poetry
+    uv # Fast Python package installer and resolver (for spec-kit and other tools)
   ];
 
   # File managers
@@ -91,12 +92,12 @@ let
     diff-so-fancy
     lazygit
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
-    gitkraken  # Git GUI client (x86_64 only)
+    gitkraken # Git GUI client (x86_64 only)
   ];
 
   # Kubernetes tools
   kubernetesTools = with pkgs; [
-    k9s  # Terminal UI for Kubernetes
+    k9s # Terminal UI for Kubernetes
   ];
 
   # Documentation and help
@@ -108,15 +109,16 @@ let
 
   # Nix helper tools
   nixTools = with pkgs; [
-    nh  # Yet another nix cli helper
-    nix-output-monitor  # Prettier nix build output
-    nixpkgs-fmt  # Nix code formatter
-    alejandra  # Alternative Nix formatter
-    nix-tree  # Visualize Nix store dependencies
-    nix-prefetch-git  # Prefetch git repositories
+    nh # Yet another nix cli helper
+    nix-output-monitor # Prettier nix build output
+    nixpkgs-fmt # Nix code formatter
+    alejandra # Alternative Nix formatter
+    nix-tree # Visualize Nix store dependencies
+    nix-prefetch-git # Prefetch git repositories
   ];
 
-in {
+in
+{
   # Export categorized packages
   editors = editors;
   terminal = terminalTools;
@@ -128,24 +130,24 @@ in {
   kubernetes = kubernetesTools;
   docs = documentation;
   nix = nixTools;
-  
+
   # Common package sets
   essential = terminalTools ++ shellTools ++ nixTools ++ [
     # vim handled by programs.vim
     pkgs.git-lfs
     pkgs.tldr
-    pkgs.yazi    # Terminal file manager
-    pkgs.yarn    # JavaScript package manager
+    pkgs.yazi # Terminal file manager
+    pkgs.yarn # JavaScript package manager
   ];
-  
+
   development = terminalTools ++ shellTools ++ editors ++
     languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ nixTools;
-  
+
   # All user packages
   all = terminalTools ++ shellTools ++ editors ++
     languageServers ++ packageManagers ++ fileManagers ++
     gitTools ++ kubernetesTools ++ documentation ++ nixTools;
-  
+
   # Minimal for testing
   minimal = with pkgs; [
     # vim handled by programs.vim
