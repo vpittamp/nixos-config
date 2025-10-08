@@ -24,15 +24,8 @@
         /run/current-system/sw/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init
       fi
 
-      # Export session type for KDE
-      export XDG_SESSION_TYPE=x11
-      export XDG_SESSION_CLASS=user
-
-      # Set X authorization file (critical for X11 connection)
-      export XAUTHORITY=$HOME/.Xauthority
-
-      # Start Plasma X11 session
-      exec startplasma-x11
+      # Start Plasma X11 session with custom wrapper
+      exec startplasma-x11-xrdp
     '';
   };
 
@@ -116,14 +109,18 @@
       export XDG_SESSION_CLASS=user
       export XDG_CURRENT_DESKTOP=KDE
 
+      # Use the user's existing D-Bus session bus (started by systemd)
+      export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
+
       # Start kwin (window manager) in background
-      ${pkgs.kdePackages.kwin}/bin/kwin_x11 --replace &
+      kwin_x11 --replace &
 
       # Wait a moment for kwin to initialize
       sleep 2
 
       # Start plasmashell (desktop shell)
-      exec ${pkgs.kdePackages.plasma-workspace}/bin/plasmashell
+      # Note: kglobalacceld and other D-Bus services will be auto-started as needed via D-Bus
+      exec plasmashell
     '')
 
     # Session cleanup helper script

@@ -18,7 +18,7 @@
 
   programs.plasma = {
     enable = true;
-    overrideConfig = false;  # Keep false to allow manual customization
+    overrideConfig = true;  # Force declarative configuration to override manual changes
   };
 
   programs.konsole = {
