@@ -27,8 +27,8 @@
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
+    # ../tools/kubernetes-apps.nix  # GUI desktop entries - excluded for container
     # ../tools/vscode.nix  # GUI app - excluded for container
-    ../tools/cluster-management.nix
     # ../tools/konsole-profiles.nix  # KDE-specific - excluded for container
 
     # AI Assistant configurations

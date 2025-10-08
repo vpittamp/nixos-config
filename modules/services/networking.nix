@@ -6,6 +6,8 @@
   services.tailscale = {
     enable = true;
     openFirewall = true;
+    useRoutingFeatures = "both";  # Enable subnet routing and exit node features
+    extraUpFlags = [ "--ssh" ];  # Enable Tailscale SSH
   };
 
   # Enhanced SSH configuration
