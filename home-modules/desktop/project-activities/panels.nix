@@ -72,7 +72,7 @@ let
   #   systemctl --user restart plasma-plasmashell.service
   # Or use the fix-panel-screens script (TODO: create this)
   numScreens =
-    if hostname == "nixos-hetzner" then 3
+    if hostname == "nixos-hetzner" then 1  # RDP presents as single virtual display
     else if hostname == "nixos-m1" then 1
     else 1;  # Default to single screen
 
