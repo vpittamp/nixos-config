@@ -71,8 +71,13 @@ let
   #   rm ~/.local/share/plasma-manager/last_run_desktop_script_panels
   #   systemctl --user restart plasma-plasmashell.service
   # Or use the fix-panel-screens script (TODO: create this)
+  #
+  # For Hetzner RDP: Support both single display and multi-monitor configurations
+  # - Single display: numScreens = 1 (one virtual display)
+  # - Multi-monitor: numScreens = 3 (three monitors via extended desktop)
+  # The RDP client determines which mode based on "Use all my monitors" setting
   numScreens =
-    if hostname == "nixos-hetzner" then 1  # RDP presents as single virtual display
+    if hostname == "nixos-hetzner" then 3  # Support 3-monitor RDP configuration
     else if hostname == "nixos-m1" then 1
     else 1;  # Default to single screen
 
@@ -159,39 +164,22 @@ let
       ];
   };
 
-  # Secondary panel configuration (minimal taskbar for non-primary screens)
+  # Secondary panel configuration (same as primary for consistent experience)
+  # Each monitor gets a full panel with all widgets and launchers
   mkSecondaryPanel = screenNum: {
     location = "bottom";
     height = 36;
     screen = screenNum;
     lengthMode = "fill";
+    alignment = "center";
+    hiding = "none";
+    floating = false;
 
-    widgets = [
-      {
-        name = "org.kde.plasma.icontasks";
-        config.General = {
-          launchers = [];
-          showOnlyCurrentActivity = true;
-          showOnlyCurrentDesktop = false;
-          showOnlyCurrentScreen = true;
-        };
-      }
-
-      {
-        name = "org.kde.plasma.panelspacer";
-        config.General.expanding = true;
-      }
-
-      "org.kde.plasma.showActivityManager"
-
-      {
-        name = "org.kde.plasma.panelspacer";
-        config.General.expanding = true;
-      }
-    ];
+    widgets = mainPanel.widgets;  # Use same widgets as main panel
   };
 
   # Generate secondary panels for all non-primary screens
+  # Each screen gets identical functionality for seamless multi-monitor experience
   secondaryPanels = map mkSecondaryPanel secondaryScreens;
 
 in {
