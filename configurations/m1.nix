@@ -25,9 +25,9 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/speech-to-text-safe.nix  # Safe version without network dependencies
+    ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     ../modules/services/home-assistant.nix
-    ../modules/services/scrypted.nix  # Bridge for Circle View cameras and HomeKit devices
+    ../modules/services/scrypted.nix # Bridge for Circle View cameras and HomeKit devices
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
@@ -56,12 +56,12 @@
   # Speech-to-text service - safe version enabled
   services.speech-to-text = {
     enable = true;
-    model = "base.en";  # Good balance of speed and accuracy
+    model = "base.en"; # Good balance of speed and accuracy
     language = "en";
     enableGlobalShortcut = true;
-    voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix {};
+    voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix { };
   };
-  
+
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
     {
@@ -69,7 +69,7 @@
       size = 8192; # 8GB swap
     }
   ];
-  
+
   # Memory management tweaks for better performance
   boot.kernel.sysctl = {
     "vm.swappiness" = 10; # Reduce swap usage unless necessary
@@ -102,18 +102,18 @@
       chown vpittamp:users /home/vpittamp/.ssh/config
     fi
   '';
-  
+
   # WiFi firmware workaround for BCM4378 stability issues
   # This disables power management features that can cause firmware crashes
   boot.kernelParams = [ "brcmfmac.feature_disable=0x82000" ];
-  
+
   # WiFi recovery service - reload module if it fails on boot
   systemd.services.wifi-recovery = {
     description = "WiFi module recovery for BCM4378";
     after = [ "network-pre.target" ];
     before = [ "network.target" "NetworkManager.service" ];
     wantedBy = [ "multi-user.target" ];
-    
+
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -124,21 +124,21 @@
       ];
     };
   };
-  
+
   # Boot configuration for Apple Silicon
   boot.loader.systemd-boot.enable = true;
-  boot.loader.systemd-boot.configurationLimit = 5;  # Keep only 5 generations to prevent EFI space issues
-  boot.loader.efi.canTouchEfiVariables = false;  # Different on Apple Silicon
-  
+  boot.loader.systemd-boot.configurationLimit = 5; # Keep only 5 generations to prevent EFI space issues
+  boot.loader.efi.canTouchEfiVariables = false; # Different on Apple Silicon
+
   # Apple Silicon specific settings
   boot.initrd.availableKernelModules = [
     "brcmfmac"
-    "xhci_pci"      # USB 3.0
-    "usbhid"        # USB HID devices
-    "usb_storage"   # USB storage
-    "nvme"          # NVMe SSD support
+    "xhci_pci" # USB 3.0
+    "usbhid" # USB HID devices
+    "usb_storage" # USB storage
+    "nvme" # NVMe SSD support
   ];
-  
+
   # Fix keyboard layout for US keyboards on Apple Silicon
   boot.extraModprobeConfig = ''
     options hid_apple iso_layout=0
@@ -148,22 +148,23 @@
   hardware.asahi.peripheralFirmwareDirectory =
     if builtins.pathExists /boot/asahi
     then /boot/asahi
-    else builtins.trace "WARNING: /boot/asahi not found - using dummy for evaluation only (not deployable!)"
-         (pkgs.runCommand "dummy-asahi-firmware" {} "mkdir -p $out");
-  
+    else
+      builtins.trace "WARNING: /boot/asahi not found - using dummy for evaluation only (not deployable!)"
+        (pkgs.runCommand "dummy-asahi-firmware" { } "mkdir -p $out");
+
   # Use NetworkManager with wpa_supplicant for WiFi (more stable on Apple Silicon)
   networking.networkmanager = {
     enable = true;
-    wifi.backend = "wpa_supplicant";  # Use wpa_supplicant for better stability
+    wifi.backend = "wpa_supplicant"; # Use wpa_supplicant for better stability
   };
-  
+
   # Disable IWD - conflicts with NetworkManager on Apple Silicon
   networking.wireless.iwd.enable = false;
-  
+
   # Display configuration for Retina display
   # Wayland handles HiDPI much better than X11
   services.xserver = {
-    dpi = 180;  # Still useful for XWayland applications
+    dpi = 180; # Still useful for XWayland applications
 
     # Keep X11 server config for XWayland apps
     serverFlagsSection = ''
@@ -177,12 +178,12 @@
   # Wayland and display scaling configuration
   environment.sessionVariables = {
     # Enable Wayland for compatible applications
-    MOZ_ENABLE_WAYLAND = "1";  # Enable Wayland for Firefox
-    NIXOS_OZONE_WL = "1";      # Enable Wayland for Electron apps (VSCode, 1Password)
+    MOZ_ENABLE_WAYLAND = "1"; # Enable Wayland for Firefox
+    NIXOS_OZONE_WL = "1"; # Enable Wayland for Electron apps (VSCode, 1Password)
 
     # Qt scaling - let KDE Plasma handle it under Wayland
-    QT_AUTO_SCREEN_SCALE_FACTOR = "1";  # Enable Qt auto-scaling
-    PLASMA_USE_QT_SCALING = "1";        # Let Plasma handle Qt scaling
+    QT_AUTO_SCREEN_SCALE_FACTOR = "1"; # Enable Qt auto-scaling
+    PLASMA_USE_QT_SCALING = "1"; # Let Plasma handle Qt scaling
 
     # IMPORTANT: Don't set GDK_SCALE globally - KDE already handles 1.75x scaling
     # Setting it causes double-scaling for Electron apps
@@ -197,59 +198,67 @@
     # Force Electron apps to detect scale from display, not GDK
     ELECTRON_FORCE_IS_PACKAGED = "true";
   };
-  
+
   # Touchpad configuration with natural scrolling (Apple-style)
   services.libinput = {
     enable = true;
     touchpad = {
-      naturalScrolling = true;  # Reverse scroll direction (Apple-style)
-      tapping = true;           # Tap to click
-      clickMethod = "clickfinger";  # Two-finger right-click
+      naturalScrolling = true; # Reverse scroll direction (Apple-style)
+      tapping = true; # Tap to click
+      clickMethod = "clickfinger"; # Two-finger right-click
       disableWhileTyping = true;
       scrollMethod = "twofinger";
       # Additional Wayland-friendly settings
-      accelProfile = "adaptive";  # Better acceleration curve
-      accelSpeed = "0.0";         # Default acceleration
+      accelProfile = "adaptive"; # Better acceleration curve
+      accelSpeed = "0.0"; # Default acceleration
     };
   };
 
   # Override default session to use Wayland
-  services.displayManager.defaultSession = lib.mkForce "plasma";  # Wayland session for KDE Plasma
-  
+  services.displayManager.defaultSession = lib.mkForce "plasma"; # Wayland session for KDE Plasma
+
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
-  
+
   # CPU configuration for Apple M1
   powerManagement.cpuFreqGovernor = lib.mkDefault "ondemand";
-  
+
   # Hardware acceleration support
   hardware.graphics.enable = true;
 
   # Asahi GPU driver configuration (optional - uncomment if needed)
   # hardware.asahi.useExperimentalGPUDriver = true;
   # hardware.asahi.experimentalGPUInstallMode = "replace";  # Use Asahi Mesa
-  
+
   # Firmware updates
   hardware.enableRedistributableFirmware = true;
-  
-  
-  
+
+
+
   # Automatic garbage collection to prevent space issues
   nix.gc = {
     automatic = true;
     dates = "weekly";
     options = "--delete-older-than 7d";
   };
-  
+
   # Set initial password for user (change after first login!)
   users.users.vpittamp.initialPassword = "nixos";
-  
+
   # Disable services that don't work well on Apple Silicon
-  services.xrdp.enable = lib.mkForce false;  # RDP doesn't work well on M1
+  services.xrdp.enable = lib.mkForce false; # RDP doesn't work well on M1
 
   # Enable touchegg only for X11 sessions (Wayland has native gestures)
   services.touchegg.enable = lib.mkForce false;
-  
+
+  # Fix DrKonqi coredump processor timeout issue
+  systemd.services."drkonqi-coredump-processor@" = {
+    serviceConfig = {
+      TimeoutStartSec = "30s"; # Reduce from default 5min
+      TimeoutStopSec = "10s";
+    };
+  };
+
   # Additional packages for Apple Silicon
   environment.systemPackages = with pkgs; [
     # Tools that work well on ARM
@@ -257,11 +266,11 @@
     alacritty
 
     # Firefox PWA support (same as Hetzner)
-    firefoxpwa  # Native component for Progressive Web Apps
+    firefoxpwa # Native component for Progressive Web Apps
 
     # Image processing for PWA icons
-    imagemagick  # For converting and manipulating images
-    librsvg      # For SVG to PNG conversion
+    imagemagick # For converting and manipulating images
+    librsvg # For SVG to PNG conversion
   ];
 
   # Firefox configuration with PWA support (same as Hetzner)
@@ -276,7 +285,7 @@
   # - To list PWAs: firefoxpwa profile list
   # - For declarative PWA management, use home-manager with firefox-pwas-managed.nix module
   # - Desktop entries will be created in ~/.local/share/applications/
-  
+
   # System state version
   system.stateVersion = "25.11";
 }
