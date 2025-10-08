@@ -60,10 +60,11 @@
     };
   };
 
-  # Open firewall for SSH
+  # Open firewall for SSH and trust Tailscale
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 ];
+    trustedInterfaces = [ "tailscale0" ];
   };
 
   # Create users with SSH access
