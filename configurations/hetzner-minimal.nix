@@ -60,6 +60,12 @@
     };
   };
 
+  # Open firewall for SSH
+  networking.firewall = {
+    enable = true;
+    allowedTCPPorts = [ 22 ];
+  };
+
   # Create users with SSH access
   users.users.root = {
     # No password - SSH key only
