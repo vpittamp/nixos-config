@@ -99,28 +99,22 @@
     freerdp
     xorg.xauth      # X authentication
 
-    # XRDP startup wrapper that bypasses startplasma-x11 and directly starts KDE
-    # Root cause: startplasma-x11 hangs waiting for systemd services that don't start properly in RDP
+    # XRDP startup wrapper for KDE Plasma X11
+    # Note: Server must not auto-start a console session (SDDM disabled on Hetzner)
+    # This ensures RDP creates the only KDE session, avoiding D-Bus conflicts
     (pkgs.writeScriptBin "startplasma-x11-xrdp" ''
       #!/bin/sh
-      # Set X authorization file (critical for X11 connection)
+      # Set X authorization file (required for X11 connection)
       export XAUTHORITY=$HOME/.Xauthority
+
+      # Set session environment for KDE
       export XDG_SESSION_TYPE=x11
       export XDG_SESSION_CLASS=user
       export XDG_CURRENT_DESKTOP=KDE
 
-      # Use the user's existing D-Bus session bus (started by systemd)
-      export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
-
-      # Start kwin (window manager) in background
-      kwin_x11 --replace &
-
-      # Wait a moment for kwin to initialize
-      sleep 2
-
-      # Start plasmashell (desktop shell)
-      # Note: kglobalacceld and other D-Bus services will be auto-started as needed via D-Bus
-      exec plasmashell
+      # Use standard KDE Plasma X11 startup
+      # This handles all KDE services (kwin, plasmashell, kglobalaccel, etc.)
+      exec startplasma-x11
     '')
 
     # Session cleanup helper script

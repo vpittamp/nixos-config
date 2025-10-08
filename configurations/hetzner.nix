@@ -101,6 +101,13 @@
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
 
+  # Disable SDDM display manager for headless cloud operation
+  # Critical: This prevents auto-starting a console KDE session on boot
+  # Without this, both console (tty2) and RDP would try to run KDE simultaneously,
+  # causing D-Bus conflicts and breaking global shortcuts and other services
+  # XRDP will start the single KDE session on-demand when you connect
+  services.displayManager.sddm.enable = lib.mkForce false;
+
   # Use X11 session by default for XRDP compatibility
   services.displayManager.defaultSession = lib.mkForce "plasmax11";
 
