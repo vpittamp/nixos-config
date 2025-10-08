@@ -6,7 +6,7 @@
   services.xrdp = {
     enable = true;
     audio.enable = true;  # Enable audio redirection support
-    defaultWindowManager = "startplasma-x11";
+    defaultWindowManager = "startplasma-x11-xrdp";
     openFirewall = true;
     port = 3389;
   };
@@ -27,6 +27,9 @@
       # Export session type for KDE
       export XDG_SESSION_TYPE=x11
       export XDG_SESSION_CLASS=user
+
+      # Set X authorization file (critical for X11 connection)
+      export XAUTHORITY=$HOME/.Xauthority
 
       # Start Plasma X11 session
       exec startplasma-x11
@@ -102,6 +105,26 @@
     remmina
     freerdp
     xorg.xauth      # X authentication
+
+    # XRDP startup wrapper that bypasses startplasma-x11 and directly starts KDE
+    # Root cause: startplasma-x11 hangs waiting for systemd services that don't start properly in RDP
+    (pkgs.writeScriptBin "startplasma-x11-xrdp" ''
+      #!/bin/sh
+      # Set X authorization file (critical for X11 connection)
+      export XAUTHORITY=$HOME/.Xauthority
+      export XDG_SESSION_TYPE=x11
+      export XDG_SESSION_CLASS=user
+      export XDG_CURRENT_DESKTOP=KDE
+
+      # Start kwin (window manager) in background
+      ${pkgs.kdePackages.kwin}/bin/kwin_x11 --replace &
+
+      # Wait a moment for kwin to initialize
+      sleep 2
+
+      # Start plasmashell (desktop shell)
+      exec ${pkgs.kdePackages.plasma-workspace}/bin/plasmashell
+    '')
 
     # Session cleanup helper script
     (pkgs.writeScriptBin "xrdp-logout" ''
