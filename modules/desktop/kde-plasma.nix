@@ -213,8 +213,12 @@
 
   # Enable PAM integration for KDE Wallet auto-unlock
   # This allows the wallet to unlock automatically with the user's login password
-  security.pam.services.sddm.enableKwallet = true;
-  security.pam.services.login.enableKwallet = true;
+  # Configure for different login methods - only enabled services will be affected
+  security.pam.services = {
+    sddm.enableKwallet = lib.mkIf config.services.displayManager.sddm.enable true;
+    xrdp-sesman.enableKwallet = lib.mkIf config.services.xrdp.enable true;
+    login.enableKwallet = true;  # Fallback for console/SSH logins
+  };
 
   # Yakuake dropdown terminal autostart - DISABLED due to issues
   # Uncomment the following block to re-enable Yakuake autostart
