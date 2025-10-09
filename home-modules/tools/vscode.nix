@@ -3,6 +3,7 @@
 let
   primaryProfile = "nixos";
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
+  chromiumBin = "${pkgs.chromium}/bin/chromium";
 
   # Use latest VSCode from unstable channel for newest features and fixes
   vscode = pkgs-unstable.vscode;
@@ -341,6 +342,29 @@ let
         };
       };
     };
+
+    # Claude Code extension settings
+    # Note: VSCode extension uses ~/.claude/settings.json for permissions
+    # The permissions configured in home-modules/ai-assistants/claude-code.nix apply here
+    "claude-code.enableTelemetry" = true;
+    "claude-code.autoCompactEnabled" = true;
+    "claude-code.todoFeatureEnabled" = true;
+    "claude-code.includeCoAuthoredBy" = true;
+    "claude-code.messageIdleNotifThresholdMs" = 60000;
+
+    # GitHub Copilot settings for full automation
+    "github.copilot.enable" = {
+      "*" = true;
+      "yaml" = true;
+      "plaintext" = true;
+      "markdown" = true;
+    };
+    "github.copilot.editor.enableAutoCompletions" = true;
+    "github.copilot.chat.followUps.enabled" = true;
+
+    # Gemini CLI settings
+    "gemini.autoStart" = true;
+    "gemini.enableCodeActions" = true;
   };
 
   baseKeybindings = [
@@ -376,6 +400,46 @@ let
     }
   ];
 
+  # MCP Server configuration for VSCode
+  # These servers enable browser automation and debugging capabilities
+  baseMcpConfig = {
+    mcpServers = {
+      playwright = {
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "@playwright/mcp@latest"
+          "--isolated"
+          "--browser"
+          "chromium"
+          "--executable-path"
+          chromiumBin
+        ];
+        env = {
+          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+          NODE_ENV = "production";
+          LOG_DIR = "/tmp/mcp-playwright-logs";
+        };
+      };
+
+      chrome-devtools = {
+        command = "${pkgs.nodejs}/bin/npx";
+        args = [
+          "-y"
+          "chrome-devtools-mcp@latest"
+          "--isolated"
+          "--headless"
+          "--executablePath"
+          chromiumBin
+        ];
+        env = {
+          NODE_ENV = "production";
+        };
+      };
+    };
+  };
+
   # Single unified profile for all VSCode instances
   # Settings Sync is configured to only sync GitHub-centric extensions
   nixosProfile = {
@@ -391,6 +455,7 @@ let
       ];
     };
     keybindings = baseKeybindings;
+    userMcp = baseMcpConfig;
   };
 
   # Override standard vscode package to remove desktop files
