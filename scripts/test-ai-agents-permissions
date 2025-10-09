@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# Test AI agent permissions configuration
+# Creates tmux panes to verify Claude Code and Codex permissions
+
+set -euo pipefail
+
+echo "=== AI Agents Permission Test ==="
+echo
+
+# Check if configs exist
+echo "1. Checking configuration files..."
+CLAUDE_CONFIG="$HOME/.claude/settings.json"
+CODEX_CONFIG="$HOME/.codex/config.toml"
+
+if [ -f "$CLAUDE_CONFIG" ]; then
+    echo "   ✓ Claude Code config exists: $CLAUDE_CONFIG"
+else
+    echo "   ⚠ Claude Code config not found (will be created on first run)"
+fi
+
+if [ -f "$CODEX_CONFIG" ]; then
+    echo "   ✓ Codex config exists: $CODEX_CONFIG"
+else
+    echo "   ⚠ Codex config not found (will be created on first run)"
+fi
+
+echo
+
+# Check Claude Code permissions
+echo "2. Verifying Claude Code permissions..."
+if [ -f "$CLAUDE_CONFIG" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        PERMS_COUNT=$(jq '.permissions.allow | length' "$CLAUDE_CONFIG" 2>/dev/null || echo "0")
+        if [ "$PERMS_COUNT" -gt 0 ]; then
+            echo "   ✓ Found $PERMS_COUNT permissions in allowlist"
+            echo "   Sample permissions:"
+            jq -r '.permissions.allow[:5][]' "$CLAUDE_CONFIG" 2>/dev/null | sed 's/^/     - /'
+            echo "     ..."
+        else
+            echo "   ⚠ No permissions configured"
+        fi
+    else
+        echo "   ⚠ jq not available, skipping detailed check"
+    fi
+else
+    echo "   ⚠ Config file not yet created"
+fi
+
+echo
+
+# Check Codex permissions
+echo "3. Verifying Codex permissions..."
+if [ -f "$CODEX_CONFIG" ]; then
+    SANDBOX_MODE=$(grep "^sandbox_mode" "$CODEX_CONFIG" | cut -d'"' -f2 2>/dev/null || echo "not found")
+    APPROVAL_POLICY=$(grep "^approval_policy" "$CODEX_CONFIG" | cut -d'"' -f2 2>/dev/null || echo "not found")
+
+    echo "   Sandbox mode: $SANDBOX_MODE"
+    echo "   Approval policy: $APPROVAL_POLICY"
+
+    if [ "$SANDBOX_MODE" = "danger-full-access" ]; then
+        echo "   ✓ YOLO mode enabled (danger-full-access)"
+    else
+        echo "   ⚠ Expected 'danger-full-access', got '$SANDBOX_MODE'"
+    fi
+
+    if [ "$APPROVAL_POLICY" = "never" ]; then
+        echo "   ✓ Auto-approve enabled (never)"
+    else
+        echo "   ⚠ Expected 'never', got '$APPROVAL_POLICY'"
+    fi
+else
+    echo "   ⚠ Config file not yet created"
+fi
+
+echo
+
+# Check if commands are available
+echo "4. Checking if AI agents are available..."
+if command -v claude-code >/dev/null 2>&1; then
+    echo "   ✓ claude-code: $(claude-code --version 2>&1 | head -1)"
+else
+    echo "   ✗ claude-code command not found"
+fi
+
+if command -v codex >/dev/null 2>&1; then
+    echo "   ✓ codex: $(codex --version 2>&1 | head -1 || echo "version unknown")"
+else
+    echo "   ✗ codex command not found"
+fi
+
+echo
+
+# Offer to start tmux session
+echo "5. Would you like to start an interactive test session?"
+echo "   This will create a tmux session with:"
+echo "   - Left pane: Claude Code"
+echo "   - Right pane: Codex"
+echo
+
+read -p "Start tmux test session? [y/N] " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo
+    echo "Starting tmux session 'ai-agents-test'..."
+    echo
+    echo "Instructions:"
+    echo "  - Test permissions by asking agents to perform file operations"
+    echo "  - Verify no approval prompts appear"
+    echo "  - Press Ctrl+B then D to detach from session"
+    echo "  - Run 'tmux attach -t ai-agents-test' to reattach"
+    echo "  - Run 'tmux kill-session -t ai-agents-test' to cleanup"
+    echo
+    sleep 2
+
+    # Create new tmux session with split panes
+    tmux new-session -d -s ai-agents-test -n "AI Agents Test"
+
+    # Split window vertically
+    tmux split-window -h -t ai-agents-test
+
+    # Left pane: Claude Code
+    tmux send-keys -t ai-agents-test:0.0 "echo '=== Claude Code Test Pane ==='" C-m
+    tmux send-keys -t ai-agents-test:0.0 "echo 'Config: ~/.claude/settings.json'" C-m
+    tmux send-keys -t ai-agents-test:0.0 "echo 'Test: Ask me to read/write files without approval prompts'" C-m
+    tmux send-keys -t ai-agents-test:0.0 "echo" C-m
+    tmux send-keys -t ai-agents-test:0.0 "claude-code" C-m
+
+    # Right pane: Codex
+    tmux send-keys -t ai-agents-test:0.1 "echo '=== Codex Test Pane ==='" C-m
+    tmux send-keys -t ai-agents-test:0.1 "echo 'Config: ~/.codex/config.toml'" C-m
+    tmux send-keys -t ai-agents-test:0.1 "echo 'Mode: YOLO (danger-full-access)'" C-m
+    tmux send-keys -t ai-agents-test:0.1 "echo 'Test: Run commands without approval prompts'" C-m
+    tmux send-keys -t ai-agents-test:0.1 "echo" C-m
+    tmux send-keys -t ai-agents-test:0.1 "codex" C-m
+
+    # Attach to session
+    tmux attach -t ai-agents-test
+else
+    echo
+    echo "Test cancelled. You can run this script again later."
+    echo
+    echo "To manually test:"
+    echo "  Claude Code: claude-code"
+    echo "  Codex:       codex"
+fi
+
+echo
+echo "=== Test Complete ==="
