@@ -61,6 +61,43 @@
           inherit system;
           specialArgs = { inherit inputs; };
           modules = modules ++ [
+            # Track git revision and metadata in system configuration
+            {
+              system.configurationRevision = self.rev or self.dirtyRev or "unknown";
+
+              # Add comprehensive build metadata to /etc/nixos-metadata
+              environment.etc."nixos-metadata".text = ''
+                # NixOS Build Metadata
+                # Generated at build time - DO NOT EDIT
+
+                # Git Information
+                GIT_COMMIT=${self.rev or self.dirtyRev or "unknown"}
+                GIT_SHORT_COMMIT=${nixpkgs.lib.substring 0 7 (self.rev or self.dirtyRev or "unknown")}
+                GIT_DIRTY=${if self ? rev then "false" else "true"}
+                GIT_LAST_MODIFIED=${self.lastModifiedDate or "unknown"}
+                GIT_SOURCE_URL=https://github.com/vpittamp/nixos-config/tree/${self.rev or "main"}
+
+                # Flake Input Revisions (for reproducibility)
+                NIXPKGS_REV=${inputs.nixpkgs.rev or "unknown"}
+                NIXPKGS_NARHASH=${inputs.nixpkgs.narHash or "unknown"}
+                HOME_MANAGER_REV=${inputs.home-manager.rev or "unknown"}
+
+                # System Information
+                HOSTNAME=${hostname}
+                SYSTEM=${system}
+                BUILD_DATE=${builtins.substring 0 8 self.lastModifiedDate or "unknown"}
+                FLAKE_URL=github:vpittamp/nixos-config/${self.rev or "main"}
+
+                # Useful Commands
+                # Rebuild this exact configuration:
+                #   sudo nixos-rebuild switch --flake ${self.sourceInfo.outPath or "."}
+                # View git commit:
+                #   git show ${self.rev or "HEAD"}
+                # Switch to this git revision:
+                #   git checkout ${self.rev or "main"}
+              '';
+            }
+
             # Home Manager integration
             home-manager.nixosModules.home-manager
             {

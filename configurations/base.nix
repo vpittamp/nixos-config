@@ -119,10 +119,13 @@
     rsync
     openssl
     jq
-    
+
     # Nix tools
     nix-prefetch-git
     nixpkgs-fmt
     nh
+
+    # Custom scripts
+    (pkgs.writeScriptBin "nixos-metadata" (builtins.readFile ../scripts/nixos-metadata))
   ];
 }

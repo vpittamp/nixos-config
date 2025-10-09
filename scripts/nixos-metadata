@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Display NixOS build metadata for current or specified generation
+
+set -euo pipefail
+
+GENERATION="${1:-current}"
+
+if [ "$GENERATION" = "current" ]; then
+    SYSTEM_PATH="/run/current-system"
+else
+    SYSTEM_PATH="/nix/var/nix/profiles/system-${GENERATION}-link"
+fi
+
+if [ ! -e "$SYSTEM_PATH" ]; then
+    echo "Error: Generation $GENERATION does not exist" >&2
+    exit 1
+fi
+
+echo "=== NixOS Build Metadata (Generation: $GENERATION) ==="
+echo
+
+# Show nixos-version info
+if [ -f "$SYSTEM_PATH/nixos-version" ]; then
+    echo "NixOS Version: $(cat "$SYSTEM_PATH/nixos-version")"
+fi
+
+if [ -f "$SYSTEM_PATH/configuration-revision" ]; then
+    echo "Git Revision:  $(cat "$SYSTEM_PATH/configuration-revision")"
+fi
+
+echo
+
+# Show detailed metadata if available
+if [ -f "$SYSTEM_PATH/etc/nixos-metadata" ]; then
+    cat "$SYSTEM_PATH/etc/nixos-metadata"
+else
+    echo "No detailed metadata available for this generation."
+    echo "This is expected for generations built before metadata tracking was added."
+fi
+
+echo
+echo "=== Quick Actions ==="
+echo
+
+# Source the metadata to get variables
+if [ -f "$SYSTEM_PATH/etc/nixos-metadata" ]; then
+    source "$SYSTEM_PATH/etc/nixos-metadata" 2>/dev/null || true
+
+    if [ "$GIT_COMMIT" != "unknown" ]; then
+        echo "View commit:     git show $GIT_COMMIT"
+        echo "Browse online:   $GIT_SOURCE_URL"
+        echo "Checkout commit: git checkout $GIT_COMMIT"
+        echo "Rebuild exactly: sudo nixos-rebuild switch --flake $FLAKE_URL"
+    fi
+fi
+
+echo
+echo "List all generations: ls -lah /nix/var/nix/profiles/system-*-link"
+echo "Switch generation:    sudo nixos-rebuild switch --rollback"
