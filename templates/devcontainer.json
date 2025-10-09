@@ -1,0 +1,132 @@
+{
+  "name": "NixOS Development Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+
+  // Install your preferred extensions automatically in Codespaces
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // Development essentials
+        "ms-vscode-remote.remote-ssh",
+        "ms-vscode-remote.remote-containers",
+        "github.codespaces",
+        "tailscale.vscode-tailscale",
+
+        // AI Assistants
+        "anthropic.claude-code",
+        "github.copilot",
+        "github.copilot-chat",
+        "Google.gemini-cli-vscode-ide-companion",
+
+        // Git integration
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+        "github.vscode-pull-request-github",
+
+        // Container tools
+        "ms-azuretools.vscode-docker",
+
+        // Nix support
+        "bbenoist.nix",
+        "jnoortheen.nix-ide",
+
+        // General development
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-python.python",
+        "golang.go",
+        "rust-lang.rust-analyzer",
+
+        // Theme and UI
+        "pkief.material-icon-theme",
+        "zhuangtongfa.material-theme",
+        "catppuccin.catppuccin-vsc",
+        "catppuccin.catppuccin-vsc-icons",
+
+        // Productivity
+        "vscodevim.vim",
+        "streetsidesoftware.code-spell-checker",
+
+        // 1Password
+        "1Password.op-vscode",
+
+        // Testing
+        "ms-playwright.playwright",
+        "openai.chatgpt"
+      ],
+
+      // Apply your settings in Codespaces
+      "settings": {
+        // Terminal integration
+        "terminal.integrated.defaultProfile.linux": "bash",
+
+        // Git integration
+        "git.enableSmartCommit": true,
+        "git.autofetch": true,
+        "git.confirmSync": false,
+        "github.gitAuthentication": true,
+        "github.gitProtocol": "https",
+
+        // Editor settings
+        "editor.fontSize": 14,
+        "editor.fontFamily": "'JetBrains Mono', 'Fira Code', monospace",
+        "editor.fontLigatures": true,
+        "editor.formatOnSave": true,
+        "editor.minimap.enabled": false,
+        "editor.rulers": [80, 120],
+        "editor.renderWhitespace": "trailing",
+
+        // Auto-save
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+
+        // File associations
+        "files.associations": {
+          "*.nix": "nix",
+          "flake.lock": "json",
+          ".env*": "dotenv",
+          ".envrc": "shellscript"
+        },
+
+        // Workspace theme
+        "workbench.colorTheme": "Material Theme Darker",
+        "workbench.iconTheme": "material-icon-theme",
+        "workbench.startupEditor": "none",
+
+        // Vim settings
+        "vim.useSystemClipboard": true,
+        "vim.hlsearch": true,
+
+        // Nix IDE
+        "nix.enableLanguageServer": true,
+        "nix.serverPath": "nil",
+
+        // Claude Code
+        "claude-code.enableTelemetry": true,
+        "claude-code.autoCompactEnabled": true,
+        "claude-code.todoFeatureEnabled": true,
+        "claude-code.includeCoAuthoredBy": true,
+
+        // GitHub Copilot
+        "github.copilot.enable": {
+          "*": true,
+          "yaml": true,
+          "plaintext": true,
+          "markdown": true
+        },
+        "github.copilot.editor.enableAutoCompletions": true,
+        "github.copilot.chat.followUps.enabled": true
+      }
+    }
+  },
+
+  // Post-create commands
+  "postCreateCommand": "bash -c 'echo \"Codespace ready! Extensions and settings synced from NixOS config.\"'",
+
+  // Features to install
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  }
+}

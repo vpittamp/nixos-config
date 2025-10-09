@@ -57,6 +57,7 @@ let
     # Development essentials
     ms-vscode-remote.remote-ssh
     ms-vscode-remote.remote-containers
+    github.codespaces
     # ms-vscode.remote-server  # May not be available in nixpkgs
 
     # Networking
@@ -104,6 +105,7 @@ let
   baseExtensionIds = [
     "ms-vscode-remote.remote-ssh"
     "ms-vscode-remote.remote-containers"
+    "github.codespaces"
     "tailscale.vscode-tailscale"
     "anthropic.claude-code"
     "github.copilot"
@@ -458,11 +460,18 @@ let
         "1password.account"
         "1password.defaultVault"
         "1password.signInAddress"
+        # Don't sync local paths to Codespaces
+        "terminal.integrated.profiles.linux"
+        "remote.SSH.configFile"
       ];
 
       # Extension auto-update settings
       "extensions.autoUpdate" = true;
       "extensions.autoCheckUpdates" = true;
+
+      # GitHub Codespaces settings
+      "github.codespaces.defaultExtensions" = baseExtensionIds;
+      "github.codespaces.devContainerPath" = ".devcontainer/devcontainer.json";
     };
     keybindings = baseKeybindings;
     userMcp = baseMcpConfig;
