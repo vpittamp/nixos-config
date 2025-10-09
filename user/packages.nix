@@ -4,6 +4,9 @@
 { pkgs, lib, ... }:
 
 let
+  # Azure CLI from stable nixpkgs for Python 3.12 compatibility
+  # Moved to user packages for Codespaces compatibility
+  azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -95,9 +98,14 @@ let
     gitkraken # Git GUI client (x86_64 only)
   ];
 
-  # Kubernetes tools
+  # Kubernetes and cloud tools
   kubernetesTools = with pkgs; [
     k9s # Terminal UI for Kubernetes
+  ];
+
+  # Cloud tools (for containers/Codespaces)
+  cloudTools = [
+    azure-cli-bin # Azure CLI (from stable nixpkgs)
   ];
 
   # Documentation and help
@@ -128,6 +136,7 @@ in
   fileManagers = fileManagers;
   git = gitTools;
   kubernetes = kubernetesTools;
+  cloud = cloudTools;
   docs = documentation;
   nix = nixTools;
 
@@ -141,12 +150,12 @@ in
   ];
 
   development = terminalTools ++ shellTools ++ editors ++
-    languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ nixTools;
+    languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ cloudTools ++ nixTools;
 
   # All user packages
   all = terminalTools ++ shellTools ++ editors ++
     languageServers ++ packageManagers ++ fileManagers ++
-    gitTools ++ kubernetesTools ++ documentation ++ nixTools;
+    gitTools ++ kubernetesTools ++ cloudTools ++ documentation ++ nixTools;
 
   # Minimal for testing
   minimal = with pkgs; [
