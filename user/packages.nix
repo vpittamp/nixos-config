@@ -7,6 +7,10 @@ let
   # Azure CLI from stable nixpkgs for Python 3.12 compatibility
   # Moved to user packages for Codespaces compatibility
   azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
+
+  # IDP Builder - x86_64 only
+  idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
+
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -101,6 +105,8 @@ let
   # Kubernetes and cloud tools
   kubernetesTools = with pkgs; [
     k9s # Terminal UI for Kubernetes
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
+    idpbuilder # IDP builder tool (x86_64 only)
   ];
 
   # Cloud tools (for containers/Codespaces)

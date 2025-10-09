@@ -26,8 +26,6 @@
 
   # Development packages
   environment.systemPackages = with pkgs; let
-    idpbuilder = pkgs.callPackage ../../packages/idpbuilder.nix { };
-
     # Headlamp package with desktop entry and icon
     headlamp = pkgs.callPackage ../../packages/headlamp.nix { };
   in
@@ -85,8 +83,7 @@
 
     # Kubernetes Dashboard
     headlamp # Kubernetes Dashboard UI (now supports both x86_64 and aarch64)
-  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
-    idpbuilder # IDP builder tool (x86_64 only)
+    # idpbuilder moved to user packages for Codespaces compatibility
   ];
 
   # Firewall ports for development services
