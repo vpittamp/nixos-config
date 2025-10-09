@@ -20,7 +20,24 @@ in
       model_provider = "openai";
       model_reasoning_effort = "high"; # Use high reasoning for complex tasks
 
-      # Project trust settings
+      # Sandbox and permission settings for sandboxed environment
+      # WARNING: This grants full permissions. Only use in trusted/sandboxed environments.
+      sandbox_mode = "danger-full-access";  # Disable sandbox (equivalent to --yolo)
+      approval_policy = "never";            # Never prompt for permissions
+
+      # Workspace write settings (used when sandbox_mode != danger-full-access)
+      sandbox_workspace_write = {
+        exclude_tmpdir_env_var = false;  # Allow temp directory access
+        exclude_slash_tmp = false;       # Allow /tmp access
+        network_access = true;           # Enable network access
+        writable_roots = [               # Additional writable locations
+          "/home/vpittamp"
+          "/tmp"
+          "/etc/nixos"
+        ];
+      };
+
+      # Project trust settings - mark all dev directories as trusted
       projects = {
         "/home/vpittamp/mcp" = {
           trust_level = "trusted";
@@ -35,6 +52,9 @@ in
           trust_level = "trusted";
         };
         "/etc/nixos" = {
+          trust_level = "trusted";
+        };
+        "/home/vpittamp" = {
           trust_level = "trusted";
         };
       };
