@@ -119,6 +119,11 @@ in
           "security.webauth.webauthn" = true;
           "security.webauth.u2f" = true;
 
+          # Clipboard API - Enable for Codespaces and web apps
+          "dom.events.asyncClipboard.read" = true;  # Allow websites to read clipboard
+          "dom.events.asyncClipboard.clipboardItem" = true;  # Enable ClipboardItem API
+          "dom.events.testing.asyncClipboard" = false;  # Disable test mode
+
           # Privacy settings optimized for OAuth compatibility
           "browser.send_pings" = false;
           "browser.urlbar.speculativeConnect.enabled" = false;
