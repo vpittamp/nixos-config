@@ -127,7 +127,6 @@
 
     # Custom scripts
     (pkgs.writeScriptBin "nixos-metadata" (builtins.readFile ../scripts/nixos-metadata))
-    (pkgs.writeScriptBin "nixos-rebuild-verbose" (builtins.readFile ../scripts/nixos-rebuild-verbose))
     (pkgs.writeScriptBin "test-ai-agents-permissions" (builtins.readFile ../scripts/test-ai-agents-permissions))
   ];
 }

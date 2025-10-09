@@ -1,7 +1,7 @@
 { config, pkgs, pkgs-unstable, lib, osConfig, ... }:
 
 let
-  primaryProfile = "nixos";
+  primaryProfile = "default";
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
   chromiumBin = "${pkgs.chromium}/bin/chromium";
 
@@ -440,10 +440,16 @@ let
     };
   };
 
-  # Single unified profile for all VSCode instances
-  # Settings Sync is configured to only sync GitHub-centric extensions
-  nixosProfile = {
+  # Default profile configuration
+  # Using "default" profile name to enable extension update settings
+  # which only work on the default profile per home-manager module constraints
+  defaultProfile = {
     extensions = baseExtensions;
+
+    # Enable extension and VSCode update checks (only works for default profile)
+    enableExtensionUpdateCheck = true;
+    enableUpdateCheck = true;
+
     userSettings = baseUserSettings // {
       # Only sync GitHub-centric extensions; other tooling stays local to this machine
       "settingsSync.keybindingsPerPlatform" = true;
@@ -453,6 +459,10 @@ let
         "1password.defaultVault"
         "1password.signInAddress"
       ];
+
+      # Extension auto-update settings
+      "extensions.autoUpdate" = true;
+      "extensions.autoCheckUpdates" = true;
     };
     keybindings = baseKeybindings;
     userMcp = baseMcpConfig;
@@ -471,10 +481,14 @@ in
     enable = true;
     package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
 
-    # Use a single unified profile for all VSCode instances
+    # Allow extensions to be installed/updated manually or by VSCode
+    # This is required when using profiles to avoid read-only filesystem conflicts
+    mutableExtensionsDir = true;
+
+    # Use the default profile to enable extension auto-update features
     # Per-activity customization is handled via working directories and environment variables
     profiles = {
-      nixos = nixosProfile;
+      default = defaultProfile;
     };
   };
 
