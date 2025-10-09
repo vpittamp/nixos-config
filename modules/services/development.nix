@@ -37,9 +37,9 @@
 
     # Container tools
     docker-compose
-    kubectl
-    kubernetes-helm
-    k9s
+    # kubectl moved to user packages for Codespaces compatibility
+    # kubernetes-helm moved to user packages for Codespaces compatibility
+    # k9s moved to user packages for Codespaces compatibility
     kind
     minikube
     argocd # Argo CD CLI
