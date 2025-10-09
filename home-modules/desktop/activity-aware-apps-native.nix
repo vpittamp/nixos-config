@@ -176,6 +176,40 @@ let
     dolphin "$WORK_DIR"
   '';
 
+  yaziActivityScript = pkgs.writeScriptBin "yazi-activity" ''
+    #!/usr/bin/env bash
+    ${getActivityDirectory}
+    ${qdbusLocator}
+
+    WORK_DIR=$(get_activity_directory)
+
+    # Get activity metadata for environment variables
+    ACTIVITY_ID=""
+    ACTIVITY_NAME=""
+    ACTIVITY_ICON=""
+    ACTIVITY_DESC=""
+
+    if [ -n "$QDBUS_BIN" ]; then
+      ACTIVITY_ID=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities CurrentActivity 2>/dev/null)
+
+      if [ -n "$ACTIVITY_ID" ]; then
+        ACTIVITY_NAME=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityName "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_ICON=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityIcon "$ACTIVITY_ID" 2>/dev/null)
+        ACTIVITY_DESC=$("$QDBUS_BIN" org.kde.ActivityManager /ActivityManager/Activities ActivityDescription "$ACTIVITY_ID" 2>/dev/null)
+      fi
+    fi
+
+    # Export activity metadata for shell sessions
+    export CURRENT_ACTIVITY_UUID="$ACTIVITY_ID"
+    export CURRENT_ACTIVITY_NAME="$ACTIVITY_NAME"
+    export CURRENT_ACTIVITY_DIR="$WORK_DIR"
+    export CURRENT_ACTIVITY_ICON="$ACTIVITY_ICON"
+    export CURRENT_ACTIVITY_DESCRIPTION="$ACTIVITY_DESC"
+
+    # Launch yazi in the activity directory
+    cd "$WORK_DIR" && exec ${pkgs.yazi}/bin/yazi "$@"
+  '';
+
   # Helper snippet reused by the Yakuake scripts to locate qdbus(6)
   qdbusLocator = ''
     QDBUS_BIN="$(command -v qdbus6 || command -v qdbus || true)"
@@ -344,6 +378,19 @@ let
               activityrule = 2;
               wmclasscomplete = false;
             }
+            # Rule for Yazi windows (terminal-based file manager)
+            {
+              Description = "Yazi - ${activity.name}";
+              clientmachine = "localhost";
+              wmclass = "yazi";
+              wmclassmatch = 1;
+              title = expandedDir;
+              titlematch = 1;
+              types = 1;
+              activity = activity.uuid;
+              activityrule = 2;
+              wmclasscomplete = false;
+            }
           ]
         )
         activities);
@@ -364,6 +411,7 @@ in
     konsoleActivityScript
     codeActivityScript
     dolphinActivityScript
+    yaziActivityScript
     # Yakuake drop-down terminal with activity-aware defaults
     yakuakeActivityScript
     yakuakeActivitySync
@@ -480,6 +528,20 @@ in
       Exec=${yakuakeActivityScript}/bin/yakuake-activity
       Terminal=false
       Keywords=terminal;console;
+    '';
+
+    ".local/share/applications/yazi.desktop".text = ''
+      [Desktop Entry]
+      Name=Yazi
+      GenericName=File Manager
+      Comment=Terminal-based file manager (activity-aware)
+      Icon=folder
+      Type=Application
+      Categories=System;FileManager;ConsoleOnly;
+      Exec=konsole -e ${yaziActivityScript}/bin/yazi-activity %f
+      Terminal=false
+      MimeType=inode/directory;
+      Keywords=file manager;filemanager;browser;explorer;yazi;
     '';
   };
 

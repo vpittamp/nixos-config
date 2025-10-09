@@ -154,7 +154,6 @@ in
           "media.hardware-video-decoding.force-enabled" = true;
 
           # Developer settings
-          "devtools.theme" = "dark";
           "devtools.debugger.remote-enabled" = true;
           "devtools.chrome.enabled" = true;
 
@@ -194,26 +193,29 @@ in
     };
   };
 
-  # Force Firefox to use our user.js settings by cleaning prefs.js
+  # Clean Firefox prefs.js to remove cached preferences that might override user.js
+  # This is needed because Firefox caches preferences in prefs.js that can override user.js
+  # Home-manager manages user.js as a symlink, but prefs.js is Firefox's runtime state
   home.activation.firefoxPrefs = lib.hm.dag.entryAfter ["writeBoundary"] ''
     FIREFOX_PROFILE="$HOME/.mozilla/firefox/default"
-    if [ -d "$FIREFOX_PROFILE" ]; then
-      for pref_file in "$FIREFOX_PROFILE/prefs.js" "$FIREFOX_PROFILE/user.js"; do
-        if [ -f "$pref_file" ]; then
-          # Drop legacy UI overrides so Firefox falls back to defaults
-          ${pkgs.gnused}/bin/sed -i \
-            -e '/devPixelsPerPx/d' \
-            -e '/browser\.toolbars\.bookmarks\.visibility/d' \
-            -e '/browser\.tabs\.inTitlebar/d' \
-            -e '/browser\.uidensity/d' \
-            "$pref_file" 2>/dev/null || true
-        fi
-      done
-
-      # Ensure user.js exists and has correct permissions
-      if [ -e "$FIREFOX_PROFILE/user.js" ]; then
-        chmod 644 "$FIREFOX_PROFILE/user.js" 2>/dev/null || true
-      fi
+    if [ -d "$FIREFOX_PROFILE" ] && [ -f "$FIREFOX_PROFILE/prefs.js" ]; then
+      # Drop legacy UI and appearance overrides so Firefox falls back to defaults
+      ${pkgs.gnused}/bin/sed -i \
+        -e '/devPixelsPerPx/d' \
+        -e '/browser\.toolbars\.bookmarks\.visibility/d' \
+        -e '/browser\.tabs\.inTitlebar/d' \
+        -e '/browser\.uidensity/d' \
+        -e '/devtools\.theme/d' \
+        -e '/ui\.systemUsesDarkTheme/d' \
+        -e '/browser\.theme\.content-theme/d' \
+        -e '/browser\.theme\.toolbar-theme/d' \
+        -e '/browser\.display\.use_system_colors/d' \
+        -e '/browser\.display\.document_color_use/d' \
+        -e '/browser\.display\.background_color/d' \
+        -e '/browser\.display\.foreground_color/d' \
+        -e '/layout\.css\.prefers-color-scheme\.content-override/d' \
+        -e '/layout\.css\.forced-colors\.enabled/d' \
+        "$FIREFOX_PROFILE/prefs.js" 2>/dev/null || true
     fi
   '';
 

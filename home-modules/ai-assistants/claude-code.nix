@@ -37,100 +37,57 @@ in
 
       # Permissions configuration for sandboxed environment
       # WARNING: This grants broad permissions. Only use in trusted/sandboxed environments.
+      # Note: Wildcards and patterns have been removed per Claude Code 2.0.11 requirements
       permissions = {
         allow = [
-          # Core file and code operations
-          "Read(*)"
-          "Write(*)"
-          "Edit(*)"
-          "Glob(*)"
-          "Grep(*)"
+          # Core file and code operations (no parentheses for broad access)
+          "Read"
+          "Write"
+          "Edit"
+          "Glob"
+          "Grep"
 
-          # Bash and system operations
-          "Bash(*)"
+          # Bash and system operations (no parentheses for all commands)
+          "Bash"
 
           # Notebook operations
-          "NotebookEdit(*)"
+          "NotebookEdit"
 
           # Task and planning tools
-          "Task(*)"
-          "TodoWrite(*)"
+          "Task"
+          "TodoWrite"
 
-          # Web operations
-          "WebFetch(*)"
-          "WebSearch(*)"
+          # Web operations (no wildcards - allows all searches/fetches)
+          "WebSearch"
+          "WebFetch"
 
           # Background bash operations
-          "BashOutput(*)"
-          "KillShell(*)"
+          "BashOutput"
+          "KillShell"
 
           # Slash commands
-          "SlashCommand(*)"
+          "SlashCommand"
 
-          # MCP Server: Context7
-          "mcp__context7__resolve-library-id(*)"
-          "mcp__context7__get-library-docs(*)"
+          # MCP Server: Context7 (use server prefix for all tools)
+          "mcp__context7"
 
-          # MCP Server: Playwright (all browser automation operations)
-          "mcp__playwright__browser_close(*)"
-          "mcp__playwright__browser_resize(*)"
-          "mcp__playwright__browser_console_messages(*)"
-          "mcp__playwright__browser_handle_dialog(*)"
-          "mcp__playwright__browser_evaluate(*)"
-          "mcp__playwright__browser_file_upload(*)"
-          "mcp__playwright__browser_fill_form(*)"
-          "mcp__playwright__browser_install(*)"
-          "mcp__playwright__browser_press_key(*)"
-          "mcp__playwright__browser_type(*)"
-          "mcp__playwright__browser_navigate(*)"
-          "mcp__playwright__browser_navigate_back(*)"
-          "mcp__playwright__browser_network_requests(*)"
-          "mcp__playwright__browser_take_screenshot(*)"
-          "mcp__playwright__browser_snapshot(*)"
-          "mcp__playwright__browser_click(*)"
-          "mcp__playwright__browser_drag(*)"
-          "mcp__playwright__browser_hover(*)"
-          "mcp__playwright__browser_select_option(*)"
-          "mcp__playwright__browser_tabs(*)"
-          "mcp__playwright__browser_wait_for(*)"
+          # MCP Server: Playwright (use server prefix for all browser automation)
+          "mcp__playwright"
 
-          # MCP Server: Chrome DevTools (all debugging and performance operations)
-          "mcp__chrome-devtools__list_console_messages(*)"
-          "mcp__chrome-devtools__emulate_cpu(*)"
-          "mcp__chrome-devtools__emulate_network(*)"
-          "mcp__chrome-devtools__click(*)"
-          "mcp__chrome-devtools__drag(*)"
-          "mcp__chrome-devtools__fill(*)"
-          "mcp__chrome-devtools__fill_form(*)"
-          "mcp__chrome-devtools__hover(*)"
-          "mcp__chrome-devtools__upload_file(*)"
-          "mcp__chrome-devtools__get_network_request(*)"
-          "mcp__chrome-devtools__list_network_requests(*)"
-          "mcp__chrome-devtools__close_page(*)"
-          "mcp__chrome-devtools__handle_dialog(*)"
-          "mcp__chrome-devtools__list_pages(*)"
-          "mcp__chrome-devtools__navigate_page(*)"
-          "mcp__chrome-devtools__navigate_page_history(*)"
-          "mcp__chrome-devtools__new_page(*)"
-          "mcp__chrome-devtools__resize_page(*)"
-          "mcp__chrome-devtools__select_page(*)"
-          "mcp__chrome-devtools__performance_analyze_insight(*)"
-          "mcp__chrome-devtools__performance_start_trace(*)"
-          "mcp__chrome-devtools__performance_stop_trace(*)"
-          "mcp__chrome-devtools__take_screenshot(*)"
-          "mcp__chrome-devtools__evaluate_script(*)"
-          "mcp__chrome-devtools__take_snapshot(*)"
-          "mcp__chrome-devtools__wait_for(*)"
+          # MCP Server: Chrome DevTools (use server prefix for all debugging)
+          "mcp__chrome-devtools"
 
-          # MCP Server: IDE integration
-          "mcp__ide__getDiagnostics(*)"
-          "mcp__ide__executeCode(*)"
+          # MCP Server: IDE integration (use server prefix for all IDE operations)
+          "mcp__ide"
         ];
       };
     };
 
     # MCP Servers configuration - using npx for cross-platform compatibility
+    # Note: All servers enabled - uses ~33k tokens
+    # Comment out servers you don't need to save context tokens
     mcpServers = {
+      # Context7 - Lightweight documentation lookup (~1.7k tokens)
       context7 = {
         command = "npx";
         args = [
@@ -139,7 +96,7 @@ in
         ];
       };
 
-      # Playwright MCP server for browser automation
+      # Playwright MCP server for browser automation (~13.7k tokens)
       playwright = {
         transport = "stdio";
         command = "npx";
@@ -153,16 +110,14 @@ in
           chromiumBin
         ];
         env = {
-          # Skip downloading Chromium since we use system package
           PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-          # Redirect logs to temp directory to avoid cluttering project directories
           NODE_ENV = "production";
           LOG_DIR = "/tmp/mcp-puppeteer-logs";
         };
       };
 
-      # Chrome DevTools MCP server for browser debugging and performance analysis
+      # Chrome DevTools MCP server for debugging and performance (~17k tokens)
       chrome-devtools = {
         command = "npx";
         args = [

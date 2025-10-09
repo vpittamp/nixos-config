@@ -102,8 +102,9 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                # Use unique backup extension to prevent conflicts and avoid collisions with legacy backups
-                backupFileExtension = nixpkgs.lib.mkForce "hm-backup-2025";
+                # Disable backups - we have git version control
+                # This prevents backup file accumulation and conflicts
+                backupFileExtension = null;
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = {
