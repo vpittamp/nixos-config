@@ -15,7 +15,7 @@
     # The module will automatically create wrapper functions for these
     plugins = with pkgs; [
       gh          # GitHub CLI - creates gh() function
-      awscli2     # AWS CLI - creates aws() function
+      # awscli2     # AWS CLI - creates aws() function (commented out - slow to build)
       cachix      # Cachix binary cache - creates cachix() function
       openai      # OpenAI CLI - creates openai() function
       # hcloud requires app integration (biometric unlock) which may not be available

@@ -7,21 +7,25 @@ let
   # Generate JSON mapping file from activity data
   activityMappings = builtins.toJSON (
     lib.listToAttrs (
-      lib.mapAttrsToList (name: activity:
-        let
-          dir = if builtins.isString activity.directory then
-                  activity.directory
-                else
-                  activity.directory;
-          expandedDir = if lib.hasPrefix "~/" dir
-                        then "${config.home.homeDirectory}/${lib.removePrefix "~/" dir}"
-                        else dir;
-        in
-        lib.nameValuePair activity.uuid {
-          inherit (activity) name description icon;
-          directory = expandedDir;
-        }
-      ) activityData.rawActivities
+      lib.mapAttrsToList
+        (name: activity:
+          let
+            dir =
+              if builtins.isString activity.directory then
+                activity.directory
+              else
+                activity.directory;
+            expandedDir =
+              if lib.hasPrefix "~/" dir
+              then "${config.home.homeDirectory}/${lib.removePrefix "~/" dir}"
+              else dir;
+          in
+          lib.nameValuePair activity.uuid {
+            inherit (activity) name description icon;
+            directory = expandedDir;
+          }
+        )
+        activityData.rawActivities
     )
   );
 
@@ -151,16 +155,17 @@ let
     export CURRENT_ACTIVITY_ICON="$ACTIVITY_ICON"
     export CURRENT_ACTIVITY_DESCRIPTION="$ACTIVITY_DESC"
 
-    # Convert activity name to lowercase profile name (e.g., "NixOS" -> "nixos")
-    PROFILE_NAME=$(echo "$ACTIVITY_NAME" | tr '[:upper:]' '[:lower:]')
+    # Convert activity name to lowercase for WM_CLASS customization (e.g., "NixOS" -> "nixos")
+    ACTIVITY_LOWER=$(echo "$ACTIVITY_NAME" | tr '[:upper:]' '[:lower:]')
 
-    # Launch VSCode with activity-specific profile for reliable window rule matching
-    # The --profile flag sets a unique WM_CLASS that KWin can match immediately
-    if [ -n "$PROFILE_NAME" ]; then
-      code --profile "$PROFILE_NAME" "$WORK_DIR"
+    # Launch VSCode with unified "nixos" profile but custom WM_CLASS for window rule matching
+    # Set WM_CLASS via electron's --class flag to enable KWin window rule matching
+    # This allows per-activity window rules while keeping all instances on the same profile
+    if [ -n "$ACTIVITY_LOWER" ]; then
+      code --profile nixos --class "code-$ACTIVITY_LOWER" "$WORK_DIR"
     else
       # Fallback to regular launch if activity name not found
-      code "$WORK_DIR"
+      code --profile nixos "$WORK_DIR"
     fi
   '';
 
@@ -235,112 +240,118 @@ let
   '';
 
   # Generate KWin window rules for activity management
-  generateKWinRules = activities: let
-    # Explicit rules for applications that should appear in all activities
-    # Matches the structure created by KDE GUI: Settings → Window Rules → Activities → Force → All Activities
-    # NOTE: These rules work with regular application launchers - no special launchers needed
-    allActivitiesRules = [
-      {
-        Description = "Firefox - All Activities";
-        wmclass = "firefox";
-        wmclassmatch = 1;  # Substring match
-        wmclasscomplete = false;
-        activities = "";  # Empty = all activities
-        activitiesrule = 2;  # Force
-        types = 1;
-      }
-      {
-        Description = "GitKraken - All Activities";
-        wmclass = "gitkraken";
-        wmclassmatch = 1;  # Substring match
-        wmclasscomplete = false;
-        activities = "";  # Empty = all activities
-        activitiesrule = 2;  # Force
-        types = 1;
-      }
-      {
-        Description = "Firefox PWAs - All Activities";
-        wmclass = "FFPWA";  # Legacy X11 WM_CLASS prefix for Firefox PWAs
-        wmclassmatch = 1;  # Substring match
-        wmclasscomplete = false;
-        activities = "";  # Empty = all activities
-        activitiesrule = 2;  # Force
-        types = 1;
-      }
-      {
-        Description = "Firefox PWAs (Wayland) - All Activities";
-        wmclass = "firefoxpwa";  # Wayland WM_CLASS reported by firefoxpwa launcher
-        wmclassmatch = 1;  # Substring match
-        wmclasscomplete = false;
-        activities = "";  # Empty = all activities
-        activitiesrule = 2;  # Force
-        types = 1;
-      }
-      {
-        Description = "Chromium - All Activities";
-        wmclass = "chromium-browser";
-        wmclassmatch = 1;  # Substring match
-        wmclasscomplete = false;
-        activities = "";  # Empty = all activities
-        activitiesrule = 2;  # Force
-        types = 1;
-      }
-    ];
-
-    # Create a flat list of rules
-    activitySpecificRules = lib.flatten (lib.mapAttrsToList (name: activity:
-      let
-        # Get clean directory name for matching
-        dirName = lib.last (lib.splitString "/" activity.directory);
-        expandedDir = if lib.hasPrefix "~/" activity.directory
-                     then "${config.home.homeDirectory}/${lib.removePrefix "~/" activity.directory}"
-                     else activity.directory;
-      in [
-        # Rule for VS Code windows
+  generateKWinRules = activities:
+    let
+      # Explicit rules for applications that should appear in all activities
+      # Matches the structure created by KDE GUI: Settings → Window Rules → Activities → Force → All Activities
+      # NOTE: These rules work with regular application launchers - no special launchers needed
+      allActivitiesRules = [
         {
-          Description = "VS Code - ${activity.name}";
-          clientmachine = "localhost";
-          wmclass = "code";
-          wmclassmatch = 1; # Substring
-          title = expandedDir;
-          titlematch = 1; # Substring
-          types = 1; # Normal window
-          activity = activity.uuid;
-          activityrule = 2; # Force (overrides default all-activities rule)
+          Description = "Firefox - All Activities";
+          wmclass = "firefox";
+          wmclassmatch = 1; # Substring match
           wmclasscomplete = false;
-        }
-        # Rule for Konsole windows
-        {
-          Description = "Konsole - ${activity.name}";
-          clientmachine = "localhost";
-          wmclass = "konsole";
-          wmclassmatch = 1;
-          title = dirName;
-          titlematch = 1;
+          activities = ""; # Empty = all activities
+          activitiesrule = 2; # Force
           types = 1;
-          activity = activity.uuid;
-          activityrule = 2;
-          wmclasscomplete = false;
         }
-        # Rule for Dolphin windows
         {
-          Description = "Dolphin - ${activity.name}";
-          clientmachine = "localhost";
-          wmclass = "dolphin";
-          wmclassmatch = 1;
-          title = dirName;
-          titlematch = 1;
-          types = 1;
-          activity = activity.uuid;
-          activityrule = 2;
+          Description = "GitKraken - All Activities";
+          wmclass = "gitkraken";
+          wmclassmatch = 1; # Substring match
           wmclasscomplete = false;
+          activities = ""; # Empty = all activities
+          activitiesrule = 2; # Force
+          types = 1;
         }
-      ]
-    ) activities);
+        {
+          Description = "Firefox PWAs - All Activities";
+          wmclass = "FFPWA"; # Legacy X11 WM_CLASS prefix for Firefox PWAs
+          wmclassmatch = 1; # Substring match
+          wmclasscomplete = false;
+          activities = ""; # Empty = all activities
+          activitiesrule = 2; # Force
+          types = 1;
+        }
+        {
+          Description = "Firefox PWAs (Wayland) - All Activities";
+          wmclass = "firefoxpwa"; # Wayland WM_CLASS reported by firefoxpwa launcher
+          wmclassmatch = 1; # Substring match
+          wmclasscomplete = false;
+          activities = ""; # Empty = all activities
+          activitiesrule = 2; # Force
+          types = 1;
+        }
+        {
+          Description = "Chromium - All Activities";
+          wmclass = "chromium-browser";
+          wmclassmatch = 1; # Substring match
+          wmclasscomplete = false;
+          activities = ""; # Empty = all activities
+          activitiesrule = 2; # Force
+          types = 1;
+        }
+      ];
 
-    # Combine all rules: PWAs for all activities + activity-specific rules
-    rulesList = allActivitiesRules ++ activitySpecificRules;
-  in rulesList;
+      # Create a flat list of rules
+      activitySpecificRules = lib.flatten (lib.mapAttrsToList
+        (name: activity:
+          let
+            # Get clean directory name for matching
+            dirName = lib.last (lib.splitString "/" activity.directory);
+            expandedDir =
+              if lib.hasPrefix "~/" activity.directory
+              then "${config.home.homeDirectory}/${lib.removePrefix "~/" activity.directory}"
+              else activity.directory;
+          in
+          [
+            # Rule for VS Code windows
+            {
+              Description = "VS Code - ${activity.name}";
+              clientmachine = "localhost";
+              wmclass = "code";
+              wmclassmatch = 1; # Substring
+              title = expandedDir;
+              titlematch = 1; # Substring
+              types = 1; # Normal window
+              activity = activity.uuid;
+              activityrule = 2; # Force (overrides default all-activities rule)
+              wmclasscomplete = false;
+            }
+            # Rule for Konsole windows
+            {
+              Description = "Konsole - ${activity.name}";
+              clientmachine = "localhost";
+              wmclass = "konsole";
+              wmclassmatch = 1;
+              title = dirName;
+              titlematch = 1;
+              types = 1;
+              activity = activity.uuid;
+              activityrule = 2;
+              wmclasscomplete = false;
+            }
+            # Rule for Dolphin windows
+            {
+              Description = "Dolphin - ${activity.name}";
+              clientmachine = "localhost";
+              wmclass = "dolphin";
+              wmclassmatch = 1;
+              title = dirName;
+              titlematch = 1;
+              types = 1;
+              activity = activity.uuid;
+              activityrule = 2;
+              wmclasscomplete = false;
+            }
+          ]
+        )
+        activities);
+
+      # Combine all rules: PWAs for all activities + activity-specific rules
+      rulesList = allActivitiesRules ++ activitySpecificRules;
+    in
+    rulesList;
 
 in
 {
@@ -485,7 +496,7 @@ in
   # '';
 
   # Rebuild KDE application cache when desktop files change
-  home.activation.rebuildKdeCache = lib.hm.dag.entryAfter ["writeBoundary"] ''
+  home.activation.rebuildKdeCache = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     # Rebuild KDE's application cache to register new desktop entries
     if command -v kbuildsycoca6 >/dev/null 2>&1; then
       $DRY_RUN_CMD kbuildsycoca6 --noincremental 2>/dev/null || true

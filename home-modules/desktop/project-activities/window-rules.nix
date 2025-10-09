@@ -19,47 +19,48 @@ let
       dir = activity.directory;
       homeDir = config.home.homeDirectory;
     in
-      if lib.hasPrefix "~/" dir
-      then lib.replaceStrings ["~/"] ["${homeDir}/"] dir
-      else dir;
+    if lib.hasPrefix "~/" dir
+    then lib.replaceStrings [ "~/" ] [ "${homeDir}/" ] dir
+    else dir;
 
   # Generate window rules for VS Code
-  # Uses both WM_CLASS (via --profile flag) and title matching for reliability
-  # This prevents race conditions where VSCode's title may not be set immediately
+  # Uses WM_CLASS (via --class flag) and title matching for reliability
+  # All instances use the same "nixos" profile, but get unique WM_CLASS for window rules
   mkVSCodeRules = activityId: activity:
     let
       basename = getFolderBasename (getActivityDirectory activity);
       fullPath = getActivityDirectory activity;
-      # VSCode --profile flag creates unique WM_CLASS: "code-${profileName}"
-      # Using activity name as profile name for consistency
-      profileWmClass = "code-${activityId}";
-    in {
+      # VSCode --class flag creates unique WM_CLASS: "code-${activityName}"
+      # Using activity name (lowercased) for window rule matching
+      customWmClass = "code-${activityId}";
+    in
+    {
       "vscode-${activityId}" = {
-        Description = "VS Code - ${activity.name} (Profile)";
-        # Primary matching: WM_CLASS from --profile flag
-        wmclass = profileWmClass;
-        wmclassmatch = 2;  # Exact match for reliability
+        Description = "VS Code - ${activity.name}";
+        # Primary matching: WM_CLASS from --class flag
+        wmclass = customWmClass;
+        wmclassmatch = 2; # Exact match for reliability
         wmclasscomplete = false;
-        # Secondary matching: Title (fallback for non-profile launches)
+        # Secondary matching: Title (for additional validation)
         title = basename;
-        titlematch = 1;  # Substring match
+        titlematch = 1; # Substring match
         activity = activity.uuid;
-        activityrule = 2;  # Force
-        types = 1;  # Normal windows
+        activityrule = 2; # Force
+        types = 1; # Normal windows
         clientmachine = "localhost";
       };
-      # Fallback rule for legacy VSCode windows without profile
+      # Fallback rule for VSCode windows without custom class (manual launches)
       "vscode-${activityId}-fallback" = {
-        Description = "VS Code - ${activity.name} (Legacy)";
+        Description = "VS Code - ${activity.name} (Manual Launch)";
         wmclass = "code";
-        wmclassmatch = 2;  # Exact match
+        wmclassmatch = 2; # Exact match
         wmclasscomplete = true;
         # Must match title to disambiguate from other VSCode windows
         title = basename;
-        titlematch = 1;  # Substring match
+        titlematch = 1; # Substring match
         activity = activity.uuid;
-        activityrule = 2;  # Force
-        types = 1;  # Normal windows
+        activityrule = 2; # Force
+        types = 1; # Normal windows
         clientmachine = "localhost";
       };
     };
@@ -69,18 +70,19 @@ let
     let
       basename = getFolderBasename (getActivityDirectory activity);
       fullPath = getActivityDirectory activity;
-    in {
+    in
+    {
       "konsole-${activityId}" = {
         Description = "Konsole - ${activity.name}";
         wmclass = "konsole";
-        wmclassmatch = 1;  # Substring match
+        wmclassmatch = 1; # Substring match
         wmclasscomplete = false;
         # Konsole shows path in title, match basename
         title = basename;
-        titlematch = 1;  # Substring match
+        titlematch = 1; # Substring match
         activity = activity.uuid;
-        activityrule = 2;  # Force
-        types = 1;  # Normal windows
+        activityrule = 2; # Force
+        types = 1; # Normal windows
         clientmachine = "localhost";
       };
     };
@@ -90,18 +92,19 @@ let
     let
       basename = getFolderBasename (getActivityDirectory activity);
       fullPath = getActivityDirectory activity;
-    in {
+    in
+    {
       "dolphin-${activityId}" = {
         Description = "Dolphin - ${activity.name}";
         wmclass = "dolphin";
-        wmclassmatch = 1;  # Substring match
+        wmclassmatch = 1; # Substring match
         wmclasscomplete = false;
         # Dolphin shows full path, but also match basename for safety
         title = basename;
-        titlematch = 1;  # Substring match
+        titlematch = 1; # Substring match
         activity = activity.uuid;
-        activityrule = 2;  # Force
-        types = 1;  # Normal windows
+        activityrule = 2; # Force
+        types = 1; # Normal windows
         clientmachine = "localhost";
       };
     };
@@ -119,7 +122,8 @@ let
   ruleNames = lib.attrNames allActivityRules;
   ruleCount = builtins.length ruleNames;
 
-in {
+in
+{
   # Export kwinrulesrc configuration
   kwinrulesrc = {
     General = {

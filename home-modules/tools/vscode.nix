@@ -1,13 +1,16 @@
-{ config, pkgs, lib, osConfig, ... }:
+{ config, pkgs, pkgs-unstable, lib, osConfig, ... }:
 
 let
   primaryProfile = "nixos";
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
 
+  # Use latest VSCode from unstable channel for newest features and fixes
+  vscode = pkgs-unstable.vscode;
+
   # Declarative VSCode package with proper flags for M1/ARM64
   # Using makeWrapper to add command-line flags for Wayland
   # Remove desktop files since we provide our own activity-aware versions
-  vscodeWithFlags = pkgs.vscode.overrideAttrs (oldAttrs: {
+  vscodeWithFlags = vscode.overrideAttrs (oldAttrs: {
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
     postFixup = (oldAttrs.postFixup or "") + ''
       wrapProgram $out/bin/code \
@@ -67,6 +70,7 @@ let
     # Git integration
     eamodio.gitlens
     mhutchie.git-graph
+    github.vscode-pull-request-github
 
     # Container tools
     ms-azuretools.vscode-docker
@@ -106,6 +110,7 @@ let
     "Google.gemini-cli-vscode-ide-companion"
     "eamodio.gitlens"
     "mhutchie.git-graph"
+    "github.vscode-pull-request-github"
     "ms-azuretools.vscode-docker"
     "bbenoist.nix"
     "jnoortheen.nix-ide"
@@ -371,12 +376,8 @@ let
     }
   ];
 
-  defaultProfile = {
-    extensions = baseExtensions;
-    userSettings = baseUserSettings;
-    keybindings = baseKeybindings;
-  };
-
+  # Single unified profile for all VSCode instances
+  # Settings Sync is configured to only sync GitHub-centric extensions
   nixosProfile = {
     extensions = baseExtensions;
     userSettings = baseUserSettings // {
@@ -392,19 +393,8 @@ let
     keybindings = baseKeybindings;
   };
 
-  # Activity-specific profiles for reliable window rule matching
-  # Each profile creates a unique WM_CLASS that KWin can match immediately
-  activityProfiles = {
-    # All activity profiles share the same configuration
-    # The profile name is used to set unique WM_CLASS for window rules
-    monitoring = nixosProfile;
-    stacks = nixosProfile;
-    backstage = nixosProfile;
-    devcontainer = nixosProfile;
-  };
-
   # Override standard vscode package to remove desktop files
-  vscodeNoDesktop = pkgs.vscode.overrideAttrs (oldAttrs: {
+  vscodeNoDesktop = vscode.overrideAttrs (oldAttrs: {
     postFixup = (oldAttrs.postFixup or "") + ''
       # Remove desktop files to prevent duplicate entries
       rm -rf $out/share/applications
@@ -416,10 +406,11 @@ in
     enable = true;
     package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
 
+    # Use a single unified profile for all VSCode instances
+    # Per-activity customization is handled via working directories and environment variables
     profiles = {
-      default = defaultProfile;
       nixos = nixosProfile;
-    } // activityProfiles;
+    };
   };
 
   # Create VSCode settings directory and SSH config for 1Password
@@ -430,10 +421,12 @@ in
     };
   } // lib.listToAttrs (
     # Dynamically generate globalStorage/.keep for all configured VS Code profiles
-    map (profileName: {
-      name = ".config/Code/User/profiles/${profileName}/globalStorage/.keep";
-      value = { text = ""; };
-    }) (builtins.attrNames config.programs.vscode.profiles)
+    map
+      (profileName: {
+        name = ".config/Code/User/profiles/${profileName}/globalStorage/.keep";
+        value = { text = ""; };
+      })
+      (builtins.attrNames config.programs.vscode.profiles)
   );
 
   # Environment variables for VSCode

@@ -17,10 +17,7 @@
       package = pkgs.qemu_kvm;
       runAsRoot = true;
       swtpm.enable = true;
-      ovmf = {
-        enable = true;
-        packages = [ pkgs.OVMFFull.fd ];
-      };
+      # ovmf submodule removed - OVMF images now available by default with QEMU
     };
   };
 
@@ -57,7 +54,7 @@
 
     # Cloud tools
     terraform
-    awscli2
+    # awscli2 # Commented out - not currently used, slow to build
     azure-cli-bin # Using pinned version with Python 3.11
     google-cloud-sdk
     hcloud # Hetzner Cloud CLI
