@@ -383,10 +383,12 @@ let
       "DOCKER_CONFIG" = "$HOME/.docker";
     };
     # Docker Hub registry configuration
+    # Note: The Docker extension may require manual connection via UI
+    # Click "+" in Registries view and select Docker Hub
     "docker.registries" = [
       {
         "url" = "https://index.docker.io/v1/";
-        "username" = "";  # Credentials managed by docker login via 1Password
+        "username" = "vpittamp23";  # Credentials from docker login via 1Password
       }
     ];
 
