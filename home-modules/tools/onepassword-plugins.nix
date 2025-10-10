@@ -7,23 +7,16 @@
   # This file configures the plugins
   # The module AUTOMATICALLY creates shell functions for each plugin
 
-  # Enable 1Password shell plugins
-  programs._1password-shell-plugins = {
-    enable = true;
-    
-    # Enable plugins for specific tools
-    # The module will automatically create wrapper functions for these
-    plugins = with pkgs; [
-      gh          # GitHub CLI - creates gh() function
-      # awscli2     # AWS CLI - creates aws() function (commented out - slow to build)
-      cachix      # Cachix binary cache - creates cachix() function
-      openai      # OpenAI CLI - creates openai() function
-      # hcloud requires app integration (biometric unlock) which may not be available
-      # We'll use a manual wrapper instead
-      # Note: Only packages that have 1Password plugins can be added here
-      # Check available plugins with: op plugin list
-    ];
-  };
+  # Note: We use 'op plugin init' instead of programs._1password-shell-plugins
+  # because the Nix module generates functions before the interactive shell check,
+  # causing bashrc syntax errors in non-interactive contexts (VSCode, etc.)
+  #
+  # Using 'op plugin init' creates aliases in ~/.config/op/plugins.sh which are
+  # sourced in initExtra (below), after the interactive check, avoiding the error.
+  #
+  # Disabled: programs._1password-shell-plugins
+  # To initialize plugins: run 'op plugin init <name>' for each tool you want
+  # Example: op plugin init gh, op plugin init hcloud, op plugin init openai
 
   # Additional shell configuration for 1Password
   programs.bash.initExtra = ''
