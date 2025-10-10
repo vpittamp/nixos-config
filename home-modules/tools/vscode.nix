@@ -1,7 +1,9 @@
 { config, pkgs, pkgs-unstable, lib, osConfig, ... }:
 
 let
-  primaryProfile = "default";
+  # Primary profile used by all VSCode instances
+  # This ensures consistent extension/settings across all activities
+  primaryProfile = config.modules.tools.vscode.defaultProfile or "default";
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
   chromiumBin = "${pkgs.chromium}/bin/chromium";
 
@@ -502,9 +504,18 @@ let
   });
 in
 {
-  programs.vscode = {
-    enable = true;
-    package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
+  options.modules.tools.vscode = {
+    defaultProfile = lib.mkOption {
+      type = lib.types.str;
+      default = "default";
+      description = "Default VSCode profile name used by all instances";
+    };
+  };
+
+  config = {
+    programs.vscode = {
+      enable = true;
+      package = if isM1 then vscodeWithFlags else vscodeNoDesktop;
 
     # Allow extensions to be installed/updated manually or by VSCode
     # This is required when using profiles to avoid read-only filesystem conflicts
@@ -533,9 +544,10 @@ in
       (builtins.attrNames config.programs.vscode.profiles)
   );
 
-  # Environment variables for VSCode
-  home.sessionVariables = {
-    # Use 1Password SSH agent in VSCode terminal
-    VSCODE_SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
+    # Environment variables for VSCode
+    home.sessionVariables = {
+      # Use 1Password SSH agent in VSCode terminal
+      VSCODE_SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
+    };
   };
 }

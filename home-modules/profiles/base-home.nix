@@ -83,6 +83,10 @@ in
   modules.tools.yazi.enable = true;
   modules.tools.docker.enable = true; # Docker with 1Password integration
 
+  # VSCode profile configuration
+  # All VSCode instances (including activity-aware launchers) use this profile
+  modules.tools.vscode.defaultProfile = "default";
+
   programs.home-manager.enable = true;
 
   # Enable XDG base directories and desktop entries

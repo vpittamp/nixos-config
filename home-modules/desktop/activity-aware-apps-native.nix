@@ -134,6 +134,7 @@ let
     ACTIVITY_ID=""
     ACTIVITY_NAME=""
     ACTIVITY_ICON=""
+    ACTIVITY_ICON=""
     ACTIVITY_DESC=""
 
     if [ -n "$QDBUS_BIN" ]; then
@@ -158,14 +159,14 @@ let
     # Convert activity name to lowercase for WM_CLASS customization (e.g., "NixOS" -> "nixos")
     ACTIVITY_LOWER=$(echo "$ACTIVITY_NAME" | tr '[:upper:]' '[:lower:]')
 
-    # Launch VSCode with unified "nixos" profile but custom WM_CLASS for window rule matching
+    # Launch VSCode with configured profile but custom WM_CLASS for window rule matching
     # Set WM_CLASS via electron's --class flag to enable KWin window rule matching
     # This allows per-activity window rules while keeping all instances on the same profile
     if [ -n "$ACTIVITY_LOWER" ]; then
-      code --profile nixos --class "code-$ACTIVITY_LOWER" "$WORK_DIR"
+      code --profile ${config.modules.tools.vscode.defaultProfile} --class "code-$ACTIVITY_LOWER" "$WORK_DIR"
     else
       # Fallback to regular launch if activity name not found
-      code --profile nixos "$WORK_DIR"
+      code --profile ${config.modules.tools.vscode.defaultProfile} "$WORK_DIR"
     fi
   '';
 
