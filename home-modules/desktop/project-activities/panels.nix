@@ -24,7 +24,7 @@ let
     chatgptCodexId = "01K772ZBM45JD68HXYNM193CVW";  # ChatGPT Codex
   };
 
-  # M1 MacBook PWA IDs (updated 2025-09-27)
+  # M1 MacBook PWA IDs (updated 2025-10-10 with new PWAs)
   m1Ids = {
     googleId = "01K664F9E8KXZPXYF4V1Q8A93V";  # Google AI mode
     youtubeId = "01K663E3K8FMGTFVQ6Z6Q2RX7X";
@@ -34,6 +34,11 @@ let
     argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
     homeAssistantId = "01K66AGFCPXE13NK7YXFEF78BN";  # Home Assistant
     uberEatsId = "01K66F8FWRP6643P7V6QQWA28X";  # Uber Eats
+    # TODO: Install these PWAs on M1 and run 'pwa-get-ids' to get actual IDs
+    githubCodespacesId = "00000000000000000000000000";  # Placeholder - not installed
+    azurePortalId = "00000000000000000000000000";  # Placeholder - not installed
+    hetznerCloudId = "00000000000000000000000000";  # Placeholder - not installed
+    chatgptCodexId = "00000000000000000000000000";  # Placeholder - not installed
   };
 
   # Select appropriate IDs based on hostname
