@@ -53,6 +53,7 @@ in
     ../tools/firefox.nix
     ../tools/docker.nix # Docker with 1Password authentication
     # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
+    ../tools/chromium-pwas.nix  # Testing: Chromium native PWA support
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
