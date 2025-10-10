@@ -1,5 +1,6 @@
 # 1Password CLI Tools Configuration
 # Uses `op run` for secure credential injection without service accounts
+# Updated: 2025-10-10 with ArgoCD, MySQL, Azure, PostgreSQL integrations
 { config, pkgs, lib, inputs, ... }:
 
 {
