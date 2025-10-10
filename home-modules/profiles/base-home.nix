@@ -51,6 +51,7 @@ in
     ../tools/fzf.nix
     ../tools/chromium.nix # Enabled for Playwright MCP support
     ../tools/firefox.nix
+    ../tools/docker.nix # Docker with 1Password authentication
     # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
     ../tools/k9s.nix
     ../tools/yazi.nix
@@ -80,6 +81,7 @@ in
     packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
 
   modules.tools.yazi.enable = true;
+  modules.tools.docker.enable = true; # Docker with 1Password integration
 
   programs.home-manager.enable = true;
 

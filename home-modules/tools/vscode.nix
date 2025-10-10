@@ -367,6 +367,20 @@ let
     # Gemini CLI settings
     "gemini.autoStart" = true;
     "gemini.enableCodeActions" = true;
+
+    # Docker extension settings with 1Password integration
+    "docker.dockerPath" = "${pkgs.docker}/bin/docker";
+    "docker.dockerComposePath" = "${pkgs.docker-compose}/bin/docker-compose";
+    "docker.enableDockerComposeLanguageService" = true;
+    "docker.showStartPage" = false;
+    "docker.autoRefreshInterval" = 5000; # Auto-refresh Docker view every 5 seconds
+    "docker.explorerRefreshInterval" = 1000;
+    "docker.environment" = {
+      "DOCKER_CONFIG" = "$HOME/.docker";
+    };
+
+    # Add Docker-related files to secret detection
+    # (Already includes docker-compose.yml in the detection.filePatterns above)
   };
 
   baseKeybindings = [

@@ -3,6 +3,7 @@
 ## 🚀 Quick Start
 
 ### Essential Commands
+
 ```bash
 # Test configuration changes (ALWAYS RUN BEFORE APPLYING)
 sudo nixos-rebuild dry-build --flake .#wsl    # For WSL
@@ -13,6 +14,9 @@ sudo nixos-rebuild dry-build --flake .#m1 --impure  # For M1 Mac (--impure for f
 sudo nixos-rebuild switch --flake .#wsl    # For WSL
 sudo nixos-rebuild switch --flake .#hetzner # For Hetzner
 sudo nixos-rebuild switch --flake .#m1 --impure  # For M1 Mac (--impure for firmware)
+
+# Remote build/deploy from Codespace or another machine (requires SSH access)
+nixos-rebuild switch --flake .#hetzner --target-host vpittamp@hetzner --use-remote-sudo
 
 # Build container images
 nix build .#container-minimal      # Minimal container (~100MB)
@@ -96,22 +100,26 @@ nix build .#container-dev          # Development container (~600MB)
 ## 🎯 Configuration Targets
 
 ### WSL (Windows Subsystem for Linux)
+
 - **Purpose**: Local development on Windows
 - **Features**: Docker Desktop integration, VS Code support, 1Password CLI
 - **Build**: `sudo nixos-rebuild switch --flake .#wsl`
 
 ### Hetzner (Cloud Server)
+
 - **Purpose**: Remote development workstation
 - **Features**: Full KDE desktop, RDP access, Tailscale VPN, 1Password GUI
 - **Build**: `sudo nixos-rebuild switch --flake .#hetzner`
 
 ### M1 (Apple Silicon Mac)
+
 - **Purpose**: Native NixOS on Apple hardware
 - **Features**: Optimized for ARM64, Apple-specific drivers, Retina display support
 - **Build**: `sudo nixos-rebuild switch --flake .#m1 --impure`
 - **Note**: Requires `--impure` flag for Asahi firmware access
 
 ### Containers
+
 - **Purpose**: Minimal NixOS for Kubernetes/Docker
 - **Profiles**: minimal, development, full
 - **Build**: `nix build .#container-minimal`
@@ -119,7 +127,9 @@ nix build .#container-dev          # Development container (~600MB)
 ## 📦 Package Management
 
 ### Package Profiles
+
 Controlled by environment variables or module imports:
+
 - `minimal` (~100MB): Core utilities only
 - `essential` (~275MB): Basic development tools
 - `development` (~600MB): Full development environment
@@ -134,6 +144,7 @@ Controlled by environment variables or module imports:
 ## 🌐 PWA Management
 
 ### Installing PWAs
+
 ```bash
 # Install all declared PWAs
 pwa-install-all
@@ -149,6 +160,7 @@ pwa-list
 ```
 
 ### Adding New PWAs
+
 1. Edit `home-modules/tools/firefox-pwas-declarative.nix`
 2. Add PWA definition with name, URL, and icon
 3. Rebuild: `sudo nixos-rebuild switch --flake .#<target>`
@@ -158,6 +170,7 @@ pwa-list
 ## 🔧 Common Tasks
 
 ### Testing Changes
+
 ```bash
 # ALWAYS test before applying
 sudo nixos-rebuild dry-build --flake .#<target>
@@ -167,6 +180,7 @@ sudo nixos-rebuild switch --flake .#<target>
 ```
 
 ### Building Containers
+
 ```bash
 # Build specific container profile
 nix build .#container-minimal
@@ -180,6 +194,7 @@ docker run -it nixos-container:latest
 ```
 
 ### Updating Flake Inputs
+
 ```bash
 # Update all inputs
 nix flake update
@@ -191,6 +206,7 @@ nix flake lock --update-input nixpkgs
 ## ⚠️ Important Notes
 
 ### Recent Updates (2025-09)
+
 - **Migrated M1 MacBook Pro from X11 to Wayland** - Following Asahi Linux recommendations
   - Enabled Wayland in KDE Plasma 6 for better HiDPI and gesture support
   - Removed X11-specific workarounds and touchegg (Wayland has native gestures)
@@ -210,12 +226,14 @@ nix flake lock --update-input nixpkgs
 - Added GitHub CLI to development module
 
 ### Recent Consolidation (2024-09)
+
 - Reduced from 46 to ~25 .nix files
 - Removed 3,486 lines of duplicate code
 - Hetzner configuration now serves as base
 - Modular architecture for better maintainability
 
 ### Module Conventions
+
 - Use `lib.mkDefault` for overrideable options
 - Use `lib.mkForce` only when override is mandatory
 - Always test with `dry-build` before applying
@@ -279,4 +297,5 @@ gh auth status  # Uses 1Password token automatically
 ```
 
 ---
-*Last updated: 2025-09 with 1Password integration and M1 improvements*
+
+_Last updated: 2025-09 with 1Password integration and M1 improvements_
