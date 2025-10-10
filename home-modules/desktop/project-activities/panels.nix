@@ -57,7 +57,8 @@ let
       "file:///home/vpittamp/.local/share/applications/FFPWA-${uberEatsId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${githubCodespacesId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${azurePortalId}.desktop"
-      "file:///home/vpittamp/.local/share/applications/FFPWA-${hetznerCloudId}.desktop"
+      # Hetzner Cloud doesn't have a web manifest, use standard desktop file
+      "file:///home/vpittamp/.local/share/applications/hetzner-cloud.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${chatgptCodexId}.desktop"
     ];
 
