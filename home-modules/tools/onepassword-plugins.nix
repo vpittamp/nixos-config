@@ -212,6 +212,9 @@
     # Short aliases for commonly used tools
     argo = "argocd";
     hc = "hcloud";
+
+    # Hetzner server management
+    reboot = "hcloud server reboot nixos-hetzner";
   };
 
   # Git configuration is now handled in git.nix module
