@@ -159,8 +159,7 @@
       
       # Platform-specific aliases moved to respective configurations
       
-      # 1Password aliases
-      ops = "eval $(op signin --account my)";
+      # 1Password aliases (ops moved to onepassword-plugins.nix for service account)
       opv = "op vault list";
       opi = "op item list";
 
