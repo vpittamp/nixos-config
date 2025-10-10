@@ -53,7 +53,7 @@ in
   
   # Polkit configuration is merged below with other polkit rules
 
-  # XDG autostart for KDE Plasma and Chromium integration
+  # Chromium integration
   environment.etc = lib.mkMerge [
     # Minimal Chromium policy - only enable native messaging, no forced extensions
     {
@@ -61,16 +61,16 @@ in
         text = builtins.toJSON {
           # Only configure what's necessary for 1Password to work
           # Using 'recommended' instead of 'managed' to avoid "managed by organization"
-          
+
           # Enable native messaging for 1Password
           NativeMessagingAllowlist = [
             "com.1password.1password"
             "com.1password.browser_support"
           ];
-          
+
           # Disable Chrome's password manager (user can override)
           PasswordManagerEnabled = false;
-          
+
           # Enable autofill
           AutofillEnabled = true;
         };
@@ -115,23 +115,7 @@ in
         mode = "0644";
       };
     }
-    (lib.mkIf hasGui {
-      "xdg/autostart/1password.desktop".text = ''
-        [Desktop Entry]
-        Name=1Password
-        GenericName=Password Manager
-        Comment=1Password password manager
-        Exec=env QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent --unlock
-        Terminal=false
-        Type=Application
-        Icon=1password
-        StartupNotify=false
-        Categories=Utility;Security;
-        X-GNOME-Autostart-enabled=true
-        X-KDE-autostart-after=panel
-        X-KDE-autostart-phase=2
-      '';
-    })
+    # Note: XDG autostart removed - using systemd service instead for better control
     
     # 1Password SSH agent configuration
     # This enables SSH keys from all vaults to be available

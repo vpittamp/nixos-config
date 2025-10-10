@@ -29,59 +29,40 @@
   programs.bash.initExtra = ''
     # 1Password CLI authentication helper
     source <(op completion bash) 2>/dev/null || true
+
+    # Source 1Password shell plugins configuration (managed by op plugin init)
+    # This file contains aliases for plugins initialized with: op plugin init <plugin-name>
+    # These aliases work ALONGSIDE the functions created by programs._1password-shell-plugins
+    #
+    # Why both?
+    # - programs._1password-shell-plugins: Creates functions for packages in nixpkgs
+    # - op plugin init: Creates aliases for plugins that need interactive configuration
+    #   (e.g., hcloud, which requires selecting specific credentials during init)
+    #
+    # Functions take precedence over aliases, so plugins in both places will use the function
+    if [ -f "$HOME/.config/op/plugins.sh" ]; then
+      source "$HOME/.config/op/plugins.sh"
+    fi
     
     # Helper functions for 1Password operations
     op-signin() {
       eval $(op signin)
     }
-    
-    # Use GitHub without 1Password plugin wrapper for non-interactive operations
-    gh-direct() {
-      command gh "$@"
-    }
-    
-    # Use GitHub with 1Password plugin for interactive operations  
-    gh-auth() {
-      op plugin run -- gh auth login --git-protocol https
-    }
-    
-    # AWS authentication using 1Password
-    aws-auth() {
-      op plugin run -- aws configure
-    }
-    
-    # Manual plugin wrappers for tools not in the plugins list
-    # These need to be initialized with: op plugin init <name>
 
-    # Hetzner Cloud CLI wrapper - using direct token retrieval
-    # Note: Shell plugins require app integration, so we use direct token access
-    hcloud() {
-      # Check if signed into 1Password CLI first
-      if ! op whoami &>/dev/null; then
-        echo "Error: Not signed into 1Password. Run: eval \$(op signin)" >&2
-        return 1
-      fi
-
-      # Get token with timeout to prevent hanging
-      local token
-      if ! token=$(timeout 2s op read 'op://CLI/Hetzner Cloud API/token' 2>/dev/null); then
-        echo "Error: Failed to retrieve Hetzner token from 1Password" >&2
-        echo "Make sure the 'Hetzner Cloud API' item exists in the CLI vault with a 'token' field" >&2
-        return 1
-      fi
-
-      HCLOUD_TOKEN="$token" command hcloud "$@"
-    }
+    # Note: gh and argocd functions removed - they're now handled by
+    # 1Password shell plugins (aliases in ~/.config/op/plugins.sh)
     
-    # PostgreSQL wrappers (initialize with: op plugin init psql)
-    psql() {
-      op plugin run -- psql "$@"
-    }
-    
-    # Argo CD wrapper (initialize with: op plugin init argocd)
-    argocd() {
-      op plugin run -- argocd "$@"
-    }
+    # 1Password Shell Plugins
+    # Plugins are initialized with: op plugin init <name>
+    # They create aliases in ~/.config/op/plugins.sh which is sourced above
+    #
+    # Currently configured plugins (check ~/.config/op/plugins.sh):
+    # - hcloud: Hetzner Cloud CLI
+    # - gh: GitHub CLI (to be initialized)
+    # - argocd: Argo CD CLI (to be initialized)
+    #
+    # Note: These don't need function wrappers - the plugin system
+    # creates aliases automatically in ~/.config/op/plugins.sh
     
     # Helper function to initialize a plugin interactively
     op-init() {
