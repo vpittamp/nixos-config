@@ -75,7 +75,8 @@ let
     github.vscode-pull-request-github
 
     # Container tools
-    ms-azuretools.vscode-docker
+    ms-azuretools.vscode-docker      # Docker extension for VS Code
+    ms-azuretools.vscode-containers  # Newer Container Tools extension (includes Docker + Podman)
 
     # Nix support
     bbenoist.nix
@@ -115,6 +116,7 @@ let
     "mhutchie.git-graph"
     "github.vscode-pull-request-github"
     "ms-azuretools.vscode-docker"
+    "ms-azuretools.vscode-containers"
     "bbenoist.nix"
     "jnoortheen.nix-ide"
     "esbenp.prettier-vscode"
