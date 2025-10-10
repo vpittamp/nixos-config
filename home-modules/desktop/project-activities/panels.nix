@@ -8,7 +8,7 @@ let
   # Get hostname from osConfig which is passed from NixOS to home-manager
   hostname = osConfig.networking.hostName or "";
 
-  # Hetzner server PWA IDs (updated 2025-09-28 with new Backstage URL)
+  # Hetzner server PWA IDs (updated 2025-10-10 with new PWAs)
   hetznerIds = {
     googleId = "01K665SPD8EPMP3JTW02JM1M0Z";  # Google AI mode
     youtubeId = "01K666N2V6BQMDSBMX3AY74TY7";  # YouTube with proper icon
@@ -18,6 +18,10 @@ let
     argoCDId = "01K665SWVY47Y54NDQJVXG2R7D";
     homeAssistantId = "01K66QAZXGDH3SBWPPNPV1YGRH";  # Home Assistant
     uberEatsId = "01K66QB12CHJDWAET5M9BKPEF5";  # Uber Eats
+    githubCodespacesId = "01K772Z7AY5J36Q3NXHH9RYGC0";  # GitHub Codespaces
+    azurePortalId = "01K772Z8M8NHD0TXCJ7CC3BRVQ";  # Azure Portal
+    hetznerCloudId = "01K772ZA22Y9RF558NQJDHHFKN";  # Hetzner Cloud
+    chatgptCodexId = "01K772ZBM45JD68HXYNM193CVW";  # ChatGPT Codex
   };
 
   # M1 MacBook PWA IDs (updated 2025-09-27)
@@ -41,7 +45,7 @@ let
   # Generate PWA launcher list for plasma-manager
   pwaLaunchers =
     let
-      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId homeAssistantId uberEatsId;
+      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId homeAssistantId uberEatsId githubCodespacesId azurePortalId hetznerCloudId chatgptCodexId;
     in [
       "file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop"
@@ -51,6 +55,10 @@ let
       "file:///home/vpittamp/.local/share/applications/FFPWA-${argoCDId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${homeAssistantId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${uberEatsId}.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${githubCodespacesId}.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${azurePortalId}.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${hetznerCloudId}.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${chatgptCodexId}.desktop"
     ];
 
   # Base launchers (common apps)

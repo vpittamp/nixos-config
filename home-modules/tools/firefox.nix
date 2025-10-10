@@ -2,6 +2,14 @@
 
 let
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
+
+  # Import centralized PWA site definitions
+  pwaSitesConfig = import ./pwa-sites.nix { inherit lib; };
+
+  # Generate Firefox policy exception patterns from PWA sites
+  trackingExceptions = pwaSitesConfig.helpers.getDomainPatterns
+    pwaSitesConfig.pwaSites
+    pwaSitesConfig.additionalTrustedDomains;
 in
 {
   # Firefox browser configuration - simplified without extensions
@@ -33,6 +41,22 @@ in
       };
       # Allow native messaging host for Plasma integration
       EnableNativeMessagingHosts = true;
+
+      # Disable Enhanced Tracking Protection for development/PWA domains
+      # This is a policy-level setting that cannot be overridden by user
+      # Prevents tracking protection from blocking OAuth flows and PWA functionality
+      # Exceptions are automatically generated from pwa-sites.nix
+      WebsiteFilter = {
+        Block = [];  # No blocked sites
+        Exceptions = trackingExceptions;
+      };
+
+      # Disable tracking protection globally via policy (cannot be overridden)
+      # This ensures PWAs and OAuth flows work without user intervention
+      Cookies = {
+        AcceptThirdParty = "always";  # Allow third-party cookies for OAuth
+        RejectTracker = false;  # Don't block tracking cookies (needed for some OAuth)
+      };
     };
 
     profiles = {
@@ -123,6 +147,10 @@ in
           "dom.events.asyncClipboard.read" = true;  # Allow websites to read clipboard
           "dom.events.asyncClipboard.clipboardItem" = true;  # Enable ClipboardItem API
           "dom.events.testing.asyncClipboard" = false;  # Disable test mode
+
+          # Auto-grant clipboard permissions to trusted domains
+          # This prevents the "grant access" prompt for GitHub Codespaces and development tools
+          "permissions.default.clipboard-read" = 1;  # 1=allow, 2=deny, 0=always ask
 
           # Privacy settings optimized for OAuth compatibility
           "browser.send_pings" = false;

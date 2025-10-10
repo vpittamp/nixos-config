@@ -129,6 +129,10 @@
       # Session management
       klogout = "qdbus org.kde.Shutdown /Shutdown logout";
       session-logout = "qdbus org.kde.Shutdown /Shutdown logout";
+
+      # System reboot with delay (gives time to disconnect from RDP)
+      reboot-delayed = "echo 'System will reboot in 10 seconds...' && sleep 10 && sudo systemctl reboot";
+      reboot-now = "sudo systemctl reboot";
       
       # Tmux pane information for LLM interaction
       tpane = "tmux display-message -p 'Current pane: #{session_name}:#{window_index}.#{pane_index} | Command: #{pane_current_command} | Path: #{pane_current_path}'";

@@ -1,9 +1,9 @@
 { config, pkgs, lib, ... }:
 
 {
-  # Git credential OAuth - disabled to avoid conflicts
+  # Git credential OAuth - disabled in favor of 1Password integration
   programs.git-credential-oauth = {
-    enable = false;  # We'll use GitHub CLI instead
+    enable = false;  # We use 1Password git-credential-op instead
   };
 
   # Git configuration
@@ -11,11 +11,12 @@
     enable = true;
     userName = "Vinod Pittampalli";
     userEmail = "vinod@pittampalli.com";
-    
-    # SSH signing configuration with 1Password (disabled - only using for authentication)
+
+    # SSH signing configuration with 1Password
+    # All commits will be signed with SSH key from 1Password
     signing = {
       key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
-      signByDefault = false;  # Disabled - we only want authentication, not signing
+      signByDefault = true;  # Sign all commits by default for verification
     };
     
     aliases = {
@@ -50,15 +51,12 @@
         };
       };
       
-      # Credential helpers - simplified configuration
+      # Credential helpers - use 1Password for all Git operations
+      # This replaces gh/glab credential helpers with unified 1Password integration
       credential = {
-        helper = "cache --timeout=3600";  # Cache credentials for 1 hour
-        "https://github.com" = {
-          helper = "!gh auth git-credential";  # Use GitHub CLI
-        };
-        "https://gitlab.com" = {
-          helper = "!glab auth git-credential";  # Use GitLab CLI
-        };
+        # Primary credential helper: 1Password
+        # This handles GitHub, GitLab, and all other Git remotes
+        helper = "${pkgs._1password-gui or pkgs._1password}/libexec/git-credential-1password";
       };
     };
   };

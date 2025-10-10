@@ -4,77 +4,11 @@
 with lib;
 
 let
-  # Custom icons can be placed in /etc/nixos/assets/pwa-icons/
-  # Use format: "file:///etc/nixos/assets/pwa-icons/name.png" for local icons
-  # Or use URLs for remote icons
+  # Import centralized PWA site definitions
+  pwaSitesConfig = import ./pwa-sites.nix { inherit lib; };
 
-  # Define PWAs to be installed
-  pwas = [
-    {
-      name = "Google AI";
-      url = "https://www.google.com/search?udm=50";  # AI mode enabled
-      icon = "file:///etc/nixos/assets/pwa-icons/google.png";  # Custom high-res icon
-      description = "Google AI Search";
-      categories = "Network;WebBrowser;";
-      keywords = "search;web;ai;";
-    }
-    {
-      name = "YouTube";
-      url = "https://www.youtube.com";
-      icon = "file:///etc/nixos/assets/pwa-icons/youtube.png";  # Custom high-res icon
-      description = "YouTube Video Platform";
-      categories = "AudioVideo;Video;";
-      keywords = "video;streaming;";
-    }
-    {
-      name = "Gitea";
-      url = "https://gitea.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/gitea.png";  # Official Gitea logo
-      description = "Git Repository Management";
-      categories = "Development;";
-      keywords = "git;code;repository;";
-    }
-    {
-      name = "Backstage";
-      url = "https://cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/backstage.png";  # Official Backstage logo
-      description = "Developer Portal";
-      categories = "Development;";
-      keywords = "portal;platform;developer;";
-    }
-    {
-      name = "Kargo";
-      url = "https://kargo.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/kargo.png";  # Official Akuity Kargo logo
-      description = "GitOps Promotion";
-      categories = "Development;";
-      keywords = "gitops;deployment;kubernetes;";
-    }
-    {
-      name = "ArgoCD";
-      url = "https://argocd.cnoe.localtest.me:8443";
-      icon = "file:///etc/nixos/assets/pwa-icons/argocd.png";  # Official CNCF ArgoCD logo
-      description = "GitOps Continuous Delivery";
-      categories = "Development;";
-      keywords = "gitops;cd;kubernetes;deployment;";
-    }
-    {
-      name = "Home Assistant";
-      url = "http://localhost:8123";
-      icon = "file:///etc/nixos/assets/pwa-icons/home-assistant.png";  # Official Home Assistant logo
-      description = "Home Automation Platform";
-      categories = "Network;RemoteAccess;";
-      keywords = "home;automation;smart;iot;assistant;";
-    }
-    {
-      name = "Uber Eats";
-      url = "https://www.ubereats.com";
-      icon = "file:///etc/nixos/assets/pwa-icons/uber-eats.png";  # Official Uber Eats logo
-      description = "Food Delivery Service";
-      categories = "Network;Office;";
-      keywords = "food;delivery;restaurant;uber;";
-    }
-  ];
+  # Use PWA sites from centralized configuration
+  pwas = pwaSitesConfig.pwaSites;
 
   # Script to install and manage PWAs
   managePWAsScript = pkgs.writeShellScript "manage-pwas" ''
@@ -288,6 +222,7 @@ let
           "name": "${pwa.name}",
           "short_name": "${pwa.name}",
           "start_url": "${pwa.url}",
+          "scope": "${if (pwa.scope or null) != null then pwa.scope else "https://${pwa.domain}/"}",
           "display": "standalone",
           "description": "${pwa.description}",
           "icons": [{
