@@ -102,9 +102,9 @@
             home-manager.nixosModules.home-manager
             {
               home-manager = {
-                # Disable backups - we have git version control
-                # This prevents backup file accumulation and conflicts
-                backupFileExtension = null;
+                # Enable backups for file conflicts during system rebuild
+                # Backup files can be safely removed after confirming the new config works
+                backupFileExtension = "backup";
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = {
@@ -226,8 +226,8 @@
                 ({ config, pkgsUnstable, ... }:
                   {
                     home-manager = {
-                      # Disable backups - we have version control
-                      backupFileExtension = null;
+                      # Enable backups for file conflicts during system rebuild
+                      backupFileExtension = "backup";
                       useGlobalPkgs = true;
                       useUserPackages = true;
                       extraSpecialArgs = {

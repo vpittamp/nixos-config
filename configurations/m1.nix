@@ -173,7 +173,8 @@
     '';
 
     # Add DisplayLink (USB graphics) stack for external monitor docks
-    videoDrivers = lib.mkForce [ "modesetting" "fbdev" "displaylink" ];
+    # DISABLED: displaylink has version mismatch issues
+    videoDrivers = lib.mkForce [ "modesetting" "fbdev" ];
   };
 
   # Wayland and display scaling configuration
