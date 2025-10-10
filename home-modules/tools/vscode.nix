@@ -382,6 +382,13 @@ let
     "docker.environment" = {
       "DOCKER_CONFIG" = "$HOME/.docker";
     };
+    # Docker Hub registry configuration
+    "docker.registries" = [
+      {
+        "url" = "https://index.docker.io/v1/";
+        "username" = "";  # Credentials managed by docker login via 1Password
+      }
+    ];
 
     # Add Docker-related files to secret detection
     # (Already includes docker-compose.yml in the detection.filePatterns above)
@@ -525,6 +532,7 @@ in
     # Per-activity customization is handled via working directories and environment variables
     profiles = {
       default = defaultProfile;
+      nixos = defaultProfile;  # Alias for nixos profile with same settings
     };
   };
 
