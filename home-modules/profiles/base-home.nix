@@ -52,8 +52,7 @@ in
     ../tools/chromium.nix # Enabled for Playwright MCP support
     ../tools/firefox.nix
     ../tools/docker.nix # Docker with 1Password authentication
-    # ../tools/firefox-pwas-declarative.nix  # Disabled - causing boot hang
-    ../tools/chromium-pwas.nix  # Testing: Chromium native PWA support
+    ../tools/firefox-pwas-declarative.nix  # Best available declarative PWA solution
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix

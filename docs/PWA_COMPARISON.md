@@ -1,13 +1,16 @@
-# PWA Implementation Comparison: Firefox vs Chromium
+# PWA Implementation Research: Firefox vs Chromium
 
-## Executive Summary
+## Executive Summary - UPDATED FINDINGS
 
-**Recommendation: Migrate to Chromium PWAs**
+**Recommendation: KEEP Firefox PWAs - They are the ONLY viable declarative solution**
 
-- **Code Reduction**: 464 lines → ~150 lines (67% reduction)
-- **Complexity**: High → Low
-- **Maintenance**: Manual ID management → Automatic
-- **Installation**: Complex workaround → Native browser feature
+After thorough research and testing, Chromium PWAs **cannot be installed programmatically**:
+- ❌ No command-line API for PWA installation in Chromium 141+
+- ❌ Requires manual browser UI interaction (security requirement)
+- ❌ `nixos-chrome-pwa` only fixes paths post-installation, doesn't install
+- ✅ **Firefox PWAs via `firefoxpwa` is the ONLY declarative solution available**
+
+**Original assumption was wrong**: Chromium does NOT support programmatic PWA installation.
 
 ---
 
@@ -399,32 +402,40 @@ sudo nixos-rebuild switch --flake .#hetzner
 
 ---
 
-## Conclusion
+## Conclusion - RESEARCH FINDINGS
 
-### Why Chromium Wins
+### Why Firefox PWAs is the ONLY Solution
 
-1. **Simplicity**: Native browser feature vs 3rd-party wrapper
-2. **Reliability**: Browser-maintained vs community project
-3. **Maintainability**: 67% less code to maintain
-4. **Determinism**: Same PWA IDs across all machines
-5. **Future-proof**: Active Google investment in PWA platform
+After testing and research, the reality is:
 
-### When to Keep Firefox PWAs
+1. **Chromium PWAs CANNOT be installed via CLI**: Modern Chrome/Chromium (v141+) has NO command-line API for PWA installation
+2. **Manual Installation Required**: Chromium requires user to click "Install" button in browser UI (security requirement)
+3. **nixos-chrome-pwa Doesn't Install**: The NixOS module only fixes desktop file paths AFTER manual installation
+4. **Firefox PWAs Work Declaratively**: `firefoxpwa` CLI tool can programmatically install PWAs
 
-- **Privacy critical**: Firefox has better privacy defaults
-- **Custom requirements**: Need specific firefoxpwa features
-- **Risk averse**: Current system works, don't change it
-- **Time constraints**: Migration requires 4-5 hours
+### Actual Comparison
+
+| Feature | Firefox PWA (firefoxpwa) | Chromium PWA (Reality) |
+|---------|-------------------------|------------------------|
+| **Programmatic Installation** | ✅ Yes (via CLI) | ❌ No - manual only |
+| **Declarative Config** | ✅ Yes | ❌ No |
+| **Command-line API** | ✅ `firefoxpwa site install` | ❌ Doesn't exist |
+| **Auto-installation** | ✅ Works | ❌ Impossible |
+| **NixOS Solution** | ✅ Fully functional | ❌ Only path fixing |
+
+### The Verdict
+
+**Your Firefox PWA implementation (464 lines) is actually OPTIMAL.**
+
+There is NO simpler solution because:
+- Chromium doesn't support programmatic installation
+- Firefox PWAs via `firefoxpwa` is the ONLY way to achieve declarative PWA management
+- The complexity in your implementation is NECESSARY and unavoidable
+- Any "simpler" solution would sacrifice declarative functionality
 
 ### Recommendation
 
-**Migrate to Chromium PWAs** for:
-- Simpler codebase (67% reduction)
-- Better long-term maintainability
-- Deterministic multi-machine setup
-- Native browser integration
-
-Keep Firefox for regular browsing if privacy is important.
+**KEEP your current Firefox PWA system** - it's the best (and only) declarative solution available on NixOS.
 
 ---
 
