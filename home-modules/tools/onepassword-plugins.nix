@@ -47,7 +47,7 @@
     openai() {
       # Create temporary env file for OpenAI API key
       local env_file=$(mktemp)
-      echo 'OPENAI_API_KEY="op://CLI/OPENAI_API_KEY/credential"' > "$env_file"
+      echo 'OPENAI_API_KEY="op://CLI/OPENAI_API_KEY/api key"' > "$env_file"
 
       # Run command with injected credentials
       op run --env-file="$env_file" -- ${pkgs.openai-whisper-cpp}/bin/openai "$@"
