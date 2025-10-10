@@ -372,25 +372,14 @@ let
     "gemini.autoStart" = true;
     "gemini.enableCodeActions" = true;
 
-    # Docker extension settings with 1Password integration
+    # Docker extension settings
     "docker.dockerPath" = "${pkgs.docker}/bin/docker";
     "docker.dockerComposePath" = "${pkgs.docker-compose}/bin/docker-compose";
     "docker.enableDockerComposeLanguageService" = true;
     "docker.showStartPage" = false;
-    "docker.autoRefreshInterval" = 5000; # Auto-refresh Docker view every 5 seconds
-    "docker.explorerRefreshInterval" = 1000;
     "docker.environment" = {
       "DOCKER_CONFIG" = "$HOME/.docker";
     };
-    # Docker Hub registry configuration
-    # Note: The Docker extension may require manual connection via UI
-    # Click "+" in Registries view and select Docker Hub
-    "docker.registries" = [
-      {
-        "url" = "https://index.docker.io/v1/";
-        "username" = "vpittamp23";  # Credentials from docker login via 1Password
-      }
-    ];
 
     # Add Docker-related files to secret detection
     # (Already includes docker-compose.yml in the detection.filePatterns above)

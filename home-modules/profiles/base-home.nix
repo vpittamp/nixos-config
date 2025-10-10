@@ -82,7 +82,6 @@ in
 
   modules.tools.yazi.enable = true;
   modules.tools.docker.enable = true; # Docker with 1Password integration
-  modules.tools.docker.autoLogin = true; # Auto-login to Docker Hub on shell startup
 
   # VSCode profile configuration
   # All VSCode instances (including activity-aware launchers) use this profile
