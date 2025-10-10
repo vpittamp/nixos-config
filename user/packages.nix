@@ -44,6 +44,11 @@ let
     tailscale # VPN CLI tool
   ];
 
+  # AI and LLM tools
+  aiTools = with pkgs; [
+    openai # OpenAI Python CLI
+  ];
+
   # Shell enhancements
   shellTools = with pkgs; [
     starship
@@ -147,6 +152,7 @@ in
   cloud = cloudTools;
   docs = documentation;
   nix = nixTools;
+  ai = aiTools;
 
   # Common package sets
   essential = terminalTools ++ shellTools ++ nixTools ++ [
@@ -158,12 +164,12 @@ in
   ];
 
   development = terminalTools ++ shellTools ++ editors ++
-    languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ cloudTools ++ nixTools;
+    languageServers ++ packageManagers ++ gitTools ++ kubernetesTools ++ cloudTools ++ nixTools ++ aiTools;
 
   # All user packages
   all = terminalTools ++ shellTools ++ editors ++
     languageServers ++ packageManagers ++ fileManagers ++
-    gitTools ++ kubernetesTools ++ cloudTools ++ documentation ++ nixTools;
+    gitTools ++ kubernetesTools ++ cloudTools ++ documentation ++ nixTools ++ aiTools;
 
   # Minimal for testing
   minimal = with pkgs; [

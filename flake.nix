@@ -118,6 +118,7 @@
                   imports = [
                     ./home-vpittamp.nix
                     inputs.plasma-manager.homeModules.plasma-manager
+                    # Note: onepassword-shell-plugins is imported in base-home.nix
                   ];
                   home.enableNixpkgsReleaseCheck = false;
                 };

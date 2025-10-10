@@ -85,7 +85,6 @@
       name = "GitHub Codespaces";
       url = "https://github.com/codespaces";
       domain = "github.com";
-      scope = "/";  # Allow all domains for OAuth redirects
       icon = "file:///etc/nixos/assets/pwa-icons/github-codespaces.png";
       description = "GitHub Cloud Development Environment";
       categories = "Development;";
