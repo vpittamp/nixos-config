@@ -37,19 +37,20 @@ with lib;
       # Provides automatic authentication to Docker Hub using 1Password CLI
 
       # Docker CLI configuration
-      home.file.".docker/config.json".text = builtins.toJSON {
-        # Use 1Password CLI for credential management
-        # Note: This requires a credential helper script to be set up
-        # For now, we rely on manual login with 1Password integration
-
-        # CLI plugins directory
-        cliPluginsExtraDirs = [
-          "$HOME/.docker/cli-plugins"
-        ];
-
-        # Empty auths - credentials managed by 1Password
-        auths = { };
-      };
+      # NOTE: Changed from home.file to activation script to allow docker login to write credentials
+      # The file must be writable for docker login to work
+      home.activation.dockerConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+        mkdir -p $HOME/.docker
+        if [ ! -f $HOME/.docker/config.json ] || [ -L $HOME/.docker/config.json ]; then
+          $DRY_RUN_CMD rm -f $HOME/.docker/config.json
+          $DRY_RUN_CMD cat > $HOME/.docker/config.json <<'EOF'
+{
+  "cliPluginsExtraDirs": ["$HOME/.docker/cli-plugins"],
+  "auths": {}
+}
+EOF
+        fi
+      '';
 
 
       # Shell functions for Docker + 1Password integration
