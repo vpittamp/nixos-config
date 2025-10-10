@@ -113,9 +113,9 @@
         "Prompt on Open" = false;
       };
 
-      # Session Management - Start with empty session
+      # Session Management - Restore previous session
       "ksmserverrc".General = {
-        loginMode = "emptySession";  # Start with an empty session (don't restore apps)
+        loginMode = "default";  # Restore previous session (last logout)
         confirmLogout = true;  # Ask for confirmation on shutdown/logout
       };
 
