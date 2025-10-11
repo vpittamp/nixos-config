@@ -25,10 +25,11 @@
   ];
 
   # ========== BOOT CONFIGURATION ==========
-  # CRITICAL: KubeVirt VMs boot via hypervisor, not GRUB
-  boot.loader = {
-    grub.enable = false;
-    systemd-boot.enable = false;
+  # For qcow2 images, we need GRUB on the disk
+  boot.loader.grub = {
+    enable = true;
+    device = "/dev/vda";
+    # Don't wait for user input
     timeout = 0;
   };
 
