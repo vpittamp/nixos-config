@@ -94,6 +94,7 @@
       name = "Azure Portal";
       url = "https://portal.azure.com";
       domain = "azure.com";
+      scope = "https://portal.azure.com/";
       icon = "file:///etc/nixos/assets/pwa-icons/azure.png";
       description = "Microsoft Azure Cloud Portal";
       categories = "Network;System;";
@@ -103,6 +104,7 @@
       name = "Hetzner Cloud";
       url = "https://console.hetzner.cloud";
       domain = "hetzner.cloud";
+      scope = "https://console.hetzner.cloud/";
       icon = "file:///etc/nixos/assets/pwa-icons/hetzner.png";
       description = "Hetzner Cloud Console";
       categories = "Network;System;";

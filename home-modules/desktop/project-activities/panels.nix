@@ -34,11 +34,10 @@ let
     argoCDId = "01K663E8S01M7HTQG6VQ5YF8PY";
     homeAssistantId = "01K66AGFCPXE13NK7YXFEF78BN";  # Home Assistant
     uberEatsId = "01K66F8FWRP6643P7V6QQWA28X";  # Uber Eats
-    # TODO: Install these PWAs on M1 and run 'pwa-get-ids' to get actual IDs
-    githubCodespacesId = "00000000000000000000000000";  # Placeholder - not installed
-    azurePortalId = "00000000000000000000000000";  # Placeholder - not installed
-    hetznerCloudId = "00000000000000000000000000";  # Placeholder - not installed
-    chatgptCodexId = "00000000000000000000000000";  # Placeholder - not installed
+    githubCodespacesId = "01K78K7W5MNT8TDEW2G23ZEM5S";  # GitHub Codespaces
+    azurePortalId = "01K78KCAQGCTBRJBYAQ03DA329";  # Azure Portal
+    hetznerCloudId = "01K78KCBZKK4DPKF0P4NXNR48Q";  # Hetzner Cloud
+    chatgptCodexId = "01K78K7ZQ1190KKGYZ6WJ0HDWX";  # ChatGPT Codex
   };
 
   # Select appropriate IDs based on hostname
@@ -62,8 +61,7 @@ let
       "file:///home/vpittamp/.local/share/applications/FFPWA-${uberEatsId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${githubCodespacesId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${azurePortalId}.desktop"
-      # Hetzner Cloud doesn't have a web manifest, use standard desktop file
-      "file:///home/vpittamp/.local/share/applications/hetzner-cloud.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${hetznerCloudId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${chatgptCodexId}.desktop"
     ];
 
