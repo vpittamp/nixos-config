@@ -25,22 +25,22 @@
 
       case "$1" in
         get)
-          # Fetch credentials from 1Password based on host
+          # Fetch credentials from 1Password CLI vault based on host
           case "$host" in
             github.com)
-              # Get GitHub PAT from 1Password
-              username=$(${pkgs._1password}/bin/op item get "Github Personal Access Token" --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "Github Personal Access Token" --fields token --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              # Get GitHub credentials from 1Password CLI vault
+              username=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
             gitlab.com)
-              # Get GitLab PAT from 1Password if you have one
-              username=$(${pkgs._1password}/bin/op item get "GitLab Personal Access Token" --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "GitLab Personal Access Token" --fields token --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              # Get GitLab credentials from 1Password CLI vault if available
+              username=$(${pkgs._1password}/bin/op item get "gitlab.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password}/bin/op item get "gitlab.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
             *)
               # Fallback to github for unknown hosts
-              username=$(${pkgs._1password}/bin/op item get "Github Personal Access Token" --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "Github Personal Access Token" --fields token --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              username=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
           esac
 
