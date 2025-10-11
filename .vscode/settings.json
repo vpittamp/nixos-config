@@ -1,3 +1,12 @@
 {
-    "inlineChat.enableV2": true
+    "inlineChat.enableV2": true,
+
+    // 1Password extension settings
+    "1password.useSecretReferences": true,
+    "1password.detectSecrets": true,
+
+    // File associations
+    "files.associations": {
+        ".env.container": "dotenv"
+    }
 }
