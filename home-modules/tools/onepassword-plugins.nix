@@ -17,18 +17,10 @@
     # Wrapper functions for CLI tools that use 1Password credentials
     # These use `op run` to inject credentials securely
 
+    # GitHub CLI now uses SSH authentication via 1Password SSH agent
+    # No wrapper needed - gh will use the same SSH keys as git
     gh() {
-      # Create temporary env file for GitHub token
-      local env_file=$(mktemp)
-      echo 'GH_TOKEN="op://Employee/Github Personal Access Token/token"' > "$env_file"
-
-      # Run command with injected credentials
-      op run --env-file="$env_file" -- ${pkgs.gh}/bin/gh "$@"
-      local exit_code=$?
-
-      # Clean up
-      rm -f "$env_file"
-      return $exit_code
+      ${pkgs.gh}/bin/gh "$@"
     }
 
     hcloud() {

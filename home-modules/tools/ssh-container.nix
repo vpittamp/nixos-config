@@ -14,11 +14,11 @@
 
     Host github.com
       User git
-      IdentitiesOnly no
+      IdentitiesOnly yes
 
     Host gitlab.com
       User git
-      IdentitiesOnly no
+      IdentitiesOnly yes
 
     Host *.hetzner.cloud
       User root

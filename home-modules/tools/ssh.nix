@@ -18,12 +18,14 @@
       Host github.com
         User git
         IdentityAgent ~/.1password/agent.sock
-        IdentitiesOnly no
+        IdentitiesOnly yes
+        IdentityFile ~/.ssh/unused_placeholder
       
       Host gitlab.com
         User git
         IdentityAgent ~/.1password/agent.sock
-        IdentitiesOnly no
+        IdentitiesOnly yes
+        IdentityFile ~/.ssh/unused_placeholder
       
       Host *.hetzner.cloud
         User root
