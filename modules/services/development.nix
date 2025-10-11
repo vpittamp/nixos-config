@@ -28,6 +28,8 @@
   environment.systemPackages = with pkgs; let
     # Headlamp package with desktop entry and icon
     headlamp = pkgs.callPackage ../../packages/headlamp.nix { };
+    # virtctl - KubeVirt CLI tool
+    virtctl = pkgs.callPackage ../../packages/virtctl.nix { };
   in
   [
     # Version control and GitHub
@@ -42,6 +44,7 @@
     # k9s moved to user packages for Codespaces compatibility
     kind
     minikube
+    virtctl # KubeVirt CLI for managing VMs in Kubernetes
     argocd # Argo CD CLI
     devspace # DevSpace for Kubernetes development
     vcluster # Virtual Kubernetes clusters

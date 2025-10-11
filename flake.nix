@@ -171,6 +171,13 @@
           system = "x86_64-linux";
           modules = [ ./configurations/wsl.nix ];
         };
+
+        # KubeVirt VM: Full desktop environment with home-manager
+        vm-hetzner = mkSystem {
+          hostname = "nixos-kubevirt-vm";
+          system = "x86_64-linux";
+          modules = [ ./configurations/vm-hetzner.nix ];
+        };
       };
 
       homeConfigurations =
