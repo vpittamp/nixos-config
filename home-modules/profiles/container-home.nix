@@ -16,11 +16,12 @@
 
     # Tool configurations - using container-safe versions
     ../tools/git-container.nix  # Container-safe git config
+    ../tools/git-container-auth.nix  # 1Password service account Git auth
     ../tools/ssh-container.nix  # Container-safe ssh config
-    # ../tools/onepassword.nix  # Excluded for container
-    # ../tools/onepassword-env.nix  # Excluded for container
-    # ../tools/onepassword-plugins.nix  # Excluded for container
-    # ../tools/onepassword-autostart.nix  # Excluded for container
+    # ../tools/onepassword.nix  # Excluded for container (desktop app)
+    # ../tools/onepassword-env.nix  # Excluded for container (desktop app)
+    # ../tools/onepassword-plugins.nix  # Excluded for container (desktop app)
+    # ../tools/onepassword-autostart.nix  # Excluded for container (desktop app)
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
