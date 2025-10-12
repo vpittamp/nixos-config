@@ -31,6 +31,7 @@
     # Services
     ../modules/services/onepassword-automation.nix
     ../modules/services/speech-to-text-safe.nix
+    ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
   ];
 
   # System identification
@@ -54,16 +55,20 @@
   # Simple DHCP networking (works best with Hetzner)
   networking.useDHCP = true;
   
+  # RustDesk service configuration
+  services.rustdesk = {
+    enable = true;
+    user = "vpittamp";
+    enableDirectIpAccess = true;
+  };
+
   # Firewall - open additional ports for services
   networking.firewall = {
     allowedTCPPorts = [
       22     # SSH
       3389   # RDP
       8080   # Web services
-      21115 21116 21117 21118 21119  # RustDesk
-    ];
-    allowedUDPPorts = [
-      21116  # RustDesk NAT type test
+      # RustDesk ports managed by rustdesk service
     ];
     # Tailscale
     checkReversePath = "loose";
@@ -99,8 +104,7 @@
     pavucontrol # GUI audio control
     alsa-utils  # For alsamixer and other ALSA utilities
 
-    # Remote access
-    rustdesk-flutter  # Remote desktop - works with Tailscale
+    # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
   ];
   

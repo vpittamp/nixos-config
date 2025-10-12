@@ -13,6 +13,8 @@
   imports = [
     # QEMU guest optimizations (virtio, etc.)
     (modulesPath + "/profiles/qemu-guest.nix")
+    # RustDesk remote desktop service
+    ../modules/services/rustdesk.nix
   ];
 
   # ========== BOOT CONFIGURATION ==========
@@ -39,12 +41,11 @@
   networking.networkmanager.enable = true;
   # NetworkManager handles DHCP, so don't set useDHCP
 
-  # Firewall - open all remote access ports
+  # Firewall - open remote access ports
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 3389 5900 5901 21115 21116 21117 21118 21119 ];
-    # RustDesk ports: 21115 (NAT type test), 21116 (ID/relay), 21117 (relay), 21118 (web client), 21119 (websocket)
-    allowedUDPPorts = [ 21116 ];
+    allowedTCPPorts = [ 22 3389 5900 5901 ];
+    # RustDesk ports managed by rustdesk service
     # Tailscale
     checkReversePath = "loose";
   };
@@ -68,6 +69,13 @@
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "client";
+  };
+
+  # ========== RUSTDESK ==========
+  services.rustdesk = {
+    enable = true;
+    user = "nixos";  # Default user for KubeVirt VMs
+    enableDirectIpAccess = true;
   };
 
   # ========== DESKTOP ENVIRONMENT ==========
@@ -134,7 +142,7 @@
     kdePackages.kate     # KDE text editor (Qt 6)
     # Remote access
     tigervnc
-    rustdesk-flutter     # Remote desktop - works with Tailscale
+    # rustdesk-flutter managed by service module
     tailscale            # Zero-config VPN
     # Development tools
     home-manager

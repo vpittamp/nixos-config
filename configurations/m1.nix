@@ -28,6 +28,7 @@
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     ../modules/services/home-assistant.nix
     ../modules/services/scrypted.nix # Bridge for Circle View cameras and HomeKit devices
+    ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
@@ -261,6 +262,13 @@
     };
   };
 
+  # RustDesk service configuration
+  services.rustdesk = {
+    enable = true;
+    user = "vpittamp";
+    enableDirectIpAccess = true;
+  };
+
   # Additional packages for Apple Silicon
   environment.systemPackages = with pkgs; [
     # Tools that work well on ARM
@@ -274,8 +282,7 @@
     imagemagick # For converting and manipulating images
     librsvg # For SVG to PNG conversion
 
-    # Remote access
-    rustdesk-flutter  # Remote desktop - works with Tailscale
+    # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
   ];
 
@@ -298,16 +305,10 @@
     useRoutingFeatures = "client";
   };
 
-  # Firewall - open RustDesk and SSH ports
+  # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [
-      22     # SSH
-      21115 21116 21117 21118 21119  # RustDesk
-    ];
-    allowedUDPPorts = [
-      21116  # RustDesk NAT type test
-    ];
+    allowedTCPPorts = [ 22 ];  # SSH (RustDesk ports managed by rustdesk service)
     # Tailscale
     checkReversePath = "loose";
   };
