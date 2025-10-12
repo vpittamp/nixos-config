@@ -81,10 +81,14 @@
   # ========== DESKTOP ENVIRONMENT ==========
   # KDE Plasma 6 - modern, feature-rich desktop
   services.desktopManager.plasma6.enable = true;
-  services.displayManager.sddm = {
-    enable = true;
-    wayland.enable = true;
-  };
+
+  # Disable SDDM display manager for headless operation
+  # Critical: This prevents auto-starting a console KDE session on boot
+  # XRDP will start the KDE session on-demand when you connect
+  services.displayManager.sddm.enable = lib.mkForce false;
+
+  # Use X11 session by default for XRDP compatibility (not Wayland)
+  services.displayManager.defaultSession = lib.mkForce "plasmax11";
 
   # Remote Desktop Protocol (xrdp)
   services.xrdp = {
