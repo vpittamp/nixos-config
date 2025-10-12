@@ -21,8 +21,10 @@ let
     XCURSOR_SIZE = if isM1 then "48" else "24"; # 48 for 200% scaling
 
     # UV (Python package manager) configuration for NixOS
-    # Use system Python instead of downloading pre-built binaries
+    # Use system Python - managed downloads won't work on NixOS due to dynamic linking
     UV_PYTHON_PREFERENCE = "only-system";
+    # Tell UV where to find the system Python
+    UV_PYTHON = "${pkgs.python3}/bin/python3";
   };
 in
 {

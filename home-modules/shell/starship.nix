@@ -66,12 +66,21 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname$custom.tmux$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = "$os$username$hostname$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
 
       os = {
         disabled = false;
-        style = "fg:${colors.lavender}";
-        format = "[$name]($style) ";
+        style = "bold fg:${colors.lavender}";
+        format = "[$symbol]($style)";
+        symbols = {
+          NixOS = "❄ ";  # Snowflake (works without Nerd Fonts)
+          Debian = " ";  # Debian Nerd Font icon
+          Ubuntu = " ";  # Ubuntu Nerd Font icon
+          Arch = " ";  # Arch Nerd Font icon
+          Fedora = " ";  # Fedora Nerd Font icon
+          Alpine = " ";  # Alpine Nerd Font icon
+          Linux = " ";  # Tux penguin Nerd Font icon
+        };
       };
 
       username = {
@@ -87,12 +96,12 @@ in
         format = "@[$hostname]($style) ";
       };
 
-      custom.tmux = {
-        when = "test -n \"$TMUX\"";
-        command = "tmux display-message -p '#S:#I.#P'";
-        style = "fg:${colors.subtext1}";
-        format = "[tmux $output]($style) ";
-      };
+      # custom.tmux = {
+      #   when = "test -n \"$TMUX\"";
+      #   command = "echo \"$TMUX_PANE\"";
+      #   style = "bold fg:${colors.sky}";
+      #   format = "[$output]($style) ";
+      # };
 
       directory = {
         style = "bold fg:${colors.green}";
@@ -100,7 +109,7 @@ in
         truncation_length = 3;
         truncation_symbol = "…/";
         home_symbol = "~";
-        truncate_to_repo = true;
+        truncate_to_repo = false;
       };
 
       git_branch = {

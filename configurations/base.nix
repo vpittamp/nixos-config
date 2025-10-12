@@ -103,6 +103,14 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
+  # Fonts configuration - enable Nerd Fonts for terminal icons
+  fonts.packages = with pkgs; [
+    nerd-fonts.hack
+    nerd-fonts.fira-code
+    nerd-fonts.jetbrains-mono
+    nerd-fonts.meslo-lg
+  ];
+
   # Essential base packages
   environment.systemPackages = with pkgs; [
     # Core utilities

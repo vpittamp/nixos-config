@@ -55,11 +55,19 @@
   networking.useDHCP = true;
   
   # Firewall - open additional ports for services
-  networking.firewall.allowedTCPPorts = [
-    22     # SSH
-    3389   # RDP
-    8080   # Web services
-  ];
+  networking.firewall = {
+    allowedTCPPorts = [
+      22     # SSH
+      3389   # RDP
+      8080   # Web services
+      21115 21116 21117 21118 21119  # RustDesk
+    ];
+    allowedUDPPorts = [
+      21116  # RustDesk NAT type test
+    ];
+    # Tailscale
+    checkReversePath = "loose";
+  };
   
   # Set initial password for user (change after first login!)
   users.users.vpittamp.initialPassword = "nixos";
@@ -90,6 +98,10 @@
     pulseaudio  # For pactl, pacmd, and other audio management tools
     pavucontrol # GUI audio control
     alsa-utils  # For alsamixer and other ALSA utilities
+
+    # Remote access
+    rustdesk-flutter  # Remote desktop - works with Tailscale
+    tailscale         # Zero-config VPN
   ];
   
   # Firefox configuration with PWA support
@@ -273,7 +285,13 @@
 
   # Ensure user is in audio group for audio access
   users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" "docker" "libvirtd" ];
-  
+
+  # ========== TAILSCALE ==========
+  services.tailscale = {
+    enable = true;
+    useRoutingFeatures = "client";
+  };
+
   # System state version
   system.stateVersion = "24.11";
 }

@@ -273,6 +273,10 @@
     # Image processing for PWA icons
     imagemagick # For converting and manipulating images
     librsvg # For SVG to PNG conversion
+
+    # Remote access
+    rustdesk-flutter  # Remote desktop - works with Tailscale
+    tailscale         # Zero-config VPN
   ];
 
   # Firefox configuration with PWA support (same as Hetzner)
@@ -287,6 +291,26 @@
   # - To list PWAs: firefoxpwa profile list
   # - For declarative PWA management, use home-manager with firefox-pwas-managed.nix module
   # - Desktop entries will be created in ~/.local/share/applications/
+
+  # ========== TAILSCALE ==========
+  services.tailscale = {
+    enable = true;
+    useRoutingFeatures = "client";
+  };
+
+  # Firewall - open RustDesk and SSH ports
+  networking.firewall = {
+    enable = true;
+    allowedTCPPorts = [
+      22     # SSH
+      21115 21116 21117 21118 21119  # RustDesk
+    ];
+    allowedUDPPorts = [
+      21116  # RustDesk NAT type test
+    ];
+    # Tailscale
+    checkReversePath = "loose";
+  };
 
   # System state version
   system.stateVersion = "25.11";
