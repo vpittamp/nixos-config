@@ -7,7 +7,7 @@
     enable = true;
     openFirewall = true;
     useRoutingFeatures = lib.mkDefault "both";  # Enable subnet routing and exit node features
-    extraUpFlags = [ "--ssh" ];  # Enable Tailscale SSH
+    extraUpFlags = [ "--ssh" "--accept-routes" ];  # Enable Tailscale SSH
   };
 
   # Enhanced SSH configuration
