@@ -63,39 +63,39 @@ in
     # Create activation script to ensure RustDesk config exists
     system.activationScripts.rustdeskConfig = mkIf cfg.enableDirectIpAccess ''
       # Ensure user config directory exists
-      mkdir -p ${config.users.users.${cfg.user}.home}/.config/rustdesk
-      chown ${cfg.user}:users ${config.users.users.${cfg.user}.home}/.config/rustdesk
-      chmod 700 ${config.users.users.${cfg.user}.home}/.config/rustdesk
+      ${pkgs.coreutils}/bin/mkdir -p ${config.users.users.${cfg.user}.home}/.config/rustdesk
+      ${pkgs.coreutils}/bin/chown ${cfg.user}:users ${config.users.users.${cfg.user}.home}/.config/rustdesk
+      ${pkgs.coreutils}/bin/chmod 700 ${config.users.users.${cfg.user}.home}/.config/rustdesk
 
       # Create RustDesk2.toml if it doesn't exist or doesn't have direct-server setting
       config_file="${config.users.users.${cfg.user}.home}/.config/rustdesk/RustDesk2.toml"
 
-      if [ ! -f "$config_file" ] || ! grep -q "direct-server" "$config_file"; then
+      if [ ! -f "$config_file" ] || ! ${pkgs.gnugrep}/bin/grep -q "direct-server" "$config_file"; then
         # Preserve existing config if present
         if [ -f "$config_file" ]; then
           # Check if [options] section exists
-          if grep -q "^\[options\]" "$config_file"; then
+          if ${pkgs.gnugrep}/bin/grep -q "^\[options\]" "$config_file"; then
             # Add to existing [options] section if not already present
-            if ! grep -q "direct-server" "$config_file"; then
-              sed -i '/^\[options\]/a direct-server = "Y"\ndirect-access-port = "21116"' "$config_file"
+            if ! ${pkgs.gnugrep}/bin/grep -q "direct-server" "$config_file"; then
+              ${pkgs.gnused}/bin/sed -i '/^\[options\]/a direct-server = "Y"\ndirect-access-port = "21116"' "$config_file"
             fi
           else
             # Append [options] section
-            echo "" >> "$config_file"
-            echo "[options]" >> "$config_file"
-            echo 'direct-server = "Y"' >> "$config_file"
-            echo 'direct-access-port = "21116"' >> "$config_file"
+            ${pkgs.coreutils}/bin/echo "" >> "$config_file"
+            ${pkgs.coreutils}/bin/echo "[options]" >> "$config_file"
+            ${pkgs.coreutils}/bin/echo 'direct-server = "Y"' >> "$config_file"
+            ${pkgs.coreutils}/bin/echo 'direct-access-port = "21116"' >> "$config_file"
           fi
         else
           # Create new config file with minimal settings
-          cat > "$config_file" << 'EOF'
+          ${pkgs.coreutils}/bin/cat > "$config_file" << 'EOF'
 [options]
 direct-server = "Y"
 direct-access-port = "21116"
 EOF
         fi
-        chown ${cfg.user}:users "$config_file"
-        chmod 600 "$config_file"
+        ${pkgs.coreutils}/bin/chown ${cfg.user}:users "$config_file"
+        ${pkgs.coreutils}/bin/chmod 600 "$config_file"
       fi
     '';
 
