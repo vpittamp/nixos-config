@@ -1,10 +1,25 @@
-# Desktop-Enabled KubeVirt Image Configuration
+# Desktop-Enabled KubeVirt Image Configuration (Minimal Base Image)
 #
-# Purpose: Create a qcow2 image with KDE Plasma 6 desktop pre-installed
-# This eliminates the need for cloud-init to build the desktop, enabling
-# fast VM boot times (2-3 minutes) even without KVM acceleration.
+# Strategy: Two-Image Approach
+# =============================
+# 1. THIS FILE (kubevirt-desktop.nix): Minimal base image with core services
+#    - Fast-booting base image (~2-3 GB, 2-3 min boot time)
+#    - Includes: KDE Plasma 6, X11, XRDP, RustDesk, Tailscale, cloud-init
+#    - Generic "nixos" user for initial access
+#    - Built via nixos-generate, deployed as qcow2 image in KubeVirt
 #
-# Usage:
+# 2. vm-hetzner.nix: Full production configuration (applied at runtime)
+#    - Full Hetzner-equivalent with home-manager integration
+#    - Includes: 1Password, Speech-to-Text, Firefox PWA, all user customizations
+#    - Uses "vpittamp" user with full home-manager profile
+#    - Applied via: sudo nixos-rebuild switch --flake github:vpittamp/nixos-config#vm-hetzner
+#
+# Workflow:
+#   1. Boot from this minimal base image (fast initial deployment)
+#   2. SSH into VM and run nixos-rebuild to switch to vm-hetzner configuration
+#   3. Full production environment matches Hetzner workstation exactly
+#
+# Build Command:
 #   nixos-generate --format qcow --configuration /etc/nixos/configurations/kubevirt-desktop.nix -o /tmp/kubevirt-desktop-image
 #
 { config, pkgs, lib, modulesPath, ... }:
@@ -13,6 +28,8 @@
   imports = [
     # QEMU guest optimizations (virtio, etc.)
     (modulesPath + "/profiles/qemu-guest.nix")
+    # RustDesk remote desktop service
+    ../modules/services/rustdesk.nix
   ];
 
   # ========== BOOT CONFIGURATION ==========
@@ -39,12 +56,11 @@
   networking.networkmanager.enable = true;
   # NetworkManager handles DHCP, so don't set useDHCP
 
-  # Firewall - open all remote access ports
+  # Firewall - open remote access ports
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 3389 5900 5901 21115 21116 21117 21118 21119 ];
-    # RustDesk ports: 21115 (NAT type test), 21116 (ID/relay), 21117 (relay), 21118 (web client), 21119 (websocket)
-    allowedUDPPorts = [ 21116 ];
+    allowedTCPPorts = [ 22 3389 5900 5901 ];
+    # RustDesk ports managed by rustdesk service
     # Tailscale
     checkReversePath = "loose";
   };
@@ -70,13 +86,24 @@
     useRoutingFeatures = "client";
   };
 
+  # ========== RUSTDESK ==========
+  services.rustdesk = {
+    enable = true;
+    user = "nixos";  # Default user for KubeVirt VMs
+    enableDirectIpAccess = true;
+  };
+
   # ========== DESKTOP ENVIRONMENT ==========
   # KDE Plasma 6 - modern, feature-rich desktop
   services.desktopManager.plasma6.enable = true;
-  services.displayManager.sddm = {
-    enable = true;
-    wayland.enable = true;
-  };
+
+  # Disable SDDM display manager for headless operation
+  # Critical: This prevents auto-starting a console KDE session on boot
+  # XRDP will start the KDE session on-demand when you connect
+  services.displayManager.sddm.enable = lib.mkForce false;
+
+  # Use X11 session by default for XRDP compatibility (not Wayland)
+  services.displayManager.defaultSession = lib.mkForce "plasmax11";
 
   # Remote Desktop Protocol (xrdp)
   services.xrdp = {
@@ -134,7 +161,7 @@
     kdePackages.kate     # KDE text editor (Qt 6)
     # Remote access
     tigervnc
-    rustdesk-flutter     # Remote desktop - works with Tailscale
+    # rustdesk-flutter managed by service module
     tailscale            # Zero-config VPN
     # Development tools
     home-manager
