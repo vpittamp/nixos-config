@@ -30,6 +30,8 @@
     (modulesPath + "/profiles/qemu-guest.nix")
     # RustDesk remote desktop service
     ../modules/services/rustdesk.nix
+    # 1Password password management
+    ../modules/services/onepassword-password-management.nix
   ];
 
   # ========== BOOT CONFIGURATION ==========
@@ -48,8 +50,28 @@
   ];
 
   boot.kernelModules = [ "kvm-intel" ];
-  boot.kernelParams = [ "net.ifnames=0" "console=ttyS0" ];
+  boot.kernelParams = [
+    "net.ifnames=0"
+    "console=ttyS0"
+    # Performance optimizations for VM
+    "mitigations=off"  # Disable CPU vulnerability mitigations for better performance
+    "elevator=noop"    # Use noop I/O scheduler for virtualized block devices
+  ];
   boot.tmp.cleanOnBoot = true;
+
+  # VM performance tuning
+  boot.kernel.sysctl = {
+    # Increase swappiness for desktop responsiveness
+    "vm.swappiness" = 10;
+    # Improve file system performance
+    "vm.dirty_ratio" = 10;
+    "vm.dirty_background_ratio" = 5;
+    # Network performance tuning
+    "net.core.rmem_max" = 134217728;
+    "net.core.wmem_max" = 134217728;
+    "net.ipv4.tcp_rmem" = "4096 87380 67108864";
+    "net.ipv4.tcp_wmem" = "4096 65536 67108864";
+  };
 
   # ========== NETWORKING ==========
   networking.hostName = "nixos-kubevirt-desktop";
@@ -94,6 +116,9 @@
   };
 
   # ========== DESKTOP ENVIRONMENT ==========
+  # Enable X11 windowing system (required for hardware.graphics)
+  services.xserver.enable = true;
+
   # KDE Plasma 6 - modern, feature-rich desktop
   services.desktopManager.plasma6.enable = true;
 
@@ -152,11 +177,21 @@
     isNormalUser = true;
     # Match Hetzner user groups (excluding docker/libvirtd which aren't needed in VM)
     extraGroups = [ "wheel" "networkmanager" "audio" "video" "input" ];
-    initialPassword = "nixos";
+    initialPassword = "nixos";  # Fallback before 1Password is configured
   };
 
   users.users.root.initialPassword = "nixos";
   security.sudo.wheelNeedsPassword = false;
+
+  # Enable 1Password password management for nixos user
+  services.onepassword-password-management = {
+    enable = true;
+    users.nixos = {
+      enable = true;
+      passwordReference = "op://Employee/NixOS User Password/password";
+    };
+    updateInterval = "hourly";  # Check for password changes hourly
+  };
 
   # ========== NIX CONFIGURATION ==========
   nix.settings = {

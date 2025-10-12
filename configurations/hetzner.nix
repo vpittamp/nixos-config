@@ -30,6 +30,7 @@
 
     # Services
     ../modules/services/onepassword-automation.nix
+    ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix
     ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
   ];
@@ -74,8 +75,18 @@
     checkReversePath = "loose";
   };
   
-  # Set initial password for user (change after first login!)
-  users.users.vpittamp.initialPassword = "nixos";
+  # Enable 1Password password management
+  services.onepassword-password-management = {
+    enable = true;
+    users.vpittamp = {
+      enable = true;
+      passwordReference = "op://Employee/NixOS User Password/password";
+    };
+    updateInterval = "hourly";  # Check for password changes hourly
+  };
+
+  # Fallback password for initial setup before 1Password is configured
+  users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
   
   # SSH settings for initial access
   services.openssh.settings = {
