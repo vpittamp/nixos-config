@@ -251,7 +251,7 @@
     enable = true;
     users.vpittamp = {
       enable = true;
-      passwordReference = "op://Employee/NixOS User Password/password";
+      passwordReference = "op://CLI/NixOS User Password/password";
     };
     updateInterval = "hourly";  # Check for password changes hourly
   };
