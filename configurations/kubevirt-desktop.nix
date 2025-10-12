@@ -140,6 +140,13 @@
   # Enable rtkit for better audio performance
   security.rtkit.enable = true;
 
+  # ========== GRAPHICS/OPENGL CONFIGURATION ==========
+  # Enable OpenGL with software rendering (llvmpipe) for virtualized environments
+  hardware.graphics = {
+    enable = true;
+    enable32Bit = true;  # Support for 32-bit applications
+  };
+
   # ========== USER CONFIGURATION ==========
   users.users.nixos = {
     isNormalUser = true;
@@ -187,13 +194,12 @@
     tailscale            # Zero-config VPN
     # Development tools
     home-manager
-    # OpenGL software rendering for virtualized environments
-    mesa                 # Mesa 3D graphics library
-    libglvnd             # Vendor-neutral OpenGL dispatch library
+    # Mesa GL utilities for testing (glxinfo, glxgears, etc.)
+    mesa-demos           # Provides glxinfo, glxgears for GL testing
   ];
 
   # ========== SYSTEM STATE ==========
-  system.stateVersion = "24.11";
+  system.stateVersion = "25.11";
 
   # Allow unfree packages (some desktop components may require this)
   nixpkgs.config.allowUnfree = true;
