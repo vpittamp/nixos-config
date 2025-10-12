@@ -117,21 +117,34 @@
   systemd.services.xrdp.wantedBy = lib.mkForce [ "multi-user.target" ];
   systemd.services.xrdp-sesman.wantedBy = lib.mkForce [ "multi-user.target" ];
 
-  # Audio support - PipeWire (default for Plasma 6)
-  # Explicitly disable PulseAudio to avoid conflicts
-  services.pulseaudio.enable = false;
-  security.rtkit.enable = true;
-  services.pipewire = {
-    enable = true;
-    alsa.enable = true;
-    alsa.support32Bit = true;
-    pulse.enable = true;
+  # Audio configuration for XRDP (matching Hetzner configuration)
+  # IMPORTANT: PulseAudio works better with XRDP audio redirection
+  # Disable PipeWire and use PulseAudio instead for proper RDP audio
+  services.pipewire.pulse.enable = lib.mkForce false;
+  services.pipewire.enable = lib.mkForce false;
+
+  services.pulseaudio = {
+    enable = lib.mkForce true;
+    package = pkgs.pulseaudioFull;
+    extraModules = [ pkgs.pulseaudio-module-xrdp ];
+    extraConfig = ''
+      .ifexists module-xrdp-sink.so
+      load-module module-xrdp-sink
+      .endif
+      .ifexists module-xrdp-source.so
+      load-module module-xrdp-source
+      .endif
+    '';
   };
+
+  # Enable rtkit for better audio performance
+  security.rtkit.enable = true;
 
   # ========== USER CONFIGURATION ==========
   users.users.nixos = {
     isNormalUser = true;
-    extraGroups = [ "wheel" "networkmanager" "audio" "video" ];
+    # Match Hetzner user groups (excluding docker/libvirtd which aren't needed in VM)
+    extraGroups = [ "wheel" "networkmanager" "audio" "video" "input" ];
     initialPassword = "nixos";
   };
 
@@ -150,15 +163,24 @@
   };
 
   # ========== SYSTEM PACKAGES ==========
-  # Desktop essentials pre-installed
+  # Desktop essentials pre-installed (matching Hetzner configuration)
   environment.systemPackages = with pkgs; [
     # Core utilities
     vim git wget curl htop tmux
+    # System monitoring (matching Hetzner)
+    btop
+    iotop
+    nethogs
+    neofetch
     # Desktop applications
     firefox
     kdePackages.konsole  # KDE terminal (Qt 6)
     kdePackages.dolphin  # KDE file manager (Qt 6)
     kdePackages.kate     # KDE text editor (Qt 6)
+    # Audio utilities (matching Hetzner)
+    pulseaudio  # For pactl, pacmd, and other audio management tools
+    pavucontrol # GUI audio control
+    alsa-utils  # For alsamixer and other ALSA utilities
     # Remote access
     tigervnc
     # rustdesk-flutter managed by service module
