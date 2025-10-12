@@ -1,4 +1,19 @@
-# KubeVirt VM Configuration - Based on Hetzner Desktop
+# KubeVirt VM Configuration - Full Production Image (Runtime Configuration)
+#
+# Strategy: Two-Image Approach
+# =============================
+# This is the FULL Hetzner-equivalent configuration with home-manager integration.
+# It is NOT used for initial image builds, but applied at runtime via nixos-rebuild.
+#
+# Initial Boot: kubevirt-desktop.nix (minimal base image, ~2-3 GB, fast boot)
+# Production: THIS FILE (full features, matches Hetzner exactly)
+#
+# Apply this configuration inside a running KubeVirt VM:
+#   sudo nixos-rebuild switch --flake github:vpittamp/nixos-config#vm-hetzner
+#
+# This configuration is identical to hetzner.nix, ensuring production VMs match
+# the local Hetzner development workstation for consistency.
+#
 # Full-featured development workstation with KDE Plasma desktop environment
 { config, lib, pkgs, modulesPath, ... }:
 

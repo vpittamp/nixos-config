@@ -1,10 +1,25 @@
-# Desktop-Enabled KubeVirt Image Configuration
+# Desktop-Enabled KubeVirt Image Configuration (Minimal Base Image)
 #
-# Purpose: Create a qcow2 image with KDE Plasma 6 desktop pre-installed
-# This eliminates the need for cloud-init to build the desktop, enabling
-# fast VM boot times (2-3 minutes) even without KVM acceleration.
+# Strategy: Two-Image Approach
+# =============================
+# 1. THIS FILE (kubevirt-desktop.nix): Minimal base image with core services
+#    - Fast-booting base image (~2-3 GB, 2-3 min boot time)
+#    - Includes: KDE Plasma 6, X11, XRDP, RustDesk, Tailscale, cloud-init
+#    - Generic "nixos" user for initial access
+#    - Built via nixos-generate, deployed as qcow2 image in KubeVirt
 #
-# Usage:
+# 2. vm-hetzner.nix: Full production configuration (applied at runtime)
+#    - Full Hetzner-equivalent with home-manager integration
+#    - Includes: 1Password, Speech-to-Text, Firefox PWA, all user customizations
+#    - Uses "vpittamp" user with full home-manager profile
+#    - Applied via: sudo nixos-rebuild switch --flake github:vpittamp/nixos-config#vm-hetzner
+#
+# Workflow:
+#   1. Boot from this minimal base image (fast initial deployment)
+#   2. SSH into VM and run nixos-rebuild to switch to vm-hetzner configuration
+#   3. Full production environment matches Hetzner workstation exactly
+#
+# Build Command:
 #   nixos-generate --format qcow --configuration /etc/nixos/configurations/kubevirt-desktop.nix -o /tmp/kubevirt-desktop-image
 #
 { config, pkgs, lib, modulesPath, ... }:
