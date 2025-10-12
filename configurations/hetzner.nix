@@ -78,6 +78,7 @@
   # Enable 1Password password management
   services.onepassword-password-management = {
     enable = true;
+    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
     users.vpittamp = {
       enable = true;
       passwordReference = "op://Employee/NixOS User Password/password";
@@ -253,10 +254,11 @@
   #  };
   # };
 
-  # Enable 1Password automation with service account - Phase 1 without automation
+  # Enable 1Password automation with service account
   services.onepassword-automation = {
     enable = true;
     user = "vpittamp";
+    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
   };
 
   # Note: Certificate sync is handled once at cluster creation via
