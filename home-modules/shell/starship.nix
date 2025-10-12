@@ -66,7 +66,7 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = "$os$username$hostname\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
 
       os = {
         disabled = false;
@@ -96,12 +96,12 @@ in
         format = "@[$hostname]($style) ";
       };
 
-      # custom.tmux = {
-      #   when = "test -n \"$TMUX\"";
-      #   command = "echo \"$TMUX_PANE\"";
-      #   style = "bold fg:${colors.sky}";
-      #   format = "[$output]($style) ";
-      # };
+      custom.tmux = {
+        when = "test -n \"$TMUX\"";
+        command = "echo \"$TMUX_PANE\"";
+        style = "bold fg:${colors.sky}";
+        format = "[$output]($style) ";
+      };
 
       directory = {
         style = "bold fg:${colors.green}";
