@@ -88,7 +88,7 @@ in rec {
       icon = "nix-snowflake";
       directory = "/etc/nixos";
       wallpaper = "/run/current-system/sw/share/wallpapers/IceCold/contents/images/1920x1080.jpg";  # Cool blue theme for NixOS
-      shortcut = "Meta+Ctrl+2";  # Activity shortcut
+      shortcut = "Meta+Ctrl+1";  # Activity shortcut
       colorScheme = {
         # Subtle blue accent for NixOS activity
         accentColor = "104,124,201";  # Nix blue (#687CC9)
@@ -114,7 +114,7 @@ in rec {
       icon = "folder-git";  # GitOps folder icon - perfect for infrastructure as code
       directory = expandPath "~/stacks";
       wallpaper = "/run/current-system/sw/share/wallpapers/Canopee/contents/images/1920x1080.jpg";  # Green forest theme for Stacks
-      shortcut = "Meta+Ctrl+3";  # Activity shortcut
+      shortcut = "Meta+Ctrl+2";  # Activity shortcut
       colorScheme = {
         # Subtle green accent for Stacks activity
         accentColor = "77,150,75";  # Forest green (#4D964B)
@@ -133,21 +133,21 @@ in rec {
       };
     };
 
-    backstage = {
-      uuid = "dcc377c8-d627-4d0b-8dd7-27d83f8282b3";
-      name = "Backstage";
-      description = "Backstage developer portal and CNOE platform.";
-      icon = "applications-development";  # Developer portal icon
-      directory = expandPath "~/backstage-cnoe";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Kokkini/contents/images/1920x1080.jpg";  # Purple/magenta theme for Backstage
-      shortcut = "Meta+Ctrl+4";  # Activity shortcut
+    "nixos-worktree" = {
+      uuid = "767eac66-c2d4-43ff-a533-c5fe375f1223";
+      name = "NixOS Worktree";
+      description = "Git worktree for experimental NixOS configuration changes.";
+      icon = "folder-development";  # Development folder icon
+      directory = expandPath "~/nixos-worktree";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Kay/contents/images/1920x1080.jpg";  # Purple/violet theme for distinction
+      shortcut = "Meta+Ctrl+3";  # Activity shortcut
       colorScheme = {
-        # Subtle purple accent for Backstage activity
-        accentColor = "139,92,168";  # Backstage purple (#8B5CA8)
-        windowDecorationColor = "54,45,60";  # Dark purple-gray
+        # Distinct purple/violet accent for NixOS worktree
+        accentColor = "142,68,173";  # Deep purple (#8E44AD)
+        windowDecorationColor = "52,44,60";  # Dark purple-gray
       };
       resources = [
-        (fileUri "~/backstage-cnoe")
+        (fileUri "~/nixos-worktree")
       ];
       autostart = [];
       scoring = {
@@ -159,47 +159,21 @@ in rec {
       };
     };
 
-    monitoring = {
-      uuid = "645bcfb7-e769-4000-93be-ad31eb77ea2e";
-      name = "Monitoring";
-      description = "System resource monitoring and performance dashboards.";
-      icon = "utilities-system-monitor";  # System monitor icon
-      directory = expandPath "~/coordination";
-      wallpaper = "/run/current-system/sw/share/wallpapers/EveningGlow/contents/images/1920x1080.jpg";  # Warm orange/amber theme for Monitoring
-      shortcut = "Meta+Ctrl+1";  # Activity shortcut
+    "stacks-worktree" = {
+      uuid = "a5877cc7-6e8f-4e68-bd8d-5b0f68a63bc9";
+      name = "Stacks Worktree";
+      description = "Git worktree for experimental stacks configuration changes.";
+      icon = "folder-script";  # Script folder icon
+      directory = expandPath "~/stacks-worktree";
+      wallpaper = "/run/current-system/sw/share/wallpapers/Autumn/contents/images/1920x1080.jpg";  # Warm orange/red theme for distinction
+      shortcut = "Meta+Ctrl+4";  # Activity shortcut
       colorScheme = {
-        # Orange/amber accent for monitoring activity
-        accentColor = "255,152,0";  # Material Design amber (#FF9800)
-        windowDecorationColor = "60,48,36";  # Dark amber-gray
+        # Distinct orange/red accent for Stacks worktree
+        accentColor = "211,84,0";  # Burnt orange (#D35400)
+        windowDecorationColor = "60,40,35";  # Dark orange-brown
       };
       resources = [
-        (fileUri "~/coordination")
-      ];
-      autostart = [];
-      scoring = {
-        pruneRecent = {
-          count = 100;
-          what = "documents";
-        };
-        keepMonths = 1;
-      };
-    };
-
-    devcontainer = {
-      uuid = "9c8675d0-9a96-4139-ba77-f4855e74e485";
-      name = "Devcontainer";
-      description = "Ubuntu Nix development container environment.";
-      icon = "utilities-terminal";  # Terminal icon for development container
-      directory = expandPath "~/ubuntu-nix-devcontainer";
-      wallpaper = "/run/current-system/sw/share/wallpapers/Autumn/contents/images/1920x1080.jpg";  # Warm red/orange theme for Devcontainer
-      shortcut = "Meta+Ctrl+5";  # Activity shortcut
-      colorScheme = {
-        # Ubuntu orange accent for Devcontainer activity
-        accentColor = "233,84,32";  # Ubuntu orange (#E95420)
-        windowDecorationColor = "58,42,38";  # Dark orange-gray
-      };
-      resources = [
-        (fileUri "~/ubuntu-nix-devcontainer")
+        (fileUri "~/stacks-worktree")
       ];
       autostart = [];
       scoring = {

@@ -48,8 +48,13 @@ in
         Restart = "on-failure";
         RestartSec = "5s";
 
-        # Environment variables for Wayland/X11 support
-        Environment = "PATH=${pkgs.coreutils}/bin:${pkgs.glib}/bin";
+        # Environment variables for Wayland/X11 support and software GL rendering
+        Environment = [
+          "PATH=${pkgs.coreutils}/bin:${pkgs.glib}/bin"
+          "LIBGL_ALWAYS_SOFTWARE=1"
+          "MESA_GL_VERSION_OVERRIDE=3.3"
+          "GALLIUM_DRIVER=llvmpipe"
+        ];
       };
     };
 

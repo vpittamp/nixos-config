@@ -187,6 +187,9 @@
     tailscale            # Zero-config VPN
     # Development tools
     home-manager
+    # OpenGL software rendering for virtualized environments
+    mesa                 # Mesa 3D graphics library
+    libglvnd             # Vendor-neutral OpenGL dispatch library
   ];
 
   # ========== SYSTEM STATE ==========
