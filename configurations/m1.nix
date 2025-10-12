@@ -25,6 +25,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     ../modules/services/home-assistant.nix
     ../modules/services/scrypted.nix # Bridge for Circle View cameras and HomeKit devices
@@ -245,8 +246,18 @@
     options = "--delete-older-than 7d";
   };
 
-  # Set initial password for user (change after first login!)
-  users.users.vpittamp.initialPassword = "nixos";
+  # Enable 1Password password management
+  services.onepassword-password-management = {
+    enable = true;
+    users.vpittamp = {
+      enable = true;
+      passwordReference = "op://Employee/NixOS User Password/password";
+    };
+    updateInterval = "hourly";  # Check for password changes hourly
+  };
+
+  # Fallback password for initial setup before 1Password is configured
+  users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
   # Disable services that don't work well on Apple Silicon
   services.xrdp.enable = lib.mkForce false; # RDP doesn't work well on M1
