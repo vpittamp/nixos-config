@@ -72,11 +72,13 @@
 
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
-
-      # SSL Certificate configuration
+    } // lib.optionalAttrs pkgs.stdenv.isLinux {
+      # SSL Certificate configuration (Linux only)
+      # macOS uses its own certificate store
       NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
       SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt";
       REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt";
+    } // {
 
       # AI/LLM API Keys (set these in your environment or use a secrets manager)
       # AVANTE_ANTHROPIC_API_KEY = "your-api-key-here"; # Uncomment and set your Claude API key
