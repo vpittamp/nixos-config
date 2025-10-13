@@ -48,11 +48,26 @@ in
     # Ensure RustDesk package is installed
     environment.systemPackages = [ cfg.package ];
 
+    # Xvfb service for headless X server (required for RustDesk-Flutter)
+    systemd.services.xvfb = mkIf cfg.enableSystemService {
+      description = "X Virtual Framebuffer (for RustDesk)";
+      after = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.xorg.xorgserver}/bin/Xvfb :0 -screen 0 1920x1080x24";
+        Restart = "always";
+        RestartSec = "5s";
+      };
+    };
+
     # System-wide service (runs before user login, for headless VMs)
     systemd.services.rustdesk-headless = mkIf cfg.enableSystemService {
       description = "RustDesk Headless Service";
-      after = [ "network-online.target" ];
+      after = [ "network-online.target" "xvfb.service" ];
       wants = [ "network-online.target" ];
+      requires = [ "xvfb.service" ];  # Ensure Xvfb is running
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {

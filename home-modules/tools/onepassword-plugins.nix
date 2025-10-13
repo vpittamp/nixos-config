@@ -53,9 +53,10 @@
 
     argocd() {
       # Create temporary env file for Argo CD auth token
+      # Using item ID instead of name to avoid special character issues
       local env_file=$(mktemp)
-      echo 'ARGOCD_AUTH_TOKEN="op://CLI/Argo CD (localdev)/auth token"' > "$env_file"
-      echo 'ARGOCD_SERVER="op://CLI/Argo CD (localdev)/address"' >> "$env_file"
+      echo 'ARGOCD_AUTH_TOKEN="op://CLI/shdhimokibw653iy5gkyzay4qy/auth token"' > "$env_file"
+      echo 'ARGOCD_SERVER="op://CLI/shdhimokibw653iy5gkyzay4qy/address"' >> "$env_file"
 
       # Run command with injected credentials
       op run --env-file="$env_file" -- ${pkgs.argocd}/bin/argocd "$@"
@@ -176,7 +177,7 @@
       echo "  ✅ gh - GitHub CLI (op://Employee/Github Personal Access Token/token)"
       echo "  ✅ hcloud - Hetzner Cloud CLI (op://CLI/Hetzner Cloud API/token)"
       echo "  ✅ openai - OpenAI CLI (op://CLI/OPENAI_API_KEY/api key)"
-      echo "  ✅ argocd - Argo CD CLI (op://CLI/Argo CD (localdev)/auth token)"
+      echo "  ✅ argocd - Argo CD CLI (op://CLI/shdhimokibw653iy5gkyzay4qy/auth token)"
       echo "  ✅ mysql - MySQL CLI (op://Employee/.../password)"
       echo "  ⚪ az - Azure CLI (passthrough, uses interactive login)"
       echo "  ⚪ psql - PostgreSQL CLI (passthrough, no 1Password integration yet)"
