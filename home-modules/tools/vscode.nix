@@ -5,7 +5,13 @@ let
   # This ensures consistent extension/settings across all activities
   primaryProfile = config.modules.tools.vscode.defaultProfile or "default";
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+
+  # Chromium is only available on Linux
+  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+
+  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+    chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
 
   # Use latest VSCode from unstable channel for newest features and fixes
   vscode = pkgs-unstable.vscode;
@@ -420,8 +426,9 @@ let
 
   # MCP Server configuration for VSCode
   # These servers enable browser automation and debugging capabilities
+  # Only enabled on Linux where Chromium is available
   baseMcpConfig = {
-    mcpServers = {
+    mcpServers = lib.optionalAttrs enableChromiumMcpServers {
       playwright = {
         command = "${pkgs.nodejs}/bin/npx";
         args = [
@@ -431,7 +438,7 @@ let
           "--browser"
           "chromium"
           "--executable-path"
-          chromiumBin
+          chromiumConfig.chromiumBin
         ];
         env = {
           PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
@@ -449,7 +456,7 @@ let
           "--isolated"
           "--headless"
           "--executablePath"
-          chromiumBin
+          chromiumConfig.chromiumBin
         ];
         env = {
           NODE_ENV = "production";
