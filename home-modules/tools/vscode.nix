@@ -95,7 +95,7 @@ let
     dbaeumer.vscode-eslint
     ms-python.python
     golang.go
-    rust-lang.rust-analyzer
+    # rust-lang.rust-analyzer  # Disabled on Darwin - has native build issues
 
     # Theme and UI
     pkief.material-icon-theme
@@ -106,6 +106,9 @@ let
     # Productivity
     vscodevim.vim
     streetsidesoftware.code-spell-checker
+  ] ++ lib.optionals pkgs.stdenv.isLinux [
+    # Linux-only extensions (have native build issues on Darwin)
+    rust-lang.rust-analyzer
   ]) ++ [
     # 1Password extension (special syntax due to naming)
     pkgs.vscode-extensions."1Password".op-vscode
@@ -131,7 +134,7 @@ let
     "dbaeumer.vscode-eslint"
     "ms-python.python"
     "golang.go"
-    "rust-lang.rust-analyzer"
+    # "rust-lang.rust-analyzer"  # Disabled on Darwin
     "pkief.material-icon-theme"
     "zhuangtongfa.material-theme"
     "catppuccin.catppuccin-vsc"
@@ -141,6 +144,8 @@ let
     "1Password.op-vscode"
     "ms-playwright.playwright"
     "openai.chatgpt"
+  ] ++ lib.optionals pkgs.stdenv.isLinux [
+    "rust-lang.rust-analyzer"
   ];
 
   githubSyncedExtensions = [
