@@ -43,7 +43,7 @@ in
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
-    ../tools/vscode.nix # Cross-platform
+    # ../tools/vscode.nix # Temporarily disabled on Darwin - has build issues with extensions
     # Note: gitkraken.nix has xdg.desktopEntries (Linux-only) - excluded
     # Note: kubernetes-apps.nix has xdg.desktopEntries (Linux-only) - excluded
 
@@ -79,7 +79,8 @@ in
   modules.tools.docker.enable = lib.mkDefault true;
 
   # VSCode profile configuration
-  modules.tools.vscode.defaultProfile = lib.mkDefault "nixos";
+  # Disabled on Darwin - VSCode module has build issues
+  # modules.tools.vscode.defaultProfile = lib.mkDefault "nixos";
 
   programs.home-manager.enable = true;
 
