@@ -35,9 +35,6 @@
       echo "Note: 1Password CLI integration may not be enabled. Check Settings → Developer"
     fi
   '';
-  
-  # Environment variables for 1Password
-  home.sessionVariables = {
-    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
-  };
+
+  # Note: SSH_AUTH_SOCK is set in onepassword-env.nix with platform-aware paths
 }
