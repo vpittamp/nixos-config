@@ -4,7 +4,18 @@ let
   # Use claude-code from the dedicated flake for latest version (2.0.1)
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+
+  # Chromium is only available on Linux platforms
+  # On macOS, users should install Chrome/Chromium manually or use a different browser
+  chromiumBin =
+    if pkgs.stdenv.isLinux
+    then "${pkgs.chromium}/bin/chromium"
+    else if pkgs.stdenv.isDarwin
+    then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"  # Default macOS Chrome path
+    else "chromium";  # Fallback
+
+  # Check if we can enable MCP servers that require Chromium
+  enableChromiumMcpServers = pkgs.stdenv.isLinux;
 in
 {
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -71,14 +82,16 @@ in
           # MCP Server: Context7 (use server prefix for all tools)
           "mcp__context7"
 
+          # MCP Server: IDE integration (use server prefix for all IDE operations)
+          "mcp__ide"
+        ] ++ lib.optionals enableChromiumMcpServers [
           # MCP Server: Playwright (use server prefix for all browser automation)
+          # Only on Linux where Chromium is available
           "mcp__playwright"
 
           # MCP Server: Chrome DevTools (use server prefix for all debugging)
+          # Only on Linux where Chromium is available
           "mcp__chrome-devtools"
-
-          # MCP Server: IDE integration (use server prefix for all IDE operations)
-          "mcp__ide"
         ];
       };
     };
@@ -88,6 +101,7 @@ in
     # Comment out servers you don't need to save context tokens
     mcpServers = {
       # Context7 - Lightweight documentation lookup (~1.7k tokens)
+      # Available on all platforms
       context7 = {
         command = "npx";
         args = [
@@ -95,8 +109,9 @@ in
           "@upstash/context7-mcp@latest"
         ];
       };
-
+    } // lib.optionalAttrs enableChromiumMcpServers {
       # Playwright MCP server for browser automation (~13.7k tokens)
+      # Only enabled on Linux where Chromium is available via Nix
       playwright = {
         transport = "stdio";
         command = "npx";
@@ -118,6 +133,7 @@ in
       };
 
       # Chrome DevTools MCP server for debugging and performance (~17k tokens)
+      # Only enabled on Linux where Chromium is available via Nix
       chrome-devtools = {
         command = "npx";
         args = [
