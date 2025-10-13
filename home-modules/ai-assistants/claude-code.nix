@@ -5,17 +5,16 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
-  # Chromium is only available on Linux platforms
-  # On macOS, users should install Chrome/Chromium manually or use a different browser
-  chromiumBin =
-    if pkgs.stdenv.isLinux
-    then "${pkgs.chromium}/bin/chromium"
-    else if pkgs.stdenv.isDarwin
-    then "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"  # Default macOS Chrome path
-    else "chromium";  # Fallback
-
   # Check if we can enable MCP servers that require Chromium
+  # Chromium package is only available on Linux
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
+
+  # Chromium configuration - only define when needed to avoid evaluation on Darwin
+  # On Linux: use Nix-managed Chromium
+  # On Darwin: MCP servers that need Chromium are disabled
+  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+    chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
 in
 {
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -122,7 +121,7 @@ in
           "--browser"
           "chromium"
           "--executable-path"
-          chromiumBin
+          chromiumConfig.chromiumBin
         ];
         env = {
           PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
@@ -142,7 +141,7 @@ in
           "--isolated"
           "--headless"
           "--executablePath"
-          chromiumBin
+          chromiumConfig.chromiumBin
         ];
       };
     };
