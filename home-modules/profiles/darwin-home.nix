@@ -48,7 +48,8 @@ in
     # Note: kubernetes-apps.nix has xdg.desktopEntries (Linux-only) - excluded
 
     # AI Assistant configurations (cross-platform)
-    ../ai-assistants/claude-code.nix
+    # Note: claude-code.nix excluded - has Chromium dependency that breaks on Darwin
+    # Users should install Claude Code manually on macOS
     ../ai-assistants/codex.nix
     ../ai-assistants/gemini-cli.nix
 
