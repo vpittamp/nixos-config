@@ -180,6 +180,9 @@
     # Match Hetzner user groups (excluding docker/libvirtd which aren't needed in VM)
     extraGroups = [ "wheel" "networkmanager" "audio" "video" "input" ];
     initialPassword = "nixos";  # Fallback before 1Password is configured
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHmXFP33EvyB3vZQktX+FvxdzfUVclE6bk0dd3nMAq84 hetzner-nixos"
+    ];
   };
 
   users.users.root.initialPassword = "nixos";
