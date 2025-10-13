@@ -5,6 +5,10 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
+  # Claude Code's home-manager module has Chromium dependencies that break on Darwin
+  # Only enable on Linux where Chromium is available
+  enableClaudeCode = pkgs.stdenv.isLinux;
+
   # Check if we can enable MCP servers that require Chromium
   # Chromium package is only available on Linux
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -16,12 +20,12 @@ let
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 in
-{
+lib.mkIf enableClaudeCode {
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
 
   # Claude Code configuration with home-manager module
-  # Try to enable on all platforms, will fail gracefully if not available
+  # Only enabled on Linux due to Chromium dependencies in the module
   programs.claude-code = {
     enable = true;
     package = claudeCodePackage;
