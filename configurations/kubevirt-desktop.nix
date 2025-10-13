@@ -113,6 +113,8 @@
     enable = true;
     user = "nixos";  # Default user for KubeVirt VMs
     enableDirectIpAccess = true;
+    permanentPassword = "Nixos123";  # Pre-configured password for headless access
+    enableSystemService = true;  # Run as system service (starts before user login)
   };
 
   # ========== DESKTOP ENVIRONMENT ==========

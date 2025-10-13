@@ -11,7 +11,7 @@ fi
 
 # Fetch the service account token using secret reference
 echo "Fetching service account token from 1Password..."
-TOKEN=$(op read 'op://Employee/ja6iykklyslhq7tccnkgaj4joe/credential')
+TOKEN=$(op read 'op://Employee/kzfqt6yulhj6glup3w22eupegu/credential')
 
 if [ -z "$TOKEN" ]; then
   echo "Error: Could not fetch token from 1Password"

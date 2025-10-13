@@ -61,6 +61,9 @@
     enable = true;
     user = "vpittamp";
     enableDirectIpAccess = true;
+    permanentPassword = "Nixos123";  # Pre-configured password for headless access
+    # Use user-level service for Hetzner (graphical session already running)
+    enableSystemService = false;
   };
 
   # Firewall - open additional ports for services
