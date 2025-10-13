@@ -68,9 +68,12 @@ in
       # Import user packages (need to handle potential Linux-specific packages)
       userPackages = import ../../user/packages.nix { inherit pkgs lib; };
       packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
+      basePackages = lib.filter (pkg: pkg.meta.available or true) (packageConfig.getProfile.user);
+      darwinSpecificPackages = [
+        pkgs._1password  # 1Password CLI for macOS
+      ];
     in
-    # Filter out Linux-only packages
-    lib.filter (pkg: pkg.meta.available or true) (packageConfig.getProfile.user);
+    basePackages ++ darwinSpecificPackages;
 
   # Yazi file manager
   modules.tools.yazi.enable = true;

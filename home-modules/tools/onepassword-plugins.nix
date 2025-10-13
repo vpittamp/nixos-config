@@ -7,7 +7,10 @@
   # Additional shell configuration for 1Password
   programs.bash.initExtra = ''
     # 1Password CLI authentication helper
-    source <(op completion bash) 2>/dev/null || true
+    # Only load completion if op is available
+    if command -v op >/dev/null 2>&1; then
+      source <(op completion bash) 2>/dev/null || true
+    fi
 
     # Helper functions for 1Password operations
     op-signin() {

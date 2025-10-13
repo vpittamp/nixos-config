@@ -39,10 +39,13 @@
       
       # Ensure LS_COLORS is set for GNU coreutils (from dircolors module)
       # This makes both BSD and GNU tools work with colors
-      if [ -r ~/.dir_colors ]; then
-        eval "$(dircolors -b ~/.dir_colors)"
-      elif command -v dircolors >/dev/null 2>&1; then
-        eval "$(dircolors -b)"
+      # Only run dircolors on Linux (it's not available on macOS)
+      if command -v dircolors >/dev/null 2>&1; then
+        if [ -r ~/.dir_colors ]; then
+          eval "$(dircolors -b ~/.dir_colors)"
+        else
+          eval "$(dircolors -b)"
+        fi
       fi
     '';
     
