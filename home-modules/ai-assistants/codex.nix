@@ -1,7 +1,13 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 let
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+  # Chromium is only available on Linux
+  # On Darwin, MCP servers requiring Chromium will be disabled
+  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+
+  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+    chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
 in
 
 {
@@ -64,7 +70,9 @@ in
       theme = "dark";
       vim_mode = false;
 
-      mcp_servers = {
+      mcp_servers = lib.optionalAttrs enableChromiumMcpServers {
+        # Playwright and Chrome DevTools MCP servers only available on Linux
+        # where Chromium is available via Nix
         playwright = {
           command = "npx";
           args = [
@@ -74,7 +82,7 @@ in
             "--browser"
             "chromium"
             "--executable-path"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
           env = {
             # Skip downloading Chromium since we use system package
@@ -92,7 +100,7 @@ in
             "--isolated"
             "--headless"
             "--executablePath"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
           startup_timeout_ms = 30000;  # 30 seconds for browser startup
           tool_timeout_sec = 60;        # 60 seconds for tool operations
