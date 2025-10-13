@@ -7,8 +7,8 @@
     # Note: plasma-home.nix is excluded - KDE Plasma is Linux-only
   ];
 
-  home.username = "vpittamp";
-  home.homeDirectory = "/Users/vpittamp";
+  home.username = "vinodpittampalli";
+  home.homeDirectory = "/Users/vinodpittampalli";
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
