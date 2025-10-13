@@ -203,10 +203,22 @@
             };
             modules = [ modulePath ];
           };
+          # Darwin-specific home configuration (no osConfig needed)
+          mkDarwinHome = modulePath: system: home-manager.lib.homeManagerConfiguration {
+            pkgs = pkgsFor system;
+            extraSpecialArgs = {
+              inherit inputs;
+              pkgs-unstable = unstableFor system;
+            };
+            modules = [ modulePath ];
+          };
         in
         {
           vpittamp = mkHome ./home-vpittamp.nix;
           code = mkHome ./home-code.nix;
+          # Darwin (macOS) home-manager configuration
+          # Usage: home-manager switch --flake .#darwin
+          darwin = mkDarwinHome ./home-darwin.nix "aarch64-darwin";
         };
 
       # Container configurations

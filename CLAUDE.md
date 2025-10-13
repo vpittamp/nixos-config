@@ -252,6 +252,7 @@ nix flake lock --update-input nixpkgs
 - `docs/ARCHITECTURE.md` - Detailed architecture documentation
 - `docs/PWA_SYSTEM.md` - PWA (Progressive Web App) management system
 - `docs/M1_SETUP.md` - Apple Silicon setup and troubleshooting
+- `docs/DARWIN_SETUP.md` - macOS Darwin home-manager setup guide
 - `docs/ONEPASSWORD.md` - 1Password integration guide
 - `docs/ONEPASSWORD_SSH.md` - 1Password SSH and Git authentication guide
 - `docs/HETZNER_NIXOS_INSTALL.md` - Hetzner installation guide
@@ -296,6 +297,24 @@ SSH_AUTH_SOCK=~/.1password/agent.sock ssh-add -l
 gh auth status  # Uses 1Password token automatically
 ```
 
+## 🍎 macOS Darwin Home-Manager
+
+For using this configuration on macOS without NixOS:
+
+```bash
+# Apply Darwin home-manager configuration
+home-manager switch --flake .#darwin
+
+# Update packages
+nix flake update
+home-manager switch --flake .#darwin
+
+# Test configuration
+home-manager build --flake .#darwin
+```
+
+See `docs/DARWIN_SETUP.md` for detailed setup instructions for your M1 MacBook Pro.
+
 ---
 
-_Last updated: 2025-09 with 1Password integration and M1 improvements_
+_Last updated: 2025-10 with Darwin home-manager support_
