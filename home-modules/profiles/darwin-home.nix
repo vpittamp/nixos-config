@@ -11,6 +11,9 @@ let
     # Use system Python on macOS with nix-darwin
     UV_PYTHON_PREFERENCE = "only-system";
     UV_PYTHON = "${pkgs.python3}/bin/python3";
+
+    # Note: SSH_AUTH_SOCK for 1Password is set in onepassword-env.nix
+    # which handles both Linux and Darwin paths automatically
   };
 in
 {

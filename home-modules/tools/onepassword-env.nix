@@ -1,15 +1,21 @@
 { config, pkgs, lib, ... }:
 
+let
+  # 1Password SSH agent path differs between Linux and macOS
+  onePasswordAgentPath = if pkgs.stdenv.isDarwin
+    then "$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    else "$HOME/.1password/agent.sock";
+in
 {
   # Ensure 1Password environment variables are set in user sessions
   programs.bash.sessionVariables = {
-    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
+    SSH_AUTH_SOCK = onePasswordAgentPath;
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };
-  
+
   # Also set in profile for non-interactive shells
   home.sessionVariables = {
-    SSH_AUTH_SOCK = "$HOME/.1password/agent.sock";
+    SSH_AUTH_SOCK = onePasswordAgentPath;
     OP_BIOMETRIC_UNLOCK_ENABLED = "true";
   };
   
@@ -22,7 +28,7 @@
       # Ensure 1Password agent socket is available
       # Only set if not already set by SSH agent forwarding
       if [ -z "$SSH_AUTH_SOCK" ] || [ ! -S "$SSH_AUTH_SOCK" ]; then
-        export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+        export SSH_AUTH_SOCK="${onePasswordAgentPath}"
       fi
       export OP_BIOMETRIC_UNLOCK_ENABLED="true"
 
@@ -44,14 +50,14 @@
     '';
     executable = true;
   };
-  
+
   # Enhanced bash configuration
   programs.bash.initExtra = ''
     # Set SSH_AUTH_SOCK for 1Password
     # IMPORTANT: Only set if not already set by SSH agent forwarding
     # When SSH'ing in with -A, SSH_AUTH_SOCK will be set to forwarded agent
     if [ -z "$SSH_AUTH_SOCK" ] || [ ! -S "$SSH_AUTH_SOCK" ]; then
-      export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+      export SSH_AUTH_SOCK="${onePasswordAgentPath}"
     fi
 
     # Initialize 1Password environment
