@@ -1,0 +1,165 @@
+# KubeVirt VM Resource Specification Contract
+# Purpose: Defines the KubeVirt VirtualMachine resource spec for optimal desktop performance
+# Entity: VMResourceSpec
+#
+# This is a YAML contract (not Nix) because KubeVirt is configured outside NixOS
+
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: nixos-desktop-vm
+  namespace: default
+  labels:
+    app: nixos-desktop
+    optimization: plasma-performance
+spec:
+  # VM should be running by default
+  running: true
+
+  template:
+    metadata:
+      labels:
+        app: nixos-desktop
+        kubevirt.io/domain: nixos-desktop-vm
+
+    spec:
+      # Domain configuration (VM hardware specification)
+      domain:
+        # CPU Configuration - Optimized for desktop responsiveness
+        cpu:
+          # Total vCPU count
+          # Recommendation: 6-8 cores for comfortable multi-tasking
+          # Minimum: 4 cores for basic desktop
+          # Maximum: Limited by physical cores on host
+          cores: 8
+
+          # Socket/thread topology
+          # Desktop workloads: Use 1 socket, 1 thread per core
+          # This provides lowest latency scheduling
+          sockets: 1
+          threads: 1
+
+          # Dedicated CPU placement (KEY OPTIMIZATION)
+          # When true, assigns exclusive physical cores to this VM
+          # Prevents "noisy neighbor" interference from other VMs/pods
+          # Reduces CPU scheduling latency from 10-50ms to <5ms
+          # REQUIRED for responsive desktop UI
+          dedicatedCpuPlacement: true
+
+          # CPU model passthrough
+          # Exposes host CPU features to guest
+          # Best performance, but limits live migration
+          model: host-passthrough
+
+          # Alternative: host-model (allows migration but slightly slower)
+          # model: host-model
+
+        # Memory Configuration - Optimized for KDE Plasma
+        memory:
+          # Guest memory (VM perspective)
+          # Recommendation: 16Gi for comfortable multi-tasking
+          # Minimum: 8Gi for KDE Plasma + browser + basic apps
+          guest: 16Gi
+
+          # Hugepages for better performance (optional)
+          # Requires host configuration
+          # hugepages:
+          #   pageSize: 2Mi
+
+        # Device Configuration
+        devices:
+          # Disk configuration
+          disks:
+            # Root disk
+            - name: rootdisk
+              disk:
+                # virtio bus required for IOThreads
+                # Provides best performance for VMs
+                bus: virtio
+
+            # Cloud-init disk (if using cloud-init)
+            - name: cloudinitdisk
+              disk:
+                bus: virtio
+
+          # Network interfaces
+          interfaces:
+            # Default pod network
+            - name: default
+              bridge: {}
+              # Use virtio for best network performance
+              model: virtio
+
+          # Graphics and input (for console access)
+          # Note: RustDesk connects via network, not VNC/SPICE
+          inputs:
+            - type: tablet
+              bus: usb
+              name: tablet
+
+        # Resource limits and requests
+        # IMPORTANT: requests = limits ensures guaranteed QoS class
+        # This prevents OOM kills and ensures consistent performance
+        resources:
+          requests:
+            memory: 16Gi
+            # CPU requests in millicores (8000m = 8 cores)
+            cpu: 8000m
+          limits:
+            memory: 16Gi
+            cpu: 8000m
+
+      # IOThreads Configuration (KEY OPTIMIZATION)
+      # Offloads disk I/O to separate threads
+      # Prevents UI blocking during disk operations
+      # Critical for VMs with network-backed storage (PVCs)
+      ioThreadsPolicy: auto  # Automatically allocates based on disk count
+
+      # Alternative: Manual IOThreads allocation
+      # ioThreads: 2  # Number of IOThread workers
+
+      # Network Configuration
+      networks:
+        - name: default
+          pod: {}
+
+      # Volume Configuration
+      volumes:
+        # Root volume from PVC
+        - name: rootdisk
+          persistentVolumeClaim:
+            claimName: nixos-desktop-pvc
+
+        # Cloud-init configuration (if using)
+        - name: cloudinitdisk
+          cloudInitNoCloud:
+            userDataBase64: ""  # Base64-encoded cloud-init user-data
+
+# Validation Rules (enforced by KubeVirt admission controller)
+---
+# 1. dedicatedCpuPlacement requires host to have available dedicated cores
+#    - Host must be labeled with CPUManager=true
+#    - Host must have cpumanager.policy=static
+#    - Sufficient physical cores must be available
+
+# 2. requests.memory == limits.memory ensures guaranteed QoS
+#    - Prevents OOM kills under memory pressure
+#    - Ensures consistent performance
+
+# 3. ioThreadsPolicy=auto requires disk.bus=virtio
+#    - SATA/IDE buses do not support IOThreads
+#    - virtio provides best performance anyway
+
+# 4. Total vCPUs must not exceed physical cores on host
+#    - Over-subscription causes scheduling delays
+#    - Use kubectl describe node to check available capacity
+
+# 5. CPU model=host-passthrough requires homogeneous cluster
+#    - All nodes must have same/compatible CPU
+#    - Limits live migration to compatible hosts
+
+# Verification Commands:
+# kubectl describe vmi nixos-desktop-vm | grep -A 10 "CPU"
+# kubectl describe vmi nixos-desktop-vm | grep -A 5 "Memory"
+# kubectl describe vmi nixos-desktop-vm | grep "dedicatedCpuPlacement"
+# kubectl get vmi nixos-desktop-vm -o jsonpath='{.status.qosClass}'  # Should be "Guaranteed"
