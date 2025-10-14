@@ -253,8 +253,8 @@
                 };
                 users.vinodpittampalli = {
                   imports = [ ./home-darwin.nix ];
-                  home.stateVersion = "25.05";
-                  home.enableNixpkgsReleaseCheck = false;
+                  # Note: home.username, home.homeDirectory, home.stateVersion, and
+                  # home.enableNixpkgsReleaseCheck are already set in home-darwin.nix
                 };
               };
             }

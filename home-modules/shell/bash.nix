@@ -18,8 +18,15 @@
     # For macOS Terminal.app - it runs login shells by default
     # This ensures colors and configs load properly
     profileExtra = ''
-      # Prioritize Nix bash over system bash (macOS has ancient bash 3.2)
-      export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+      # On Darwin (macOS), set up the full nix-darwin PATH
+      # This must match the PATH from nix-darwin's set-environment script
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        # nix-darwin system packages and home-manager packages
+        export PATH="$HOME/.nix-profile/bin:/etc/profiles/per-user/$USER/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      else
+        # On Linux, use standard Nix paths
+        export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+      fi
 
       # CRITICAL: Source Nix daemon environment (sets up PATH)
       # This must come first to ensure nix packages are available
@@ -50,7 +57,14 @@
       # Enable grep colors
       export GREP_OPTIONS='--color=auto'
       export GREP_COLOR='1;32'
-      
+
+      # Force colors for terminals (CRITICAL for Starship)
+      export CLICOLOR_FORCE=1
+      export FORCE_COLOR=1
+      export COLORTERM=truecolor
+      # Unset NO_COLOR if it's set (even if empty, it disables colors)
+      unset NO_COLOR 2>/dev/null || true
+
       # Ensure LS_COLORS is set for GNU coreutils (from dircolors module)
       # This makes both BSD and GNU tools work with colors
       # Only run dircolors on Linux (it's not available on macOS)
@@ -203,6 +217,12 @@
     };
     
     initExtra = ''
+      # Source nix-darwin environment setup (must be first!)
+      # This sets up PATH to include /run/current-system/sw/bin
+      if [ -f /etc/bashrc ]; then
+        . /etc/bashrc
+      fi
+
       # Check bash version and warn if using old macOS bash
       if [[ "$OSTYPE" == "darwin"* ]] && [[ ''${BASH_VERSINFO[0]:-0} -lt 4 ]]; then
         echo "⚠️  Warning: You're using macOS system bash $BASH_VERSION (very old!)"

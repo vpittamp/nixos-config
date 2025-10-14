@@ -32,10 +32,21 @@
     localHostName = "macbook-pro";
   };
 
+  # Primary user for system defaults
+  # Required for nix-darwin to apply user-specific system preferences
+  system.primaryUser = "vinodpittampalli";
+
   # ============================================================================
   # NIX CONFIGURATION
   # ============================================================================
 
+  # Disable nix-darwin's Nix management - we're using Determinate Nix
+  # Determinate Nix manages its own daemon and configuration
+  nix.enable = false;
+
+  # Note: The following nix.* settings are managed by Determinate Nix, not nix-darwin
+  # You can configure them in /etc/nix/nix.conf or via Determinate's tools
+  /*
   nix = {
     # Nix daemon settings
     settings = {
@@ -44,9 +55,6 @@
 
       # Trust users (allows these users to use additional substituters)
       trusted-users = [ "vinodpittampalli" "@admin" ];
-
-      # Auto-optimize store (deduplicate identical files)
-      auto-optimise-store = true;
 
       # Binary caches for faster builds
       substituters = [
@@ -71,7 +79,12 @@
       };
       options = "--delete-older-than 30d";
     };
+
+    # Store optimization (deduplicate identical files)
+    # Replaces deprecated nix.settings.auto-optimise-store
+    optimise.automatic = true;
   };
+  */
 
   # ============================================================================
   # NIXPKGS CONFIGURATION
@@ -81,8 +94,8 @@
     # Allow unfree packages (required for many development tools)
     config.allowUnfree = true;
 
-    # Host platform (auto-detected: aarch64-darwin or x86_64-darwin)
-    hostPlatform = builtins.currentSystem;
+    # Host platform is automatically set from the system attribute in flake.nix
+    # No need to explicitly set hostPlatform here
   };
 
   # ============================================================================
@@ -120,7 +133,40 @@
     nix-prefetch-git
     nixpkgs-fmt
 
-    # Development tools will be added in later phases
+    # ============================================================================
+    # DEVELOPMENT TOOLS (Phase 6)
+    # ============================================================================
+
+    # Compilers and language runtimes
+    nodejs         # Node.js runtime
+    python3        # Python 3
+    go             # Go compiler
+    rustc          # Rust compiler
+    cargo          # Rust package manager
+
+    # Build tools
+    gcc            # GNU C compiler
+    gnumake        # GNU Make
+    cmake          # Cross-platform build system
+    pkg-config     # Package configuration tool
+
+    # Container tools
+    # Note: Docker Desktop must be installed separately on macOS
+    # Docker Desktop provides the docker CLI and daemon
+    # See: https://docs.docker.com/desktop/install/mac-install/
+    docker-compose # Docker Compose for multi-container applications
+
+    # Kubernetes tools
+    kubectl              # Kubernetes CLI
+    kubernetes-helm      # Helm package manager for Kubernetes
+    k9s                  # Terminal UI for Kubernetes
+    kind                 # Kubernetes in Docker (local clusters)
+    argocd               # GitOps continuous delivery
+
+    # Cloud CLIs
+    terraform            # Infrastructure as Code
+    google-cloud-sdk     # Google Cloud Platform CLI
+    hcloud               # Hetzner Cloud CLI
   ];
 
   # ============================================================================
@@ -130,11 +176,34 @@
   # Enable bash (macOS default is bash 3.2, Nix provides 5.x)
   programs.bash.enable = true;
 
-  # SSH configuration
+  # ============================================================================
+  # SSH CONFIGURATION
+  # ============================================================================
+
+  # SSH configuration with 1Password integration
+  # Note: nix-darwin doesn't have programs.ssh.enable, use programs.ssh.extraConfig instead
+  # The SSH agent socket path is set in home-manager (onepassword-env.nix)
   programs.ssh = {
-    # macOS uses different known_hosts and config locations
-    # Additional SSH config will be added in Phase 5 for 1Password integration
-    enable = true;
+    extraConfig = ''
+      # 1Password SSH Agent Integration (macOS)
+      # The agent socket is available at: ~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock
+      # SSH_AUTH_SOCK is set in home-manager sessionVariables
+
+      Host *
+        # Use 1Password SSH agent for all connections
+        # Note: IdentityAgent is set in home-manager's SSH config (home-modules/tools/ssh.nix)
+        # to handle platform-specific paths (Linux vs Darwin)
+
+        # Only use explicitly configured SSH keys (prevents trying all keys)
+        IdentitiesOnly yes
+
+        # Prefer public key authentication
+        PreferredAuthentications publickey,keyboard-interactive,password
+
+        # Keep connections alive
+        ServerAliveInterval 60
+        ServerAliveCountMax 3
+    '';
   };
 
   # ============================================================================
@@ -143,16 +212,13 @@
 
   # System fonts (matching NixOS base.nix where applicable)
   # macOS font management uses fonts.packages
-  fonts.packages = with pkgs; [
+  # Note: nerdfonts has been split into individual packages under nerd-fonts namespace
+  fonts.packages = with pkgs.nerd-fonts; [
     # Nerd Fonts for terminal and editor
-    (nerdfonts.override {
-      fonts = [
-        "FiraCode"
-        "JetBrainsMono"
-        "Hack"
-        "SourceCodePro"
-      ];
-    })
+    fira-code
+    jetbrains-mono
+    hack
+    sauce-code-pro  # SourceCodePro is called sauce-code-pro in nerd-fonts
   ];
 
   # ============================================================================
@@ -230,17 +296,6 @@
   # SERVICES
   # ============================================================================
 
-  # Nix daemon (required - manages Nix store and builds)
-  services.nix-daemon.enable = true;
-
-  # ============================================================================
-  # SYSTEM ACTIVATION
-  # ============================================================================
-
-  # System activation scripts (if needed)
-  # These run during `darwin-rebuild switch`
-  system.activationScripts.postUserActivation.text = ''
-    # Following line should allow us to avoid a logout/login cycle
-    /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
-  '';
+  # Nix daemon is now managed automatically by nix-darwin when nix.enable is on
+  # No need to explicitly enable services.nix-daemon
 }

@@ -111,12 +111,19 @@ nix build .#container-dev          # Development container (~600MB)
 - **Features**: Full KDE desktop, RDP access, Tailscale VPN, 1Password GUI
 - **Build**: `sudo nixos-rebuild switch --flake .#hetzner`
 
-### M1 (Apple Silicon Mac)
+### M1 (Apple Silicon Mac - Asahi Linux)
 
 - **Purpose**: Native NixOS on Apple hardware
 - **Features**: Optimized for ARM64, Apple-specific drivers, Retina display support
 - **Build**: `sudo nixos-rebuild switch --flake .#m1 --impure`
 - **Note**: Requires `--impure` flag for Asahi firmware access
+
+### Darwin (macOS with nix-darwin)
+
+- **Purpose**: System configuration management for macOS
+- **Features**: System packages, macOS preferences, home-manager integration, full dev environment
+- **Build**: `sudo darwin-rebuild switch --flake .#darwin`
+- **Note**: Replaces standalone home-manager with integrated nix-darwin + home-manager
 
 ### Containers
 
@@ -297,24 +304,69 @@ SSH_AUTH_SOCK=~/.1password/agent.sock ssh-add -l
 gh auth status  # Uses 1Password token automatically
 ```
 
-## 🍎 macOS Darwin Home-Manager
+## 🍎 macOS Darwin (nix-darwin)
 
-For using this configuration on macOS without NixOS:
+### nix-darwin System Management
+
+For managing macOS system configuration with nix-darwin:
 
 ```bash
-# Apply Darwin home-manager configuration
-home-manager switch --flake .#darwin
+# Test configuration (dry-run)
+nix run nix-darwin -- build --flake .#darwin
 
-# Update packages
+# Apply Darwin system configuration
+sudo darwin-rebuild switch --flake .#darwin
+
+# List generations
+darwin-rebuild --list-generations
+
+# Rollback to previous generation
+darwin-rebuild rollback
+
+# Update flake inputs
 nix flake update
-home-manager switch --flake .#darwin
-
-# Test configuration
-home-manager build --flake .#darwin
+sudo darwin-rebuild switch --flake .#darwin
 ```
 
-See `docs/DARWIN_SETUP.md` for detailed setup instructions for your M1 MacBook Pro.
+### What nix-darwin Manages
+
+- **System Packages**: Installed in `/run/current-system/sw/bin`
+- **macOS System Preferences**: Dock, Finder, keyboard, trackpad settings
+- **SSH Configuration**: System-wide SSH config with 1Password integration
+- **Home-Manager Integration**: User-level dotfiles and packages
+- **Fonts**: System fonts (Nerd Fonts for terminals)
+
+### Darwin-Specific Features
+
+- **PATH**: System packages in `/run/current-system/sw/bin`, user packages in `/etc/profiles/per-user/$USER/bin`
+- **1Password SSH**: Uses macOS-specific socket path (`~/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock`)
+- **Git Signing**: Uses 1Password.app bundle for `op-ssh-sign` on Darwin
+- **Development Tools**: Full dev environment (compilers, K8s tools, cloud CLIs)
+- **Docker**: Works with Docker Desktop (install separately)
+
+### Troubleshooting Darwin
+
+**PATH not including system packages:**
+- Reload shell: `exec bash -l`
+- Check PATH: `echo $PATH | tr ':' '\n' | grep run`
+- Verify packages: `ls /run/current-system/sw/bin`
+
+**SSH config errors (spaces in path):**
+- 1Password path must be quoted in SSH config
+- Fixed automatically in `home-modules/tools/ssh.nix`
+
+**Git signing fails:**
+- On Darwin, uses `/Applications/1Password.app/Contents/MacOS/op-ssh-sign`
+- Verify: `git config --get gpg.ssh.program`
+- Test: `git commit --allow-empty -m "test" --gpg-sign`
+
+**Colors not showing in terminal:**
+- Check TERM: `echo $TERM` (should be `tmux-256color` or `xterm-256color`)
+- Test colors: `tput colors` (should show 256)
+- Verify Starship: `which starship && starship --version`
+
+See `docs/DARWIN_SETUP.md` for detailed setup instructions.
 
 ---
 
-_Last updated: 2025-10 with Darwin home-manager support_
+_Last updated: 2025-10 with nix-darwin system management_

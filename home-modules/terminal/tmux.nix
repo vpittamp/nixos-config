@@ -104,13 +104,11 @@
       set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
 
       # Visual distinction between active and inactive panes
-      # Active pane: pure black background with bright text
-      set -g window-active-style "bg=colour16"  # Pure black background for active pane
-      # Inactive panes: apply dim filter to all content including application colors
-      set -g window-style "bg=colour234,dim"  # Dark gray background with dim attribute for all text
-
-      # Alternative color settings for better inactive pane dimming
-      # The 'dim' attribute affects all output including ANSI colors from applications
+      # IMPORTANT: Removed 'dim' attribute as it strips colors from Starship prompt and other colored output
+      # Active pane: default terminal background
+      set -g window-active-style "bg=default"
+      # Inactive panes: slightly darker background without dim attribute
+      set -g window-style "bg=colour233"  # Very dark gray but no dim filter
 
       # Remove pane indicators for cleaner look
       set -g pane-border-indicators off

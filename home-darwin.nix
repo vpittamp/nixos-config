@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 {
   imports = [
     # Use only darwin-home.nix, which has curated cross-platform imports
@@ -7,8 +7,9 @@
     # Note: plasma-home.nix is excluded - KDE Plasma is Linux-only
   ];
 
-  home.username = "vinodpittampalli";
-  home.homeDirectory = "/Users/vinodpittampalli";
+  # Force these settings to override any null values from onepassword-shell-plugins
+  home.username = lib.mkForce "vinodpittampalli";
+  home.homeDirectory = lib.mkForce "/Users/vinodpittampalli";
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''

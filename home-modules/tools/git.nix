@@ -46,15 +46,21 @@
       gpg = {
         format = "ssh";
         ssh = {
-          program = "${pkgs._1password-gui or pkgs._1password-cli}/bin/op-ssh-sign";
+          # On Darwin, op-ssh-sign is in the 1Password.app bundle
+          # On Linux, it's in the Nix package
+          program = if pkgs.stdenv.isDarwin
+            then "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
+            else "${pkgs._1password-gui or pkgs._1password-cli}/bin/op-ssh-sign";
           allowedSignersFile = "~/.config/git/allowed_signers";
         };
       };
       
       # Credential helpers - use 1Password for all Git operations
       # This replaces gh/glab credential helpers with unified 1Password integration
-      credential = {
-        # Primary credential helper: 1Password
+      # Note: On Darwin, 1Password CLI doesn't include git-credential helper
+      # Use SSH authentication instead (configured above with op-ssh-sign)
+      credential = lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
+        # Primary credential helper: 1Password (Linux only)
         # This handles GitHub, GitLab, and all other Git remotes
         helper = "${pkgs._1password-gui or pkgs._1password}/libexec/git-credential-1password";
       };

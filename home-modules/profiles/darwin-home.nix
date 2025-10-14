@@ -73,7 +73,7 @@ in
       packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
       basePackages = lib.filter (pkg: pkg.meta.available or true) (packageConfig.getProfile.user);
       darwinSpecificPackages = [
-        pkgs._1password  # 1Password CLI for macOS
+        pkgs._1password-cli  # 1Password CLI for macOS
       ];
     in
     basePackages ++ darwinSpecificPackages;
@@ -99,6 +99,28 @@ in
   };
 
   home.sessionVariables = sessionConfig;
+
+  # Create stable bash symlink for use with chsh
+  # This ensures we can set a persistent default shell that doesn't change with Nix store paths
+  home.activation.createBashSymlink = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
+    $DRY_RUN_CMD ln -sf "${pkgs.bashInteractive}/bin/bash" "$HOME/.local/bin/bash"
+
+    # Check if already in /etc/shells
+    if ! grep -q "^$HOME/.local/bin/bash$" /etc/shells 2>/dev/null; then
+      echo ""
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "📌 To set Nix bash 5.3 as your default shell, run:"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "  sudo sh -c 'echo \"$HOME/.local/bin/bash\" >> /etc/shells'"
+      echo "  chsh -s $HOME/.local/bin/bash"
+      echo ""
+      echo "Current shell: $(dscl . -read ~/ UserShell | awk '{print $2}')"
+      echo "Nix bash version: ${pkgs.bashInteractive.version}"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo ""
+    fi
+  '';
 
   # macOS-specific configurations
   # Note: macOS uses launchd instead of systemd, so services need to be configured differently

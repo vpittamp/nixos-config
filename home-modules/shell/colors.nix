@@ -2,10 +2,12 @@
 {
   # Cross-platform terminal color configuration
   # Works on both Linux and macOS
-  
+
   programs.dircolors = {
-    enable = true;
-    enableBashIntegration = true;
+    # dircolors is Linux-only (uses GNU coreutils dircolors command)
+    # On macOS, we use LSCOLORS instead (configured in bash.nix)
+    enable = pkgs.stdenv.isLinux;
+    enableBashIntegration = pkgs.stdenv.isLinux;
     
     # Custom color settings for ls/eza
     # These work consistently across platforms
