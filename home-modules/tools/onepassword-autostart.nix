@@ -63,35 +63,7 @@
   ];
   
   # Auto-start 1Password desktop app on login with proper environment
-  systemd.user.services.onepassword-gui = {
-    Unit = {
-      Description = "1Password Desktop Application";
-      After = [ "graphical-session.target" ];
-      PartOf = [ "graphical-session.target" ];
-    };
-    
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --enable-features=UseOzonePlatform --ozone-platform=x11";
-      Restart = "on-failure";
-      RestartSec = 5;
-      
-      # Environment for better integration
-      Environment = [
-        "XDG_RUNTIME_DIR=/run/user/%U"
-      ];
-      
-      # Dynamic display environment
-      EnvironmentFile = "-%h/.config/1password/env";
-    };
-    
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
-  
-  # Ensure 1Password starts with the desktop session
-  # This creates a desktop entry for autostart
+  # Using single autostart mechanism (XDG desktop entry) to avoid duplicate system tray icons
   home.file.".config/autostart/1password.desktop" = {
     text = ''
       [Desktop Entry]

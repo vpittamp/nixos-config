@@ -95,7 +95,7 @@
     kdePackages.krfb     # KDE's VNC server (works with both X11 and Wayland)
 
     # Remote access clients
-    remmina
+    # remmina  # Disabled to prevent autostart issues - use KRFB or XRDP instead
     freerdp
     xorg.xauth      # X authentication
 

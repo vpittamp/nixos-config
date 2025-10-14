@@ -223,23 +223,6 @@ in
     fi
   '';
 
-  # Systemd service to ensure 1Password starts properly (only with GUI)
-  systemd.user.services.onepassword-gui = lib.mkIf hasGui {
-    description = "1Password Desktop Application";
-    after = [ "graphical-session.target" ];
-    wantedBy = [ "graphical-session.target" ];
-    
-    serviceConfig = {
-      Type = "forking";
-      # QT_SCALE_FACTOR=0.75 makes 1Password smaller on HiDPI displays
-      # --silent starts minimized, --unlock prompts for unlock immediately
-      ExecStart = "${pkgs.bash}/bin/bash -c 'QT_SCALE_FACTOR=0.75 GDK_SCALE=1 GDK_DPI_SCALE=1 ${pkgs._1password-gui}/bin/1password --silent --unlock'";
-      Restart = "on-failure";
-      RestartSec = 5;
-      Environment = [
-        "DISPLAY=:0"
-        "SSH_AUTH_SOCK=/home/vpittamp/.1password/agent.sock"
-      ];
-    };
-  };
+  # Note: 1Password autostart is managed by home-manager in onepassword-autostart.nix
+  # This avoids duplicate system tray icons from multiple autostart mechanisms
 }
