@@ -26,6 +26,7 @@ in
     # Terminal configurations (cross-platform)
     ../terminal/tmux.nix
     ../terminal/sesh.nix
+    ../terminal/iterm2.nix  # iTerm2 declarative profile (Darwin-only)
 
     # Editor configurations (cross-platform)
     ../editors/neovim.nix
@@ -86,6 +87,19 @@ in
 
   # VSCode profile configuration
   modules.tools.vscode.defaultProfile = lib.mkDefault "default";
+
+  # iTerm2 declarative configuration (Darwin-only)
+  programs.iterm2 = {
+    enable = true;
+    profileName = "NixOS Catppuccin";
+    font = {
+      name = "MesloLGS-NF-Regular";
+      size = 14;
+    };
+    unlimitedScrollback = true;
+    transparency = 0.0;
+    blur = false;
+  };
 
   programs.home-manager.enable = true;
 

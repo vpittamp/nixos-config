@@ -293,6 +293,22 @@
   };
 
   # ============================================================================
+  # SECURITY CONFIGURATION
+  # ============================================================================
+
+  # Disable password requirement for sudo (convenient for development)
+  # Note: This is less secure than TouchID but convenient for automation
+  security.sudo = {
+    extraConfig = ''
+      # Allow vinodpittampalli to run sudo without password
+      vinodpittampalli ALL=(ALL) NOPASSWD: ALL
+    '';
+  };
+
+  # TouchID for sudo authentication (disabled in favor of NOPASSWD above)
+  # security.pam.enableSudoTouchIdAuth = true;
+
+  # ============================================================================
   # SERVICES
   # ============================================================================
 
