@@ -51,9 +51,15 @@
       url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # VM image generation
+    nixos-generators = {
+      url = "github:nix-community/nixos-generators";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, nixos-generators, ... }@inputs:
     let
       # Helper function to create a system configuration
       mkSystem = { hostname, system, modules }:
@@ -178,6 +184,12 @@
           system = "x86_64-linux";
           modules = [ ./configurations/vm-hetzner.nix ];
         };
+
+        # KubeVirt Minimal: Minimal base image (SSH + RustDesk + Tailscale)
+        kubevirt-minimal = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [ ./configurations/kubevirt-minimal.nix ];
+        };
       };
 
       homeConfigurations =
@@ -263,6 +275,15 @@
             }).config.system.build.toplevel;
         in
         rec {
+          # Minimal KubeVirt VM image (qcow2 format with RustDesk + Tailscale)
+          nixos-kubevirt-minimal-image = nixos-generators.nixosGenerate {
+            inherit system;
+            modules = [
+              ./configurations/kubevirt-minimal.nix
+            ];
+            format = "qcow";
+          };
+
           # Minimal container
           container-minimal = pkgs.dockerTools.buildLayeredImage {
             name = "nixos-container";

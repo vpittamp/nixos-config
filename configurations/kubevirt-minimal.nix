@@ -22,6 +22,8 @@
     (modulesPath + "/profiles/qemu-guest.nix")
     # Minimal base profile
     (modulesPath + "/profiles/minimal.nix")
+    # Remote Desktop: RustDesk
+    ../modules/services/rustdesk.nix
   ];
 
   # ========== BOOT CONFIGURATION ==========
@@ -57,10 +59,10 @@
   networking.hostName = "nixos-kubevirt";
   networking.useDHCP = true;  # Works best with KubeVirt pod networking
 
-  # Firewall - open SSH only
+  # Firewall - open SSH and RustDesk
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 ];
+    allowedTCPPorts = [ 22 21116 ];  # SSH and RustDesk direct connection port
   };
 
   # ========== CLOUD-INIT ==========
@@ -78,6 +80,21 @@
       PasswordAuthentication = true;
     };
   };
+
+  # ========== RUSTDESK REMOTE DESKTOP ==========
+  # Enable RustDesk Remote Desktop (Headless Mode for VMs)
+  services.rustdesk = {
+    enable = true;
+    enableSystemService = true;
+    enableDirectIpAccess = true;
+    user = "root";
+    package = pkgs.rustdesk-flutter;
+    # permanentPassword will be set via cloud-init from Azure Key Vault Secret
+  };
+
+  # ========== TAILSCALE VPN ==========
+  # Enable Tailscale for secure remote access
+  services.tailscale.enable = true;
 
   # ========== USER CONFIGURATION ==========
   # Create default user (cloud-init can override)
