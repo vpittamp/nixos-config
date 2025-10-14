@@ -41,7 +41,9 @@
       set -ga terminal-overrides ",xterm-256color:Tc"
       set -ga terminal-overrides ",screen-256color:Tc"
       set -ga terminal-overrides ",tmux-256color:Tc"
-      set -sg escape-time 0
+      # Increase escape-time to 200ms to prevent OSC color query sequences
+      # appearing as literal text (tmux 3.4+ issue on Darwin)
+      set -sg escape-time 200
       set -g focus-events off
       set -g detach-on-destroy off
       set -g repeat-time 1000

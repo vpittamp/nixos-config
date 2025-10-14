@@ -46,18 +46,18 @@ in
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
-    # ../tools/vscode.nix # Temporarily disabled on Darwin - has build issues with extensions
-    # Note: gitkraken.nix has xdg.desktopEntries (Linux-only) - excluded
-    # Note: kubernetes-apps.nix has xdg.desktopEntries (Linux-only) - excluded
 
     # AI Assistant configurations (cross-platform)
-    # Note: All AI assistants temporarily disabled on Darwin due to Chromium dependencies
-    # Users can install them manually on macOS:
-    # - Claude Code: https://claude.ai/download
-    # - Codex: https://github.com/codex/codex
-    # - Gemini CLI: https://github.com/google/gemini-cli
-    # ../ai-assistants/codex.nix
-    # ../ai-assistants/gemini-cli.nix
+    # Platform guards ensure only compatible MCP servers are enabled
+    ../ai-assistants/claude-code.nix
+    ../ai-assistants/codex.nix
+    ../ai-assistants/gemini-cli.nix
+
+    # VSCode with AI extensions
+    ../tools/vscode.nix
+
+    # Note: gitkraken.nix has xdg.desktopEntries (Linux-only) - excluded
+    # Note: kubernetes-apps.nix has xdg.desktopEntries (Linux-only) - excluded
 
     # External modules (cross-platform)
     inputs.onepassword-shell-plugins.hmModules.default
@@ -85,8 +85,7 @@ in
   modules.tools.docker.enable = lib.mkDefault true;
 
   # VSCode profile configuration
-  # Disabled on Darwin - VSCode module has build issues
-  # modules.tools.vscode.defaultProfile = lib.mkDefault "nixos";
+  modules.tools.vscode.defaultProfile = lib.mkDefault "default";
 
   programs.home-manager.enable = true;
 

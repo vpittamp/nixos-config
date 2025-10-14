@@ -1,7 +1,13 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 let
-  chromiumBin = "${pkgs.chromium}/bin/chromium";
+  # Chromium is only available on Linux
+  # On Darwin, MCP servers requiring Chromium will be disabled
+  enableChromiumMcpServers = pkgs.stdenv.isLinux;
+
+  chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
+    chromiumBin = "${pkgs.chromium}/bin/chromium";
+  };
 in
 {
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
@@ -14,13 +20,15 @@ in
 
     # Settings for gemini-cli
     settings = {
-      theme = "Default";
+      # Theme removed - using Gemini CLI default theme
+      # Note: Custom theme names like "dark" or "Default Dark" are not recognized
       vimMode = false;
       preferredEditor = "nvim";
       autoAccept = false;
 
       # MCP Servers configuration
-      mcpServers = {
+      # Only enabled on Linux where Chromium is available
+      mcpServers = lib.optionalAttrs enableChromiumMcpServers {
         # Chrome DevTools MCP server for browser debugging and performance analysis
         chrome-devtools = {
           command = "npx";
@@ -30,7 +38,7 @@ in
             "--isolated"
             "--headless"  # Run without GUI (learned from Codex fix)
             "--executablePath"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
         };
 
@@ -44,7 +52,7 @@ in
             "--browser"
             "chromium"
             "--executable-path"
-            chromiumBin
+            chromiumConfig.chromiumBin
           ];
           env = {
             PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";

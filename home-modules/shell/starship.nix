@@ -1,3 +1,26 @@
+# Starship Prompt Configuration
+#
+# Color Strategy:
+# - Darwin (macOS): Uses simple ANSI color names (blue, cyan, green, yellow, red)
+#   due to Terminal.app + tmux compatibility issues with RGB colors
+# - Linux: Can use Catppuccin Mocha RGB palette (currently disabled for consistency)
+#
+# Palette Status:
+# - Catppuccin palette defined below but not activated (line ~37 commented)
+# - All prompt elements use ANSI colors for cross-platform compatibility
+# - To enable Catppuccin on Linux: uncomment palette line or add platform conditional
+#
+# Related Configuration:
+# - bash.nix: Sets color environment variables on Darwin+tmux (lines 269-279)
+# - tmux.nix: Sets escape-time to prevent OSC color query sequences on Darwin (line 46)
+#
+# Troubleshooting:
+# - If colors missing: Check COLORTERM environment variable (should be "truecolor")
+# - If OSC sequences visible: Check VTE_VERSION and STARSHIP_NO_COLOR_QUERY
+# - If git status shows $!: Ensure format uses $modified not $all_status
+#
+# See: specs/003-incorporate-this-into/ for full documentation
+
 { config, pkgs, lib, ... }:
 let
   colors = {
@@ -33,7 +56,8 @@ in
 
     settings = {
       add_newline = true;
-      palette = "catppuccin_mocha";
+      # Palette disabled - using simple ANSI colors for compatibility
+      # palette = "catppuccin_mocha";
       right_format = "$time";
       continuation_prompt = "⋯ ";
 
@@ -66,11 +90,12 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      # Simplified format for debugging - hostname already includes @
+      format = "$username$hostname $directory$git_branch$git_status$character";
 
       os = {
         disabled = false;
-        style = "bold fg:${colors.lavender}";
+        style = "bold blue";  # Was: fg:${colors.lavender}
         format = "[$symbol]($style)";
         symbols = {
           Macos = " ";  # Apple logo Nerd Font icon
@@ -86,26 +111,29 @@ in
 
       username = {
         show_always = true;
-        style_user = "bold fg:${colors.rosewater}";
-        style_root = "bold fg:${colors.red}";
+        # Test with direct color codes instead of palette
+        style_user = "bold blue";
+        style_root = "bold red";
         format = "[$user]($style)";
       };
 
       hostname = {
         ssh_only = false;
-        style = "fg:${colors.sapphire}";
+        # Test with direct color
+        style = "cyan";
         format = "@[$hostname]($style) ";
       };
 
       custom.tmux = {
         when = "test -n \"$TMUX\"";
         command = "echo \"$TMUX_PANE\"";
-        style = "bold fg:${colors.sky}";
+        style = "bold cyan";  # Was: bold fg:${colors.sky}
         format = "[$output]($style) ";
       };
 
       directory = {
-        style = "bold fg:${colors.green}";
+        # Test with simple color
+        style = "bold green";
         format = "[$path]($style) ";
         truncation_length = 3;
         truncation_symbol = "…/";
@@ -115,29 +143,34 @@ in
 
       git_branch = {
         symbol = "⎇ ";
-        style = "fg:${colors.peach}";
+        # Test with simple color
+        style = "yellow";
         format = "[$symbol$branch]($style)";
       };
 
       git_status = {
-        style = "fg:${colors.yellow}";
-        format = " [$all_status$ahead_behind]($style)";
+        # Test with simple color
+        style = "red";
+        # Simplified format - explicitly list status indicators
+        format = "([$modified$untracked]($style) )";
+        modified = "!";
+        untracked = "?";
       };
 
       git_state = {
-        style = "fg:${colors.maroon}";
+        style = "red";  # Was: fg:${colors.maroon}
         format = " [$state( $progress_current/$progress_total)]($style)";
       };
 
       nix_shell = {
         symbol = "❄ ";
-        style = "fg:${colors.sky} bold";
+        style = "cyan bold";  # Was: fg:${colors.sky} bold
         format = "[$symbol$state( $name)]($style) ";
       };
 
       kubernetes = {
         symbol = "☸";
-        style = "fg:${colors.teal}";
+        style = "cyan";  # Was: fg:${colors.teal}
         format = " [$symbol $context]($style)";
         disabled = false;
         contexts = [
@@ -150,7 +183,7 @@ in
 
       cmd_duration = {
         min_time = 2000;
-        style = "fg:${colors.yellow}";
+        style = "yellow";  # Was: fg:${colors.yellow}
         format = " [⏱ $duration]($style)";
       };
 
@@ -161,14 +194,15 @@ in
       time = {
         disabled = false;
         time_format = "%H:%M";
-        style = "fg:${colors.subtext0}";
+        style = "bright-black";  # Was: fg:${colors.subtext0}
         format = "[$time]($style)";
       };
 
       character = {
-        success_symbol = "[❯](bold fg:${colors.green})";
-        error_symbol = "[❯](bold fg:${colors.red})";
-        vimcmd_symbol = "[❮](bold fg:${colors.green})";
+        # Test with simple colors
+        success_symbol = "[❯](bold green)";
+        error_symbol = "[❯](bold red)";
+        vimcmd_symbol = "[❮](bold green)";
       };
     };
   };

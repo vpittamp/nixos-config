@@ -4,7 +4,11 @@ let
   # Primary profile used by all VSCode instances
   # This ensures consistent extension/settings across all activities
   primaryProfile = config.modules.tools.vscode.defaultProfile or "default";
-  isM1 = osConfig.networking.hostName or "" == "nixos-m1";
+
+  # Platform detection without osConfig (unavailable in nix-darwin)
+  isDarwin = pkgs.stdenv.isDarwin;
+  isLinux = pkgs.stdenv.isLinux;
+  isM1 = isLinux && pkgs.stdenv.isAarch64;  # M1 detection for Linux Asahi only
 
   # Chromium is only available on Linux
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
@@ -240,6 +244,7 @@ let
         "icon" = "terminal-bash";
         "env" = {
           "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
+        } // lib.optionalAttrs isLinux {
           "BROWSER" = "${pkgs.firefox}/bin/firefox";
         };
       };
@@ -255,6 +260,7 @@ let
           "SSH_AUTH_SOCK" = "$HOME/.1password/agent.sock";
           "VSCODE_TERMINAL" = "true"; # Signal to tmux that we're in VS Code
           "TERM" = "xterm-256color"; # Ensure consistent TERM variable
+        } // lib.optionalAttrs isLinux {
           "BROWSER" = "${pkgs.firefox}/bin/firefox"; # For OAuth flows
         };
         "overrideName" = true;
@@ -268,12 +274,12 @@ let
     "terminal.integrated.localEchoExcludePrograms" = [ "tmux" "screen" ]; # Disable local echo for tmux
     "terminal.integrated.environmentChangesRelaunch" = false; # Don't relaunch on env changes
     "terminal.integrated.persistentSessionScrollback" = 100; # Limit persistent scrollback
-
-    # Global terminal environment for OAuth flows
+  } // lib.optionalAttrs isLinux {
+    # Global terminal environment for OAuth flows (Linux only - Firefox not available on Darwin)
     "terminal.integrated.env.linux" = {
       "BROWSER" = "${pkgs.firefox}/bin/firefox";
     };
-
+  } // {
     # SSH configuration for 1Password
     "remote.SSH.configFile" = "~/.ssh/config";
     "remote.SSH.showLoginTerminal" = true;

@@ -266,6 +266,25 @@
         export STARSHIP_DISABLE_ANSI_INJECTION=1
         # Tell applications not to query terminal colors
         export VTE_VERSION="6003"  # Fake VTE version to disable color queries
+      elif [[ "$OSTYPE" == "darwin"* ]] && [ -n "$TMUX" ]; then
+        # Darwin + tmux color configuration
+        #
+        # These environment variables prevent OSC color query sequences and
+        # ensure proper dark theme detection for AI assistant TUIs:
+        #
+        # - VTE_VERSION=6003: Disables terminal color detection queries
+        #   (prevents ]11;rgb:... sequences from appearing as literal text)
+        # - COLORFGBG=15;0: Indicates dark terminal (white fg, black bg)
+        #   (prevents yellow background distortion in AI TUIs like Gemini/Claude)
+        # - STARSHIP_NO_COLOR_QUERY=1: Disables Starship's color detection
+        # - COLORTERM=truecolor: Indicates 24-bit color support
+        #
+        # See: specs/003-incorporate-this-into/research.md for rationale
+
+        export VTE_VERSION="6003"  # Fake VTE version to disable color queries
+        export COLORFGBG="15;0"  # Dark terminal: white fg (15), black bg (0)
+        export STARSHIP_NO_COLOR_QUERY=1  # Disable Starship color detection
+        export COLORTERM="truecolor"  # 24-bit color support
       else
         # Regular terminal settings - let Konsole set its own TERM
         # Only set TERM if it's not already set properly
