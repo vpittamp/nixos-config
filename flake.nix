@@ -23,6 +23,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # nix-darwin: System configuration framework for macOS
+    nix-darwin = {
+      url = "github:LnL7/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Additional tools
     onepassword-shell-plugins = {
       url = "github:1Password/shell-plugins";
@@ -53,7 +59,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, nix-darwin, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, ... }@inputs:
     let
       # Helper function to create a system configuration
       mkSystem = { hostname, system, modules }:
@@ -220,6 +226,41 @@
           # Usage: home-manager switch --flake .#darwin
           darwin = mkDarwinHome ./home-darwin.nix "aarch64-darwin";
         };
+
+      # Darwin (macOS) System Configurations
+      darwinConfigurations = {
+        darwin = nix-darwin.lib.darwinSystem {
+          system = builtins.currentSystem or "aarch64-darwin";
+          specialArgs = { inherit inputs; };
+          modules = [
+            ./configurations/darwin.nix
+            home-manager.darwinModules.home-manager
+            {
+              # Track git revision similar to NixOS
+              system.configurationRevision = self.rev or self.dirtyRev or "unknown";
+
+              # Home Manager integration
+              home-manager = {
+                backupFileExtension = "backup";
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = {
+                  inherit inputs;
+                  pkgs-unstable = import nixpkgs-bleeding {
+                    system = builtins.currentSystem or "aarch64-darwin";
+                    config.allowUnfree = true;
+                  };
+                };
+                users.vinodpittampalli = {
+                  imports = [ ./home-darwin.nix ];
+                  home.stateVersion = "25.05";
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
+            }
+          ];
+        };
+      };
 
       # Container configurations
       packages = flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
