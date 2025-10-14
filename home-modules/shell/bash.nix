@@ -5,10 +5,15 @@
     # Use the Nix-provided bash (version 5+) instead of system bash
     # This avoids compatibility issues with macOS's ancient bash 3.2
     package = pkgs.bashInteractive;
-    
+
     historyControl = [ "ignoreboth" ];
     historySize = 10000;
     historyFileSize = 20000;
+
+    # Disable bash-completion on Darwin due to bash 3.2 incompatibility
+    # The -v test operator in bash-completion doesn't work in bash 3.2
+    # Users running Nix bash will get completion through initExtra
+    enableCompletion = !pkgs.stdenv.isDarwin;
     
     # For macOS Terminal.app - it runs login shells by default
     # This ensures colors and configs load properly
