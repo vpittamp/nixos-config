@@ -1,4 +1,4 @@
-{ config, pkgs, lib, osConfig, ... }:
+{ config, pkgs, lib, osConfig ? {}, ... }:
 {
   programs.bash = {
     enable = true;
@@ -359,7 +359,7 @@
         rm -f -- "$tmp"
       }
       
-      # Native Linux clipboard functions (Wayland/X11)
+      # Cross-platform clipboard functions (macOS, Wayland, X11)
       pbcopy() {
         local input
         if [ -t 0 ]; then
@@ -367,8 +367,11 @@
         else
           input="$(cat)"
         fi
+        # macOS native pbcopy
+        if [[ "$OSTYPE" == "darwin"* ]] && command -v pbcopy >/dev/null 2>&1; then
+          printf "%s" "$input" | command pbcopy
         # Try Wayland first (KDE Plasma on Hetzner)
-        if command -v wl-copy >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
+        elif command -v wl-copy >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
           printf "%s" "$input" | wl-copy --type text/plain 2>/dev/null
         # Fall back to X11
         elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then
@@ -380,8 +383,11 @@
       }
 
       pbpaste() {
+        # macOS native pbpaste
+        if [[ "$OSTYPE" == "darwin"* ]] && command -v pbpaste >/dev/null 2>&1; then
+          command pbpaste
         # Try Wayland first (KDE Plasma on Hetzner)
-        if command -v wl-paste >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
+        elif command -v wl-paste >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY" ]; then
           wl-paste --no-newline 2>/dev/null
         # Fall back to X11
         elif command -v xclip >/dev/null 2>&1 && [ -n "$DISPLAY" ]; then

@@ -73,6 +73,7 @@ in
         style = "bold fg:${colors.lavender}";
         format = "[$symbol]($style)";
         symbols = {
+          Macos = " ";  # Apple logo Nerd Font icon
           NixOS = "❄ ";  # Snowflake (works without Nerd Fonts)
           Debian = " ";  # Debian Nerd Font icon
           Ubuntu = " ";  # Ubuntu Nerd Font icon

@@ -171,14 +171,16 @@
       bind -n M-4 select-window -t 4
       bind -n M-5 select-window -t 5
 
-      # Copy mode with KDE clipboard integration
+      # Copy mode with cross-platform clipboard integration (macOS, Wayland, X11)
       bind Enter copy-mode
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
 
-      # 'y' key copies to KDE clipboard and exits copy mode
+      # 'y' key copies to clipboard and exits copy mode
       bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "\
-        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+        if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+          pbcopy; \
+        elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
           wl-copy; \
         else \
           xclip -selection clipboard -in; \
@@ -186,7 +188,9 @@
 
       # 'Y' copies to clipboard but stays in copy mode (for multiple selections)
       bind -T copy-mode-vi Y send-keys -X copy-pipe "\
-        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+        if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+          pbcopy; \
+        elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
           wl-copy; \
         else \
           xclip -selection clipboard -in; \
@@ -200,10 +204,12 @@
       bind p paste-buffer
       bind B choose-buffer  # Changed from P to B to avoid conflict with popup
 
-      # Paste from system clipboard (KDE Plasma clipboard)
+      # Paste from system clipboard (cross-platform)
       # Use Ctrl+Shift+V or prefix + V to paste from system clipboard
       bind V run-shell "\
-        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+        if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+          pbpaste | tmux load-buffer - && tmux paste-buffer; \
+        elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
           wl-paste | tmux load-buffer - && tmux paste-buffer; \
         else \
           xclip -selection clipboard -out | tmux load-buffer - && tmux paste-buffer; \
@@ -218,10 +224,12 @@
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
 
-      # Enhanced mouse copy that integrates with KDE clipboard
+      # Enhanced mouse copy with cross-platform clipboard integration
       # This preserves the smooth selection experience while adding clipboard sync
       bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-no-clear "\
-        if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+        if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+          pbcopy; \
+        elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
           wl-copy; \
         else \
           xclip -selection clipboard -in; \
@@ -232,7 +240,9 @@
         select-pane \; \
         send-keys -X select-word \; \
         send-keys -X copy-pipe-no-clear "\
-          if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+            pbcopy; \
+          elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
             wl-copy; \
           else \
             xclip -selection clipboard -in; \
@@ -243,7 +253,9 @@
         select-pane \; \
         send-keys -X select-line \; \
         send-keys -X copy-pipe-no-clear "\
-          if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
+          if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+            pbcopy; \
+          elif [ -n \"\$WAYLAND_DISPLAY\" ]; then \
             wl-copy; \
           else \
             xclip -selection clipboard -in; \
@@ -275,7 +287,13 @@
       # File picker popup (backtick + F) - Auto-copies selected path
       bind-key F display-popup -E -h 80% -w 80% 'file=$(find . -type f 2>/dev/null | fzf --preview="head -50 {}"); \
         if [ -n "$file" ]; then \
-          echo -n "$file" | if [ -n "$WAYLAND_DISPLAY" ]; then wl-copy; else xclip -selection clipboard; fi; \
+          if [[ "$OSTYPE" == "darwin"* ]]; then \
+            echo -n "$file" | pbcopy; \
+          elif [ -n "$WAYLAND_DISPLAY" ]; then \
+            echo -n "$file" | wl-copy; \
+          else \
+            echo -n "$file" | xclip -selection clipboard; \
+          fi; \
           echo "Copied: $file"; \
           sleep 1; \
         fi'
@@ -298,7 +316,7 @@
       # Quick copy popup (backtick + C) - Show current tmux buffer
       bind-key C display-popup -E -h 60% -w 70% 'echo "=== TMUX BUFFER ==="; tmux show-buffer | less'
 
-      # Clipboard history popup (backtick + Q) - Show KDE clipboard items
+      # Clipboard history popup (backtick + Q) - Show clipboard items (cross-platform)
       bind-key Q display-popup -E -h 70% -w 80% 'bash -c "\
         if command -v qdbus &>/dev/null 2>&1; then \
           echo \"=== CLIPBOARD HISTORY (press q to quit) ===\"; \
@@ -312,7 +330,9 @@
             fi; \
           done; \
         else \
-          if [ -n \"$WAYLAND_DISPLAY\" ]; then \
+          if [[ \"\$OSTYPE\" == \"darwin\"* ]]; then \
+            echo \"Current clipboard:\"; pbpaste; \
+          elif [ -n \"$WAYLAND_DISPLAY\" ]; then \
             echo \"Current clipboard:\"; wl-paste; \
           else \
             echo \"Current clipboard:\"; xclip -selection clipboard -o; \
