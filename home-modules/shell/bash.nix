@@ -13,6 +13,12 @@
     # For macOS Terminal.app - it runs login shells by default
     # This ensures colors and configs load properly
     profileExtra = ''
+      # CRITICAL: Source Nix daemon environment (sets up PATH)
+      # This must come first to ensure nix packages are available
+      if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      fi
+
       # CRITICAL: Source home-manager session variables for login shells
       # This ensures KDE terminals that start login shells get the environment
       if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
