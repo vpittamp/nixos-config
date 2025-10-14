@@ -40,36 +40,57 @@
       };
 
       # KWin Compositing and Effects
+      # Performance optimized for VM environments (T008, T009)
       "kwinrc".Compositing = {
-        Backend = "OpenGL";
+        Backend = lib.mkForce "XRender";  # CPU-based rendering for VMs (T008)
         Enabled = true;
-        GLCore = true;
-        GLPreferBufferSwap = "a";  # Automatic
-        HiddenPreviews = 5;  # Show previews for all windows
+        GLCore = false;  # Disable GL core when using XRender
+        GLPreferBufferSwap = "n";  # No buffer swapping for lowest latency (T008)
+        MaxFPS = 30;  # Cap at 30 FPS for remote desktop (T009)
+        MaxFPSInterval = 33333333;  # 1/30 second in nanoseconds
+        VSync = false;  # Disable VSync for lower latency (T009)
+        HiddenPreviews = 5;  # Limit preview generation (T009)
         OpenGLIsUnsafe = false;
-        WindowsBlockCompositing = true;
+        WindowsBlockCompositing = true;  # Allow fullscreen apps to disable compositing
       };
 
       # Desktop Effects
+      # VM Performance Optimization: Disable expensive effects (T013-T018)
       "kwinrc".Plugins = {
-        overviewEnabled = true;  # Enable Overview effect
+        overviewEnabled = true;  # Enable Overview effect (low cost)
         screenedgeEnabled = false;  # Disable screen edge
         presentwindowsEnabled = false;  # Disable present windows
         desktopgridEnabled = false;  # Disable desktop grid (replaced by Overview)
-        windowviewEnabled = true;  # Enable window view
-        blurEnabled = true;
-        contrastEnabled = true;
-        slideEnabled = true;
-        wobblywindowsEnabled = false;
-        zoomEnabled = true;
+        windowviewEnabled = true;  # Enable window view (low cost)
+        blurEnabled = lib.mkForce false;  # T013: Disable blur (saves 15-25% CPU)
+        contrastEnabled = lib.mkForce false;  # T014: Disable background contrast (saves 10-15% CPU)
+        kwin4_effect_translucencyEnabled = lib.mkForce false;  # T015: Disable translucency (saves 10-20% CPU)
+        wobblywindowsEnabled = lib.mkForce false;  # T016: Disable wobbly windows (saves 8-12% CPU)
+        magiclampEnabled = lib.mkForce false;  # T017: Disable magic lamp (saves 5-8% CPU)
+        cubeslideEnabled = lib.mkForce false;  # T018: Disable desktop cube (saves 15-25% CPU if enabled)
+        slideEnabled = true;  # Keep slide but will set duration to 0
+        zoomEnabled = true;  # Keep zoom for accessibility
         mouseclickEnabled = false;
       };
 
-      # Screen Edges - Disable all hot corners
-      "kwinrc".Effect-PresentWindows = {
-        BorderActivateAll = 9;  # None
+      # Animation Configuration (T019): Set all animations to instant for VM performance
+      "kdeglobals".KDE = {
+        AnimationDurationFactor = lib.mkForce 0;  # Disable all animations globally
+      };
+
+      "kwinrc"."Effect-Slide" = {
+        Duration = lib.mkForce 0;  # Instant workspace switching
+      };
+
+      "kwinrc"."Effect-PresentWindows" = {
+        Duration = lib.mkForce 0;  # Instant present windows
+        BorderActivateAll = 9;  # None (hot corner)
         BorderActivate = 9;  # None
         BorderActivateClass = 9;  # None
+      };
+
+      "kwinrc"."Effect-Fade" = {
+        Duration = lib.mkForce 0;  # Instant fade effects
       };
 
       "kwinrc".Effect-Overview = {
@@ -119,19 +140,20 @@
         confirmLogout = true;  # Ask for confirmation on shutdown/logout
       };
 
-      # Baloo File Indexing - Enable for KRunner search
-      # Baloo indexes files for search in KRunner and Dolphin
+      # Baloo File Indexing - Disabled for VM performance optimization (T028)
+      # Baloo indexing consumes 300MB RAM + 10-30% CPU during indexing
+      # Trade-off: Lose file search in KRunner and Dolphin
       "baloofilerc"."Basic Settings" = {
-        "Indexing-Enabled" = true;  # Enable file indexing
+        "Indexing-Enabled" = lib.mkForce false;  # Disable for VM optimization
       };
 
       # KRunner Configuration
-      # Enable Firefox integration and search plugins
+      # Optimized for VM environment (Baloo disabled)
       "krunnerrc".Plugins = {
         # Enable Firefox bookmarks and history search
         "browsertabsEnabled" = true;  # Search open browser tabs
         "placesEnabled" = true;  # Search places (bookmarks, etc.)
-        "baloosearchEnabled" = true;  # Enable file search via Baloo
+        "baloosearchEnabled" = lib.mkForce false;  # Disable (Baloo not running)
         "webshortcutsEnabled" = true;  # Web search shortcuts
       };
 

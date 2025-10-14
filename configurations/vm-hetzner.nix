@@ -38,6 +38,9 @@
     # Firefox optimizations can be configured manually after VM deployment
     ../modules/desktop/rdp-display.nix
 
+    # Remote Desktop: RustDesk
+    ../modules/services/rustdesk.nix
+
     # Services
     ../modules/services/onepassword-automation.nix
     ../modules/services/speech-to-text-safe.nix
@@ -154,6 +157,16 @@
     language = "en";
     enableGlobalShortcut = true;
     voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix {};
+  };
+
+  # Enable RustDesk Remote Desktop (Headless Mode for VMs)
+  services.rustdesk = {
+    enable = true;
+    enableSystemService = true;      # Run as system service (headless mode)
+    enableDirectIpAccess = true;     # Port 21116 for direct connections
+    user = "root";                   # Required for headless VMs
+    package = pkgs.rustdesk-flutter; # Latest Flutter-based version
+    # permanentPassword will be set via cloud-init from Azure Key Vault Secret
   };
 
   # Audio configuration for XRDP

@@ -15,7 +15,7 @@ in
 
     user = mkOption {
       type = types.str;
-      default = "vpittamp";
+      default = "root";  # Changed from "vpittamp" for VM deployments
       description = "User to run RustDesk service for";
     };
 
@@ -139,6 +139,9 @@ direct-access-port = "21116"
 ''}
 ${optionalString (cfg.permanentPassword != null) ''
 permanent-password = "${cfg.permanentPassword}"
+''}
+${optionalString cfg.enableSystemService ''
+allow-linux-headless = "Y"
 ''}
 # Enable unattended access (always allow connections without confirmation)
 enable-keyboard = true
