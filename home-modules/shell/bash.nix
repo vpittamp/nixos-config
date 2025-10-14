@@ -13,6 +13,9 @@
     # For macOS Terminal.app - it runs login shells by default
     # This ensures colors and configs load properly
     profileExtra = ''
+      # Prioritize Nix bash over system bash (macOS has ancient bash 3.2)
+      export PATH="$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+
       # CRITICAL: Source Nix daemon environment (sets up PATH)
       # This must come first to ensure nix packages are available
       if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
@@ -55,10 +58,15 @@
       fi
     '';
     
+    # Shell options - globstar and checkjobs require bash 4+
+    # On macOS, system bash is 3.2, so we conditionally enable these
     shellOptions = [
       "histappend"
       "checkwinsize"
       "extglob"
+    ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [
+      # These options require bash 4+ and may not work with macOS system bash 3.2
+      # They will work when using Nix bash 5.3+ (via ~/.nix-profile/bin/bash)
       "globstar"
       "checkjobs"
     ];
@@ -190,13 +198,27 @@
     };
     
     initExtra = ''
+      # Check bash version and warn if using old macOS bash
+      if [[ "$OSTYPE" == "darwin"* ]] && [[ ''${BASH_VERSINFO[0]:-0} -lt 4 ]]; then
+        echo "⚠️  Warning: You're using macOS system bash $BASH_VERSION (very old!)"
+        echo "   For full features, use Nix bash: ~/.nix-profile/bin/bash"
+        echo "   Or run: export PATH=\"\$HOME/.nix-profile/bin:\$PATH\""
+        echo ""
+      fi
+
+      # Enable bash 4+ options if available (for old bash compatibility)
+      if [[ ''${BASH_VERSINFO[0]:-0} -ge 4 ]]; then
+        shopt -s globstar 2>/dev/null || true
+        shopt -s checkjobs 2>/dev/null || true
+      fi
+
       # CRITICAL: Source home-manager session variables
       # This is required for all home-manager configurations to work properly
       # especially in KDE where the display manager doesn't source these
       if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
-      
+
       # Terminal configuration moved to TERM settings below
       
       # Native Linux Docker configuration (baseline)
