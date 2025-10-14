@@ -63,23 +63,30 @@
   ];
   
   # Auto-start 1Password desktop app on login with proper environment
-  # Using single autostart mechanism (XDG desktop entry) to avoid duplicate system tray icons
-  home.file.".config/autostart/1password.desktop" = {
-    text = ''
-      [Desktop Entry]
-      Name=1Password
-      GenericName=Password Manager
-      Comment=1Password - Password Manager
-      Exec=${pkgs._1password-gui}/bin/1password --silent --enable-features=UseOzonePlatform --ozone-platform=x11
-      Terminal=false
-      Type=Application
-      Icon=1password
-      StartupNotify=true
-      Categories=Utility;Security;
-      X-GNOME-Autostart-enabled=true
-      X-KDE-autostart-after=panel
-      Hidden=false
-    '';
+  # Using systemd user service for reliable autostart that works even after nixos-rebuild
+  systemd.user.services.onepassword-gui = {
+    Unit = {
+      Description = "1Password Desktop Application";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --enable-features=UseOzonePlatform --ozone-platform=x11";
+      Restart = "on-failure";
+      RestartSec = 5;
+
+      # Environment for better integration
+      Environment = [
+        "XDG_RUNTIME_DIR=/run/user/%U"
+        "DISPLAY=:10.0"
+      ];
+    };
+
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
+    };
   };
   
   # Note: 1Password settings are managed by onepassword.nix
