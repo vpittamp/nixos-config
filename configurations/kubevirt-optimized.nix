@@ -40,8 +40,8 @@
   boot.loader.grub = {
     enable = true;
     device = lib.mkDefault "/dev/vda";
-    timeout = 0;
   };
+  boot.loader.timeout = 0;
 
   # Kernel modules for KubeVirt (virtio devices)
   boot.initrd.availableKernelModules = [

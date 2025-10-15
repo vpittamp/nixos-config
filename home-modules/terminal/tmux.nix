@@ -7,7 +7,7 @@
     shell = "${pkgs.bash}/bin/bash";
     terminal = "tmux-256color";
     prefix = "`";
-    baseIndex = 1;
+    baseIndex = 0;
     historyLimit = 10000;
     keyMode = "vi";
     mouse = true;
@@ -94,7 +94,7 @@
       set -as terminal-features ",*:RGB"
 
       # Pane settings
-      set -g pane-base-index 1
+      set -g pane-base-index 0
       set -g renumber-windows on
       set -g pane-border-lines single  # Simple lines for cleaner look
       set -g pane-border-status off  # Remove pane status labels for cleaner appearance
@@ -165,11 +165,11 @@
       bind -r L resize-pane -R 5
 
       # Quick window switching
+      bind -n M-0 select-window -t 0
       bind -n M-1 select-window -t 1
       bind -n M-2 select-window -t 2
       bind -n M-3 select-window -t 3
       bind -n M-4 select-window -t 4
-      bind -n M-5 select-window -t 5
 
       # Copy mode with KDE clipboard integration
       bind Enter copy-mode
