@@ -239,9 +239,9 @@
           # Usage: home-manager switch --flake .#darwin
           darwin = mkDarwinHome ./home-darwin.nix "aarch64-darwin";
         };
-
-      # Container configurations
-      packages = flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
+    } //
+    # Container and VM image packages (merged at top level)
+    (flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -347,10 +347,9 @@
 
           # Default container output
           default = container-minimal;
-        });
-
-      # Development shells
-      devShells = flake-utils.lib.eachDefaultSystem (system:
+        })) //
+    # Development shells (merged at top level)
+    (flake-utils.lib.eachDefaultSystem (system:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -391,6 +390,5 @@
               echo "Apply Home Manager profile: nix run home-manager/master -- switch --flake .#vpittamp"
             '';
           };
-        });
-    };
+        }));
 }
