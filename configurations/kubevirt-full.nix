@@ -136,7 +136,7 @@
   # XRDP configuration
   services.xrdp = {
     enable = true;
-    defaultWindowManager = "startplasma-x11";
+    defaultWindowManager = lib.mkForce "startplasma-x11";
     openFirewall = true;
   };
 
