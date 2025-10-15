@@ -133,6 +133,7 @@
           ];
         };
     in
+    # Merge nixosConfigurations and homeConfigurations with packages/devShells from eachSystem
     {
       # NixOS Configurations
       nixosConfigurations = {
@@ -239,156 +240,159 @@
           # Usage: home-manager switch --flake .#darwin
           darwin = mkDarwinHome ./home-darwin.nix "aarch64-darwin";
         };
-    } //
-    # Container and VM image packages (merged at top level)
-    (flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-          pkgsUnstable = import nixpkgs-bleeding {
-            inherit system;
-            config.allowUnfree = true;
-          };
-          mkContainerSystem = profile:
-            (nixpkgs.lib.nixosSystem {
+
+      # Container and VM image packages (manually defined per system)
+      packages = let
+        mkPackagesFor = system:
+          let
+            pkgs = import nixpkgs {
               inherit system;
-              specialArgs = {
-                inherit inputs pkgsUnstable;
-                containerProfile = profile;
-              };
-              modules = [
-                ./configurations/container.nix
-                home-manager.nixosModules.home-manager
-                ({ config, pkgsUnstable, ... }:
-                  {
-                    home-manager = {
-                      # Enable backups for file conflicts during system rebuild
-                      backupFileExtension = "backup";
-                      useGlobalPkgs = true;
-                      useUserPackages = true;
-                      extraSpecialArgs = {
-                        inherit inputs;
-                        osConfig = config;
-                        pkgs-unstable = pkgsUnstable;
-                      };
-                      users.code = {
-                        imports = [ ./home-code.nix ];
-                      };
-                    };
-                  })
-              ];
-            }).config.system.build.toplevel;
-        in
-        rec {
-          # Minimal KubeVirt VM image (qcow2 format with RustDesk + Tailscale)
-          nixos-kubevirt-minimal-image = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [
-              ./configurations/kubevirt-minimal.nix
-            ];
-            format = "qcow";
-          };
-
-          # Full KubeVirt VM image (qcow2 with complete desktop + home-manager)
-          nixos-kubevirt-full-image = nixos-generators.nixosGenerate {
-            inherit system;
-            modules = [
-              ./configurations/kubevirt-full.nix
-              # Add home-manager integration (same as mkSystem helper)
-              home-manager.nixosModules.home-manager
-              {
-                home-manager = {
-                  backupFileExtension = "backup";
-                  useGlobalPkgs = true;
-                  useUserPackages = true;
-                  extraSpecialArgs = {
-                    inherit inputs;
-                    pkgs-unstable = import nixpkgs-bleeding {
-                      inherit system;
-                      config.allowUnfree = true;
-                    };
-                  };
-                  users.vpittamp = {
-                    imports = [
-                      ./home-vpittamp.nix
-                      inputs.plasma-manager.homeModules.plasma-manager
-                    ];
-                    home.enableNixpkgsReleaseCheck = false;
-                  };
+              config.allowUnfree = true;
+            };
+            pkgsUnstable = import nixpkgs-bleeding {
+              inherit system;
+              config.allowUnfree = true;
+            };
+            mkContainerSystem = profile:
+              (nixpkgs.lib.nixosSystem {
+                inherit system;
+                specialArgs = {
+                  inherit inputs pkgsUnstable;
+                  containerProfile = profile;
                 };
-              }
-            ];
-            format = "qcow";
-          };
+                modules = [
+                  ./configurations/container.nix
+                  home-manager.nixosModules.home-manager
+                  ({ config, pkgsUnstable, ... }:
+                    {
+                      home-manager = {
+                        backupFileExtension = "backup";
+                        useGlobalPkgs = true;
+                        useUserPackages = true;
+                        extraSpecialArgs = {
+                          inherit inputs;
+                          osConfig = config;
+                          pkgs-unstable = pkgsUnstable;
+                        };
+                        users.code = {
+                          imports = [ ./home-code.nix ];
+                        };
+                      };
+                    })
+                ];
+              }).config.system.build.toplevel;
+          in
+          rec {
+            # Minimal KubeVirt VM image (qcow2 format with RustDesk + Tailscale)
+            nixos-kubevirt-minimal-image = nixos-generators.nixosGenerate {
+              inherit system;
+              modules = [ ./configurations/kubevirt-minimal.nix ];
+              format = "qcow";
+            };
 
-          # Minimal container
-          container-minimal = pkgs.dockerTools.buildLayeredImage {
-            name = "nixos-container";
-            tag = "minimal";
-            contents = [ (mkContainerSystem "minimal") ];
-            config = {
-              Cmd = [ "/bin/bash" ];
-              Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
+            # Full KubeVirt VM image (qcow2 with complete desktop + home-manager)
+            nixos-kubevirt-full-image = nixos-generators.nixosGenerate {
+              inherit system;
+              modules = [
+                ./configurations/kubevirt-full.nix
+                # Add home-manager integration (same as mkSystem helper)
+                home-manager.nixosModules.home-manager
+                {
+                  home-manager = {
+                    backupFileExtension = "backup";
+                    useGlobalPkgs = true;
+                    useUserPackages = true;
+                    extraSpecialArgs = {
+                      inherit inputs;
+                      pkgs-unstable = import nixpkgs-bleeding {
+                        inherit system;
+                        config.allowUnfree = true;
+                      };
+                    };
+                    users.vpittamp = {
+                      imports = [
+                        ./home-vpittamp.nix
+                        inputs.plasma-manager.homeModules.plasma-manager
+                      ];
+                      home.enableNixpkgsReleaseCheck = false;
+                    };
+                  };
+                }
+              ];
+              format = "qcow";
+            };
+
+            # Minimal container
+            container-minimal = pkgs.dockerTools.buildLayeredImage {
+              name = "nixos-container";
+              tag = "minimal";
+              contents = [ (mkContainerSystem "minimal") ];
+              config = {
+                Cmd = [ "/bin/bash" ];
+                Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=minimal" ];
+              };
+            };
+
+            # Development container
+            container-dev = pkgs.dockerTools.buildLayeredImage {
+              name = "nixos-container";
+              tag = "development";
+              contents = [ (mkContainerSystem "development") ];
+              config = {
+                Cmd = [ "/bin/bash" ];
+                Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=development" ];
+              };
+            };
+
+            # Default container output
+            default = container-minimal;
+          };
+      in
+      {
+        x86_64-linux = mkPackagesFor "x86_64-linux";
+        aarch64-linux = mkPackagesFor "aarch64-linux";
+      };
+
+      # Development shells
+      devShells = let
+        mkDevShellFor = system:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              config.allowUnfree = true;
+            };
+          in
+          {
+            default = pkgs.mkShell {
+              name = "nixos-dev";
+              buildInputs = with pkgs; [
+                # Nix tools
+                nixpkgs-fmt nixfmt statix deadnix
+                # Development tools
+                git vim tmux
+                # Container tools
+                docker docker-compose kubectl
+              ];
+
+              shellHook = ''
+                echo "NixOS Development Shell"
+                echo "Available configurations:"
+                echo "  - hetzner: Primary workstation (x86_64)"
+                echo "  - m1: Apple Silicon (aarch64)"
+                echo "  - wsl: Windows Subsystem for Linux"
+                echo "  - container: Docker/K8s containers"
+                echo ""
+                echo "Build with: nixos-rebuild switch --flake .#<config>"
+                echo "Export current Plasma settings: ./scripts/plasma-rc2nix.sh > plasma-latest.nix"
+                echo "Apply Home Manager profile: nix run home-manager/master -- switch --flake .#vpittamp"
+              '';
             };
           };
-
-          # Development container
-          container-dev = pkgs.dockerTools.buildLayeredImage {
-            name = "nixos-container";
-            tag = "development";
-            contents = [ (mkContainerSystem "development") ];
-            config = {
-              Cmd = [ "/bin/bash" ];
-              Env = [ "NIXOS_CONTAINER=1" "NIXOS_PACKAGES=development" ];
-            };
-          };
-
-          # Default container output
-          default = container-minimal;
-        })) //
-    # Development shells (merged at top level)
-    (flake-utils.lib.eachDefaultSystem (system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-        in
-        {
-          default = pkgs.mkShell {
-            name = "nixos-dev";
-            buildInputs = with pkgs; [
-              # Nix tools
-              nixpkgs-fmt
-              nixfmt
-              statix
-              deadnix
-
-              # Development tools
-              git
-              vim
-              tmux
-
-              # Container tools
-              docker
-              docker-compose
-              kubectl
-            ];
-
-            shellHook = ''
-              echo "NixOS Development Shell"
-              echo "Available configurations:"
-              echo "  - hetzner: Primary workstation (x86_64)"
-              echo "  - m1: Apple Silicon (aarch64)"
-              echo "  - wsl: Windows Subsystem for Linux"
-              echo "  - container: Docker/K8s containers"
-              echo ""
-              echo "Build with: nixos-rebuild switch --flake .#<config>"
-              echo "Export current Plasma settings: ./scripts/plasma-rc2nix.sh > plasma-latest.nix"
-              echo "Apply Home Manager profile: nix run home-manager/master -- switch --flake .#vpittamp"
-            '';
-          };
-        }));
+      in
+      {
+        x86_64-linux = mkDevShellFor "x86_64-linux";
+        aarch64-linux = mkDevShellFor "aarch64-linux";
+        aarch64-darwin = mkDevShellFor "aarch64-darwin";
+      };
+    };
 }
