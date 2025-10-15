@@ -22,6 +22,7 @@ let
     azurePortalId = "01K772Z8M8NHD0TXCJ7CC3BRVQ";  # Azure Portal
     hetznerCloudId = "01K772ZA22Y9RF558NQJDHHFKN";  # Hetzner Cloud
     chatgptCodexId = "01K772ZBM45JD68HXYNM193CVW";  # ChatGPT Codex
+    tailscaleId = "01K7M1P32EN0BBJK8BQS3VZH7H";  # Tailscale Admin
   };
 
   # M1 MacBook PWA IDs (updated 2025-10-10 with new PWAs)
@@ -49,7 +50,7 @@ let
   # Generate PWA launcher list for plasma-manager
   pwaLaunchers =
     let
-      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId homeAssistantId uberEatsId githubCodespacesId azurePortalId hetznerCloudId chatgptCodexId;
+      inherit (pwaIds) googleId youtubeId giteaId backstageId kargoId argoCDId homeAssistantId uberEatsId githubCodespacesId azurePortalId hetznerCloudId chatgptCodexId tailscaleId;
     in [
       "file:///home/vpittamp/.local/share/applications/FFPWA-${googleId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${youtubeId}.desktop"
@@ -63,6 +64,7 @@ let
       "file:///home/vpittamp/.local/share/applications/FFPWA-${azurePortalId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${hetznerCloudId}.desktop"
       "file:///home/vpittamp/.local/share/applications/FFPWA-${chatgptCodexId}.desktop"
+      "file:///home/vpittamp/.local/share/applications/FFPWA-${tailscaleId}.desktop"
     ];
 
   # Base launchers (common apps)

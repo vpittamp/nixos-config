@@ -119,6 +119,16 @@
       categories = "Development;";
       keywords = "ai;chatgpt;codex;coding;assistant;";
     }
+    {
+      name = "Tailscale";
+      url = "https://login.tailscale.com/admin/machines";
+      domain = "login.tailscale.com";
+      scope = "https://login.tailscale.com/";
+      icon = "file:///etc/nixos/assets/pwa-icons/tailscale.png";
+      description = "Tailscale VPN Admin Console";
+      categories = "Network;System;";
+      keywords = "vpn;tailscale;network;admin;";
+    }
   ];
 
   # Additional trusted domains for Firefox policies
