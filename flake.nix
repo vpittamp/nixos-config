@@ -190,6 +190,13 @@
           system = "x86_64-linux";
           modules = [ ./configurations/kubevirt-minimal.nix ];
         };
+
+        # KubeVirt Full: Complete desktop with home-manager integration
+        kubevirt-full = mkSystem {
+          hostname = "nixos-kubevirt-vm";
+          system = "x86_64-linux";
+          modules = [ ./configurations/kubevirt-full.nix ];
+        };
       };
 
       homeConfigurations =
@@ -280,6 +287,15 @@
             inherit system;
             modules = [
               ./configurations/kubevirt-minimal.nix
+            ];
+            format = "qcow";
+          };
+
+          # Full KubeVirt VM image (qcow2 with complete desktop + home-manager)
+          nixos-kubevirt-full-image = nixos-generators.nixosGenerate {
+            inherit system;
+            modules = [
+              ./configurations/kubevirt-full.nix
             ];
             format = "qcow";
           };
