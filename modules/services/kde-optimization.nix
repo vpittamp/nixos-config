@@ -41,35 +41,38 @@
   };
 
   config = lib.mkIf config.services.kde-optimization.enable {
-    # Baloo disabling implementation (T028)
-    home-manager.users.vpittamp = lib.mkIf config.services.kde-optimization.baloo.disable {
-      # Disable Baloo file indexing via configuration
-      programs.plasma.configFile."baloofilerc"."Basic Settings" = {
-        "Indexing-Enabled" = lib.mkForce false;
-      };
-
-      # Disable Baloo systemd services
-      systemd.user.services.baloo_file = {
-        Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
-      };
-      systemd.user.services.baloo_file_extractor = {
-        Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
-      };
-    };
-
-    # Akonadi disabling implementation (T029)
-    home-manager.users.vpittamp = lib.mkIf config.services.kde-optimization.akonadi.disable {
-      # Disable Akonadi server startup via configuration
-      xdg.configFile."akonadi/akonadiserverrc".text = lib.generators.toINI {} {
-        "%General" = {
-          StartServer = false;
+    # Merge all home-manager.users.vpittamp configurations into one
+    home-manager.users.vpittamp = lib.mkMerge [
+      # Baloo disabling implementation (T028)
+      (lib.mkIf config.services.kde-optimization.baloo.disable {
+        # Disable Baloo file indexing via configuration
+        programs.plasma.configFile."baloofilerc"."Basic Settings" = {
+          "Indexing-Enabled" = lib.mkForce false;
         };
-      };
 
-      # Disable Akonadi systemd service
-      systemd.user.services.akonadi_control = {
-        Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
-      };
-    };
+        # Disable Baloo systemd services
+        systemd.user.services.baloo_file = {
+          Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
+        };
+        systemd.user.services.baloo_file_extractor = {
+          Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
+        };
+      })
+
+      # Akonadi disabling implementation (T029)
+      (lib.mkIf config.services.kde-optimization.akonadi.disable {
+        # Disable Akonadi server startup via configuration
+        xdg.configFile."akonadi/akonadiserverrc".text = lib.generators.toINI {} {
+          "%General" = {
+            StartServer = false;
+          };
+        };
+
+        # Disable Akonadi systemd service
+        systemd.user.services.akonadi_control = {
+          Unit.ConditionPathExists = "/dev/null";  # Prevents service from starting
+        };
+      })
+    ];
   };
 }
