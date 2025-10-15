@@ -198,6 +198,12 @@
           system = "x86_64-linux";
           modules = [ ./configurations/kubevirt-full.nix ];
         };
+
+        # KubeVirt Optimized: Fast-building desktop (no home-manager in image)
+        kubevirt-optimized = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [ ./configurations/kubevirt-optimized.nix ];
+        };
       };
 
       homeConfigurations =
@@ -319,6 +325,15 @@
                   };
                 }
               ];
+              format = "qcow";
+            };
+
+            # Optimized KubeVirt VM image (qcow2 with desktop, no home-manager)
+            # Fast build: ~15-20 minutes (vs 60+ minutes for full image)
+            # Apply home-manager at runtime: nix run home-manager/master -- switch --flake .#vpittamp
+            nixos-kubevirt-optimized-image = nixos-generators.nixosGenerate {
+              inherit system;
+              modules = [ ./configurations/kubevirt-optimized.nix ];
               format = "qcow";
             };
 
