@@ -296,6 +296,29 @@
             inherit system;
             modules = [
               ./configurations/kubevirt-full.nix
+              # Add home-manager integration (same as mkSystem helper)
+              home-manager.nixosModules.home-manager
+              {
+                home-manager = {
+                  backupFileExtension = "backup";
+                  useGlobalPkgs = true;
+                  useUserPackages = true;
+                  extraSpecialArgs = {
+                    inherit inputs;
+                    pkgs-unstable = import nixpkgs-bleeding {
+                      inherit system;
+                      config.allowUnfree = true;
+                    };
+                  };
+                  users.vpittamp = {
+                    imports = [
+                      ./home-vpittamp.nix
+                      inputs.plasma-manager.homeModules.plasma-manager
+                    ];
+                    home.enableNixpkgsReleaseCheck = false;
+                  };
+                };
+              }
             ];
             format = "qcow";
           };
