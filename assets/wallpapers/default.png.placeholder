@@ -1,0 +1,18 @@
+# Placeholder for default MangoWC wallpaper
+#
+# This is a placeholder file. A proper wallpaper image should be placed at:
+#   /etc/nixos/assets/wallpapers/default.png
+#
+# Recommended specifications:
+#   - Format: PNG or JPEG
+#   - Resolution: 1920x1080 or higher
+#   - Aspect ratio: 16:9
+#   - Size: < 5MB
+#
+# Temporary workaround: MangoWC will use the root color (0x201b14ff) as background
+# if no wallpaper file is found. This is configured in the appearance.rootColor setting.
+#
+# To add a custom wallpaper:
+#   1. Place your image at /etc/nixos/assets/wallpapers/default.png
+#   2. Update the autostart configuration in modules/desktop/mangowc.nix
+#   3. Rebuild: sudo nixos-rebuild switch --flake .#hetzner-mangowc

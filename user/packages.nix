@@ -47,6 +47,9 @@ let
   # AI and LLM tools
   aiTools = with pkgs; [
     openai # OpenAI Python CLI
+    # Note: gitingest is run on-demand via: uvx gitingest <repo-url>
+    # This ensures we always use the latest version without pre-installation
+    # See /etc/nixos/.claude/commands/gitingest.md for usage
   ];
 
   # Shell enhancements

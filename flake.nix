@@ -57,9 +57,15 @@
       url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # MangoWC Wayland Compositor
+    mangowc = {
+      url = "github:DreamMaoMao/mangowc";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, nixos-generators, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, nixos-generators, mangowc, ... }@inputs:
     let
       # Helper function to create a system configuration
       mkSystem = { hostname, system, modules }:
@@ -144,6 +150,16 @@
           modules = [
             disko.nixosModules.disko
             ./configurations/hetzner.nix
+          ];
+        };
+
+        # Hetzner with MangoWC Desktop (x86_64)
+        hetzner-mangowc = mkSystem {
+          hostname = "nixos-hetzner-mangowc";
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-mangowc.nix
           ];
         };
 
