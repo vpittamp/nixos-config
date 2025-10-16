@@ -83,6 +83,14 @@ in {
       KillDisconnected=no        # Keep sessions alive
       DisconnectedTimeLimit=0    # No timeout
       IdleTimeLimit=0            # No idle timeout
+
+      [SessionAllocations]
+      # Policy options:
+      # Default - Reconnect to existing session if available
+      # UBD (User, Bpp, Display) - Create new session for each connection
+      # UBDI (User, Bpp, Display, IP) - Separate session per source IP
+      # Separate - Always create new independent sessions
+      Policy=Separate           # Allow multiple simultaneous sessions from different machines
     '';
 
     # i3 XRDP session wrapper
