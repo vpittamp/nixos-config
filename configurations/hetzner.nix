@@ -137,10 +137,15 @@
   # Without this, both console (tty2) and RDP would try to run KDE simultaneously,
   # causing D-Bus conflicts and breaking global shortcuts and other services
   # XRDP will start the single KDE session on-demand when you connect
-  services.displayManager.sddm.enable = lib.mkForce false;
+  services.displayManager.sddm = {
+    enable = lib.mkForce false;
+    # Disable Wayland for XRDP compatibility (XRDP requires X11)
+    wayland.enable = lib.mkForce false;
+  };
 
   # Use X11 session by default for XRDP compatibility
-  services.displayManager.defaultSession = lib.mkForce "plasmax11";
+  # Note: With Wayland disabled above, "plasma" will use X11
+  services.displayManager.defaultSession = lib.mkForce "plasma";
 
   # Fully Automated PWA Configuration - Phase 3
   # programs.firefoxpwa-auto = {
