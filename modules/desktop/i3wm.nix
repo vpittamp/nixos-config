@@ -48,6 +48,7 @@ in {
       cfg.package
       alacritty  # Terminal
       rofi       # Application launcher (better than dmenu)
+      xorg.xsetroot  # For setting background color
     ] ++ cfg.extraPackages;
 
     # Basic i3 configuration - minimal working config
@@ -60,6 +61,15 @@ in {
 
       # Font for window titles and bar
       font pango:monospace 10
+
+      # Color scheme for better visibility
+      # class                 border  backgr. text    indicator child_border
+      client.focused          #4c7899 #285577 #ffffff #2e9ef4   #285577
+      client.focused_inactive #333333 #5f676a #ffffff #484e50   #5f676a
+      client.unfocused        #333333 #222222 #888888 #292d2e   #222222
+      client.urgent           #2f343a #900000 #ffffff #900000   #900000
+      client.placeholder      #000000 #0c0c0c #ffffff #000000   #0c0c0c
+      client.background       #ffffff
 
       # Use Mouse+$mod to drag floating windows
       floating_modifier $mod
@@ -134,11 +144,27 @@ in {
       # Exit i3
       bindsym $mod+Shift+e exec "i3-msg exit"
 
-      # Status bar
+      # Status bar with colors
       bar {
         status_command ${pkgs.i3status}/bin/i3status
         position bottom
+
+        colors {
+          background #000000
+          statusline #ffffff
+          separator  #666666
+
+          # class            border  backgr. text
+          focused_workspace  #4c7899 #285577 #ffffff
+          active_workspace   #333333 #5f676a #ffffff
+          inactive_workspace #333333 #222222 #888888
+          urgent_workspace   #2f343a #900000 #ffffff
+          binding_mode       #2f343a #900000 #ffffff
+        }
       }
+
+      # Set desktop background to solid dark color
+      exec --no-startup-id ${pkgs.xorg.xsetroot}/bin/xsetroot -solid "#1a1a1a"
     '';
 
     # Basic i3status configuration
