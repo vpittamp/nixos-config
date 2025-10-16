@@ -280,14 +280,11 @@ in {
     # Disable X11 (Wayland only)
     services.xserver.enable = lib.mkForce false;
 
-    # Enable Wayland
-    programs.wayland.enable = true;
-
     # Essential Wayland packages
     environment.systemPackages = with pkgs; [
       cfg.package  # MangoWC compositor
       foot         # Terminal
-      rofi-wayland # Application launcher
+      rofi         # Application launcher (Wayland support built-in)
       swaybg       # Wallpaper
       grim         # Screenshot
       slurp        # Region selection
@@ -332,6 +329,10 @@ in {
         WLR_LIBINPUT_NO_DEVICES = "1";
         WLR_HEADLESS_OUTPUTS = "1";
         WLR_OUTPUT_MODE = cfg.resolution;
+
+        # Force software rendering (no GPU in QEMU)
+        WLR_RENDERER = "pixman";
+        WLR_NO_HARDWARE_CURSORS = "1";
 
         # Wayland display
         WAYLAND_DISPLAY = "wayland-1";
