@@ -35,6 +35,7 @@ in
     ../shell/colors.nix
 
     # Terminal configurations
+    ../terminal/alacritty.nix
     ../terminal/tmux.nix
     ../terminal/sesh.nix
 
