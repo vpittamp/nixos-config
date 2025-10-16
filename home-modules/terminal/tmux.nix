@@ -104,13 +104,10 @@
       set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
 
       # Visual distinction between active and inactive panes
-      # Active pane: pure black background with bright text
-      set -g window-active-style "bg=colour16"  # Pure black background for active pane
-      # Inactive panes: apply dim filter to all content including application colors
-      set -g window-style "bg=colour234,dim"  # Dark gray background with dim attribute for all text
-
-      # Alternative color settings for better inactive pane dimming
-      # The 'dim' attribute affects all output including ANSI colors from applications
+      # DISABLED: Custom background colors cause invisible text in some terminals (XRDP/Alacritty)
+      # Use terminal's default colors for maximum compatibility
+      set -g window-active-style "default"
+      set -g window-style "default"
 
       # Remove pane indicators for cleaner look
       set -g pane-border-indicators off
