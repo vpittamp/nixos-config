@@ -163,6 +163,16 @@
           ];
         };
 
+        # Hetzner with i3wm Desktop (x86_64) - Testing configuration for Phase 1
+        hetzner-i3 = mkSystem {
+          hostname = "nixos-hetzner";
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-i3.nix
+          ];
+        };
+
         # Minimal Hetzner for nixos-anywhere deployment
         hetzner-minimal = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
