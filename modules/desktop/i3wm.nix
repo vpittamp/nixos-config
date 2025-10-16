@@ -74,8 +74,9 @@ in {
       bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun
 
       # Quick launch applications
-      bindsym $mod+c exec code
-      bindsym $mod+b exec firefox
+      # Use env to ensure DISPLAY is set correctly for current session
+      bindsym $mod+c exec env DISPLAY=$DISPLAY code
+      bindsym $mod+b exec env DISPLAY=$DISPLAY firefox
 
       # Change focus
       bindsym $mod+Left focus left
