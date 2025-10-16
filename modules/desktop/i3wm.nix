@@ -167,6 +167,41 @@ in {
       exec --no-startup-id ${pkgs.xorg.xsetroot}/bin/xsetroot -solid "#1a1a1a"
     '';
 
+    # Alacritty configuration for i3 - ensures visible text
+    environment.etc."xdg/alacritty/alacritty.toml".text = ''
+      [colors.primary]
+      background = "#1e1e1e"
+      foreground = "#d4d4d4"
+
+      [colors.normal]
+      black   = "#000000"
+      red     = "#cd3131"
+      green   = "#0dbc79"
+      yellow  = "#e5e510"
+      blue    = "#2472c8"
+      magenta = "#bc3fbc"
+      cyan    = "#11a8cd"
+      white   = "#e5e5e5"
+
+      [colors.bright]
+      black   = "#666666"
+      red     = "#f14c4c"
+      green   = "#23d18b"
+      yellow  = "#f5f543"
+      blue    = "#3b8eea"
+      magenta = "#d670d6"
+      cyan    = "#29b8db"
+      white   = "#ffffff"
+
+      [font]
+      size = 11.0
+    '';
+
+    # Set XDG_CONFIG_DIRS to include /etc/xdg
+    environment.sessionVariables = {
+      XDG_CONFIG_DIRS = "/etc/xdg:$XDG_CONFIG_DIRS";
+    };
+
     # Basic i3status configuration
     environment.etc."i3status.conf".text = ''
       general {
