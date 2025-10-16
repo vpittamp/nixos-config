@@ -104,9 +104,10 @@
       set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
 
       # Visual distinction between active and inactive panes
-      # Use light background to ensure text is visible
-      set -g window-active-style "bg=terminal,fg=terminal"
-      set -g window-style "bg=terminal,fg=terminal"
+      # Active pane: pure black background with bright text
+      set -g window-active-style "bg=colour16"  # Pure black background for active pane
+      # Inactive panes: apply dim filter to all content including application colors
+      set -g window-style "bg=colour234,dim"  # Dark gray background with dim attribute for all text
 
       # Alternative color settings for better inactive pane dimming
       # The 'dim' attribute affects all output including ANSI colors from applications

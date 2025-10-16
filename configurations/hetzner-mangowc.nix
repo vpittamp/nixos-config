@@ -32,7 +32,7 @@
   ];
 
   # System identification
-  networking.hostName = "nixos-hetzner";
+  networking.hostName = "nixos-hetzner-mangowc";
 
   # Boot configuration for Hetzner - GRUB for nixos-anywhere compatibility
   boot.loader.grub = {

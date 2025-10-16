@@ -59,15 +59,15 @@
 
 ### Implementation for User Story 1
 
-- [X] T012 [P] [US1] Implement core i3 keybindings in `modules/desktop/i3wm.nix`: terminal, launcher, window close
-- [X] T013 [P] [US1] Implement XRDP core configuration in `modules/desktop/xrdp.nix`: port, firewall, defaultWindowManager
-- [X] T014 [US1] Add default package installation: dmenu, i3status, i3lock, alacritty in `services.i3wm.extraPackages`
-- [X] T015 [US1] Configure i3 fonts and basic appearance: Set default fonts, border width, colors
-- [X] T016 [US1] Configure XRDP authentication: PAM integration with system users
-- [X] T017 [US1] Add i3 status bar configuration: Enable i3bar with i3status at bottom
-- [X] T018 [US1] Configure XRDP display settings: Default resolution 1920x1080, 24-bit color
-- [X] T019 [US1] Update `configurations/hetzner-i3.nix`: Enable both modules with minimal config
-- [X] T020 [US1] Test build: `nixos-rebuild dry-build --flake .#hetzner-i3` ✅ **BUILD SUCCEEDED**
+- [ ] T012 [P] [US1] Implement core i3 keybindings in `modules/desktop/i3wm.nix`: terminal, launcher, window close
+- [ ] T013 [P] [US1] Implement XRDP core configuration in `modules/desktop/xrdp.nix`: port, firewall, defaultWindowManager
+- [ ] T014 [US1] Add default package installation: dmenu, i3status, i3lock, alacritty in `services.i3wm.extraPackages`
+- [ ] T015 [US1] Configure i3 fonts and basic appearance: Set default fonts, border width, colors
+- [ ] T016 [US1] Configure XRDP authentication: PAM integration with system users
+- [ ] T017 [US1] Add i3 status bar configuration: Enable i3bar with i3status at bottom
+- [ ] T018 [US1] Configure XRDP display settings: Default resolution 1920x1080, 24-bit color
+- [ ] T019 [US1] Update `configurations/hetzner-i3.nix`: Enable both modules with minimal config
+- [ ] T020 [US1] Test build: `nixos-rebuild dry-build --flake .#hetzner-i3`
 - [ ] T021 [US1] Test in VM: `nixos-rebuild build-vm --flake .#hetzner-i3` and verify RDP connection
 - [ ] T022 [US1] Deploy to test server: `nixos-rebuild switch --flake .#hetzner-i3 --target-host vpittamp@hetzner`
 - [ ] T023 [US1] Validate core functionality: Connect via RDP, launch terminal, close windows, verify session persistence on disconnect
