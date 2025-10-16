@@ -104,10 +104,9 @@
       set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
 
       # Visual distinction between active and inactive panes
-      # Disable custom pane styling to use terminal defaults
-      # This ensures text remains visible in all terminals
-      set -g window-active-style "default"
-      set -g window-style "default"
+      # Use light background to ensure text is visible
+      set -g window-active-style "bg=terminal,fg=terminal"
+      set -g window-style "bg=terminal,fg=terminal"
 
       # Alternative color settings for better inactive pane dimming
       # The 'dim' attribute affects all output including ANSI colors from applications
