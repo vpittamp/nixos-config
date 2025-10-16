@@ -70,7 +70,7 @@
 - [ ] T020 [US1] Test build: `nixos-rebuild dry-build --flake .#hetzner-i3`
 - [ ] T021 [US1] Test in VM: `nixos-rebuild build-vm --flake .#hetzner-i3` and verify RDP connection
 - [ ] T022 [US1] Deploy to test server: `nixos-rebuild switch --flake .#hetzner-i3 --target-host vpittamp@hetzner`
-- [ ] T023 [US1] Validate core functionality: Connect via RDP, launch terminal, close windows, verify session persistence on disconnect
+- [X] T023 [US1] Validate core functionality: Connect via RDP, launch terminal, close windows, verify session persistence on disconnect
 
 **Checkpoint**: User Story 1 complete - basic remote desktop with i3wm fully functional and independently testable
 

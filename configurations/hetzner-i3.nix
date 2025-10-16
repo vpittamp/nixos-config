@@ -104,6 +104,8 @@
       rofi
       alacritty
       firefox  # Browser
+      # Note: VS Code is provided by home-manager configuration
+      # See: home-modules/tools/vscode.nix
     ];
   };
 
