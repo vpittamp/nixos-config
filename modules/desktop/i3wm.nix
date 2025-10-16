@@ -73,6 +73,10 @@ in {
       # Start application launcher
       bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun
 
+      # Quick launch applications
+      bindsym $mod+c exec code
+      bindsym $mod+b exec firefox
+
       # Change focus
       bindsym $mod+Left focus left
       bindsym $mod+Down focus down
