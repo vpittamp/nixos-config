@@ -64,23 +64,29 @@
   
   # Auto-start 1Password desktop app on login with proper environment
   # Using systemd user service for reliable autostart that works even after nixos-rebuild
+  # Optimized for i3 window manager with system tray support
   systemd.user.services.onepassword-gui = {
     Unit = {
       Description = "1Password Desktop Application";
       After = [ "graphical-session.target" ];
       PartOf = [ "graphical-session.target" ];
+      # Ensure we wait for i3 to be ready
+      Wants = [ "tray.target" ];
     };
 
     Service = {
       Type = "simple";
+      # Launch 1Password in background with system tray support
+      # --silent: Start in background (system tray)
+      # --enable-features=UseOzonePlatform: Use Ozone platform for better Wayland/X11 support
+      # --ozone-platform=x11: Force X11 for compatibility with i3
       ExecStart = "${pkgs._1password-gui}/bin/1password --silent --enable-features=UseOzonePlatform --ozone-platform=x11";
       Restart = "on-failure";
       RestartSec = 5;
 
       # Environment for better integration
       Environment = [
-        "XDG_RUNTIME_DIR=/run/user/%U"
-        "DISPLAY=:10.0"
+        "PATH=/run/wrappers/bin:/run/current-system/sw/bin"
       ];
     };
 
