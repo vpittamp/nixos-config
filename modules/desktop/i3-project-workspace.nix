@@ -204,6 +204,17 @@ in
               local use_sesh=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.useSesh // false')
               local sesh_session=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.seshSession // empty')
 
+              # Expand tildes in arguments
+              # Convert "~/stacks" to "/home/user/stacks"
+              if [[ -n "$args" ]]; then
+                local expanded_args=""
+                for arg in $args; do
+                  arg="''${arg/#\~/$HOME}"
+                  expanded_args="$expanded_args $arg"
+                done
+                args="''${expanded_args# }"  # Trim leading space
+              fi
+
               # T027: Determine working directory (app-specific > override > project default)
               local final_wd="''${app_wd:-$working_dir}"
 

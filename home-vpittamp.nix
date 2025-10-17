@@ -59,7 +59,7 @@
         displayName = "Stacks Development";
         description = "Cloud-native reference stacks development";
         primaryWorkspace = 3;
-        workingDirectory = "~/stacks";
+        workingDirectory = "/home/vpittamp/stacks";
 
         workspaces = [
           # Workspace 3: Terminal with sesh session on first monitor (rdp1)
@@ -83,7 +83,7 @@
             applications = [
               {
                 command = "code";
-                args = ["~/stacks"];
+                args = ["/home/vpittamp/stacks"];
                 wmClass = "Code";
                 launchDelay = 500;  # Give VS Code time to start
               }
