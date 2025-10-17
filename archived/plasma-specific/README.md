@@ -27,6 +27,34 @@ Application launchers that opened in activity-specific directories:
 
 **Archived because**: i3wm uses simpler workspace model. Users can manually organize projects by directory.
 
+### desktop/kde-plasma.nix
+Complete KDE Plasma 6 desktop environment configuration:
+- X11 and Wayland display server setup
+- SDDM display manager
+- Plasma 6 desktop environment
+- Touchegg gesture support for X11
+- PipeWire/PulseAudio configuration
+- KDE applications (Kate, Konsole, Dolphin, etc.)
+- Clipboard management (Klipper)
+- Hardware acceleration and Bluetooth
+
+**Archived because**: Hetzner migrating to i3wm + X11 for better remote access compatibility. M1 still uses this module.
+
+### desktop/kde-plasma-vm.nix
+KDE Plasma optimizations for virtual machines:
+- Virtual display driver configuration
+- VM-specific graphics settings
+- Performance tuning for virtualized environments
+
+**Archived because**: No longer needed for i3wm setup on Hetzner.
+
+### desktop/wayland-remote-access.nix
+Wayland-specific remote access configuration:
+- Wayland compositor settings for RDP
+- Screen sharing and remote desktop protocols for Wayland
+
+**Archived because**: i3wm uses X11, not Wayland. XRDP works natively with X11.
+
 ## Migration Notes
 
 **For users who relied on project activities:**
@@ -52,6 +80,8 @@ Application launchers that opened in activity-specific directories:
 
 If you need to restore this functionality (e.g., switching back to KDE Plasma):
 
+### For Project Activities (home-manager):
+
 1. Copy modules back to their original locations:
    ```bash
    cp -r archived/plasma-specific/desktop/project-activities home-modules/desktop/
@@ -65,6 +95,28 @@ If you need to restore this functionality (e.g., switching back to KDE Plasma):
    ```
 
 3. Restore sesh.nix activity integration (see git history for original version)
+
+4. Rebuild system
+
+### For KDE Plasma Desktop (system-level):
+
+1. Copy desktop modules back:
+   ```bash
+   cp archived/plasma-specific/desktop/kde-plasma.nix modules/desktop/
+   cp archived/plasma-specific/desktop/kde-plasma-vm.nix modules/desktop/
+   cp archived/plasma-specific/desktop/wayland-remote-access.nix modules/desktop/
+   ```
+
+2. Update `configurations/hetzner.nix` imports (around line 25):
+   ```nix
+   ../modules/desktop/kde-plasma.nix
+   ../modules/desktop/remote-access.nix  # May need to restore this too
+   ```
+
+3. Re-enable plasma-home in `home-vpittamp.nix`:
+   ```nix
+   ./home-modules/profiles/plasma-home.nix
+   ```
 
 4. Rebuild system
 
