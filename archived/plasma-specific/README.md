@@ -55,6 +55,36 @@ Wayland-specific remote access configuration:
 
 **Archived because**: i3wm uses X11, not Wayland. XRDP works natively with X11.
 
+### home-modules/plasma-config.nix
+KDE Plasma home-manager configuration:
+- Plasma desktop settings and theming
+- Window rules and keyboard shortcuts
+- Application preferences
+- Kwin compositor settings
+
+**Archived because**: Home-manager configuration specific to KDE Plasma, not needed for i3wm.
+
+### home-modules/plasma-sync.nix
+Plasma configuration synchronization:
+- Automated backup/restore of Plasma settings
+- Declarative plasma configuration management
+
+**Archived because**: Plasma-specific synchronization not applicable to i3wm.
+
+### home-modules/plasma-snapshot-analysis.nix
+Plasma configuration analysis tool:
+- Snapshot and diff Plasma configuration files
+- Debug declarative plasma configuration
+
+**Archived because**: Debugging tool for Plasma configuration, not needed for i3wm.
+
+### home-modules/touchpad-gestures.nix
+Touchpad gesture configuration:
+- Touchegg configuration for X11 gesture support
+- Wayland has native gesture support
+
+**Archived because**: i3wm module handles gesture configuration directly if needed.
+
 ## Migration Notes
 
 **For users who relied on project activities:**
