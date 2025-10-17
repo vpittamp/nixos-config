@@ -74,6 +74,18 @@ let
           description = "Delay in milliseconds before launching";
         };
 
+        useSesh = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Launch terminal with sesh tmux session manager";
+        };
+
+        seshSession = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "Sesh session name (defaults to project name if not specified)";
+        };
+
         floating = mkOption {
           type = types.bool;
           default = false;
@@ -481,6 +493,8 @@ in
             args = app.args;
             instanceBehavior = app.instanceBehavior;
             launchDelay = app.launchDelay;
+            useSesh = app.useSesh;
+            seshSession = app.seshSession;
             floating = app.floating;
             position = app.position;
             size = app.size;
