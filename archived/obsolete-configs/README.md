@@ -23,10 +23,15 @@ This directory contains platform configurations that are no longer in use.
 - Not in active use for production deployments
 - Can be restored and migrated to i3wm if needed
 
-### Hetzner Utility Configurations
-**Files**: hetzner-minimal.nix, hetzner-example.nix
-**Purpose**: Minimal and example configurations for nixos-anywhere deployments
-**Archived because**: Superseded by hetzner-i3.nix as primary reference configuration
+### Hetzner Utility and Reference Configurations
+**Files**: hetzner-minimal.nix, hetzner-example.nix, hetzner-i3.nix
+**Purpose**:
+- hetzner-minimal.nix, hetzner-example.nix: nixos-anywhere deployment templates
+- hetzner-i3.nix: Reference implementation for i3wm testing (Phase 1)
+**Archived because**:
+- Utility configs superseded by production hetzner.nix
+- hetzner-i3.nix was testing/reference config, consolidated into hetzner.nix
+- Production hetzner.nix now contains all i3wm features plus production services
 
 ## Recovery
 
