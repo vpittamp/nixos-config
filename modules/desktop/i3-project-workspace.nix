@@ -95,18 +95,191 @@ in
       xprop
       wmctrl
       xorg.xrandr
+      bc  # For delay calculations in i3-project
 
       # Main i3-project CLI tool (will be expanded in Phase 3)
       (pkgs.writeShellScriptBin "i3-project" ''
         #!/usr/bin/env bash
         # i3-project - i3 Project Workspace Management
-        # Version: 1.0
+        # Version: 1.0 - Phase 3 Implementation
 
-        # Source shared library
         source ${i3ProjectLib}
 
-        # Placeholder for Phase 3 implementation
-        # This will contain: activate, list, close, status, switch commands
+        CONFIG_FILE="$HOME/.config/i3-projects/projects.json"
+        STATE_DIR="/tmp/i3-projects"
+        DRY_RUN=false
+        VERBOSE=false
+
+        mkdir -p "$STATE_DIR"
+
+        log() { [[ "$VERBOSE" == "true" ]] && echo "[i3-project] $*" >&2; }
+        error() { echo "Error: $*" >&2; exit 1; }
+
+        # T012: Load and validate project configuration
+        load_project() {
+          local name="$1"
+          [[ -f "$CONFIG_FILE" ]] || error "Config file not found: $CONFIG_FILE"
+
+          local project=$(${pkgs.jq}/bin/jq -r ".projects[\"$name\"] // empty" "$CONFIG_FILE")
+          [[ -n "$project" ]] || error "Project '$name' not found"
+          [[ "$(echo "$project" | ${pkgs.jq}/bin/jq -r '.enabled // true')" == "true" ]] || error "Project '$name' is disabled"
+
+          echo "$project"
+        }
+
+        # T013-T014: Activate project (switch workspaces, launch apps)
+        cmd_activate() {
+          local name="$1"
+          [[ -n "$name" ]] || error "Usage: i3-project activate <name>"
+
+          i3_is_running || error "i3 is not running"
+
+          local project=$(load_project "$name")
+          local display_name=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.displayName')
+
+          echo "Activating project: $display_name"
+
+          local state_file="$STATE_DIR/$name.state"
+          local workspaces=$(echo "$project" | ${pkgs.jq}/bin/jq -c '.workspaces[]')
+
+          [[ "$DRY_RUN" == "true" ]] && { echo "[DRY-RUN] Would activate project $name"; return 0; }
+
+          # Initialize state
+          echo "{\"name\":\"$name\",\"startTime\":$(date +%s),\"pids\":[],\"workspaces\":[]}" > "$state_file"
+
+          # T013: Process each workspace
+          while IFS= read -r ws; do
+            local ws_num=$(echo "$ws" | ${pkgs.jq}/bin/jq -r '.number')
+            local ws_output=$(echo "$ws" | ${pkgs.jq}/bin/jq -r '.output // empty')
+
+            log "Processing workspace $ws_num"
+            i3_workspace_switch "$ws_num"
+
+            # T014: Launch applications
+            local apps=$(echo "$ws" | ${pkgs.jq}/bin/jq -c '.applications[]')
+            while IFS= read -r app; do
+              local cmd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.command')
+              local args=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.args[]? // empty' | tr '\n' ' ')
+              local wd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.workingDirectory // empty')
+              local delay=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.launchDelay // 0')
+
+              log "Launching: $cmd $args"
+
+              (
+                [[ -n "$wd" ]] && cd "$wd"
+                $cmd $args &
+                echo $! >> "$state_file.pids"
+              ) &
+
+              [[ "$delay" -gt 0 ]] && sleep $(echo "scale=3; $delay/1000" | ${pkgs.bc}/bin/bc)
+            done < <(echo "$apps")
+
+            ${pkgs.jq}/bin/jq ".workspaces += [$ws_num]" "$state_file" > "$state_file.tmp" && mv "$state_file.tmp" "$state_file"
+          done < <(echo "$workspaces")
+
+          # T015: Focus primary workspace
+          local primary=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.primaryWorkspace')
+          log "Focusing primary workspace: $primary"
+          i3_workspace_switch "$primary"
+
+          # T016: Save PIDs to state
+          [[ -f "$state_file.pids" ]] && ${pkgs.jq}/bin/jq ".pids = [$(cat "$state_file.pids" | tr '\n' ',' | sed 's/,$//')] " "$state_file" > "$state_file.tmp" && mv "$state_file.tmp" "$state_file"
+          rm -f "$state_file.pids"
+
+          echo "Project '$display_name' activated successfully"
+        }
+
+        # T017: List projects
+        cmd_list() {
+          [[ -f "$CONFIG_FILE" ]] || error "Config file not found"
+
+          echo "Available projects:"
+          ${pkgs.jq}/bin/jq -r '.projects | to_entries[] | "\(.key)\t\(.value.displayName)\t\(.value.enabled // true)"' "$CONFIG_FILE" | \
+          while IFS=$'\t' read -r name display enabled; do
+            local status="inactive"
+            [[ -f "$STATE_DIR/$name.state" ]] && status="active"
+            [[ "$enabled" == "false" ]] && status="disabled"
+
+            printf "%-20s %-30s [%s]\n" "$name" "$display" "$status"
+          done
+        }
+
+        # T018: Show project status
+        cmd_status() {
+          local name="$1"
+
+          if [[ -z "$name" ]]; then
+            # Show all active projects
+            for state in "$STATE_DIR"/*.state; do
+              [[ -f "$state" ]] || continue
+              local pname=$(basename "$state" .state)
+              cmd_status "$pname"
+            done
+            return 0
+          fi
+
+          local state_file="$STATE_DIR/$name.state"
+          [[ -f "$state_file" ]] || { echo "Project '$name' is not active"; return 1; }
+
+          local state=$(cat "$state_file")
+          local display=$(${pkgs.jq}/bin/jq -r '.name' <<<"$state")
+          local start=$(${pkgs.jq}/bin/jq -r '.startTime' <<<"$state")
+          local pids=$(${pkgs.jq}/bin/jq -r '.pids[]?' <<<"$state")
+          local workspaces=$(${pkgs.jq}/bin/jq -r '.workspaces[]?' <<<"$state")
+
+          echo "Project: $display"
+          echo "Started: $(date -d @$start)"
+          echo "Workspaces: $workspaces"
+          echo "Running processes: $(echo "$pids" | wc -w)"
+        }
+
+        # T019: Switch to project
+        cmd_switch() {
+          local name="$1"
+          [[ -n "$name" ]] || error "Usage: i3-project switch <name>"
+
+          local state_file="$STATE_DIR/$name.state"
+          [[ -f "$state_file" ]] || error "Project '$name' is not active. Use 'activate' first."
+
+          local project=$(load_project "$name")
+          local primary=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.primaryWorkspace')
+
+          i3_workspace_switch "$primary"
+          echo "Switched to project: $name (workspace $primary)"
+        }
+
+        # T020: Close project
+        cmd_close() {
+          local name="$1"
+          local force=false
+          [[ "$2" == "--force" ]] && force=true
+
+          [[ -n "$name" ]] || error "Usage: i3-project close <name> [--force]"
+
+          local state_file="$STATE_DIR/$name.state"
+          [[ -f "$state_file" ]] || error "Project '$name' is not active"
+
+          local pids=$(${pkgs.jq}/bin/jq -r '.pids[]?' "$state_file")
+
+          echo "Closing project: $name"
+
+          for pid in $pids; do
+            if kill -0 "$pid" 2>/dev/null; then
+              log "Terminating PID $pid"
+              kill "$pid" 2>/dev/null || true
+            fi
+          done
+
+          if [[ "$force" == "true" ]]; then
+            sleep 1
+            for pid in $pids; do
+              kill -9 "$pid" 2>/dev/null || true
+            done
+          fi
+
+          rm -f "$state_file"
+          echo "Project '$name' closed"
+        }
 
         show_help() {
           cat <<EOF
@@ -115,41 +288,48 @@ i3-project - i3 Project Workspace Management
 Usage: i3-project <command> [options]
 
 Commands:
-  activate, a <name>   Activate a project (Phase 3)
-  list, ls             List all projects (Phase 3)
-  close, c <name>      Close a project (Phase 3)
-  status, st [name]    Show project status (Phase 3)
-  switch, sw <name>    Switch to a project (Phase 3)
-  reload               Reload configurations (Phase 4)
-  help [command]       Show help
+  activate, a <name>    Activate a project
+  list, ls              List all projects
+  close, c <name>       Close a project
+  status, st [name]     Show project status
+  switch, sw <name>     Switch to active project
+  help                  Show this help
 
 Options:
-  --help, -h           Show this help message
-  --version, -v        Show version information
+  --dry-run            Show what would be done
+  --verbose, -v        Verbose output
+  --help, -h           Show help
 
-Note: Core functionality will be implemented in Phase 3 (User Story 1)
-
-For more information: man i3-project (Phase 9)
+Examples:
+  i3-project activate backend-dev
+  i3-project list
+  i3-project status
+  i3-project close backend-dev --force
 EOF
         }
 
-        # Parse command
+        # Parse global options
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --dry-run) DRY_RUN=true; shift ;;
+            --verbose|-v) VERBOSE=true; shift ;;
+            --help|-h) show_help; exit 0 ;;
+            --version) echo "i3-project 1.0"; exit 0 ;;
+            *) break ;;
+          esac
+        done
+
         COMMAND="''${1:-help}"
         shift || true
 
         case "$COMMAND" in
-          help|--help|-h)
-            show_help
-            ;;
-          --version|-v)
-            echo "i3-project version 1.0 (Phase 1 - Module Structure)"
-            ;;
-          *)
-            echo "Error: Command '$COMMAND' not yet implemented"
-            echo "Current phase: Phase 1 (Module Structure)"
-            echo "Run 'i3-project help' for more information"
-            exit 1
-            ;;
+          activate|a) cmd_activate "$@" ;;
+          list|ls) cmd_list "$@" ;;
+          status|st) cmd_status "$@" ;;
+          switch|sw) cmd_switch "$@" ;;
+          close|c) cmd_close "$@" ;;
+          help) show_help ;;
+          *) error "Unknown command: $COMMAND. Run 'i3-project help' for usage." ;;
         esac
       '')
 

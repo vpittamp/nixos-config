@@ -61,18 +61,18 @@
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Implement core project activation logic in `i3-project` CLI (embedded in `modules/desktop/i3-project-workspace.nix` via pkgs.writeShellScriptBin): load config, validate project exists
-- [ ] T013 [US1] Implement workspace switching logic in `i3-project` CLI: iterate workspaces, switch to each using i3-msg
-- [ ] T014 [US1] Implement application launching logic in `i3-project` CLI: launch applications with configured delays, handle working directory context
-- [ ] T015 [US1] Implement primary workspace focus in `i3-project` CLI: focus project's primary workspace after all applications launch
-- [ ] T016 [US1] Implement project state tracking in `i3-project` CLI: write project state to `/tmp/i3-projects/<name>.state` with PIDs, timestamps, workspace list
-- [ ] T017 [US1] Implement `i3-project list` command in `i3-project` CLI: read projects from JSON config, show status (active/inactive), display workspace and application counts
-- [ ] T018 [US1] Implement `i3-project status` command in `i3-project` CLI: read state files, show running applications, workspace assignments, resource usage
-- [ ] T019 [US1] Implement `i3-project switch` command in `i3-project` CLI: check if project active, focus primary workspace, error if not active
-- [ ] T020 [US1] Implement project close logic in `i3-project close` command: read state file, send SIGTERM to PIDs, wait for graceful termination, optional SIGKILL with --force
-- [ ] T021 [US1] Add error handling and user feedback to all commands: project not found, i3 communication errors, application launch failures
-- [ ] T022 [US1] Implement --dry-run flag for `activate` command: show what would be done without executing
-- [ ] T023 [US1] Implement --verbose flag for detailed activation progress across all commands
+- [X] T012 [US1] Implement core project activation logic in `i3-project` CLI (embedded in `modules/desktop/i3-project-workspace.nix` via pkgs.writeShellScriptBin): load config, validate project exists
+- [X] T013 [US1] Implement workspace switching logic in `i3-project` CLI: iterate workspaces, switch to each using i3-msg
+- [X] T014 [US1] Implement application launching logic in `i3-project` CLI: launch applications with configured delays, handle working directory context
+- [X] T015 [US1] Implement primary workspace focus in `i3-project` CLI: focus project's primary workspace after all applications launch
+- [X] T016 [US1] Implement project state tracking in `i3-project` CLI: write project state to `/tmp/i3-projects/<name>.state` with PIDs, timestamps, workspace list
+- [X] T017 [US1] Implement `i3-project list` command in `i3-project` CLI: read projects from JSON config, show status (active/inactive), display workspace and application counts
+- [X] T018 [US1] Implement `i3-project status` command in `i3-project` CLI: read state files, show running applications, workspace assignments, resource usage
+- [X] T019 [US1] Implement `i3-project switch` command in `i3-project` CLI: check if project active, focus primary workspace, error if not active
+- [X] T020 [US1] Implement project close logic in `i3-project close` command: read state file, send SIGTERM to PIDs, wait for graceful termination, optional SIGKILL with --force
+- [X] T021 [US1] Add error handling and user feedback to all commands: project not found, i3 communication errors, application launch failures
+- [X] T022 [US1] Implement --dry-run flag for `activate` command: show what would be done without executing
+- [X] T023 [US1] Implement --verbose flag for detailed activation progress across all commands
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - users can define projects in Nix, activate them, list them, close them, and switch between them
 
