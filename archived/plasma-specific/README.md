@@ -85,6 +85,30 @@ Touchpad gesture configuration:
 
 **Archived because**: i3wm module handles gesture configuration directly if needed.
 
+### scripts/plasma-rc2nix.sh
+Plasma configuration exporter using plasma-manager's rc2nix:
+- Exports current KDE Plasma settings to Nix format
+- Creates backup before overwriting
+- Generates `home-modules/desktop/generated/plasma-rc2nix.nix`
+
+**Archived because**: Not needed for i3wm configuration management.
+
+### scripts/plasma-diff.sh
+Plasma snapshot diff tool:
+- Shows changes in plasma-rc2nix.nix since last commit
+- Summary mode (`--summary`) for quick overview
+- Config file listing (`--config-files`)
+
+**Archived because**: No longer tracking Plasma configuration snapshots on Hetzner.
+
+### scripts/setup-wayland-remote.sh
+Wayland remote desktop setup guide:
+- Documentation for KRDP (native KDE RDP)
+- KRFB (VNC) setup instructions
+- Comparison with XRDP (X11-only)
+
+**Archived because**: Hetzner now uses i3wm + X11 with XRDP (no Wayland).
+
 ## Migration Notes
 
 **For users who relied on project activities:**
@@ -148,7 +172,12 @@ If you need to restore this functionality (e.g., switching back to KDE Plasma):
    ./home-modules/profiles/plasma-home.nix
    ```
 
-4. Rebuild system
+4. Restore scripts:
+   ```bash
+   cp archived/plasma-specific/scripts/*.sh scripts/
+   ```
+
+5. Rebuild system
 
 ## Git History
 
