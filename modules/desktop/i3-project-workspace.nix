@@ -22,6 +22,19 @@ let
     # Ensure PATH includes required tools
     export PATH="${pkgs.i3}/bin:${pkgs.jq}/bin:${pkgs.xdotool}/bin:${pkgs.xprop}/bin:${pkgs.wmctrl}/bin:${pkgs.coreutils}/bin:${pkgs.gnused}/bin:${pkgs.gnugrep}/bin:$PATH"
 
+    # Auto-detect and set I3SOCK if not already set
+    # Finds the most recently modified i3 IPC socket for the current user
+    if [[ -z "$I3SOCK" ]]; then
+      # Look for i3 sockets in user runtime directory
+      if [[ -d "/run/user/$UID/i3" ]]; then
+        # Find the most recently modified socket
+        I3SOCK=$(ls -t /run/user/$UID/i3/ipc-socket.* 2>/dev/null | head -1)
+        if [[ -n "$I3SOCK" ]]; then
+          export I3SOCK
+        fi
+      fi
+    fi
+
     # Check if i3 is running
     i3_is_running() {
       ${pkgs.i3}/bin/i3-msg -t get_version &>/dev/null
