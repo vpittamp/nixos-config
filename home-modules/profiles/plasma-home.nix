@@ -6,8 +6,9 @@
     ../desktop/plasma-config.nix
     ../desktop/plasma-sync.nix
     ../desktop/plasma-snapshot-analysis.nix
-    ../desktop/project-activities
-    ../desktop/activity-aware-apps-native.nix
+    # Project activities removed during i3wm migration (archived to archived/plasma-specific/desktop/)
+    # ../desktop/project-activities
+    # ../desktop/activity-aware-apps-native.nix
     ../desktop/monitoring-desktop-widgets.nix
     ../desktop/speech-to-text-shortcuts.nix
     ../desktop/kubernetes/k9s-desktop.nix
