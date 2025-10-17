@@ -14,7 +14,46 @@
   home.homeDirectory = "/home/vpittamp";
 
   # Enable i3 project workspace management (Feature 010)
-  programs.i3Projects.enable = true;
+  programs.i3Projects = {
+    enable = true;
+
+    projects = {
+      nixos = {
+        displayName = "NixOS Configuration";
+        description = "NixOS system configuration development";
+        primaryWorkspace = 1;
+        workingDirectory = "/etc/nixos";
+
+        workspaces = [
+          # Workspace 1: Terminal on first monitor (rdp1)
+          {
+            number = 1;
+            output = "rdp1";
+            applications = [
+              {
+                command = "alacritty";
+                wmClass = "Alacritty";
+              }
+            ];
+          }
+
+          # Workspace 2: VS Code on second monitor (rdp2)
+          {
+            number = 2;
+            output = "rdp2";
+            applications = [
+              {
+                command = "code";
+                args = ["/etc/nixos"];
+                wmClass = "Code";
+                launchDelay = 500;  # Give VS Code time to start
+              }
+            ];
+          }
+        ];
+      };
+    };
+  };
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
