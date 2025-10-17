@@ -25,7 +25,7 @@
         workingDirectory = "/etc/nixos";
 
         workspaces = [
-          # Workspace 1: Terminal on first monitor (rdp1)
+          # Workspace 1: Terminal with sesh session on first monitor (rdp1)
           {
             number = 1;
             output = "rdp1";
@@ -33,6 +33,8 @@
               {
                 command = "alacritty";
                 wmClass = "Alacritty";
+                useSesh = true;
+                seshSession = "nixos";  # Corresponds to sesh session in sesh.nix
               }
             ];
           }
@@ -45,6 +47,43 @@
               {
                 command = "code";
                 args = ["/etc/nixos"];
+                wmClass = "Code";
+                launchDelay = 500;  # Give VS Code time to start
+              }
+            ];
+          }
+        ];
+      };
+
+      stacks = {
+        displayName = "Stacks Development";
+        description = "Cloud-native reference stacks development";
+        primaryWorkspace = 3;
+        workingDirectory = "~/stacks";
+
+        workspaces = [
+          # Workspace 3: Terminal with sesh session on first monitor (rdp1)
+          {
+            number = 3;
+            output = "rdp1";
+            applications = [
+              {
+                command = "alacritty";
+                wmClass = "Alacritty";
+                useSesh = true;
+                seshSession = "stacks";  # Corresponds to sesh session in sesh.nix
+              }
+            ];
+          }
+
+          # Workspace 4: VS Code on second monitor (rdp2)
+          {
+            number = 4;
+            output = "rdp2";
+            applications = [
+              {
+                command = "code";
+                args = ["~/stacks"];
                 wmClass = "Code";
                 launchDelay = 500;  # Give VS Code time to start
               }
