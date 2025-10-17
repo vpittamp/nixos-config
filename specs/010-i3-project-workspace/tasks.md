@@ -86,14 +86,14 @@
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement project definition example in `home-modules/desktop/i3-projects.nix` module comments: complete working example with all options documented
-- [ ] T025 [US2] Implement configuration reload mechanism in `i3-project reload` command: re-read JSON, validate, update internal state
-- [ ] T026 [US2] Add parameterized working directory support in `i3-project activate`: --dir flag to override workingDirectory for all applications
-- [ ] T027 [US2] Implement application command construction with working directory in shared library: build command with --working-directory flags for terminals
-- [ ] T028 [US2] Add support for application args in configuration: concatenate args list to command, quote properly for shell execution
-- [ ] T029 [US2] Implement project templates helper function in `home-modules/desktop/i3-projects.nix` module comments: example of makeProjectTemplate pattern for reusable configurations
-- [ ] T030 [US2] Add validation for working directory existence in home-manager module: check paths exist or can be created, generate warnings
-- [ ] T031 [US2] Implement configuration update detection: warn users when config changed but not rebuilt
+- [X] T024 [US2] Implement project definition example in `home-modules/desktop/i3-projects.nix` module comments: complete working example with all options documented
+- [X] T025 [US2] Implement configuration reload mechanism in `i3-project reload` command: re-read JSON, validate, update internal state
+- [X] T026 [US2] Add parameterized working directory support in `i3-project activate`: --dir flag to override workingDirectory for all applications
+- [X] T027 [US2] Implement application command construction with working directory in shared library: build command with --working-directory flags for terminals
+- [X] T028 [US2] Add support for application args in configuration: concatenate args list to command, quote properly for shell execution
+- [X] T029 [US2] Implement project templates helper function in `home-modules/desktop/i3-projects.nix` module comments: example of makeProjectTemplate pattern for reusable configurations
+- [X] T030 [US2] Add validation for working directory existence in home-manager module: check paths exist or can be created, generate warnings
+- [X] T031 [US2] Implement configuration update detection: warn users when config changed but not rebuilt
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work - users can fully manage projects via declarative Nix configuration
 

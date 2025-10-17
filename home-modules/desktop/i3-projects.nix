@@ -215,31 +215,194 @@ in
         - Working directory context
       '';
       example = literalExpression ''
+        # T024: Complete working example with all options documented
         {
-          backend-dev = {
-            displayName = "Backend API Development";
-            description = "Spring Boot API with database tools";
-            primaryWorkspace = 1;
-            workingDirectory = "/home/user/projects/backend";
+          # Simple single-workspace project
+          quick-notes = {
+            displayName = "Quick Notes";
+            description = "Simple note-taking environment";
+            primaryWorkspace = 9;
+            workingDirectory = "$HOME/Documents/notes";
             workspaces = [
               {
+                number = 9;
+                applications = [
+                  {
+                    command = "alacritty";
+                    wmClass = "Alacritty";
+                  }
+                  {
+                    package = pkgs.obsidian;
+                    command = "obsidian";
+                    wmClass = "obsidian";
+                  }
+                ];
+              }
+            ];
+          };
+
+          # Complex multi-workspace project
+          backend-dev = {
+            displayName = "Backend API Development";
+            description = "Full-stack development with IDE, terminals, and database tools";
+            primaryWorkspace = 1;
+            workingDirectory = "/home/user/projects/backend";
+            autostart = false;  # Don't auto-start on i3 launch
+
+            workspaces = [
+              # Workspace 1: Code editor and terminal
+              {
                 number = 1;
-                output = "DP-1";
+                output = "DP-1";  # Primary monitor
+                layoutMode = "manual";
                 applications = [
                   {
                     package = pkgs.vscode;
                     command = "code";
-                    args = ["."];
+                    args = ["."];  # Open current directory
                     wmClass = "Code";
+                    instanceBehavior = "new";
                   }
                   {
                     command = "alacritty";
+                    wmClass = "Alacritty";
+                    workingDirectory = "/home/user/projects/backend";
+                  }
+                ];
+              }
+
+              # Workspace 2: Browser and API testing
+              {
+                number = 2;
+                output = "DP-1";
+                applications = [
+                  {
+                    package = pkgs.firefox;
+                    command = "firefox";
+                    args = ["--new-window" "http://localhost:8080"];
+                    wmClass = "Firefox";
+                    instanceBehavior = "new";
+                    launchDelay = 1000;  # Wait 1s before launching
+                  }
+                  {
+                    package = pkgs.postman;
+                    command = "postman";
+                    wmClass = "Postman";
+                    launchDelay = 2000;
+                  }
+                ];
+              }
+
+              # Workspace 3: Database tools
+              {
+                number = 3;
+                output = "HDMI-1";  # Secondary monitor
+                applications = [
+                  {
+                    package = pkgs.dbeaver;
+                    command = "dbeaver";
+                    wmClass = "DBeaver";
+                  }
+                  {
+                    command = "alacritty";
+                    args = ["-e" "psql" "-U" "postgres"];
                     wmClass = "Alacritty";
                   }
                 ];
               }
             ];
           };
+
+          # T029: Template-based project examples
+          # You can create helper functions for common project patterns in your configuration:
+
+          # Example 1: Simple single-workspace template
+          # let
+          #   makeSimpleProject = { name, displayName, workspace ? 9, apps }:
+          #     {
+          #       inherit displayName;
+          #       primaryWorkspace = workspace;
+          #       workspaces = [{
+          #         number = workspace;
+          #         applications = apps;
+          #       }];
+          #     };
+          # in {
+          #   quick-notes = makeSimpleProject {
+          #     name = "quick-notes";
+          #     displayName = "Quick Notes";
+          #     workspace = 9;
+          #     apps = [
+          #       { command = "alacritty"; wmClass = "Alacritty"; }
+          #       { package = pkgs.obsidian; command = "obsidian"; wmClass = "obsidian"; }
+          #     ];
+          #   };
+          # }
+
+          # Example 2: Full-stack development template
+          # let
+          #   makeDevProject = { name, displayName, workingDir, editor, browser, workspace ? 1 }:
+          #     {
+          #       inherit displayName workingDir;
+          #       primaryWorkspace = workspace;
+          #       workspaces = [
+          #         {
+          #           number = workspace;
+          #           applications = [
+          #             { package = editor; command = editor.pname or editor.name; wmClass = "Code"; args = ["."]; }
+          #             { command = "alacritty"; wmClass = "Alacritty"; }
+          #           ];
+          #         }
+          #         {
+          #           number = workspace + 1;
+          #           applications = [
+          #             { package = browser; command = browser.pname or browser.name; wmClass = "Firefox"; args = ["--new-window" "http://localhost:3000"]; launchDelay = 1000; }
+          #           ];
+          #         }
+          #       ];
+          #     };
+          # in {
+          #   frontend-dev = makeDevProject {
+          #     name = "frontend-dev";
+          #     displayName = "Frontend Development";
+          #     workingDir = "/home/user/projects/frontend";
+          #     editor = pkgs.vscode;
+          #     browser = pkgs.firefox;
+          #   };
+          # }
+
+          # Example 3: Multi-monitor project template
+          # let
+          #   makeMultiMonitorProject = { name, displayName, workingDir, primaryOutput, secondaryOutput }:
+          #     {
+          #       inherit displayName workingDir;
+          #       primaryWorkspace = 1;
+          #       workspaces = [
+          #         {
+          #           number = 1;
+          #           output = primaryOutput;
+          #           applications = [
+          #             { package = pkgs.vscode; command = "code"; args = ["."]; wmClass = "Code"; }
+          #           ];
+          #         }
+          #         {
+          #           number = 2;
+          #           output = secondaryOutput;
+          #           applications = [
+          #             { package = pkgs.firefox; command = "firefox"; wmClass = "Firefox"; }
+          #           ];
+          #         }
+          #       ];
+          #     };
+          # in {
+          #   backend-dev = makeMultiMonitorProject {
+          #     name = "backend-dev";
+          #     displayName = "Backend API Development";
+          #     workingDir = "/home/user/projects/backend";
+          #     primaryOutput = "DP-1";
+          #     secondaryOutput = "HDMI-1";
+          #   };
+          # }
         }
       '';
     };

@@ -127,25 +127,51 @@ in
           echo "$project"
         }
 
-        # T013-T014: Activate project (switch workspaces, launch apps)
+        # T013-T014, T026-T028: Activate project (switch workspaces, launch apps)
         cmd_activate() {
           local name="$1"
-          [[ -n "$name" ]] || error "Usage: i3-project activate <name>"
+          local override_dir=""
+
+          # T026: Parse --dir flag
+          shift
+          while [[ $# -gt 0 ]]; do
+            case "$1" in
+              --dir) override_dir="$2"; shift 2 ;;
+              *) error "Unknown option: $1" ;;
+            esac
+          done
+
+          [[ -n "$name" ]] || error "Usage: i3-project activate <name> [--dir <directory>]"
 
           i3_is_running || error "i3 is not running"
 
           local project=$(load_project "$name")
           local display_name=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.displayName')
+          local project_wd=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.workingDirectory // empty')
+
+          # T026: Use override if provided, otherwise use project default
+          local working_dir="''${override_dir:-$project_wd}"
+
+          # T030: Validate working directory exists
+          if [[ -n "$working_dir" ]]; then
+            # Expand ~ to home directory
+            working_dir="''${working_dir/#\~/$HOME}"
+            if [[ ! -d "$working_dir" ]]; then
+              error "Working directory does not exist: $working_dir"
+            fi
+          fi
 
           echo "Activating project: $display_name"
+          [[ -n "$working_dir" ]] && log "Working directory: $working_dir"
 
           local state_file="$STATE_DIR/$name.state"
           local workspaces=$(echo "$project" | ${pkgs.jq}/bin/jq -c '.workspaces[]')
 
-          [[ "$DRY_RUN" == "true" ]] && { echo "[DRY-RUN] Would activate project $name"; return 0; }
+          [[ "$DRY_RUN" == "true" ]] && { echo "[DRY-RUN] Would activate project $name in $working_dir"; return 0; }
 
-          # Initialize state
-          echo "{\"name\":\"$name\",\"startTime\":$(date +%s),\"pids\":[],\"workspaces\":[]}" > "$state_file"
+          # T031: Initialize state with config file timestamp for change detection
+          local config_mtime=$(stat -c %Y "$CONFIG_FILE" 2>/dev/null || echo 0)
+          echo "{\"name\":\"$name\",\"startTime\":$(date +%s),\"configMtime\":$config_mtime,\"pids\":[],\"workspaces\":[]}" > "$state_file"
 
           # T013: Process each workspace
           while IFS= read -r ws; do
@@ -155,18 +181,32 @@ in
             log "Processing workspace $ws_num"
             i3_workspace_switch "$ws_num"
 
-            # T014: Launch applications
+            # T014, T027-T028: Launch applications
             local apps=$(echo "$ws" | ${pkgs.jq}/bin/jq -c '.applications[]')
             while IFS= read -r app; do
               local cmd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.command')
               local args=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.args[]? // empty' | tr '\n' ' ')
-              local wd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.workingDirectory // empty')
+              local app_wd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.workingDirectory // empty')
               local delay=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.launchDelay // 0')
 
+              # T027: Determine working directory (app-specific > override > project default)
+              local final_wd="''${app_wd:-$working_dir}"
+
+              # T030: Validate app-specific working directory
+              if [[ -n "$final_wd" ]]; then
+                final_wd="''${final_wd/#\~/$HOME}"
+                if [[ ! -d "$final_wd" ]]; then
+                  echo "Warning: Working directory does not exist for $cmd: $final_wd" >&2
+                  echo "Continuing without working directory..." >&2
+                  final_wd=""
+                fi
+              fi
+
               log "Launching: $cmd $args"
+              [[ -n "$final_wd" ]] && log "  in directory: $final_wd"
 
               (
-                [[ -n "$wd" ]] && cd "$wd"
+                [[ -n "$final_wd" ]] && cd "$final_wd"
                 $cmd $args &
                 echo $! >> "$state_file.pids"
               ) &
@@ -227,10 +267,20 @@ in
           local pids=$(${pkgs.jq}/bin/jq -r '.pids[]?' <<<"$state")
           local workspaces=$(${pkgs.jq}/bin/jq -r '.workspaces[]?' <<<"$state")
 
+          # T031: Check if configuration has changed since activation
+          local state_mtime=$(${pkgs.jq}/bin/jq -r '.configMtime // 0' <<<"$state")
+          local current_mtime=$(stat -c %Y "$CONFIG_FILE" 2>/dev/null || echo 0)
+
           echo "Project: $display"
           echo "Started: $(date -d @$start)"
           echo "Workspaces: $workspaces"
           echo "Running processes: $(echo "$pids" | wc -w)"
+
+          if [[ "$current_mtime" -gt "$state_mtime" ]]; then
+            echo ""
+            echo "⚠ Configuration has changed since activation"
+            echo "  Consider running: i3-project close $name && i3-project activate $name"
+          fi
         }
 
         # T019: Switch to project
@@ -281,6 +331,19 @@ in
           echo "Project '$name' closed"
         }
 
+        # T025: Reload configuration
+        cmd_reload() {
+          echo "Reloading project configuration..."
+          [[ -f "$CONFIG_FILE" ]] || error "Config file not found: $CONFIG_FILE"
+
+          # Verify JSON is valid
+          ${pkgs.jq}/bin/jq empty "$CONFIG_FILE" 2>/dev/null || error "Invalid JSON in config file"
+
+          echo "Configuration loaded from: $CONFIG_FILE"
+          echo ""
+          cmd_list
+        }
+
         show_help() {
           cat <<EOF
 i3-project - i3 Project Workspace Management
@@ -293,6 +356,7 @@ Commands:
   close, c <name>       Close a project
   status, st [name]     Show project status
   switch, sw <name>     Switch to active project
+  reload, r             Reload configuration
   help                  Show this help
 
 Options:
@@ -302,9 +366,11 @@ Options:
 
 Examples:
   i3-project activate backend-dev
+  i3-project activate backend-dev --dir ~/my-fork
   i3-project list
   i3-project status
   i3-project close backend-dev --force
+  i3-project reload
 EOF
         }
 
@@ -328,6 +394,7 @@ EOF
           status|st) cmd_status "$@" ;;
           switch|sw) cmd_switch "$@" ;;
           close|c) cmd_close "$@" ;;
+          reload|r) cmd_reload "$@" ;;
           help) show_help ;;
           *) error "Unknown command: $COMMAND. Run 'i3-project help' for usage." ;;
         esac
