@@ -150,6 +150,16 @@ KDE global shortcuts for speech-to-text:
 
 **Archived because**: i3wm uses i3 key bindings instead of KDE global shortcuts.
 
+### home-modules/profiles/plasma-home.nix
+KDE Plasma home-manager profile that aggregated all Plasma-specific modules:
+- Imported konsole.nix, touchpad-gestures.nix, plasma-config.nix, plasma-sync.nix
+- Imported plasma-snapshot-analysis.nix, monitoring-desktop-widgets.nix, speech-to-text-shortcuts.nix
+- Referenced project-activities system (commented out)
+- Included plasma-manager home-manager module
+- Configured k9s-desktop and kwallet-config
+
+**Archived because**: References 8 archived modules (broken). Not actively imported by any configuration (commented out in home-vpittamp.nix). M1 configuration (still using KDE Plasma temporarily) doesn't import this profile.
+
 ## Migration Notes
 
 **For users who relied on project activities:**
@@ -181,6 +191,7 @@ If you need to restore this functionality (e.g., switching back to KDE Plasma):
    ```bash
    cp -r archived/plasma-specific/desktop/project-activities home-modules/desktop/
    cp archived/plasma-specific/desktop/activity-aware-apps-native.nix home-modules/desktop/
+   cp archived/plasma-specific/home-modules/profiles/plasma-home.nix home-modules/profiles/
    ```
 
 2. Uncomment imports in `home-modules/profiles/plasma-home.nix`:
