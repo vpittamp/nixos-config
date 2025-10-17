@@ -73,4 +73,20 @@
     xclip
     xsel  # Alternative clipboard tool
   ];
+
+  # Fix DISPLAY environment variable for XRDP multi-session support
+  # home-manager's clipcat service doesn't automatically import DISPLAY
+  systemd.user.services.clipcat = {
+    Service = {
+      # Import DISPLAY from the graphical session environment
+      Environment = lib.mkForce [];
+      # Alternative: use systemctl --user import-environment DISPLAY
+    };
+    Unit = {
+      After = lib.mkAfter [ "graphical-session.target" ];
+    };
+  };
+
+  # Alternative workaround: Start clipcat from i3 config instead of systemd
+  # Add to i3 config: exec --no-startup-id clipcatd
 }

@@ -295,20 +295,20 @@
       # Quick copy popup (backtick + C) - Show current tmux buffer
       bind-key C display-popup -E -h 60% -w 70% 'echo "=== TMUX BUFFER ==="; tmux show-buffer | less'
 
-      # Clipboard history popup (backtick + Q) - Show KDE clipboard items
+      # Clipboard history popup (backtick + Q) - Show clipcat clipboard items
+      # Uses clipcat for unified clipboard history across all applications
       bind-key Q display-popup -E -h 70% -w 80% 'bash -c "\
-        if command -v qdbus &>/dev/null 2>&1; then \
-          echo \"=== CLIPBOARD HISTORY (press q to quit) ===\"; \
+        if command -v clipcatctl &>/dev/null 2>&1; then \
+          echo \"=== CLIPBOARD HISTORY (clipcat) ===\"; \
           echo; \
-          for i in {0..9}; do \
-            item=$(qdbus org.kde.klipper /klipper getClipboardHistoryItem $i 2>/dev/null | head -3); \
-            if [ -n \"$item\" ]; then \
-              echo \"[$i] ----------------------------------------\"; \
-              echo \"$item\" | head -3; \
-              echo; \
-            fi; \
+          clipcatctl list | while IFS=: read -r hash content; do \
+            echo \"Hash: $hash\"; \
+            echo \"$content\" | head -3; \
+            echo \"----------------------------------------\"; \
+            echo; \
           done; \
         else \
+          echo \"Clipcat not available\"; \
           if [ -n \"$WAYLAND_DISPLAY\" ]; then \
             echo \"Current clipboard:\"; wl-paste; \
           else \
