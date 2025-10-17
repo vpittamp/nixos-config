@@ -201,6 +201,8 @@ in
               local args=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.args[]? // empty' | tr '\n' ' ')
               local app_wd=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.workingDirectory // empty')
               local delay=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.launchDelay // 0')
+              local use_sesh=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.useSesh // false')
+              local sesh_session=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.seshSession // empty')
 
               # T027: Determine working directory (app-specific > override > project default)
               local final_wd="''${app_wd:-$working_dir}"
@@ -215,7 +217,20 @@ in
                 fi
               fi
 
-              log "Launching: $cmd $args"
+              # Handle sesh integration for terminal applications
+              if [[ "$use_sesh" == "true" ]]; then
+                # Determine session name (explicit > project name)
+                local session="''${sesh_session:-$name}"
+
+                # Transform command to use sesh
+                # e.g., "alacritty" becomes "alacritty -e sesh connect nixos"
+                args="-e sesh connect $session $args"
+
+                log "Launching: $cmd with sesh session '$session'"
+              else
+                log "Launching: $cmd $args"
+              fi
+
               [[ -n "$final_wd" ]] && log "  in directory: $final_wd"
 
               (
