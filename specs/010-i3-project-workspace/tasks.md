@@ -40,14 +40,14 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Define Nix types for Project entity in `home-modules/desktop/i3-projects.nix` (displayName, workspaces, primaryWorkspace, workingDirectory, enabled, autostart)
-- [ ] T005 Define Nix types for WorkspaceConfig entity in `home-modules/desktop/i3-projects.nix` (number, output, outputs, applications, layout, layoutMode)
-- [ ] T006 Define Nix types for ApplicationConfig entity in `home-modules/desktop/i3-projects.nix` (package, command, wmClass, wmInstance, workingDirectory, args, instanceBehavior, launchDelay, floating, position, size)
-- [ ] T007 Implement project configuration validation in `home-modules/desktop/i3-projects.nix` (assertions for unique names, valid workspace references, existing packages)
-- [ ] T008 Implement JSON configuration generation in `home-modules/desktop/i3-projects.nix` to create `~/.config/i3-projects/projects.json` from Nix definitions
-- [ ] T009 Create shared library functions in embedded `i3-project-lib.sh`: i3_workspace_switch, i3_get_workspaces, i3_get_outputs, check_package_installed
-- [ ] T010 [P] Add required packages to system module in `modules/desktop/i3-project-workspace.nix`: i3, i3-save-tree, xdotool, xprop, jq, wmctrl
-- [ ] T011 [P] Implement conditional module activation based on i3wm presence in both system and home-manager modules
+- [X] T004 Define Nix types for Project entity in `home-modules/desktop/i3-projects.nix` (displayName, workspaces, primaryWorkspace, workingDirectory, enabled, autostart)
+- [X] T005 Define Nix types for WorkspaceConfig entity in `home-modules/desktop/i3-projects.nix` (number, output, outputs, applications, layout, layoutMode)
+- [X] T006 Define Nix types for ApplicationConfig entity in `home-modules/desktop/i3-projects.nix` (package, command, wmClass, wmInstance, workingDirectory, args, instanceBehavior, launchDelay, floating, position, size)
+- [X] T007 Implement project configuration validation in `home-modules/desktop/i3-projects.nix` (assertions for unique names, valid workspace references, existing packages)
+- [X] T008 Implement JSON configuration generation in `home-modules/desktop/i3-projects.nix` to create `~/.config/i3-projects/projects.json` from Nix definitions
+- [X] T009 Create shared library functions in embedded `i3-project-lib.sh`: i3_workspace_switch, i3_get_workspaces, i3_get_outputs, check_package_installed
+- [X] T010 [P] Add required packages to system module in `modules/desktop/i3-project-workspace.nix`: i3, i3-save-tree, xdotool, xprop, jq, wmctrl
+- [X] T011 [P] Implement conditional module activation based on i3wm presence in both system and home-manager modules
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
