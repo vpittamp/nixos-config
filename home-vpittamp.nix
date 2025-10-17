@@ -7,10 +7,14 @@
     # ./home-modules/profiles/plasma-home.nix
     # ./home-modules/desktop/i3.nix  # Not needed - using manual config file
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
+    ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management
   ];
 
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
+
+  # Enable i3 project workspace management (Feature 010)
+  programs.i3Projects.enable = true;
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
