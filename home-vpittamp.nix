@@ -4,6 +4,7 @@
     ./home-modules/profiles/base-home.nix
     ./home-modules/profiles/plasma-home.nix
     # ./home-modules/desktop/i3.nix  # Not needed - using manual config file
+    ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
   ];
 
   home.username = "vpittamp";
