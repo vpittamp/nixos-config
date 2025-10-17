@@ -15,6 +15,19 @@ This directory contains platform configurations that are no longer in use.
 **Purpose**: Windows Subsystem for Linux development environment
 **Archived because**: WSL environment no longer in active use
 
+### VM and KubeVirt Configurations
+**Files**: kubevirt-optimized.nix, kubevirt-full.nix, kubevirt-desktop.nix, kubevirt-minimal.nix, vm-hetzner.nix, vm-minimal.nix
+**Purpose**: Virtual machine and KubeVirt deployment configurations with KDE Plasma desktop
+**Archived because**:
+- Reference archived KDE Plasma modules (kde-plasma.nix, kde-plasma-vm.nix)
+- Not in active use for production deployments
+- Can be restored and migrated to i3wm if needed
+
+### Hetzner Utility Configurations
+**Files**: hetzner-minimal.nix, hetzner-example.nix
+**Purpose**: Minimal and example configurations for nixos-anywhere deployments
+**Archived because**: Superseded by hetzner-i3.nix as primary reference configuration
+
 ## Recovery
 
 If you need to restore these configurations:
