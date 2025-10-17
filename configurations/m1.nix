@@ -16,8 +16,9 @@
     # Apple Silicon support - CRITICAL for hardware functionality
     inputs.nixos-apple-silicon.nixosModules.default
 
-    # Desktop environment
-    ../modules/desktop/kde-plasma.nix
+    # Desktop environment (KDE Plasma - temporarily retained, deferred migration to i3wm)
+    # NOTE: KDE modules archived in Feature 009, M1 migration deferred per user request
+    ../archived/plasma-specific/desktop/kde-plasma.nix
     ../modules/desktop/remote-access.nix
     ../modules/desktop/wireless-display.nix
 
