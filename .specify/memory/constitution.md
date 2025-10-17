@@ -1,14 +1,26 @@
 <!--
 Sync Impact Report:
-- Version: Initial → 1.0.0 (INITIAL RELEASE)
-- New principles created: All principles are new
-- Added sections: All sections are new
-- Templates updated:
-  ✅ .specify/templates/spec-template.md - aligned with modular architecture principle
-  ✅ .specify/templates/plan-template.md - Constitution Check section references this document
-  ✅ .specify/templates/tasks-template.md - task organization aligns with modularity
+- Version: 1.0.0 → 1.1.0 (MINOR - New principle added, existing principles expanded)
+- Modified principles:
+  * Principle II: "Hetzner as Reference Implementation" → "Reference Implementation Flexibility"
+    - Relaxed requirement to allow migration away from Hetzner base when necessary
+    - Added guidance for evaluating alternative reference configurations
+  * Principle VI: "Declarative Configuration Over Imperative" - Updated exception language
+    - Removed Plasma-specific mention, generalized to "desktop environment settings capture"
+- New principles created:
+  * Principle VIII: "Remote Desktop & Multi-Session Standards" (NEW)
+    - Addresses xrdp multi-session requirements
+    - Session isolation and resource management
+    - Authentication and security standards
+- Expanded sections:
+  * Platform Support Standards - Updated Hetzner testing requirements to reflect i3wm transition
+  * Platform Support Standards - Added guidance for evaluating desktop environment changes
+- Templates requiring updates:
+  ✅ .specify/templates/spec-template.md - no changes needed (principles remain compatible)
+  ✅ .specify/templates/plan-template.md - Constitution Check section compatible with new principle
+  ✅ .specify/templates/tasks-template.md - task organization aligns with new remote desktop principle
   ⚠ Command files - none found in .specify/templates/commands/
-- Follow-up TODOs: None - all fields completed
+- Follow-up TODOs: Update docs/HETZNER_NIXOS_INSTALL.md to reflect potential i3wm migration path
 -->
 
 # NixOS Modular Configuration Constitution
@@ -27,17 +39,24 @@ Every configuration MUST be built from composable modules rather than monolithic
 
 **Rationale**: This project reduced from 46 files with 3,486 lines of duplication to ~25 modular files. Modular composition is the foundation that enables maintainability, consistency, and platform flexibility without code duplication.
 
-### II. Hetzner as Reference Implementation
+### II. Reference Implementation Flexibility
 
-The Hetzner configuration (`configurations/hetzner.nix`) serves as the canonical reference for full-featured NixOS installations.
+A reference configuration serves as the canonical example for full-featured NixOS installations. The reference implementation MAY change when architectural requirements demand it.
 
 **Rules**:
-- Base configuration (`configurations/base.nix`) MUST be extracted from Hetzner's common functionality
-- New features MUST be validated against Hetzner configuration first
-- Breaking changes MUST be tested on Hetzner before other platforms
-- Documentation MUST reference Hetzner as the primary example
+- Base configuration (`configurations/base.nix`) MUST be extracted from the current reference implementation's common functionality
+- New features MUST be validated against the reference configuration first
+- When evaluating a new reference configuration:
+  * Document the specific technical limitations of the current reference
+  * Research and validate the proposed alternative meets all core requirements
+  * Test the migration path on at least one platform before full adoption
+  * Update documentation to reflect the new reference architecture
+- Breaking changes MUST be tested on the reference configuration before other platforms
+- Documentation MUST clearly identify the current reference configuration
 
-**Rationale**: Hetzner represents a complete NixOS installation with both server and desktop components on standard x86_64 hardware. It provides the most comprehensive reference point for testing and validating new features.
+**Current Reference**: Hetzner configuration (`configurations/hetzner.nix`) - full-featured NixOS on standard x86_64 hardware
+
+**Rationale**: Originally, Hetzner provided a stable reference for KDE Plasma desktop deployments. As requirements evolve (e.g., i3wm + multi-session RDP), the reference may need to migrate to a configuration better suited to new architectural patterns. This principle allows flexibility while maintaining the discipline of having a canonical reference.
 
 ### III. Test-Before-Apply (NON-NEGOTIABLE)
 
@@ -92,16 +111,17 @@ in {
 
 ### VI. Declarative Configuration Over Imperative
 
-All system configuration MUST be declared in Nix expressions; imperative post-install scripts are forbidden except for Plasma user settings capture.
+All system configuration MUST be declared in Nix expressions; imperative post-install scripts are forbidden except for desktop environment settings capture during migration.
 
 **Rules**:
 - System packages MUST be declared in `environment.systemPackages` or module configurations
 - Services MUST be configured via NixOS options, not manual systemd files
 - User environments MUST use home-manager, not manual dotfile management
 - Secrets MUST use 1Password integration or declarative secret management (sops-nix/agenix)
-- The ONLY exception: `scripts/plasma-rc2nix.sh` for capturing live Plasma tweaks before refactoring into declarative modules
+- Desktop environment configurations MUST be declared in home-manager or NixOS modules
+- Limited exception: Temporary capture scripts (e.g., `scripts/*-rc2nix.sh`) MAY be used to extract live desktop environment settings during migration, with the intent to refactor captured settings into declarative modules
 
-**Rationale**: Declarative configuration is NixOS's core value proposition. It enables reproducible builds, atomic upgrades, and automatic rollbacks. Imperative changes create configuration drift and break the reproducibility guarantee.
+**Rationale**: Declarative configuration is NixOS's core value proposition. It enables reproducible builds, atomic upgrades, and automatic rollbacks. Imperative changes create configuration drift and break the reproducibility guarantee. Capture scripts serve as a bridge during migrations but should not remain as permanent solutions.
 
 ### VII. Documentation as Code
 
@@ -115,6 +135,27 @@ Every module, configuration change, and architectural decision MUST be documente
 - Migration guides MUST be created for major structural changes
 
 **Rationale**: This project's complexity demands clear documentation. LLM assistants, new contributors, and future maintainers rely on comprehensive guides to navigate the modular architecture effectively.
+
+### VIII. Remote Desktop & Multi-Session Standards
+
+Remote desktop access MUST support multiple concurrent sessions with proper isolation, authentication, and resource management.
+
+**Rules**:
+- Multi-session support MUST allow 3-5 concurrent connections per user without disconnecting existing sessions
+- Session isolation MUST ensure independent desktop environments (separate window managers, application states)
+- Session persistence MUST maintain state across disconnections with automatic cleanup after 24 hours of idle time
+- Authentication MUST support password-based access with optional SSH key authentication
+- Display server choice MUST prioritize RDP/xrdp compatibility (X11 preferred for mature tooling)
+- Remote desktop configuration MUST preserve existing tool integrations (1Password, terminal customizations, browser extensions)
+- Resource limits MUST be documented and enforced to prevent system exhaustion
+
+**Configuration**:
+- Remote desktop service: xrdp or compatible multi-session RDP server
+- Display server: X11 (for mature RDP compatibility and tool support)
+- Window manager: Must support multi-session isolation (i3wm, other tiling WMs)
+- Session management: Automatic cleanup policies, reconnection handling
+
+**Rationale**: Remote development workstations require seamless multi-device access without workflow interruption. Microsoft Remote Desktop (RDP) is the standard cross-platform protocol. Multi-session support enables users to maintain separate contexts on different devices while sharing a single powerful remote system. Session cleanup prevents resource exhaustion while maintaining reasonable persistence expectations.
 
 ## Platform Support Standards
 
@@ -131,9 +172,18 @@ The configuration MUST support WSL2, Hetzner Cloud, Apple Silicon Macs (via Asah
 
 **Testing Requirements**:
 - WSL: Docker Desktop integration, VS Code Remote, 1Password CLI
-- Hetzner: Full KDE desktop, RDP access, Tailscale VPN, development tools
+- Hetzner: Full desktop environment (currently transitioning from KDE Plasma to i3wm), RDP multi-session access, Tailscale VPN, development tools
 - M1: ARM64 optimizations, Wayland session, Retina display scaling, requires `--impure` flag
 - Containers: Size constraints (<100MB minimal, <600MB development)
+
+**Desktop Environment Transitions**:
+When migrating desktop environments (e.g., KDE Plasma → i3wm):
+1. Research target environment's compatibility with existing tools and workflows
+2. Evaluate reference configuration suitability (may trigger Principle II evaluation)
+3. Test migration on reference platform first
+4. Document configuration patterns and module structure
+5. Validate all critical integrations (1Password, terminal tools, browser extensions)
+6. Update platform testing requirements to reflect new environment
 
 ## Security & Authentication Standards
 
@@ -148,23 +198,26 @@ Secret management MUST use 1Password for centralized, secure credential storage.
 - GUI installations (Hetzner, M1) MUST include 1Password desktop app
 - Headless installations (WSL, containers) MUST use 1Password CLI
 - Biometric authentication MUST be enabled where platform supports it
+- Remote desktop sessions MUST have access to 1Password without re-authentication
 
 **Configuration**:
 - Module: `modules/services/onepassword.nix`
 - Conditional GUI/CLI support based on `config.services.xserver.enable`
 - PAM integration for system authentication
 - Polkit rules for desktop authentication
+- RDP session integration for persistent authentication state
 
 ### SSH Hardening
 
 SSH access MUST use key-based authentication with rate limiting and fail2ban integration.
 
 **Rules**:
-- Password authentication MUST be disabled
+- Password authentication MUST be disabled for SSH
 - SSH keys MUST be managed via 1Password SSH agent
 - Rate limiting MUST be configured on public-facing systems
 - Fail2ban MUST be enabled on Hetzner and other exposed servers
 - Tailscale VPN MUST be the primary access method for remote systems
+- RDP authentication MAY use password-based access (separate from SSH) with optional SSH key support
 
 ## Package Management Standards
 
@@ -226,9 +279,10 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ Test-before-apply - `dry-build` executed and passed
 - ✅ Override priorities - `mkDefault` and `mkForce` used appropriately
 - ✅ Conditional features - modules adapt to system capabilities
-- ✅ Declarative configuration - no imperative post-install scripts (except Plasma capture)
+- ✅ Declarative configuration - no imperative post-install scripts (except temporary desktop capture)
 - ✅ Documentation updates - architectural changes reflected in docs
 - ✅ Security standards - secrets via 1Password, SSH hardening maintained
+- ✅ Remote desktop standards - multi-session support, session isolation, resource limits
 
 ### Complexity Justification
 
@@ -237,4 +291,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.0.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-14
+**Version**: 1.1.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-16

@@ -68,6 +68,7 @@
       VISUAL = "nvim";
       PAGER = "less";
       LESS = "-R";
+      TERMINAL = "alacritty";  # Default terminal emulator (Feature 007)
       # TERM is now set dynamically in bash initExtra to avoid conflicts
       # TERM = "screen-256color";
       # DOCKER_HOST is now set conditionally in WSL configuration only

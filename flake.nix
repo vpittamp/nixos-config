@@ -143,28 +143,8 @@
     {
       # NixOS Configurations
       nixosConfigurations = {
-        # Primary: Hetzner Cloud Server (x86_64)
+        # Primary: Hetzner Cloud Server with i3wm (x86_64)
         hetzner = mkSystem {
-          hostname = "nixos-hetzner";
-          system = "x86_64-linux";
-          modules = [
-            disko.nixosModules.disko
-            ./configurations/hetzner.nix
-          ];
-        };
-
-        # Hetzner with MangoWC Desktop (x86_64)
-        hetzner-mangowc = mkSystem {
-          hostname = "nixos-hetzner-mangowc";
-          system = "x86_64-linux";
-          modules = [
-            disko.nixosModules.disko
-            ./configurations/hetzner-mangowc.nix
-          ];
-        };
-
-        # Hetzner with i3wm Desktop (x86_64) - Testing configuration for Phase 1
-        hetzner-i3 = mkSystem {
           hostname = "nixos-hetzner";
           system = "x86_64-linux";
           modules = [
@@ -172,6 +152,18 @@
             ./configurations/hetzner-i3.nix
           ];
         };
+
+        # ARCHIVED: KDE Plasma configuration (uncomment if needed)
+        # hetzner-kde = mkSystem {
+        #   hostname = "nixos-hetzner";
+        #   system = "x86_64-linux";
+        #   modules = [
+        #     disko.nixosModules.disko
+        #     ./configurations/hetzner.nix
+        #   ];
+        # };
+
+        # REMOVED: hetzner-mangowc (MangoWC experimental compositor)
 
         # Minimal Hetzner for nixos-anywhere deployment
         hetzner-minimal = nixpkgs.lib.nixosSystem {

@@ -37,6 +37,7 @@ in
     # Terminal configurations
     ../terminal/tmux.nix
     ../terminal/sesh.nix
+    ../terminal/alacritty.nix  # GPU-accelerated terminal (Feature 007)
 
     # Editor configurations
     ../editors/neovim.nix
@@ -55,6 +56,8 @@ in
     ../tools/firefox.nix
     ../tools/docker.nix # Docker with 1Password authentication
     ../tools/firefox-pwas-declarative.nix  # Best available declarative PWA solution
+    # ../tools/web-apps-declarative.nix  # Chromium-based web app launcher - DISABLED (using Firefox PWAs instead)
+    ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix

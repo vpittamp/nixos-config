@@ -37,6 +37,26 @@ in {
       defaultWindowManager = "i3-xrdp-session";
       openFirewall = cfg.openFirewall;
       port = cfg.port;
+
+      # Session Management: Using xrdp upstream defaults
+      #
+      # Upstream defaults (xrdp 0.10.4.1):
+      # - Policy=Default (single session per user, reconnect to existing session)
+      # - MaxSessions=50 (generous limit)
+      # - KillDisconnected=false (sessions persist indefinitely when disconnected)
+      # - DisconnectedTimeLimit=0 (ignored when KillDisconnected=false)
+      # - IdleTimeLimit=0 (no idle timeout)
+      #
+      # These defaults are intentional:
+      # - Users can disconnect and reconnect from any device
+      # - Work continues exactly where they left off
+      # - Sessions only end on logout or system restart
+      #
+      # With Policy=Default, only ONE session per user should exist.
+      # If multiple sessions accumulate, the issue is likely session matching logic,
+      # not cleanup configuration.
+      #
+      # No extraConfDirCommands - use xrdp defaults as-is
     };
 
     # Create XRDP startup script for i3
@@ -75,23 +95,8 @@ in {
       use_bitmap_compression=yes
     '';
 
-    # Configure sesman for session management
-    environment.etc."xrdp/sesman.ini".text = mkAfter ''
-      [Sessions]
-      X11DisplayOffset=10
-      MaxSessions=50
-      KillDisconnected=no        # Keep sessions alive
-      DisconnectedTimeLimit=0    # No timeout
-      IdleTimeLimit=0            # No idle timeout
-
-      [SessionAllocations]
-      # Policy options:
-      # Default - Reconnect to existing session if available
-      # UBD (User, Bpp, Display) - Create new session for each connection
-      # UBDI (User, Bpp, Display, IP) - Separate session per source IP
-      # Separate - Always create new independent sessions
-      Policy=Separate           # Allow multiple simultaneous sessions from different machines
-    '';
+    # NOTE: sesman.ini configuration is handled via services.xrdp.extraConfDirCommands above
+    # Do NOT use environment.etc."xrdp/sesman.ini" as the service uses a NixOS store path
 
     # i3 XRDP session wrapper
     environment.systemPackages = [
@@ -100,12 +105,19 @@ in {
         # Set X authorization
         export XAUTHORITY=$HOME/.Xauthority
 
+        # CRITICAL: Ensure DISPLAY is set and propagated to all child processes
+        # This prevents applications from launching on wrong displays
+        export DISPLAY="''${DISPLAY:-:10}"
+
         # Set session environment
         export XDG_SESSION_TYPE=x11
         export XDG_SESSION_CLASS=user
         export XDG_CURRENT_DESKTOP=i3
 
-        # Launch i3
+        # Log session start for debugging
+        echo "$(date): Starting i3 on DISPLAY=$DISPLAY" >> /tmp/xrdp-session.log
+
+        # Launch i3 with DISPLAY explicitly set
         exec ${cfg.defaultWindowManager}
       '')
     ];

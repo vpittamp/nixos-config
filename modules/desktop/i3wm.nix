@@ -50,6 +50,19 @@ in {
       rofi       # Application launcher (better than dmenu)
     ] ++ cfg.extraPackages;
 
+    # Simple keybinding help script - just display keybindings in rofi
+    environment.etc."i3/scripts/show-keybindings.sh" = {
+      text = ''
+        #!/usr/bin/env bash
+        # Simple i3 keybinding viewer - displays all bindsym entries
+        ${pkgs.gnugrep}/bin/grep '^[[:space:]]*bindsym' /etc/i3/config | \
+            ${pkgs.gnused}/bin/sed 's/^[[:space:]]*bindsym //' | \
+            ${pkgs.util-linux}/bin/column -t -s ' ' | \
+            ${pkgs.rofi}/bin/rofi -dmenu -p "i3 Keybindings" -i -width 80 -lines 20
+      '';
+      mode = "0755";
+    };
+
     # Basic i3 configuration - minimal working config
     environment.etc."i3/config".text = ''
       # i3 configuration file (v4)
@@ -64,14 +77,25 @@ in {
       # Use Mouse+$mod to drag floating windows
       floating_modifier $mod
 
-      # Start a terminal
+      # Start a terminal (FR-024, T063)
       bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
+
+      # Floating terminal (T064)
+      bindsym $mod+Shift+Return exec ${pkgs.alacritty}/bin/alacritty --class floating_terminal
+      for_window [class="floating_terminal"] floating enable
 
       # Kill focused window
       bindsym $mod+Shift+q kill
 
       # Start application launcher
-      bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun
+      bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -display-drun "Applications"
+
+      # Clipboard history (FR-031, T090, T091)
+      bindsym $mod+v exec ${pkgs.clipcat}/bin/clipcat-menu
+      bindsym $mod+Shift+v exec ${pkgs.clipcat}/bin/clipctl clear
+
+      # Show keybinding help (Super+i for info/help)
+      bindsym $mod+i exec /etc/i3/scripts/show-keybindings.sh
 
       # Quick launch applications
       # Use env to ensure DISPLAY is set correctly for current session
@@ -92,7 +116,7 @@ in {
 
       # Split orientation
       bindsym $mod+h split h
-      bindsym $mod+v split v
+      bindsym $mod+Shift+bar split v
 
       # Fullscreen
       bindsym $mod+f fullscreen toggle
@@ -107,6 +131,12 @@ in {
 
       # Change focus between tiling / floating windows
       bindsym $mod+space focus mode_toggle
+
+      # Scratchpad (FR-025, T065, T066)
+      # Move window to scratchpad (hide it)
+      bindsym $mod+Shift+minus move scratchpad
+      # Show/hide scratchpad window (cycles through all scratchpad windows)
+      bindsym $mod+minus scratchpad show
 
       # Workspace switching (Ctrl+1-9)
       bindsym Control+1 workspace number 1
@@ -141,6 +171,7 @@ in {
 
       # Status bar
       bar {
+        id bar-0
         status_command ${pkgs.i3status}/bin/i3status
         position bottom
       }

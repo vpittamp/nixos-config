@@ -107,6 +107,9 @@
 
     firefoxpwa  # Native component for Progressive Web Apps
 
+    # Application launcher
+    rofi        # Application launcher for KDE (alternative to KRunner)
+
     # System monitoring
     htop
     btop

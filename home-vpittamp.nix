@@ -3,6 +3,7 @@
   imports = [
     ./home-modules/profiles/base-home.nix
     ./home-modules/profiles/plasma-home.nix
+    # ./home-modules/desktop/i3.nix  # Not needed - using manual config file
   ];
 
   home.username = "vpittamp";
