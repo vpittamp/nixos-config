@@ -14,13 +14,8 @@ let
   # Filter enabled projects
   enabledProjects = filterAttrs (name: proj: proj.enabled or true) cfg.projects;
 
-in
-{
-  options.programs.i3Projects = {
-    enable = mkEnableOption "i3 project workspace management";
-
-    # Application configuration type (T006)
-    applicationConfigType = types.submodule {
+  # Application configuration type (T006)
+  applicationConfigType = types.submodule {
       options = {
         package = mkOption {
           type = types.nullOr types.package;
@@ -109,8 +104,8 @@ in
       };
     };
 
-    # Workspace configuration type (T005)
-    workspaceConfigType = types.submodule {
+  # Workspace configuration type (T005)
+  workspaceConfigType = types.submodule {
       options = {
         number = mkOption {
           type = types.ints.positive;
@@ -156,6 +151,11 @@ in
         };
       };
     };
+
+in
+{
+  options.programs.i3Projects = {
+    enable = mkEnableOption "i3 project workspace management";
 
     # Project definitions (T004)
     projects = mkOption {
