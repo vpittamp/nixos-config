@@ -21,12 +21,17 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     
-    # Phase 2: Desktop Environment
-    ../modules/desktop/kde-plasma.nix
-    ../modules/desktop/remote-access.nix
-    ../modules/desktop/xrdp-with-sound.nix
-    ../modules/desktop/firefox-virtual-optimization.nix
-    ../modules/desktop/rdp-display.nix
+    # Phase 2: Desktop Environment - Migrated to i3wm (Feature 009)
+    # KDE Plasma modules archived to archived/plasma-specific/desktop/
+    # ../modules/desktop/kde-plasma.nix  # ARCHIVED
+    # ../modules/desktop/remote-access.nix  # Will be replaced by i3-specific modules
+    # ../modules/desktop/xrdp-with-sound.nix  # Integrated into hetzner-i3.nix
+    # ../modules/desktop/firefox-virtual-optimization.nix  # May still be useful
+    # ../modules/desktop/rdp-display.nix  # May still be useful
+
+    # NEW: i3wm desktop environment
+    ../modules/desktop/i3wm.nix
+    ../modules/desktop/xrdp.nix
 
     # Services
     ../modules/services/onepassword-automation.nix
@@ -108,7 +113,7 @@
     firefoxpwa  # Native component for Progressive Web Apps
 
     # Application launcher
-    rofi        # Application launcher for KDE (alternative to KRunner)
+    rofi        # Application launcher for i3wm
 
     # System monitoring
     htop
@@ -135,20 +140,10 @@
   # Performance tuning for cloud server
   powerManagement.cpuFreqGovernor = lib.mkForce "performance";
 
-  # Disable SDDM display manager for headless cloud operation
-  # Critical: This prevents auto-starting a console KDE session on boot
-  # Without this, both console (tty2) and RDP would try to run KDE simultaneously,
-  # causing D-Bus conflicts and breaking global shortcuts and other services
-  # XRDP will start the single KDE session on-demand when you connect
-  services.displayManager.sddm = {
-    enable = lib.mkForce false;
-    # Disable Wayland for XRDP compatibility (XRDP requires X11)
-    wayland.enable = lib.mkForce false;
-  };
-
-  # Use X11 session by default for XRDP compatibility
-  # Note: With Wayland disabled above, "plasma" will use X11
-  services.displayManager.defaultSession = lib.mkForce "plasma";
+  # Display manager disabled for headless i3wm cloud operation
+  # XRDP will start the i3wm session on-demand when you connect
+  # No SDDM needed for i3wm (unlike KDE Plasma which required it)
+  services.displayManager.sddm.enable = lib.mkForce false;
 
   # Fully Automated PWA Configuration - Phase 3
   # programs.firefoxpwa-auto = {

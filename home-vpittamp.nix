@@ -2,7 +2,9 @@
 {
   imports = [
     ./home-modules/profiles/base-home.nix
-    ./home-modules/profiles/plasma-home.nix
+    # Plasma-home disabled during i3wm migration (Feature 009)
+    # Re-enable if switching back to KDE Plasma
+    # ./home-modules/profiles/plasma-home.nix
     # ./home-modules/desktop/i3.nix  # Not needed - using manual config file
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
   ];

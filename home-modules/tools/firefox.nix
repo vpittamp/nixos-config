@@ -21,26 +21,32 @@ in
     package = pkgs.firefox;
     nativeMessagingHosts = [
       pkgs.firefoxpwa  # PWA native messaging host
-      pkgs.kdePackages.plasma-browser-integration  # KDE Plasma 6 browser integration
+      # NOTE: plasma-browser-integration removed in Feature 009 (i3wm migration)
+      # M1 configuration temporarily retains KDE Plasma integration
+    ] ++ lib.optionals (isM1) [
+      pkgs.kdePackages.plasma-browser-integration  # KDE Plasma 6 browser integration (M1 only)
     ];
     policies = {
       Extensions = {
         Install = [
           "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
           "https://addons.mozilla.org/firefox/downloads/latest/pwas-for-firefox/latest.xpi"
-          "https://addons.mozilla.org/firefox/downloads/latest/plasma-integration/latest.xpi"
           "https://addons.mozilla.org/firefox/downloads/latest/gitingest/latest.xpi"
+          # NOTE: plasma-integration extension removed in Feature 009 (i3wm migration)
+        ] ++ lib.optionals (isM1) [
+          "https://addons.mozilla.org/firefox/downloads/latest/plasma-integration/latest.xpi"
         ];
       };
       PasswordManagerEnabled = false;
-      # Grant permissions to the Plasma Browser Integration extension
-      ExtensionSettings = {
+      # Grant permissions to extensions
+      ExtensionSettings = lib.optionalAttrs (isM1) {
+        # Plasma Browser Integration (M1 only - temporarily retained for KDE Plasma)
         "plasma-browser-integration@kde.org" = {
           installation_mode = "allowed";
           allowed_types = ["extension"];
         };
       };
-      # Allow native messaging host for Plasma integration
+      # Allow native messaging hosts for PWAsForFirefox and 1Password
       EnableNativeMessagingHosts = true;
 
       # Disable Enhanced Tracking Protection for development/PWA domains
@@ -119,15 +125,16 @@ in
           # Enable native messaging for PWAsForFirefox
           "extensions.firefoxpwa.native-messaging-hosts" = true;
 
-          # Enable native messaging for Plasma Browser Integration
-          "extensions.plasma-browser-integration.native-messaging-hosts" = true;
-
-          # Grant history access permissions for Plasma Integration
+          # Privacy and history settings
           "privacy.history.enabled" = true;
           "places.history.enabled" = true;
-
-          # Allow Plasma extension to access browsing data
+        }
+        // lib.optionalAttrs (isM1) {
+          # Plasma Browser Integration settings (M1 only)
+          "extensions.plasma-browser-integration.native-messaging-hosts" = true;
           "extensions.webextensions.ExtensionStorageIDB.migrated.plasma-browser-integration@kde.org" = true;
+        }
+        // {
 
           # Auto-accept extension permissions
           "extensions.autoDisableScopes" = 0;  # Don't disable any scopes
@@ -312,11 +319,6 @@ in
     find "$HOME/.config" "$HOME/.local/share/applications" -maxdepth 1 \
       -name "mimeapps.list.backup*" -o -name "mimeapps.list.hm-backup*" \
       -mtime +7 -delete 2>/dev/null || true
-
-    # Ensure KDE respects our MIME associations
-    if [ -d "$HOME/.config" ]; then
-      ${pkgs.kdePackages.kconfig}/bin/kwriteconfig6 --file kdeglobals --group General --key BrowserApplication "firefox.desktop" 2>/dev/null || true
-    fi
 
     # Print a message if there were recent changes
     if [ -f "$LOG_FILE" ]; then

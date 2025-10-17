@@ -1,33 +1,5 @@
 { config, lib, pkgs, ... }:
 
-let
-  # Import activity data to generate sesh sessions
-  activityData = import ../desktop/project-activities/data.nix { inherit lib config pkgs; };
-
-  # Generate sesh sessions from activity data
-  activitySessions = lib.mapAttrsToList
-    (name: activity:
-      let
-        # Handle directory expansion
-        dir =
-          if builtins.isString activity.directory then
-            activity.directory
-          else
-            activity.directory;
-        expandedDir =
-          if lib.hasPrefix "~/" dir
-          then dir  # sesh handles ~ expansion
-          else dir;
-      in
-      {
-        name = lib.toLower activity.name; # Use lowercase activity name as session name
-        path = expandedDir;
-        startup_command = "";
-        preview_command = "eza --all --git --icons --color=always --group-directories-first --long {}";
-      }
-    )
-    activityData.rawActivities;
-in
 {
   # Sesh session manager configuration
   # Smart tmux session manager with predefined sessions and directory navigation
@@ -58,8 +30,9 @@ in
       };
 
       # Session configurations
-      # Generate sessions from activity data plus some additional custom sessions
-      session = activitySessions ++ [
+      # NOTE: Activity-based sessions removed during i3wm migration
+      # Users can add custom sessions below or rely on zoxide for directory navigation
+      session = [
         # Additional Nix-specific sessions (not tied to activities)
         # {
         #   name = "nix-config";
