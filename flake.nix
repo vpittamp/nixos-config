@@ -47,6 +47,8 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     # Plasma (KDE) user configuration via Home Manager
+    # ARCHIVED: KDE Plasma removed in Feature 009 (i3wm migration)
+    # M1 configuration still uses this temporarily
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -58,14 +60,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # MangoWC Wayland Compositor
-    mangowc = {
-      url = "github:DreamMaoMao/mangowc";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # REMOVED: MangoWC Wayland Compositor (experimental, archived)
+    # mangowc = {
+    #   url = "github:DreamMaoMao/mangowc";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, nixos-generators, mangowc, ... }@inputs:
+  outputs = { self, nixpkgs, nixpkgs-bleeding, nixos-wsl, nixos-apple-silicon, home-manager, onepassword-shell-plugins, vscode-server, claude-code-nix, disko, flake-utils, nixos-generators, ... }@inputs:
     let
       # Helper function to create a system configuration
       mkSystem = { hostname, system, modules }:
@@ -144,84 +146,34 @@
       # NixOS Configurations
       nixosConfigurations = {
         # Primary: Hetzner Cloud Server with i3wm (x86_64)
+        # Production configuration with i3wm desktop environment
         hetzner = mkSystem {
           hostname = "nixos-hetzner";
           system = "x86_64-linux";
           modules = [
             disko.nixosModules.disko
-            ./configurations/hetzner-i3.nix
+            ./configurations/hetzner.nix
           ];
         };
 
-        # ARCHIVED: KDE Plasma configuration (uncomment if needed)
-        # hetzner-kde = mkSystem {
-        #   hostname = "nixos-hetzner";
-        #   system = "x86_64-linux";
-        #   modules = [
-        #     disko.nixosModules.disko
-        #     ./configurations/hetzner.nix
-        #   ];
-        # };
-
-        # REMOVED: hetzner-mangowc (MangoWC experimental compositor)
-
-        # Minimal Hetzner for nixos-anywhere deployment
-        hetzner-minimal = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [
-            disko.nixosModules.disko
-            ./configurations/hetzner-minimal.nix
-          ];
-        };
-
-        # Hetzner example with our SSH key
-        hetzner-example = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [
-            disko.nixosModules.disko
-            ./configurations/hetzner-example.nix
-          ];
-        };
+        # ARCHIVED CONFIGURATIONS:
+        # The following have been moved to archived/obsolete-configs/
+        # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)
+        # - hetzner-mangowc.nix (MangoWC experimental compositor)
+        # - hetzner-minimal.nix, hetzner-example.nix (nixos-anywhere templates)
+        # - wsl.nix (WSL2 environment)
+        # - vm-*.nix, kubevirt-*.nix (VM/KubeVirt deployments)
 
         # Secondary: M1 MacBook Pro (aarch64)
+        # Note: Still uses KDE Plasma temporarily (migration deferred)
         m1 = mkSystem {
           hostname = "nixos-m1";
           system = "aarch64-linux";
           modules = [ ./configurations/m1.nix ];
         };
 
-        # Legacy: WSL2 (x86_64)
-        wsl = mkSystem {
-          hostname = "nixos-wsl";
-          system = "x86_64-linux";
-          modules = [ ./configurations/wsl.nix ];
-        };
-
-        # KubeVirt VM: Full desktop environment with home-manager
-        vm-hetzner = mkSystem {
-          hostname = "nixos-kubevirt-vm";
-          system = "x86_64-linux";
-          modules = [ ./configurations/vm-hetzner.nix ];
-        };
-
-        # KubeVirt Minimal: Minimal base image (SSH + RustDesk + Tailscale)
-        kubevirt-minimal = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [ ./configurations/kubevirt-minimal.nix ];
-        };
-
-        # KubeVirt Full: Complete desktop with home-manager integration
-        kubevirt-full = mkSystem {
-          hostname = "nixos-kubevirt-vm";
-          system = "x86_64-linux";
-          modules = [ ./configurations/kubevirt-full.nix ];
-        };
-
-        # KubeVirt Optimized: Fast-building desktop (no home-manager in image)
-        kubevirt-optimized = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [ ./configurations/kubevirt-optimized.nix ];
-        };
+        # Container: Docker/K8s deployments
+        # Note: container.nix is used via packages.container-* builds
       };
 
       homeConfigurations =
