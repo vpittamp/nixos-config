@@ -170,7 +170,7 @@
       zs = "zoxide query -s";   # Show database statistics
 
       # Floating fzf terminal (using Ghostty instead of xterm)
-      fzff = ''ghostty --class=floating_fzf -e bash -c 'fzf "$@" < /proc/fd/0 > /proc/$$/fd/1' '';
+      fzff = "ghostty --class=floating_fzf -e bash -c 'fzf \"$@\" < /proc/fd/0 > /proc/$$/fd/1' ";
       
       # Platform-specific aliases moved to respective configurations
       
