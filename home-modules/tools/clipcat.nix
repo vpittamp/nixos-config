@@ -3,6 +3,13 @@
 { config, lib, pkgs, ... }:
 
 {
+  # Install clipcat and clipboard tools
+  home.packages = with pkgs; [
+    clipcat
+    xclip  # For tmux integration (FR-092, FR-093)
+    xsel   # Alternative clipboard tool
+  ];
+
   services.clipcat = {
     enable = true;
     package = pkgs.clipcat;
@@ -68,25 +75,6 @@
     };
   };
 
-  # Ensure xclip is available for tmux integration (FR-092, FR-093)
-  home.packages = with pkgs; [
-    xclip
-    xsel  # Alternative clipboard tool
-  ];
-
-  # Fix DISPLAY environment variable for XRDP multi-session support
-  # home-manager's clipcat service doesn't automatically import DISPLAY
-  systemd.user.services.clipcat = {
-    Service = {
-      # Import DISPLAY from the graphical session environment
-      Environment = lib.mkForce [];
-      # Alternative: use systemctl --user import-environment DISPLAY
-    };
-    Unit = {
-      After = lib.mkAfter [ "graphical-session.target" ];
-    };
-  };
-
-  # Alternative workaround: Start clipcat from i3 config instead of systemd
-  # Add to i3 config: exec --no-startup-id clipcatd
+  # The clipcat service automatically gets DISPLAY from the graphical-session.target
+  # No additional systemd configuration needed - home-manager handles it
 }

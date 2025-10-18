@@ -79,6 +79,15 @@
 
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
+
+      # FZF configuration - Commands only (options are set in initExtra)
+      # These must be in sessionVariables to be available before fzf bash integration loads
+      FZF_DEFAULT_COMMAND = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
+      FZF_CTRL_T_COMMAND = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
+      FZF_ALT_C_COMMAND = "${pkgs.fd}/bin/fd --type d --hidden --exclude .git";
+
+      # FZF_CTRL_T_OPTS, FZF_ALT_C_OPTS, and FZF_CTRL_R_OPTS are set in initExtra
+      # due to complex quoting requirements for preview commands
     } // lib.optionalAttrs pkgs.stdenv.isLinux {
       # SSL Certificate configuration (Linux only)
       # macOS uses its own certificate store
@@ -169,9 +178,11 @@
       zr = "zoxide remove";     # Remove entry from database
       zs = "zoxide query -s";   # Show database statistics
 
-      # Floating fzf terminal (using Ghostty instead of xterm)
-      fzff = "ghostty --class=floating_fzf -e bash -c 'fzf \"$@\" < /proc/fd/0 > /proc/$$/fd/1' ";
-      
+      # Floating fzf terminal - defined as function in initExtra (not an alias)
+
+      # History search with fzf in floating window (copies to clipboard)
+      fzfhist = "xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-history.sh";
+
       # Platform-specific aliases moved to respective configurations
       
       # 1Password aliases (ops moved to onepassword-plugins.nix for service account)
@@ -200,6 +211,12 @@
       if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
+
+      # FZF widget options - must be set here due to quoting issues in sessionVariables
+      # These override the defaults for Ctrl+P, Alt+C, and Ctrl+R
+      export FZF_CTRL_T_OPTS="--tmux=center,80%,70% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
+      export FZF_ALT_C_OPTS="--tmux=center,80%,70% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
+      export FZF_CTRL_R_OPTS="--tmux=center,80%,70% --scheme=history --highlight-line"
       
       # Terminal configuration moved to TERM settings below
       
@@ -275,11 +292,16 @@
       cr()   { __claude_run resume    "$@"; }
       cdsp() { __claude_run ""        "$@"; }
 
-      # Set up fzf key bindings (only if available)
-      if command -v fzf &> /dev/null; then
-        eval "$(fzf --bash)" 2>/dev/null || true
+      # fzf key bindings are handled by programs.fzf.enableBashIntegration in fzf.nix
+      # Do not manually initialize fzf here as it breaks the load order
+
+      # Remap fzf file widget from Ctrl+T to Ctrl+P (Ctrl+T is transpose-chars in bash)
+      # This must come after fzf initialization
+      if command -v fzf &> /dev/null && type -t fzf-file-widget &>/dev/null; then
+        bind -x '"\C-p": fzf-file-widget'  # Ctrl+P for file search
+        bind '"\C-t": transpose-chars'      # Restore Ctrl+T to default bash behavior
       fi
-      
+
       # Enable direnv (only if available)
       if command -v direnv &> /dev/null; then
         eval "$(direnv hook bash)" 2>/dev/null || true
@@ -361,6 +383,28 @@
           zoxide add "$PWD" 2>/dev/null || true
         fi
         rm -f -- "$tmp"
+      }
+
+      # Floating fzf terminal function (replacement for xterm -name floating xterm)
+      # Usage: command | fzff (opens in floating window like rofi, outputs selection to stdout)
+      function fzff() {
+        local tmpfile=$(mktemp)
+        local outfile=$(mktemp)
+        # Capture stdin if piped
+        if [ ! -t 0 ]; then
+          cat > "$tmpfile"
+          ghostty --class=floating_fzf -e sh -c "fzf < '$tmpfile' > '$outfile'; rm -f '$tmpfile'"
+          # Wait for ghostty to finish
+          wait
+          # Output the result
+          cat "$outfile"
+          rm -f "$outfile"
+        else
+          ghostty --class=floating_fzf -e sh -c "fzf > '$outfile'"
+          wait
+          cat "$outfile"
+          rm -f "$outfile"
+        fi
       }
       
       # Native Linux clipboard functions (Wayland/X11)

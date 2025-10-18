@@ -94,9 +94,15 @@ let
 
   # File managers
   fileManagers = with pkgs; [
+    # Terminal-based
     yazi
     ranger
     lf
+
+    # GUI
+    xfce.thunar        # Lightweight GTK file manager (popular for i3)
+    xfce.thunar-volman # Thunar volume manager
+    xfce.thunar-archive-plugin # Archive support for Thunar
   ];
 
   # Git tools (from nixpkgs, no custom builds)

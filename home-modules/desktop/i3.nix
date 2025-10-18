@@ -17,19 +17,35 @@
     bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
     for_window [class="floating_terminal"] floating enable
 
+    # Floating fzf launcher window
+    for_window [instance="fzf-launcher"] floating enable
+
     # Window management
     bindsym $mod+Shift+q kill
 
     # Application launcher
     bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -display-drun Applications
+    bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
+
+    # Keybinding cheatsheet
+    bindsym $mod+Shift+slash exec /etc/nixos/scripts/keybindings-cheatsheet.sh
 
     # Clipboard
     bindsym $mod+v exec ${pkgs.clipcat}/bin/clipcat-menu
-    bindsym $mod+Shift+v exec ${pkgs.clipcat}/bin/clipctl clear
+    bindsym $mod+Shift+v exec ${pkgs.clipcat}/bin/clipcatctl clear
+
+    # Screenshots (Spectacle)
+    # Full screen to clipboard
+    bindsym Print exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcf
+    # Active window to clipboard
+    bindsym $mod+Print exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bca
+    # Rectangular region to clipboard
+    bindsym $mod+Shift+s exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
 
     # Quick launch
     bindsym $mod+c exec code
     bindsym $mod+b exec firefox
+    bindsym $mod+Shift+f exec ${pkgs.xfce.thunar}/bin/thunar
 
     # Split orientation
     bindsym $mod+h split h
@@ -96,6 +112,9 @@
       status_command ${pkgs.i3status}/bin/i3status
       position bottom
     }
+
+    # Autostart - import environment variables for systemd services
+    exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf

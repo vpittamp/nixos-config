@@ -5,7 +5,7 @@
     # Plasma-home disabled during i3wm migration (Feature 009)
     # Re-enable if switching back to KDE Plasma
     # ./home-modules/profiles/plasma-home.nix
-    # ./home-modules/desktop/i3.nix  # Not needed - using manual config file
+    ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
     ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management
   ];

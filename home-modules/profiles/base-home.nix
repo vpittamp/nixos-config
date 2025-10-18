@@ -38,6 +38,7 @@ in
     ../terminal/tmux.nix
     ../terminal/sesh.nix
     ../terminal/ghostty.nix    # Modern terminal with native tabs/splits (default)
+    ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
 
     # Editor configurations
     ../editors/neovim.nix
@@ -98,6 +99,10 @@ in
   modules.tools.vscode.defaultProfile = "nixos";
 
   programs.home-manager.enable = true;
+
+  # Enable automatic restart of systemd user services on home-manager activation
+  # This is now the default in newer home-manager, but we set it explicitly
+  systemd.user.startServices = "sd-switch";
 
   # Enable XDG base directories and desktop entries
   xdg.enable = true;
