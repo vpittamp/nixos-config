@@ -106,7 +106,7 @@
     bindsym $mod+Shift+r restart
     bindsym $mod+Shift+e exec "i3-msg exit"
 
-    # Status bar
+    # Status bar - using i3status
     bar {
       id bar-0
       status_command ${pkgs.i3status}/bin/i3status
