@@ -27,9 +27,8 @@
     bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -display-drun Applications
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
 
-    # Keybinding cheatsheet (Mod4+?)
-    # Note: Using bindcode with keycode 61 (slash/question mark key) since keysym names are unreliable
-    bindcode $mod+Shift+61 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
+    # Keybinding cheatsheet (F1 for help)
+    bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
 
     # Clipboard
     bindsym $mod+v exec ${pkgs.clipcat}/bin/clipcat-menu
