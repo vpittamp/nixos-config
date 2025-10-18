@@ -210,6 +210,10 @@
       bind S run-shell "tmux setw synchronize-panes && tmux display-message 'Synchronize panes: #{?pane_synchronized,ON,OFF}'"
       bind m run-shell "tmux set -g mouse && tmux display-message 'Mouse: #{?mouse,ON,OFF}'"
 
+      # Keybinding cheatsheet (F1 or prefix + ?)
+      bind -n F1 run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
+      bind ? run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
+
 
       # Mouse behavior with KDE Plasma clipboard integration
       unbind -n MouseDown3Pane
