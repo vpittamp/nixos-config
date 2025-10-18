@@ -214,7 +214,9 @@
       bind -n F1 run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
       bind ? run-shell "/etc/nixos/scripts/keybindings-cheatsheet.sh"
 
-      # Clipboard history (prefix + v for clipboard history)
+      # Clipboard history (prefix + v for clipboard history - overrides split-window)
+      # Note: This overrides the vertical split binding. Use prefix + - for vertical split instead.
+      unbind v
       bind v run-shell "/etc/nixos/scripts/clipcat-fzf.sh"
 
 
