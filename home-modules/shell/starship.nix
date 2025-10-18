@@ -66,7 +66,7 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = "$os$username$hostname\${custom.tmux}\${custom.nixos_generation}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
 
       os = {
         disabled = false;
@@ -100,6 +100,14 @@ in
         when = "test -n \"$TMUX\"";
         command = "echo \"$TMUX_PANE\"";
         style = "bold fg:${colors.sky}";
+        format = "[$output]($style) ";
+      };
+
+      custom.nixos_generation = {
+        description = "Warn if running system is not the latest generation";
+        when = ''[ "$(readlink /run/current-system 2>/dev/null)" != "$(readlink -f /nix/var/nix/profiles/system 2>/dev/null)" ]'';
+        command = "echo '⚠ OUT-OF-SYNC'";
+        style = "bold fg:${colors.red}";
         format = "[$output]($style) ";
       };
 
