@@ -28,7 +28,8 @@
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
 
     # Keybinding cheatsheet (Mod4+?)
-    bindsym $mod+Shift+slash exec /etc/nixos/scripts/keybindings-cheatsheet.sh
+    # Note: Using question mark directly since Shift+slash may not work in all keyboard layouts
+    bindsym $mod+question exec /etc/nixos/scripts/keybindings-cheatsheet.sh
 
     # Clipboard
     bindsym $mod+v exec ${pkgs.clipcat}/bin/clipcat-menu
