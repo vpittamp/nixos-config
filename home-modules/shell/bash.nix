@@ -159,6 +159,10 @@
       tpane = "tmux display-message -p 'Current pane: #{session_name}:#{window_index}.#{pane_index} | Command: #{pane_current_command} | Path: #{pane_current_path}'";
       tpanes = "tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} → #{pane_current_command} (#{pane_current_path})'";
       tpinfo = "echo -e 'CURRENT PANE:\\n' && tmux display-message -p '  #{session_name}:#{window_index}.#{pane_index} (#{pane_current_command})\\n\\nALL PANES:' && tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} → #{pane_current_command}'";
+
+      # Keybinding cheatsheet
+      keys = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
+      cheatsheet = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
       
       # Kubernetes
       k = "kubectl";
