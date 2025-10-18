@@ -24,7 +24,7 @@
           family = "FiraCode Nerd Font";
           style = "Italic";
         };
-        size = 9.0;
+        size = 12.0;
       };
 
       # Window configuration (FR-062)
@@ -101,8 +101,6 @@
     };
   };
 
-  # Set as default terminal (FR-024)
-  home.sessionVariables = {
-    TERMINAL = "alacritty";
-  };
+  # Note: TERMINAL variable now set by ghostty.nix as default
+  # Alacritty is still available but Ghostty is the new default terminal
 }

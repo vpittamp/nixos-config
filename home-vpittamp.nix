@@ -31,18 +31,18 @@
             output = "rdp1";
             applications = [
               {
-                command = "alacritty";
-                wmClass = "Alacritty";
+                command = "ghostty";
+                wmClass = "com.mitchellh.ghostty";
                 useSesh = true;
                 seshSession = "nixos";  # Corresponds to sesh session in sesh.nix
               }
             ];
           }
 
-          # Workspace 2: VS Code on second monitor (rdp2)
+          # Workspace 2: VS Code on second monitor (rdp0)
           {
             number = 2;
-            output = "rdp2";
+            output = "rdp0";
             applications = [
               {
                 command = "code";
@@ -68,18 +68,18 @@
             output = "rdp1";
             applications = [
               {
-                command = "alacritty";
-                wmClass = "Alacritty";
+                command = "ghostty";
+                wmClass = "com.mitchellh.ghostty";
                 useSesh = true;
                 seshSession = "stacks";  # Corresponds to sesh session in sesh.nix
               }
             ];
           }
 
-          # Workspace 4: VS Code on second monitor (rdp2)
+          # Workspace 4: VS Code on second monitor (rdp0)
           {
             number = 4;
-            output = "rdp2";
+            output = "rdp0";
             applications = [
               {
                 command = "code";

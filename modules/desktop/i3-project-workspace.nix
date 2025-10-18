@@ -194,6 +194,12 @@ in
             log "Processing workspace $ws_num"
             i3_workspace_switch "$ws_num"
 
+            # Move workspace to its designated output if specified
+            if [[ -n "$ws_output" ]]; then
+              log "  Moving workspace $ws_num to output $ws_output"
+              ${pkgs.i3}/bin/i3-msg "move workspace to output $ws_output" &>/dev/null
+            fi
+
             # T014, T027-T028: Launch applications
             local apps=$(echo "$ws" | ${pkgs.jq}/bin/jq -c '.applications[]')
             while IFS= read -r app; do
@@ -203,6 +209,7 @@ in
               local delay=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.launchDelay // 0')
               local use_sesh=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.useSesh // false')
               local sesh_session=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.seshSession // empty')
+              local wm_class=$(echo "$app" | ${pkgs.jq}/bin/jq -r '.wmClass // empty')
 
               # Expand tildes in arguments
               # Convert "~/stacks" to "/home/user/stacks"
@@ -246,9 +253,15 @@ in
 
               (
                 [[ -n "$final_wd" ]] && cd "$final_wd"
-                $cmd $args &
+                $cmd $args &>/dev/null &
                 echo $! >> "$state_file.pids"
               ) &
+
+              # Wait for window to appear before proceeding
+              if [[ -n "$wm_class" ]]; then
+                log "  Waiting for window with class: $wm_class"
+                wait_for_window "$wm_class" 5 || log "  Warning: Window did not appear within timeout"
+              fi
 
               [[ "$delay" -gt 0 ]] && sleep $(echo "scale=3; $delay/1000" | ${pkgs.bc}/bin/bc)
             done < <(echo "$apps")
@@ -323,6 +336,7 @@ in
         }
 
         # T019: Switch to project
+        # Enhanced to switch ALL project workspaces across all monitors
         cmd_switch() {
           local name="$1"
           [[ -n "$name" ]] || error "Usage: i3-project switch <name>"
@@ -332,9 +346,24 @@ in
 
           local project=$(load_project "$name")
           local primary=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.primaryWorkspace')
+          local display_name=$(echo "$project" | ${pkgs.jq}/bin/jq -r '.displayName')
 
+          log "Switching to project: $display_name"
+
+          # Switch to ALL project workspaces across all monitors
+          # This makes each monitor show the corresponding workspace for this project
+          local workspaces=$(echo "$project" | ${pkgs.jq}/bin/jq -c '.workspaces[]')
+          while IFS= read -r ws; do
+            local ws_num=$(echo "$ws" | ${pkgs.jq}/bin/jq -r '.number')
+            log "  Switching to workspace $ws_num"
+            i3_workspace_switch "$ws_num"
+          done < <(echo "$workspaces")
+
+          # Finally, focus the primary workspace
+          log "  Focusing primary workspace: $primary"
           i3_workspace_switch "$primary"
-          echo "Switched to project: $name (workspace $primary)"
+
+          echo "Switched to project: $display_name (all workspaces visible)"
         }
 
         # T020: Close project
@@ -349,14 +378,22 @@ in
           [[ -f "$state_file" ]] || error "Project '$name' is not active"
 
           local pids=$(${pkgs.jq}/bin/jq -r '.pids[]?' "$state_file")
+          local workspaces=$(${pkgs.jq}/bin/jq -r '.workspaces[]?' "$state_file")
 
           echo "Closing project: $name"
 
+          # Kill tracked PIDs first
           for pid in $pids; do
             if kill -0 "$pid" 2>/dev/null; then
               log "Terminating PID $pid"
               kill "$pid" 2>/dev/null || true
             fi
+          done
+
+          # Close all windows on project workspaces
+          for ws in $workspaces; do
+            log "Closing windows on workspace $ws"
+            ${pkgs.i3}/bin/i3-msg "[workspace=\"$ws\"] kill" &>/dev/null || true
           done
 
           if [[ "$force" == "true" ]]; then

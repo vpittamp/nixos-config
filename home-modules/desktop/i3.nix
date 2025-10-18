@@ -13,8 +13,8 @@
     floating_modifier $mod
 
     # Terminal
-    bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
-    bindsym $mod+Shift+Return exec ${pkgs.alacritty}/bin/alacritty --class floating_terminal
+    bindsym $mod+Return exec ${pkgs.ghostty}/bin/ghostty
+    bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
     for_window [class="floating_terminal"] floating enable
 
     # Window management

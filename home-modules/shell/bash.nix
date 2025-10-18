@@ -68,7 +68,7 @@
       VISUAL = "nvim";
       PAGER = "less";
       LESS = "-R";
-      TERMINAL = "alacritty";  # Default terminal emulator (Feature 007)
+      TERMINAL = "ghostty";  # Default terminal emulator
       # TERM is now set dynamically in bash initExtra to avoid conflicts
       # TERM = "screen-256color";
       # DOCKER_HOST is now set conditionally in WSL configuration only
@@ -168,6 +168,9 @@
       zl = "zoxide query -l";  # List all database entries
       zr = "zoxide remove";     # Remove entry from database
       zs = "zoxide query -s";   # Show database statistics
+
+      # Floating fzf terminal (using Ghostty instead of xterm)
+      fzff = ''ghostty --class=floating_fzf -e bash -c 'fzf "$@" < /proc/fd/0 > /proc/$$/fd/1' '';
       
       # Platform-specific aliases moved to respective configurations
       
