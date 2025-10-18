@@ -163,6 +163,10 @@
       # Keybinding cheatsheet
       keys = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
       cheatsheet = "/etc/nixos/scripts/keybindings-cheatsheet.sh";
+
+      # Clipboard management
+      clip = "/etc/nixos/scripts/clipcat-fzf.sh";
+      clips = "/etc/nixos/scripts/clipcat-fzf.sh";
       
       # Kubernetes
       k = "kubectl";

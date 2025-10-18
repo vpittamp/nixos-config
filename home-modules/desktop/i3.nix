@@ -30,8 +30,8 @@
     # Keybinding cheatsheet (F1 for help)
     bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
 
-    # Clipboard
-    bindsym $mod+v exec ${pkgs.clipcat}/bin/clipcat-menu
+    # Clipboard (using FZF for better tmux integration)
+    bindsym $mod+v exec /etc/nixos/scripts/clipcat-fzf.sh
     bindsym $mod+Shift+v exec ${pkgs.clipcat}/bin/clipcatctl clear
 
     # Screenshots (Spectacle)
