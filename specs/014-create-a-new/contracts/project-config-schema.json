@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-project-config.json",
+  "title": "i3 Project Configuration",
+  "description": "Schema for i3 project management system project configuration files",
+  "type": "object",
+  "required": ["version", "project"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for future migrations",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0"]
+    },
+    "project": {
+      "type": "object",
+      "description": "Core project metadata",
+      "required": ["name", "displayName", "icon", "directory"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique project identifier (must match filename without .json)",
+          "pattern": "^[a-zA-Z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 50,
+          "examples": ["nixos", "stacks", "api-gateway"]
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Human-readable project name for display in status bar and switcher",
+          "minLength": 1,
+          "maxLength": 100,
+          "examples": ["NixOS Configuration", "Stacks Platform", "API Gateway"]
+        },
+        "icon": {
+          "type": "string",
+          "description": "Unicode emoji or Nerd Font icon for visual identification",
+          "maxLength": 10,
+          "examples": ["", "", "", "", "🚀"]
+        },
+        "directory": {
+          "type": "string",
+          "description": "Absolute path to project root directory",
+          "pattern": "^/.*",
+          "examples": ["/etc/nixos", "/home/user/code/stacks", "/home/user/projects/api"]
+        }
+      }
+    },
+    "workspaces": {
+      "type": "object",
+      "description": "Optional workspace-specific configurations (workspace number as key)",
+      "patternProperties": {
+        "^[1-9][0-9]?$": {
+          "type": "object",
+          "properties": {
+            "layout_file": {
+              "type": "string",
+              "description": "Path to i3 append_layout JSON file for this workspace",
+              "examples": ["/home/user/.config/i3/layouts/coding.json"]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "workspaceOutputs": {
+      "type": "object",
+      "description": "Optional workspace-to-monitor assignments for multi-monitor setups",
+      "patternProperties": {
+        "^[1-9][0-9]?$": {
+          "type": "string",
+          "description": "Output name (e.g., HDMI-1, eDP-1, DP-1)",
+          "examples": ["HDMI-1", "eDP-1", "DP-1", "rdp0"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "appClasses": {
+      "type": "array",
+      "description": "Reserved for future use (project-specific app classifications)",
+      "items": {
+        "type": "object"
+      },
+      "maxItems": 0
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "version": "1.0",
+      "project": {
+        "name": "nixos",
+        "displayName": "NixOS Configuration",
+        "icon": "",
+        "directory": "/etc/nixos"
+      },
+      "workspaces": {
+        "2": {
+          "layout_file": "/home/user/.config/i3/layouts/nixos-dev.json"
+        }
+      },
+      "workspaceOutputs": {
+        "2": "HDMI-1",
+        "3": "eDP-1"
+      },
+      "appClasses": []
+    }
+  ]
+}

@@ -26,10 +26,10 @@
     set $ws8 "8: ai "
     set $ws9 "9 "
 
-    # Default workspace-to-output assignments for polybar
+    # Default workspace-to-output assignments for i3bar
     # These are defaults; assign-workspace-monitor.sh will override based on monitor count
     # NOTE: These assignments are intentionally permissive (multiple outputs per workspace)
-    # to ensure workspaces show on polybar even before dynamic assignment runs
+    # to ensure workspaces show on i3bar even before dynamic assignment runs
 
     # Application to workspace assignments
     # Terminal applications (Ghostty, Konsole, etc.)

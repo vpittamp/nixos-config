@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-app-classes.json",
+  "title": "Application Classification Configuration",
+  "description": "Global configuration defining which application window classes are project-scoped vs global",
+  "type": "object",
+  "required": ["version", "classes"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0"]
+    },
+    "classes": {
+      "type": "array",
+      "description": "Application window class classifications",
+      "items": {
+        "type": "object",
+        "required": ["class", "scoped", "description"],
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "X11 WM_CLASS value (exact match, case-sensitive)",
+            "minLength": 1,
+            "maxLength": 100,
+            "examples": ["Code", "firefox", "Alacritty", "ghostty", "k9s"]
+          },
+          "scoped": {
+            "type": "boolean",
+            "description": "Whether application should receive project marks (true) or remain global (false)",
+            "examples": [true, false]
+          },
+          "workspace": {
+            "type": "integer",
+            "description": "Preferred workspace number for this application (advisory)",
+            "minimum": 1,
+            "maximum": 20,
+            "examples": [2, 3, 4]
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of the application",
+            "minLength": 1,
+            "maxLength": 200,
+            "examples": ["VS Code editor", "Firefox browser (global)", "Alacritty terminal"]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "version": "1.0",
+      "classes": [
+        {
+          "class": "Code",
+          "scoped": true,
+          "workspace": 2,
+          "description": "VS Code editor"
+        },
+        {
+          "class": "firefox",
+          "scoped": false,
+          "workspace": 3,
+          "description": "Firefox browser (global)"
+        },
+        {
+          "class": "Alacritty",
+          "scoped": true,
+          "workspace": 1,
+          "description": "Alacritty terminal"
+        }
+      ]
+    }
+  ]
+}
