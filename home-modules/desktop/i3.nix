@@ -183,7 +183,7 @@
     # Native i3 status bar with i3blocks status command
     bar {
       position bottom
-      status_command ${pkgs.i3blocks}/bin/i3blocks -c ~/.config/i3blocks/config
+      status_command ${pkgs.i3blocks}/bin/i3blocks
       workspace_buttons yes
       binding_mode_indicator yes
       font pango:FiraCode Nerd Font 10
