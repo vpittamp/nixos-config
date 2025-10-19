@@ -29,12 +29,5 @@ else
   COLOR="#6c7086"  # Overlay0 (Catppuccin Mocha - dimmed)
 fi
 
-# Output JSON with color
-cat <<EOF
-{
-  "full_text": "$TEXT",
-  "color": "$COLOR",
-  "separator": true,
-  "separator_block_width": 15
-}
-EOF
+# Output with Pango markup for color
+echo "<span foreground='$COLOR'>$TEXT</span>"

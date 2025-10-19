@@ -5,12 +5,5 @@
 # Get current date and time
 DATETIME=$(date '+%Y-%m-%d %H:%M')
 
-# Output JSON with color (Catppuccin Mocha text color)
-cat <<EOF
-{
-  "full_text": " $DATETIME",
-  "color": "#cdd6f4",
-  "separator": false,
-  "separator_block_width": 15
-}
-EOF
+# Output with Pango markup for color (Catppuccin Mocha text color)
+echo "<span foreground='#cdd6f4'> $DATETIME</span>"

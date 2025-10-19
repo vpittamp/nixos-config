@@ -25,12 +25,5 @@ else
   COLOR="#89dceb"  # Sky blue (normal)
 fi
 
-# Output JSON with color
-cat <<EOF
-{
-  "full_text": " MEM: ${MEM_PERCENT}%",
-  "color": "$COLOR",
-  "separator": true,
-  "separator_block_width": 15
-}
-EOF
+# Output with Pango markup for color
+echo "<span foreground='$COLOR'> MEM: ${MEM_PERCENT}%</span>"

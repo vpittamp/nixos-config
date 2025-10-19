@@ -19,12 +19,5 @@ else
   COLOR="#a6e3a1"  # Green (normal)
 fi
 
-# Output JSON with color
-cat <<EOF
-{
-  "full_text": " CPU: ${CPU}%",
-  "color": "$COLOR",
-  "separator": true,
-  "separator_block_width": 15
-}
-EOF
+# Output with Pango markup for color
+echo "<span foreground='$COLOR'> CPU: ${CPU}%</span>"

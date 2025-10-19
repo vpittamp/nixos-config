@@ -20,12 +20,5 @@ else
   fi
 fi
 
-# Output JSON with color
-cat <<EOF
-{
-  "full_text": "$STATUS",
-  "color": "$COLOR",
-  "separator": true,
-  "separator_block_width": 15
-}
-EOF
+# Output with Pango markup for color
+echo "<span foreground='$COLOR'>$STATUS</span>"
