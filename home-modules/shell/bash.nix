@@ -224,6 +224,22 @@
       plasma-export = "/etc/nixos/scripts/plasma-rc2nix.sh";
       plasma-diff = "/etc/nixos/scripts/plasma-diff.sh";
       plasma-diff-summary = "/etc/nixos/scripts/plasma-diff.sh --summary";
+
+      # i3 Project Management (integrated with i3blocks status bar)
+      # These replace the old i3-project command system
+      project-switch = "~/.config/i3/scripts/project-switch.sh";
+      project-clear = "~/.config/i3/scripts/project-clear.sh";
+      project-list = "~/.config/i3/scripts/project-list.sh";
+      project-current = "~/.config/i3/scripts/project-current.sh";
+      project-create = "~/.config/i3/scripts/project-create.sh";
+      project-edit = "~/.config/i3/scripts/project-edit.sh";
+      project-delete = "~/.config/i3/scripts/project-delete.sh";
+
+      # Short aliases for common commands
+      pswitch = "~/.config/i3/scripts/project-switch.sh";
+      pclear = "~/.config/i3/scripts/project-clear.sh";
+      plist = "~/.config/i3/scripts/project-list.sh";
+      pcurrent = "~/.config/i3/scripts/project-current.sh";
     };
     
     initExtra = ''

@@ -292,37 +292,57 @@ The i3 window manager includes a project-scoped application workspace management
 - K9s
 - Google AI PWA
 
+### Shell Commands
+
+The following shell aliases are available for project management:
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `project-switch <name>` | `pswitch` | Switch to a project |
+| `project-clear` | `pclear` | Clear active project (global mode) |
+| `project-list` | `plist` | List all available projects |
+| `project-current` | `pcurrent` | Show current active project |
+| `project-create` | - | Create a new project |
+| `project-edit` | - | Edit a project configuration |
+| `project-delete` | - | Delete a project |
+
 ### Common Workflows
 
 **Create a new project:**
 ```bash
-i3-project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
+project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
 ```
 
 **Start working on a project:**
 ```bash
-# Press Win+P, select project from rofi menu
+# Press Win+P to open rofi project switcher
 # Or from command line:
-i3-project-switch nixos
+project-switch nixos
+# Or use the short alias:
+pswitch nixos
 ```
 
 **Check current project:**
 ```bash
-i3-project-current
-# Or JSON format:
-i3-project-current --format json | jq -r '.name'
+project-current
+# Or use short alias:
+pcurrent
 ```
 
 **List all projects:**
 ```bash
-i3-project-list
+project-list
+# Or use short alias:
+plist
 ```
 
 **Return to global mode:**
 ```bash
 # Press Win+Shift+P
 # Or from command line:
-i3-project-clear
+project-clear
+# Or use short alias:
+pclear
 ```
 
 ### Multi-Monitor Support

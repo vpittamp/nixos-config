@@ -5,111 +5,16 @@
     # Plasma-home disabled during i3wm migration (Feature 009)
     # Re-enable if switching back to KDE Plasma
     # ./home-modules/profiles/plasma-home.nix
-    ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
+    ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings + project scripts
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
-    ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management (OLD STATIC SYSTEM)
-    ./home-modules/desktop/i3-project-manager.nix  # Feature 012: Dynamic runtime project management (NEW)
+    # ./home-modules/desktop/i3-projects.nix  # REMOVED: Feature 010 (OLD STATIC SYSTEM)
+    # ./home-modules/desktop/i3-project-manager.nix  # REMOVED: Feature 012 (OLD DYNAMIC SYSTEM)
     # ./home-modules/desktop/polybar.nix  # REMOVED: Migrated to i3bar (Feature 013)
     ./home-modules/desktop/i3blocks  # Feature 013: i3blocks status command for i3bar
   ];
 
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
-
-  # Enable i3 project workspace management (Feature 010)
-  programs.i3Projects = {
-    enable = true;
-
-    projects = {
-      nixos = {
-        displayName = "NixOS";
-        description = "NixOS system configuration development";
-        icon = "";  # NixOS snowflake logo
-        primaryWorkspace = 1;
-        workingDirectory = "/etc/nixos";
-
-        workspaces = [
-          # Workspace 1: Terminal with sesh session on first monitor (rdp1)
-          {
-            number = 1;
-            output = "rdp1";
-            applications = [
-              {
-                command = "ghostty";
-                wmClass = "com.mitchellh.ghostty";
-                useSesh = true;
-                seshSession = "nixos";  # Corresponds to sesh session in sesh.nix
-                # T010: Add project-scoped classification
-                projectScoped = true;  # Project-specific terminal
-                monitorPriority = 1;   # High priority - primary monitor
-              }
-            ];
-          }
-
-          # Workspace 2: VS Code on second monitor (rdp0)
-          {
-            number = 2;
-            output = "rdp0";
-            applications = [
-              {
-                command = "code";
-                args = ["/etc/nixos"];
-                wmClass = "Code";
-                launchDelay = 500;  # Give VS Code time to start
-                # T010: Add project-scoped classification
-                projectScoped = true;  # Project-specific IDE
-                monitorPriority = 1;   # High priority - primary monitor
-              }
-            ];
-          }
-        ];
-      };
-
-      stacks = {
-        displayName = "Stacks";
-        description = "Cloud-native reference stacks development";
-        icon = "";  # Cloud/stack icon
-        primaryWorkspace = 3;
-        workingDirectory = "/home/vpittamp/stacks";
-
-        workspaces = [
-          # Workspace 3: Terminal with sesh session on first monitor (rdp1)
-          {
-            number = 3;
-            output = "rdp1";
-            applications = [
-              {
-                command = "ghostty";
-                wmClass = "com.mitchellh.ghostty";
-                useSesh = true;
-                seshSession = "stacks";  # Corresponds to sesh session in sesh.nix
-                # T010: Add project-scoped classification
-                projectScoped = true;  # Project-specific terminal
-                monitorPriority = 1;   # High priority - primary monitor
-              }
-            ];
-          }
-
-          # Workspace 4: VS Code on second monitor (rdp0)
-          {
-            number = 4;
-            output = "rdp0";
-            applications = [
-              {
-                command = "code";
-                args = ["/home/vpittamp/stacks"];
-                wmClass = "Code";
-                launchDelay = 500;  # Give VS Code time to start
-                # T010: Add project-scoped classification
-                projectScoped = true;  # Project-specific IDE
-                monitorPriority = 1;   # High priority - primary monitor
-              }
-            ];
-          }
-        ];
-      };
-    };
-  };
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
@@ -135,10 +40,4 @@
       fi
     done
   '';
-
-  # Feature 012: Enable new dynamic i3 project manager
-  programs.i3ProjectManager = {
-    enable = true;
-    enableShellcheck = true;
-  };
 }
