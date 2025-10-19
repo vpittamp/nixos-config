@@ -161,8 +161,8 @@
     bindsym $mod+Shift+8 move container to workspace $ws8
     bindsym $mod+Shift+9 move container to workspace $ws9
 
-    # Project management keybindings
-    bindsym $mod+p exec ~/.config/i3/scripts/project-switcher.sh
+    # Project management keybindings (T049: rofi switcher)
+    bindsym $mod+p exec ~/.config/i3/scripts/rofi-project-switcher.sh
     bindsym $mod+Shift+p exec ~/.config/i3/scripts/project-clear.sh
 
     # T022: Project-aware application launchers
@@ -171,8 +171,8 @@
     bindsym $mod+g exec ~/.config/i3/scripts/launch-lazygit.sh
     bindsym $mod+y exec ~/.config/i3/scripts/launch-yazi.sh
 
-    # T041: Monitor detection keybinding
-    bindsym $mod+Shift+m exec ~/.config/i3/scripts/assign-workspace-monitor.sh
+    # T042: Monitor detection/workspace reassignment keybinding
+    bindsym $mod+Shift+m exec ~/.config/i3/scripts/reassign-workspaces.sh
 
     # Reload/restart
     bindsym $mod+Shift+c reload

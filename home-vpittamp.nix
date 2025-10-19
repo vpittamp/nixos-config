@@ -7,7 +7,8 @@
     # ./home-modules/profiles/plasma-home.nix
     ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
-    ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management
+    ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management (OLD STATIC SYSTEM)
+    ./home-modules/desktop/i3-project-manager.nix  # Feature 012: Dynamic runtime project management (NEW)
     ./home-modules/desktop/polybar.nix  # Polybar statusbar with project indicator
   ];
 
@@ -133,4 +134,10 @@
       fi
     done
   '';
+
+  # Feature 012: Enable new dynamic i3 project manager
+  programs.i3ProjectManager = {
+    enable = true;
+    enableShellcheck = true;
+  };
 }

@@ -284,23 +284,35 @@ The i3 window manager includes a project-scoped application workspace management
 
 ### Common Workflows
 
+**Create a new project:**
+```bash
+i3-project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
+```
+
 **Start working on a project:**
 ```bash
-# Press Win+P, select project from menu
+# Press Win+P, select project from rofi menu
 # Or from command line:
-~/.config/i3/scripts/project-set.sh nixos --switch
+i3-project-switch nixos
 ```
 
 **Check current project:**
 ```bash
-~/.config/i3/scripts/project-current.sh | jq -r '.name'
+i3-project-current
+# Or JSON format:
+i3-project-current --format json | jq -r '.name'
+```
+
+**List all projects:**
+```bash
+i3-project-list
 ```
 
 **Return to global mode:**
 ```bash
 # Press Win+Shift+P
 # Or from command line:
-~/.config/i3/scripts/project-clear.sh
+i3-project-clear
 ```
 
 ### Multi-Monitor Support
@@ -315,17 +327,30 @@ After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspa
 ### Troubleshooting
 
 **Applications not opening in project context:**
-1. Check active project: `~/.config/i3/scripts/project-current.sh`
+1. Check active project: `i3-project-current`
 2. Verify project directory exists
 3. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
 
 **Windows from old project still visible:**
 1. Check polybar shows correct project
-2. Manually run: `~/.config/i3/scripts/project-switch-hook.sh old_project new_project`
+2. Verify project switch completed: `i3-project-current`
+3. Try switching again: `i3-project-switch <project-name>`
+
+**Edit project configuration:**
+```bash
+i3-project-edit nixos
+# Or manually:
+vi ~/.config/i3/projects/nixos.json
+```
+
+**Validate project configuration:**
+```bash
+i3-project-validate nixos
+```
 
 For more details, see the quickstart guide:
 ```bash
-cat /etc/nixos/specs/011-project-scoped-application/quickstart.md
+cat /etc/nixos/specs/012-review-project-scoped/quickstart.md
 ```
 
 ## 📚 Additional Documentation

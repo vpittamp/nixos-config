@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "stacks",
+    "displayName": "Stacks",
+    "icon": "",
+    "directory": "/home/vpittamp/stacks"
+  },
+  "workspaces": {
+    "3": {
+      "launchCommands": [
+        "ghostty -e sesh connect stacks"
+      ]
+    },
+    "4": {
+      "launchCommands": [
+        "code /home/vpittamp/stacks"
+      ]
+    }
+  },
+  "workspaceOutputs": {
+    "3": "rdp1",
+    "4": "rdp0"
+  },
+  "appClasses": [
+    {
+      "class": "Docker",
+      "scoped": true,
+      "description": "Docker Desktop for this project"
+    }
+  ]
+}

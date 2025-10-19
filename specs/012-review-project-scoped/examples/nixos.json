@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "nixos",
+    "displayName": "NixOS",
+    "icon": "",
+    "directory": "/etc/nixos"
+  },
+  "workspaces": {
+    "1": {
+      "launchCommands": [
+        "ghostty -e sesh connect nixos"
+      ]
+    },
+    "2": {
+      "launchCommands": [
+        "code /etc/nixos"
+      ]
+    }
+  },
+  "workspaceOutputs": {
+    "1": "rdp1",
+    "2": "rdp0"
+  },
+  "appClasses": []
+}
