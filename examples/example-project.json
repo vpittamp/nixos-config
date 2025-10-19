@@ -1,0 +1,26 @@
+{
+  "name": "example-vscode-ghostty",
+  "description": "Example project: VSCode on workspace 4, Ghostty on workspace 2",
+  "workspaces": [
+    {
+      "number": 2,
+      "apps": [
+        {
+          "command": "ghostty",
+          "args": [],
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "apps": [
+        {
+          "command": "code",
+          "args": [],
+          "delay": 500
+        }
+      ]
+    }
+  ]
+}

@@ -291,6 +291,8 @@ show_project_windows() {
         if [ -n "$target_workspace" ] && [ "$target_workspace" != "null" ]; then
             if "$I3MSG" "[con_id=\"$con_id\"] move to workspace number $target_workspace" > /dev/null 2>&1; then
                 log "  Moved window $con_id to workspace $target_workspace"
+                # Disable floating mode to ensure windows are tiled properly
+                "$I3MSG" "[con_id=\"$con_id\"] floating disable" > /dev/null 2>&1 || true
             else
                 log "  WARNING: Failed to move window $con_id to workspace $target_workspace"
             fi
@@ -373,6 +375,8 @@ show_all_project_windows() {
 
             if [ -n "$target_workspace" ] && [ "$target_workspace" != "null" ]; then
                 "$I3MSG" "[con_id=\"$con_id\"] move to workspace number $target_workspace" > /dev/null 2>&1 || true
+                # Disable floating mode to ensure windows are tiled properly
+                "$I3MSG" "[con_id=\"$con_id\"] floating disable" > /dev/null 2>&1 || true
                 log "      Moved window $con_id to workspace $target_workspace"
             fi
         done

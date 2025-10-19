@@ -53,7 +53,7 @@
         font-1 = "Font Awesome 6 Free:style=Solid:size=10;2";
         font-2 = "Font Awesome 6 Brands:size=10;2";
 
-        modules-left = "i3";
+        modules-left = "monitor i3";
         modules-center = "project";
         modules-right = "filesystem memory cpu network date";
 
@@ -66,6 +66,20 @@
         cursor-scroll = "ns-resize";
 
         enable-ipc = true;
+      };
+
+      # Monitor Module - Display current monitor name
+      "module/monitor" = {
+        type = "custom/script";
+        exec = "echo \"\${MONITOR}\"";
+        format = "<label>";
+        format-prefix = "󰍹 ";  # Monitor icon
+        format-prefix-foreground = "#89dceb";  # Sky blue color
+        format-background = "#313244";  # Darker background
+        format-padding = 2;
+        label = "%output%";
+        label-foreground = "#89dceb";  # Match prefix color
+        label-font = 1;  # Use Font Awesome font
       };
 
       # Project Module - Custom Script

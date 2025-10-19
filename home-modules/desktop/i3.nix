@@ -26,6 +26,11 @@
     set $ws8 "8: ai "
     set $ws9 "9 "
 
+    # Default workspace-to-output assignments for polybar
+    # These are defaults; assign-workspace-monitor.sh will override based on monitor count
+    # NOTE: These assignments are intentionally permissive (multiple outputs per workspace)
+    # to ensure workspaces show on polybar even before dynamic assignment runs
+
     # Application to workspace assignments
     # Terminal applications (Ghostty, Konsole, etc.)
     assign [class="ghostty"] $ws1
@@ -180,8 +185,12 @@
     # Autostart - import environment variables for systemd services
     exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
 
+    # Assign workspaces to monitors on startup and monitor change
+    exec_always --no-startup-id ~/.config/i3/scripts/assign-workspace-monitor.sh
+
     # Launch polybar on all monitors (workaround for systemd service issues)
-    exec_always --no-startup-id ${pkgs.procps}/bin/pkill polybar; sleep 1; for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do MONITOR=$m ${pkgs.polybar}/bin/polybar --reload main & done
+    # Delay slightly to allow workspace assignment to complete first
+    exec_always --no-startup-id ${pkgs.procps}/bin/pkill polybar; sleep 2; for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do MONITOR=$m ${pkgs.polybar}/bin/polybar --reload main & done
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf

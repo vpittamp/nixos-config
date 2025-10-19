@@ -1,0 +1,36 @@
+{
+  "name": "${PROJECT_NAME:-dev-project}",
+  "description": "Development project workspace template",
+  "workspaces": [
+    {
+      "number": 1,
+      "apps": [
+        {
+          "command": "firefox",
+          "args": ["--new-window", "${PROJECT_URL:-http://localhost:3000}"],
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "apps": [
+        {
+          "command": "ghostty",
+          "args": [],
+          "delay": 0
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "apps": [
+        {
+          "command": "code",
+          "args": ["${PROJECT_DIR:-.}"],
+          "delay": 500
+        }
+      ]
+    }
+  ]
+}

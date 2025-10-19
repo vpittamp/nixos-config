@@ -20,8 +20,9 @@
 
     projects = {
       nixos = {
-        displayName = "NixOS Configuration";
+        displayName = "NixOS";
         description = "NixOS system configuration development";
+        icon = "";  # NixOS snowflake logo
         primaryWorkspace = 1;
         workingDirectory = "/etc/nixos";
 
@@ -63,8 +64,9 @@
       };
 
       stacks = {
-        displayName = "Stacks Development";
+        displayName = "Stacks";
         description = "Cloud-native reference stacks development";
+        icon = "";  # Cloud/stack icon
         primaryWorkspace = 3;
         workingDirectory = "/home/vpittamp/stacks";
 

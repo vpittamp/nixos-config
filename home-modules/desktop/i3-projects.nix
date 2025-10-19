@@ -205,6 +205,13 @@ in
             example = "API Backend Development";
           };
 
+          icon = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Icon to display for the project (emoji or nerd font icon)";
+            example = "";
+          };
+
           description = mkOption {
             type = types.nullOr types.str;
             default = null;
@@ -498,6 +505,7 @@ in
 
       projects = mapAttrs (name: proj: {
         displayName = proj.displayName;
+        icon = proj.icon;
         description = proj.description;
         enabled = proj.enabled;
         primaryWorkspace = proj.primaryWorkspace;

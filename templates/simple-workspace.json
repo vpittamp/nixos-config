@@ -1,0 +1,16 @@
+{
+  "name": "${WORKSPACE_NAME:-simple-workspace}",
+  "description": "Simple single-workspace template with one app",
+  "workspaces": [
+    {
+      "number": "${WORKSPACE_NUM:-9}",
+      "apps": [
+        {
+          "command": "${APP_COMMAND:-ghostty}",
+          "args": ${APP_ARGS:-[]},
+          "delay": 0
+        }
+      ]
+    }
+  ]
+}
