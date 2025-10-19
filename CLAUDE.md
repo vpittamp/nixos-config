@@ -205,6 +205,16 @@ nix flake lock --update-input nixpkgs
 
 ## ⚠️ Important Notes
 
+### Recent Updates (2025-10)
+
+- **Migrated from Polybar to i3bar + i3blocks** - Native i3 status bar (Feature 013)
+  - Replaced polybar with i3's native i3bar for workspace indicators
+  - Implemented i3blocks for status command with system information blocks
+  - Added project context indicator that updates via signal when switching projects
+  - System info blocks: CPU usage, memory usage, network status, date/time
+  - Configuration in `home-modules/desktop/i3blocks/` with shell scripts
+  - Benefits: Better i3 integration, simpler configuration, more reliable workspace sync
+
 ### Recent Updates (2025-09)
 
 - **Migrated M1 MacBook Pro from X11 to Wayland** - Following Asahi Linux recommendations
