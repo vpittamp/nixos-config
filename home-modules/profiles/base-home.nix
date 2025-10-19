@@ -37,7 +37,11 @@ in
     # Terminal configurations
     ../terminal/tmux.nix
     ../terminal/sesh.nix
-    ../terminal/alacritty.nix  # GPU-accelerated terminal (Feature 007)
+    ../terminal/ghostty.nix    # Modern terminal with native tabs/splits (default)
+    ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
+
+    # Desktop configurations
+    ../desktop/dunst.nix       # Notification daemon for i3
 
     # Editor configurations
     ../editors/neovim.nix
@@ -52,12 +56,16 @@ in
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
+    ../tools/htop.nix
+    ../tools/btop.nix
     ../tools/chromium.nix # Enabled for Playwright MCP support
     ../tools/firefox.nix
     ../tools/docker.nix # Docker with 1Password authentication
     ../tools/firefox-pwas-declarative.nix  # Best available declarative PWA solution
     # ../tools/web-apps-declarative.nix  # Chromium-based web app launcher - DISABLED (using Firefox PWAs instead)
     ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
+    ../tools/screenshot-ocr.nix  # Screenshot (Spectacle) and OCR (gImageReader) tools
+    ../tools/lazygit.nix  # Terminal UI for Git and Docker
     ../tools/k9s.nix
     ../tools/yazi.nix
     ../tools/nix.nix
@@ -95,12 +103,21 @@ in
 
   programs.home-manager.enable = true;
 
+  # Enable automatic restart of systemd user services on home-manager activation
+  # This is now the default in newer home-manager, but we set it explicitly
+  systemd.user.startServices = "sd-switch";
+
   # Enable XDG base directories and desktop entries
   xdg.enable = true;
   # MIME associations are fully managed in firefox.nix when Firefox is enabled
   # No need for duplicate configuration here
 
   home.sessionVariables = sessionConfig;
+
+  # Add ~/.local/bin to PATH for user scripts and CLI tools
+  home.sessionPath = [
+    "$HOME/.local/bin"
+  ];
 
   # Firefox PWAs configuration - DISABLED (causing boot hang)
   # programs.firefox-pwas = {

@@ -30,41 +30,23 @@
       };
 
       # Session configurations
-      # NOTE: Activity-based sessions removed during i3wm migration
-      # Users can add custom sessions below or rely on zoxide for directory navigation
+      # Configured sessions for i3 project workspace integration
       session = [
-        # Additional Nix-specific sessions (not tied to activities)
-        # {
-        #   name = "nix-config";
-        #   path = "/etc/nixos";
-        #   startup_command = "";
-        #   preview_command = "bat --color=always /etc/nixos/configuration.nix";
-        # }
-        # {
-        #   name = "nix-home";
-        #   path = "/etc/nixos";
-        #   startup_command = "";
-        #   preview_command = "bat --color=always /etc/nixos/home-vpittamp.nix";
-        # }
-        # {
-        #   name = "nix-flake";
-        #   path = "/etc/nixos";
-        #   startup_command = "";
-        #   preview_command = "bat --color=always /etc/nixos/flake.nix";
-        # }
-        # # Additional utility sessions
-        # {
-        #   name = "dotfiles";
-        #   path = "~/.config";
-        #   startup_command = "";
-        #   preview_command = "eza --all --git --icons --color=always --group-directories-first {}";
-        # }
-        # {
-        #   name = "k8s-dev";
-        #   path = "~/k8s";
-        #   startup_command = "";
-        #   preview_command = "kubectl get pods --all-namespaces 2>/dev/null || echo 'No cluster connected'";
-        # }
+        # NixOS Configuration Project
+        {
+          name = "nixos";
+          path = "/etc/nixos";
+          startup_command = "git status";
+          preview_command = "eza --all --git --icons --color=always --group-directories-first --long /etc/nixos";
+        }
+
+        # Stacks Project
+        {
+          name = "stacks";
+          path = "~/stacks";
+          startup_command = "git status";
+          preview_command = "eza --all --git --icons --color=always --group-directories-first --long ~/stacks";
+        }
       ];
 
       # Window definitions for multi-window sessions

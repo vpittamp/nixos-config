@@ -1,0 +1,781 @@
+# Implementation Guide: Constitutional Compliance Remediation
+
+**Feature**: 014 - Consolidate and Validate i3 Project Management System
+**Date**: 2025-10-19
+**Status**: Phase 1 Complete, Phase 2+ Pending
+**Audience**: Developers continuing this implementation
+
+## Executive Summary
+
+**Completed**: Phase 1 (T001-T003) - Validation infrastructure created and ready
+**Remaining**: 91 tasks across Phases 2-10
+**Critical Path**: Phase 2 constitutional compliance (26 tasks) must complete before user story validation
+
+---
+
+## Phase 1: ✅ COMPLETED
+
+### What Was Done
+
+Created three validation scripts in `/etc/nixos/tests/`:
+
+1. **`validate-i3-schema.sh`** - Validates:
+   - Window marks follow `project:NAME` format
+   - i3 IPC queries work (get_tree, get_workspaces)
+   - No redundant state files (window-project-map.json)
+
+2. **`validate-json-schemas.sh`** - Validates:
+   - Project config files structure
+   - Active-project file format
+   - App-classes.json structure
+   - Directory paths and field consistency
+
+3. **`i3-project-test.sh`** - Automated UI tests:
+   - Project creation/deletion
+   - Project switching via CLI
+   - Status bar update timing
+   - Rapid switching without race conditions
+   - Safe design (won't close terminals)
+
+### How to Use Validation Scripts
+
+```bash
+# Run i3 schema validation
+/etc/nixos/tests/validate-i3-schema.sh
+
+# Run JSON schema validation
+/etc/nixos/tests/validate-json-schemas.sh
+
+# Run automated UI tests (requires user confirmation)
+/etc/nixos/tests/i3-project-test.sh
+
+# Or run all validations
+cd /etc/nixos/tests
+./validate-i3-schema.sh && ./validate-json-schemas.sh && ./i3-project-test.sh
+```
+
+---
+
+## Phase 2: 🚨 CRITICAL - Constitutional Compliance (26 tasks)
+
+### Problem Statement
+
+**Current Architecture Violates NixOS Constitution**:
+- 21 shell scripts use imperative file copying: `source = ./file.sh`
+- Scripts contain 100+ hardcoded binary paths (not reproducible)
+- Violates Principle VI: "Declarative Configuration Over Imperative"
+- Breaks reproducibility guarantees
+
+**Impact**:
+- Scripts depend on PATH environment variable
+- May fail in minimal containers or different system configurations
+- Not reproducible across machines
+
+### Solution: Convert to Declarative Generation
+
+All scripts must be converted from:
+```nix
+home.file.".config/i3/scripts/foo.sh" = {
+  source = ./scripts/foo.sh;  # ❌ WRONG
+};
+```
+
+To:
+```nix
+home.file.".config/i3/scripts/foo.sh" = {
+  text = ''
+    #!${pkgs.bash}/bin/bash
+    # Script content with Nix-interpolated paths
+  '';  # ✅ CORRECT
+};
+```
+
+---
+
+## Conversion Template #1: Simple Script (project-current.sh)
+
+### Original Script Analysis
+
+**File**: `home-modules/desktop/scripts/project-current.sh`
+**Lines**: 85
+**Dependencies**: i3-project-common.sh, jq, cat, echo
+**Complexity**: LOW (no i3-msg commands, just file reading)
+
+### Step 1: Identify All Binary Dependencies
+
+From the original script:
+```bash
+#!/usr/bin/env bash           # → ${pkgs.bash}/bin/bash
+source ...                     # → Will inline common.sh functions
+cat <<EOF                      # → ${pkgs.coreutils}/bin/cat
+echo "..."                     # → ${pkgs.coreutils}/bin/echo (built-in, but explicit)
+jq -r '.project.name'          # → ${pkgs.jq}/bin/jq
+```
+
+### Step 2: Identify Functions from common.sh
+
+The script calls:
+- `get_active_project()` - from common.sh
+- `log_error()` - from common.sh
+- Uses `$PROJECT_DIR` variable - from common.sh
+
+These must be inlined or referenced from a shared Nix function library.
+
+### Step 3: Create Declarative Version
+
+```nix
+# In home-modules/desktop/i3-project-manager.nix
+
+# First, create a shared function library (T005)
+let
+  # Common shell functions used by multiple scripts
+  commonFunctions = ''
+    # Project directories
+    PROJECT_DIR="$HOME/.config/i3/projects"
+    ACTIVE_PROJECT_FILE="$HOME/.config/i3/active-project"
+    LOG_FILE="$HOME/.config/i3/project-system.log"
+
+    # Logging function
+    log_error() {
+      local message="$1"
+      local timestamp=$(${pkgs.coreutils}/bin/date '+%Y-%m-%d %H:%M:%S')
+      ${pkgs.coreutils}/bin/echo "[$timestamp] [ERROR] [$(${pkgs.coreutils}/bin/basename "$0")] $message" >> "$LOG_FILE"
+    }
+
+    log_info() {
+      local message="$1"
+      local timestamp=$(${pkgs.coreutils}/bin/date '+%Y-%m-%d %H:%M:%S')
+      ${pkgs.coreutils}/bin/echo "[$timestamp] [INFO] [$(${pkgs.coreutils}/bin/basename "$0")] $message" >> "$LOG_FILE"
+    }
+
+    # Get active project name
+    get_active_project() {
+      if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+        return 1
+      fi
+      ${pkgs.jq}/bin/jq -r '.name // empty' "$ACTIVE_PROJECT_FILE" 2>/dev/null || return 1
+    }
+  '';
+
+in
+{
+  # ... existing config ...
+
+  config = mkIf cfg.enable {
+    # T010: Convert project-current.sh
+    home.file.".config/i3/scripts/project-current.sh" = {
+      executable = true;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # i3-project-current - Display currently active project
+        # Declaratively generated by home-manager
+
+        set -euo pipefail
+
+        # Source common functions
+        ${commonFunctions}
+
+        # Binary paths (Nix-interpolated for reproducibility)
+        CAT="${pkgs.coreutils}/bin/cat"
+        ECHO="${pkgs.coreutils}/bin/echo"
+        JQ="${pkgs.jq}/bin/jq"
+
+        usage() {
+          $CAT <<EOF
+        Usage: i3-project-current [--format FORMAT]
+
+        Display the currently active project.
+
+        Arguments:
+            --format FORMAT    Output format: text (default) or json
+
+        Examples:
+            i3-project-current
+            i3-project-current --format json
+        EOF
+        }
+
+        main() {
+          local format="text"
+
+          if [ "$1" = "--format" ]; then
+            format="$2"
+          elif [ "$1" = "--help" ]; then
+            usage
+            exit 0
+          fi
+
+          # Get active project
+          local project_name
+          project_name=$(get_active_project 2>/dev/null) || project_name=""
+
+          if [ -z "$project_name" ]; then
+            if [ "$format" = "json" ]; then
+              $ECHO '{"active": false, "name": null}'
+            else
+              $ECHO "No active project (global mode)"
+            fi
+            exit 0
+          fi
+
+          # Get project details
+          local project_file="''${PROJECT_DIR}/''${project_name}.json"
+          if [ ! -f "$project_file" ]; then
+            log_error "Active project file not found: $project_name"
+            if [ "$format" = "json" ]; then
+              $ECHO '{"active": false, "name": null, "error": "project file not found"}'
+            else
+              $ECHO "Error: Active project '$project_name' configuration not found"
+            fi
+            exit 1
+          fi
+
+          local project_json
+          project_json=$($CAT "$project_file")
+
+          if [ "$format" = "json" ]; then
+            # JSON output
+            $ECHO "$project_json" | $JQ -c '{
+              active: true,
+              name: .project.name,
+              displayName: .project.displayName,
+              icon: .project.icon,
+              directory: .project.directory
+            }'
+          else
+            # Text output
+            local display_name icon dir
+            display_name=$($ECHO "$project_json" | $JQ -r '.project.displayName // .project.name')
+            icon=$($ECHO "$project_json" | $JQ -r '.project.icon // ""')
+            dir=$($ECHO "$project_json" | $JQ -r '.project.directory')
+
+            $ECHO "Active project: $icon $display_name"
+            $ECHO "  Name: $project_name"
+            $ECHO "  Directory: $dir"
+          fi
+        }
+
+        main "$@"
+      '';
+    };
+  };
+}
+```
+
+### Key Points in Conversion
+
+1. **Shebang**: `#!${pkgs.bash}/bin/bash` - Nix interpolates full path
+2. **Common Functions**: Inlined at top of script (from `commonFunctions` let binding)
+3. **Binary Variables**: All commands assigned to variables with Nix paths
+4. **Variable Escaping**: Use `''${VAR}` in Nix strings to escape bash variables
+5. **Heredocs**: Work normally inside Nix text blocks
+6. **Comments**: Add note "Declaratively generated by home-manager"
+
+---
+
+## Conversion Template #2: Complex Script (project-switch.sh)
+
+### Original Script Analysis
+
+**File**: `home-modules/desktop/scripts/project-switch.sh`
+**Lines**: ~250
+**Dependencies**: i3-msg, jq, xdotool, date, sleep, pkill
+**Complexity**: HIGH (i3 IPC calls, window manipulation, signals)
+
+Let me read the first part of this script to show the conversion:
+
+```bash
+# Original project-switch.sh (excerpt)
+#!/usr/bin/env bash
+
+source "${HOME}/.config/i3/scripts/common.sh"
+
+main() {
+  local project_name="$1"
+
+  # Query current windows with marks
+  local old_windows
+  old_windows=$(i3-msg -t get_tree | jq -r '.. | select(.marks? | contains(["project:old"])) | .window')
+
+  # Hide old project windows
+  i3-msg "[con_mark=\"project:old\"] move scratchpad"
+
+  # Show new project windows
+  i3-msg "[con_mark=\"project:$project_name\"] scratchpad show"
+
+  # Update active-project file
+  echo "{\"name\":\"$project_name\"}" > ~/.config/i3/active-project
+
+  # Signal status bar (POLYBAR REMNANT - to be removed in T023)
+  i3-msg -t send_tick "project:$project_name"
+
+  # Signal i3blocks
+  pkill -RTMIN+10 i3blocks
+}
+
+main "$@"
+```
+
+### Converted Version (Declarative)
+
+```nix
+# T007: Convert project-switch.sh
+home.file.".config/i3/scripts/project-switch.sh" = {
+  executable = true;
+  text = ''
+    #!${pkgs.bash}/bin/bash
+    # project-switch - Switch active i3 project
+    # Declaratively generated by home-manager
+
+    set -euo pipefail
+
+    # Source common functions
+    ${commonFunctions}
+
+    # Binary paths (Nix-interpolated)
+    I3MSG="${pkgs.i3}/bin/i3-msg"
+    JQ="${pkgs.jq}/bin/jq"
+    CAT="${pkgs.coreutils}/bin/cat"
+    ECHO="${pkgs.coreutils}/bin/echo"
+    MV="${pkgs.coreutils}/bin/mv"
+    SLEEP="${pkgs.coreutils}/bin/sleep"
+    PKILL="${pkgs.procps}/bin/pkill"
+
+    main() {
+      local project_name="$1"
+
+      if [ -z "$project_name" ]; then
+        $ECHO "Error: Project name required"
+        exit 1
+      fi
+
+      log_info "Switching to project: $project_name"
+
+      # Verify project exists
+      local project_file="''${PROJECT_DIR}/''${project_name}.json"
+      if [ ! -f "$project_file" ]; then
+        log_error "Project not found: $project_name"
+        exit 1
+      fi
+
+      # Get currently active project
+      local old_project
+      old_project=$(get_active_project 2>/dev/null) || old_project=""
+
+      # Query windows with old project marks
+      if [ -n "$old_project" ]; then
+        log_info "Hiding windows from project: $old_project"
+
+        # Move old project windows to scratchpad
+        $I3MSG "[con_mark=\"project:$old_project\"] move scratchpad" > /dev/null 2>&1
+      fi
+
+      # Show new project windows from scratchpad
+      log_info "Showing windows from project: $project_name"
+      $I3MSG "[con_mark=\"project:$project_name\"] scratchpad show" > /dev/null 2>&1
+
+      # Read project metadata
+      local project_json
+      project_json=$($CAT "$project_file")
+
+      local display_name icon
+      display_name=$($ECHO "$project_json" | $JQ -r '.project.displayName')
+      icon=$($ECHO "$project_json" | $JQ -r '.project.icon')
+
+      # Update active-project file atomically
+      local temp_file="''${ACTIVE_PROJECT_FILE}.tmp"
+      $ECHO "{\"name\":\"$project_name\",\"display_name\":\"$display_name\",\"icon\":\"$icon\"}" > "$temp_file"
+      $MV "$temp_file" "$ACTIVE_PROJECT_FILE"
+
+      # Small delay to ensure file write completes
+      $SLEEP 0.1
+
+      # Signal i3blocks to update status bar
+      $PKILL -RTMIN+10 i3blocks 2>/dev/null || log_warn "i3blocks not running"
+
+      log_info "Project switch completed: $project_name"
+    }
+
+    main "$@"
+  '';
+};
+```
+
+### Key Changes from Original
+
+1. **Removed i3_send_tick()**: This was for polybar (T023 requirement)
+2. **Atomic file writes**: Use temp file + mv pattern for active-project
+3. **Error logging**: Added log_warn when pkill fails
+4. **All binaries**: Full Nix paths via variables
+
+---
+
+## Binary Path Reference Table
+
+Use this table for all script conversions:
+
+| Binary | Nix Package | Full Path |
+|--------|-------------|-----------|
+| bash | pkgs.bash | `${pkgs.bash}/bin/bash` |
+| cat | pkgs.coreutils | `${pkgs.coreutils}/bin/cat` |
+| echo | pkgs.coreutils | `${pkgs.coreutils}/bin/echo` |
+| date | pkgs.coreutils | `${pkgs.coreutils}/bin/date` |
+| mv | pkgs.coreutils | `${pkgs.coreutils}/bin/mv` |
+| rm | pkgs.coreutils | `${pkgs.coreutils}/bin/rm` |
+| mkdir | pkgs.coreutils | `${pkgs.coreutils}/bin/mkdir` |
+| stat | pkgs.coreutils | `${pkgs.coreutils}/bin/stat` |
+| cut | pkgs.coreutils | `${pkgs.coreutils}/bin/cut` |
+| head | pkgs.coreutils | `${pkgs.coreutils}/bin/head` |
+| tail | pkgs.coreutils | `${pkgs.coreutils}/bin/tail` |
+| sleep | pkgs.coreutils | `${pkgs.coreutils}/bin/sleep` |
+| jq | pkgs.jq | `${pkgs.jq}/bin/jq` |
+| awk | pkgs.gawk | `${pkgs.gawk}/bin/awk` |
+| grep | pkgs.gnugrep | `${pkgs.gnugrep}/bin/grep` |
+| sed | pkgs.gnused | `${pkgs.gnused}/bin/sed` |
+| i3-msg | pkgs.i3 | `${pkgs.i3}/bin/i3-msg` |
+| xdotool | pkgs.xdotool | `${pkgs.xdotool}/bin/xdotool` |
+| rofi | pkgs.rofi | `${pkgs.rofi}/bin/rofi` |
+| code | pkgs.vscode | `${pkgs.vscode}/bin/code` |
+| pkill | pkgs.procps | `${pkgs.procps}/bin/pkill` |
+| pgrep | pkgs.procps | `${pkgs.procps}/bin/pgrep` |
+| top | pkgs.procps | `${pkgs.procps}/bin/top` |
+| ps | pkgs.procps | `${pkgs.procps}/bin/ps` |
+| ip | pkgs.iproute2 | `${pkgs.iproute2}/bin/ip` |
+
+---
+
+## Conversion Template #3: i3blocks Script (project.sh)
+
+### Original i3blocks Script
+
+**File**: `home-modules/desktop/i3blocks/scripts/project.sh`
+**Module**: `home-modules/desktop/i3blocks/default.nix` (different file!)
+**Complexity**: LOW (just reads JSON and outputs Pango markup)
+
+### Conversion Location
+
+i3blocks scripts go in `i3blocks/default.nix`, not `i3-project-manager.nix`:
+
+```nix
+# In home-modules/desktop/i3blocks/default.nix
+
+let
+  # T017: Project indicator script
+  projectScript = pkgs.writeShellScript "i3blocks-project" ''
+    #!${pkgs.bash}/bin/bash
+    # i3blocks project indicator
+    # Declaratively generated by home-manager
+
+    set -euo pipefail
+
+    # Binary paths
+    JQ="${pkgs.jq}/bin/jq"
+    CAT="${pkgs.coreutils}/bin/cat"
+    ECHO="${pkgs.coreutils}/bin/echo"
+
+    # Catppuccin Mocha colors
+    COLOR_BLUE="#89b4fa"
+    COLOR_SURFACE2="#6c7086"
+
+    ACTIVE_PROJECT="$HOME/.config/i3/active-project"
+
+    if [ ! -f "$ACTIVE_PROJECT" ]; then
+      # No active project
+      $ECHO "<span foreground='$COLOR_SURFACE2'>∅ No Project</span>"
+      exit 0
+    fi
+
+    # Check if file is empty JSON
+    if [ "$($JQ '. | length' "$ACTIVE_PROJECT" 2>/dev/null || $ECHO 0)" -eq 0 ]; then
+      $ECHO "<span foreground='$COLOR_SURFACE2'>∅ No Project</span>"
+      exit 0
+    fi
+
+    # Read project info
+    name=$($JQ -r '.display_name // .name' "$ACTIVE_PROJECT" 2>/dev/null || $ECHO "Unknown")
+    icon=$($JQ -r '.icon // ""' "$ACTIVE_PROJECT" 2>/dev/null || $ECHO "")
+
+    # Output Pango markup
+    $ECHO "<span foreground='$COLOR_BLUE'>$icon $name</span>"
+  '';
+
+in
+{
+  # ... existing config ...
+
+  # i3blocks configuration
+  xdg.configFile."i3blocks/config".text = ''
+    [project]
+    command=${projectScript}
+    interval=once
+    signal=10
+    markup=pango
+
+    # ... other blocks ...
+  '';
+}
+```
+
+### Key Differences for i3blocks Scripts
+
+1. **Use `pkgs.writeShellScript`**: Creates a script in Nix store
+2. **Reference in config**: `command=${projectScript}` (no path needed)
+3. **Signal number**: `signal=10` matches SIGRTMIN+10 from pkill
+
+---
+
+## Phase 2 Task Breakdown with Examples
+
+### T004-T005: Setup Foundation (REQUIRED FIRST)
+
+**T004**: Read current `i3-project-manager.nix`, understand structure
+**T005**: Create `commonFunctions` let binding with shared shell functions
+
+This is the foundation - all other scripts depend on this.
+
+### T006-T016: Project Management Scripts (11 tasks)
+
+Each script follows the pattern shown above. Complexity varies:
+
+| Task | Script | Complexity | Estimated Lines | Key Binaries |
+|------|--------|------------|-----------------|--------------|
+| T006 | project-create.sh | Medium | ~150 | jq, mkdir, echo, mv |
+| T007 | project-switch.sh | High | ~250 | i3-msg, jq, pkill, mv, sleep |
+| T008 | project-clear.sh | Low | ~50 | i3-msg, echo, mv |
+| T009 | project-list.sh | Low | ~80 | cat, jq, echo |
+| T010 | project-current.sh | Low | ~85 | cat, jq, echo |
+| T011 | project-delete.sh | Medium | ~120 | rm, jq, i3-msg |
+| T012 | launch-code.sh | Medium | ~100 | code, i3-msg, xdotool |
+| T013 | launch-ghostty.sh | Medium | ~100 | ghostty, i3-msg, xdotool |
+| T014 | launch-lazygit.sh | Low | ~60 | lazygit, i3-msg |
+| T015 | launch-yazi.sh | Low | ~60 | yazi, i3-msg |
+| T016 | project-logs.sh | Low | ~80 | tail, grep, cat |
+
+### T017-T021: i3blocks Scripts (5 tasks - CAN PARALLELIZE)
+
+These are independent and can be done simultaneously:
+
+| Task | Script | Location | Complexity |
+|------|--------|----------|------------|
+| T017 | project.sh | i3blocks/default.nix | Low (shown above) |
+| T018 | cpu.sh | i3blocks/default.nix | Low |
+| T019 | memory.sh | i3blocks/default.nix | Low |
+| T020 | network.sh | i3blocks/default.nix | Low |
+| T021 | datetime.sh | i3blocks/default.nix | Low |
+
+### T022-T027: Polybar Cleanup (6 tasks)
+
+**Simple deletions and edits**:
+
+- T022: Find and remove polybar script deployment lines
+- T023-T024: Remove `i3_send_tick()` calls from converted scripts
+- T025-T026: Update two comments in i3.nix
+- T027: Delete `polybar-i3-project-indicator.py` file
+
+### T028-T029: Redundant State Cleanup (2 tasks)
+
+Search converted scripts for any references to `window-project-map.json` and remove.
+
+---
+
+## Phase 3-10: User Story Validation (65 tasks)
+
+After Phase 2 completes, validation is straightforward:
+
+### Phase 3: User Story 1 - Project Lifecycle (T030-T036)
+
+**Test the converted project management commands**:
+1. Create test project
+2. List projects (verify appears)
+3. Switch to project (verify state file updated)
+4. Check status bar (verify <1s update)
+5. Switch to different project (verify windows move)
+6. Clear project (verify "No Project")
+7. Test rapid switching (verify no race conditions)
+
+### Phase 4-6: User Stories 2-4 (T037-T052)
+
+**Run validation scripts created in Phase 1**:
+- T037-T041: Run `validate-i3-schema.sh` and verify compliance
+- T042-T046: Audit converted scripts for i3 native integration
+- T047-T052: Test status bar integration
+
+### Phase 7-8: User Stories 5-6 (T053-T066)
+
+**Test application window management and logging**:
+- Launch apps with marks
+- Verify scratchpad management
+- Check logging system works
+
+### Phase 9: User Story 7 (T067-T071)
+
+**Test multi-monitor support** (if applicable)
+
+### Phase 10: Polish (T072-T094)
+
+**Documentation, validation, performance testing**:
+- Update CLAUDE.md
+- Run all validation scripts
+- Measure performance
+- Test edge cases
+- Final NixOS rebuild and deployment
+
+---
+
+## Execution Strategy
+
+### Recommended Approach: Incremental Conversion
+
+**Week 1: Foundation**
+1. Complete T004-T005 (common functions setup)
+2. Convert 3-4 simple scripts (T009, T010, T008) to validate pattern
+3. Test converted scripts manually
+
+**Week 2: Core Scripts**
+1. Convert complex scripts (T006, T007, T011, T012, T013)
+2. Test project lifecycle end-to-end
+3. Fix any issues found
+
+**Week 3: i3blocks + Cleanup**
+1. Convert all i3blocks scripts (T017-T021) - can parallelize
+2. Polybar cleanup (T022-T027)
+3. Redundant state cleanup (T028-T029)
+4. Run `nixos-rebuild dry-build` to verify no errors
+
+**Week 4: Validation**
+1. Phases 3-9: Run all validation tests
+2. Fix any issues discovered
+3. Phase 10: Documentation and final deployment
+
+### Parallel Work Opportunities
+
+Tasks that can be done simultaneously:
+
+- **i3blocks scripts (T018-T021)**: All independent
+- **Documentation updates (T072-T075)**: Can be done anytime after Phase 2
+- **Validation scripts**: Already complete, can run anytime
+
+### Testing Strategy
+
+After each script conversion:
+1. Run `nixos-rebuild dry-build --flake .#hetzner` to check syntax
+2. Deploy with `nixos-rebuild switch --flake .#hetzner`
+3. Test the specific script manually
+4. Check logs for errors
+
+---
+
+## Common Pitfalls & Solutions
+
+### Pitfall 1: Variable Escaping in Nix Strings
+
+**Problem**:
+```nix
+text = ''
+  PROJECT_DIR="$HOME/.config/i3/projects"  # ❌ Nix interpolates $HOME
+'';
+```
+
+**Solution**:
+```nix
+text = ''
+  PROJECT_DIR="$HOME/.config/i3/projects"  # ✅ Use double '' to escape $
+'';
+# Or explicitly:
+text = ''
+  PROJECT_DIR="''${HOME}/.config/i3/projects"  # ✅ ''${} escapes bash variables
+'';
+```
+
+### Pitfall 2: Heredocs in Nix Strings
+
+**Problem**: Nested heredocs can confuse Nix parser
+
+**Solution**: Heredocs work fine, just ensure EOF markers are unique:
+```nix
+text = ''
+  usage() {
+    cat <<EOF
+  Usage: command [options]
+  EOF
+  }
+'';
+```
+
+### Pitfall 3: Sourcing Common Functions
+
+**Problem**: Can't use `source` with external files
+
+**Solution**: Inline common functions at top of each script via Nix:
+```nix
+let
+  commonFunctions = ''...'';
+in
+{
+  script1 = ''
+    ${commonFunctions}
+    # ... rest of script
+  '';
+  script2 = ''
+    ${commonFunctions}
+    # ... rest of script
+  '';
+}
+```
+
+---
+
+## Success Criteria
+
+Phase 2 is complete when:
+
+1. ✅ All 21 scripts converted to `text = ''...''` format
+2. ✅ Zero hardcoded binary paths remain (all use `${pkgs.*/bin/*}`)
+3. ✅ `nixos-rebuild dry-build` succeeds with no errors
+4. ✅ `nixos-rebuild switch` deploys successfully
+5. ✅ Manual testing of all converted scripts passes
+6. ✅ Polybar remnants completely removed
+7. ✅ Redundant state files (window-project-map.json) removed
+
+Run validation:
+```bash
+# Check for hardcoded paths
+grep -r "#!/bin/bash" home-modules/desktop/i3-project-manager.nix  # Should be empty
+grep -r "#!/usr/bin/env" home-modules/desktop/i3-project-manager.nix  # Should be empty
+
+# Check for imperative sources
+grep -r "source = ./" home-modules/desktop/i3-project-manager.nix  # Should be empty
+grep -r "source = ./" home-modules/desktop/i3blocks/default.nix  # Should be empty
+
+# Verify declarative generation
+grep -r "text = ''" home-modules/desktop/i3-project-manager.nix  # Should find all scripts
+```
+
+---
+
+## Next Steps
+
+1. **Review this guide** - Ensure you understand the conversion pattern
+2. **Start with T004-T005** - Create the foundation (commonFunctions)
+3. **Convert 2-3 simple scripts** - Validate the pattern works (T009, T010, T008)
+4. **Test thoroughly** - nixos-rebuild dry-build, deploy, manual test
+5. **Continue incrementally** - Convert remaining scripts following templates
+6. **Run Phase 1 validations** - Use the scripts created earlier
+7. **Complete user story validation** - Phases 3-10
+
+---
+
+## Resources
+
+- **Validation scripts**: `/etc/nixos/tests/validate-*.sh`
+- **Task list**: `/etc/nixos/specs/014-create-a-new/tasks.md`
+- **Research**: `/etc/nixos/specs/014-create-a-new/research.md`
+- **Data model**: `/etc/nixos/specs/014-create-a-new/data-model.md`
+- **Contracts**: `/etc/nixos/specs/014-create-a-new/contracts/`
+- **Nix manual**: https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-writeShellScript
+
+---
+
+**Document Version**: 1.0
+**Last Updated**: 2025-10-19
+**Status**: Ready for Phase 2 implementation

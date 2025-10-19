@@ -109,6 +109,7 @@
     nerd-fonts.fira-code
     nerd-fonts.jetbrains-mono
     nerd-fonts.meslo-lg
+    font-awesome  # For i3 workspace icons
   ];
 
   # Essential base packages

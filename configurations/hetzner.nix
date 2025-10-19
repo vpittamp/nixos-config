@@ -32,6 +32,7 @@
     # NEW: i3wm desktop environment
     ../modules/desktop/i3wm.nix
     ../modules/desktop/xrdp.nix
+    ../modules/desktop/i3-project-workspace.nix  # Feature 010: Project workspace management
 
     # Services
     ../modules/services/onepassword-automation.nix
@@ -61,6 +62,15 @@
   # Simple DHCP networking (works best with Hetzner)
   networking.useDHCP = true;
   
+  # i3 Window Manager (Feature 009)
+  services.i3wm.enable = true;
+
+  # XRDP for i3wm remote access
+  services.xrdp-i3.enable = true;
+
+  # i3 Project Workspace Management (Feature 010)
+  services.i3ProjectWorkspace.enable = true;
+
   # RustDesk service configuration
   services.rustdesk = {
     enable = true;

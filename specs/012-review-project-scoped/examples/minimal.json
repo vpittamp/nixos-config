@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "minimal",
+    "displayName": "Minimal Example",
+    "icon": "",
+    "directory": "/tmp/minimal"
+  },
+  "workspaces": {},
+  "workspaceOutputs": {},
+  "appClasses": []
+}

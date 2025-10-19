@@ -2,12 +2,71 @@
 
 with lib;
 
+let
+  # Yazi launcher with fzf directory selection
+  yazi-fzf = pkgs.writeShellScriptBin "yazi-fzf" ''
+    # Common directories to search (customize as needed)
+    SEARCH_DIRS=(
+      "$HOME"
+      "$HOME/projects"
+      "$HOME/Documents"
+      "/etc/nixos"
+    )
+
+    # Build list of directories (max depth 3)
+    DIRS=$(for dir in "''${SEARCH_DIRS[@]}"; do
+      if [[ -d "$dir" ]]; then
+        ${pkgs.fd}/bin/fd --type d --max-depth 3 . "$dir" 2>/dev/null
+      fi
+    done | sort -u)
+
+    # Use fzf to select directory
+    SELECTED=$(echo "$DIRS" | ${pkgs.fzf}/bin/fzf \
+      --prompt="Select directory for yazi: " \
+      --height=50% \
+      --preview='${pkgs.eza}/bin/eza -la --color=always --icons {}' \
+      --preview-window=right:50%)
+
+    # If a directory was selected, open it with yazi
+    if [[ -n "$SELECTED" ]]; then
+      ${pkgs.yazi}/bin/yazi "$SELECTED"
+    fi
+  '';
+in
 {
   options = {
     modules.tools.yazi.enable = mkEnableOption "yazi file manager configuration";
   };
 
   config = mkIf config.modules.tools.yazi.enable {
+    # Add yazi-fzf to packages
+    home.packages = [ yazi-fzf ];
+
+    # Create desktop entries for yazi
+    xdg.dataFile."applications/yazi.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Yazi
+      Comment=Blazing fast terminal file manager
+      Exec=ghostty -e yazi
+      Icon=folder
+      Terminal=false
+      Categories=System;FileTools;FileManager;
+      Keywords=file;manager;explorer;terminal;
+    '';
+
+    xdg.dataFile."applications/yazi-fzf.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Yazi (Select Directory)
+      Comment=Launch Yazi with fzf directory picker
+      Exec=ghostty --class=floating_fzf -e yazi-fzf
+      Icon=folder-open
+      Terminal=false
+      Categories=System;FileTools;FileManager;
+      Keywords=file;manager;explorer;terminal;fzf;search;
+    '';
+
     # Yazi file manager configuration
     programs.yazi = {
       enable = true;

@@ -205,6 +205,16 @@ nix flake lock --update-input nixpkgs
 
 ## ⚠️ Important Notes
 
+### Recent Updates (2025-10)
+
+- **Migrated from Polybar to i3bar + i3blocks** - Native i3 status bar (Feature 013)
+  - Replaced polybar with i3's native i3bar for workspace indicators
+  - Implemented i3blocks for status command with system information blocks
+  - Added project context indicator that updates via signal when switching projects
+  - System info blocks: CPU usage, memory usage, network status, date/time
+  - Configuration in `home-modules/desktop/i3blocks/` with shell scripts
+  - Benefits: Better i3 integration, simpler configuration, more reliable workspace sync
+
 ### Recent Updates (2025-09)
 
 - **Migrated M1 MacBook Pro from X11 to Wayland** - Following Asahi Linux recommendations
@@ -245,6 +255,133 @@ nix flake lock --update-input nixpkgs
 2. **Package conflicts**: Check for deprecated packages (e.g., mysql → mariadb)
 3. **Option deprecations**: Update to new option names (e.g., hardware.opengl → hardware.graphics)
 4. **Build failures**: Run with `--show-trace` for detailed errors
+
+## 🎯 Project Management Workflow
+
+### Overview
+
+The i3 window manager includes a project-scoped application workspace management system that allows you to:
+- Switch between project contexts (NixOS, Stacks, Personal)
+- Automatically show/hide project-specific applications
+- Maintain global applications accessible across all projects
+- Adapt workspace distribution across multiple monitors
+
+### Quick Reference Keybindings
+
+| Key | Action |
+|-----|--------|
+| `Win+P` | Open project switcher |
+| `Win+Shift+P` | Clear active project (global mode) |
+| `Win+C` | Launch VS Code in project context |
+| `Win+Return` | Launch Ghostty terminal with sesh session |
+| `Win+G` | Launch lazygit in project repository |
+| `Win+Y` | Launch yazi file manager in project directory |
+| `Win+Shift+M` | Manually trigger monitor detection/reassignment |
+
+### Project-Scoped vs Global Applications
+
+**Project-Scoped** (hidden when switching projects):
+- Ghostty terminal (with sesh sessions)
+- VS Code (opens project directory)
+- Yazi file manager
+- Lazygit
+
+**Global** (always visible):
+- Firefox browser
+- YouTube PWA
+- K9s
+- Google AI PWA
+
+### Shell Commands
+
+The following shell aliases are available for project management:
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `project-switch <name>` | `pswitch` | Switch to a project |
+| `project-clear` | `pclear` | Clear active project (global mode) |
+| `project-list` | `plist` | List all available projects |
+| `project-current` | `pcurrent` | Show current active project |
+| `project-create` | - | Create a new project |
+| `project-edit` | - | Edit a project configuration |
+| `project-delete` | - | Delete a project |
+
+### Common Workflows
+
+**Create a new project:**
+```bash
+project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
+```
+
+**Start working on a project:**
+```bash
+# Press Win+P to open rofi project switcher
+# Or from command line:
+project-switch nixos
+# Or use the short alias:
+pswitch nixos
+```
+
+**Check current project:**
+```bash
+project-current
+# Or use short alias:
+pcurrent
+```
+
+**List all projects:**
+```bash
+project-list
+# Or use short alias:
+plist
+```
+
+**Return to global mode:**
+```bash
+# Press Win+Shift+P
+# Or from command line:
+project-clear
+# Or use short alias:
+pclear
+```
+
+### Multi-Monitor Support
+
+Workspaces automatically distribute based on monitor count:
+- **1 monitor**: All workspaces on primary
+- **2 monitors**: WS 1-2 on primary, WS 3-9 on secondary
+- **3+ monitors**: WS 1-2 on primary, WS 3-5 on secondary, WS 6-9 on tertiary
+
+After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspaces.
+
+### Troubleshooting
+
+**Applications not opening in project context:**
+1. Check active project: `i3-project-current`
+2. Verify project directory exists
+3. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
+
+**Windows from old project still visible:**
+1. Check i3bar shows correct project
+2. Verify project switch completed: `i3-project-current`
+3. Try switching again: `i3-project-switch <project-name>`
+
+**Edit project configuration:**
+```bash
+i3-project-edit nixos
+# Or manually:
+vi ~/.config/i3/projects/nixos.json
+```
+
+**Validate project configuration:**
+```bash
+i3-project-validate nixos
+```
+
+For more details, see the quickstart guide:
+```bash
+cat /etc/nixos/specs/012-review-project-scoped/quickstart.md
+```
 
 ## 📚 Additional Documentation
 

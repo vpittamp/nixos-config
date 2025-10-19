@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-active-project.json",
+  "title": "Active Project Metadata",
+  "description": "Runtime state file indicating which project is currently active",
+  "oneOf": [
+    {
+      "type": "object",
+      "description": "Active project state",
+      "required": ["name", "display_name", "icon"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project identifier (must match existing project config)",
+          "pattern": "^[a-zA-Z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 50,
+          "examples": ["nixos", "stacks", "personal"]
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable name for status bar display",
+          "minLength": 1,
+          "maxLength": 100,
+          "examples": ["NixOS Configuration", "Stacks Development"]
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon for status bar display",
+          "maxLength": 10,
+          "examples": ["", "", "🚀"]
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "description": "No active project (cleared state)",
+      "maxProperties": 0
+    }
+  ],
+  "examples": [
+    {
+      "name": "nixos",
+      "display_name": "NixOS Configuration",
+      "icon": ""
+    },
+    {}
+  ]
+}

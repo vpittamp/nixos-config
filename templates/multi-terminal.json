@@ -1,0 +1,26 @@
+{
+  "name": "${PROJECT_NAME:-multi-terminal}",
+  "description": "Multiple terminals with different working directories",
+  "workspaces": [
+    {
+      "number": "${WORKSPACE_NUM:-8}",
+      "apps": [
+        {
+          "command": "ghostty",
+          "args": ["--working-directory=${DIR1:-$HOME}"],
+          "delay": 0
+        },
+        {
+          "command": "ghostty",
+          "args": ["--working-directory=${DIR2:-$HOME}"],
+          "delay": 300
+        },
+        {
+          "command": "ghostty",
+          "args": ["--working-directory=${DIR3:-$HOME}"],
+          "delay": 600
+        }
+      ]
+    }
+  ]
+}
