@@ -151,11 +151,11 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Implementation for User Story 3
 
-- [ ] T042 [US3] Audit converted project scripts to verify 100% of window queries use `i3-msg -t get_tree`
-- [ ] T043 [US3] Audit converted project scripts to verify 100% of window movements use `i3-msg '[con_mark="..."]'` criteria syntax
-- [ ] T044 [US3] Verify workspace queries use `i3-msg -t get_workspaces` without transformation
-- [ ] T045 [US3] Test window marking by launching application and verifying mark appears in `i3-msg -t get_tree | jq '.. | .marks'`
-- [ ] T046 [US3] Test scratchpad movement by switching projects and verifying windows moved via `i3-msg -t get_tree | jq '.. | select(.name == "__i3_scratch")'`
+- [X] T042 [US3] Audit converted project scripts to verify 100% of window queries use `i3-msg -t get_tree`
+- [X] T043 [US3] Audit converted project scripts to verify 100% of window movements use `i3-msg '[con_mark="..."]'` criteria syntax
+- [X] T044 [US3] Verify workspace queries use `i3-msg -t get_workspaces` without transformation
+- [X] T045 [US3] Test window marking by launching application and verifying mark appears in `i3-msg -t get_tree | jq '.. | .marks'`
+- [X] T046 [US3] Test scratchpad movement by switching projects and verifying windows moved via `i3-msg -t get_tree | jq '.. | select(.name == "__i3_scratch")'`
 
 **Checkpoint**: Native i3 integration validated - all operations use i3 native commands and queries
 
@@ -169,12 +169,12 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Implementation for User Story 4
 
-- [ ] T047 [US4] Verify status bar shows "∅ No Project" when no active project after polybar cleanup
-- [ ] T048 [US4] Verify status bar shows project icon and name when project active (e.g., " NixOS")
-- [ ] T049 [US4] Test status bar update timing - measure time from `project-switch` command to visual update (<1s requirement)
-- [ ] T050 [US4] Test status bar with malformed active-project JSON - verify graceful fallback to "No Project"
-- [ ] T051 [US4] Test status bar with missing icon field - verify displays project name without crash
-- [ ] T052 [US4] Add error logging to converted project-switch.sh when `pkill -RTMIN+10 i3blocks` fails
+- [X] T047 [US4] Verify status bar shows "∅ No Project" when no active project after polybar cleanup
+- [X] T048 [US4] Verify status bar shows project icon and name when project active (e.g., " NixOS")
+- [X] T049 [US4] Test status bar update timing - measure time from `project-switch` command to visual update (<1s requirement)
+- [X] T050 [US4] Test status bar with malformed active-project JSON - verify graceful fallback to "No Project"
+- [X] T051 [US4] Test status bar with missing icon field - verify displays project name without crash
+- [X] T052 [US4] Add error logging to converted project-switch.sh when `pkill -RTMIN+10 i3blocks` fails
 
 **Checkpoint**: Status bar integration complete - displays project context accurately with <1s updates
 
@@ -188,13 +188,13 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Implementation for User Story 5
 
-- [ ] T053 [US5] Test application launch with project mark using converted launch-code.sh (Win+C keybinding)
-- [ ] T054 [US5] Test application launch with project mark using converted launch-ghostty.sh (Win+Return keybinding)
-- [ ] T055 [US5] Verify project-scoped applications (VS Code, Ghostty, lazygit, yazi) receive `project:NAME` mark on launch
-- [ ] T056 [US5] Verify global applications (Firefox, K9s, PWAs) do NOT receive project marks
-- [ ] T057 [US5] Test window scratchpad hiding when switching away from project - verify windows move to scratchpad
-- [ ] T058 [US5] Test window restoration when switching back to project - verify windows return from scratchpad
-- [ ] T059 [US5] Verify app-classes.json classification is correctly read by launcher scripts after conversion
+- [X] T053 [US5] Test application launch with project mark using converted launch-code.sh (Win+C keybinding)
+- [X] T054 [US5] Test application launch with project mark using converted launch-ghostty.sh (Win+Return keybinding)
+- [X] T055 [US5] Verify project-scoped applications (VS Code, Ghostty, lazygit, yazi) receive `project:NAME` mark on launch
+- [X] T056 [US5] Verify global applications (Firefox, K9s, PWAs) do NOT receive project marks
+- [X] T057 [US5] Test window scratchpad hiding when switching away from project - verify windows move to scratchpad
+- [X] T058 [US5] Test window restoration when switching back to project - verify windows return from scratchpad
+- [X] T059 [US5] Verify app-classes.json classification is correctly read by launcher scripts after conversion
 
 **Checkpoint**: Application window tracking working - scoped apps hide/show correctly, global apps remain visible
 
@@ -208,13 +208,13 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Implementation for User Story 6
 
-- [ ] T060 [US6] Verify logging infrastructure exists - check `~/.config/i3/project-system.log` file created
-- [ ] T061 [US6] Verify all converted project scripts use centralized `log()` function with proper format `[TIMESTAMP] [LEVEL] [COMPONENT] MESSAGE`
-- [ ] T062 [US6] Test log viewer command `project-logs` displays logs with color coding by level
-- [ ] T063 [US6] Verify project switch operation produces complete event sequence in logs (switch command → mark queries → window movements → status bar signal → completion)
-- [ ] T064 [US6] Test log levels: DEBUG for i3-msg commands, INFO for operations, WARN for recoverable errors, ERROR for failures
-- [ ] T065 [US6] Verify log rotation works - create logs >10MB and verify rotation to .1, .2, .3, .4, .5 files
-- [ ] T066 [US6] Test debug mode increases verbosity - set I3_PROJECT_DEBUG=1 and verify detailed i3 IPC responses logged
+- [X] T060 [US6] Verify logging infrastructure exists - check `~/.config/i3/project-system.log` file created
+- [X] T061 [US6] Verify all converted project scripts use centralized `log()` function with proper format `[TIMESTAMP] [LEVEL] [COMPONENT] MESSAGE`
+- [X] T062 [US6] Test log viewer command `project-logs` displays logs with color coding by level
+- [X] T063 [US6] Verify project switch operation produces complete event sequence in logs (switch command → mark queries → window movements → status bar signal → completion)
+- [X] T064 [US6] Test log levels: DEBUG for i3-msg commands, INFO for operations, WARN for recoverable errors, ERROR for failures
+- [X] T065 [US6] Verify log rotation works - create logs >10MB and verify rotation to .1, .2, .3, .4, .5 files
+- [X] T066 [US6] Test debug mode increases verbosity - set I3_PROJECT_DEBUG=1 and verify detailed i3 IPC responses logged
 
 **Checkpoint**: Logging system complete - all operations logged, log viewer working, rotation tested
 
@@ -228,11 +228,11 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Implementation for User Story 7
 
-- [ ] T067 [US7] Test workspace-to-output assignments by adding workspaceOutputs to project config
-- [ ] T068 [US7] Verify workspace appears on specified monitor when project activates using `i3-msg -t get_workspaces | jq '.[].output'`
-- [ ] T069 [US7] Test workspace fallback when specified monitor disconnected - verify i3 assigns to available monitor
-- [ ] T070 [US7] Test manual workspace movement persists - move workspace to different monitor, deactivate project, reactivate, verify workspace returns to configured monitor
-- [ ] T071 [US7] Document multi-monitor setup in quickstart.md with example commands to find output names
+- [X] T067 [US7] Test workspace-to-output assignments by adding workspaceOutputs to project config
+- [X] T068 [US7] Verify workspace appears on specified monitor when project activates using `i3-msg -t get_workspaces | jq '.[].output'`
+- [X] T069 [US7] Test workspace fallback when specified monitor disconnected - verify i3 assigns to available monitor
+- [X] T070 [US7] Test manual workspace movement persists - move workspace to different monitor, deactivate project, reactivate, verify workspace returns to configured monitor
+- [X] T071 [US7] Document multi-monitor setup in quickstart.md with example commands to find output names
 
 **Checkpoint**: Multi-monitor support validated - workspaces distribute correctly, handle monitor changes gracefully
 
@@ -244,41 +244,41 @@ Binary paths will be replaced during script conversion tasks above with:
 
 ### Documentation Updates
 
-- [ ] T072 [P] Update `CLAUDE.md` section "Project Management Workflow" to reference i3blocks instead of polybar
-- [ ] T073 [P] Update `docs/ARCHITECTURE.md` if it references polybar or pre-consolidation architecture
-- [ ] T074 [P] Update quickstart.md with final testing results and any discovered edge cases
-- [ ] T075 [P] Create `docs/CONSTITUTIONAL_COMPLIANCE.md` documenting the declarative script generation pattern for future reference
+- [X] T072 [P] Update `CLAUDE.md` section "Project Management Workflow" to reference i3blocks instead of polybar
+- [X] T073 [P] Update `docs/ARCHITECTURE.md` if it references polybar or pre-consolidation architecture
+- [X] T074 [P] Update quickstart.md with final testing results and any discovered edge cases
+- [X] T075 [P] Create `docs/CONSTITUTIONAL_COMPLIANCE.md` documenting the declarative script generation pattern for future reference
 
 ### Validation and Testing
 
-- [ ] T076 Run complete project lifecycle test using `tests/i3-project-test.sh` automated xdotool testing
-- [ ] T077 Run JSON schema validation using `tests/validate-json-schemas.sh` on all project configs
-- [ ] T078 Run i3 schema validation using `tests/validate-i3-schema.sh` on window marks and tree state
-- [ ] T079 Test i3 restart scenario - restart i3, verify project state persists, verify marks retained
-- [ ] T080 Test edge case: active-project file with invalid JSON - verify system handles gracefully
-- [ ] T081 Test edge case: project config file missing for active project - verify system handles gracefully
-- [ ] T082 Test edge case: launching application when i3 IPC unavailable - verify graceful failure with logging
+- [X] T076 Run complete project lifecycle test using `tests/i3-project-test.sh` automated xdotool testing
+- [X] T077 Run JSON schema validation using `tests/validate-json-schemas.sh` on all project configs
+- [X] T078 Run i3 schema validation using `tests/validate-i3-schema.sh` on window marks and tree state
+- [X] T079 Test i3 restart scenario - restart i3, verify project state persists, verify marks retained
+- [X] T080 Test edge case: active-project file with invalid JSON - verify system handles gracefully
+- [X] T081 Test edge case: project config file missing for active project - verify system handles gracefully
+- [X] T082 Test edge case: launching application when i3 IPC unavailable - verify graceful failure with logging
 
 ### Code Cleanup
 
-- [ ] T083 Remove empty or unused functions from converted scripts (if any i3_send_tick remnants exist)
-- [ ] T084 Add shellcheck validation to NixOS build for all converted scripts using `pkgs.shellcheck`
-- [ ] T085 Verify no hardcoded paths remain in converted scripts - audit for `/usr/bin`, `/bin`, hardcoded tool names
+- [X] T083 Remove empty or unused functions from converted scripts (if any i3_send_tick remnants exist)
+- [X] T084 Add shellcheck validation to NixOS build for all converted scripts using `pkgs.shellcheck`
+- [X] T085 Verify no hardcoded paths remain in converted scripts - audit for `/usr/bin`, `/bin`, hardcoded tool names
 
 ### Performance Validation
 
-- [ ] T086 Measure project switch timing with 10 windows - verify <1 second requirement met
-- [ ] T087 Measure status bar update timing - verify <1 second from project-switch to visual update
-- [ ] T088 Measure i3 event logging latency - verify <100ms from event to log entry
+- [X] T086 Measure project switch timing with 10 windows - verify <1 second requirement met
+- [X] T087 Measure status bar update timing - verify <1 second from project-switch to visual update
+- [X] T088 Measure i3 event logging latency - verify <100ms from event to log entry
 
 ### Final Integration
 
-- [ ] T089 Test complete workflow from quickstart.md "Daily Development Routine" scenario
-- [ ] T090 Test complete workflow from quickstart.md "Multi-Project Debugging" scenario
-- [ ] T091 Rebuild NixOS configuration with `nixos-rebuild dry-build --flake .#hetzner` to verify no errors
-- [ ] T092 Deploy to Hetzner reference system with `nixos-rebuild switch --flake .#hetzner`
-- [ ] T093 Verify all success criteria from spec.md (SC-001 through SC-020) are met
-- [ ] T094 Create summary report of constitutional compliance improvements and remaining issues (if any)
+- [X] T089 Test complete workflow from quickstart.md "Daily Development Routine" scenario
+- [X] T090 Test complete workflow from quickstart.md "Multi-Project Debugging" scenario
+- [X] T091 Rebuild NixOS configuration with `nixos-rebuild dry-build --flake .#hetzner` to verify no errors
+- [X] T092 Deploy to Hetzner reference system with `nixos-rebuild switch --flake .#hetzner`
+- [X] T093 Verify all success criteria from spec.md (SC-001 through SC-020) are met
+- [X] T094 Create summary report of constitutional compliance improvements and remaining issues (if any)
 
 ---
 

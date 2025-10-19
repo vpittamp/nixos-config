@@ -362,7 +362,7 @@ After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspa
 3. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
 
 **Windows from old project still visible:**
-1. Check polybar shows correct project
+1. Check i3bar shows correct project
 2. Verify project switch completed: `i3-project-current`
 3. Try switching again: `i3-project-switch <project-name>`
 

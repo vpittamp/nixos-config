@@ -504,8 +504,8 @@ in
 
             local project_files=()
             local file
-            while IFS= read -r -d '' file; do
-                project_files=("''${project_files[@]}" "$file")
+            while IFS= read -r -d "" file; do
+                project_files=("$${project_files[@]}" "$file")
             done < <(${pkgs.findutils}/bin/find "$PROJECT_DIR" -maxdepth 1 -name "*.json" -print0 2>/dev/null | ${pkgs.coreutils}/bin/sort -z)
 
             if [ ''${#project_files[@]} -eq 0 ]; then
