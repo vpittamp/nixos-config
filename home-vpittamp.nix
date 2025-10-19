@@ -9,7 +9,8 @@
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
     ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management (OLD STATIC SYSTEM)
     ./home-modules/desktop/i3-project-manager.nix  # Feature 012: Dynamic runtime project management (NEW)
-    ./home-modules/desktop/polybar.nix  # Polybar statusbar with project indicator
+    # ./home-modules/desktop/polybar.nix  # REMOVED: Migrated to i3bar (Feature 013)
+    ./home-modules/desktop/i3blocks  # Feature 013: i3blocks status command for i3bar
   ];
 
   home.username = "vpittamp";

@@ -179,18 +179,33 @@
     bindsym $mod+Shift+r restart
     bindsym $mod+Shift+e exec "i3-msg exit"
 
-    # No i3bar - using polybar instead (configured in polybar.nix)
-    # Polybar is started via services.polybar.enable
+    # i3bar configuration (Feature 013: Migrated from polybar)
+    # Native i3 status bar with i3blocks status command
+    bar {
+      position bottom
+      status_command ${pkgs.i3blocks}/bin/i3blocks -c ~/.config/i3blocks/config
+      workspace_buttons yes
+      binding_mode_indicator yes
+      font pango:FiraCode Nerd Font 10
+
+      colors {
+        background #1e1e2e
+        statusline #cdd6f4
+        separator  #6c7086
+
+        # Workspace button colors (border, background, text)
+        focused_workspace  #b4befe #45475a #cdd6f4
+        active_workspace   #89b4fa #313244 #cdd6f4
+        inactive_workspace #313244 #1e1e2e #bac2de
+        urgent_workspace   #f38ba8 #f38ba8 #1e1e2e
+      }
+    }
 
     # Autostart - import environment variables for systemd services
     exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
 
     # Assign workspaces to monitors on startup and monitor change
     exec_always --no-startup-id ~/.config/i3/scripts/assign-workspace-monitor.sh
-
-    # Launch polybar on all monitors (workaround for systemd service issues)
-    # Delay slightly to allow workspace assignment to complete first
-    exec_always --no-startup-id ${pkgs.procps}/bin/pkill polybar; sleep 2; for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do MONITOR=$m ${pkgs.polybar}/bin/polybar --reload main & done
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
