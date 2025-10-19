@@ -68,6 +68,8 @@ main() {
 
     # Update i3blocks project indicator (Feature 013)
     log_debug "Signaling i3blocks to update project indicator"
+    # Small delay to ensure file write is complete before signal
+    sleep 0.1
     pkill -RTMIN+10 i3blocks 2>/dev/null || true
 }
 
