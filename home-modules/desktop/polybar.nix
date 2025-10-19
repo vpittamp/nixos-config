@@ -269,18 +269,25 @@
       #!${pkgs.bash}/bin/bash
       # Display current project for polybar
 
-      PROJECT=$(~/.config/i3/scripts/project-current.sh)
+      PROJECT=$(~/.config/i3/scripts/project-current.sh --format json 2>/dev/null)
 
-      if [ -n "$PROJECT" ] && [ "$PROJECT" != "{}" ]; then
-        PROJECT_NAME=$(echo "$PROJECT" | ${pkgs.jq}/bin/jq -r '.name // empty')
-        PROJECT_ICON=$(echo "$PROJECT" | ${pkgs.jq}/bin/jq -r '.icon // ""')
+      if [ -n "$PROJECT" ]; then
+        # Check if project is active
+        IS_ACTIVE=$(echo "$PROJECT" | ${pkgs.jq}/bin/jq -r '.active // false' 2>/dev/null)
 
-        if [ -n "$PROJECT_NAME" ]; then
-          # Display with icon (if available)
-          if [ -n "$PROJECT_ICON" ]; then
-            echo "$PROJECT_ICON $PROJECT_NAME"
+        if [ "$IS_ACTIVE" = "true" ]; then
+          PROJECT_NAME=$(echo "$PROJECT" | ${pkgs.jq}/bin/jq -r '.name // empty' 2>/dev/null)
+          PROJECT_ICON=$(echo "$PROJECT" | ${pkgs.jq}/bin/jq -r '.icon // ""' 2>/dev/null)
+
+          if [ -n "$PROJECT_NAME" ] && [ "$PROJECT_NAME" != "null" ]; then
+            # Display with icon (if available)
+            if [ -n "$PROJECT_ICON" ] && [ "$PROJECT_ICON" != "null" ]; then
+              echo "$PROJECT_ICON $PROJECT_NAME"
+            else
+              echo "$PROJECT_NAME"
+            fi
           else
-            echo "$PROJECT_NAME"
+            echo "No Project"
           fi
         else
           echo "No Project"
