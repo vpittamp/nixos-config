@@ -12,7 +12,8 @@ if [ -f "$PROJECT_FILE" ]; then
 
   if [ -n "$NAME" ] && [ "$NAME" != "null" ]; then
     # Active project - combine icon and name
-    if [ -n "$ICON" ] && [ "$ICON" != "null" ]; then
+    # Check if icon is not empty and not null (handle emoji properly)
+    if [ ! -z "$ICON" ] && [ "$ICON" != "null" ] && [ "$ICON" != '""' ]; then
       TEXT="$ICON  $NAME"
     else
       TEXT=" $NAME"

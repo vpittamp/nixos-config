@@ -23,7 +23,7 @@ in
     separator_block_width=15
     markup=pango
 
-    # US2: System information blocks
+    # Left side: System information blocks
     [cpu]
     command=${cpuScript}
     interval=5
@@ -32,17 +32,17 @@ in
     command=${memoryScript}
     interval=5
 
-    [network]
-    command=${networkScript}
-    interval=10
-
-    # US3: Project indicator (signal-based)
+    # Center: Project indicator (prominent, signal-based)
     [project]
     command=${projectScript}
     interval=once
     signal=10
 
-    # DateTime
+    # Right side: Network and DateTime
+    [network]
+    command=${networkScript}
+    interval=10
+
     [datetime]
     command=${datetimeScript}
     interval=60
