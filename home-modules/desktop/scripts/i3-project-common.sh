@@ -22,6 +22,21 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 #######################################
+# Initialization
+#######################################
+
+# Ensure active-project file exists and is writable
+# (It may be a read-only symlink from home-manager on first run)
+if [ -L "$ACTIVE_PROJECT_FILE" ]; then
+    # It's a symlink to nix store - remove it and create real file
+    rm -f "$ACTIVE_PROJECT_FILE"
+    touch "$ACTIVE_PROJECT_FILE"
+elif [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+    # Doesn't exist - create it
+    touch "$ACTIVE_PROJECT_FILE" 2>/dev/null || true
+fi
+
+#######################################
 # Logging Functions
 #######################################
 

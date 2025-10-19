@@ -109,8 +109,8 @@ in
     home.file.".config/i3/launchers/.keep".text = "# Application launcher scripts";
     home.file.".config/i3/scripts/.keep".text = "# Project management scripts";
 
-    # Create empty active-project file
-    home.file.".config/i3/active-project".text = "";
+    # NOTE: active-project file is NOT managed by home-manager because it needs to be writable
+    # It will be created on first use by the project management scripts
 
     # Generate default app-classes.json
     home.file.".config/i3/app-classes.json".text = builtins.toJSON {

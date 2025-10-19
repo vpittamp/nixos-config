@@ -114,6 +114,11 @@ in
 
   home.sessionVariables = sessionConfig;
 
+  # Add ~/.local/bin to PATH for user scripts and CLI tools
+  home.sessionPath = [
+    "$HOME/.local/bin"
+  ];
+
   # Firefox PWAs configuration - DISABLED (causing boot hang)
   # programs.firefox-pwas = {
   #   enable = true;
