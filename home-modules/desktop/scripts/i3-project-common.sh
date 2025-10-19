@@ -236,8 +236,27 @@ get_active_project() {
         return 1
     fi
 
+    local content
+    content=$(cat "$ACTIVE_PROJECT_FILE")
+
+    if [ -z "$content" ]; then
+        return 1
+    fi
+
+    # Try to parse as JSON (Feature 013: new format)
+    if command -v jq >/dev/null 2>&1; then
+        local project_name
+        project_name=$(echo "$content" | jq -r '.name // empty' 2>/dev/null)
+
+        if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            echo "$project_name"
+            return 0
+        fi
+    fi
+
+    # Fallback: treat as plain text (old format for backward compatibility)
     local project_name
-    project_name=$(cat "$ACTIVE_PROJECT_FILE" | tr -d '[:space:]')
+    project_name=$(echo "$content" | tr -d '[:space:]')
 
     if [ -z "$project_name" ]; then
         return 1

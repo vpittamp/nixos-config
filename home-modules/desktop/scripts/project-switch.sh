@@ -68,8 +68,14 @@ main() {
     local old_project
     old_project=$(get_active_project 2>/dev/null) || old_project=""
 
-    # Update active project file
-    echo "$project_name" > "$ACTIVE_PROJECT_FILE"
+    # Update active project file (JSON format for i3blocks project indicator)
+    cat > "$ACTIVE_PROJECT_FILE" <<EOF
+{
+  "name": "$project_name",
+  "display_name": "$display_name",
+  "icon": "$icon"
+}
+EOF
 
     log_info "Active project set to: $project_name"
     echo -e "${GREEN}✓${NC} Switched to project: $icon $display_name"
@@ -202,6 +208,10 @@ main() {
     # Phase 6: Send i3 tick event for polybar/UI updates
     log_debug "Sending tick event: project:$project_name"
     i3_send_tick "project:$project_name"
+
+    # Update i3blocks project indicator (Feature 013)
+    log_debug "Signaling i3blocks to update project indicator"
+    pkill -RTMIN+10 i3blocks 2>/dev/null || true
 }
 
 main "$@"

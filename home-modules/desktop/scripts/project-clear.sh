@@ -39,8 +39,8 @@ main() {
 
     log_info "Clearing active project: $old_project"
 
-    # Clear active project file
-    echo "" > "$ACTIVE_PROJECT_FILE"
+    # Clear active project file (write empty JSON for i3blocks compatibility)
+    echo "{}" > "$ACTIVE_PROJECT_FILE"
 
     echo -e "${GREEN}✓${NC} Cleared active project (was: $old_project)"
     echo "  Returned to global mode"
@@ -65,6 +65,10 @@ main() {
     # Phase 6: Send i3 tick event for polybar/UI updates
     log_debug "Sending tick event: project:none"
     i3_send_tick "project:none"
+
+    # Update i3blocks project indicator (Feature 013)
+    log_debug "Signaling i3blocks to update project indicator"
+    pkill -RTMIN+10 i3blocks 2>/dev/null || true
 }
 
 main "$@"
