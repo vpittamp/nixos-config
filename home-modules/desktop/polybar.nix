@@ -114,25 +114,29 @@ in
         label-mode-background = "#f38ba8";
 
         # Focused workspace
-        label-focused = "%name%";
-        label-focused-background = "#45475a";
-        label-focused-underline = "#b4befe";
-        label-focused-padding = 2;
+        "label-focused" = "%name%";
+        "label-focused-foreground" = "#cdd6f4";  # Light text
+        "label-focused-background" = "#45475a";
+        "label-focused-underline" = "#b4befe";
+        "label-focused-padding" = 2;
 
         # Unfocused workspace
-        label-unfocused = "%name%";
-        label-unfocused-padding = 2;
+        "label-unfocused" = "%name%";
+        "label-unfocused-foreground" = "#bac2de";  # Slightly dimmed text
+        "label-unfocused-padding" = 2;
 
         # Visible workspace (on other monitor)
-        label-visible = "%name%";
-        label-visible-background = "#313244";
-        label-visible-underline = "#45475a";
-        label-visible-padding = 2;
+        "label-visible" = "%name%";
+        "label-visible-foreground" = "#cdd6f4";  # Light text
+        "label-visible-background" = "#313244";
+        "label-visible-underline" = "#45475a";
+        "label-visible-padding" = 2;
 
         # Urgent workspace
-        label-urgent = "%name%";
-        label-urgent-background = "#f38ba8";
-        label-urgent-padding = 2;
+        "label-urgent" = "%name%";
+        "label-urgent-foreground" = "#1e1e2e";  # Dark text on bright background
+        "label-urgent-background" = "#f38ba8";
+        "label-urgent-padding" = 2;
       };
 
       # Date Module
@@ -259,6 +263,16 @@ in
         margin-bottom = 0;
       };
     };
+
+    # Workaround: Add i3 module foreground colors via extraConfig
+    # These don't seem to work when defined in the module config above
+    extraConfig = ''
+      [module/i3]
+      label-focused-foreground = #cdd6f4
+      label-unfocused-foreground = #bac2de
+      label-visible-foreground = #cdd6f4
+      label-urgent-foreground = #1e1e2e
+    '';
   };
 
   # Create polybar scripts directory and project display script
