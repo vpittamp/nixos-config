@@ -8,6 +8,7 @@
     ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
     ./home-modules/desktop/i3-projects.nix  # Feature 010: Project workspace management
+    ./home-modules/desktop/polybar.nix  # Polybar statusbar with project indicator
   ];
 
   home.username = "vpittamp";
@@ -35,6 +36,9 @@
                 wmClass = "com.mitchellh.ghostty";
                 useSesh = true;
                 seshSession = "nixos";  # Corresponds to sesh session in sesh.nix
+                # T010: Add project-scoped classification
+                projectScoped = true;  # Project-specific terminal
+                monitorPriority = 1;   # High priority - primary monitor
               }
             ];
           }
@@ -49,6 +53,9 @@
                 args = ["/etc/nixos"];
                 wmClass = "Code";
                 launchDelay = 500;  # Give VS Code time to start
+                # T010: Add project-scoped classification
+                projectScoped = true;  # Project-specific IDE
+                monitorPriority = 1;   # High priority - primary monitor
               }
             ];
           }
@@ -72,6 +79,9 @@
                 wmClass = "com.mitchellh.ghostty";
                 useSesh = true;
                 seshSession = "stacks";  # Corresponds to sesh session in sesh.nix
+                # T010: Add project-scoped classification
+                projectScoped = true;  # Project-specific terminal
+                monitorPriority = 1;   # High priority - primary monitor
               }
             ];
           }
@@ -86,6 +96,9 @@
                 args = ["/home/vpittamp/stacks"];
                 wmClass = "Code";
                 launchDelay = 500;  # Give VS Code time to start
+                # T010: Add project-scoped classification
+                projectScoped = true;  # Project-specific IDE
+                monitorPriority = 1;   # High priority - primary monitor
               }
             ];
           }

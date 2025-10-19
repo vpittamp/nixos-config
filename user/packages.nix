@@ -42,6 +42,8 @@ let
     wget
     gum
     tailscale # VPN CLI tool
+    chafa # Terminal image viewer for fzf previews
+    glib # For gio command (desktop file launcher and file operations)
   ];
 
   # AI and LLM tools
@@ -103,6 +105,7 @@ let
     xfce.thunar        # Lightweight GTK file manager (popular for i3)
     xfce.thunar-volman # Thunar volume manager
     xfce.thunar-archive-plugin # Archive support for Thunar
+    arandr             # GUI for xrandr (display configuration)
   ];
 
   # Git tools (from nixpkgs, no custom builds)

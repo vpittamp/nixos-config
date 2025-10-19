@@ -40,6 +40,9 @@ in
     ../terminal/ghostty.nix    # Modern terminal with native tabs/splits (default)
     ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
 
+    # Desktop configurations
+    ../desktop/dunst.nix       # Notification daemon for i3
+
     # Editor configurations
     ../editors/neovim.nix
 

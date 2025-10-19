@@ -26,6 +26,10 @@
       # Mouse
       mouse-hide-while-typing = true;
 
+      # Scroll sensitivity - reduce for more precise scrolling
+      # Default multiplier is 1.0, reduce to 0.3 for finer control
+      mouse-scroll-multiplier = 0.3;
+
       # Shell integration (Ghostty's killer feature)
       shell-integration = "detect";
 

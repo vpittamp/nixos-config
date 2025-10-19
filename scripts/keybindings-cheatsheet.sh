@@ -119,6 +119,46 @@ BINDINGS
 echo "" >> "$TMPFILE"
 
 # ============================================================================
+# FZF LAUNCHER (Mod4+Shift+d)
+# ============================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+echo "FZF LAUNCHER (Mod4+Shift+d)" >> "$TMPFILE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+
+cat >> "$TMPFILE" << 'LAUNCHER'
+Enter                     Execute selected command normally
+Ctrl+Space                Execute exactly what you typed
+Ctrl+B                    Run command in BACKGROUND with notification
+Tab                       Replace query with selected item
+
+Background Commands:
+  bglast                  View last background command output
+  bglog                   View all background command history
+LAUNCHER
+
+echo "" >> "$TMPFILE"
+
+# ============================================================================
+# FZF SEND TO WINDOW (Mod4+Ctrl+d)
+# ============================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+echo "FZF SEND TO WINDOW (Mod4+Ctrl+d)" >> "$TMPFILE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+
+cat >> "$TMPFILE" << 'SENDWINDOW'
+Sends command to terminal in workspace 4
+
+Enter                     Send selected command to workspace 4
+Ctrl+Space                Send exactly what you typed
+Tab                       Replace query with selected item
+
+After selection, the command is typed and executed in the
+target window automatically.
+SENDWINDOW
+
+echo "" >> "$TMPFILE"
+
+# ============================================================================
 # CLIPCAT (CLIPBOARD MANAGER)
 # ============================================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"

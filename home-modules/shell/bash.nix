@@ -167,6 +167,10 @@
       # Clipboard management
       clip = "/etc/nixos/scripts/clipcat-fzf.sh";
       clips = "/etc/nixos/scripts/clipcat-fzf.sh";
+
+      # Background command management
+      bglast = "/etc/nixos/scripts/view-last-bg-command.sh";  # View last background command output
+      bglog = "less ~/.cache/bg-commands.log";  # View all background command history
       
       # Kubernetes
       k = "kubectl";
@@ -206,6 +210,16 @@
       pbcopy = "pbcopy";
       pbpaste = "pbpaste";
 
+      # Nix Helper (nh) - rebuilds with eval-cache disabled to avoid stale cache issues
+      nh-hetzner = "nh os switch --hostname hetzner -- --option eval-cache false";
+      nh-m1 = "nh os switch --hostname m1 --impure -- --option eval-cache false";
+      nh-wsl = "nh os switch --hostname wsl -- --option eval-cache false";
+
+      # Force full reevaluation (disables eval-cache + refreshes downloads)
+      nh-hetzner-fresh = "nh os switch --hostname hetzner --refresh -- --option eval-cache false";
+      nh-m1-fresh = "nh os switch --hostname m1 --impure --refresh -- --option eval-cache false";
+      nh-wsl-fresh = "nh os switch --hostname wsl --refresh -- --option eval-cache false";
+
       # Plasma config export with analysis
       plasma-export = "/etc/nixos/scripts/plasma-rc2nix.sh";
       plasma-diff = "/etc/nixos/scripts/plasma-diff.sh";
@@ -222,9 +236,10 @@
 
       # FZF widget options - must be set here due to quoting issues in sessionVariables
       # These override the defaults for Ctrl+P, Alt+C, and Ctrl+R
-      export FZF_CTRL_T_OPTS="--tmux=center,80%,70% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
-      export FZF_ALT_C_OPTS="--tmux=center,80%,70% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
-      export FZF_CTRL_R_OPTS="--tmux=center,80%,70% --scheme=history --highlight-line"
+      # Using centered popup format (90%,80%) matching clipboard history style
+      export FZF_CTRL_T_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
+      export FZF_ALT_C_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
+      export FZF_CTRL_R_OPTS="--tmux=center,90%,80% --scheme=history --highlight-line"
       
       # Terminal configuration moved to TERM settings below
       
@@ -393,6 +408,46 @@
         rm -f -- "$tmp"
       }
 
+      # FZF file search with directory argument support
+      # Usage: fzf-search [directory]
+      # Default: searches $HOME and /etc/nixos
+      function fzf-search() {
+        local search_dirs=()
+
+        if [ $# -eq 0 ]; then
+          # No arguments - search default locations
+          search_dirs=("$HOME" "/etc/nixos")
+        else
+          # Use provided directories
+          search_dirs=("$@")
+        fi
+
+        # Build fd command with multiple search paths
+        local fd_results
+        fd_results=$(${pkgs.fd}/bin/fd --type f --hidden --exclude .git "''${search_dirs[@]}")
+
+        # Pass to fzf with preview
+        echo "$fd_results" | ${pkgs.fzf}/bin/fzf \
+          --tmux=center,90%,80% \
+          --scheme=path \
+          --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' \
+          --preview-window=right:60%:wrap
+      }
+
+      # Override the default fzf-file-widget to use our custom search
+      # This makes Ctrl+P use our default directories
+      if command -v fzf &> /dev/null; then
+        fzf-file-widget() {
+          local selected
+          selected=$(fzf-search)
+          if [ -n "$selected" ]; then
+            READLINE_LINE="''${READLINE_LINE:0:$READLINE_POINT}$selected''${READLINE_LINE:$READLINE_POINT}"
+            READLINE_POINT=$((READLINE_POINT + ''${#selected}))
+          fi
+        }
+        export -f fzf-file-widget
+      fi
+
       # Floating fzf terminal function (replacement for xterm -name floating xterm)
       # Usage: command | fzff (opens in floating window like rofi, outputs selection to stdout)
       function fzff() {
@@ -481,6 +536,79 @@
       if [[ -n "$TMUX" ]] && [[ -f ~/.tmux-popups.conf ]]; then
         tmux source-file ~/.tmux-popups.conf 2>/dev/null
       fi
+
+      # i3 helper: Launch application on specific workspace
+      # Usage: i3-launch-on <workspace_number> <command>
+      # Example: i3-launch-on 4 code
+      i3-launch-on() {
+        if [ $# -lt 2 ]; then
+          echo "Usage: i3-launch-on <workspace_number> <command> [args...]"
+          return 1
+        fi
+        local workspace="$1"
+        shift
+        # Switch to workspace twice to lock focus, preventing race condition
+        i3-msg "workspace number $workspace; exec $*; workspace number $workspace" >/dev/null
+      }
+
+      # Firefox history launcher with fzf and preview pane
+      # Usage: fh (searches and opens Firefox history)
+      fh() {
+        # Find Firefox profile directory
+        local ff_profile
+        ff_profile=$(find ~/.mozilla/firefox -maxdepth 1 -name "*default*" -type d | grep -v "Crash\|Pending\|Profile" | head -n 1)
+
+        if [[ -z "''$ff_profile" ]]; then
+          echo "Could not find a Firefox profile."
+          return 1
+        fi
+
+        local ff_db="''${ff_profile}/places.sqlite"
+
+        if [[ ! -f "''$ff_db" ]]; then
+          echo "Firefox history database not found."
+          return 1
+        fi
+
+        # Copy database to temp location to avoid "database is locked" errors
+        local tmp_db
+        tmp_db=$(mktemp)
+        trap 'rm -f "''$tmp_db"' EXIT
+        cp "''$ff_db" "''$tmp_db"
+
+        # Query history with metadata: title|url|visit_count|last_visit|frecency
+        # Order by frecency (Firefox's frequency + recency score) for most relevant results
+        local selected
+        selected=$(${pkgs.sqlite}/bin/sqlite3 -separator '|' "''$tmp_db" \
+          "SELECT p.title, p.url, p.visit_count,
+                  datetime(MAX(h.visit_date)/1000000, 'unixepoch', 'localtime') as last_visit,
+                  p.frecency
+           FROM moz_places AS p
+           JOIN moz_historyvisits AS h ON p.id = h.place_id
+           WHERE p.title IS NOT NULL AND length(p.title) > 0
+           GROUP BY p.id
+           ORDER BY p.frecency DESC
+           LIMIT 1000" | \
+          ${pkgs.fzf}/bin/fzf \
+            --delimiter='|' \
+            --with-nth=1 \
+            --preview='printf "\033[1;36m%s\033[0m\n%s\n\n\033[1;33m%s\033[0m\n%s\n\n\033[1;32m%s\033[0m\nVisited %s times\n\n\033[1;35m%s\033[0m\n%s\n\n\033[1;90m%s\033[0m\nRelevance: %s" "Title:" {1} "URL:" {2} "Stats:" {3} "Last Visit:" {4} "Frecency:" {5}' \
+            --preview-window='right:45%:wrap' \
+            --tmux=center,90%,70% \
+            --scheme=history \
+            --prompt='Firefox History (by relevance)  ')
+
+        # Extract URL and open in Firefox
+        if [[ -n "''$selected" ]]; then
+          local url
+          url=$(echo "''$selected" | cut -d'|' -f2)
+          firefox "''$url" &>/dev/null &
+
+          # Give Firefox a moment to open the URL, then focus it
+          sleep 0.5
+          i3-msg '[class="firefox"] focus' >/dev/null 2>&1
+        fi
+      }
     '';
   };
 }

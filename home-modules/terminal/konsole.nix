@@ -54,6 +54,7 @@
       HistorySize=10000
       ScrollBarPosition=2
       ScrollFullPage=false
+      MouseWheelScrollLines=1
 
       [Terminal Features]
       BellMode=0

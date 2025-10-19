@@ -113,6 +113,32 @@ let
           default = null;
           description = "Window size for floating windows";
         };
+
+        # T001: Enhanced schema for project-scoped applications
+        projectScoped = mkOption {
+          type = types.bool;
+          default = true;
+          description = ''
+            Whether this application is project-scoped (hidden when switching projects)
+            or global (always visible across all projects).
+
+            Project-scoped: VS Code, Ghostty, lazygit, yazi
+            Global: Firefox, YouTube PWA, K9s
+          '';
+        };
+
+        monitorPriority = mkOption {
+          type = types.ints.positive;
+          default = 2;
+          description = ''
+            Monitor assignment priority for multi-monitor setups.
+            Lower numbers = higher priority (assigned to primary monitors first).
+
+            Priority 1: Primary monitor (critical applications like terminal, IDE)
+            Priority 2: Secondary monitor (supporting tools)
+            Priority 3: Tertiary monitor (background applications)
+          '';
+        };
       };
     };
 
@@ -498,10 +524,240 @@ in
             floating = app.floating;
             position = app.position;
             size = app.size;
+            # T001: Include new project-scoped fields
+            projectScoped = app.projectScoped;
+            monitorPriority = app.monitorPriority;
             # Note: package is resolved at build time, only command is in JSON
           }) ws.applications;
         }) proj.workspaces;
       }) enabledProjects;
+    };
+
+    # Project management scripts with proper Nix paths
+    home.file.".config/i3/scripts/project-current.sh" = {
+      executable = true;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # Get current active project
+        # Returns JSON or empty if no project active
+
+        STATE_FILE=~/.config/i3/current-project
+
+        if [ ! -f "$STATE_FILE" ]; then
+          echo "{}"
+          exit 0
+        fi
+
+        # Check if state is stale (> 24 hours old)
+        if [ -f "$STATE_FILE" ]; then
+          ACTIVATED=$(${pkgs.jq}/bin/jq -r '.activated_at // empty' "$STATE_FILE")
+          if [ -n "$ACTIVATED" ]; then
+            ACTIVATED_EPOCH=$(${pkgs.coreutils}/bin/date -d "$ACTIVATED" +%s 2>/dev/null || echo 0)
+            NOW_EPOCH=$(${pkgs.coreutils}/bin/date +%s)
+            AGE=$((NOW_EPOCH - ACTIVATED_EPOCH))
+
+            # If > 24 hours, consider stale and fall back to auto-detect
+            if [ $AGE -gt 86400 ]; then
+              echo "{}" >&2
+              exit 0
+            fi
+          fi
+        fi
+
+        ${pkgs.coreutils}/bin/cat "$STATE_FILE"
+      '';
+    };
+
+    home.file.".config/i3/scripts/project-set.sh" = {
+      executable = true;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # Set active project
+
+        PROJECT_ID="$1"
+        PROJECTS_FILE=~/.config/i3-projects/projects.json
+        STATE_FILE=~/.config/i3/current-project
+
+        if [ -z "$PROJECT_ID" ]; then
+          echo "Usage: $0 <project_id>" >&2
+          echo "Available projects:" >&2
+          ${pkgs.jq}/bin/jq -r '.projects | keys[]' "$PROJECTS_FILE" >&2
+          exit 1
+        fi
+
+        # Get project info
+        PROJECT_INFO=$(${pkgs.jq}/bin/jq -r --arg id "$PROJECT_ID" '.projects[$id]' "$PROJECTS_FILE")
+
+        if [ "$PROJECT_INFO" = "null" ] || [ -z "$PROJECT_INFO" ]; then
+          echo "Error: Project '$PROJECT_ID' not found" >&2
+          exit 1
+        fi
+
+        # T009: Read current project BEFORE updating state
+        OLD_PROJECT=""
+        if [ -f "$STATE_FILE" ]; then
+          OLD_PROJECT=$(${pkgs.jq}/bin/jq -r '.project_id // empty' "$STATE_FILE" 2>/dev/null || echo "")
+        fi
+
+        # Create state with metadata
+        ${pkgs.jq}/bin/jq -n \
+          --arg id "$PROJECT_ID" \
+          --argjson info "$PROJECT_INFO" \
+          --arg timestamp "$(${pkgs.coreutils}/bin/date -Iseconds)" \
+          '{
+            mode: "manual",
+            override: true,
+            project_id: $id,
+            name: $info.displayName,
+            directory: $info.workingDirectory,
+            icon: ($info.icon // ""),
+            activated_at: $timestamp
+          }' > "$STATE_FILE"
+
+        echo "✓ Active project set to: $(${pkgs.jq}/bin/jq -r '.name' "$STATE_FILE")"
+
+        # T009: Detect monitors and assign workspaces
+        if command -v ~/.config/i3/scripts/detect-monitors.sh > /dev/null 2>&1; then
+          ~/.config/i3/scripts/assign-workspace-monitor.sh 2>/dev/null || true
+        fi
+
+        # T009: Call project-switch-hook to show/hide windows
+        # Pass both old and new project to the hook
+        if [ "$OLD_PROJECT" != "$PROJECT_ID" ] && command -v ~/.config/i3/scripts/project-switch-hook.sh > /dev/null 2>&1; then
+          ~/.config/i3/scripts/project-switch-hook.sh "$OLD_PROJECT" "$PROJECT_ID"
+        fi
+
+        # Optional: Switch to first workspace of project
+        if [ "$2" = "--switch" ]; then
+          FIRST_WS=$(${pkgs.jq}/bin/jq -r '.primaryWorkspace' <<< "$PROJECT_INFO")
+          i3-msg "workspace number $FIRST_WS" > /dev/null 2>&1 || true
+          echo "  Switched to workspace $FIRST_WS"
+        fi
+      '';
+    };
+
+    home.file.".config/i3/scripts/project-clear.sh" = {
+      executable = true;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # T046: Clear active project (return to global mode)
+
+        STATE_FILE=~/.config/i3/current-project
+
+        # T046: Read old project before clearing
+        OLD_PROJECT=""
+        if [ -f "$STATE_FILE" ]; then
+          OLD_PROJECT=$(${pkgs.jq}/bin/jq -r '.project_id // empty' "$STATE_FILE" 2>/dev/null || echo "")
+          PREV_PROJECT_NAME=$(${pkgs.jq}/bin/jq -r '.name // "None"' "$STATE_FILE")
+          ${pkgs.coreutils}/bin/rm "$STATE_FILE"
+          echo "✓ Cleared active project (was: $PREV_PROJECT_NAME)"
+        else
+          echo "No active project to clear"
+          exit 0
+        fi
+
+        # T046: Call project-switch-hook with empty new project to show all windows
+        if [ -n "$OLD_PROJECT" ] && command -v ~/.config/i3/scripts/project-switch-hook.sh > /dev/null 2>&1; then
+          ~/.config/i3/scripts/project-switch-hook.sh "$OLD_PROJECT" ""
+        fi
+      '';
+    };
+
+    home.file.".config/i3/scripts/project-switcher.sh" = {
+      executable = true;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # Interactive project switcher using rofi
+
+        PROJECTS_FILE=~/.config/i3-projects/projects.json
+        CURRENT=$(~/.config/i3/scripts/project-current.sh | ${pkgs.jq}/bin/jq -r '.project_id // empty')
+
+        # Build rofi list with current project highlighted
+        PROJECT_LIST=$(${pkgs.jq}/bin/jq -r '.projects | to_entries[] | "\(.value.icon // "") \(.value.displayName)\t\(.key)"' "$PROJECTS_FILE")
+
+        # Add "Clear Project" option
+        PROJECT_LIST="󰅖 Clear Project (Global Mode)	__clear__
+        $PROJECT_LIST"
+
+        # Show rofi menu
+        SELECTED=$(${pkgs.coreutils}/bin/echo "$PROJECT_LIST" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "Project" -format 's' -selected-row 0)
+
+        if [ -z "$SELECTED" ]; then
+          exit 0
+        fi
+
+        PROJECT_ID=$(${pkgs.coreutils}/bin/echo "$SELECTED" | ${pkgs.gawk}/bin/awk '{print $NF}')
+
+        if [ "$PROJECT_ID" = "__clear__" ]; then
+          ~/.config/i3/scripts/project-clear.sh
+        else
+          ~/.config/i3/scripts/project-set.sh "$PROJECT_ID" --switch
+        fi
+      '';
+    };
+
+    # T002: Deploy project-switch-hook.sh
+    home.file.".config/i3/scripts/project-switch-hook.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/project-switch-hook.sh;
+    };
+
+    # T003/T007: Deploy monitor detection scripts
+    home.file.".config/i3/scripts/detect-monitors.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/detect-monitors.sh;
+    };
+
+    # T008: Deploy workspace-monitor assignment script
+    home.file.".config/i3/scripts/assign-workspace-monitor.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/assign-workspace-monitor.sh;
+    };
+
+    # T018-T021: Deploy project-aware launcher scripts
+    home.file.".config/i3/scripts/launch-code.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/launch-code.sh;
+    };
+
+    home.file.".config/i3/scripts/launch-ghostty.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/launch-ghostty.sh;
+    };
+
+    home.file.".config/i3/scripts/launch-lazygit.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/launch-lazygit.sh;
+    };
+
+    home.file.".config/i3/scripts/launch-yazi.sh" = {
+      executable = true;
+      text = builtins.readFile ../../scripts/launch-yazi.sh;
+    };
+
+    # T027: Override desktop entries to use launcher scripts
+    # This ensures rofi/application menus launch project-aware versions
+    xdg.dataFile."applications/code.desktop" = {
+      text = ''
+        [Desktop Entry]
+        Actions=new-empty-window
+        Categories=Utility;TextEditor;Development;IDE
+        Comment=Code Editing. Redefined.
+        Exec=${config.home.homeDirectory}/.config/i3/scripts/launch-code.sh %F
+        GenericName=Text Editor
+        Icon=vscode
+        Keywords=vscode
+        Name=Visual Studio Code
+        StartupNotify=true
+        StartupWMClass=Code
+        Type=Application
+        Version=1.5
+
+        [Desktop Action new-empty-window]
+        Exec=${config.home.homeDirectory}/.config/i3/scripts/launch-code.sh --new-window %F
+        Icon=vscode
+        Name=New Empty Window
+      '';
     };
   };
 }

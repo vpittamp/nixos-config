@@ -17,8 +17,10 @@
     fileWidgetCommand = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
 
     defaultOptions = [
-      # Tmux integration - automatically use popup when inside tmux
-      "--tmux=center,80%,70%"
+      # Tmux integration - use centered popup like clipboard history
+      # center = floating popup in middle of screen (like clipcat-fzf)
+      # 90% width, 80% height for good visibility
+      "--tmux=center,90%,80%"
 
       # When not in tmux, use these settings
       "--height=40%"

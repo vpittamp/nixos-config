@@ -220,6 +220,16 @@
       bind -n M-v run-shell -b "/etc/nixos/scripts/clipcat-fzf.sh"
 
 
+      # Mouse scroll sensitivity - reduce scroll speed for precision
+      # By default, tmux scrolls too fast (3 lines per wheel event)
+      # Reduce to 1 line per event for more precise scrolling
+      bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
+      bind -n WheelDownPane select-pane -t= \; send-keys -M
+
+      # In copy mode, scroll only 1 line at a time for precision
+      bind -T copy-mode-vi WheelUpPane send-keys -X -N 1 scroll-up
+      bind -T copy-mode-vi WheelDownPane send-keys -X -N 1 scroll-down
+
       # Mouse behavior with KDE Plasma clipboard integration
       unbind -n MouseDown3Pane
       unbind -T copy-mode-vi MouseDown3Pane
