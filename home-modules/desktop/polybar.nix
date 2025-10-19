@@ -2,27 +2,25 @@
 # Provides statusbar with custom modules including project indicator
 { config, lib, pkgs, ... }:
 
+let
+  polybarPkg = pkgs.polybar.override {
+    i3Support = true;
+    alsaSupport = true;
+    pulseSupport = true;
+  };
+in
 {
+  # Install polybar package (even though systemd service is disabled)
+  home.packages = [ polybarPkg ];
+
+  # We still need services.polybar enabled to generate the config file
+  # but we disable the systemd service afterwards
   services.polybar = {
     enable = true;
-    package = pkgs.polybar.override {
-      i3Support = true;
-      alsaSupport = true;
-      pulseSupport = true;
-    };
+    package = polybarPkg;
 
-    script = ''
-      # Kill any existing polybar instances
-      ${pkgs.procps}/bin/pkill polybar || true
-
-      # Wait for processes to exit
-      sleep 1
-
-      # Launch polybar on each connected monitor
-      for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do
-        MONITOR=$m ${pkgs.polybar}/bin/polybar --reload main &
-      done
-    '';
+    # Dummy script since we start polybar from i3
+    script = "";
 
     config = {
       "bar/main" = {
@@ -298,4 +296,8 @@
     '';
     executable = true;
   };
+
+  # Disable the polybar systemd service - polybar is started by i3 instead
+  # This avoids X11 authentication issues and properly inherits i3's environment
+  systemd.user.services.polybar.Install.WantedBy = lib.mkForce [];
 }
