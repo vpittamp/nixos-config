@@ -12,19 +12,29 @@ if [ -f "$PROJECT_FILE" ]; then
 
   if [ -n "$NAME" ] && [ "$NAME" != "null" ]; then
     # Active project - combine icon and name
-    if [ -n "$ICON" ]; then
-      TEXT="$ICON $NAME"
+    if [ -n "$ICON" ] && [ "$ICON" != "null" ]; then
+      TEXT="$ICON  $NAME"
     else
-      TEXT="$NAME"
+      TEXT=" $NAME"
     fi
+    COLOR="#b4befe"  # Lavender (Catppuccin Mocha - active project)
   else
     # Invalid JSON or missing fields
-    TEXT="∅"
+    TEXT="∅ No Project"
+    COLOR="#6c7086"  # Overlay0 (Catppuccin Mocha - dimmed)
   fi
 else
   # No project active
-  TEXT="∅"
+  TEXT="∅ No Project"
+  COLOR="#6c7086"  # Overlay0 (Catppuccin Mocha - dimmed)
 fi
 
-# Output plain text
-echo "$TEXT"
+# Output JSON with color
+cat <<EOF
+{
+  "full_text": "$TEXT",
+  "color": "$COLOR",
+  "separator": true,
+  "separator_block_width": 15
+}
+EOF

@@ -15,33 +15,29 @@
     separator_block_width=15
     markup=pango
 
-    # US3: Project indicator (signal-based)
-    [project]
-    command=${config.home.homeDirectory}/.config/i3blocks/scripts/project.sh
-    interval=once
-    signal=10
-    color=#b4befe
-
-    # US2: System information blocks
+    # US2: System information blocks (left side)
     [cpu]
     command=${config.home.homeDirectory}/.config/i3blocks/scripts/cpu.sh
     interval=5
-    color=#cdd6f4
 
     [memory]
     command=${config.home.homeDirectory}/.config/i3blocks/scripts/memory.sh
     interval=5
-    color=#cdd6f4
 
     [network]
     command=${config.home.homeDirectory}/.config/i3blocks/scripts/network.sh
     interval=10
-    color=#cdd6f4
 
+    # US3: Project indicator (center - signal-based, prominent display)
+    [project]
+    command=${config.home.homeDirectory}/.config/i3blocks/scripts/project.sh
+    interval=once
+    signal=10
+
+    # DateTime (right side)
     [datetime]
     command=${config.home.homeDirectory}/.config/i3blocks/scripts/datetime.sh
     interval=60
-    color=#cdd6f4
   '';
 
   # Make i3blocks scripts executable

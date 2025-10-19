@@ -16,14 +16,21 @@ else
   MEM_PERCENT=$((MEM_USED * 100 / MEM_TOTAL))
 fi
 
-# Color based on usage
+# Color based on usage (Catppuccin Mocha)
 if [ "$MEM_PERCENT" -gt 95 ]; then
   COLOR="#f38ba8"  # Red (urgent)
 elif [ "$MEM_PERCENT" -gt 80 ]; then
   COLOR="#f9e2af"  # Yellow (warning)
 else
-  COLOR="#cdd6f4"  # Normal (Catppuccin text)
+  COLOR="#89dceb"  # Sky blue (normal)
 fi
 
-# Output plain text
-echo "MEM: ${MEM_PERCENT}%"
+# Output JSON with color
+cat <<EOF
+{
+  "full_text": " MEM: ${MEM_PERCENT}%",
+  "color": "$COLOR",
+  "separator": true,
+  "separator_block_width": 15
+}
+EOF
