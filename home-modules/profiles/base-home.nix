@@ -42,6 +42,8 @@ in
 
     # Desktop configurations
     ../desktop/dunst.nix       # Notification daemon for i3
+    ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
+    ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)
 
     # Editor configurations
     ../editors/neovim.nix

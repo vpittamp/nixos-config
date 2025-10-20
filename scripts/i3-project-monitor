@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# i3-project-monitor - Terminal-based monitoring tool for i3 project system
+# Part of Feature 017: i3 Project System Monitor
+
+set -euo pipefail
+
+# Pass all arguments to Python module
+exec python3 -m i3_project_monitor "$@"

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#
+# i3-project-test - Test framework wrapper script
+#
+# This script invokes the i3 project test framework Python module
+# with proper environment setup.
+#
+
+set -euo pipefail
+
+# Ensure Python module path is set
+export PYTHONPATH="${PYTHONPATH:-}"
+
+# Invoke Python module
+exec python3 -m i3_project_test "$@"

@@ -24,6 +24,7 @@ from .config import load_project_configs, load_app_classification, load_active_p
 from .state import StateManager
 from .connection import ResilientI3Connection
 from .ipc_server import IPCServer
+from .event_buffer import EventBuffer
 from .handlers import (
     on_tick,
     on_window_new,
@@ -135,6 +136,7 @@ class I3ProjectDaemon:
         self.state_manager: Optional[StateManager] = None
         self.connection: Optional[ResilientI3Connection] = None
         self.ipc_server: Optional[IPCServer] = None
+        self.event_buffer: Optional[EventBuffer] = None  # Feature 017: Event storage
         self.health_monitor: Optional[DaemonHealthMonitor] = None
         self.shutdown_event = asyncio.Event()
 
@@ -144,6 +146,16 @@ class I3ProjectDaemon:
 
         # Create state manager
         self.state_manager = StateManager()
+
+        # Create IPC server first (needed for event buffer callback)
+        self.ipc_server = await IPCServer.from_systemd_socket(self.state_manager, event_buffer=None)
+
+        # Create event buffer with broadcast callback (Feature 017: T019)
+        self.event_buffer = EventBuffer(max_size=500, broadcast_callback=self.ipc_server.broadcast_event_entry)
+        logger.info("Event buffer initialized (500 events)")
+
+        # Update IPC server with event buffer
+        self.ipc_server.event_buffer = self.event_buffer
 
         # Load project configurations
         projects_dir = self.config_dir / "projects"
@@ -180,8 +192,9 @@ class I3ProjectDaemon:
             logger.error(f"Failed to connect to i3: {e}")
             raise
 
-        # Start IPC server with systemd socket activation
-        self.ipc_server = await IPCServer.from_systemd_socket(self.state_manager)
+        # Update IPC server with i3 connection (Feature 018)
+        self.ipc_server.i3_connection = self.connection
+        logger.info("IPC server updated with i3 connection")
 
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
@@ -211,25 +224,25 @@ class I3ProjectDaemon:
         # USER STORY 1: Project switching via tick events
         self.connection.subscribe(
             "tick",
-            partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir)
+            partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir, event_buffer=self.event_buffer)
         )
 
         # USER STORY 2: Automatic window tracking
         self.connection.subscribe(
             "window::new",
-            partial(on_window_new, state_manager=self.state_manager, app_classification=app_classification)
+            partial(on_window_new, state_manager=self.state_manager, app_classification=app_classification, event_buffer=self.event_buffer)
         )
         self.connection.subscribe(
             "window::mark",
-            partial(on_window_mark, state_manager=self.state_manager)
+            partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer)
         )
         self.connection.subscribe(
             "window::close",
-            partial(on_window_close, state_manager=self.state_manager)
+            partial(on_window_close, state_manager=self.state_manager, event_buffer=self.event_buffer)
         )
         self.connection.subscribe(
             "window::focus",
-            partial(on_window_focus, state_manager=self.state_manager)
+            partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer)
         )
 
         # USER STORY 3: Workspace monitoring
