@@ -29,9 +29,21 @@ let
 
     # Create proper source layout and pyproject.toml before build
     preBuild = ''
-      # Create proper package structure
-      mkdir -p i3_project_test
-      cp -r * i3_project_test/ 2>/dev/null || true
+      # Restructure to proper Python package layout
+      # Current: all files at root
+      # Needed: all files under i3_project_test/ subdirectory
+      mkdir -p src/i3_project_test
+
+      # Move all Python files and directories into package
+      for item in *; do
+        if [ "$item" != "src" ]; then
+          mv "$item" src/i3_project_test/ 2>/dev/null || true
+        fi
+      done
+
+      # Move back to root for build
+      mv src/i3_project_test ./
+      rmdir src 2>/dev/null || true
 
       cat > pyproject.toml <<'EOF'
 [build-system]
@@ -50,6 +62,10 @@ dependencies = [
 
 [project.scripts]
 i3-project-test = "i3_project_test.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["i3_project_test*"]
 EOF
     '';
 
