@@ -221,13 +221,14 @@ class StateManager:
             Dictionary with event counts, window counts, etc.
         """
         async with self._lock:
+            from datetime import datetime
+            uptime = (datetime.now() - self.state.start_time).total_seconds()
+
             return {
                 "event_count": self.state.event_count,
                 "error_count": self.state.error_count,
                 "window_count": len(self.state.window_map),
                 "workspace_count": len(self.state.workspace_map),
                 "active_project": self.state.active_project,
-                "uptime_seconds": (
-                    asyncio.get_event_loop().time() - self.state.start_time.timestamp()
-                ),
+                "uptime_seconds": uptime,
             }

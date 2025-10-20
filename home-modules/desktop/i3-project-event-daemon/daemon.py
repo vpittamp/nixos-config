@@ -15,6 +15,11 @@ from typing import Optional
 try:
     from systemd import journal, daemon as sd_daemon
     SYSTEMD_AVAILABLE = True
+
+    # Suppress "no running event loop" warnings from systemd.daemon.notify()
+    # The notify() function checks for event loops but doesn't need them
+    import warnings
+    warnings.filterwarnings('ignore', message='.*no running event loop.*')
 except ImportError:
     SYSTEMD_AVAILABLE = False
     print("Warning: systemd-python not available, running without systemd integration", file=sys.stderr)
@@ -64,7 +69,11 @@ class DaemonHealthMonitor:
     def notify_ready(self) -> None:
         """Send READY=1 signal to systemd."""
         if SYSTEMD_AVAILABLE:
-            sd_daemon.notify("READY=1")
+            # Suppress stderr warnings from systemd.daemon.notify()
+            import contextlib
+            import io
+            with contextlib.redirect_stderr(io.StringIO()):
+                sd_daemon.notify("READY=1")
             logger.info("Sent READY=1 to systemd")
         else:
             logger.debug("Systemd not available, skipping READY notification")
@@ -72,13 +81,21 @@ class DaemonHealthMonitor:
     def notify_watchdog(self) -> None:
         """Send WATCHDOG=1 ping to systemd."""
         if SYSTEMD_AVAILABLE:
-            sd_daemon.notify("WATCHDOG=1")
+            # Suppress stderr warnings from systemd.daemon.notify()
+            import contextlib
+            import io
+            with contextlib.redirect_stderr(io.StringIO()):
+                sd_daemon.notify("WATCHDOG=1")
             logger.debug("Sent WATCHDOG=1 ping")
 
     def notify_stopping(self) -> None:
         """Send STOPPING=1 signal to systemd."""
         if SYSTEMD_AVAILABLE:
-            sd_daemon.notify("STOPPING=1")
+            # Suppress stderr warnings from systemd.daemon.notify()
+            import contextlib
+            import io
+            with contextlib.redirect_stderr(io.StringIO()):
+                sd_daemon.notify("STOPPING=1")
             logger.info("Sent STOPPING=1 to systemd")
 
     async def watchdog_loop(self) -> None:
@@ -285,7 +302,11 @@ def setup_logging() -> None:
 
     if SYSTEMD_AVAILABLE:
         # Use systemd journal handler
-        handler = journal.JournalHandler(SYSLOG_IDENTIFIER="i3-project-daemon")
+        # Suppress stderr output from journal handler creation
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            handler = journal.JournalHandler(SYSLOG_IDENTIFIER="i3-project-daemon")
     else:
         # Use stderr handler
         handler = logging.StreamHandler(sys.stderr)
@@ -343,6 +364,33 @@ async def main_async() -> int:
 
 def main() -> None:
     """Main entry point."""
+    # Filter stderr to suppress "no running event loop" from systemd-python
+    import io
+    import contextlib
+
+    class StderrFilter:
+        """Filter stderr to suppress systemd-python event loop warnings."""
+
+        def __init__(self, original_stderr):
+            self.original_stderr = original_stderr
+            self.buffer = ""
+
+        def write(self, text):
+            # Filter out the "no running event loop" messages
+            if "no running event loop" not in text:
+                self.original_stderr.write(text)
+                return len(text)
+            return len(text)
+
+        def flush(self):
+            self.original_stderr.flush()
+
+        def fileno(self):
+            return self.original_stderr.fileno()
+
+    # Install stderr filter
+    sys.stderr = StderrFilter(sys.stderr)
+
     # Setup logging
     setup_logging()
 

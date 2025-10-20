@@ -131,10 +131,14 @@ in
           "LOG_LEVEL=${cfg.logLevel}"
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
+          "PYTHONWARNINGS=ignore::DeprecationWarning"
         ];
 
         # Logging
         StandardOutput = "journal";
+        # Note: StandardError goes to journal but systemd-python library emits
+        # "no running event loop" warnings. These are harmless but noisy.
+        # We filter them via Python stderr replacement in daemon.py
         StandardError = "journal";
         SyslogIdentifier = "i3-project-daemon";
       };
