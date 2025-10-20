@@ -310,8 +310,9 @@ class OutputState:
             raise ValueError("Output name cannot be empty")
         if self.width < 0 or self.height < 0:
             raise ValueError(f"Invalid output dimensions: {self.width}x{self.height}")
-        if self.current_workspace is not None and self.current_workspace not in self.workspaces:
-            raise ValueError(f"current_workspace '{self.current_workspace}' not in workspaces list")
+        # NOTE: current_workspace validation is skipped because the workspaces list
+        # is populated separately from GET_WORKSPACES. The current_workspace field
+        # comes from GET_OUTPUTS which provides the workspace name but not the full list.
 
     @classmethod
     def from_i3_output(cls, output: Any) -> 'OutputState':
