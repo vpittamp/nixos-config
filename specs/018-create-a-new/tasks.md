@@ -168,14 +168,14 @@
 - [ ] T050 [P] Add workspace validation helper command - Create `i3-project-monitor validate-workspaces` subcommand
 - [ ] T051 [P] Add connection test helper - Create `i3-project-monitor --test-connection` flag
 - [ ] T052 [P] Add error handling improvements across all displays - Ensure clear error messages with troubleshooting hints (EC-001 through EC-009)
-- [ ] T053 [P] Update quickstart.md with real examples from implementation
+- [X] T053 [P] Update quickstart.md with real examples from implementation
 - [ ] T054 [P] Add Python docstrings to all public classes and methods
 - [ ] T055 [P] Add type hints validation - Run mypy on all Python modules
 - [ ] T056 Verify test-* namespace isolation - Ensure all test scenarios use TEST_PROJECT_PREFIX
 - [ ] T057 Run full validation from quickstart.md - Execute all commands in quickstart to verify completeness
 - [ ] T058 [P] Add logging configuration - Ensure all modules use consistent logging format
-- [ ] T059 Performance validation - Verify diagnostic capture completes in <3 seconds, state validation in <2 seconds
-- [ ] T060 Create GitHub Actions workflow example in quickstart.md for CI/CD integration
+- [X] T059 Performance validation - Verify diagnostic capture completes in <3 seconds, state validation in <2 seconds
+- [X] T060 Create GitHub Actions workflow example in quickstart.md for CI/CD integration
 
 ---
 

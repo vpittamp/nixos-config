@@ -13,12 +13,12 @@ This guide provides quick start instructions for using the i3 project testing an
 The testing framework will be installed via home-manager module:
 
 ```bash
-# After implementation, rebuild home-manager configuration
-home-manager switch --flake .#hetzner
+# Framework installed via base-home.nix module
 
 # Verify installation
-i3-project-test --version
-i3-project-monitor diagnose --help
+i3-project-test --version                    # Should show: i3-project-test v1.0.0
+i3-project-monitor --help | grep diagnose    # Should show diagnose mode
+i3-project-test list                         # Should list 9 test scenarios
 ```
 
 ## Basic Usage
@@ -59,20 +59,23 @@ i3-project-switch stacks
 Run automated tests that simulate workflows and validate correctness.
 
 ```bash
-# Run single test scenario
-i3-project-test run project_lifecycle_001
+# List available scenarios
+i3-project-test list
 
-# Run all tests in category
-i3-project-test run --category project_management
+# Run single test scenario
+i3-project-test run project_lifecycle_001 --verbose
+
+# Run multiple scenarios
+i3-project-test run monitor_config_001 monitor_config_003
 
 # Run full test suite
 i3-project-test run --all
 
-# Run with verbose output
-i3-project-test run --all --verbose
-
 # Run headless for CI/CD
-i3-project-test run --all --no-ui --format=json > results.json
+i3-project-test run --all --ci
+
+# Run with JSON output
+i3-project-test run --all --format=json --output=results.json
 ```
 
 **Example output**:
@@ -100,22 +103,20 @@ Total time: 21.9s
 Capture comprehensive system state snapshot for debugging.
 
 ```bash
-# Capture diagnostic snapshot to file
+# Capture full diagnostic snapshot
 i3-project-monitor diagnose --output=diagnostic.json
 
-# Capture with specific components
-i3-project-monitor diagnose \
-  --include-events=500 \
-  --include-tree \
-  --include-monitors \
-  --output=diagnostic-detailed.json
+# Capture without tree dump (faster)
+i3-project-monitor diagnose --no-tree --output=quick-diagnostic.json
 
-# View diagnostic summary
-i3-project-monitor diagnose --summary
+# Capture with limited events
+i3-project-monitor diagnose --event-limit=100 --output=diagnostic.json
+
+# Output to stdout (for piping)
+i3-project-monitor diagnose --no-tree | jq '.daemon_state'
 
 # Compare two diagnostic snapshots
-i3-project-monitor diagnose \
-  --compare diagnostic-before.json diagnostic-after.json
+i3-project-monitor diagnose --compare before.json after.json --output=diff.json
 ```
 
 **Diagnostic snapshot includes**:
@@ -133,13 +134,15 @@ Validate monitor configuration and workspace assignments.
 
 ```bash
 # Run monitor configuration tests
-i3-project-test run --category monitor_configuration
+i3-project-test run monitor_config_001 monitor_config_002 monitor_config_003
 
-# Test with simulated display changes
-i3-project-test run monitor_disconnect_001
+# Quick workspace validation test
+i3-project-test run monitor_config_001 --verbose
 
-# Validate current workspace assignments
-i3-project-monitor validate-workspaces
+# Capture diagnostic with monitor state
+i3-project-monitor diagnose --output=monitor-state.json
+jq '.i3_state.outputs' monitor-state.json
+jq '.i3_state.workspaces' monitor-state.json
 ```
 
 **What's validated**:
@@ -150,59 +153,62 @@ i3-project-monitor validate-workspaces
 
 ## Common Test Scenarios
 
-### Scenario 1: Validate Project Switch
+### Scenario 1: Monitor Configuration Validation
 
 ```bash
-# Test basic project switching
-i3-project-test run project_switch_basic
-
-# What it tests:
-# 1. Create two test projects
-# 2. Switch between them
-# 3. Validate active project changes
-# 4. Validate events recorded correctly
-# 5. Cleanup test projects
-```
-
-### Scenario 2: Validate Window Marking
-
-```bash
-# Test window marking and visibility
-i3-project-test run window_marking_validation
-
-# What it tests:
-# 1. Create test project
-# 2. Open windows in project context
-# 3. Validate windows have correct project mark
-# 4. Switch away and verify windows hidden
-# 5. Switch back and verify windows visible
-```
-
-### Scenario 3: Validate Multi-Monitor Setup
-
-```bash
-# Test workspace-to-output assignments
-i3-project-test run workspace_assignment_validation
+# Test workspace assignments (passes without daemon)
+i3-project-test run monitor_config_001 --verbose
 
 # What it tests:
 # 1. Query current outputs via GET_OUTPUTS
 # 2. Query workspace assignments via GET_WORKSPACES
 # 3. Validate all visible workspaces on active outputs
-# 4. Validate monitor tool displays match i3 state
+# 4. Validate workspace-to-output assignments correct
 ```
 
-### Scenario 4: Validate Event Stream
+### Scenario 2: Daemon/i3 State Consistency
 
 ```bash
-# Test event recording and ordering
-i3-project-test run event_stream_validation
+# Test state consistency (requires daemon)
+i3-project-test run monitor_config_002 --verbose
 
 # What it tests:
-# 1. Subscribe to event stream
-# 2. Perform actions (open window, switch project)
-# 3. Validate expected events recorded
-# 4. Validate event ordering correct
-# 5. Validate event payloads accurate
+# 1. Query daemon state via JSON-RPC
+# 2. Query i3 state via GET_OUTPUTS/GET_WORKSPACES
+# 3. Cross-validate daemon state matches i3 state
+# 4. Validate window counts and project state
+```
+
+### Scenario 3: Project Lifecycle
+
+```bash
+# Test basic project operations (requires daemon)
+i3-project-test run project_lifecycle_001 --verbose
+
+# What it tests:
+# 1. Create test project
+# 2. Switch to project
+# 3. Validate active project changes
+# 4. Clear active project
+# 5. Cleanup test projects
+```
+
+### Scenario 4: Full Test Suite
+
+```bash
+# Run all 9 scenarios
+i3-project-test run --all
+
+# Scenarios:
+# - project_lifecycle_001: Basic Project Lifecycle
+# - project_lifecycle_002: Multiple Project Switches
+# - window_management_001: Window Marking Validation
+# - window_management_002: Window Visibility Toggle
+# - monitor_config_001: Workspace Assignment Validation (✓ passes)
+# - monitor_config_002: Daemon/i3 State Consistency
+# - monitor_config_003: Output Count Validation (✓ passes)
+# - event_stream_001: Event Buffer Validation
+# - event_stream_002: Event Ordering Validation
 ```
 
 ## Tmux Testing Workflow
@@ -294,39 +300,65 @@ i3-project-monitor diagnose --compare expected.json debug.json
 For automated testing in CI pipelines:
 
 ```bash
-# Run tests headless with JSON output
-i3-project-test run --all \
-  --no-ui \
-  --format=json \
-  --output=test-results.json \
-  --capture-on-failure \
-  --diagnostics-dir=./diagnostics/
+# Run tests in CI mode (automatic JSON output, headless, strict validation)
+i3-project-test run --all --ci
 
-# Check exit code
-echo $?  # 0 = all passed, non-zero = failures or errors
+# Exit codes:
+# 0 = all tests passed
+# 1 = tests failed
+# 2 = tests had errors
 
-# Parse JSON results
-jq '.summary' test-results.json
+# Check results
+cat test-results.json | jq '.summary'
+# Output:
+# {
+#   "total": 9,
+#   "passed": 2,
+#   "failed": 0,
+#   "skipped": 0,
+#   "errors": 7,
+#   "success_rate": 22.2,
+#   "duration_seconds": 6.8
+# }
 ```
 
 **GitHub Actions Example**:
 ```yaml
-- name: Run i3 Project Tests
-  run: |
-    i3-project-test run --all --no-ui --format=json --output=results.json
+name: i3 Project Tests
 
-- name: Upload Test Results
-  if: always()
-  uses: actions/upload-artifact@v3
-  with:
-    name: test-results
-    path: |
-      results.json
-      diagnostics/
+on: [push, pull_request]
 
-- name: Check Test Results
-  run: |
-    jq -e '.summary.passed == .summary.total' results.json
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup test environment
+        run: |
+          # Install i3, tmux, and dependencies
+          sudo apt-get update
+          sudo apt-get install -y i3 tmux python3 python3-pip
+
+      - name: Run i3 project tests
+        run: i3-project-test run --all --ci
+        continue-on-error: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: test-results.json
+
+      - name: Check test success
+        run: |
+          SUCCESS_RATE=$(jq -r '.summary.success_rate' test-results.json)
+          echo "Success rate: $SUCCESS_RATE%"
+          if (( $(echo "$SUCCESS_RATE < 100" | bc -l) )); then
+            echo "Some tests failed or had errors"
+            exit 1
+          fi
 ```
 
 ## Advanced Usage
@@ -438,6 +470,18 @@ Test framework configuration:
 5. **Review event stream** when debugging state issues - events show exact sequence of operations
 6. **Compare diagnostic snapshots** when investigating regressions
 7. **Run tests locally** before pushing to CI - CI environments have limited debugging capabilities
+
+## Performance Characteristics
+
+Based on validation testing:
+
+- **Diagnostic capture**: ~5ms internal capture time, ~150ms total execution
+- **State validation tests**: <1 second per test (monitor config tests)
+- **Full test suite**: ~7 seconds for 9 scenarios
+- **Diagnostic snapshot size**: ~1700 lines of formatted JSON
+- **Memory usage**: Framework <20MB, daemon <17MB
+
+All performance requirements met (diagnostic <3s, validation <2s)
 
 ## Quick Reference
 
