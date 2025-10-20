@@ -149,13 +149,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T043 [P] [US4] Add headless mode support to test runner in `home-modules/tools/i3-project-test/test_runner.py` - Add `--no-ui` flag that disables rich terminal output
-- [ ] T044 [P] [US4] Add CI mode to test runner in `home-modules/tools/i3-project-test/test_runner.py` - Add `--ci` flag that enables strict validation and full scenario execution
-- [ ] T045 [US4] Implement exit code handling in `home-modules/tools/i3-project-test/__main__.py` - Return 0 for all passed, 1 for failures, 2 for errors
-- [ ] T046 [US4] Add test result summary to terminal reporter in `home-modules/tools/i3-project-test/reporters/terminal_reporter.py` - Show passed/failed/skipped counts
-- [ ] T047 [US4] Add diagnostic capture on failure in `home-modules/tools/i3-project-test/test_runner.py` - Add `--capture-on-failure` flag that saves diagnostic snapshot when test fails
-- [ ] T048 [US4] Add test suite library expansion - Create 10+ test scenarios covering all project management workflows in `scenarios/` directory
-- [ ] T049 [US4] Test CI integration - Run `i3-project-test suite --ci --no-ui --format=json` and verify AS4.1 through AS4.4
+- [X] T043 [P] [US4] Add headless mode support to test runner in `home-modules/tools/i3-project-test/test_runner.py` - Add `--no-ui` flag that disables rich terminal output
+- [X] T044 [P] [US4] Add CI mode to test runner in `home-modules/tools/i3-project-test/test_runner.py` - Add `--ci` flag that enables strict validation and full scenario execution
+- [X] T045 [US4] Implement exit code handling in `home-modules/tools/i3-project-test/__main__.py` - Return 0 for all passed, 1 for failures, 2 for errors
+- [X] T046 [US4] Add test result summary to terminal reporter in `home-modules/tools/i3-project-test/reporters/terminal_reporter.py` - Show passed/failed/skipped counts
+- [X] T047 [US4] Add diagnostic capture on failure in `home-modules/tools/i3-project-test/test_runner.py` - Add `--capture-on-failure` flag that saves diagnostic snapshot when test fails
+- [X] T048 [US4] Add test suite library expansion - Create 10+ test scenarios covering all project management workflows in `scenarios/` directory
+- [X] T049 [US4] Test CI integration - Run `i3-project-test suite --ci --no-ui --format=json` and verify AS4.1 through AS4.4
 
 **Checkpoint**: All four user stories should now be complete and independently functional
 
