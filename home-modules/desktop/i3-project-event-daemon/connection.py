@@ -6,7 +6,8 @@ Handles i3 IPC connection, automatic reconnection, and state rebuilding.
 import asyncio
 import logging
 from typing import Optional, Callable, Awaitable
-import i3ipc
+from i3ipc import aio
+from i3ipc.events import IpcBaseEvent
 
 from .state import StateManager
 
@@ -23,18 +24,18 @@ class ResilientI3Connection:
             state_manager: StateManager instance for state rebuilding
         """
         self.state_manager = state_manager
-        self.conn: Optional[i3ipc.Connection] = None
+        self.conn: Optional[aio.Connection] = None
         self.is_shutting_down = False
         self.reconnect_delay = 0.1  # Initial delay: 100ms
 
-    async def connect_with_retry(self, max_attempts: int = 10) -> i3ipc.Connection:
+    async def connect_with_retry(self, max_attempts: int = 10) -> aio.Connection:
         """Connect to i3 with exponential backoff retry.
 
         Args:
             max_attempts: Maximum connection attempts
 
         Returns:
-            Connected i3ipc.Connection
+            Connected i3ipc.aio.Connection
 
         Raises:
             ConnectionError: If connection fails after max attempts
@@ -46,11 +47,11 @@ class ResilientI3Connection:
             try:
                 logger.info(f"Attempting to connect to i3 (attempt {attempt + 1}/{max_attempts})")
 
-                # Create connection with auto-reconnect
-                self.conn = i3ipc.Connection(auto_reconnect=True)
+                # Create async connection
+                self.conn = await aio.Connection(auto_reconnect=True).connect()
 
                 # Test connection by getting version
-                version = self.conn.get_version()
+                version = await self.conn.get_version()
                 logger.info(f"Connected to i3 version {version.human_readable}")
 
                 # Rebuild state from marks
@@ -74,6 +75,33 @@ class ResilientI3Connection:
 
         raise ConnectionError(f"Failed to connect to i3 after {max_attempts} attempts")
 
+    async def subscribe_events(self) -> None:
+        """Subscribe to all required i3 IPC events.
+
+        This must be called AFTER connecting and BEFORE starting the main loop.
+        """
+        if not self.conn:
+            logger.error("Cannot subscribe to events: not connected")
+            return
+
+        try:
+            # Subscribe to all event types we'll be handling
+            # This is required for i3ipc.aio - it's not automatic
+            from i3ipc import Event
+
+            await self.conn.subscribe([
+                Event.TICK,
+                Event.WINDOW,
+                Event.WORKSPACE,
+                Event.SHUTDOWN,
+            ])
+
+            logger.info("Subscribed to i3 IPC event stream (tick, window, workspace, shutdown)")
+
+        except Exception as e:
+            logger.error(f"Failed to subscribe to events: {e}")
+            raise
+
     async def rebuild_state(self) -> None:
         """Rebuild daemon state from i3 tree marks.
 
@@ -86,8 +114,8 @@ class ResilientI3Connection:
         try:
             logger.info("Rebuilding state from i3 tree...")
 
-            # Get entire window tree
-            tree = self.conn.get_tree()
+            # Get entire window tree (async)
+            tree = await self.conn.get_tree()
 
             # Rebuild window_map from marks
             await self.state_manager.rebuild_from_marks(tree)
@@ -109,7 +137,8 @@ class ResilientI3Connection:
         try:
             from .models import WorkspaceInfo
 
-            workspaces = self.conn.get_workspaces()
+            # Get workspaces (async)
+            workspaces = await self.conn.get_workspaces()
 
             for ws in workspaces:
                 workspace_info = WorkspaceInfo(
@@ -129,21 +158,22 @@ class ResilientI3Connection:
         except Exception as e:
             logger.error(f"Failed to rebuild workspaces: {e}")
 
-    async def handle_shutdown_event(self, event: i3ipc.Event) -> None:
+    async def handle_shutdown_event(self, conn: aio.Connection, event: IpcBaseEvent) -> None:
         """Handle i3 shutdown/restart events.
 
         Distinguishes between i3 restart (reconnect) vs exit (shutdown daemon).
 
         Args:
+            conn: i3 async connection
             event: Shutdown event from i3
         """
         try:
             # Check shutdown type
-            change = event.change  # type: ignore
+            change = event.change
 
             if change == "restart":
                 logger.info("i3 is restarting - will auto-reconnect")
-                # i3ipc auto_reconnect will handle this
+                # i3ipc.aio auto_reconnect will handle this
                 # Just wait for connection to come back
                 await asyncio.sleep(2)
                 await self.rebuild_state()
@@ -161,9 +191,9 @@ class ResilientI3Connection:
     def subscribe(
         self,
         event_type: str,
-        handler: Callable[[i3ipc.Connection, i3ipc.Event], Awaitable[None]],
+        handler: Callable[[aio.Connection, IpcBaseEvent], Awaitable[None]],
     ) -> None:
-        """Subscribe to i3 events.
+        """Subscribe to i3 events with async handler.
 
         Args:
             event_type: Event type to subscribe to (window, workspace, tick, shutdown)
@@ -173,15 +203,13 @@ class ResilientI3Connection:
             logger.error("Cannot subscribe: not connected")
             return
 
-        def sync_wrapper(conn: i3ipc.Connection, event: i3ipc.Event) -> None:
-            """Wrapper to run async handler in event loop."""
-            asyncio.create_task(handler(conn, event))
-
-        self.conn.on(event_type, sync_wrapper)
-        logger.debug(f"Subscribed to {event_type} events")
+        # Register handler for this event type
+        # i3ipc.aio natively supports async handlers
+        self.conn.on(event_type, handler)
+        logger.debug(f"Registered handler for {event_type} events")
 
     async def main(self) -> None:
-        """Run the i3 event loop.
+        """Run the i3 async event loop.
 
         This blocks until i3 connection is closed or daemon is shut down.
         """
@@ -190,10 +218,9 @@ class ResilientI3Connection:
             return
 
         try:
-            # Run i3 main loop (blocking)
+            # Run i3 async main loop (native async, no executor needed)
             # This will process events until connection closes
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self.conn.main)
+            await self.conn.main()
 
         except Exception as e:
             if not self.is_shutting_down:

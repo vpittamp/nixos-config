@@ -98,8 +98,30 @@ def load_app_classification(config_file: Path) -> ApplicationClassification:
         with open(config_file, "r") as f:
             data = json.load(f)
 
-        scoped_classes = set(data.get("scoped_classes", []))
-        global_classes = set(data.get("global_classes", []))
+        # Support two JSON formats:
+        # 1. New format: {"scoped_classes": [...], "global_classes": [...]}
+        # 2. Legacy format: {"classes": [{"class": "Foo", "scoped": true},...]}
+        if "scoped_classes" in data or "global_classes" in data:
+            # New format
+            scoped_classes = set(data.get("scoped_classes", []))
+            global_classes = set(data.get("global_classes", []))
+        elif "classes" in data:
+            # Legacy format - convert from class objects
+            scoped_classes = set()
+            global_classes = set()
+            for class_config in data.get("classes", []):
+                class_name = class_config.get("class", "")
+                is_scoped = class_config.get("scoped", False)
+                if class_name:
+                    if is_scoped:
+                        scoped_classes.add(class_name)
+                    else:
+                        global_classes.add(class_name)
+        else:
+            # Neither format found - return empty
+            logger.warning(f"Unknown app-classes.json format, using empty classification")
+            scoped_classes = set()
+            global_classes = set()
 
         classification = ApplicationClassification(
             scoped_classes=scoped_classes, global_classes=global_classes

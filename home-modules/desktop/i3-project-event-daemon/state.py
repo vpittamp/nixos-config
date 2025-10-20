@@ -1,12 +1,12 @@
 """State manager for i3 project event daemon.
 
-Manages in-memory daemon state with thread-safe operations.
+Manages in-memory daemon state with async-safe operations.
 """
 
 import asyncio
 import logging
 from typing import Dict, List, Optional
-import i3ipc
+from i3ipc import aio
 
 from .models import DaemonState, WindowInfo, WorkspaceInfo
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class StateManager:
-    """Manages runtime state for the daemon with thread-safe operations."""
+    """Manages runtime state for the daemon with async-safe operations."""
 
     def __init__(self) -> None:
         """Initialize state manager with empty state."""
@@ -143,13 +143,13 @@ class StateManager:
             else:
                 logger.warning(f"Attempted to remove non-existent workspace {name}")
 
-    async def rebuild_from_marks(self, tree: i3ipc.Con) -> None:
+    async def rebuild_from_marks(self, tree: aio.Con) -> None:
         """Rebuild window_map from i3 tree by scanning for project marks.
 
         This is used during daemon startup/reconnection to restore state from marks.
 
         Args:
-            tree: Root container from i3 GET_TREE
+            tree: Root container from i3 GET_TREE (async)
         """
         async with self._lock:
             # Clear existing state
@@ -157,7 +157,7 @@ class StateManager:
             count = 0
 
             # Recursively scan tree for windows with project marks
-            def scan_container(container: i3ipc.Con) -> None:
+            def scan_container(container: aio.Con) -> None:
                 nonlocal count
 
                 # Check if this is a window (has window_id)

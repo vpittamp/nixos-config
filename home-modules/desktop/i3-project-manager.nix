@@ -399,7 +399,7 @@ in
           workspace = 2;
           description = "VS Code editor";
         };
-        Ghostty = {
+        "com.mitchellh.ghostty" = {
           scoped = true;
           workspace = 1;
           description = "Ghostty terminal";

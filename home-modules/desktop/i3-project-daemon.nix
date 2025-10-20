@@ -109,8 +109,7 @@ in
         ProtectHome = "read-only";
         ReadWritePaths = [
           "%t/i3-project-daemon"
-          "%h/.config/i3/projects"
-          "%h/.config/i3/active-project.json"
+          "%h/.config/i3"
         ];
         NoNewPrivileges = true;
         RestrictRealtime = true;
@@ -136,11 +135,15 @@ in
 
         # Logging
         StandardOutput = "journal";
-        # Note: StandardError goes to journal but systemd-python library emits
-        # "no running event loop" warnings. These are harmless but noisy.
-        # We filter them via Python stderr replacement in daemon.py
         StandardError = "journal";
         SyslogIdentifier = "i3-project-daemon";
+
+        # NOTE: systemd-python emits "no running event loop" warnings to stderr from C code
+        # These warnings occur during sd_notify() calls and are cosmetic (sd_notify doesn't
+        # need an event loop). We've attempted multiple suppression methods (FD redirection,
+        # LogFilterPatterns, context managers) but the warnings originate from C-level fprintf
+        # calls that bypass Python's stderr. The warnings are harmless and don't affect
+        # functionality - they can be safely ignored when reviewing logs.
       };
 
       Install = {

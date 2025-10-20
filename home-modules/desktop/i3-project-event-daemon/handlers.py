@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
-import i3ipc
+from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent
 
 from .state import StateManager
 from .models import WindowInfo, WorkspaceInfo, ApplicationClassification
@@ -23,21 +23,22 @@ logger = logging.getLogger(__name__)
 
 
 async def on_tick(
-    conn: i3ipc.Connection,
-    event: i3ipc.TickEvent,
+    conn: aio.Connection,
+    event: TickEvent,
     state_manager: StateManager,
     config_dir: Path,
 ) -> None:
     """Handle tick events for project switch notifications (T007).
 
     Args:
-        conn: i3 IPC connection
+        conn: i3 async IPC connection
         event: Tick event containing payload
         state_manager: State manager instance
         config_dir: Configuration directory path
     """
     try:
         payload = event.payload
+        logger.info(f"✓ TICK EVENT RECEIVED: {payload}")  # Changed to INFO to ensure visibility
         logger.debug(f"Received tick event: {payload}")
 
         if payload.startswith("project:"):
@@ -60,14 +61,14 @@ async def on_tick(
 
 
 async def _switch_project(
-    project_name: str, state_manager: StateManager, conn: i3ipc.Connection, config_dir: Path
+    project_name: str, state_manager: StateManager, conn: aio.Connection, config_dir: Path
 ) -> None:
     """Switch to a new project (hide old, show new).
 
     Args:
         project_name: Name of project to switch to
         state_manager: State manager instance
-        conn: i3 connection
+        conn: i3 async connection
         config_dir: Config directory
     """
     # Get current active project
@@ -103,13 +104,13 @@ async def _switch_project(
 
 
 async def _clear_project(
-    state_manager: StateManager, conn: i3ipc.Connection, config_dir: Path
+    state_manager: StateManager, conn: aio.Connection, config_dir: Path
 ) -> None:
     """Clear active project (global mode).
 
     Args:
         state_manager: State manager instance
-        conn: i3 connection
+        conn: i3 async connection
         config_dir: Config directory
     """
     old_project = await state_manager.get_active_project()
@@ -136,51 +137,51 @@ async def _clear_project(
     save_active_project(state, config_dir / "active-project.json")
 
 
-async def hide_window(conn: i3ipc.Connection, window_id: int) -> None:
+async def hide_window(conn: aio.Connection, window_id: int) -> None:
     """Hide a window by moving it to scratchpad (T008).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         window_id: Window ID to hide
     """
     try:
-        conn.command(f"[id={window_id}] move scratchpad")
+        await conn.command(f"[id={window_id}] move scratchpad")
         logger.debug(f"Hid window {window_id}")
     except Exception as e:
         logger.error(f"Failed to hide window {window_id}: {e}")
 
 
-async def show_window(conn: i3ipc.Connection, window_id: int, workspace: str) -> None:
+async def show_window(conn: aio.Connection, window_id: int, workspace: str) -> None:
     """Show a window by moving it to a workspace (T008).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         window_id: Window ID to show
         workspace: Workspace to move window to
     """
     try:
-        conn.command(f"[id={window_id}] move container to workspace {workspace}")
+        await conn.command(f"[id={window_id}] move container to workspace {workspace}")
         logger.debug(f"Showed window {window_id} on workspace {workspace}")
     except Exception as e:
         logger.error(f"Failed to show window {window_id}: {e}")
 
 
-async def hide_project_windows(conn: i3ipc.Connection, windows: list[WindowInfo]) -> None:
+async def hide_project_windows(conn: aio.Connection, windows: list[WindowInfo]) -> None:
     """Batch hide windows belonging to a project (T008).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         windows: List of WindowInfo objects to hide
     """
     for window_info in windows:
         await hide_window(conn, window_info.window_id)
 
 
-async def show_project_windows(conn: i3ipc.Connection, windows: list[WindowInfo]) -> None:
+async def show_project_windows(conn: aio.Connection, windows: list[WindowInfo]) -> None:
     """Batch show windows belonging to a project (T008).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         windows: List of WindowInfo objects to show
     """
     for window_info in windows:
@@ -193,15 +194,15 @@ async def show_project_windows(conn: i3ipc.Connection, windows: list[WindowInfo]
 
 
 async def on_window_new(
-    conn: i3ipc.Connection,
-    event: i3ipc.WindowEvent,
+    conn: aio.Connection,
+    event: WindowEvent,
     state_manager: StateManager,
     app_classification: ApplicationClassification,
 ) -> None:
     """Handle window::new events - auto-mark new windows (T014).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Window event
         state_manager: State manager
         app_classification: Application classification config
@@ -220,9 +221,9 @@ async def on_window_new(
             logger.debug(f"Window class {window_class} is not scoped, not marking")
             return
 
-        # Apply project mark
+        # Apply project mark (async)
         mark = f"project:{active_project}"
-        conn.command(f'[id={container.window}] mark --add "{mark}"')
+        await conn.command(f'[id={container.window}] mark --add "{mark}"')
         logger.info(f"Marked window {container.window} with {mark}")
 
         # Add to state (mark event will update this)
@@ -246,12 +247,12 @@ async def on_window_new(
 
 
 async def on_window_mark(
-    conn: i3ipc.Connection, event: i3ipc.WindowEvent, state_manager: StateManager
+    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
 ) -> None:
     """Handle window::mark events - track mark changes (T015).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Window event
         state_manager: State manager
     """
@@ -277,12 +278,12 @@ async def on_window_mark(
 
 
 async def on_window_close(
-    conn: i3ipc.Connection, event: i3ipc.WindowEvent, state_manager: StateManager
+    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
 ) -> None:
     """Handle window::close events - remove from tracking (T016).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Window event
         state_manager: State manager
     """
@@ -297,12 +298,12 @@ async def on_window_close(
 
 
 async def on_window_focus(
-    conn: i3ipc.Connection, event: i3ipc.WindowEvent, state_manager: StateManager
+    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Window event
         state_manager: State manager
     """
@@ -322,12 +323,12 @@ async def on_window_focus(
 
 
 async def on_workspace_init(
-    conn: i3ipc.Connection, event: i3ipc.WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
 ) -> None:
     """Handle workspace::init events - track new workspaces (T023).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Workspace event
         state_manager: State manager
     """
@@ -349,12 +350,12 @@ async def on_workspace_init(
 
 
 async def on_workspace_empty(
-    conn: i3ipc.Connection, event: i3ipc.WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
 ) -> None:
     """Handle workspace::empty events - remove empty workspaces (T024).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Workspace event
         state_manager: State manager
     """
@@ -369,12 +370,12 @@ async def on_workspace_empty(
 
 
 async def on_workspace_move(
-    conn: i3ipc.Connection, event: i3ipc.WorkspaceEvent, state_manager: StateManager
+    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
 ) -> None:
     """Handle workspace::move events - update workspace output (T025).
 
     Args:
-        conn: i3 connection
+        conn: i3 async connection
         event: Workspace event
         state_manager: State manager
     """

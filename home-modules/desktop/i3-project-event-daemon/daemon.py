@@ -5,6 +5,7 @@ This module provides the main event loop and systemd integration
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import signal
@@ -15,11 +16,6 @@ from typing import Optional
 try:
     from systemd import journal, daemon as sd_daemon
     SYSTEMD_AVAILABLE = True
-
-    # Suppress "no running event loop" warnings from systemd.daemon.notify()
-    # The notify() function checks for event loops but doesn't need them
-    import warnings
-    warnings.filterwarnings('ignore', message='.*no running event loop.*')
 except ImportError:
     SYSTEMD_AVAILABLE = False
     print("Warning: systemd-python not available, running without systemd integration", file=sys.stderr)
@@ -41,6 +37,31 @@ from .handlers import (
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _suppress_stderr_fd():
+    """Context manager to suppress stderr at the file descriptor level.
+
+    This is needed because systemd-python writes directly to file descriptor 2 (stderr),
+    bypassing Python's sys.stderr. The "no running event loop" warnings come from
+    systemd-python's internal checks that write to C stderr.
+    """
+    # Save original stderr FD
+    stderr_fd = sys.stderr.fileno()
+    saved_stderr_fd = os.dup(stderr_fd)
+
+    # Redirect stderr to /dev/null
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull_fd, stderr_fd)
+    os.close(devnull_fd)
+
+    try:
+        yield
+    finally:
+        # Restore original stderr
+        os.dup2(saved_stderr_fd, stderr_fd)
+        os.close(saved_stderr_fd)
 
 
 class DaemonHealthMonitor:
@@ -69,10 +90,8 @@ class DaemonHealthMonitor:
     def notify_ready(self) -> None:
         """Send READY=1 signal to systemd."""
         if SYSTEMD_AVAILABLE:
-            # Suppress stderr warnings from systemd.daemon.notify()
-            import contextlib
-            import io
-            with contextlib.redirect_stderr(io.StringIO()):
+            # Suppress stderr warnings from systemd.daemon.notify() at FD level
+            with _suppress_stderr_fd():
                 sd_daemon.notify("READY=1")
             logger.info("Sent READY=1 to systemd")
         else:
@@ -81,20 +100,16 @@ class DaemonHealthMonitor:
     def notify_watchdog(self) -> None:
         """Send WATCHDOG=1 ping to systemd."""
         if SYSTEMD_AVAILABLE:
-            # Suppress stderr warnings from systemd.daemon.notify()
-            import contextlib
-            import io
-            with contextlib.redirect_stderr(io.StringIO()):
+            # Suppress stderr warnings from systemd.daemon.notify() at FD level
+            with _suppress_stderr_fd():
                 sd_daemon.notify("WATCHDOG=1")
             logger.debug("Sent WATCHDOG=1 ping")
 
     def notify_stopping(self) -> None:
         """Send STOPPING=1 signal to systemd."""
         if SYSTEMD_AVAILABLE:
-            # Suppress stderr warnings from systemd.daemon.notify()
-            import contextlib
-            import io
-            with contextlib.redirect_stderr(io.StringIO()):
+            # Suppress stderr warnings from systemd.daemon.notify() at FD level
+            with _suppress_stderr_fd():
                 sd_daemon.notify("STOPPING=1")
             logger.info("Sent STOPPING=1 to systemd")
 
@@ -183,48 +198,52 @@ class I3ProjectDaemon:
 
         # Get application classification for handlers
         from .models import ApplicationClassification
+        from functools import partial
 
         app_classification = ApplicationClassification(
             scoped_classes=self.state_manager.state.scoped_classes,
             global_classes=self.state_manager.state.global_classes,
         )
 
+        # Register handlers with partial application to bind extra arguments
+        # i3ipc.aio will call these with (conn, event) and they'll forward to our handlers
+
         # USER STORY 1: Project switching via tick events
         self.connection.subscribe(
             "tick",
-            lambda conn, event: on_tick(conn, event, self.state_manager, self.config_dir),
+            partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir)
         )
 
         # USER STORY 2: Automatic window tracking
         self.connection.subscribe(
             "window::new",
-            lambda conn, event: on_window_new(conn, event, self.state_manager, app_classification),
+            partial(on_window_new, state_manager=self.state_manager, app_classification=app_classification)
         )
         self.connection.subscribe(
             "window::mark",
-            lambda conn, event: on_window_mark(conn, event, self.state_manager),
+            partial(on_window_mark, state_manager=self.state_manager)
         )
         self.connection.subscribe(
             "window::close",
-            lambda conn, event: on_window_close(conn, event, self.state_manager),
+            partial(on_window_close, state_manager=self.state_manager)
         )
         self.connection.subscribe(
             "window::focus",
-            lambda conn, event: on_window_focus(conn, event, self.state_manager),
+            partial(on_window_focus, state_manager=self.state_manager)
         )
 
         # USER STORY 3: Workspace monitoring
         self.connection.subscribe(
             "workspace::init",
-            lambda conn, event: on_workspace_init(conn, event, self.state_manager),
+            partial(on_workspace_init, state_manager=self.state_manager)
         )
         self.connection.subscribe(
             "workspace::empty",
-            lambda conn, event: on_workspace_empty(conn, event, self.state_manager),
+            partial(on_workspace_empty, state_manager=self.state_manager)
         )
         self.connection.subscribe(
             "workspace::move",
-            lambda conn, event: on_workspace_move(conn, event, self.state_manager),
+            partial(on_workspace_move, state_manager=self.state_manager)
         )
 
         # Shutdown event (for i3 restart/exit)
@@ -302,10 +321,8 @@ def setup_logging() -> None:
 
     if SYSTEMD_AVAILABLE:
         # Use systemd journal handler
-        # Suppress stderr output from journal handler creation
-        import contextlib
-        import io
-        with contextlib.redirect_stderr(io.StringIO()):
+        # Suppress stderr output from journal handler creation at FD level
+        with _suppress_stderr_fd():
             handler = journal.JournalHandler(SYSLOG_IDENTIFIER="i3-project-daemon")
     else:
         # Use stderr handler
@@ -336,7 +353,7 @@ async def main_async() -> int:
         # Initialize daemon
         await daemon.initialize()
 
-        # Register event handlers
+        # Register event handlers (auto-subscribes via i3ipc.aio.Connection.on())
         await daemon.register_event_handlers()
 
         # Run main loop
@@ -364,34 +381,7 @@ async def main_async() -> int:
 
 def main() -> None:
     """Main entry point."""
-    # Filter stderr to suppress "no running event loop" from systemd-python
-    import io
-    import contextlib
-
-    class StderrFilter:
-        """Filter stderr to suppress systemd-python event loop warnings."""
-
-        def __init__(self, original_stderr):
-            self.original_stderr = original_stderr
-            self.buffer = ""
-
-        def write(self, text):
-            # Filter out the "no running event loop" messages
-            if "no running event loop" not in text:
-                self.original_stderr.write(text)
-                return len(text)
-            return len(text)
-
-        def flush(self):
-            self.original_stderr.flush()
-
-        def fileno(self):
-            return self.original_stderr.fileno()
-
-    # Install stderr filter
-    sys.stderr = StderrFilter(sys.stderr)
-
-    # Setup logging
+    # Setup logging (FD-level stderr suppression is now handled in _suppress_stderr_fd())
     setup_logging()
 
     logger.info("i3 Project Event Daemon starting...")
