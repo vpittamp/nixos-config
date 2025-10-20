@@ -4,6 +4,37 @@
 { config, lib, pkgs, ... }:
 
 let
+  # Define i3-project-monitor package (same as in i3-project-monitor.nix)
+  i3-project-monitor = pkgs.python3Packages.buildPythonApplication {
+    pname = "i3-project-monitor";
+    version = "0.1.0";
+    format = "pyproject";
+    src = ./i3_project_monitor;
+    nativeBuildInputs = with pkgs.python3Packages; [ setuptools wheel ];
+    propagatedBuildInputs = with pkgs.python3Packages; [ i3ipc rich ];
+    doCheck = false;
+    preBuild = ''
+      mkdir -p i3_project_monitor
+      cp -r * i3_project_monitor/ 2>/dev/null || true
+      cat > pyproject.toml <<'EOF'
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "i3-project-monitor"
+version = "0.1.0"
+description = "Terminal-based monitoring tool for i3 project management"
+requires-python = ">=3.11"
+dependencies = ["i3ipc", "rich"]
+[project.scripts]
+i3-project-monitor = "i3_project_monitor.__main__:main"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["i3_project_monitor*"]
+EOF
+    '';
+  };
+
   # Create Python package for i3-project-test
   i3-project-test = pkgs.python3Packages.buildPythonApplication {
     pname = "i3-project-test";
@@ -22,6 +53,7 @@ let
     propagatedBuildInputs = with pkgs.python3Packages; [
       i3ipc  # i3 IPC library
       rich   # Terminal UI library
+      i3-project-monitor  # Monitor tool (provides daemon_client)
     ];
 
     # No tests for now (manual testing via quickstart.md)
