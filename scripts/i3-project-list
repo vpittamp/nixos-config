@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# i3-project-list - List all projects with window counts
+# Part of i3 Project Event Daemon (T029)
+
+set -euo pipefail
+
+# Configuration
+SOCKET_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+# Usage message
+usage() {
+    cat <<EOF
+Usage: i3-project-list [OPTIONS]
+
+List all configured i3 projects with details.
+
+Options:
+    --format=FORMAT  Output format: text (default), json, simple
+    --help, -h       Show this help message
+
+Formats:
+    text    Human-readable table with icons and window counts
+    json    JSON array of project objects
+    simple  Simple list of project names (for scripts)
+
+Examples:
+    i3-project-list
+    i3-project-list --format=json
+    i3-project-list --format=simple | fzf
+
+Exit codes:
+    0  Success
+    1  Error
+    2  Daemon not running
+EOF
+    exit 0
+}
+
+# Check if daemon is running
+check_daemon() {
+    if [[ ! -S "$SOCKET_PATH" ]]; then
+        echo "Error: Daemon not running" >&2
+        exit 2
+    fi
+}
+
+# Send JSON-RPC request
+send_request() {
+    local method="$1"
+    local params="${2:-{}}"
+
+    local request
+    request=$(cat <<EOF
+{"jsonrpc":"2.0","method":"$method","params":$params,"id":1}
+EOF
+)
+
+    response=$(echo "$request" | nc -U -N "$SOCKET_PATH" 2>/dev/null || true)
+
+    if [[ -z "$response" ]]; then
+        echo "Error: No response from daemon" >&2
+        exit 2
+    fi
+
+    echo "$response"
+}
+
+# List projects in text format
+list_text() {
+    local response
+    response=$(send_request "get_projects")
+
+    # Get active project
+    local active_response
+    active_response=$(send_request "get_active_project")
+    local active_project
+    active_project=$(echo "$active_response" | grep -o '"project_name":"[^"]*"' | cut -d'"' -f4 || echo "")
+
+    echo "Available Projects:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf "%-4s %-20s %-30s %-10s\n" "Icon" "Name" "Display Name" "Windows"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Parse JSON response (simple grep-based parsing)
+    # This is a simplified parser - in production, use jq if available
+    local projects
+    projects=$(echo "$response" | grep -o '"[^"]*":{' | sed 's/"://g' | tr -d '{')
+
+    for project in $projects; do
+        project=$(echo "$project" | tr -d '"')
+
+        # Extract project details
+        local icon display_name window_count
+        icon=$(echo "$response" | grep -A 5 "\"$project\"" | grep '"icon"' | cut -d'"' -f4 || echo "📁")
+        display_name=$(echo "$response" | grep -A 5 "\"$project\"" | grep '"display_name"' | cut -d'"' -f4 || echo "$project")
+        window_count=$(echo "$response" | grep -A 5 "\"$project\"" | grep '"window_count"' | grep -o '[0-9]*' || echo "0")
+
+        # Mark active project
+        local marker=""
+        if [[ "$project" == "$active_project" ]]; then
+            marker="→"
+        else
+            marker=" "
+        fi
+
+        printf "%s %-3s %-20s %-30s %-10s\n" "$marker" "$icon" "$project" "$display_name" "$window_count"
+    done
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    if [[ -n "$active_project" ]]; then
+        echo "Active: $active_project"
+    else
+        echo "Active: Global mode (no project)"
+    fi
+}
+
+# List projects in JSON format
+list_json() {
+    local response
+    response=$(send_request "get_projects")
+
+    # Extract just the projects object
+    echo "$response" | grep -o '"projects":{.*}' | sed 's/"projects"://' || echo "{}"
+}
+
+# List projects in simple format (names only)
+list_simple() {
+    local response
+    response=$(send_request "get_projects")
+
+    # Extract project names
+    echo "$response" | grep -o '"[^"]*":{' | sed 's/"://g' | tr -d '{' | tr -d '"' || echo ""
+}
+
+# Main
+main() {
+    local format="text"
+
+    # Parse arguments
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help)
+                usage
+                ;;
+            --format=*)
+                format="${arg#*=}"
+                ;;
+            *)
+                echo "Error: Unknown option: $arg" >&2
+                usage
+                ;;
+        esac
+    done
+
+    # Validate format
+    if [[ ! "$format" =~ ^(text|json|simple)$ ]]; then
+        echo "Error: Invalid format: $format" >&2
+        exit 1
+    fi
+
+    check_daemon
+
+    case "$format" in
+        text)
+            list_text
+            ;;
+        json)
+            list_json
+            ;;
+        simple)
+            list_simple
+            ;;
+    esac
+}
+
+main "$@"

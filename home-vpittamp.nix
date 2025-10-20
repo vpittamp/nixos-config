@@ -9,6 +9,7 @@
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
     # ./home-modules/desktop/i3-projects.nix  # REMOVED: Feature 010 (OLD STATIC SYSTEM)
     ./home-modules/desktop/i3-project-manager.nix  # Feature 012: Project management scripts (CURRENT SYSTEM)
+    ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon (NEW SYSTEM)
     # ./home-modules/desktop/polybar.nix  # REMOVED: Migrated to i3bar (Feature 013)
     ./home-modules/desktop/i3blocks  # Feature 013: i3blocks status command for i3bar
   ];
@@ -18,6 +19,12 @@
 
   # Feature 012: Enable i3 project manager (deploys scripts to ~/.config/i3/scripts/)
   programs.i3ProjectManager.enable = true;
+
+  # Feature 015: Enable i3 project event listener daemon
+  services.i3ProjectEventListener = {
+    enable = true;  # Enabled for testing (Feature 015)
+    logLevel = "DEBUG";  # Debug logging for initial testing
+  };
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
