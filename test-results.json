@@ -1,0 +1,122 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "2025-10-20T16:12:13.758828",
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 1,
+    "success_rate": 0.0,
+    "duration_seconds": 1.583261
+  },
+  "tests": [
+    {
+      "scenario_id": "project_lifecycle_001",
+      "name": "Basic Project Lifecycle",
+      "status": "error",
+      "duration_seconds": 1.583188,
+      "start_time": "2025-10-20T16:12:12.175558",
+      "end_time": "2025-10-20T16:12:13.758746",
+      "assertions": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "results": []
+      },
+      "error": "Test execution error: Not connected to daemon",
+      "logs": [
+        {
+          "timestamp": "2025-10-20T16:12:12.175587",
+          "level": "INFO",
+          "message": "Starting scenario: Basic Project Lifecycle"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.175611",
+          "level": "INFO",
+          "message": "Running setup phase"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.175628",
+          "level": "INFO",
+          "message": "Creating test projects"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.205659",
+          "level": "INFO",
+          "message": "Created project: test-proj-a"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.233055",
+          "level": "INFO",
+          "message": "Created project: test-proj-b"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.233206",
+          "level": "INFO",
+          "message": "Running execute phase"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.233234",
+          "level": "INFO",
+          "message": "Switching between projects"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:12.482848",
+          "level": "DEBUG",
+          "message": "Waiting 0.5s"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.234050",
+          "level": "DEBUG",
+          "message": "Waiting 0.5s"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.734642",
+          "level": "INFO",
+          "message": "Running validate phase"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.734822",
+          "level": "INFO",
+          "message": "Validating project state"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.734871",
+          "level": "ERROR",
+          "message": "Execution error: Not connected to daemon"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.734909",
+          "level": "INFO",
+          "message": "Running cleanup phase"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.734923",
+          "level": "INFO",
+          "message": "Cleaning up test projects"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.755092",
+          "level": "WARNING",
+          "message": "Could not clear active project: Failed to switch project: [ERROR] Project '--clear' does not exist\n\u001b[0;31mError: Project '--clear' does not exist\u001b[0m\n"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.757152",
+          "level": "INFO",
+          "message": "Deleted project: test-proj-a"
+        },
+        {
+          "timestamp": "2025-10-20T16:12:13.758682",
+          "level": "INFO",
+          "message": "Deleted project: test-proj-b"
+        }
+      ],
+      "artifacts": {}
+    }
+  ],
+  "metadata": {
+    "parallel": false,
+    "total_scenarios": 1
+  }
+}
