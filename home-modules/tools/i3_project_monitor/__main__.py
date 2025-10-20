@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from typing import NoReturn
 
 from .daemon_client import DaemonClient
@@ -48,7 +49,7 @@ def create_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="live",
-        choices=["live", "events", "history", "tree"],
+        choices=["live", "events", "history", "tree", "diagnose"],
         help="Display mode (default: live)",
     )
 
@@ -115,6 +116,50 @@ def create_parser() -> argparse.ArgumentParser:
         "--project",
         metavar="PROJECT",
         help="Filter by project name",
+    )
+
+    # Diagnose mode options
+    diagnose_group = parser.add_argument_group("diagnose mode options")
+    diagnose_group.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        metavar="FILE",
+        help="Output file path for diagnostic snapshot (default: stdout)",
+    )
+
+    diagnose_group.add_argument(
+        "--no-events",
+        action="store_true",
+        help="Exclude event buffer from snapshot",
+    )
+
+    diagnose_group.add_argument(
+        "--no-tree",
+        action="store_true",
+        help="Exclude i3 tree dump from snapshot",
+    )
+
+    diagnose_group.add_argument(
+        "--no-monitors",
+        action="store_true",
+        help="Exclude monitor client list from snapshot",
+    )
+
+    diagnose_group.add_argument(
+        "--event-limit",
+        type=int,
+        default=500,
+        metavar="N",
+        help="Number of events to include in snapshot (default: 500)",
+    )
+
+    diagnose_group.add_argument(
+        "--compare",
+        type=Path,
+        nargs=2,
+        metavar=("FILE1", "FILE2"),
+        help="Compare two diagnostic snapshots",
     )
 
     return parser
@@ -188,6 +233,42 @@ async def run_tree_mode(client: DaemonClient, args: argparse.Namespace) -> int:
     return 0
 
 
+async def run_diagnose_mode(client: DaemonClient, args: argparse.Namespace) -> int:
+    """Run diagnostic snapshot mode.
+
+    Args:
+        client: DaemonClient instance
+        args: Parsed command-line arguments
+
+    Returns:
+        Exit code
+    """
+    from .displays.diagnose import DiagnoseDisplay, DiagnoseDiffDisplay
+
+    # Handle comparison mode
+    if args.compare:
+        display = DiagnoseDiffDisplay(
+            client,
+            snapshot1_path=args.compare[0],
+            snapshot2_path=args.compare[1],
+            output_file=args.output,
+        )
+        await display.run()
+        return 0
+
+    # Handle snapshot capture mode
+    display = DiagnoseDisplay(
+        client,
+        output_file=args.output,
+        include_events=not args.no_events,
+        event_limit=args.event_limit,
+        include_tree=not args.no_tree,
+        include_monitors=not args.no_monitors,
+    )
+    await display.run()
+    return 0
+
+
 async def async_main(args: argparse.Namespace) -> int:
     """Async main function.
 
@@ -221,6 +302,8 @@ async def async_main(args: argparse.Namespace) -> int:
             return await run_history_mode(client, args)
         elif args.mode == "tree":
             return await run_tree_mode(client, args)
+        elif args.mode == "diagnose":
+            return await run_diagnose_mode(client, args)
         else:
             print(f"Error: Unknown mode: {args.mode}", file=sys.stderr)
             return 1
