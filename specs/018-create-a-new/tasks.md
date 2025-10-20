@@ -130,12 +130,12 @@
 
 ### Implementation for User Story 3
 
-- [ ] T037 [P] [US3] Create diagnose display mode in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Implement diagnostic capture logic
-- [ ] T038 [US3] Add diagnose mode to CLI in `home-modules/tools/i3_project_monitor/__main__.py` - Add argparse subcommand for diagnose
-- [ ] T039 [US3] Implement diagnostic snapshot assembly in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Call `get_diagnostic_state` JSON-RPC method, query i3 GET_TREE, assemble complete snapshot
-- [ ] T040 [US3] Implement JSON serialization with schema versioning in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Output to file with indent=2, include schema_version field
-- [ ] T041 [US3] Implement diagnostic comparison mode in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Add `--compare` flag to diff two snapshots
-- [ ] T042 [US3] Test diagnostic capture - Run `i3-project-monitor diagnose --output=test.json` and verify AS3.1 through AS3.5
+- [X] T037 [P] [US3] Create diagnose display mode in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Implement diagnostic capture logic
+- [X] T038 [US3] Add diagnose mode to CLI in `home-modules/tools/i3_project_monitor/__main__.py` - Add argparse subcommand for diagnose
+- [X] T039 [US3] Implement diagnostic snapshot assembly in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Call `get_diagnostic_state` JSON-RPC method, query i3 GET_TREE, assemble complete snapshot
+- [X] T040 [US3] Implement JSON serialization with schema versioning in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Output to file with indent=2, include schema_version field
+- [X] T041 [US3] Implement diagnostic comparison mode in `home-modules/tools/i3_project_monitor/displays/diagnose.py` - Add `--compare` flag to diff two snapshots
+- [X] T042 [US3] Test diagnostic capture - Run `i3-project-monitor diagnose --output=test.json` and verify AS3.1 through AS3.5
 
 **Checkpoint**: All three user stories should now be independently functional - manual monitoring, automated testing, and diagnostic capture
 
