@@ -153,12 +153,13 @@ i3_send_tick() {
     i3-msg -t send_tick "$payload" &> /dev/null || log_warn "Failed to send tick event"
 }
 
-# Get all window IDs with specific mark
+# Get all window IDs with specific mark (prefix match)
 # Arguments:
-#   $1 - Mark name
+#   $1 - Mark name (will match marks starting with this)
 i3_get_windows_by_mark() {
     local mark="$1"
-    i3-msg -t get_tree | jq -r ".. | select(.marks? | contains([\"$mark\"])) | .window" 2>/dev/null || true
+    # Match marks that START with the given mark name
+    i3-msg -t get_tree | jq -r ".. | select(.marks? | length > 0) | select(.marks[] | startswith(\"$mark\")) | .window" 2>/dev/null | sort -u || true
 }
 
 # Move windows with mark to scratchpad
@@ -166,8 +167,10 @@ i3_get_windows_by_mark() {
 #   $1 - Mark name
 i3_hide_windows_by_mark() {
     local mark="$1"
-    log_debug "Hiding windows with mark: $mark"
-    i3_cmd "[con_mark=\"$mark\"] move scratchpad" > /dev/null
+    log_debug "Hiding windows with mark prefix: $mark"
+    # Use regex to match marks that START with the project name
+    # This handles both "project:nixos" and "project:nixos:term0" formats
+    i3_cmd "[con_mark=\"^$mark\"] move scratchpad" > /dev/null
 }
 
 # Show windows with mark from scratchpad

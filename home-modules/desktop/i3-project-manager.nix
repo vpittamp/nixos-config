@@ -148,13 +148,16 @@ let
 
     i3_get_windows_by_mark() {
         local mark="$1"
-        ${pkgs.i3}/bin/i3-msg -t get_tree | ${pkgs.jq}/bin/jq -r ".. | select(.marks? | contains([\"$mark\"])) | .window" 2>/dev/null || true
+        # Match marks that START with the given mark name (prefix match)
+        ${pkgs.i3}/bin/i3-msg -t get_tree | ${pkgs.jq}/bin/jq -r ".. | select(.marks? | length > 0) | select(.marks[] | startswith(\"$mark\")) | .window" 2>/dev/null | ${pkgs.coreutils}/bin/sort -u || true
     }
 
     i3_hide_windows_by_mark() {
         local mark="$1"
-        log_debug "Hiding windows with mark: $mark"
-        i3_cmd "[con_mark=\"$mark\"] move scratchpad" > /dev/null
+        log_debug "Hiding windows with mark prefix: $mark"
+        # Use regex to match marks that START with the project name
+        # This handles both "project:nixos" and "project:nixos:term0" formats
+        i3_cmd "[con_mark=\"^$mark\"] move scratchpad" > /dev/null
     }
 
     i3_show_windows_by_mark() {
@@ -171,7 +174,9 @@ let
 
         while IFS= read -r window_id; do
             [ -z "$window_id" ] && continue
+            # Show from scratchpad and make tiling (not floating)
             i3_cmd "[id=$window_id] scratchpad show" > /dev/null
+            i3_cmd "[id=$window_id] floating disable" > /dev/null
         done <<< "$windows"
     }
 
@@ -492,9 +497,9 @@ in
         main() {
             local format="text"
 
-            if [ "$1" = "--format" ]; then
-                format="$2"
-            elif [ "$1" = "--help" ]; then
+            if [ "''${1:-}" = "--format" ]; then
+                format="''${2:-text}"
+            elif [ "''${1:-}" = "--help" ]; then
                 usage
                 exit 0
             fi
@@ -505,7 +510,7 @@ in
             local project_files=()
             local file
             while IFS= read -r -d "" file; do
-                project_files=("$${project_files[@]}" "$file")
+                project_files+=("$file")
             done < <(${pkgs.findutils}/bin/find "$PROJECT_DIR" -maxdepth 1 -name "*.json" -print0 2>/dev/null | ${pkgs.coreutils}/bin/sort -z)
 
             if [ ''${#project_files[@]} -eq 0 ]; then
@@ -607,7 +612,7 @@ in
         }
 
         main() {
-            if [ "$1" = "--help" ]; then
+            if [ "''${1:-}" = "--help" ]; then
                 usage
                 exit 0
             fi
@@ -925,9 +930,9 @@ in
         main() {
             local format="text"
 
-            if [ "$1" = "--format" ]; then
-                format="$2"
-            elif [ "$1" = "--help" ]; then
+            if [ "''${1:-}" = "--format" ]; then
+                format="''${2:-text}"
+            elif [ "''${1:-}" = "--help" ]; then
                 usage
                 exit 0
             fi
@@ -1224,7 +1229,8 @@ in
             local project_name
             project_name=$(get_active_project 2>/dev/null) || project_name=""
 
-            local target_dir="$1"
+            # Get target directory from argument, default to empty if not provided
+            local target_dir="''${1:-}"
 
             if [ -n "$project_name" ]; then
                 if [ -z "$target_dir" ]; then
@@ -1236,28 +1242,75 @@ in
                 fi
             fi
 
-            if [ -n "$target_dir" ]; then
-                log_debug "Executing: code \"$target_dir\""
-                ${pkgs.vscode}/bin/code "$target_dir" &
-                local code_pid=$!
-            else
-                log_debug "Executing: code"
-                ${pkgs.vscode}/bin/code &
-                local code_pid=$!
+            # If project is active and app is scoped, detect the new window using i3 native queries
+            local window_id=""
+            if [ -n "$project_name" ] && is_app_scoped "Code"; then
+                log_info "Code is project-scoped, will mark window with project:$project_name"
+
+                # Get current Code windows from i3 tree (native i3 query)
+                local windows_before
+                windows_before=$(${pkgs.i3}/bin/i3-msg -t get_tree | ${pkgs.jq}/bin/jq -r '[.. | select(.window_properties?.class? == "Code") | .window] | .[]' 2>/dev/null || true)
+                log_debug "Code windows in i3 before launch: $(${pkgs.coreutils}/bin/echo "$windows_before" | ${pkgs.gnugrep}/bin/grep -c . || ${pkgs.coreutils}/bin/echo 0)"
             fi
 
+            # Launch VS Code
+            if [ -n "$target_dir" ]; then
+                log_debug "Executing: code --new-window \"$target_dir\""
+                ${pkgs.vscode}/bin/code --new-window "$target_dir" &
+            else
+                log_debug "Executing: code --new-window"
+                ${pkgs.vscode}/bin/code --new-window &
+            fi
+
+            # If project is active and app is scoped, mark the new window
             if [ -n "$project_name" ]; then
                 if is_app_scoped "Code"; then
-                    log_info "Code is project-scoped, will mark window with project:$project_name"
+                    # Poll i3 tree for new window (more reliable than xdotool)
+                    local max_attempts=20
+                    local attempt=0
 
-                    local window_id
-                    window_id=$(get_window_id_by_pid "$code_pid" 10)
+                    while [ $attempt -lt $max_attempts ]; do
+                        ${pkgs.coreutils}/bin/sleep 0.5
+
+                        # Get current windows from i3 tree
+                        local windows_after
+                        windows_after=$(${pkgs.i3}/bin/i3-msg -t get_tree | ${pkgs.jq}/bin/jq -r '[.. | select(.window_properties?.class? == "Code") | .window] | .[]' 2>/dev/null || true)
+
+                        log_debug "Attempt $attempt: windows_before=$windows_before"
+                        log_debug "Attempt $attempt: windows_after=$windows_after"
+
+                        # Find new window by comparing lists
+                        local new_window
+                        new_window=$(${pkgs.coreutils}/bin/comm -13 <(${pkgs.coreutils}/bin/echo "$windows_before" | ${pkgs.coreutils}/bin/sort) <(${pkgs.coreutils}/bin/echo "$windows_after" | ${pkgs.coreutils}/bin/sort) | ${pkgs.coreutils}/bin/head -1)
+
+                        log_debug "Attempt $attempt: new_window=$new_window"
+
+                        if [ -n "$new_window" ]; then
+                            window_id="$new_window"
+                            log_debug "Found new Code window in i3 tree: $window_id (attempt $attempt)"
+
+                            # Wait briefly for window to stabilize
+                            ${pkgs.coreutils}/bin/sleep 0.3
+
+                            # Verify window still exists in i3 tree (not just X11)
+                            if ${pkgs.i3}/bin/i3-msg -t get_tree | ${pkgs.jq}/bin/jq -e ".. | select(.window? == $window_id)" >/dev/null 2>&1; then
+                                log_debug "Verified window $window_id exists in i3 tree"
+                                break
+                            else
+                                log_debug "Window $window_id not in i3 tree, continuing search..."
+                                window_id=""
+                            fi
+                        fi
+
+                        # Increment attempt counter (|| true prevents set -e exit when attempt=0)
+                        ((attempt++)) || true
+                    done
 
                     if [ -n "$window_id" ]; then
                         mark_window_with_project "$window_id" "$project_name"
                         ${pkgs.coreutils}/bin/echo -e "''${GREEN}✓''${NC} Launched Code for project: $project_name (window $window_id)"
                     else
-                        log_warn "Could not find window for Code process $code_pid"
+                        log_warn "Could not detect new Code window in i3 tree after ''${max_attempts} attempts"
                         ${pkgs.coreutils}/bin/echo -e "''${YELLOW}⚠''${NC} Launched Code but could not mark window"
                     fi
                 else
@@ -1354,7 +1407,8 @@ in
             local project_name
             project_name=$(get_active_project 2>/dev/null) || project_name=""
 
-            local target_dir="$1"
+            # Get target directory from argument, default to empty if not provided
+            local target_dir="''${1:-}"
 
             if [ -n "$project_name" ]; then
                 if [ -z "$target_dir" ]; then
@@ -1418,7 +1472,8 @@ in
             local project_name
             project_name=$(get_active_project 2>/dev/null) || project_name=""
 
-            local target_dir="$1"
+            # Get target directory from argument, default to empty if not provided
+            local target_dir="''${1:-}"
 
             if [ -n "$project_name" ]; then
                 if [ -z "$target_dir" ]; then
@@ -1477,7 +1532,119 @@ in
     # T048: Deploy Phase 9 rofi project switcher
     home.file.".config/i3/scripts/rofi-project-switcher.sh" = {
       executable = true;
-      source = ./scripts/rofi-project-switcher.sh;
+      text = ''
+        #!${pkgs.bash}/bin/bash
+        # rofi-project-switcher - Interactive project switcher using rofi
+        # Declaratively generated by home-manager
+
+        set -euo pipefail
+
+        ${commonFunctions}
+
+        main() {
+            # Check if rofi is available
+            if ! command -v ${pkgs.rofi}/bin/rofi >/dev/null 2>&1; then
+                die "rofi is not installed"
+            fi
+
+            # Get list of projects
+            if [ ! -d "$PROJECT_DIR" ]; then
+                die "Project directory does not exist: $PROJECT_DIR"
+            fi
+
+            # Get active project
+            local active_project
+            active_project=$(get_active_project 2>/dev/null) || active_project=""
+
+            # Build project list with icons and display names
+            local project_list=""
+            local project_names=()
+
+            # Add "Clear Project" option at the top
+            if [ -n "$active_project" ]; then
+                project_list="  Clear Project (Return to Global Mode)\n"
+                project_names+=("__CLEAR__")
+            fi
+
+            # Scan for project JSON files
+            while IFS= read -r -d ''' project_file; do
+                local project_name
+                project_name=$(${pkgs.coreutils}/bin/basename "$project_file" .json)
+
+                if [ -f "$project_file" ]; then
+                    local project_json
+                    project_json=$(${pkgs.coreutils}/bin/cat "$project_file")
+
+                    local display_name icon
+                    display_name=$(${pkgs.coreutils}/bin/echo "$project_json" | ${pkgs.jq}/bin/jq -r '.project.displayName // .project.name')
+                    icon=$(${pkgs.coreutils}/bin/echo "$project_json" | ${pkgs.jq}/bin/jq -r '.project.icon // ""')
+
+                    # Mark active project
+                    local marker=""
+                    if [ "$project_name" = "$active_project" ]; then
+                        marker=" (active)"
+                    fi
+
+                    # Build display line
+                    if [ -n "$icon" ]; then
+                        project_list+="$icon  ''${display_name}''${marker}\n"
+                    else
+                        project_list+="  ''${display_name}''${marker}\n"
+                    fi
+
+                    project_names+=("$project_name")
+                fi
+            done < <(${pkgs.findutils}/bin/find "$PROJECT_DIR" -maxdepth 1 -name "*.json" -print0 | ${pkgs.coreutils}/bin/sort -z)
+
+            if [ ''${#project_names[@]} -eq 0 ] && [ -z "$active_project" ]; then
+                ${pkgs.coreutils}/bin/echo "No projects found"
+                exit 0
+            fi
+
+            # Show rofi menu
+            local selection
+            selection=$(${pkgs.coreutils}/bin/echo -e "$project_list" | ${pkgs.rofi}/bin/rofi -dmenu -i -p "Project" -theme-str 'window {width: 40%;}' -no-custom)
+
+            if [ -z "$selection" ]; then
+                # User cancelled
+                exit 0
+            fi
+
+            # Find which project was selected by matching the display line
+            local selected_index=-1
+            local index=0
+
+            while IFS= read -r line; do
+                if [ "$line" = "$selection" ]; then
+                    selected_index=$index
+                    break
+                fi
+                # Increment index (|| true prevents set -e exit when index=0)
+                ((index++)) || true
+            done <<< "$(${pkgs.coreutils}/bin/echo -e "$project_list")"
+
+            if [ $selected_index -lt 0 ] || [ $selected_index -ge ''${#project_names[@]} ]; then
+                log_error "Invalid selection index: $selected_index"
+                exit 1
+            fi
+
+            local selected_project="''${project_names[$selected_index]}"
+
+            # Handle selection
+            if [ "$selected_project" = "__CLEAR__" ]; then
+                log_info "Clearing active project via rofi"
+                exec "$HOME/.config/i3/scripts/project-clear.sh"
+            elif [ "$selected_project" = "$active_project" ]; then
+                # Already active, nothing to do
+                ${pkgs.coreutils}/bin/echo "Project '$selected_project' is already active"
+            else
+                log_info "Switching to project via rofi: $selected_project"
+                exec "$HOME/.config/i3/scripts/project-switch.sh" "$selected_project"
+            fi
+        }
+
+        main "$@"
+      '';
     };
 
     # T015: Create command-line symlinks in ~/.local/bin/
