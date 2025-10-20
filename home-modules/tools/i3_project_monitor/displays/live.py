@@ -153,9 +153,9 @@ class LiveDisplay(BaseDisplay):
             Rich Panel with connection info
         """
         uptime_seconds = status.get("uptime_seconds", 0.0)
-        events_processed = status.get("total_events_processed", 0)
+        events_processed = status.get("event_count", 0)  # daemon returns "event_count"
         error_count = status.get("error_count", 0)
-        is_connected = status.get("is_connected", False)
+        is_connected = status.get("connected", False)  # daemon returns "connected", not "is_connected"
 
         # Format uptime
         uptime_str = self.format_uptime(uptime_seconds)
@@ -193,8 +193,8 @@ class LiveDisplay(BaseDisplay):
             Rich Panel with active project info
         """
         active_project = status.get("active_project")
-        tracked_windows_count = status.get("tracked_windows", 0)
-        total_windows = status.get("total_windows", 0)
+        window_count = status.get("window_count", 0)  # daemon returns "window_count"
+        workspace_count = status.get("workspace_count", 0)
 
         # Format project name
         if active_project:
@@ -213,9 +213,10 @@ class LiveDisplay(BaseDisplay):
         # Add window tracking stats
         project_text.append("\n")
         project_text.append("Tracked Windows: ", "bold white")
-        project_text.append(f"{tracked_windows_count}", "green")
-        project_text.append(" / ", "dim")
-        project_text.append(f"{total_windows}", "white")
+        project_text.append(f"{window_count}", "green")
+        project_text.append("\n")
+        project_text.append("Workspaces: ", "bold white")
+        project_text.append(f"{workspace_count}", "cyan")
 
         return Panel(
             project_text,
