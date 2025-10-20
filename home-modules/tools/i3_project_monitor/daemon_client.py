@@ -9,9 +9,11 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, AsyncIterator
+from typing import Any, Dict, Optional, AsyncIterator, List
 
-from .models import ConnectionState
+from i3ipc import aio as i3ipc_aio
+
+from .models import ConnectionState, OutputState, WorkspaceAssignment
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,9 @@ class DaemonClient:
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
         self.request_id: int = 0
+
+        # i3 IPC connection for direct queries (Feature 018)
+        self.i3: Optional[i3ipc_aio.Connection] = None
 
     async def connect(self) -> None:
         """Connect to daemon socket.
@@ -256,3 +261,64 @@ class DaemonClient:
 
         self.state.connected = False
         logger.info("Event stream ended")
+
+    async def connect_i3(self) -> None:
+        """Connect to i3 IPC for direct queries (Feature 018).
+
+        This creates a separate i3 IPC connection for querying i3 state directly
+        (GET_OUTPUTS, GET_WORKSPACES, GET_TREE) without going through the daemon.
+
+        Raises:
+            ConnectionError: If i3 connection fails
+        """
+        try:
+            self.i3 = await i3ipc_aio.Connection().connect()
+            logger.info("Connected to i3 IPC")
+        except Exception as e:
+            logger.error(f"Failed to connect to i3 IPC: {e}")
+            raise ConnectionError(f"Failed to connect to i3 IPC: {e}")
+
+    async def disconnect_i3(self) -> None:
+        """Disconnect from i3 IPC."""
+        if self.i3:
+            # i3ipc.aio doesn't have an explicit disconnect, connections are auto-managed
+            self.i3 = None
+            logger.info("Disconnected from i3 IPC")
+
+    async def get_i3_outputs(self) -> List[OutputState]:
+        """Query i3 outputs using GET_OUTPUTS IPC (Feature 018).
+
+        Returns:
+            List of OutputState objects from i3
+
+        Raises:
+            ConnectionError: If not connected to i3
+        """
+        if not self.i3:
+            await self.connect_i3()
+
+        try:
+            outputs = await self.i3.get_outputs()
+            return [OutputState.from_i3_output(output) for output in outputs]
+        except Exception as e:
+            logger.error(f"Failed to get i3 outputs: {e}")
+            raise ConnectionError(f"Failed to get i3 outputs: {e}")
+
+    async def get_i3_workspaces(self) -> List[WorkspaceAssignment]:
+        """Query i3 workspaces using GET_WORKSPACES IPC (Feature 018).
+
+        Returns:
+            List of WorkspaceAssignment objects from i3
+
+        Raises:
+            ConnectionError: If not connected to i3
+        """
+        if not self.i3:
+            await self.connect_i3()
+
+        try:
+            workspaces = await self.i3.get_workspaces()
+            return [WorkspaceAssignment.from_i3_workspace(ws) for ws in workspaces]
+        except Exception as e:
+            logger.error(f"Failed to get i3 workspaces: {e}")
+            raise ConnectionError(f"Failed to get i3 workspaces: {e}")

@@ -192,6 +192,10 @@ class I3ProjectDaemon:
             logger.error(f"Failed to connect to i3: {e}")
             raise
 
+        # Update IPC server with i3 connection (Feature 018)
+        self.ipc_server.i3_connection = self.connection
+        logger.info("IPC server updated with i3 connection")
+
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
 

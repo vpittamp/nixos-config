@@ -14,7 +14,8 @@ from rich.table import Table
 from rich.text import Text
 
 from ..daemon_client import DaemonClient
-from ..models import MonitorState, WindowEntry, MonitorEntry
+from ..models import MonitorState, WindowEntry, MonitorEntry, OutputState, WorkspaceAssignment
+from ..validators import validate_workspace_assignments, validate_output_configuration
 from .base import BaseDisplay
 
 
@@ -107,30 +108,47 @@ class LiveDisplay(BaseDisplay):
         ))
 
     def _create_layout(self) -> Layout:
-        """Create initial layout structure.
+        """Create initial layout structure (Feature 018: T012).
 
         Returns:
-            Rich Layout with 4 panels
+            Rich Layout with 6 panels (added outputs and workspaces)
         """
         layout = Layout()
         layout.split_column(
             Layout(name="status", ratio=1),
             Layout(name="project", ratio=1),
             Layout(name="windows", ratio=3),
-            Layout(name="monitors", ratio=2),
+            Layout(name="outputs", ratio=2),  # NEW: i3 outputs panel
+            Layout(name="workspaces", ratio=2),  # NEW: i3 workspaces panel
+            Layout(name="monitors", ratio=1),  # Monitor tool clients (reduced ratio)
         )
         return layout
 
     async def _fetch_and_render(self) -> Layout:
-        """Fetch data from daemon and render complete layout.
+        """Fetch data from daemon and i3, validate, and render complete layout (Feature 018: T013).
 
         Returns:
             Rendered Rich Layout
         """
-        # Fetch data sequentially (socket can only handle one request at a time)
+        # Fetch daemon data sequentially (socket can only handle one request at a time)
         status_data = await self.client.get_status()
         windows_data = await self.client.get_windows()
         monitors_data = await self.client.list_monitors()
+
+        # Fetch i3 IPC data directly (Feature 018: T013)
+        try:
+            outputs = await self.client.get_i3_outputs()
+            workspaces = await self.client.get_i3_workspaces()
+
+            # Validate outputs and workspaces (Feature 018: T013)
+            output_validation = validate_output_configuration(outputs)
+            workspace_validation = validate_workspace_assignments(workspaces, outputs)
+        except Exception as e:
+            # If i3 query fails, show error in panels
+            outputs = []
+            workspaces = []
+            output_validation = None
+            workspace_validation = None
 
         # Create layout
         layout = self._create_layout()
@@ -139,6 +157,8 @@ class LiveDisplay(BaseDisplay):
         layout["status"].update(self._render_connection_status(status_data))
         layout["project"].update(self._render_active_project(status_data))
         layout["windows"].update(self._render_windows_table(windows_data))
+        layout["outputs"].update(self._render_outputs_panel(outputs, output_validation))
+        layout["workspaces"].update(self._render_workspaces_panel(workspaces, workspace_validation))
         layout["monitors"].update(self._render_monitors_table(monitors_data))
 
         return layout
@@ -317,7 +337,144 @@ class LiveDisplay(BaseDisplay):
 
         return Panel(
             table,
-            title=f"[bold blue]Monitors[/bold blue] ({len(monitors)} connected)",
+            title=f"[bold blue]Monitor Clients[/bold blue] ({len(monitors)} connected)",
             border_style="blue",
+            padding=(0, 1),
+        )
+
+    def _render_outputs_panel(
+        self,
+        outputs: list[OutputState],
+        validation: Optional[Any] = None
+    ) -> Panel:
+        """Render i3 outputs panel (Feature 018: T010).
+
+        Args:
+            outputs: List of OutputState objects from i3 GET_OUTPUTS
+            validation: Output validation result
+
+        Returns:
+            Rich Panel with outputs table
+        """
+        # Create table
+        table = Table(
+            show_header=True,
+            header_style="bold cyan",
+            border_style="blue",
+            show_lines=False,
+        )
+
+        table.add_column("Output", justify="left", style="cyan", width=12)
+        table.add_column("Resolution", justify="left", style="white", width=14)
+        table.add_column("Position", justify="left", style="dim", width=12)
+        table.add_column("Primary", justify="center", style="green", width=8)
+        table.add_column("Active", justify="center", style="magenta", width=8)
+
+        # Add rows
+        if not outputs:
+            table.add_row("—", "—", "—", "—", "[red]No outputs[/red]")
+        else:
+            for output in outputs:
+                name = output.name
+                resolution = f"{output.width}×{output.height}"
+                position = f"({output.x},{output.y})"
+                primary = "✓" if output.primary else "—"
+                active = "[green]✓[/green]" if output.active else "[dim]—[/dim]"
+
+                # Highlight primary output
+                if output.primary:
+                    name = f"[bold]{name}[/bold]"
+
+                table.add_row(name, resolution, position, primary, active)
+
+        # Determine border style based on validation
+        border_style = "green"
+        title_suffix = ""
+        if validation:
+            if not validation.valid:
+                border_style = "red"
+                title_suffix = " [red]⚠[/red]"
+            elif validation.warnings:
+                border_style = "yellow"
+                title_suffix = " [yellow]⚠[/yellow]"
+
+        return Panel(
+            table,
+            title=f"[bold cyan]i3 Outputs[/bold cyan] ({len(outputs)} outputs){title_suffix}",
+            border_style=border_style,
+            padding=(0, 1),
+        )
+
+    def _render_workspaces_panel(
+        self,
+        workspaces: list[WorkspaceAssignment],
+        validation: Optional[Any] = None
+    ) -> Panel:
+        """Render i3 workspaces panel (Feature 018: T011).
+
+        Args:
+            workspaces: List of WorkspaceAssignment objects from i3 GET_WORKSPACES
+            validation: Workspace validation result
+
+        Returns:
+            Rich Panel with workspaces table
+        """
+        # Create table
+        table = Table(
+            show_header=True,
+            header_style="bold cyan",
+            border_style="blue",
+            show_lines=False,
+        )
+
+        table.add_column("#", justify="right", style="yellow", width=4)
+        table.add_column("Name", justify="left", style="white", width=20)
+        table.add_column("Output", justify="left", style="cyan", width=12)
+        table.add_column("Visible", justify="center", style="green", width=8)
+        table.add_column("Focused", justify="center", style="magenta", width=8)
+
+        # Add rows
+        if not workspaces:
+            table.add_row("—", "—", "—", "—", "[red]No workspaces[/red]")
+        else:
+            # Sort by workspace number
+            sorted_workspaces = sorted(workspaces, key=lambda ws: ws.num)
+
+            for ws in sorted_workspaces:
+                num = str(ws.num)
+                name = self.truncate_string(ws.name, 20)
+                output = ws.output
+                visible = "[green]✓[/green]" if ws.visible else "[dim]—[/dim]"
+                focused = "[bold magenta]●[/bold magenta]" if ws.focused else "[dim]—[/dim]"
+
+                # Highlight focused workspace
+                if ws.focused:
+                    name = f"[bold]{name}[/bold]"
+                    num = f"[bold]{num}[/bold]"
+
+                # Highlight urgent workspace
+                if ws.urgent:
+                    name = f"[red]{name}[/red]"
+                    num = f"[red]{num}[/red]"
+
+                table.add_row(num, name, output, visible, focused)
+
+        # Determine border style based on validation
+        border_style = "green"
+        title_suffix = ""
+        if validation:
+            if not validation.valid:
+                border_style = "red"
+                error_count = len(validation.errors)
+                title_suffix = f" [red]⚠ {error_count} errors[/red]"
+            elif validation.warnings:
+                border_style = "yellow"
+                warning_count = len(validation.warnings)
+                title_suffix = f" [yellow]⚠ {warning_count} warnings[/yellow]"
+
+        return Panel(
+            table,
+            title=f"[bold yellow]i3 Workspaces[/bold yellow] ({len(workspaces)} workspaces){title_suffix}",
+            border_style=border_style,
             padding=(0, 1),
         )

@@ -19,31 +19,44 @@ logger = logging.getLogger(__name__)
 class IPCServer:
     """JSON-RPC IPC server for CLI tool queries."""
 
-    def __init__(self, state_manager: StateManager, event_buffer: Optional[Any] = None) -> None:
+    def __init__(
+        self,
+        state_manager: StateManager,
+        event_buffer: Optional[Any] = None,
+        i3_connection: Optional[Any] = None
+    ) -> None:
         """Initialize IPC server.
 
         Args:
             state_manager: StateManager instance for queries
             event_buffer: EventBuffer instance for event history (Feature 017)
+            i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
+        self.i3_connection = i3_connection
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
 
     @classmethod
-    async def from_systemd_socket(cls, state_manager: StateManager, event_buffer: Optional[Any] = None) -> "IPCServer":
+    async def from_systemd_socket(
+        cls,
+        state_manager: StateManager,
+        event_buffer: Optional[Any] = None,
+        i3_connection: Optional[Any] = None
+    ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
         Args:
             state_manager: StateManager instance
             event_buffer: EventBuffer instance for event history (Feature 017)
+            i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer)
+        server = cls(state_manager, event_buffer, i3_connection)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -178,6 +191,8 @@ class IPCServer:
                 result = await self._subscribe_events(params, writer)
             elif method == "reload_config":
                 result = await self._reload_config()
+            elif method == "get_diagnostic_state":
+                result = await self._get_diagnostic_state(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -394,3 +409,140 @@ class IPCServer:
         """Reload project configs from disk."""
         # TODO: Implement config reload
         return {"success": True, "message": "Config reloaded"}
+
+    async def _get_diagnostic_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get complete diagnostic snapshot (Feature 018).
+
+        Combines daemon state, projects, windows, events, monitors, and i3 tree
+        into a single atomic snapshot for diagnostic capture.
+
+        Args:
+            params: Query parameters
+                - include_events: bool (default True) - Include event buffer
+                - event_limit: int (default 500) - Number of events to include
+                - include_tree: bool (default True) - Include i3 tree dump
+                - include_monitors: bool (default True) - Include monitor client list
+
+        Returns:
+            Dictionary with complete diagnostic state
+        """
+        import time
+
+        start_time = time.perf_counter()
+
+        # Parse parameters
+        include_events = params.get("include_events", True)
+        event_limit = params.get("event_limit", 500)
+        include_tree = params.get("include_tree", True)
+        include_monitors = params.get("include_monitors", True)
+
+        # Gather all state in parallel for performance
+        daemon_state = await self._get_status()
+        projects_data = await self._get_projects()
+        windows_data = await self._get_windows({})
+
+        # Optional components
+        events_data = {"events": [], "stats": {}}
+        if include_events:
+            events_data = await self._get_events({"limit": event_limit})
+
+        monitors_data = {"monitors": [], "total_clients": 0, "subscribed_clients": 0}
+        if include_monitors:
+            monitors_data = await self._list_monitors()
+
+        # i3 tree dump (requires i3 connection)
+        i3_tree = None
+        if include_tree and self.i3_connection and self.i3_connection.i3:
+            try:
+                tree = await self.i3_connection.i3.get_tree()
+                # Convert i3ipc tree to dict (recursive)
+                i3_tree = self._tree_to_dict(tree)
+            except Exception as e:
+                logger.error(f"Failed to get i3 tree: {e}")
+                i3_tree = {"error": str(e)}
+
+        # Calculate capture duration
+        end_time = time.perf_counter()
+        capture_duration_ms = (end_time - start_time) * 1000
+
+        return {
+            "daemon_state": daemon_state,
+            "projects": projects_data["projects"],
+            "windows": windows_data["windows"],
+            "events": events_data["events"],
+            "event_stats": events_data.get("stats", {}),
+            "monitors": monitors_data["monitors"],
+            "monitor_stats": {
+                "total_clients": monitors_data["total_clients"],
+                "subscribed_clients": monitors_data["subscribed_clients"]
+            },
+            "i3_tree": i3_tree,
+            "capture_duration_ms": round(capture_duration_ms, 2)
+        }
+
+    def _tree_to_dict(self, node: Any) -> Dict[str, Any]:
+        """Convert i3ipc tree node to dictionary recursively.
+
+        Args:
+            node: i3ipc Con (container) node
+
+        Returns:
+            Dictionary representation of tree node
+        """
+        # Convert basic attributes
+        result = {
+            "id": node.id,
+            "name": node.name,
+            "type": node.type,
+            "border": node.border,
+            "current_border_width": node.current_border_width,
+            "layout": node.layout,
+            "orientation": node.orientation,
+            "percent": node.percent,
+            "rect": {
+                "x": node.rect.x,
+                "y": node.rect.y,
+                "width": node.rect.width,
+                "height": node.rect.height
+            },
+            "window_rect": {
+                "x": node.window_rect.x,
+                "y": node.window_rect.y,
+                "width": node.window_rect.width,
+                "height": node.window_rect.height
+            },
+            "deco_rect": {
+                "x": node.deco_rect.x,
+                "y": node.deco_rect.y,
+                "width": node.deco_rect.width,
+                "height": node.deco_rect.height
+            },
+            "geometry": {
+                "x": node.geometry.x,
+                "y": node.geometry.y,
+                "width": node.geometry.width,
+                "height": node.geometry.height
+            },
+            "window": node.window,
+            "urgent": node.urgent,
+            "focused": node.focused,
+            "focus": node.focus,
+            "nodes": [],
+            "floating_nodes": [],
+            "marks": node.marks,
+            "fullscreen_mode": node.fullscreen_mode,
+            "sticky": node.sticky,
+            "floating": node.floating,
+            "window_class": getattr(node, 'window_class', None),
+            "window_instance": getattr(node, 'window_instance', None),
+            "window_title": getattr(node.window_properties, 'title', None) if hasattr(node, 'window_properties') and node.window_properties else None
+        }
+
+        # Recursively convert child nodes
+        if hasattr(node, 'nodes') and node.nodes:
+            result["nodes"] = [self._tree_to_dict(child) for child in node.nodes]
+
+        if hasattr(node, 'floating_nodes') and node.floating_nodes:
+            result["floating_nodes"] = [self._tree_to_dict(child) for child in node.floating_nodes]
+
+        return result

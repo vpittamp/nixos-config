@@ -278,6 +278,159 @@ class TreeNode:
 
 
 @dataclass
+class OutputState:
+    """i3 output/monitor configuration from GET_OUTPUTS IPC.
+
+    Represents monitor state for validation and display purposes.
+    Aligns with i3wm's native GET_OUTPUTS response structure.
+    """
+
+    # Identifiers
+    name: str  # Output name (e.g., "HDMI-1", "eDP-1")
+
+    # Status
+    active: bool  # Whether output is active
+    primary: bool = False  # Whether output is primary display
+
+    # Current state
+    current_workspace: Optional[str] = None  # Currently visible workspace name
+
+    # Geometry (rect from i3 GET_OUTPUTS)
+    x: int = 0
+    y: int = 0
+    width: int = 0
+    height: int = 0
+
+    # Assigned workspaces
+    workspaces: List[str] = field(default_factory=list)  # All workspaces assigned to this output
+
+    def __post_init__(self) -> None:
+        """Validate output state."""
+        if not self.name:
+            raise ValueError("Output name cannot be empty")
+        if self.width < 0 or self.height < 0:
+            raise ValueError(f"Invalid output dimensions: {self.width}x{self.height}")
+        if self.current_workspace is not None and self.current_workspace not in self.workspaces:
+            raise ValueError(f"current_workspace '{self.current_workspace}' not in workspaces list")
+
+    @classmethod
+    def from_i3_output(cls, output: Any) -> 'OutputState':
+        """Create OutputState from i3ipc Output object.
+
+        Args:
+            output: i3ipc Output instance or dict from GET_OUTPUTS
+
+        Returns:
+            OutputState instance
+        """
+        # Handle both i3ipc Output objects and dict responses
+        if hasattr(output, 'name'):
+            # i3ipc Output object
+            return cls(
+                name=output.name,
+                active=output.active,
+                primary=output.primary,
+                current_workspace=output.current_workspace,
+                x=output.rect.x,
+                y=output.rect.y,
+                width=output.rect.width,
+                height=output.rect.height,
+                workspaces=[]  # Populated separately from GET_WORKSPACES
+            )
+        else:
+            # Dict from JSON response
+            rect = output.get('rect', {})
+            return cls(
+                name=output['name'],
+                active=output.get('active', False),
+                primary=output.get('primary', False),
+                current_workspace=output.get('current_workspace'),
+                x=rect.get('x', 0),
+                y=rect.get('y', 0),
+                width=rect.get('width', 0),
+                height=rect.get('height', 0),
+                workspaces=output.get('workspaces', [])
+            )
+
+
+@dataclass
+class WorkspaceAssignment:
+    """Workspace-to-output mapping from GET_WORKSPACES IPC.
+
+    Represents workspace state for validation purposes.
+    Aligns with i3wm's native GET_WORKSPACES response structure.
+    """
+
+    # Identifiers
+    num: int  # Workspace number
+    name: str  # Workspace name (may include dynamic naming from i3wsr)
+
+    # Assignment
+    output: str  # Output name this workspace is assigned to
+
+    # State
+    visible: bool  # Whether workspace is currently visible
+    focused: bool  # Whether workspace is focused
+    urgent: bool = False  # Whether workspace has urgent window
+
+    # Geometry
+    x: int = 0
+    y: int = 0
+    width: int = 0
+    height: int = 0
+
+    def __post_init__(self) -> None:
+        """Validate workspace assignment."""
+        if self.num <= 0:
+            raise ValueError(f"Invalid workspace num: {self.num}")
+        if not self.name:
+            raise ValueError("Workspace name cannot be empty")
+        if not self.output:
+            raise ValueError("Workspace output cannot be empty")
+
+    @classmethod
+    def from_i3_workspace(cls, workspace: Any) -> 'WorkspaceAssignment':
+        """Create WorkspaceAssignment from i3ipc Workspace object.
+
+        Args:
+            workspace: i3ipc Workspace instance or dict from GET_WORKSPACES
+
+        Returns:
+            WorkspaceAssignment instance
+        """
+        # Handle both i3ipc Workspace objects and dict responses
+        if hasattr(workspace, 'num'):
+            # i3ipc Workspace object
+            return cls(
+                num=workspace.num,
+                name=workspace.name,
+                output=workspace.output,
+                visible=workspace.visible,
+                focused=workspace.focused,
+                urgent=workspace.urgent,
+                x=workspace.rect.x,
+                y=workspace.rect.y,
+                width=workspace.rect.width,
+                height=workspace.rect.height
+            )
+        else:
+            # Dict from JSON response
+            rect = workspace.get('rect', {})
+            return cls(
+                num=workspace['num'],
+                name=workspace['name'],
+                output=workspace['output'],
+                visible=workspace.get('visible', False),
+                focused=workspace.get('focused', False),
+                urgent=workspace.get('urgent', False),
+                x=rect.get('x', 0),
+                y=rect.get('y', 0),
+                width=rect.get('width', 0),
+                height=rect.get('height', 0)
+            )
+
+
+@dataclass
 class ConnectionState:
     """Connection state for daemon client."""
 
