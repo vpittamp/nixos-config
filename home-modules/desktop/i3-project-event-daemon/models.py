@@ -159,6 +159,36 @@ class WorkspaceInfo:
 
 
 @dataclass
+class EventEntry:
+    """Event log entry for event stream display (Feature 017)."""
+
+    # Event metadata
+    event_id: int  # Incremental ID for event ordering
+    event_type: str  # "window::new", "window::close", "tick", "workspace::init", etc.
+    timestamp: datetime  # When event occurred
+
+    # Event payload (varies by type)
+    window_id: Optional[int] = None  # Window ID if applicable
+    window_class: Optional[str] = None  # Window class if applicable
+    workspace_name: Optional[str] = None  # Workspace name if applicable
+    project_name: Optional[str] = None  # Project name if applicable
+    tick_payload: Optional[str] = None  # Tick event payload if type is "tick"
+
+    # Processing info
+    processing_duration_ms: float = 0.0  # Time daemon took to handle event
+    error: Optional[str] = None  # If event processing failed
+
+    def __post_init__(self) -> None:
+        """Validate event entry."""
+        if self.event_id < 0:
+            raise ValueError(f"Invalid event_id: {self.event_id}")
+        if not self.event_type:
+            raise ValueError("event_type cannot be empty")
+        if self.processing_duration_ms < 0:
+            raise ValueError(f"Invalid processing_duration_ms: {self.processing_duration_ms}")
+
+
+@dataclass
 class DaemonState:
     """Runtime state of the event listener daemon."""
 

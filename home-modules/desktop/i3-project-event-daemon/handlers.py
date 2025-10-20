@@ -5,14 +5,18 @@ This module contains all event handlers that process i3 IPC events.
 
 import asyncio
 import logging
+import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent
 
 from .state import StateManager
-from .models import WindowInfo, WorkspaceInfo, ApplicationClassification
+from .models import WindowInfo, WorkspaceInfo, ApplicationClassification, EventEntry
 from .config import save_active_project, load_active_project
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from .event_buffer import EventBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,7 @@ async def on_tick(
     event: TickEvent,
     state_manager: StateManager,
     config_dir: Path,
+    event_buffer: Optional["EventBuffer"] = None,
 ) -> None:
     """Handle tick events for project switch notifications (T007).
 
@@ -35,7 +40,11 @@ async def on_tick(
         event: Tick event containing payload
         state_manager: State manager instance
         config_dir: Configuration directory path
+        event_buffer: Event buffer for recording events (Feature 017)
     """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+
     try:
         payload = event.payload
         logger.info(f"✓ TICK EVENT RECEIVED: {payload}")  # Changed to INFO to ensure visibility
@@ -56,8 +65,24 @@ async def on_tick(
                 await _switch_project(project_name, state_manager, conn, config_dir)
 
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error handling tick event: {e}")
         await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="tick",
+                timestamp=datetime.now(),
+                tick_payload=event.payload,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
 
 
 async def _switch_project(
@@ -198,6 +223,7 @@ async def on_window_new(
     event: WindowEvent,
     state_manager: StateManager,
     app_classification: ApplicationClassification,
+    event_buffer: Optional["EventBuffer"] = None,
 ) -> None:
     """Handle window::new events - auto-mark new windows (T014).
 
@@ -206,29 +232,34 @@ async def on_window_new(
         event: Window event
         state_manager: State manager
         app_classification: Application classification config
+        event_buffer: Event buffer for recording events (Feature 017)
     """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.window
+    window_class = container.window_class or "unknown"
+
     try:
-        container = event.container
         active_project = await state_manager.get_active_project()
 
         # Check if we should mark this window
         if not active_project:
-            logger.debug(f"No active project, not marking window {container.window}")
+            logger.debug(f"No active project, not marking window {window_id}")
             return
 
-        window_class = container.window_class or "unknown"
         if window_class not in app_classification.scoped_classes:
             logger.debug(f"Window class {window_class} is not scoped, not marking")
             return
 
         # Apply project mark (async)
         mark = f"project:{active_project}"
-        await conn.command(f'[id={container.window}] mark --add "{mark}"')
-        logger.info(f"Marked window {container.window} with {mark}")
+        await conn.command(f'[id={window_id}] mark --add "{mark}"')
+        logger.info(f"Marked window {window_id} with {mark}")
 
         # Add to state (mark event will update this)
         window_info = WindowInfo(
-            window_id=container.window,
+            window_id=window_id,
             con_id=container.id,
             window_class=window_class,
             window_title=container.name or "",
@@ -242,12 +273,33 @@ async def on_window_new(
         await state_manager.add_window(window_info)
 
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error handling window::new event: {e}")
         await state_manager.increment_error_count()
 
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::new",
+                timestamp=datetime.now(),
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
+
 
 async def on_window_mark(
-    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WindowEvent,
+    state_manager: StateManager,
+    event_buffer: Optional["EventBuffer"] = None,
 ) -> None:
     """Handle window::mark events - track mark changes (T015).
 
@@ -255,11 +307,15 @@ async def on_window_mark(
         conn: i3 async connection
         event: Window event
         state_manager: State manager
+        event_buffer: Event buffer for recording events (Feature 017)
     """
-    try:
-        container = event.container
-        window_id = container.window
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.window
+    window_class = container.window_class or "unknown"
 
+    try:
         # Extract project marks
         project_marks = [mark for mark in container.marks if mark.startswith("project:")]
 
@@ -273,12 +329,33 @@ async def on_window_mark(
             logger.debug(f"Removed project mark from window {window_id}")
 
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error handling window::mark event: {e}")
         await state_manager.increment_error_count()
 
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::mark",
+                timestamp=datetime.now(),
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
+
 
 async def on_window_close(
-    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WindowEvent,
+    state_manager: StateManager,
+    event_buffer: Optional["EventBuffer"] = None,
 ) -> None:
     """Handle window::close events - remove from tracking (T016).
 
@@ -286,19 +363,46 @@ async def on_window_close(
         conn: i3 async connection
         event: Window event
         state_manager: State manager
+        event_buffer: Event buffer for recording events (Feature 017)
     """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.window
+    window_class = container.window_class or "unknown"
+
     try:
-        window_id = event.container.window
         await state_manager.remove_window(window_id)
         logger.debug(f"Removed closed window {window_id}")
 
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error handling window::close event: {e}")
         await state_manager.increment_error_count()
 
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::close",
+                timestamp=datetime.now(),
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            event_buffer.add_event(entry)
+
 
 async def on_window_focus(
-    conn: aio.Connection, event: WindowEvent, state_manager: StateManager
+    conn: aio.Connection,
+    event: WindowEvent,
+    state_manager: StateManager,
+    event_buffer: Optional["EventBuffer"] = None,
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
@@ -306,15 +410,39 @@ async def on_window_focus(
         conn: i3 async connection
         event: Window event
         state_manager: State manager
+        event_buffer: Event buffer for recording events (Feature 017)
     """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.window
+    window_class = container.window_class or "unknown"
+
     try:
-        window_id = event.container.window
         await state_manager.update_window(window_id, last_focus=datetime.now())
         logger.debug(f"Updated focus timestamp for window {window_id}")
 
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error handling window::focus event: {e}")
         await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::focus",
+                timestamp=datetime.now(),
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
 
 
 # ============================================================================

@@ -19,27 +19,31 @@ logger = logging.getLogger(__name__)
 class IPCServer:
     """JSON-RPC IPC server for CLI tool queries."""
 
-    def __init__(self, state_manager: StateManager) -> None:
+    def __init__(self, state_manager: StateManager, event_buffer: Optional[Any] = None) -> None:
         """Initialize IPC server.
 
         Args:
             state_manager: StateManager instance for queries
+            event_buffer: EventBuffer instance for event history (Feature 017)
         """
         self.state_manager = state_manager
+        self.event_buffer = event_buffer
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
+        self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
 
     @classmethod
-    async def from_systemd_socket(cls, state_manager: StateManager) -> "IPCServer":
+    async def from_systemd_socket(cls, state_manager: StateManager, event_buffer: Optional[Any] = None) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
         Args:
             state_manager: StateManager instance
+            event_buffer: EventBuffer instance for event history (Feature 017)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager)
+        server = cls(state_manager, event_buffer)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -166,6 +170,10 @@ class IPCServer:
                 result = await self._switch_project(params)
             elif method == "get_events":
                 result = await self._get_events(params)
+            elif method == "list_monitors":
+                result = await self._list_monitors()
+            elif method == "subscribe_events":
+                result = await self._subscribe_events(params)
             elif method == "reload_config":
                 result = await self._reload_config()
             else:
@@ -248,10 +256,131 @@ class IPCServer:
         return {"success": True, "message": f"Switched to project: {project_name}"}
 
     async def _get_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return recent events for diagnostics."""
+        """Return recent events for diagnostics (Feature 017).
+
+        Args:
+            params: Query parameters (limit, event_type)
+
+        Returns:
+            Dictionary with events list and buffer stats
+        """
+        if not self.event_buffer:
+            return {"events": [], "stats": {"total_events": 0, "buffer_size": 0, "max_size": 0}}
+
         limit = params.get("limit", 100)
-        # TODO: Implement event queue
-        return {"events": []}
+        event_type = params.get("event_type")
+
+        # Get events from buffer
+        events = self.event_buffer.get_events(limit=limit, event_type=event_type)
+
+        # Convert EventEntry objects to dict
+        events_data = [
+            {
+                "event_id": e.event_id,
+                "event_type": e.event_type,
+                "timestamp": e.timestamp.isoformat(),
+                "window_id": e.window_id,
+                "window_class": e.window_class,
+                "workspace_name": e.workspace_name,
+                "project_name": e.project_name,
+                "tick_payload": e.tick_payload,
+                "processing_duration_ms": e.processing_duration_ms,
+                "error": e.error,
+            }
+            for e in events
+        ]
+
+        return {
+            "events": events_data,
+            "stats": self.event_buffer.get_stats()
+        }
+
+    async def _list_monitors(self) -> Dict[str, Any]:
+        """List all connected monitor clients (Feature 017).
+
+        Returns:
+            Dictionary with list of connected monitors
+        """
+        monitors = []
+        for idx, writer in enumerate(self.clients):
+            peer = writer.get_extra_info("peername")
+            monitors.append({
+                "monitor_id": idx,
+                "peer": str(peer),
+                "subscribed": writer in self.subscribed_clients
+            })
+
+        return {
+            "monitors": monitors,
+            "total_clients": len(self.clients),
+            "subscribed_clients": len(self.subscribed_clients)
+        }
+
+    async def _subscribe_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Subscribe/unsubscribe from event stream (Feature 017).
+
+        Args:
+            params: Subscription parameters (subscribe: bool)
+
+        Returns:
+            Subscription confirmation
+        """
+        # Note: In a real implementation, we'd track which writer/client is making this request
+        # For now, this is a placeholder that will be completed when we implement
+        # the client-side connection tracking
+        subscribe = params.get("subscribe", True)
+
+        return {
+            "success": True,
+            "subscribed": subscribe,
+            "message": f"Event subscription {'enabled' if subscribe else 'disabled'}"
+        }
+
+    async def broadcast_event(self, event_data: Dict[str, Any]) -> None:
+        """Broadcast event notification to all subscribed clients (Feature 017).
+
+        Args:
+            event_data: Event data to broadcast
+        """
+        if not self.subscribed_clients:
+            return
+
+        notification = {
+            "jsonrpc": "2.0",
+            "method": "event_notification",
+            "params": event_data
+        }
+        message = json.dumps(notification).encode() + b"\n"
+
+        # Send to all subscribed clients
+        for writer in list(self.subscribed_clients):
+            try:
+                writer.write(message)
+                await writer.drain()
+            except Exception as e:
+                logger.error(f"Failed to broadcast to client: {e}")
+                self.subscribed_clients.discard(writer)
+
+    async def broadcast_event_entry(self, event_entry) -> None:
+        """Broadcast EventEntry to all subscribed clients (Feature 017: T019).
+
+        Args:
+            event_entry: EventEntry instance to broadcast
+        """
+        # Convert EventEntry to dict for JSON serialization
+        event_data = {
+            "event_id": event_entry.event_id,
+            "event_type": event_entry.event_type,
+            "timestamp": event_entry.timestamp.isoformat(),
+            "window_id": event_entry.window_id,
+            "window_class": event_entry.window_class,
+            "workspace_name": event_entry.workspace_name,
+            "project_name": event_entry.project_name,
+            "tick_payload": event_entry.tick_payload,
+            "processing_duration_ms": event_entry.processing_duration_ms,
+            "error": event_entry.error,
+        }
+        await self.broadcast_event(event_data)
 
     async def _reload_config(self) -> Dict[str, Any]:
         """Reload project configs from disk."""
