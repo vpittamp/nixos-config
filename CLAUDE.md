@@ -207,10 +207,19 @@ nix flake lock --update-input nixpkgs
 
 ### Recent Updates (2025-10)
 
+- **Event-Driven i3 Project Management** - Real-time project synchronization (Feature 015)
+  - Replaced polling-based system with event-driven daemon using i3 IPC subscriptions
+  - Automatic window marking with project context (<100ms latency)
+  - Long-running systemd daemon with socket activation and watchdog monitoring
+  - JSON-RPC IPC server for CLI tool communication
+  - New commands: `i3-project-daemon-status`, `i3-project-daemon-events`, `i3-project-create`
+  - Benefits: No race conditions, instant updates, <1% CPU usage, <15MB memory
+  - Documentation: `/etc/nixos/specs/015-create-a-new/quickstart.md`
+
 - **Migrated from Polybar to i3bar + i3blocks** - Native i3 status bar (Feature 013)
   - Replaced polybar with i3's native i3bar for workspace indicators
   - Implemented i3blocks for status command with system information blocks
-  - Added project context indicator that updates via signal when switching projects
+  - Added project context indicator that updates via daemon query (not signals)
   - System info blocks: CPU usage, memory usage, network status, date/time
   - Configuration in `home-modules/desktop/i3blocks/` with shell scripts
   - Benefits: Better i3 integration, simpler configuration, more reliable workspace sync
@@ -298,40 +307,59 @@ The following shell aliases are available for project management:
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `project-switch <name>` | `pswitch` | Switch to a project |
-| `project-clear` | `pclear` | Clear active project (global mode) |
-| `project-list` | `plist` | List all available projects |
-| `project-current` | `pcurrent` | Show current active project |
-| `project-create` | - | Create a new project |
-| `project-edit` | - | Edit a project configuration |
-| `project-delete` | - | Delete a project |
+| `i3-project-switch <name>` | `pswitch` | Switch to a project |
+| `i3-project-switch --clear` | `pclear` | Clear active project (global mode) |
+| `i3-project-list` | `plist` | List all available projects |
+| `i3-project-current` | `pcurrent` | Show current active project |
+| `i3-project-create` | - | Create a new project |
+| `i3-project-daemon-status` | - | Show daemon status and diagnostics |
+| `i3-project-daemon-events` | - | Show recent daemon events for debugging |
+
+### Daemon Management
+
+The event-based daemon runs as a systemd user service:
+
+```bash
+# Check daemon status
+systemctl --user status i3-project-event-listener
+i3-project-daemon-status
+
+# View daemon logs
+journalctl --user -u i3-project-event-listener -f
+
+# Restart daemon
+systemctl --user restart i3-project-event-listener
+
+# View recent events
+i3-project-daemon-events --limit=20
+```
 
 ### Common Workflows
 
 **Create a new project:**
 ```bash
-project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
+i3-project-create --name nixos --dir /etc/nixos --icon "" --display-name "NixOS"
 ```
 
 **Start working on a project:**
 ```bash
 # Press Win+P to open rofi project switcher
 # Or from command line:
-project-switch nixos
+i3-project-switch nixos
 # Or use the short alias:
 pswitch nixos
 ```
 
 **Check current project:**
 ```bash
-project-current
+i3-project-current
 # Or use short alias:
 pcurrent
 ```
 
 **List all projects:**
 ```bash
-project-list
+i3-project-list
 # Or use short alias:
 plist
 ```
@@ -340,7 +368,7 @@ plist
 ```bash
 # Press Win+Shift+P
 # Or from command line:
-project-clear
+i3-project-switch --clear
 # Or use short alias:
 pclear
 ```
@@ -356,31 +384,41 @@ After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspa
 
 ### Troubleshooting
 
+**Daemon not running:**
+1. Check daemon status: `i3-project-daemon-status`
+2. View logs: `journalctl --user -u i3-project-event-listener -n 50`
+3. Restart daemon: `systemctl --user restart i3-project-event-listener`
+
+**Windows not auto-marking:**
+1. Check recent events: `i3-project-daemon-events --limit=20 --type=window`
+2. Verify window class in scoped_classes: `cat ~/.config/i3/app-classes.json`
+3. Reload daemon config: Send tick event or restart daemon
+
 **Applications not opening in project context:**
-1. Check active project: `i3-project-current`
+1. Check active project: `i3-project-current` or `pcurrent`
 2. Verify project directory exists
-3. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
+3. Check daemon is running: `i3-project-daemon-status`
+4. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
 
 **Windows from old project still visible:**
 1. Check i3bar shows correct project
 2. Verify project switch completed: `i3-project-current`
-3. Try switching again: `i3-project-switch <project-name>`
+3. Check daemon processed switch: `i3-project-daemon-events | grep tick`
+4. Try switching again: `i3-project-switch <project-name>`
 
 **Edit project configuration:**
 ```bash
-i3-project-edit nixos
-# Or manually:
+# Manually edit
 vi ~/.config/i3/projects/nixos.json
+
+# Reload daemon after edits
+systemctl --user restart i3-project-event-listener
 ```
 
-**Validate project configuration:**
+For more details, see the quickstart guides:
 ```bash
-i3-project-validate nixos
-```
-
-For more details, see the quickstart guide:
-```bash
-cat /etc/nixos/specs/012-review-project-scoped/quickstart.md
+cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (current)
+cat /etc/nixos/docs/I3_PROJECT_EVENTS.md              # Troubleshooting guide (coming soon)
 ```
 
 ## 📚 Additional Documentation

@@ -152,14 +152,18 @@ in
       (writeShellScriptBin "i3-project-switch" (builtins.readFile ../../scripts/i3-project-switch))
       (writeShellScriptBin "i3-project-current" (builtins.readFile ../../scripts/i3-project-current))
       (writeShellScriptBin "i3-project-list" (builtins.readFile ../../scripts/i3-project-list))
+      (writeShellScriptBin "i3-project-create" (builtins.readFile ../../scripts/i3-project-create))
+      (writeShellScriptBin "i3-project-daemon-status" (builtins.readFile ../../scripts/i3-project-daemon-status))
+      (writeShellScriptBin "i3-project-daemon-events" (builtins.readFile ../../scripts/i3-project-daemon-events))
     ];
 
     # Shell aliases (T034)
+    # Use mkForce to override existing pclear alias from bash.nix (Feature 012)
     programs.bash.shellAliases = mkIf cfg.enable {
-      pswitch = "i3-project-switch";
-      pcurrent = "i3-project-current";
-      plist = "i3-project-list";
-      pclear = "i3-project-switch --clear";
+      pswitch = lib.mkForce "i3-project-switch";
+      pcurrent = lib.mkForce "i3-project-current";
+      plist = lib.mkForce "i3-project-list";
+      pclear = lib.mkForce "i3-project-switch --clear";  # Override old Feature 012 alias
     };
   };
 }

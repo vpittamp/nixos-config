@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# i3-project-daemon-events - Show recent daemon events for debugging
+# Part of Feature 015: Event-Based i3 Project Synchronization
+
+set -euo pipefail
+
+# Configuration
+SOCKET_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Usage
+usage() {
+    cat << EOF
+Usage: i3-project-daemon-events [OPTIONS]
+
+Show recent events processed by the daemon for debugging.
+
+OPTIONS:
+    --limit=N          Number of events to show (default: 10, max: 100)
+    --type=TYPE        Filter by event type (window, workspace, tick, shutdown)
+    --format=FORMAT    Output format: text (default), json
+    -h, --help         Show this help message
+
+EXAMPLES:
+    i3-project-daemon-events
+    i3-project-daemon-events --limit=20
+    i3-project-daemon-events --type=window --limit=50
+    i3-project-daemon-events --format=json
+
+EOF
+    exit 0
+}
+
+# Parse arguments
+LIMIT=10
+EVENT_TYPE=""
+FORMAT="text"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --limit=*)
+            LIMIT="${1#*=}"
+            shift
+            ;;
+        --type=*)
+            EVENT_TYPE="${1#*=}"
+            shift
+            ;;
+        --format=*)
+            FORMAT="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NC}" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Validate limit
+if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Error: --limit must be a number${NC}" >&2
+    exit 1
+fi
+
+if [[ "$LIMIT" -gt 100 ]]; then
+    echo -e "${YELLOW}Warning: Limit capped at 100${NC}" >&2
+    LIMIT=100
+fi
+
+# Validate event type
+if [[ -n "$EVENT_TYPE" ]]; then
+    case "$EVENT_TYPE" in
+        window|workspace|tick|shutdown)
+            ;;
+        *)
+            echo -e "${RED}Error: Invalid event type: $EVENT_TYPE${NC}" >&2
+            echo "Valid types: window, workspace, tick, shutdown" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# Validate format
+if [[ "$FORMAT" != "text" && "$FORMAT" != "json" ]]; then
+    echo -e "${RED}Error: Invalid format: $FORMAT (must be 'text' or 'json')${NC}" >&2
+    exit 1
+fi
+
+# Check if daemon is running
+if [[ ! -S "$SOCKET_PATH" ]]; then
+    if [[ "$FORMAT" == "json" ]]; then
+        echo '{"error":"Daemon not running"}'
+    else
+        echo -e "${RED}✗ Daemon not running${NC}"
+        echo "Start daemon with: systemctl --user start i3-project-event-listener"
+    fi
+    exit 2
+fi
+
+# Build JSON-RPC request
+if [[ -n "$EVENT_TYPE" ]]; then
+    REQUEST='{"jsonrpc":"2.0","method":"get_events","params":{"limit":'$LIMIT',"event_type":"'$EVENT_TYPE'"},"id":1}'
+else
+    REQUEST='{"jsonrpc":"2.0","method":"get_events","params":{"limit":'$LIMIT'},"id":1}'
+fi
+
+# Query daemon
+RESPONSE=$(echo "$REQUEST" | nc -U "$SOCKET_PATH" 2>/dev/null || echo "")
+
+if [[ -z "$RESPONSE" ]]; then
+    if [[ "$FORMAT" == "json" ]]; then
+        echo '{"error":"No response from daemon"}'
+    else
+        echo -e "${RED}✗ No response from daemon${NC}"
+    fi
+    exit 2
+fi
+
+# Check for JSON-RPC error
+if echo "$RESPONSE" | grep -q '"error"'; then
+    if [[ "$FORMAT" == "json" ]]; then
+        echo "$RESPONSE"
+    else
+        ERROR=$(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)
+        echo -e "${RED}✗ Daemon error: $ERROR${NC}"
+    fi
+    exit 1
+fi
+
+# Output
+if [[ "$FORMAT" == "json" ]]; then
+    echo "$RESPONSE" | grep -o '"result":\[.*\]' | sed 's/"result"://' || echo "[]"
+else
+    # Parse and display events
+    echo -e "${BOLD}Recent Events (last $LIMIT)${NC}"
+    if [[ -n "$EVENT_TYPE" ]]; then
+        echo -e "${BLUE}Filtered by type: $EVENT_TYPE${NC}"
+    fi
+    echo ""
+    
+    # Extract events array (simplified parsing without jq)
+    EVENTS=$(echo "$RESPONSE" | grep -o '"result":\[.*\]' | sed 's/"result":\[//' | sed 's/\]$//')
+    
+    if [[ -z "$EVENTS" || "$EVENTS" == "" ]]; then
+        echo -e "${YELLOW}No events found${NC}"
+        exit 0
+    fi
+    
+    # Note: Full event parsing would require jq or complex bash
+    # For now, show raw JSON or simplified output
+    echo -e "${YELLOW}Note: Full event display requires 'jq' to be installed${NC}"
+    echo -e "${YELLOW}Raw response:${NC}"
+    echo "$EVENTS"
+    echo ""
+    echo -e "${BLUE}Tip: Install 'jq' for better formatting:${NC}"
+    echo "  echo '$REQUEST' | nc -U $SOCKET_PATH | jq '.result'"
+fi

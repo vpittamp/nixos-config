@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# i3-project-create - Create new project configuration
+# Part of Feature 015: Event-Based i3 Project Synchronization
+
+set -euo pipefail
+
+# Configuration
+PROJECTS_DIR="${HOME}/.config/i3/projects"
+SOCKET_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3-project-daemon/ipc.sock"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Usage
+usage() {
+    cat << EOF
+Usage: i3-project-create [OPTIONS]
+
+Create a new i3 project configuration.
+
+OPTIONS:
+    --name NAME          Project name (required, alphanumeric + dashes/underscores)
+    --dir DIRECTORY      Project directory (required, must exist)
+    --display-name NAME  Human-readable display name (optional, defaults to name)
+    --icon ICON          Project icon (optional, single Unicode character)
+    -h, --help           Show this help message
+
+EXAMPLES:
+    i3-project-create --name=myproject --dir=~/projects/myproject
+    i3-project-create --name=nixos --dir=/etc/nixos --display-name="NixOS" --icon=""
+
+EOF
+    exit 0
+}
+
+# Parse arguments
+NAME=""
+DIR=""
+DISPLAY_NAME=""
+ICON=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name=*)
+            NAME="${1#*=}"
+            shift
+            ;;
+        --dir=*)
+            DIR="${1#*=}"
+            shift
+            ;;
+        --display-name=*)
+            DISPLAY_NAME="${1#*=}"
+            shift
+            ;;
+        --icon=*)
+            ICON="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NC}" >&2
+            echo "Use --help for usage information" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$NAME" ]]; then
+    echo -e "${RED}Error: --name is required${NC}" >&2
+    exit 1
+fi
+
+if [[ -z "$DIR" ]]; then
+    echo -e "${RED}Error: --dir is required${NC}" >&2
+    exit 1
+fi
+
+# Validate name format (alphanumeric, dashes, underscores only)
+if ! [[ "$NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo -e "${RED}Error: Project name must contain only letters, numbers, dashes, and underscores${NC}" >&2
+    exit 1
+fi
+
+# Expand directory path
+DIR=$(eval echo "$DIR")
+
+# Validate directory exists
+if [[ ! -d "$DIR" ]]; then
+    echo -e "${RED}Error: Directory does not exist: $DIR${NC}" >&2
+    exit 1
+fi
+
+# Convert to absolute path
+DIR=$(cd "$DIR" && pwd)
+
+# Set defaults
+DISPLAY_NAME="${DISPLAY_NAME:-$NAME}"
+ICON="${ICON:-📁}"
+
+# Create projects directory if it doesn't exist
+mkdir -p "$PROJECTS_DIR"
+
+# Check if project already exists
+PROJECT_FILE="$PROJECTS_DIR/$NAME.json"
+if [[ -f "$PROJECT_FILE" ]]; then
+    echo -e "${YELLOW}Warning: Project '$NAME' already exists${NC}" >&2
+    echo -e "${YELLOW}File: $PROJECT_FILE${NC}" >&2
+    read -p "Overwrite? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted"
+        exit 0
+    fi
+fi
+
+# Create project JSON
+CREATED_AT=$(date -Iseconds)
+
+cat > "$PROJECT_FILE" << EOF
+{
+  "name": "$NAME",
+  "display_name": "$DISPLAY_NAME",
+  "icon": "$ICON",
+  "directory": "$DIR",
+  "created": "$CREATED_AT"
+}
+EOF
+
+echo -e "${GREEN}✓ Created project: $NAME${NC}"
+echo -e "  ${BLUE}Display name:${NC} $DISPLAY_NAME"
+echo -e "  ${BLUE}Directory:${NC} $DIR"
+echo -e "  ${BLUE}Icon:${NC} $ICON"
+echo -e "  ${BLUE}Config file:${NC} $PROJECT_FILE"
+
+# Reload daemon if running
+if [[ -S "$SOCKET_PATH" ]]; then
+    echo ""
+    echo "Notifying daemon to reload configuration..."
+    
+    REQUEST='{"jsonrpc":"2.0","method":"reload_config","id":1}'
+    RESPONSE=$(echo "$REQUEST" | nc -U "$SOCKET_PATH" 2>/dev/null || echo "")
+    
+    if [[ -n "$RESPONSE" ]] && echo "$RESPONSE" | grep -q '"result"'; then
+        echo -e "${GREEN}✓ Daemon configuration reloaded${NC}"
+    else
+        echo -e "${YELLOW}⚠ Could not reload daemon configuration (daemon may not be running)${NC}"
+    fi
+fi
