@@ -116,7 +116,7 @@
 - [X] T033 [US2] Create NixOS home-manager module at `home-modules/tools/i3-project-test.nix` - Package test framework, add to PATH
 - [X] T034 [US2] Create wrapper script at `scripts/i3-project-test` - Invoke Python module with proper environment
 - [X] T035 [US2] Update `home-modules/profiles/base-home.nix` to import i3-project-test.nix module
-- [ ] T036 [US2] Test automated scenarios - Run `i3-project-test run --all` and verify AS2.1 through AS2.6
+- [X] T036 [US2] Test automated scenarios - Run `i3-project-test run --all` and verify AS2.1 through AS2.6
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - can manually monitor OR run automated tests
 
