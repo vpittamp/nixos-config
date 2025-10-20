@@ -121,7 +121,7 @@ class IPCServer:
 
                 try:
                     request = json.loads(data.decode())
-                    response = await self._handle_request(request)
+                    response = await self._handle_request(request, writer)
                     writer.write(json.dumps(response).encode() + b"\n")
                     await writer.drain()
 
@@ -139,15 +139,17 @@ class IPCServer:
 
         finally:
             self.clients.remove(writer)
+            self.subscribed_clients.discard(writer)  # Remove from subscriptions if subscribed
             writer.close()
             await writer.wait_closed()
             logger.debug(f"Client disconnected: {addr}")
 
-    async def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_request(self, request: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Handle a JSON-RPC request.
 
         Args:
             request: JSON-RPC request dictionary
+            writer: Stream writer for this client connection
 
         Returns:
             JSON-RPC response dictionary
@@ -173,7 +175,7 @@ class IPCServer:
             elif method == "list_monitors":
                 result = await self._list_monitors()
             elif method == "subscribe_events":
-                result = await self._subscribe_events(params)
+                result = await self._subscribe_events(params, writer)
             elif method == "reload_config":
                 result = await self._reload_config()
             else:
@@ -316,24 +318,30 @@ class IPCServer:
             "subscribed_clients": len(self.subscribed_clients)
         }
 
-    async def _subscribe_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _subscribe_events(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe/unsubscribe from event stream (Feature 017).
 
         Args:
             params: Subscription parameters (subscribe: bool)
+            writer: Stream writer for this client connection
 
         Returns:
             Subscription confirmation
         """
-        # Note: In a real implementation, we'd track which writer/client is making this request
-        # For now, this is a placeholder that will be completed when we implement
-        # the client-side connection tracking
         subscribe = params.get("subscribe", True)
+
+        if subscribe:
+            self.subscribed_clients.add(writer)
+            logger.info(f"Client subscribed to events (total subscribers: {len(self.subscribed_clients)})")
+        else:
+            self.subscribed_clients.discard(writer)
+            logger.info(f"Client unsubscribed from events (total subscribers: {len(self.subscribed_clients)})")
 
         return {
             "success": True,
             "subscribed": subscribe,
-            "message": f"Event subscription {'enabled' if subscribe else 'disabled'}"
+            "message": f"Event subscription {'enabled' if subscribe else 'disabled'}",
+            "subscriber_count": len(self.subscribed_clients)
         }
 
     async def broadcast_event(self, event_data: Dict[str, Any]) -> None:
