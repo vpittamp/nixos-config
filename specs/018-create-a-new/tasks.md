@@ -65,7 +65,7 @@
 - [X] T012 [US1] Update live display layout to include outputs and workspaces panels in `home-modules/tools/i3_project_monitor/displays/live.py` - Modify `_create_layout()` to add new panels
 - [X] T013 [US1] Update live display `_fetch_and_render()` to call validators in `home-modules/tools/i3_project_monitor/displays/live.py` - Integrate workspace_validator and output_validator
 - [X] T014 [US1] Add i3 IPC connection to DaemonClient in `home-modules/tools/i3_project_monitor/daemon_client.py` - Add `get_i3_outputs()` and `get_i3_workspaces()` methods using i3ipc.aio
-- [ ] T015 [US1] Test live monitor display with tmux split-pane setup - Manually verify AS1.1 through AS1.5 from spec.md
+- [X] T015 [US1] Test live monitor display with tmux split-pane setup - Manually verify AS1.1 through AS1.5 from spec.md
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - live monitor displays complete state including monitors/workspaces
 
@@ -81,41 +81,41 @@
 
 #### Test Framework Core
 
-- [ ] T016 [P] [US2] Create BaseScenario class in `home-modules/tools/i3-project-test/scenarios/base_scenario.py` - Abstract base class with setup/execute/validate/cleanup methods
-- [ ] T017 [P] [US2] Create TestResult and AssertionResult models in `home-modules/tools/i3-project-test/models.py` - Data structures for test outcomes
-- [ ] T018 [P] [US2] Create test runner in `home-modules/tools/i3-project-test/test_runner.py` - Load scenarios, execute, collect results
+- [X] T016 [P] [US2] Create BaseScenario class in `home-modules/tools/i3-project-test/scenarios/base_scenario.py` - Abstract base class with setup/execute/validate/cleanup methods
+- [X] T017 [P] [US2] Create TestResult and AssertionResult models in `home-modules/tools/i3-project-test/models.py` - Data structures for test outcomes
+- [X] T018 [P] [US2] Create test runner in `home-modules/tools/i3-project-test/test_runner.py` - Load scenarios, execute, collect results
 
 #### Tmux Integration
 
-- [ ] T019 [US2] Create TmuxManager in `home-modules/tools/i3-project-test/tmux_manager.py` - Session creation, pane management, output capture, cleanup
+- [X] T019 [US2] Create TmuxManager in `home-modules/tools/i3-project-test/tmux_manager.py` - Session creation, pane management, output capture, cleanup
 
 #### Assertion Framework
 
-- [ ] T020 [P] [US2] Create daemon state assertions in `home-modules/tools/i3-project-test/assertions/state_assertions.py` - Assert active project, window count, project exists, window marked
-- [ ] T021 [P] [US2] Create i3 IPC assertions in `home-modules/tools/i3-project-test/assertions/i3_assertions.py` - Assert workspace visible, workspace on output, output active, output exists, window exists, mark exists
-- [ ] T022 [P] [US2] Create output/workspace assertions in `home-modules/tools/i3-project-test/assertions/output_assertions.py` - Assert workspace assignment valid, daemon-i3 state match
-- [ ] T023 [P] [US2] Create `__init__.py` for assertions at `home-modules/tools/i3-project-test/assertions/__init__.py`
+- [X] T020 [P] [US2] Create daemon state assertions in `home-modules/tools/i3-project-test/assertions/state_assertions.py` - Assert active project, window count, project exists, window marked
+- [X] T021 [P] [US2] Create i3 IPC assertions in `home-modules/tools/i3-project-test/assertions/i3_assertions.py` - Assert workspace visible, workspace on output, output active, output exists, window exists, mark exists
+- [X] T022 [P] [US2] Create output/workspace assertions in `home-modules/tools/i3-project-test/assertions/output_assertions.py` - Assert workspace assignment valid, daemon-i3 state match
+- [X] T023 [P] [US2] Create `__init__.py` for assertions at `home-modules/tools/i3-project-test/assertions/__init__.py`
 
 #### Test Scenarios
 
-- [ ] T024 [P] [US2] Create project lifecycle scenario in `home-modules/tools/i3-project-test/scenarios/project_lifecycle.py` - Test create/delete/switch projects (implements AS2.1)
-- [ ] T025 [P] [US2] Create window management scenario in `home-modules/tools/i3-project-test/scenarios/window_management.py` - Test window marking and visibility (implements AS2.2)
-- [ ] T026 [P] [US2] Create monitor configuration scenario in `home-modules/tools/i3-project-test/scenarios/monitor_configuration.py` - Test workspace-to-output validation (implements AS2.5, AS2.6)
-- [ ] T027 [P] [US2] Create event stream scenario in `home-modules/tools/i3-project-test/scenarios/event_stream.py` - Test event recording and ordering (implements AS2.4)
-- [ ] T028 [P] [US2] Create `__init__.py` for scenarios at `home-modules/tools/i3-project-test/scenarios/__init__.py`
+- [X] T024 [P] [US2] Create project lifecycle scenario in `home-modules/tools/i3-project-test/scenarios/project_lifecycle.py` - Test create/delete/switch projects (implements AS2.1)
+- [X] T025 [P] [US2] Create window management scenario in `home-modules/tools/i3-project-test/scenarios/window_management.py` - Test window marking and visibility (implements AS2.2)
+- [X] T026 [P] [US2] Create monitor configuration scenario in `home-modules/tools/i3-project-test/scenarios/monitor_configuration.py` - Test workspace-to-output validation (implements AS2.5, AS2.6)
+- [X] T027 [P] [US2] Create event stream scenario in `home-modules/tools/i3-project-test/scenarios/event_stream.py` - Test event recording and ordering (implements AS2.4)
+- [X] T028 [P] [US2] Create `__init__.py` for scenarios at `home-modules/tools/i3-project-test/scenarios/__init__.py`
 
 #### Reporting
 
-- [ ] T029 [P] [US2] Create terminal reporter in `home-modules/tools/i3-project-test/reporters/terminal_reporter.py` - Human-readable output with rich library
-- [ ] T030 [P] [US2] Create JSON reporter in `home-modules/tools/i3-project-test/reporters/json_reporter.py` - Machine-readable JSON/TAP output
-- [ ] T031 [P] [US2] Create `__init__.py` for reporters at `home-modules/tools/i3-project-test/reporters/__init__.py`
+- [X] T029 [P] [US2] Create terminal reporter in `home-modules/tools/i3-project-test/reporters/terminal_reporter.py` - Human-readable output with rich library
+- [X] T030 [P] [US2] Create JSON reporter in `home-modules/tools/i3-project-test/reporters/json_reporter.py` - Machine-readable JSON/TAP output
+- [X] T031 [P] [US2] Create `__init__.py` for reporters at `home-modules/tools/i3-project-test/reporters/__init__.py`
 
 #### CLI and Integration
 
-- [ ] T032 [US2] Create CLI entry point in `home-modules/tools/i3-project-test/__main__.py` - Argument parsing, scenario selection, reporter selection, test execution
-- [ ] T033 [US2] Create NixOS home-manager module at `home-modules/tools/i3-project-test.nix` - Package test framework, add to PATH
-- [ ] T034 [US2] Create wrapper script at `scripts/i3-project-test` - Invoke Python module with proper environment
-- [ ] T035 [US2] Update `home-modules/profiles/base-home.nix` to import i3-project-test.nix module
+- [X] T032 [US2] Create CLI entry point in `home-modules/tools/i3-project-test/__main__.py` - Argument parsing, scenario selection, reporter selection, test execution
+- [X] T033 [US2] Create NixOS home-manager module at `home-modules/tools/i3-project-test.nix` - Package test framework, add to PATH
+- [X] T034 [US2] Create wrapper script at `scripts/i3-project-test` - Invoke Python module with proper environment
+- [X] T035 [US2] Update `home-modules/profiles/base-home.nix` to import i3-project-test.nix module
 - [ ] T036 [US2] Test automated scenarios - Run `i3-project-test run --all` and verify AS2.1 through AS2.6
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - can manually monitor OR run automated tests
