@@ -2022,7 +2022,7 @@ def cli_main() -> int:
     parser.add_argument(
         "--version",
         action="version",
-        version="i3pm 0.1.0 (Phase 3)"
+        version="i3pm 0.3.0 (Phase 7: Polish & Documentation)"
     )
 
     # Subcommands

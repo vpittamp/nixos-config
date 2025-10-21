@@ -8,7 +8,7 @@ let
   # Python package with i3pm and all dependencies
   i3pmPackage = pkgs.python3Packages.buildPythonApplication {
     pname = "i3-project-manager";
-    version = "0.2.0";
+    version = "0.3.0";
 
     # Source is the tools directory containing both pyproject.toml and i3_project_manager/
     src = ./.;
@@ -16,11 +16,22 @@ let
     format = "pyproject";
 
     propagatedBuildInputs = with pkgs.python3Packages; [
+      # Core TUI/CLI dependencies
       textual
       rich
       i3ipc
       argcomplete
       setuptools
+
+      # Phase 6: Window inspector dependencies
+      # xdotool and xprop provided via buildInputs (system packages)
+    ];
+
+    # System dependencies for window inspection and Xvfb detection (T042, T098)
+    buildInputs = with pkgs; [
+      xdotool      # Window selection for inspector
+      xorg.xprop   # Window property extraction
+      xvfb-run     # Virtual framebuffer for app detection
     ];
 
     nativeBuildInputs = with pkgs.python3Packages; [
@@ -32,6 +43,7 @@ let
       pytest
       pytest-asyncio
       pytest-cov
+      pytest-textual  # Phase 6: TUI testing
     ];
 
     # Skip tests during Nix build (Phase 2 - run tests manually for now)

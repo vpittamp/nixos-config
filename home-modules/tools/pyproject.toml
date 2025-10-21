@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "i3-project-manager"
-version = "0.2.0"
+version = "0.3.0"
 description = "Unified CLI/TUI for i3 window manager project management"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,12 +13,15 @@ authors = [
     {name = "i3pm contributors"}
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Topic :: Desktop Environment :: Window Managers",
+    "Topic :: Utilities",
 ]
 
 dependencies = [
@@ -33,6 +36,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
+    "pytest-textual>=0.1.0",
     "black>=23.0.0",
     "mypy>=1.5.0",
     "ruff>=0.1.0",
