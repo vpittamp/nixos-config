@@ -19,7 +19,7 @@ let
   i3pmPackage = pkgs.python3Packages.buildPythonPackage {
     pname = "i3-project-manager";
     version = "0.3.0";
-    src = ../tools/i3-project-manager;
+    src = ../tools;  # The tools directory contains pyproject.toml and i3_project_manager/
     format = "pyproject";
     propagatedBuildInputs = with pkgs.python3Packages; [
       textual
