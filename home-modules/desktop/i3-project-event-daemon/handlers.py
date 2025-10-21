@@ -435,26 +435,21 @@ async def on_window_title(
         active_project_name = await state_manager.get_active_project()
         active_project_scoped_classes = None
 
-        if active_project_name:
-            active_project = await state_manager.get_project(active_project_name)
-            if active_project:
-                active_project_scoped_classes = active_project.scoped_classes
+        if active_project_name and active_project_name in state_manager.state.projects:
+            active_project = state_manager.state.projects[active_project_name]
+            active_project_scoped_classes = active_project.scoped_classes
 
         # Re-classify window with new title
         from .pattern_resolver import classify_window
-
-        app_patterns = app_classification.class_patterns if app_classification else None
-        app_scoped = list(app_classification.scoped_classes) if app_classification else None
-        app_global = list(app_classification.global_classes) if app_classification else None
 
         classification = classify_window(
             window_class=window_class,
             window_title=window_title,
             active_project_scoped_classes=active_project_scoped_classes,
             window_rules=window_rules,
-            app_classification_patterns=app_patterns,
-            app_classification_scoped=app_scoped,
-            app_classification_global=app_global,
+            app_classification_patterns=None,  # TODO: Add pattern support
+            app_classification_scoped=list(app_classification.scoped_classes) if app_classification else None,
+            app_classification_global=list(app_classification.global_classes) if app_classification else None,
         )
 
         logger.debug(
@@ -501,7 +496,6 @@ async def on_window_title(
                 project_name=await state_manager.get_active_project(),
                 processing_duration_ms=duration_ms,
                 error=error_msg,
-                details={"new_title": window_title} if window_title else None,
             )
             await event_buffer.add_event(entry)
 
