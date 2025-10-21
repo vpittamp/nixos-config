@@ -669,6 +669,7 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
         0 on success, 1 on error
     """
     from ..core.config import AppClassConfig
+    from ..core.app_discovery import AppDiscovery
     import json
 
     try:
@@ -697,7 +698,7 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                     for cls in config.get_all_scoped():
                         print(f"  {Colors.BLUE}●{Colors.RESET} {cls}")
                 else:
-                    print(f"  {Colors.DIM}(none){Colors.RESET}")
+                    print(f"  {Colors.GRAY}(none){Colors.RESET}")
 
                 print()
 
@@ -707,7 +708,7 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                     for cls in config.get_all_global():
                         print(f"  {Colors.GREEN}●{Colors.RESET} {cls}")
                 else:
-                    print(f"  {Colors.DIM}(none){Colors.RESET}")
+                    print(f"  {Colors.GRAY}(none){Colors.RESET}")
 
                 print()
 
@@ -784,12 +785,199 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
 
             return 0
 
+        elif subcommand == 'discover':
+            # Discover all apps on system
+            discovery = AppDiscovery()
+            print_info("Scanning system for installed applications...")
+            apps = discovery.discover_all()
+
+            if hasattr(args, 'json') and args.json:
+                result = {
+                    "total": len(apps),
+                    "apps": [
+                        {
+                            "name": app.name,
+                            "wm_class": app.wm_class,
+                            "guessed_class": discovery.guess_wm_class(app),
+                            "exec": app.exec_command,
+                            "suggested": discovery.suggest_classification(app),
+                            "categories": app.categories,
+                        }
+                        for app in apps
+                    ],
+                }
+                print(json.dumps(result, indent=2))
+            else:
+                # Rich formatted output
+                print(f"\n{Colors.BOLD}Discovered Applications:{Colors.RESET} {len(apps)} apps\n")
+
+                # Group by whether they have WM class
+                apps_with_class = [a for a in apps if a.wm_class]
+                apps_without = [a for a in apps if not a.wm_class]
+
+                print(f"{Colors.GREEN}✓{Colors.RESET} {len(apps_with_class)} apps with WM class defined")
+                print(f"{Colors.YELLOW}?{Colors.RESET} {len(apps_without)} apps without WM class (can be detected)")
+                print()
+
+                # Show apps with classification suggestions
+                if hasattr(args, 'show_all') and args.show_all:
+                    print(f"{Colors.BOLD}Applications with WM Class:{Colors.RESET}\n")
+                    for app in sorted(apps_with_class, key=lambda a: a.name.lower())[:20]:
+                        suggestion = discovery.suggest_classification(app)
+                        color = Colors.BLUE if suggestion == "scoped" else Colors.GREEN
+                        print(f"  {color}●{Colors.RESET} {app.name:30} {app.wm_class:20} ({suggestion})")
+
+                    if len(apps_with_class) > 20:
+                        print(f"\n  ... and {len(apps_with_class) - 20} more")
+
+                print(f"\n{Colors.GRAY}Use 'i3pm app-classes discover --show-all' to see full list{Colors.RESET}")
+                print(f"{Colors.GRAY}Use 'i3pm app-classes suggest' for auto-classification{Colors.RESET}")
+
+            return 0
+
+        elif subcommand == 'suggest':
+            # Auto-classify discovered apps
+            discovery = AppDiscovery()
+            print_info("Scanning applications and generating suggestions...")
+            apps = discovery.discover_all()
+
+            # Filter to apps with WM class
+            apps_with_class = [a for a in apps if a.wm_class]
+
+            # Generate suggestions
+            scoped_suggestions = []
+            global_suggestions = []
+
+            for app in apps_with_class:
+                suggestion = discovery.suggest_classification(app)
+                wm_class = app.wm_class
+
+                # Skip if already classified
+                if config.get_classification(wm_class) in ["scoped", "global"]:
+                    continue
+
+                if suggestion == "scoped":
+                    scoped_suggestions.append((app.name, wm_class))
+                elif suggestion == "global":
+                    global_suggestions.append((app.name, wm_class))
+
+            if hasattr(args, 'json') and args.json:
+                result = {
+                    "scoped": [{"name": n, "class": c} for n, c in scoped_suggestions],
+                    "global": [{"name": n, "class": c} for n, c in global_suggestions],
+                }
+                print(json.dumps(result, indent=2))
+            else:
+                print(f"\n{Colors.BOLD}Classification Suggestions:{Colors.RESET}\n")
+
+                if scoped_suggestions:
+                    print(f"{Colors.BLUE}{Colors.BOLD}Suggested Scoped:{Colors.RESET} (project-specific)")
+                    for name, wm_class in scoped_suggestions[:10]:
+                        print(f"  {Colors.BLUE}●{Colors.RESET} {name:30} ({wm_class})")
+                    if len(scoped_suggestions) > 10:
+                        print(f"  ... and {len(scoped_suggestions) - 10} more")
+                    print()
+
+                if global_suggestions:
+                    print(f"{Colors.GREEN}{Colors.BOLD}Suggested Global:{Colors.RESET} (visible everywhere)")
+                    for name, wm_class in global_suggestions[:10]:
+                        print(f"  {Colors.GREEN}●{Colors.RESET} {name:30} ({wm_class})")
+                    if len(global_suggestions) > 10:
+                        print(f"  ... and {len(global_suggestions) - 10} more")
+                    print()
+
+                if scoped_suggestions or global_suggestions:
+                    print(f"{Colors.GRAY}Use 'i3pm app-classes auto-classify' to apply these suggestions{Colors.RESET}")
+                else:
+                    print_success("All discovered apps are already classified!")
+
+            return 0
+
+        elif subcommand == 'auto-classify':
+            # Auto-classify based on suggestions
+            discovery = AppDiscovery()
+            print_info("Scanning and auto-classifying applications...")
+            apps = discovery.discover_all()
+
+            apps_with_class = [a for a in apps if a.wm_class]
+
+            added_scoped = []
+            added_global = []
+
+            for app in apps_with_class:
+                suggestion = discovery.suggest_classification(app)
+                wm_class = app.wm_class
+
+                # Skip if already classified
+                if config.get_classification(wm_class) in ["scoped", "global"]:
+                    continue
+
+                # Skip if no clear suggestion
+                if suggestion == "unknown":
+                    continue
+
+                try:
+                    if suggestion == "scoped":
+                        config.add_scoped_class(wm_class)
+                        added_scoped.append((app.name, wm_class))
+                    elif suggestion == "global":
+                        config.add_global_class(wm_class)
+                        added_global.append((app.name, wm_class))
+                except ValueError:
+                    # Already exists, skip
+                    pass
+
+            # Save changes
+            if added_scoped or added_global:
+                config.save()
+
+                print_success(f"Auto-classified {len(added_scoped) + len(added_global)} applications")
+
+                if added_scoped:
+                    print(f"\n{Colors.BLUE}Added to scoped:{Colors.RESET}")
+                    for name, wm_class in added_scoped[:5]:
+                        print(f"  {Colors.BLUE}●{Colors.RESET} {name} ({wm_class})")
+                    if len(added_scoped) > 5:
+                        print(f"  ... and {len(added_scoped) - 5} more")
+
+                if added_global:
+                    print(f"\n{Colors.GREEN}Added to global:{Colors.RESET}")
+                    for name, wm_class in added_global[:5]:
+                        print(f"  {Colors.GREEN}●{Colors.RESET} {name} ({wm_class})")
+                    if len(added_global) > 5:
+                        print(f"  ... and {len(added_global) - 5} more")
+            else:
+                print_info("No new applications to classify (all already handled)")
+
+            return 0
+
+        elif subcommand == 'report':
+            # Generate classification report
+            discovery = AppDiscovery()
+            print_info("Generating classification report...")
+            apps = discovery.discover_all()
+
+            report = discovery.generate_classification_report()
+
+            if hasattr(args, 'output') and args.output:
+                # Write to file
+                output_path = Path(args.output)
+                output_path.write_text(report)
+                print_success(f"Report saved to: {output_path}")
+            else:
+                # Print to stdout
+                print(report)
+
+            return 0
+
         else:
             print_error(f"Unknown subcommand: {subcommand}")
             return 1
 
     except Exception as e:
         print_error(f"Failed to manage app classifications: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 
@@ -1441,6 +1629,50 @@ def cli_main() -> int:
         "--json",
         action="store_true",
         help="Output in JSON format"
+    )
+
+    # app-classes discover
+    parser_app_classes_discover = app_classes_subparsers.add_parser(
+        "discover",
+        help="Discover all installed applications"
+    )
+    parser_app_classes_discover.add_argument(
+        "--show-all",
+        action="store_true",
+        help="Show all discovered apps (not just summary)"
+    )
+    parser_app_classes_discover.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # app-classes suggest
+    parser_app_classes_suggest = app_classes_subparsers.add_parser(
+        "suggest",
+        help="Suggest classifications for discovered apps"
+    )
+    parser_app_classes_suggest.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # app-classes auto-classify
+    parser_app_classes_auto = app_classes_subparsers.add_parser(
+        "auto-classify",
+        help="Automatically classify apps based on suggestions"
+    )
+
+    # app-classes report
+    parser_app_classes_report = app_classes_subparsers.add_parser(
+        "report",
+        help="Generate classification report"
+    )
+    parser_app_classes_report.add_argument(
+        "--output",
+        "-o",
+        help="Output file (default: stdout)"
     )
 
     # ========================================================================
