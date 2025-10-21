@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/vpittamp/nixos/schemas/app-classes.json",
+  "title": "App Classes Configuration Schema",
+  "description": "Schema for i3 Project Manager application classification configuration",
+  "type": "object",
+  "properties": {
+    "scoped_classes": {
+      "type": "array",
+      "description": "Window classes that are project-specific (hidden when switching projects)",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "global_classes": {
+      "type": "array",
+      "description": "Window classes that are visible in all projects",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "class_patterns": {
+      "type": "array",
+      "description": "Pattern-based classification rules",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Pattern string (glob:*, regex:^...$, or literal)",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "description": "Classification scope",
+            "enum": ["scoped", "global"]
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Pattern priority (higher = evaluated first)",
+            "default": 0
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description for the pattern",
+            "default": ""
+          }
+        },
+        "required": ["pattern", "scope"],
+        "additionalProperties": false
+      },
+      "default": []
+    }
+  },
+  "required": ["scoped_classes", "global_classes", "class_patterns"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "scoped_classes": ["Ghostty", "Code", "neovide"],
+      "global_classes": ["firefox", "Google-chrome", "mpv"],
+      "class_patterns": [
+        {
+          "pattern": "glob:pwa-*",
+          "scope": "global",
+          "priority": 10,
+          "description": "Progressive Web Apps"
+        },
+        {
+          "pattern": "regex:^terminal.*$",
+          "scope": "scoped",
+          "priority": 5,
+          "description": "All terminal emulators"
+        }
+      ]
+    }
+  ]
+}

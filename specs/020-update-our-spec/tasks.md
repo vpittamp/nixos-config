@@ -215,7 +215,7 @@
 - [X] T092 [P] Implement dry-run mode for all mutation commands (add-pattern, remove-pattern, detect, wizard save) with --dry-run flag showing what would change without applying per FR-125
 - [X] T093 [P] Implement verbose logging for all commands with --verbose flag using logging.DEBUG level, showing subprocess calls, i3 IPC messages, timing per FR-125
 - [ ] T094 [P] Add shell completion for Bash in `home-modules/tools/i3_project_manager/cli/commands.py` using argcomplete decorators @autocomplete(choices=...) for pattern prefixes (glob:, regex:), scope values (scoped, global), filter values, sort values per contracts/cli-commands.md
-- [ ] T095 [P] Implement app-classes.json schema validation on daemon load in existing daemon code using JSON schema, logging detailed errors to systemd journal on validation failure (FR-130)
+- [X] T095 [P] Implement app-classes.json schema validation on daemon load in existing daemon code using JSON schema, logging detailed errors to systemd journal on validation failure (FR-130)
 - [ ] T096 [P] Add comprehensive docstrings (Google style) to all public APIs in models/, core/, tui/, cli/ modules per Principle X and FR-135
 - [ ] T097 [P] Create user guide sections in docs/ directory: "Pattern Rules", "Xvfb Detection", "Classification Wizard", "Window Inspector" with examples, troubleshooting, screenshots per quickstart.md
 - [X] T098 [P] Update NixOS package in `home-modules/tools/i3-project-manager.nix` to version 0.3.0, add xvfb-run, xdotool, xprop to buildInputs, add argcomplete to propagatedBuildInputs per quickstart.md deployment section

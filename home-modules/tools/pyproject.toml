@@ -29,6 +29,7 @@ dependencies = [
     "rich>=13.7.0",
     "i3ipc>=2.2.0",
     "argcomplete>=3.0.0",
+    "jsonschema>=4.17.0",
 ]
 
 [project.optional-dependencies]

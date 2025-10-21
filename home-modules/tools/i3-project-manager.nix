@@ -23,6 +23,9 @@ let
       argcomplete
       setuptools
 
+      # Phase 7: Schema validation (T095)
+      jsonschema
+
       # Phase 6: Window inspector dependencies
       # xdotool and xprop provided via buildInputs (system packages)
     ];
