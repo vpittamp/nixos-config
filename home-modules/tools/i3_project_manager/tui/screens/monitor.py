@@ -28,6 +28,12 @@ class MonitorScreen(Screen):
     BINDINGS = [
         Binding("r", "refresh", "Refresh"),
         Binding("escape", "back", "Back"),
+        Binding("right,l", "next_tab", "Next Tab", show=False),
+        Binding("left,h", "previous_tab", "Prev Tab", show=False),
+        Binding("1", "tab_1", "Live", show=False),
+        Binding("2", "tab_2", "Events", show=False),
+        Binding("3", "tab_3", "History", show=False),
+        Binding("4", "tab_4", "Tree", show=False),
     ]
 
     def compose(self) -> ComposeResult:
@@ -248,6 +254,36 @@ class MonitorScreen(Screen):
         await self._refresh_history()
         await self._refresh_tree()
         self.notify("Dashboard refreshed", severity="information")
+
+    def action_next_tab(self) -> None:
+        """Switch to next tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.action_next_tab()
+
+    def action_previous_tab(self) -> None:
+        """Switch to previous tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.action_previous_tab()
+
+    def action_tab_1(self) -> None:
+        """Switch to Live Status tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.active = "tab-1"
+
+    def action_tab_2(self) -> None:
+        """Switch to Events tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.active = "tab-2"
+
+    def action_tab_3(self) -> None:
+        """Switch to History tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.active = "tab-3"
+
+    def action_tab_4(self) -> None:
+        """Switch to Tree tab."""
+        tabs = self.query_one(TabbedContent)
+        tabs.active = "tab-4"
 
     async def action_back(self) -> None:
         """Return to browser screen."""

@@ -86,10 +86,16 @@ class I3PMApp(App):
     active_project: reactive[Optional[str]] = reactive(None)
     daemon_connected: reactive[bool] = reactive(False)
 
-    def __init__(self):
-        """Initialize the TUI application."""
+    def __init__(self, initial_screen: Optional[str] = None):
+        """Initialize the TUI application.
+
+        Args:
+            initial_screen: Optional initial screen to show ("browser", "monitor", etc.)
+                          Defaults to "browser" if not specified.
+        """
         super().__init__()
         self._daemon_client: Optional[DaemonClient] = None
+        self._initial_screen = initial_screen or "browser"
 
     async def on_mount(self) -> None:
         """Called when app is mounted.
@@ -105,9 +111,14 @@ class I3PMApp(App):
         # Start status polling (every 5 seconds) using set_interval
         self.set_interval(5, self._sync_poll_daemon)
 
-        # Push the default browser screen
-        from i3_project_manager.tui.screens.browser import ProjectBrowserScreen
-        await self.push_screen(ProjectBrowserScreen())
+        # Push the initial screen based on configuration
+        if self._initial_screen == "monitor":
+            from i3_project_manager.tui.screens.monitor import MonitorScreen
+            await self.push_screen(MonitorScreen())
+        else:
+            # Default to browser screen
+            from i3_project_manager.tui.screens.browser import ProjectBrowserScreen
+            await self.push_screen(ProjectBrowserScreen())
 
     async def _connect_daemon(self) -> None:
         """Establish connection to the daemon."""

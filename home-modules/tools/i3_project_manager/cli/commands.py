@@ -1990,34 +1990,13 @@ async def cmd_monitor(args: argparse.Namespace) -> int:
     try:
         # Import TUI app
         from ..tui.app import I3PMApp
-        from ..tui.screens.monitor import MonitorScreen
 
-        # Create app
-        app = I3PMApp()
+        # Create app with monitor as initial screen
+        app = I3PMApp(initial_screen="monitor")
 
-        # If mode specified, navigate to that tab
+        # If mode specified, could navigate to that tab after launch
+        # TODO: Add support for initial tab selection via mode parameter
         mode = args.mode if hasattr(args, 'mode') and args.mode else None
-
-        # Push monitor screen directly
-        async def on_mount():
-            screen = MonitorScreen()
-            await app.push_screen(screen)
-
-            # Navigate to specific tab if requested
-            if mode:
-                tab_map = {
-                    "live": 0,
-                    "events": 1,
-                    "history": 2,
-                    "tree": 3,
-                }
-                tab_index = tab_map.get(mode)
-                if tab_index is not None:
-                    # TODO: Switch to tab (implement in MonitorScreen)
-                    pass
-
-        # Override on_mount to push monitor screen
-        app.on_mount = on_mount
 
         # Run TUI
         await app.run_async()
