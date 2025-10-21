@@ -1949,8 +1949,8 @@ async def cmd_windows(args: argparse.Namespace) -> int:
             # Handle both daemon format (window_id, window_class) and i3 format (id, class)
             win_id = str(window.get("window_id") or window.get("id", ""))[:8]
             win_class = (window.get("window_class") or window.get("class", "unknown"))[:14]
-            workspace_name = window.get("workspace_name") or window.get("workspace", "?")
-            workspace = f"WS{workspace_name}" if not workspace_name.startswith("WS") else workspace_name
+            workspace_name = window.get("workspace_name") or window.get("workspace") or "?"
+            workspace = f"WS{workspace_name}" if workspace_name != "?" and not workspace_name.startswith("WS") else workspace_name
             marks = window.get("marks", [])
             marks_str = ", ".join(marks)[:18] if marks else ""
             title = (window.get("window_title") or window.get("title", ""))[:40]
