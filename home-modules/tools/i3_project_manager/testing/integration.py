@@ -97,6 +97,9 @@ class IntegrationTestFramework:
             config_dir=config_dir
         )
 
+        # Set self.env early so _start_i3 can use it for logging
+        self.env = env
+
         # Start Xvfb
         print("  Starting Xvfb...")
         env.xvfb_process = await self._start_xvfb()
@@ -104,11 +107,36 @@ class IntegrationTestFramework:
 
         # Start i3
         print("  Starting i3 window manager...")
+        print(f"    Config: {i3_config_dir / 'config'}")
+        print(f"    DISPLAY: {self.display}")
         env.i3_process = await self._start_i3(i3_config_dir)
-        await asyncio.sleep(2)  # Wait for i3 to be ready
+        await asyncio.sleep(3)  # Wait for i3 to be ready (increased from 2s)
+
+        # Check if i3 process is still running
+        if env.i3_process.poll() is not None:
+            print(f"    ERROR: i3 process exited with code {env.i3_process.returncode}")
+            # Close log file and read contents
+            if hasattr(self, 'i3_log_file') and self.i3_log_file:
+                self.i3_log_file.close()
+
+            log_file = temp_dir / "i3.log"
+            print(f"    Checking for log file: {log_file}")
+            print(f"    Log file exists: {log_file.exists()}")
+            if log_file.exists():
+                print(f"    i3 log contents:")
+                log_content = log_file.read_text()
+                print(log_content if log_content else "    (empty log file)")
+            else:
+                print(f"    No log file found at {log_file}")
+            raise RuntimeError(f"i3 process terminated unexpectedly (exit code {env.i3_process.returncode})")
 
         # Verify i3 is running
         if not await self._verify_i3_running():
+            # Read log file for diagnostics
+            log_file = temp_dir / "i3.log"
+            if log_file.exists():
+                print(f"    i3 log contents:")
+                print(log_file.read_text())
             raise RuntimeError("i3 failed to start")
 
         print("  Test environment ready!")
@@ -130,13 +158,13 @@ font pango:monospace 8
 # No startup applications
 # exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork
 
-# Start i3bar
-bar {
-    status_command i3status
-}
+# No status bar for testing (i3status can hang)
+# bar {
+#     status_command i3status
+# }
 
 # Basic keybindings
-bindsym Mod1+Return exec alacritty
+bindsym Mod1+Return exec xterm
 bindsym Mod1+Shift+q kill
 bindsym Mod1+Shift+e exit
 
@@ -201,17 +229,22 @@ bindsym Mod1+Shift+c reload
         """
         cmd = [
             "i3",
-            "-c", str(config_dir / "config"),
-            "-d", "all"  # Debug output
+            "-c", str(config_dir / "config")
+            # No debug flag - let i3 start normally in foreground
         ]
 
         log_file = self.env.temp_dir / "i3.log" if self.env else None
-        log_handle = open(log_file, "w") if log_file else subprocess.PIPE
+        if log_file:
+            self.i3_log_file = open(log_file, "w", buffering=1)  # Line buffered, keep file handle
+            print(f"    i3 log: {log_file}")
+            log_handle = self.i3_log_file
+        else:
+            log_handle = subprocess.PIPE
 
         process = subprocess.Popen(
             cmd,
             stdout=log_handle,
-            stderr=log_handle,
+            stderr=subprocess.STDOUT,  # Merge stderr to stdout
             env={**os.environ, 'DISPLAY': self.display}
         )
 
@@ -230,8 +263,16 @@ bindsym Mod1+Shift+c reload
                 timeout=5,
                 env={**os.environ, 'DISPLAY': self.display}
             )
-            return result.returncode == 0
-        except Exception:
+            if result.returncode == 0:
+                print(f"    i3 verification successful: {result.stdout.decode().strip()}")
+                return True
+            else:
+                print(f"    i3 verification failed: returncode={result.returncode}")
+                print(f"    stdout: {result.stdout.decode()}")
+                print(f"    stderr: {result.stderr.decode()}")
+                return False
+        except Exception as e:
+            print(f"    i3 verification exception: {e}")
             return False
 
     async def close_all_windows(self) -> None:

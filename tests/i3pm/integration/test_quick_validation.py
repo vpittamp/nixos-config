@@ -9,6 +9,7 @@ import asyncio
 from pathlib import Path
 import sys
 import subprocess
+import os
 
 # Add i3pm to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "home-modules" / "tools" / "i3_project_manager"))
@@ -63,7 +64,7 @@ async def test_integration_framework_setup_only():
             capture_output=True,
             text=True,
             timeout=5,
-            env={"DISPLAY": framework.display}
+            env={**os.environ, "DISPLAY": framework.display}
         )
 
         assert result.returncode == 0, "i3-msg failed"
@@ -76,7 +77,7 @@ async def test_integration_framework_setup_only():
             capture_output=True,
             text=True,
             timeout=5,
-            env={"DISPLAY": framework.display}
+            env={**os.environ, "DISPLAY": framework.display}
         )
 
         assert result.returncode == 0, "Failed to get workspaces"
