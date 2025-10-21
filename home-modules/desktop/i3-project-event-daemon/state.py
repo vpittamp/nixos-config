@@ -232,3 +232,24 @@ class StateManager:
                 "active_project": self.state.active_project,
                 "uptime_seconds": uptime,
             }
+
+    async def update_app_classification(self, classification: "ApplicationClassification") -> None:
+        """Update application classification (scoped/global classes).
+
+        This method is called when reloading configuration via tick event (T030).
+
+        Args:
+            classification: New ApplicationClassification object with scoped/global sets
+        """
+        async with self._lock:
+            old_scoped_count = len(self.state.scoped_classes)
+            old_global_count = len(self.state.global_classes)
+
+            self.state.scoped_classes = classification.scoped_classes
+            self.state.global_classes = classification.global_classes
+
+            logger.info(
+                f"Updated app classification: "
+                f"scoped {old_scoped_count}→{len(classification.scoped_classes)}, "
+                f"global {old_global_count}→{len(classification.global_classes)}"
+            )

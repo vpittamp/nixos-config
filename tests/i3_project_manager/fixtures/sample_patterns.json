@@ -1,0 +1,28 @@
+{
+  "class_patterns": [
+    {
+      "pattern": "glob:pwa-*",
+      "scope": "global",
+      "priority": 100,
+      "description": "All PWAs are global apps"
+    },
+    {
+      "pattern": "regex:^(neo)?vim$",
+      "scope": "scoped",
+      "priority": 90,
+      "description": "Neovim and Vim are project-scoped"
+    },
+    {
+      "pattern": "glob:Code*",
+      "scope": "scoped",
+      "priority": 80,
+      "description": "VS Code variants are project-scoped"
+    },
+    {
+      "pattern": "Ghostty",
+      "scope": "scoped",
+      "priority": 50,
+      "description": "Ghostty terminal is project-scoped (literal match)"
+    }
+  ]
+}

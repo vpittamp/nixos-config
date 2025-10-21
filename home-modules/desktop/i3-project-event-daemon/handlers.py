@@ -64,6 +64,19 @@ async def on_tick(
                 # Switch to specified project
                 await _switch_project(project_name, state_manager, conn, config_dir)
 
+        elif payload == "i3pm:reload-config":
+            # Reload app classification config (T030 - Pattern-based classification)
+            logger.info("Reloading app classification configuration...")
+            try:
+                from .config import load_app_classification
+                config_file = config_dir / "app-classes.json"
+                new_classification = load_app_classification(config_file)
+                await state_manager.update_app_classification(new_classification)
+                logger.info(f"✓ App classification reloaded: {len(new_classification.scoped_classes)} scoped, {len(new_classification.global_classes)} global")
+            except Exception as e:
+                logger.error(f"Failed to reload app classification: {e}")
+                raise
+
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Error handling tick event: {e}")

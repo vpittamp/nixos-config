@@ -715,9 +715,11 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 # Patterns
                 if config.class_patterns:
                     print(f"{Colors.YELLOW}{Colors.BOLD}Patterns:{Colors.RESET}")
-                    for pattern, classification in config.class_patterns.items():
-                        color = Colors.BLUE if classification == "scoped" else Colors.GREEN
-                        print(f"  {color}●{Colors.RESET} {pattern}* → {classification}")
+                    for pattern_rule in sorted(config.class_patterns, key=lambda p: p.priority, reverse=True):
+                        color = Colors.BLUE if pattern_rule.scope == "scoped" else Colors.GREEN
+                        priority_str = f"[priority {pattern_rule.priority}]" if pattern_rule.priority != 0 else ""
+                        desc_str = f" - {pattern_rule.description}" if pattern_rule.description else ""
+                        print(f"  {color}●{Colors.RESET} {pattern_rule.pattern} → {pattern_rule.scope} {priority_str}{desc_str}")
                     print()
 
             return 0
@@ -834,6 +836,154 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 print(f"{Colors.GRAY}Use 'i3pm app-classes suggest' for auto-classification{Colors.RESET}")
 
             return 0
+
+        elif subcommand == 'detect':
+            # Detect window classes using Xvfb (T042, FR-083, FR-090, FR-093)
+            from ..core.app_discovery import (
+                check_xvfb_available,
+                detect_window_class_xvfb,
+                get_cached_result,
+                update_cache_with_result,
+            )
+            from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
+            # Check dependencies first (FR-083)
+            if not check_xvfb_available():
+                print_error("Required tools not found: Xvfb, xdotool, or xprop")
+                print_info("Please install: sudo apt install xvfb xdotool x11-utils  (Debian/Ubuntu)")
+                print_info("              or: sudo pacman -S xorg-server-xvfb xdotool xorg-xprop  (Arch)")
+                return 1
+
+            # Parse options
+            all_missing = getattr(args, 'all_missing', False)
+            isolated_only = getattr(args, 'isolated', False)
+            timeout = getattr(args, 'timeout', 10)
+            use_cache = getattr(args, 'cache', True)
+            verbose = getattr(args, 'verbose', False)
+            desktop_file = getattr(args, 'desktop_file', None)
+
+            # Get list of apps to detect
+            discovery = AppDiscovery()
+
+            if desktop_file:
+                # Single app detection
+                apps_to_detect = [desktop_file]
+            elif all_missing:
+                # All apps without WM_CLASS
+                print_info("Scanning for applications without WM_CLASS...")
+                all_apps = discovery.discover_all()
+                apps_to_detect = [str(app.desktop_file) for app in all_apps if not app.wm_class]
+
+                if not apps_to_detect:
+                    print_success("All discovered apps already have WM_CLASS defined!")
+                    return 0
+
+                print_info(f"Found {len(apps_to_detect)} apps without WM_CLASS")
+            else:
+                print_error("Please specify either a desktop file or use --all-missing")
+                print_info("Usage: i3pm app-classes detect /path/to/app.desktop")
+                print_info("       i3pm app-classes detect --all-missing")
+                return 1
+
+            # Detect window classes with progress indication (FR-090)
+            results = []
+            cache_hits = 0
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=None if verbose else ...
+            ) as progress:
+                task = progress.add_task(
+                    f"[cyan]Detecting window classes...",
+                    total=len(apps_to_detect)
+                )
+
+                for desktop_path in apps_to_detect:
+                    # Check cache first (FR-091)
+                    if use_cache:
+                        cached = get_cached_result(desktop_path)
+                        if cached:
+                            cache_hits += 1
+                            results.append(cached)
+                            progress.update(task, advance=1, description=f"[cyan]Using cached result for {Path(desktop_path).stem}")
+                            continue
+
+                    # Perform detection (FR-086: with timeout)
+                    if verbose:
+                        print_info(f"Detecting {Path(desktop_path).stem}...")
+
+                    progress.update(task, description=f"[cyan]Detecting {Path(desktop_path).stem}...")
+                    result = detect_window_class_xvfb(desktop_path, timeout=timeout)
+                    results.append(result)
+
+                    # Update cache on success (FR-091)
+                    if result.detection_method == "xvfb" and use_cache:
+                        update_cache_with_result(result)
+
+                    progress.update(task, advance=1)
+
+            # Display results (FR-093)
+            successful = [r for r in results if r.detection_method == "xvfb"]
+            failed = [r for r in results if r.detection_method == "failed"]
+
+            print()
+            print_success(f"Detected {len(successful)}/{len(results)} window classes")
+
+            if cache_hits > 0:
+                print_info(f"Used {cache_hits} cached results")
+
+            if successful:
+                print(f"\n{Colors.GREEN}{Colors.BOLD}Successful Detections:{Colors.RESET}")
+                for result in successful:
+                    app_name = result.app_name
+                    wm_class = result.detected_class
+                    print(f"  {Colors.GREEN}✓{Colors.RESET} {app_name:30} → {wm_class}")
+
+            if failed:
+                print(f"\n{Colors.RED}{Colors.BOLD}Failed Detections:{Colors.RESET}")
+                for result in failed:
+                    app_name = result.app_name
+                    error = result.error_message
+                    print(f"  {Colors.RED}✗{Colors.RESET} {app_name:30} ({error})")
+
+            if successful and not isolated_only:
+                print(f"\n{Colors.GRAY}Next steps:{Colors.RESET}")
+                print(f"{Colors.GRAY}- Review detected classes above{Colors.RESET}")
+                print(f"{Colors.GRAY}- Use 'i3pm app-classes add-scoped <class>' to classify{Colors.RESET}")
+                print(f"{Colors.GRAY}- Or use 'i3pm app-classes suggest' for automatic suggestions{Colors.RESET}")
+
+            return 0 if len(failed) == 0 else 1
+
+        elif subcommand == 'wizard':
+            # Launch interactive classification wizard (T065)
+            print_info("Launching classification wizard...")
+            print_info("Use arrow keys to navigate, s/g/u to classify, Enter to save")
+
+            # Import here to avoid loading Textual when not needed
+            from ..tui.wizard import WizardApp
+
+            try:
+                # Create wizard app
+                app = WizardApp(
+                    filter_status=args.filter,
+                    sort_by=args.sort,
+                    auto_accept=args.auto_accept,
+                )
+
+                # Run asynchronously since we're already in an async function
+                await app.run_async()
+                return 0
+            except KeyboardInterrupt:
+                print_info("\nWizard cancelled")
+                return 0
+            except Exception as e:
+                print_error(f"Wizard failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return 1
 
         elif subcommand == 'suggest':
             # Auto-classify discovered apps
@@ -969,6 +1119,189 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 print(report)
 
             return 0
+
+        elif subcommand == 'add-pattern':
+            # Add pattern rule (T025)
+            from ..models.pattern import PatternRule
+
+            pattern = args.pattern
+            scope = args.scope
+            priority = getattr(args, 'priority', 0)
+            description = getattr(args, 'description', '')
+
+            try:
+                # Create and add pattern rule
+                pattern_rule = PatternRule(
+                    pattern=pattern,
+                    scope=scope,
+                    priority=priority,
+                    description=description
+                )
+                config.add_pattern(pattern_rule)
+                config.save()
+
+                print_success(f"Added pattern: {pattern} → {scope}")
+                if priority != 0:
+                    print_info(f"Priority: {priority}")
+                if description:
+                    print_info(f"Description: {description}")
+
+                # Suggest daemon reload
+                print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+                return 0
+
+            except ValueError as e:
+                print_error(f"Invalid pattern: {e}")
+                return 1
+
+        elif subcommand == 'list-patterns':
+            # List pattern rules (T026)
+            if not config.class_patterns:
+                print_info("No pattern rules configured")
+                return 0
+
+            if hasattr(args, 'json') and args.json:
+                # JSON output
+                import json
+                patterns_data = [
+                    {
+                        "pattern": p.pattern,
+                        "scope": p.scope,
+                        "priority": p.priority,
+                        "description": p.description
+                    }
+                    for p in config.list_patterns()
+                ]
+                print(json.dumps(patterns_data, indent=2))
+            else:
+                # Table output using rich
+                from rich.console import Console
+                from rich.table import Table
+
+                console = Console()
+                table = Table(title="Pattern Rules", show_header=True, header_style="bold")
+                table.add_column("Pattern", style="cyan")
+                table.add_column("Scope", style="green")
+                table.add_column("Priority", justify="right")
+                table.add_column("Description", style="dim")
+
+                for pattern in config.list_patterns():
+                    scope_color = "blue" if pattern.scope == "scoped" else "green"
+                    table.add_row(
+                        pattern.pattern,
+                        f"[{scope_color}]{pattern.scope}[/{scope_color}]",
+                        str(pattern.priority),
+                        pattern.description or ""
+                    )
+
+                console.print(table)
+
+            return 0
+
+        elif subcommand == 'remove-pattern':
+            # Remove pattern rule (T027)
+            pattern = args.pattern
+
+            # Confirm removal unless --yes flag
+            if not getattr(args, 'yes', False):
+                response = input(f"Remove pattern '{pattern}'? [y/N]: ")
+                if response.lower() not in ['y', 'yes']:
+                    print_info("Cancelled")
+                    return 0
+
+            if config.remove_pattern(pattern):
+                config.save()
+                print_success(f"Removed pattern: {pattern}")
+                print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+                return 0
+            else:
+                print_error(f"Pattern not found: {pattern}")
+                return 1
+
+        elif subcommand == 'test-pattern':
+            # Test pattern matching (T028)
+            pattern = args.pattern
+            window_class = args.window_class if hasattr(args, 'window_class') else None
+
+            from ..models.pattern import PatternRule
+
+            try:
+                # Create pattern rule for testing
+                test_pattern = PatternRule(pattern=pattern, scope="scoped", priority=0)
+
+                if window_class:
+                    # Test single window class
+                    matches = test_pattern.matches(window_class)
+
+                    if hasattr(args, 'json') and args.json:
+                        import json
+                        result = {
+                            "pattern": pattern,
+                            "window_class": window_class,
+                            "matches": matches
+                        }
+                        print(json.dumps(result, indent=2))
+                    else:
+                        if matches:
+                            print_success(f"Pattern '{pattern}' MATCHES '{window_class}'")
+                        else:
+                            print_info(f"Pattern '{pattern}' does NOT match '{window_class}'")
+
+                    return 0
+
+                elif hasattr(args, 'all_classes') and args.all_classes:
+                    # Test against all known window classes
+                    all_classes = set()
+                    all_classes.update(config.scoped_classes)
+                    all_classes.update(config.global_classes)
+
+                    matches = [cls for cls in sorted(all_classes) if test_pattern.matches(cls)]
+
+                    if hasattr(args, 'json') and args.json:
+                        import json
+                        result = {
+                            "pattern": pattern,
+                            "matches": matches,
+                            "total_tested": len(all_classes)
+                        }
+                        print(json.dumps(result, indent=2))
+                    else:
+                        if matches:
+                            print_success(f"Pattern '{pattern}' matches {len(matches)} classes:")
+                            for cls in matches:
+                                print(f"  {Colors.GREEN}✓{Colors.RESET} {cls}")
+                        else:
+                            print_info(f"Pattern '{pattern}' matches no known classes")
+                        print_info(f"Tested against {len(all_classes)} known classes")
+
+                    return 0
+
+                else:
+                    # Just show pattern info
+                    print_info(f"Pattern: {pattern}")
+                    print_info("Use --window-class or --all-classes to test matching")
+                    return 0
+
+            except ValueError as e:
+                print_error(f"Invalid pattern: {e}")
+                return 1
+
+        elif subcommand == 'reload':
+            # Reload daemon configuration (T029 part 1 - CLI function)
+            print_info("Reloading daemon configuration...")
+
+            try:
+                # Send i3 tick event to daemon
+                async with I3Client() as i3:
+                    await i3.command('nop "i3pm:reload-config"')
+
+                print_success("Reload signal sent to daemon")
+                print_info("Daemon will reload configuration on next event")
+                return 0
+
+            except I3Error as e:
+                print_error(f"Failed to send reload signal: {e}")
+                return 1
 
         else:
             print_error(f"Unknown subcommand: {subcommand}")
@@ -1647,6 +1980,71 @@ def cli_main() -> int:
         help="Output in JSON format"
     )
 
+    # app-classes detect (T042)
+    parser_app_classes_detect = app_classes_subparsers.add_parser(
+        "detect",
+        help="Detect window classes using isolated Xvfb",
+        description="Launch applications in isolated Xvfb to detect their window classes"
+    )
+    parser_app_classes_detect.add_argument(
+        "desktop_file",
+        nargs="?",
+        help="Path to .desktop file to detect (optional)"
+    )
+    parser_app_classes_detect.add_argument(
+        "--all-missing",
+        action="store_true",
+        help="Detect all apps without WM_CLASS defined"
+    )
+    parser_app_classes_detect.add_argument(
+        "--isolated",
+        action="store_true",
+        help="Skip final suggestions, only detect"
+    )
+    parser_app_classes_detect.add_argument(
+        "--timeout",
+        type=int,
+        default=10,
+        help="Timeout in seconds per app (default: 10)"
+    )
+    parser_app_classes_detect.add_argument(
+        "--no-cache",
+        dest="cache",
+        action="store_false",
+        default=True,
+        help="Skip cache and force fresh detection"
+    )
+    parser_app_classes_detect.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show verbose output during detection"
+    )
+
+    # app-classes wizard (T065)
+    parser_app_classes_wizard = app_classes_subparsers.add_parser(
+        "wizard",
+        help="Interactive TUI for bulk application classification",
+        description="Launch interactive wizard for classifying multiple applications with keyboard shortcuts"
+    )
+    parser_app_classes_wizard.add_argument(
+        "--filter",
+        choices=["all", "unclassified", "scoped", "global"],
+        default="all",
+        help="Initial filter (default: all)"
+    )
+    parser_app_classes_wizard.add_argument(
+        "--sort",
+        choices=["name", "class", "status", "confidence"],
+        default="name",
+        help="Initial sort field (default: name)"
+    )
+    parser_app_classes_wizard.add_argument(
+        "--auto-accept",
+        action="store_true",
+        help="Automatically accept high-confidence suggestions on launch"
+    )
+
     # app-classes suggest
     parser_app_classes_suggest = app_classes_subparsers.add_parser(
         "suggest",
@@ -1673,6 +2071,87 @@ def cli_main() -> int:
         "--output",
         "-o",
         help="Output file (default: stdout)"
+    )
+
+    # app-classes add-pattern (T025)
+    parser_app_classes_add_pattern = app_classes_subparsers.add_parser(
+        "add-pattern",
+        help="Add a pattern rule for window class matching"
+    )
+    parser_app_classes_add_pattern.add_argument(
+        "pattern",
+        help="Pattern string (e.g., 'glob:pwa-*', 'regex:^vim$', or literal 'Code')"
+    )
+    parser_app_classes_add_pattern.add_argument(
+        "scope",
+        choices=["scoped", "global"],
+        help="Classification scope"
+    )
+    parser_app_classes_add_pattern.add_argument(
+        "--priority",
+        type=int,
+        default=0,
+        help="Pattern priority (higher = evaluated first, default: 0)"
+    )
+    parser_app_classes_add_pattern.add_argument(
+        "--description",
+        help="Optional description for the pattern"
+    )
+
+    # app-classes list-patterns (T026)
+    parser_app_classes_list_patterns = app_classes_subparsers.add_parser(
+        "list-patterns",
+        help="List all pattern rules"
+    )
+    parser_app_classes_list_patterns.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # app-classes remove-pattern (T027)
+    parser_app_classes_remove_pattern = app_classes_subparsers.add_parser(
+        "remove-pattern",
+        help="Remove a pattern rule"
+    )
+    parser_app_classes_remove_pattern.add_argument(
+        "pattern",
+        help="Exact pattern string to remove"
+    )
+    parser_app_classes_remove_pattern.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip confirmation prompt"
+    )
+
+    # app-classes test-pattern (T028)
+    parser_app_classes_test_pattern = app_classes_subparsers.add_parser(
+        "test-pattern",
+        help="Test pattern matching against window classes"
+    )
+    parser_app_classes_test_pattern.add_argument(
+        "pattern",
+        help="Pattern to test (e.g., 'glob:pwa-*')"
+    )
+    parser_app_classes_test_pattern.add_argument(
+        "--window-class",
+        help="Test against specific window class"
+    )
+    parser_app_classes_test_pattern.add_argument(
+        "--all-classes",
+        action="store_true",
+        help="Test against all known window classes"
+    )
+    parser_app_classes_test_pattern.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # app-classes reload (T029)
+    parser_app_classes_reload = app_classes_subparsers.add_parser(
+        "reload",
+        help="Reload daemon configuration"
     )
 
     # ========================================================================

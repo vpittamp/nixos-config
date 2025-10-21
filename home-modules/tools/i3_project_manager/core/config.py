@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
+from ..models.pattern import PatternRule
+
 
 class AppClassConfig:
     """Manager for application classification configuration.
@@ -31,7 +33,7 @@ class AppClassConfig:
         self.config_file = config_file
         self.scoped_classes: Set[str] = set()
         self.global_classes: Set[str] = set()
-        self.class_patterns: Dict[str, str] = {}
+        self.class_patterns: List[PatternRule] = []
 
     def load(self) -> None:
         """Load application classifications from disk.
@@ -42,7 +44,7 @@ class AppClassConfig:
             # Create default config
             self.scoped_classes = set(self.DEFAULT_SCOPED_CLASSES)
             self.global_classes = set(self.DEFAULT_GLOBAL_CLASSES)
-            self.class_patterns = {}
+            self.class_patterns = []
             self.save()
             return
 
@@ -52,7 +54,35 @@ class AppClassConfig:
 
             self.scoped_classes = set(data.get("scoped_classes", []))
             self.global_classes = set(data.get("global_classes", []))
-            self.class_patterns = data.get("class_patterns", {})
+
+            # Load patterns as list of PatternRule objects
+            # Handle both old dict format and new array format for backward compatibility
+            patterns_data = data.get("class_patterns", [])
+
+            if isinstance(patterns_data, dict):
+                # Old format: {"pattern": "scope"} -> convert to new format
+                self.class_patterns = [
+                    PatternRule(
+                        pattern=pattern,
+                        scope=scope,
+                        priority=0,
+                        description="",
+                    )
+                    for pattern, scope in patterns_data.items()
+                ]
+            elif isinstance(patterns_data, list):
+                # New format: [{"pattern": "...", "scope": "...", ...}]
+                self.class_patterns = [
+                    PatternRule(
+                        pattern=p["pattern"],
+                        scope=p["scope"],
+                        priority=p.get("priority", 0),
+                        description=p.get("description", ""),
+                    )
+                    for p in patterns_data
+                ]
+            else:
+                self.class_patterns = []
 
         except (json.JSONDecodeError, IOError) as e:
             raise ValueError(f"Failed to load app classifications: {e}")
@@ -62,6 +92,7 @@ class AppClassConfig:
 
         Creates parent directory if it doesn't exist.
         Performs atomic write using temp file + rename.
+        Saves patterns in new PatternRule list format.
         """
         import tempfile
         import os
@@ -69,11 +100,19 @@ class AppClassConfig:
         # Ensure parent directory exists
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Prepare data
+        # Prepare data - convert PatternRule objects to dicts
         data = {
             "scoped_classes": sorted(list(self.scoped_classes)),
             "global_classes": sorted(list(self.global_classes)),
-            "class_patterns": self.class_patterns,
+            "class_patterns": [
+                {
+                    "pattern": p.pattern,
+                    "scope": p.scope,
+                    "priority": p.priority,
+                    "description": p.description,
+                }
+                for p in self.class_patterns
+            ],
         }
 
         # Atomic write using temp file + rename
@@ -157,6 +196,8 @@ class AppClassConfig:
     def is_scoped(self, class_name: str, project: Optional[str] = None) -> bool:
         """Check if a window class is scoped (project-specific).
 
+        Precedence: explicit scoped_classes > explicit global_classes > patterns > default
+
         Args:
             class_name: Window class name
             project: Optional project name (for project-specific overrides)
@@ -164,7 +205,7 @@ class AppClassConfig:
         Returns:
             True if class is scoped, False if global
         """
-        # Direct match in scoped list
+        # Direct match in scoped list (highest priority)
         if class_name in self.scoped_classes:
             return True
 
@@ -172,10 +213,11 @@ class AppClassConfig:
         if class_name in self.global_classes:
             return False
 
-        # Pattern matching
-        for pattern, classification in self.class_patterns.items():
-            if class_name.startswith(pattern):
-                return classification == "scoped"
+        # Pattern matching (sorted by priority, first match wins)
+        sorted_patterns = sorted(self.class_patterns, key=lambda p: p.priority, reverse=True)
+        for pattern in sorted_patterns:
+            if pattern.matches(class_name):
+                return pattern.scope == "scoped"
 
         # Default: treat unknown classes as scoped for safety
         # (prevents global windows from appearing in all projects)
@@ -222,10 +264,45 @@ class AppClassConfig:
             return "scoped"
         elif class_name in self.global_classes:
             return "global"
-        elif any(class_name.startswith(p) for p in self.class_patterns):
-            for pattern, classification in self.class_patterns.items():
-                if class_name.startswith(pattern):
-                    return classification
-            return "unknown"
         else:
+            # Check pattern matches
+            sorted_patterns = sorted(
+                self.class_patterns, key=lambda p: p.priority, reverse=True
+            )
+            for pattern in sorted_patterns:
+                if pattern.matches(class_name):
+                    return pattern.scope
             return "unknown"
+
+    def add_pattern(self, pattern_rule: PatternRule) -> None:
+        """Add a new pattern rule for classification.
+
+        Args:
+            pattern_rule: PatternRule object to add
+
+        Raises:
+            ValueError: If pattern syntax is invalid (caught in PatternRule.__post_init__)
+        """
+        # PatternRule validation happens in __post_init__
+        self.class_patterns.append(pattern_rule)
+
+    def remove_pattern(self, pattern_str: str) -> bool:
+        """Remove a pattern rule by exact pattern string match.
+
+        Args:
+            pattern_str: Exact pattern string to remove (e.g., "glob:pwa-*")
+
+        Returns:
+            True if pattern was removed, False if not found
+        """
+        original_len = len(self.class_patterns)
+        self.class_patterns = [p for p in self.class_patterns if p.pattern != pattern_str]
+        return len(self.class_patterns) < original_len
+
+    def list_patterns(self) -> List[PatternRule]:
+        """Get all configured pattern rules, sorted by priority (descending).
+
+        Returns:
+            List of PatternRule objects sorted by priority
+        """
+        return sorted(self.class_patterns, key=lambda p: p.priority, reverse=True)
