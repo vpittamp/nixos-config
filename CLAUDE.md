@@ -421,10 +421,91 @@ cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (curre
 cat /etc/nixos/docs/I3_PROJECT_EVENTS.md              # Troubleshooting guide (coming soon)
 ```
 
+## 🐍 Python Project Testing & Monitoring
+
+### i3 Project System Monitor
+
+Real-time monitoring tool for debugging the i3 project management system:
+
+```bash
+# Live dashboard (default) - shows current state
+i3-project-monitor
+
+# Event stream - watch events as they occur
+i3-project-monitor --mode=events
+
+# Historical events - review recent events
+i3-project-monitor --mode=history
+
+# i3 tree inspector - inspect window hierarchy
+i3-project-monitor --mode=tree
+
+# Diagnostic capture - save complete state snapshot
+i3-project-monitor --mode=diagnose --output=report.json
+```
+
+### Automated Testing Framework
+
+Run automated tests for the i3 project management system:
+
+```bash
+# Run single test scenario
+i3-project-test run project_lifecycle
+
+# Run full test suite
+i3-project-test suite
+
+# Run tests with verbose output
+i3-project-test suite --verbose
+
+# Run tests in CI mode (JSON output)
+i3-project-test suite --ci --output=test-results.json
+
+# Validate current state
+i3-project-test verify-state
+```
+
+### Multi-Pane Debugging Workflow
+
+Use tmux for simultaneous monitoring and testing:
+
+```bash
+# Split terminal for monitor + commands
+tmux split-window -h 'i3-project-monitor'
+
+# Or use test framework's built-in tmux integration
+i3-project-test interactive project_lifecycle
+```
+
+### Python Development Standards
+
+All Python-based system tools follow these standards:
+- **Language**: Python 3.11+ with async/await patterns
+- **Testing**: pytest with async support (pytest-asyncio)
+- **Terminal UI**: Rich library for tables and live displays
+- **i3 Integration**: i3ipc.aio for async i3 IPC communication
+- **Type Safety**: Type hints for all public APIs
+- **Data Validation**: Pydantic models or dataclasses with validation
+
+See `docs/PYTHON_DEVELOPMENT.md` for detailed patterns and examples.
+
+### i3 IPC Integration
+
+All i3-related state queries must use i3's native IPC API:
+- Use `GET_WORKSPACES` for workspace-to-output assignments
+- Use `GET_OUTPUTS` for monitor/output configuration
+- Use `GET_TREE` for window hierarchy and marks
+- Use `GET_MARKS` for all window marks
+- Subscribe to events for real-time updates (not polling)
+
+See `docs/I3_IPC_PATTERNS.md` for integration patterns and best practices.
+
 ## 📚 Additional Documentation
 
 - `README.md` - Project overview and quick start
 - `docs/ARCHITECTURE.md` - Detailed architecture documentation
+- `docs/PYTHON_DEVELOPMENT.md` - Python development standards and patterns
+- `docs/I3_IPC_PATTERNS.md` - i3 IPC integration patterns and best practices
 - `docs/PWA_SYSTEM.md` - PWA (Progressive Web App) management system
 - `docs/M1_SETUP.md` - Apple Silicon setup and troubleshooting
 - `docs/DARWIN_SETUP.md` - macOS Darwin home-manager setup guide
@@ -492,4 +573,4 @@ See `docs/DARWIN_SETUP.md` for detailed setup instructions for your M1 MacBook P
 
 ---
 
-_Last updated: 2025-10 with Darwin home-manager support_
+_Last updated: 2025-10-20 with Python testing workflows and i3 IPC patterns_

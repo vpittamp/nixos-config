@@ -1,40 +1,34 @@
 <!--
 Sync Impact Report:
-- Version: 1.1.0 → 1.2.0 (MINOR - New principle added, existing principles expanded with i3wm/X11 focus)
+- Version: 1.2.0 → 1.3.0 (MINOR - New principles added for Python development and testing standards)
 - Modified principles:
-  * Principle VIII: "Remote Desktop & Multi-Session Standards" - Enhanced
-    - Added explicit X11 preference for RDP compatibility
-    - Specified i3wm as reference window manager for multi-session isolation
-    - Added clipboard manager integration requirements (clipcat)
-  * Platform Support Standards: "Desktop Environment Transitions" - Expanded
-    - Updated from KDE Plasma → i3wm migration to generalized tiling WM guidance
-    - Added X11 vs Wayland decision criteria for remote desktop scenarios
-    - Integrated clipcat clipboard manager as standard tool
+  * None - existing principles remain unchanged
 - New principles created:
-  * Principle IX: "Tiling Window Manager & Productivity Standards" (NEW)
-    - Establishes i3wm as the standard tiling window manager
-    - Keyboard-first workflow requirements
-    - Workspace and session isolation standards
-    - Integration requirements (rofi, i3wsr, clipcat, tmux)
-- New best practices integrated:
-  * Home-manager module structure (explicit imports, conditional features)
-  * NixOS module option patterns (mkEnableOption, mkOption with types)
-  * Configuration file generation via environment.etc
-  * Package scoping discipline (system vs user vs module-specific)
-  * Minimal X11 server configuration for headless RDP scenarios
+  * Principle X: "Python Development & Testing Standards" (NEW)
+    - Establishes Python 3.11+ as standard for system tooling
+    - Async/await patterns for i3 IPC and daemon communication
+    - pytest as standard testing framework
+    - Type hints and validation standards
+  * Principle XI: "i3 IPC Alignment & State Authority" (NEW)
+    - i3's native IPC API as authoritative source of truth
+    - Mandatory use of i3 message types (GET_WORKSPACES, GET_OUTPUTS, GET_TREE, GET_MARKS)
+    - State synchronization patterns
+    - Event-driven architecture requirements
+- New sections added:
+  * Testing & Validation Standards - Automated testing requirements for Python projects
+  * Diagnostic & Monitoring Standards - Requirements for system observability
 - Updated sections:
-  * Platform Support Standards - Changed Hetzner from "Full KDE desktop" to "i3 tiling WM"
-  * Desktop Environment Transitions - Replaced KDE Plasma references with i3wm context
-  * Testing Requirements - Updated Hetzner to reflect i3wm + xrdp + X11 architecture
+  * None - existing sections remain compatible
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - no changes needed (principles remain compatible)
-  ✅ .specify/templates/plan-template.md - Constitution Check section compatible with new principle
-  ✅ .specify/templates/tasks-template.md - task organization aligns with new tiling WM principle
-  ✅ .specify/templates/commands/ - no command-specific files requiring updates
+  ✅ .specify/templates/spec-template.md - Already compatible with new principles
+  ✅ .specify/templates/plan-template.md - Technical Context section compatible with Python projects
+  ✅ .specify/templates/tasks-template.md - Test task organization aligns with new testing principle
+  ⚠️ .specify/templates/commands/ - May benefit from Python-specific guidance updates
 - Follow-up TODOs:
-  * Update CLAUDE.md to reflect i3wm as standard desktop (remove KDE Plasma references)
-  * Update docs/HETZNER_NIXOS_INSTALL.md to document i3wm installation path
-  * Consider creating docs/I3WM_SETUP.md for i3wm-specific configuration guidance
+  * Consider creating docs/PYTHON_DEVELOPMENT.md for detailed Python patterns and best practices
+  * Consider creating docs/I3_IPC_PATTERNS.md for i3 integration guidance
+  * Update CLAUDE.md to mention Python project testing workflows
+  * Add example test scenarios to documentation
 -->
 
 # NixOS Modular Configuration Constitution
@@ -238,6 +232,114 @@ services.i3wm = {
 
 **Rationale**: Tiling window managers maximize screen real estate and minimize mouse usage, critical for remote desktop scenarios where mouse precision is degraded. i3wm's minimal resource usage enables multiple concurrent sessions on a single server. Keyboard-first workflows improve productivity and reduce dependency on RDP's pointer handling. Dynamic workspace naming via i3wsr provides immediate context awareness across workspaces. Clipboard history via clipcat ensures seamless copy/paste workflow across applications and RDP sessions.
 
+### X. Python Development & Testing Standards
+
+Python-based system tooling MUST follow consistent patterns for async programming, testing, type safety, and dependency management.
+
+**Rules**:
+- Python version MUST be 3.11+ for all new development (matches existing i3-project daemon)
+- Async/await patterns MUST be used for i3 IPC communication and daemon interaction (via i3ipc.aio, asyncio)
+- Testing framework MUST be pytest with support for async tests (pytest-asyncio)
+- Type hints MUST be used for function signatures and public APIs
+- Data validation MUST use Pydantic models or dataclasses with validation
+- Terminal UI applications MUST use Rich library for tables, live displays, and formatting
+- Module structure MUST follow single-responsibility principle with clear separation (models, services, displays, validators)
+- Python packages MUST be installed via home-manager user packages (development profile)
+- CLI tools MUST provide --help output and follow standard argument patterns
+- Error handling MUST be explicit with clear error messages and exit codes
+- Logging MUST use standard library `logging` module with appropriate log levels
+
+**Testing Requirements**:
+- Unit tests MUST validate data models, formatters, and business logic
+- Integration tests MUST validate IPC communication and daemon interaction
+- Test scenarios MUST be independently executable and validate expected vs actual state
+- Tests MUST support headless operation for CI/CD environments
+- Mock patterns MUST be used to isolate tests from external dependencies (daemon, i3 IPC)
+- Test reports MUST be output in both human-readable (terminal) and machine-readable (JSON) formats
+- Automated tests MUST execute in under 10 seconds for full workflow validation
+- Test frameworks MUST support tmux integration for multi-pane monitoring during manual testing
+
+**Python Project Structure Pattern**:
+```
+home-modules/tools/<tool-name>/
+├── __init__.py              # Package initialization
+├── __main__.py              # CLI entry point
+├── models.py                # Pydantic models / dataclasses
+├── <service>.py             # Business logic modules
+├── displays/                # Terminal UI components (if applicable)
+│   ├── __init__.py
+│   └── <mode>.py           # Display mode implementations
+└── README.md                # Module documentation
+
+tests/<tool-name>/
+├── test_models.py           # Data model tests
+├── test_<service>.py        # Service logic tests
+└── fixtures/
+    └── mock_<dependency>.py # Mock implementations
+```
+
+**Best Practices**:
+- Prefer async/await over callbacks for better readability and error handling
+- Use context managers for resource cleanup (connections, files, etc.)
+- Validate input early and fail fast with clear error messages
+- Keep display logic separate from business logic for testability
+- Use circular buffers for event storage to prevent memory growth
+- Implement auto-reconnection with exponential backoff for daemon connections
+- Include diagnostic modes in monitoring tools for troubleshooting
+
+**Rationale**: Features 017 and 018 established Python as the standard for i3-project system tooling. Consistent patterns across monitoring tools, test frameworks, and daemon extensions reduce cognitive load and improve maintainability. Async patterns are essential for event-driven i3 IPC integration. Rich library provides consistent terminal UI across all tools. pytest enables comprehensive test coverage including CI/CD integration. Type hints and validation prevent runtime errors and improve code quality.
+
+### XI. i3 IPC Alignment & State Authority
+
+All i3-related state queries and window management operations MUST use i3's native IPC API as the authoritative source of truth.
+
+**Rules**:
+- State queries MUST use i3's native IPC message types: GET_WORKSPACES, GET_OUTPUTS, GET_TREE, GET_MARKS
+- Workspace-to-output assignments MUST be validated against i3's GET_WORKSPACES response
+- Monitor/output configuration MUST be queried via GET_OUTPUTS, not xrandr or other tools
+- Window marking and visibility MUST be verified via GET_TREE and GET_MARKS
+- Event subscriptions MUST use i3's SUBSCRIBE IPC message type (window, workspace, output, binding)
+- Custom state tracking (daemon, database) MUST be validated against i3 IPC data, not vice versa
+- When discrepancies occur between custom state and i3 IPC, i3 IPC data MUST be considered authoritative
+- i3ipc-python library (i3ipc.aio for async) MUST be used for all i3 IPC communication
+- State synchronization MUST be event-driven via i3 IPC subscriptions, not polling
+- Diagnostic tools MUST include i3 IPC state in all reports for validation
+
+**Event-Driven Architecture Requirements**:
+- Use i3 IPC subscriptions for real-time state updates (window events, workspace changes, output changes)
+- Process events asynchronously via asyncio event loops
+- Maintain minimal daemon state - query i3 IPC when authoritative state needed
+- Implement event handlers with <100ms latency for window marking and state updates
+- Use event buffers (circular, max 500 events) for diagnostic history, not authoritative state
+- Fail gracefully when i3 IPC connection is lost with auto-reconnection (exponential backoff)
+
+**i3 IPC Message Types (Standard Usage)**:
+- `GET_WORKSPACES`: Query workspace list with names, visible status, output assignments
+- `GET_OUTPUTS`: Query monitor/output configuration with names, active status, dimensions, workspaces
+- `GET_TREE`: Query complete window tree with containers, marks, focus, properties
+- `GET_MARKS`: Query all window marks in current session
+- `SUBSCRIBE`: Subscribe to events (window, workspace, output, binding, shutdown, tick)
+- `COMMAND`: Execute i3 commands (mark windows, move containers, switch workspaces)
+
+**State Validation Pattern**:
+```python
+# Query i3's authoritative state
+async with i3ipc.aio.Connection() as i3:
+    workspaces = await i3.get_workspaces()
+    outputs = await i3.get_outputs()
+    tree = await i3.get_tree()
+
+    # Validate daemon state against i3 state
+    for workspace in workspaces:
+        expected_output = workspace.output
+        daemon_output = get_daemon_workspace_assignment(workspace.num)
+        if expected_output != daemon_output:
+            # i3 state is authoritative - update daemon
+            sync_daemon_state(workspace.num, expected_output)
+```
+
+**Rationale**: Feature 018 identified critical issues when custom state tracking (daemon databases, configuration files) drifts from i3's actual state. i3's IPC API is the single source of truth for window management state - workspace assignments, output configuration, window marks, and focus state all originate from i3. Event-driven architecture via i3 IPC subscriptions replaced polling-based systems in Feature 015, reducing CPU usage to <1% and eliminating race conditions. All monitoring, testing, and diagnostic tools must align with i3's state to ensure accurate debugging and validation. When building extensions to i3, query i3 IPC to validate assumptions rather than maintaining parallel state that can desync.
+
 ## Platform Support Standards
 
 ### Multi-Platform Compatibility
@@ -362,6 +464,74 @@ config = mkIf cfg.enable {
 };
 ```
 
+## Testing & Validation Standards
+
+### Automated Testing Requirements
+
+Python-based system tooling MUST include comprehensive automated tests for functionality validation and regression prevention.
+
+**Rules**:
+- All Python modules MUST have pytest-based unit tests for data models and business logic
+- Integration tests MUST validate daemon communication, i3 IPC interaction, and state synchronization
+- Test scenarios MUST simulate real user workflows (project lifecycle, window management, monitor configuration)
+- Tests MUST support headless operation for CI/CD integration
+- Mock implementations MUST be provided for external dependencies (daemon, i3 IPC socket)
+- Test reports MUST be output in machine-readable format (JSON) for CI/CD parsing
+- Automated test suites MUST execute in under 10 seconds for complete workflow validation
+- Failed tests MUST report expected vs actual state with detailed diff information
+- Test frameworks MUST use tmux for multi-pane monitoring during manual interactive testing
+
+**Test Coverage Requirements**:
+- **Unit tests**: Data models, formatters, validators, business logic (>80% coverage target)
+- **Integration tests**: IPC communication, daemon interaction, state queries
+- **Contract tests**: JSON-RPC API endpoints, i3 IPC message types
+- **Scenario tests**: End-to-end user workflows with state validation
+- **Regression tests**: Previously identified bugs with validation to prevent recurrence
+
+**Test Organization Pattern**:
+```
+tests/<module-name>/
+├── unit/
+│   ├── test_models.py
+│   ├── test_validators.py
+│   └── test_formatters.py
+├── integration/
+│   ├── test_daemon_client.py
+│   └── test_i3_ipc.py
+├── scenarios/
+│   ├── test_project_lifecycle.py
+│   └── test_window_management.py
+└── fixtures/
+    ├── mock_daemon.py
+    └── sample_data.py
+```
+
+**Rationale**: Feature 018 demonstrated the value of automated testing for complex event-driven systems. Manual testing is time-consuming, error-prone, and doesn't scale to CI/CD. Automated tests catch regressions early, provide confidence during refactoring, and serve as executable documentation of expected behavior. Test scenarios based on real user workflows ensure comprehensive coverage of critical paths.
+
+### Diagnostic & Monitoring Standards
+
+System tooling MUST provide observability and diagnostic capabilities for debugging and troubleshooting.
+
+**Rules**:
+- Monitoring tools MUST display real-time system state (active project, tracked windows, monitors, events)
+- Event streams MUST be captured and displayed with timestamps, event types, and payloads
+- Diagnostic capture MUST include: current state snapshot, recent event history (500 events), i3 tree structure, complete i3 IPC state (outputs, workspaces, marks)
+- State validation MUST compare custom daemon state against i3 IPC authoritative state
+- Monitoring tools MUST support multiple display modes (live, events, history, tree, diagnose)
+- Connection status MUST be clearly indicated with auto-reconnection on failure
+- Error states MUST provide actionable troubleshooting guidance
+- Diagnostic reports MUST be output as structured JSON for analysis and comparison
+
+**Monitoring Tool Requirements**:
+- Real-time display updates (250ms refresh rate for live mode)
+- Event streaming with <100ms latency from event occurrence to display
+- Circular event buffer (500 events max) for historical review
+- Terminal UI using Rich library for tables, syntax highlighting, and live displays
+- Multiple concurrent instances for parallel monitoring (different modes in different terminals)
+- Headless operation mode for automated diagnostic capture
+
+**Rationale**: Feature 017 (i3 Project System Monitor) established that comprehensive observability reduces debugging time by 50% compared to manual log inspection. Real-time monitoring enables developers to see state changes as they occur, event streams reveal timing and sequencing issues, and diagnostic captures provide complete context for post-mortem analysis. These capabilities are essential for maintaining complex event-driven systems.
+
 ## Home-Manager Standards
 
 ### Module Structure
@@ -449,6 +619,8 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ Security standards - secrets via 1Password, SSH hardening maintained
 - ✅ Remote desktop standards - multi-session support, session isolation, resource limits
 - ✅ Tiling WM standards - i3wm configuration, keyboard-first workflows, workspace isolation
+- ✅ Python standards - async patterns, pytest testing, type hints, Rich UI
+- ✅ i3 IPC alignment - state queries via native IPC, event-driven architecture
 
 ### Complexity Justification
 
@@ -457,4 +629,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.2.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-17
+**Version**: 1.3.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-20
