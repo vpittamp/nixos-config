@@ -127,7 +127,8 @@ async def inspect_window_focused() -> WindowProperties:
     if Connection is None:
         raise ImportError("i3ipc.aio not available")
 
-    async with Connection() as i3:
+    i3 = await Connection().connect()
+    try:
         tree = await i3.get_tree()
         focused = tree.find_focused()
 
@@ -135,6 +136,9 @@ async def inspect_window_focused() -> WindowProperties:
             raise ValueError("No window is currently focused")
 
         return await extract_window_properties(focused)
+    finally:
+        if i3:
+            i3.main_quit()
 
 
 async def inspect_window_by_id(window_id: int) -> WindowProperties:
@@ -162,7 +166,8 @@ async def inspect_window_by_id(window_id: int) -> WindowProperties:
     if Connection is None:
         raise ImportError("i3ipc.aio not available")
 
-    async with Connection() as i3:
+    i3 = await Connection().connect()
+    try:
         tree = await i3.get_tree()
         container = tree.find_by_id(window_id)
 
@@ -170,6 +175,9 @@ async def inspect_window_by_id(window_id: int) -> WindowProperties:
             raise ValueError(f"Window not found: {window_id}")
 
         return await extract_window_properties(container)
+    finally:
+        if i3:
+            i3.main_quit()
 
 
 async def extract_window_properties(container) -> WindowProperties:
