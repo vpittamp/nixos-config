@@ -985,6 +985,63 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 traceback.print_exc()
                 return 1
 
+        elif subcommand == 'inspect':
+            # Launch window inspector TUI (T086)
+            from ..tui.inspector import (
+                InspectorApp,
+                inspect_window_click,
+                inspect_window_focused,
+                inspect_window_by_id,
+            )
+
+            try:
+                # Determine inspection mode
+                window_props = None
+
+                if args.window_id:
+                    # By-ID mode
+                    print_info(f"Inspecting window ID: {args.window_id}")
+                    window_props = await inspect_window_by_id(args.window_id)
+
+                elif args.focused:
+                    # Focused mode
+                    print_info("Inspecting focused window...")
+                    window_props = await inspect_window_focused()
+
+                else:
+                    # Click mode (default)
+                    print_info("Click any window to inspect...")
+                    print_info("(Press Escape to cancel)")
+
+                    window_id = inspect_window_click()
+                    if window_id is None:
+                        print_info("Cancelled")
+                        return 0
+
+                    window_props = await inspect_window_by_id(window_id)
+
+                # Launch inspector app
+                app = InspectorApp(window_props=window_props)
+
+                # Enable live mode if requested
+                if args.live:
+                    app.live_mode = True
+
+                await app.run_async()
+                return 0
+
+            except KeyboardInterrupt:
+                print_info("\nInspector cancelled")
+                return 0
+            except ValueError as e:
+                print_error(str(e))
+                return 1
+            except Exception as e:
+                print_error(f"Inspector failed: {e}")
+                import traceback
+                traceback.print_exc()
+                return 1
+
         elif subcommand == 'suggest':
             # Auto-classify discovered apps
             discovery = AppDiscovery()
@@ -2043,6 +2100,35 @@ def cli_main() -> int:
         "--auto-accept",
         action="store_true",
         help="Automatically accept high-confidence suggestions on launch"
+    )
+
+    # app-classes inspect (T086)
+    parser_app_classes_inspect = app_classes_subparsers.add_parser(
+        "inspect",
+        help="Inspect window properties and classification (TUI)",
+        description="Launch interactive window inspector with real-time property display and classification actions"
+    )
+    inspect_mode_group = parser_app_classes_inspect.add_mutually_exclusive_group()
+    inspect_mode_group.add_argument(
+        "--click",
+        action="store_true",
+        help="Click mode - select window by clicking (default)"
+    )
+    inspect_mode_group.add_argument(
+        "--focused",
+        action="store_true",
+        help="Focused mode - inspect currently focused window"
+    )
+    inspect_mode_group.add_argument(
+        "window_id",
+        nargs="?",
+        type=int,
+        help="Inspect specific window by i3 container ID"
+    )
+    parser_app_classes_inspect.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable live mode by default (auto-update on i3 events)"
     )
 
     # app-classes suggest
