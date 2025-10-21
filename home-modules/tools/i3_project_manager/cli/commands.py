@@ -655,6 +655,145 @@ async def cmd_validate(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
+# Phase 4: Application Classification Commands (T019)
+# ============================================================================
+
+
+async def cmd_app_classes(args: argparse.Namespace) -> int:
+    """Manage application classifications (scoped vs global).
+
+    Args:
+        args: Parsed arguments with subcommand and options
+
+    Returns:
+        0 on success, 1 on error
+    """
+    from ..core.config import AppClassConfig
+    import json
+
+    try:
+        config = AppClassConfig()
+        config.load()
+
+        # Handle subcommands
+        subcommand = getattr(args, 'app_classes_command', None)
+
+        if subcommand == 'list' or subcommand is None:
+            # List all classifications
+            if hasattr(args, 'json') and args.json:
+                result = {
+                    "scoped": config.get_all_scoped(),
+                    "global": config.get_all_global(),
+                    "patterns": config.class_patterns
+                }
+                print(json.dumps(result, indent=2))
+            else:
+                # Rich formatted output
+                print(f"\n{Colors.BOLD}Application Classifications:{Colors.RESET}\n")
+
+                # Scoped classes
+                print(f"{Colors.BLUE}{Colors.BOLD}Scoped Classes:{Colors.RESET} (project-specific windows)")
+                if config.scoped_classes:
+                    for cls in config.get_all_scoped():
+                        print(f"  {Colors.BLUE}●{Colors.RESET} {cls}")
+                else:
+                    print(f"  {Colors.DIM}(none){Colors.RESET}")
+
+                print()
+
+                # Global classes
+                print(f"{Colors.GREEN}{Colors.BOLD}Global Classes:{Colors.RESET} (visible in all projects)")
+                if config.global_classes:
+                    for cls in config.get_all_global():
+                        print(f"  {Colors.GREEN}●{Colors.RESET} {cls}")
+                else:
+                    print(f"  {Colors.DIM}(none){Colors.RESET}")
+
+                print()
+
+                # Patterns
+                if config.class_patterns:
+                    print(f"{Colors.YELLOW}{Colors.BOLD}Patterns:{Colors.RESET}")
+                    for pattern, classification in config.class_patterns.items():
+                        color = Colors.BLUE if classification == "scoped" else Colors.GREEN
+                        print(f"  {color}●{Colors.RESET} {pattern}* → {classification}")
+                    print()
+
+            return 0
+
+        elif subcommand == 'add-scoped':
+            # Add scoped class
+            class_name = args.class_name
+            try:
+                config.add_scoped_class(class_name)
+                config.save()
+                print_success(f"Added '{class_name}' to scoped classes")
+                print_info("Windows of this class will now be project-specific")
+                return 0
+            except ValueError as e:
+                print_error(str(e))
+                return 1
+
+        elif subcommand == 'add-global':
+            # Add global class
+            class_name = args.class_name
+            try:
+                config.add_global_class(class_name)
+                config.save()
+                print_success(f"Added '{class_name}' to global classes")
+                print_info("Windows of this class will now be visible in all projects")
+                return 0
+            except ValueError as e:
+                print_error(str(e))
+                return 1
+
+        elif subcommand == 'remove':
+            # Remove class
+            class_name = args.class_name
+            if config.remove_class(class_name):
+                config.save()
+                print_success(f"Removed '{class_name}' from classifications")
+                return 0
+            else:
+                print_error(f"Class '{class_name}' not found in any classification")
+                return 1
+
+        elif subcommand == 'check':
+            # Check classification
+            class_name = args.class_name
+            classification = config.get_classification(class_name)
+
+            if hasattr(args, 'json') and args.json:
+                result = {
+                    "class": class_name,
+                    "classification": classification,
+                    "is_scoped": classification == "scoped",
+                    "is_global": classification == "global"
+                }
+                print(json.dumps(result, indent=2))
+            else:
+                if classification == "scoped":
+                    print(f"{Colors.BLUE}●{Colors.RESET} {class_name}: {Colors.BOLD}SCOPED{Colors.RESET}")
+                    print_info("Windows will be project-specific")
+                elif classification == "global":
+                    print(f"{Colors.GREEN}●{Colors.RESET} {class_name}: {Colors.BOLD}GLOBAL{Colors.RESET}")
+                    print_info("Windows will be visible in all projects")
+                else:
+                    print(f"{Colors.YELLOW}●{Colors.RESET} {class_name}: {Colors.BOLD}UNKNOWN{Colors.RESET}")
+                    print_info("No explicit classification (defaults to scoped)")
+
+            return 0
+
+        else:
+            print_error(f"Unknown subcommand: {subcommand}")
+            return 1
+
+    except Exception as e:
+        print_error(f"Failed to manage app classifications: {e}")
+        return 1
+
+
+# ============================================================================
 # Phase 7: Monitoring Commands (T041-T044)
 # ============================================================================
 
@@ -1232,6 +1371,79 @@ def cli_main() -> int:
     )
 
     # ========================================================================
+    # Phase 4: Application Classification Commands
+    # ========================================================================
+
+    # i3pm app-classes
+    parser_app_classes = subparsers.add_parser(
+        "app-classes",
+        help="Manage application classifications",
+        description="Manage which window classes are scoped (project-specific) or global (visible in all projects)"
+    )
+
+    # Create subparsers for app-classes subcommands
+    app_classes_subparsers = parser_app_classes.add_subparsers(
+        dest="app_classes_command",
+        help="Subcommand"
+    )
+
+    # app-classes list
+    parser_app_classes_list = app_classes_subparsers.add_parser(
+        "list",
+        help="List all application classifications"
+    )
+    parser_app_classes_list.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # app-classes add-scoped
+    parser_app_classes_add_scoped = app_classes_subparsers.add_parser(
+        "add-scoped",
+        help="Add a window class to scoped list"
+    )
+    parser_app_classes_add_scoped.add_argument(
+        "class_name",
+        help="Window class name (e.g., Code, Ghostty)"
+    )
+
+    # app-classes add-global
+    parser_app_classes_add_global = app_classes_subparsers.add_parser(
+        "add-global",
+        help="Add a window class to global list"
+    )
+    parser_app_classes_add_global.add_argument(
+        "class_name",
+        help="Window class name (e.g., firefox, chrome)"
+    )
+
+    # app-classes remove
+    parser_app_classes_remove = app_classes_subparsers.add_parser(
+        "remove",
+        help="Remove a window class from all lists"
+    )
+    parser_app_classes_remove.add_argument(
+        "class_name",
+        help="Window class name to remove"
+    )
+
+    # app-classes check
+    parser_app_classes_check = app_classes_subparsers.add_parser(
+        "check",
+        help="Check classification of a window class"
+    )
+    parser_app_classes_check.add_argument(
+        "class_name",
+        help="Window class name to check"
+    )
+    parser_app_classes_check.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # ========================================================================
     # Phase 7: Monitoring Commands
     # ========================================================================
 
@@ -1330,6 +1542,8 @@ def cli_main() -> int:
         "edit": cmd_edit,
         "delete": cmd_delete,
         "validate": cmd_validate,
+        # Phase 4: App classification commands
+        "app-classes": cmd_app_classes,
         # Phase 7: Monitoring commands
         "status": cmd_status,
         "events": cmd_events,

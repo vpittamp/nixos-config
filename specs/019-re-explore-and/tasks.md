@@ -468,7 +468,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T018: Implement app classification management [US2]
+### T018: Implement app classification management [US2] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/core/config.py`
 
@@ -490,7 +490,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T019: Implement CLI app-classes commands [US2] [P]
+### T019: Implement CLI app-classes commands [US2] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
