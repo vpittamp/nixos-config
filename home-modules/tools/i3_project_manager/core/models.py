@@ -294,6 +294,12 @@ class LayoutWindow:
     launch_env: Dict[str, str] = field(default_factory=dict)
     expected_marks: List[str] = field(default_factory=list)  # e.g., ["project:nixos"]
 
+    # Application relaunching fields (FR-002, FR-003)
+    cwd: Optional[str] = None  # Working directory for launch
+    launch_timeout: float = 5.0  # Timeout for window appearance (seconds)
+    max_retries: int = 3  # Retry attempts if launch fails
+    retry_delay: float = 1.0  # Delay between retries (seconds)
+
     def __post_init__(self):
         """Validate window configuration."""
         if not self.window_class:
