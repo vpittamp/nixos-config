@@ -166,13 +166,14 @@ class DaemonClient:
         return status.get("active_project")
 
     async def get_events(
-        self, limit: int = 20, event_type: Optional[str] = None
+        self, limit: int = 20, event_type: Optional[str] = None, since_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get recent daemon events.
 
         Args:
             limit: Maximum number of events to return (default 20)
             event_type: Filter by type: "window", "workspace", "tick", "output"
+            since_id: Only return events with ID greater than this value
 
         Returns:
             Events dict with keys:
@@ -185,6 +186,8 @@ class DaemonClient:
         params = {"limit": limit}
         if event_type:
             params["event_type"] = event_type
+        if since_id is not None:
+            params["since_id"] = since_id
 
         return await self.call("get_events", params)
 

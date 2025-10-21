@@ -1724,7 +1724,15 @@ async def cmd_events(args: argparse.Namespace) -> int:
             try:
                 while True:
                     # Poll for new events
-                    events = await daemon.get_events(limit=100, event_type=event_type, since_id=last_event_id)
+                    events_response = await daemon.get_events(limit=100, event_type=event_type, since_id=last_event_id)
+
+                    # Extract events array from response
+                    if isinstance(events_response, dict) and "events" in events_response:
+                        events = events_response["events"]
+                    elif isinstance(events_response, list):
+                        events = events_response
+                    else:
+                        events = []
 
                     for event in events:
                         if json_output:
@@ -1733,21 +1741,33 @@ async def cmd_events(args: argparse.Namespace) -> int:
                         else:
                             # Format event
                             timestamp = event.get("timestamp", "")
-                            evt_type = event.get("type", "unknown")
-                            details = event.get("details", {})
+                            evt_type = event.get("event_type", "unknown")
+
+                            # Build details string
+                            details_parts = []
+                            if event.get("window_class"):
+                                details_parts.append(f"class={event['window_class']}")
+                            if event.get("workspace_name"):
+                                details_parts.append(f"ws={event['workspace_name']}")
+                            if event.get("project_name"):
+                                details_parts.append(f"project={event['project_name']}")
+                            if event.get("tick_payload"):
+                                details_parts.append(f"payload={event['tick_payload']}")
+                            details = " ".join(details_parts) if details_parts else ""
 
                             # Color code by type
+                            evt_prefix = evt_type.split("::")[0] if "::" in evt_type else evt_type
                             type_color = {
                                 "window": Colors.BLUE,
                                 "workspace": Colors.GREEN,
                                 "output": Colors.YELLOW,
                                 "tick": Colors.GRAY,
                                 "error": Colors.RED,
-                            }.get(evt_type, Colors.RESET)
+                            }.get(evt_prefix, Colors.RESET)
 
-                            print(f"{Colors.GRAY}{timestamp}{Colors.RESET} {type_color}{evt_type:10}{Colors.RESET} {details}")
+                            print(f"{Colors.GRAY}{timestamp}{Colors.RESET} {type_color}{evt_type:20}{Colors.RESET} {details}")
 
-                        last_event_id = max(last_event_id, event.get("id", 0))
+                        last_event_id = max(last_event_id, event.get("event_id", 0))
 
                     # Sleep briefly before next poll
                     await asyncio.sleep(0.1)

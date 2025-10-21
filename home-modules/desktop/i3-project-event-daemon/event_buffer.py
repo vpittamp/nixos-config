@@ -46,13 +46,15 @@ class EventBuffer:
     def get_events(
         self,
         limit: int = 100,
-        event_type: Optional[str] = None
+        event_type: Optional[str] = None,
+        since_id: Optional[int] = None
     ) -> List[EventEntry]:
         """Retrieve events with optional filtering.
 
         Args:
             limit: Maximum number of events to return (default: 100)
             event_type: Filter by event type prefix (e.g., "window", "workspace")
+            since_id: Only return events with ID greater than this value
 
         Returns:
             List of EventEntry objects (most recent first)
@@ -63,6 +65,10 @@ class EventBuffer:
             filtered = [e for e in self.events if e.event_type.startswith(event_type)]
         else:
             filtered = list(self.events)
+
+        # Filter by since_id if specified
+        if since_id is not None:
+            filtered = [e for e in filtered if e.event_id > since_id]
 
         # Return most recent N events (reverse chronological order)
         return list(filtered)[-limit:][::-1]

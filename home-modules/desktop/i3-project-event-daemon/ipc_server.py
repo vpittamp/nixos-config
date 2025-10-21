@@ -276,7 +276,7 @@ class IPCServer:
         """Return recent events for diagnostics (Feature 017).
 
         Args:
-            params: Query parameters (limit, event_type)
+            params: Query parameters (limit, event_type, since_id)
 
         Returns:
             Dictionary with events list and buffer stats
@@ -286,9 +286,10 @@ class IPCServer:
 
         limit = params.get("limit", 100)
         event_type = params.get("event_type")
+        since_id = params.get("since_id")
 
         # Get events from buffer
-        events = self.event_buffer.get_events(limit=limit, event_type=event_type)
+        events = self.event_buffer.get_events(limit=limit, event_type=event_type, since_id=since_id)
 
         # Convert EventEntry objects to dict
         events_data = [

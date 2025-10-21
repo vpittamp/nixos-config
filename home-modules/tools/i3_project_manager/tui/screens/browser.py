@@ -154,7 +154,15 @@ class ProjectBrowserScreen(Screen):
         table = self.query_one("#projects", DataTable)
         table.clear()
 
+        # Track added keys to prevent duplicates
+        added_keys = set()
+
         for project in projects:
+            # Skip if we've already added this project name
+            if project.name in added_keys:
+                self.log.warning(f"Skipping duplicate project: {project.name}")
+                continue
+
             # Calculate relative time for modified_at
             time_diff = datetime.now() - project.modified_at
             if time_diff.days > 0:
@@ -170,21 +178,23 @@ class ProjectBrowserScreen(Screen):
                 dir_str = "..." + dir_str[-27:]
 
             # Add row with styling for active project
-            styled = project.name == self.active_project
-            table.add_row(
-                project.icon or " ",
-                project.display_name or project.name,
-                dir_str,
-                str(len(project.scoped_classes)),
-                str(len(project.saved_layouts)),
-                modified_str,
-                key=project.name,
-            )
+            try:
+                styled = project.name == self.active_project
+                table.add_row(
+                    project.icon or " ",
+                    project.display_name or project.name,
+                    dir_str,
+                    str(len(project.scoped_classes)),
+                    str(len(project.saved_layouts)),
+                    modified_str,
+                    key=project.name,
+                )
+                added_keys.add(project.name)
+            except Exception as e:
+                self.log.error(f"Failed to add row for project {project.name}: {e}")
+                # Continue adding other projects even if one fails
 
-            # Highlight active project row
-            if styled:
-                row_key = table.get_row_at(table.row_count - 1)[0]
-                # Note: Textual DataTable styling will be handled via CSS
+            # Note: Active project highlighting handled via CSS
 
     async def _update_status(self) -> None:
         """Update the status bar with active project info."""
