@@ -15,23 +15,34 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Import i3pm package for shared models
-  i3pmPackage = config.programs.i3pm.package or null;
+  # Build i3pm package for shared models (same as in i3-project-manager.nix)
+  i3pmPackage = pkgs.python3Packages.buildPythonPackage {
+    pname = "i3-project-manager";
+    version = "0.3.0";
+    src = ../tools/i3-project-manager;
+    format = "pyproject";
+    propagatedBuildInputs = with pkgs.python3Packages; [
+      textual
+      rich
+      i3ipc
+      argcomplete
+      setuptools
+      jsonschema
+    ];
+    nativeBuildInputs = with pkgs.python3Packages; [
+      setuptools
+      wheel
+    ];
+    doCheck = false;
+  };
 
   # Python dependencies for the daemon (T033)
-  pythonEnv = if i3pmPackage != null then
-    pkgs.python3.withPackages (ps: with ps; [
-      i3ipc        # i3 IPC library
-      systemd      # systemd-python for sd_notify/watchdog/journald
-      watchdog     # File system monitoring (Feature 021: T022)
-      i3pmPackage  # i3pm for shared Project models
-    ])
-  else
-    pkgs.python3.withPackages (ps: with ps; [
-      i3ipc
-      systemd
-      watchdog     # File system monitoring (Feature 021: T022)
-    ]);
+  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    i3ipc        # i3 IPC library
+    systemd      # systemd-python for sd_notify/watchdog/journald
+    watchdog     # File system monitoring (Feature 021: T022)
+    i3pmPackage  # i3pm for shared Project models (PatternRule, etc.)
+  ]);
 
   # Daemon package (T033)
   daemonSrc = ./i3-project-event-daemon;
