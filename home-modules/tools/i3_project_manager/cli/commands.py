@@ -2034,6 +2034,188 @@ async def cmd_monitor(args: argparse.Namespace) -> int:
 
 
 # ============================================================================
+# Feature 021: Window Rules Management (T027-T028)
+# ============================================================================
+
+
+async def cmd_rules(args: argparse.Namespace) -> int:
+    """List window rules from daemon.
+
+    Args:
+        args: Parsed arguments with optional scope filter
+
+    Returns:
+        0 on success, 1 on error
+    """
+    from .output import OutputFormatter
+
+    json_mode = getattr(args, 'json', False)
+    scope_filter = getattr(args, 'scope', None)
+
+    fmt = OutputFormatter(json_mode=json_mode)
+
+    try:
+        client = DaemonClient()
+        params = {}
+        if scope_filter and scope_filter != "all":
+            params["scope"] = scope_filter
+
+        result = await client.send_command("get_window_rules", params)
+
+        if json_mode:
+            fmt.print_json(result)
+        else:
+            rules = result.get("rules", [])
+            count = result.get("count", 0)
+
+            if count == 0:
+                print_info("No window rules configured")
+                print_info("Create rules in ~/.config/i3/window-rules.json")
+                return 0
+
+            # Print header
+            scope_desc = scope_filter if scope_filter != "all" else "all"
+            print(f"{Colors.BOLD}Window Rules ({scope_desc}):{Colors.RESET} {count} rule(s)\n")
+
+            # Print table
+            for rule in rules:
+                pattern = rule.get("pattern", "")
+                scope = rule.get("scope", "")
+                priority = rule.get("priority", 0)
+                workspace = rule.get("workspace")
+                desc = rule.get("description", "")
+                modifier = rule.get("modifier")
+
+                # Scope color
+                scope_color = Colors.GREEN if scope == "scoped" else Colors.YELLOW
+                scope_text = f"{scope_color}{scope:7}{Colors.RESET}"
+
+                # Pattern
+                pattern_text = f"{Colors.BLUE}{pattern:30}{Colors.RESET}"
+
+                # Priority
+                priority_text = f"{Colors.GRAY}P{priority:03}{Colors.RESET}"
+
+                # Workspace
+                ws_text = f"WS{workspace}" if workspace else "     "
+
+                # Modifier
+                mod_text = f"[{modifier}]" if modifier else ""
+
+                print(f"{scope_text} {pattern_text} {priority_text} {ws_text} {mod_text}")
+
+                if desc:
+                    print(f"{Colors.GRAY}  {desc}{Colors.RESET}")
+                print()
+
+        return 0
+
+    except DaemonError as e:
+        if json_mode:
+            fmt.print_error(str(e))
+        else:
+            print_error(f"Daemon error: {e}")
+            print_info("Ensure i3-project-event-listener service is running")
+        return 1
+    except Exception as e:
+        if json_mode:
+            fmt.print_error(str(e))
+        else:
+            print_error(f"Failed to get window rules: {e}")
+        return 1
+
+
+async def cmd_classify(args: argparse.Namespace) -> int:
+    """Debug window classification.
+
+    Args:
+        args: Parsed arguments with window_class, window_title, project
+
+    Returns:
+        0 on success, 1 on error
+    """
+    from .output import OutputFormatter
+
+    json_mode = getattr(args, 'json', False)
+    window_class = args.window_class
+    window_title = getattr(args, 'window_title', "")
+    project_name = getattr(args, 'project', None)
+
+    fmt = OutputFormatter(json_mode=json_mode)
+
+    try:
+        client = DaemonClient()
+        params = {
+            "window_class": window_class,
+        }
+        if window_title:
+            params["window_title"] = window_title
+        if project_name:
+            params["project_name"] = project_name
+
+        result = await client.send_command("classify_window", params)
+
+        if json_mode:
+            fmt.print_json(result)
+        else:
+            scope = result.get("scope", "unknown")
+            source = result.get("source", "unknown")
+            workspace = result.get("workspace")
+            matched_pattern = result.get("matched_pattern")
+
+            # Print classification result
+            print(f"{Colors.BOLD}Classification Result:{Colors.RESET}\n")
+
+            # Scope
+            scope_color = Colors.GREEN if scope == "scoped" else Colors.YELLOW
+            print(f"  Scope:     {scope_color}{scope}{Colors.RESET}")
+
+            # Source
+            source_colors = {
+                "project": Colors.GREEN,
+                "window_rule": Colors.BLUE,
+                "app_classes": Colors.YELLOW,
+                "default": Colors.GRAY,
+            }
+            source_color = source_colors.get(source, Colors.RESET)
+            print(f"  Source:    {source_color}{source}{Colors.RESET}")
+
+            # Workspace
+            if workspace:
+                print(f"  Workspace: {Colors.BLUE}{workspace}{Colors.RESET}")
+            else:
+                print(f"  Workspace: {Colors.GRAY}(none){Colors.RESET}")
+
+            # Matched pattern
+            if matched_pattern:
+                print(f"  Pattern:   {Colors.BLUE}{matched_pattern}{Colors.RESET}")
+
+            # Context info
+            print(f"\n{Colors.GRAY}Input:{Colors.RESET}")
+            print(f"  Class:   {window_class}")
+            if window_title:
+                print(f"  Title:   {window_title}")
+            if project_name:
+                print(f"  Project: {project_name}")
+
+        return 0
+
+    except DaemonError as e:
+        if json_mode:
+            fmt.print_error(str(e))
+        else:
+            print_error(f"Daemon error: {e}")
+            print_info("Ensure i3-project-event-listener service is running")
+        return 1
+    except Exception as e:
+        if json_mode:
+            fmt.print_error(str(e))
+        else:
+            print_error(f"Classification failed: {e}")
+        return 1
+
+
+# ============================================================================
 # CLI Entry Point
 # ============================================================================
 
@@ -2658,6 +2840,48 @@ def cli_main() -> int:
         help="Start in specific monitor mode"
     )
 
+    # Feature 021: i3pm rules
+    parser_rules = subparsers.add_parser(
+        "rules",
+        help="List window classification rules",
+        description="Display window rules from ~/.config/i3/window-rules.json"
+    )
+    parser_rules.add_argument(
+        "--scope",
+        choices=["scoped", "global", "all"],
+        default="all",
+        help="Filter rules by scope (default: all)"
+    )
+    parser_rules.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # Feature 021: i3pm classify
+    parser_classify = subparsers.add_parser(
+        "classify",
+        help="Debug window classification",
+        description="Test window classification using the 4-level precedence system"
+    )
+    parser_classify.add_argument(
+        "window_class",
+        help="Window WM_CLASS to classify"
+    )
+    parser_classify.add_argument(
+        "--window-title",
+        help="Window title (optional, for title-based patterns)"
+    )
+    parser_classify.add_argument(
+        "--project",
+        help="Active project name (optional, for project-scoped classification)"
+    )
+    parser_classify.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
     # T094: Enable shell completion if argcomplete is available
     if ARGCOMPLETE_AVAILABLE:
         argcomplete.autocomplete(parser)
@@ -2701,6 +2925,9 @@ def cli_main() -> int:
         "events": cmd_events,
         "windows": cmd_windows,
         "monitor": cmd_monitor,
+        # Feature 021: Window rules commands
+        "rules": cmd_rules,
+        "classify": cmd_classify,
     }
 
     handler = command_handlers.get(args.command)

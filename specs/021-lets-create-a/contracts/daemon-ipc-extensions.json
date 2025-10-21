@@ -1,0 +1,335 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.config/i3/daemon-ipc-extensions.schema.json",
+  "title": "i3pm Daemon IPC Extensions for Window Rules",
+  "description": "JSON-RPC 2.0 methods added to i3-project-event-listener daemon for window rule management",
+  "type": "object",
+  "properties": {
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method", "params", "result"],
+        "properties": {
+          "method": {"type": "string"},
+          "description": {"type": "string"},
+          "params": {"type": "object"},
+          "result": {"type": "object"}
+        }
+      }
+    }
+  },
+  "definitions": {
+    "methods": [
+      {
+        "method": "get_window_rules",
+        "description": "Get all loaded window rules",
+        "params": {
+          "type": "object",
+          "properties": {
+            "filter_scope": {
+              "type": "string",
+              "enum": ["scoped", "global", "all"],
+              "default": "all",
+              "description": "Filter rules by scope"
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "required": ["rules", "count"],
+          "properties": {
+            "rules": {
+              "type": "array",
+              "description": "List of WindowRule objects",
+              "items": {
+                "$ref": "#/definitions/windowRule"
+              }
+            },
+            "count": {
+              "type": "integer",
+              "description": "Total number of rules"
+            }
+          }
+        },
+        "example_request": {
+          "jsonrpc": "2.0",
+          "method": "get_window_rules",
+          "params": {"filter_scope": "scoped"},
+          "id": 1
+        },
+        "example_response": {
+          "jsonrpc": "2.0",
+          "result": {
+            "rules": [
+              {
+                "pattern_rule": {
+                  "pattern": "Code",
+                  "scope": "scoped",
+                  "priority": 250
+                },
+                "workspace": 2
+              }
+            ],
+            "count": 1
+          },
+          "id": 1
+        }
+      },
+      {
+        "method": "classify_window",
+        "description": "Classify a window using current rules",
+        "params": {
+          "type": "object",
+          "required": ["window_class"],
+          "properties": {
+            "window_class": {
+              "type": "string",
+              "description": "Window WM_CLASS to classify"
+            },
+            "window_title": {
+              "type": "string",
+              "description": "Window title (for title-based patterns)",
+              "default": ""
+            },
+            "project_name": {
+              "type": "string",
+              "description": "Active project name (for project-specific rules)",
+              "default": null
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "required": ["scope", "workspace", "source"],
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": ["scoped", "global"],
+              "description": "Classification result"
+            },
+            "workspace": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9,
+              "description": "Target workspace (null if no rule specifies)"
+            },
+            "source": {
+              "type": "string",
+              "enum": ["project", "window_rule", "app_classes", "default"],
+              "description": "Source of classification decision"
+            },
+            "matched_pattern": {
+              "type": "string",
+              "description": "Pattern that matched (for debugging)"
+            }
+          }
+        },
+        "example_request": {
+          "jsonrpc": "2.0",
+          "method": "classify_window",
+          "params": {
+            "window_class": "Code",
+            "project_name": "nixos"
+          },
+          "id": 2
+        },
+        "example_response": {
+          "jsonrpc": "2.0",
+          "result": {
+            "scope": "scoped",
+            "workspace": 2,
+            "source": "project",
+            "matched_pattern": "Code (from nixos.scoped_classes)"
+          },
+          "id": 2
+        }
+      },
+      {
+        "method": "get_workspace_config",
+        "description": "Get workspace configuration (names, icons, output roles)",
+        "params": {
+          "type": "object",
+          "properties": {
+            "workspace_number": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9,
+              "description": "Get specific workspace (omit for all)"
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "required": ["workspaces", "count"],
+          "properties": {
+            "workspaces": {
+              "type": "array",
+              "description": "List of WorkspaceConfig objects",
+              "items": {
+                "$ref": "#/definitions/workspaceConfig"
+              }
+            },
+            "count": {
+              "type": "integer",
+              "description": "Total number of workspaces"
+            }
+          }
+        },
+        "example_request": {
+          "jsonrpc": "2.0",
+          "method": "get_workspace_config",
+          "params": {},
+          "id": 3
+        },
+        "example_response": {
+          "jsonrpc": "2.0",
+          "result": {
+            "workspaces": [
+              {
+                "number": 1,
+                "name": "Terminal",
+                "icon": "󰨊",
+                "default_output_role": "primary"
+              }
+            ],
+            "count": 9
+          },
+          "id": 3
+        }
+      },
+      {
+        "method": "get_monitor_config",
+        "description": "Get current monitor configuration from i3 (real-time query)",
+        "params": {
+          "type": "object",
+          "properties": {}
+        },
+        "result": {
+          "type": "object",
+          "required": ["monitors", "count"],
+          "properties": {
+            "monitors": {
+              "type": "array",
+              "description": "List of MonitorConfig objects (from i3 GET_OUTPUTS)",
+              "items": {
+                "$ref": "#/definitions/monitorConfig"
+              }
+            },
+            "count": {
+              "type": "integer",
+              "description": "Number of active monitors"
+            }
+          }
+        },
+        "example_request": {
+          "jsonrpc": "2.0",
+          "method": "get_monitor_config",
+          "params": {},
+          "id": 4
+        },
+        "example_response": {
+          "jsonrpc": "2.0",
+          "result": {
+            "monitors": [
+              {
+                "name": "DP-1",
+                "rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+                "active": true,
+                "primary": true,
+                "role": "primary"
+              }
+            ],
+            "count": 1
+          },
+          "id": 4
+        }
+      },
+      {
+        "method": "reload_window_rules",
+        "description": "Reload window-rules.json and workspace-config.json from disk",
+        "params": {
+          "type": "object",
+          "properties": {}
+        },
+        "result": {
+          "type": "object",
+          "required": ["success", "window_rules_count", "workspace_config_count"],
+          "properties": {
+            "success": {"type": "boolean"},
+            "window_rules_count": {"type": "integer"},
+            "workspace_config_count": {"type": "integer"},
+            "error": {"type": "string"}
+          }
+        },
+        "example_request": {
+          "jsonrpc": "2.0",
+          "method": "reload_window_rules",
+          "params": {},
+          "id": 5
+        },
+        "example_response": {
+          "jsonrpc": "2.0",
+          "result": {
+            "success": true,
+            "window_rules_count": 12,
+            "workspace_config_count": 9
+          },
+          "id": 5
+        }
+      }
+    ]
+  },
+  "schemas": {
+    "windowRule": {
+      "type": "object",
+      "required": ["pattern_rule"],
+      "properties": {
+        "pattern_rule": {
+          "type": "object",
+          "required": ["pattern", "scope"],
+          "properties": {
+            "pattern": {"type": "string"},
+            "scope": {"type": "string", "enum": ["scoped", "global"]},
+            "priority": {"type": "integer"},
+            "description": {"type": "string"}
+          }
+        },
+        "workspace": {"type": "integer"},
+        "command": {"type": "string"},
+        "modifier": {"type": "string"},
+        "blacklist": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "workspaceConfig": {
+      "type": "object",
+      "required": ["number"],
+      "properties": {
+        "number": {"type": "integer"},
+        "name": {"type": "string"},
+        "icon": {"type": "string"},
+        "default_output_role": {"type": "string"}
+      }
+    },
+    "monitorConfig": {
+      "type": "object",
+      "required": ["name", "rect", "active", "primary", "role"],
+      "properties": {
+        "name": {"type": "string"},
+        "rect": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"}
+          }
+        },
+        "active": {"type": "boolean"},
+        "primary": {"type": "boolean"},
+        "role": {"type": "string", "enum": ["primary", "secondary", "tertiary"]}
+      }
+    }
+  }
+}

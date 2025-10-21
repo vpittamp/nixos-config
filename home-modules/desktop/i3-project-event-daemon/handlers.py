@@ -7,12 +7,14 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, List
 from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent
 
 from .state import StateManager
 from .models import WindowInfo, WorkspaceInfo, ApplicationClassification, EventEntry
 from .config import save_active_project, load_active_project
+from .pattern_resolver import classify_window, Classification
+from .window_rules import WindowRule
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -237,8 +239,15 @@ async def on_window_new(
     state_manager: StateManager,
     app_classification: ApplicationClassification,
     event_buffer: Optional["EventBuffer"] = None,
+    window_rules: Optional[List[WindowRule]] = None,
 ) -> None:
-    """Handle window::new events - auto-mark new windows (T014).
+    """Handle window::new events - auto-mark and classify new windows (T014, T023).
+
+    Uses the 4-level precedence classification system:
+    1. Project scoped_classes (priority 1000)
+    2. Window rules (priority 200-500)
+    3. App classification patterns (priority 100)
+    4. App classification lists (priority 50)
 
     Args:
         conn: i3 async connection
@@ -246,44 +255,68 @@ async def on_window_new(
         state_manager: State manager
         app_classification: Application classification config
         event_buffer: Event buffer for recording events (Feature 017)
+        window_rules: Window rules from window-rules.json (Feature 021)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
     window_class = container.window_class or "unknown"
+    window_title = container.name or ""
 
     try:
         active_project = await state_manager.get_active_project()
 
-        # Check if we should mark this window
-        if not active_project:
-            logger.debug(f"No active project, not marking window {window_id}")
-            return
+        # Get active project's scoped classes
+        active_project_scoped_classes = None
+        if active_project and active_project in state_manager.state.projects:
+            project = state_manager.state.projects[active_project]
+            active_project_scoped_classes = project.scoped_classes
 
-        if window_class not in app_classification.scoped_classes:
-            logger.debug(f"Window class {window_class} is not scoped, not marking")
-            return
-
-        # Apply project mark (async)
-        mark = f"project:{active_project}"
-        await conn.command(f'[id={window_id}] mark --add "{mark}"')
-        logger.info(f"Marked window {window_id} with {mark}")
-
-        # Add to state (mark event will update this)
-        window_info = WindowInfo(
-            window_id=window_id,
-            con_id=container.id,
+        # Classify window using 4-level precedence (Feature 021: T023)
+        classification = classify_window(
             window_class=window_class,
-            window_title=container.name or "",
-            window_instance=container.window_instance or "",
-            app_identifier=window_class,
-            project=active_project,
-            marks=[mark],
-            workspace=container.workspace().name if container.workspace() else "",
-            created=datetime.now(),
+            window_title=window_title,
+            active_project_scoped_classes=active_project_scoped_classes,
+            window_rules=window_rules,
+            app_classification_patterns=None,  # TODO: Extract from app_classification
+            app_classification_scoped=list(app_classification.scoped_classes),
+            app_classification_global=list(app_classification.global_classes),
         )
-        await state_manager.add_window(window_info)
+
+        logger.info(
+            f"Window {window_id} ({window_class}) classified as {classification.scope} "
+            f"from {classification.source}"
+            + (f", workspace={classification.workspace}" if classification.workspace else "")
+        )
+
+        # If scoped and we have an active project, apply project mark
+        if classification.scope == "scoped" and active_project:
+            mark = f"project:{active_project}"
+            await conn.command(f'[id={window_id}] mark --add "{mark}"')
+            logger.info(f"Marked window {window_id} with {mark}")
+
+            # Add to state (mark event will update this)
+            window_info = WindowInfo(
+                window_id=window_id,
+                con_id=container.id,
+                window_class=window_class,
+                window_title=window_title,
+                window_instance=container.window_instance or "",
+                app_identifier=window_class,
+                project=active_project,
+                marks=[mark],
+                workspace=container.workspace().name if container.workspace() else "",
+                created=datetime.now(),
+            )
+            await state_manager.add_window(window_info)
+
+        # If rule specifies a workspace, move window to that workspace
+        if classification.workspace:
+            await conn.command(
+                f'[id={window_id}] move container to workspace number {classification.workspace}'
+            )
+            logger.info(f"Moved window {window_id} to workspace {classification.workspace}")
 
     except Exception as e:
         error_msg = str(e)

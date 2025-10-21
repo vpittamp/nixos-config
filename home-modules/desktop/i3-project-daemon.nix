@@ -23,12 +23,14 @@ let
     pkgs.python3.withPackages (ps: with ps; [
       i3ipc        # i3 IPC library
       systemd      # systemd-python for sd_notify/watchdog/journald
+      watchdog     # File system monitoring (Feature 021: T022)
       i3pmPackage  # i3pm for shared Project models
     ])
   else
     pkgs.python3.withPackages (ps: with ps; [
       i3ipc
       systemd
+      watchdog     # File system monitoring (Feature 021: T022)
     ]);
 
   # Daemon package (T033)
