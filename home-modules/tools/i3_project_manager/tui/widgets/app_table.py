@@ -56,6 +56,7 @@ class AppTable(DataTable):
         )
 
         self.apps = apps or []
+        self._row_keys: list = []  # Store RowKey objects for update_cell
         self._setup_columns()
 
     def _setup_columns(self):
@@ -76,6 +77,7 @@ class AppTable(DataTable):
         """
         self.apps = apps
         self.clear()
+        self._row_keys = []  # Reset row keys
 
         for app in apps:
             self._add_app_row(app)
@@ -99,13 +101,15 @@ class AppTable(DataTable):
         # Format status with visual indicator
         status = self._format_status(app.current_scope)
 
-        self.add_row(
+        # Add row and store the RowKey for later updates
+        row_key = self.add_row(
             app.app_name,
             app.window_class,
             status,
             confidence,
             suggestion,
         )
+        self._row_keys.append(row_key)
 
     def _format_status(self, scope: Literal["scoped", "global", "unclassified"]) -> str:
         """Format status with visual indicator.
@@ -130,6 +134,11 @@ class AppTable(DataTable):
             row_index: Index of row to update
             app: Updated AppClassification
         """
+        if row_index < 0 or row_index >= len(self._row_keys):
+            return  # Invalid row index
+
+        row_key = self._row_keys[row_index]
+
         confidence = (
             f"{app.suggestion_confidence * 100:.0f}%"
             if app.suggestion_confidence > 0
@@ -138,12 +147,12 @@ class AppTable(DataTable):
         suggestion = app.suggested_scope if app.suggested_scope else "-"
         status = self._format_status(app.current_scope)
 
-        # Update cells individually
-        self.update_cell(row_index, "Name", app.app_name)
-        self.update_cell(row_index, "Class", app.window_class)
-        self.update_cell(row_index, "Status", status)
-        self.update_cell(row_index, "Confidence", confidence)
-        self.update_cell(row_index, "Suggestion", suggestion)
+        # Update cells using the RowKey
+        self.update_cell(row_key, "Name", app.app_name)
+        self.update_cell(row_key, "Class", app.window_class)
+        self.update_cell(row_key, "Status", status)
+        self.update_cell(row_key, "Confidence", confidence)
+        self.update_cell(row_key, "Suggestion", suggestion)
 
     def get_selected_row_index(self) -> Optional[int]:
         """Get the index of the currently selected row.

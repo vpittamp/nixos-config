@@ -78,6 +78,48 @@ class WizardApp(App):
         height: 100%;
         overflow-y: auto;
     }
+
+    /* Semantic color scheme (T066, FR-097, FR-129) */
+    .scoped-app {
+        color: $success;  /* Green for scoped apps */
+    }
+
+    .global-app {
+        color: $primary;  /* Blue for global apps */
+    }
+
+    .unknown-app {
+        color: $warning;  /* Yellow for unknown apps */
+    }
+
+    .high-confidence {
+        color: $success;
+        text-style: bold;
+    }
+
+    .medium-confidence {
+        color: $warning;
+    }
+
+    .low-confidence {
+        color: $error 30%;
+    }
+
+    /* Status indicators */
+    DataTable .scoped {
+        background: $success 20%;
+        color: $success;
+    }
+
+    DataTable .global {
+        background: $primary 20%;
+        color: $primary;
+    }
+
+    DataTable .unknown {
+        background: $warning 20%;
+        color: $warning;
+    }
     """
 
     TITLE = "i3pm Classification Wizard"

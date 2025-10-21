@@ -154,10 +154,10 @@
 - [X] T060 [US3] Implement undo/redo stack in WizardApp saving JSON snapshots before each action, max 20 snapshots, restoring state on Ctrl+Z, showing notification with action description (FR-104)
 - [X] T061 [US3] Implement save workflow in WizardApp with confirmation dialog if changes_made=True, validation (detect duplicates/conflicts), atomic write to app-classes.json, daemon reload, success notification per contracts/tui-wizard.md (FR-105, FR-106)
 - [X] T062 [US3] Implement external file modification detection in WizardApp checking mtime on focus, showing modal dialog (Reload/Merge/Overwrite), preserving current work (FR-108)
-- [ ] T063 [US3] Implement pattern creation action in WizardScreen with 'p' key opening pattern dialog, pre-filling current app's window_class, preview showing matches, validation, adding to patterns on confirm per contracts/tui-wizard.md
-- [ ] T064 [US3] Implement detection action in WizardScreen with 'd' key triggering detect_window_class_xvfb() for selected app, showing progress spinner, updating detected_class on success (integration with US2)
+- [X] T063 [US3] Implement pattern creation action in WizardScreen with 'p' key opening pattern dialog, pre-filling current app's window_class, preview showing matches, validation, adding to patterns on confirm per contracts/tui-wizard.md
+- [X] T064 [US3] Implement detection action in WizardScreen with 'd' key triggering detect_window_class_xvfb() for selected app, showing progress spinner, updating detected_class on success (integration with US2)
 - [X] T065 [US3] Add CLI command `i3pm app-classes wizard` in `home-modules/tools/i3_project_manager/cli/commands.py` with options (--filter, --sort, --auto-accept), launching WizardApp.run() per contracts/cli-commands.md (FR-095)
-- [ ] T066 [US3] Implement semantic color scheme in WizardScreen using Textual styles: scoped=green, global=blue, unknown=yellow, error=red, with confidence-based brightness per contracts/tui-wizard.md (FR-097, FR-129)
+- [X] T066 [US3] Implement semantic color scheme in WizardScreen using Textual styles: scoped=green, global=blue, unknown=yellow, error=red, with confidence-based brightness per contracts/tui-wizard.md (FR-097, FR-129)
 - [X] T067 [US3] Implement empty state handling in WizardApp showing helpful message "No apps discovered. Run 'i3pm app-classes detect --all-missing' to populate." when apps list empty (FR-110)
 
 **Checkpoint**: At this point, User Stories 1, 2, AND 3 should all work independently. Users have complete workflow: detect → wizard classify → patterns automatically apply.

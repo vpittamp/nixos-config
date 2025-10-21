@@ -260,11 +260,17 @@ class WizardScreen(Screen):
         self.dismiss(None)
 
     async def action_create_pattern(self) -> None:
-        """Create pattern rule for selected app (FR-???).
+        """Create pattern rule for selected app.
+
+        Opens a modal dialog to create a pattern rule, pre-filled with the
+        selected app's window class. Shows live preview of matching apps.
 
         Integration with US1 (pattern creation from wizard).
         T063: Pattern creation action
         """
+        from i3_project_manager.tui.screens.pattern_dialog import PatternDialog
+        from i3_project_manager.core.config import AppClassConfig
+
         table = self.query_one("#app-table", AppTable)
         app = table.get_selected_app()
 
@@ -272,19 +278,54 @@ class WizardScreen(Screen):
             self.status_message = "No app selected"
             return
 
-        # TODO: Open pattern creation dialog
-        # - Pre-fill with app.window_class
-        # - Show preview of matches
-        # - Validate pattern
-        # - Add to config on confirm
-        self.status_message = f"Pattern creation for '{app.window_class}' not yet implemented"
+        # Open pattern creation dialog
+        pattern_rule = await self.app.push_screen_wait(
+            PatternDialog(
+                initial_pattern=app.window_class,
+                apps=self.wizard_state.apps,
+            )
+        )
+
+        if pattern_rule is None:
+            self.status_message = "Pattern creation cancelled"
+            return
+
+        # Add pattern to config
+        try:
+            config = AppClassConfig()
+            config.load()
+
+            # Check for duplicate pattern
+            existing_patterns = [p.pattern for p in config.class_patterns]
+            if pattern_rule.pattern in existing_patterns:
+                self.status_message = f"⚠ Pattern '{pattern_rule.pattern}' already exists"
+                return
+
+            # Add and save
+            config.add_pattern(pattern_rule)
+            config.save()
+
+            self.status_message = f"✓ Pattern '{pattern_rule.pattern}' added (scope: {pattern_rule.scope})"
+
+            # Reload daemon to pick up new pattern
+            await self._reload_daemon()
+
+        except Exception as e:
+            self.status_message = f"Failed to add pattern: {e}"
 
     async def action_detect_class(self) -> None:
-        """Detect window class for selected app using Xvfb (FR-???).
+        """Detect window class for selected app using Xvfb.
+
+        Launches app in isolated Xvfb session to detect its actual window class.
+        Updates the app's window_class field and refreshes the table on success.
 
         Integration with US2 (detection from wizard).
-        T064: Detection action
+        T064: Detection action implementation
+        FR-084 through FR-094: Xvfb detection workflow
         """
+        from i3_project_manager.core.app_discovery import detect_window_class_xvfb
+        import asyncio
+
         table = self.query_one("#app-table", AppTable)
         app = table.get_selected_app()
 
@@ -292,12 +333,68 @@ class WizardScreen(Screen):
             self.status_message = "No app selected"
             return
 
-        # TODO: Trigger Xvfb detection
-        # - Show progress spinner
-        # - Call detect_window_class_xvfb()
-        # - Update app.window_class on success
-        # - Refresh table row
-        self.status_message = f"Detection for '{app.app_name}' not yet implemented"
+        if not app.desktop_file:
+            self.status_message = f"⚠ No desktop file for '{app.app_name}'"
+            return
+
+        # Show progress notification
+        self.notify(
+            f"Detecting window class for '{app.app_name}'...\nThis may take up to 10 seconds.",
+            severity="information",
+            timeout=10,
+        )
+        self.status_message = f"⏳ Detecting '{app.app_name}'..."
+
+        # Run detection in background thread (blocking operation)
+        try:
+            result = await asyncio.to_thread(
+                detect_window_class_xvfb,
+                app.desktop_file,
+                timeout=10,
+            )
+
+            if result.detected_class:
+                # Update app's window class
+                old_class = app.window_class
+                app.window_class = result.detected_class
+
+                # Mark as user-modified if we changed it
+                if old_class != result.detected_class:
+                    app.user_modified = True
+                    self.wizard_state.changes_made = True
+
+                # Refresh table row
+                row_index = table.get_selected_row_index()
+                if row_index is not None:
+                    table.update_row(row_index, app)
+
+                # Update detail panel
+                detail = self.query_one("#detail-panel")
+                detail.set_app(app)
+
+                self.status_message = f"✓ Detected '{result.detected_class}' for '{app.app_name}'"
+                self.notify(
+                    f"Successfully detected: {result.detected_class}",
+                    severity="information",
+                    timeout=3,
+                )
+            else:
+                # Detection failed
+                error = result.error_message or "Unknown error"
+                self.status_message = f"✗ Detection failed for '{app.app_name}': {error}"
+                self.notify(
+                    f"Detection failed: {error}",
+                    severity="warning",
+                    timeout=5,
+                )
+
+        except Exception as e:
+            self.status_message = f"✗ Detection error: {e}"
+            self.notify(
+                f"Detection error: {e}",
+                severity="error",
+                timeout=5,
+            )
 
     async def action_filter(self) -> None:
         """Cycle through filter options (FR-096).
@@ -346,3 +443,29 @@ class WizardScreen(Screen):
         table.populate(sorted_apps)
 
         self.status_message = f"Sorted by: {new_sort}"
+
+    async def _reload_daemon(self) -> None:
+        """Reload i3 project daemon to pick up new classifications.
+
+        Sends an i3 tick event to trigger daemon config reload.
+
+        FR-082: Daemon reload via i3 tick event
+        FR-123: Config reload signal
+        """
+        import subprocess
+        import asyncio
+
+        try:
+            # Send i3 tick event to reload daemon
+            await asyncio.to_thread(
+                subprocess.run,
+                ["i3-msg", "-q", "tick", "i3pm:reload-config"],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # Non-fatal - classifications still saved
+            self.notify(
+                f"Warning: Failed to reload daemon: {e}",
+                severity="warning",
+                timeout=5,
+            )
