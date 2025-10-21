@@ -8,12 +8,19 @@ This module provides async wrappers around i3ipc.aio for querying:
 - Sending commands (RUN_COMMAND)
 
 All queries follow Principle XI: i3 IPC as authoritative source.
+
+T093: i3 IPC logging for debugging and diagnostics.
 """
 
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import i3ipc.aio
+
+
+# Get logger for this module
+logger = logging.getLogger('i3pm.i3_client')
 
 
 class I3Error(Exception):
@@ -38,10 +45,15 @@ class I3Client:
 
         Raises:
             I3Error: If connection fails
+
+        T093: Log connection attempts
         """
         try:
+            logger.debug("Connecting to i3 IPC socket")
             self._connection = await i3ipc.aio.Connection().connect()
+            logger.info("Connected to i3 IPC")
         except Exception as e:
+            logger.error(f"Failed to connect to i3 IPC: {e}")
             raise I3Error(f"Failed to connect to i3: {e}")
 
     async def close(self) -> None:
@@ -58,13 +70,19 @@ class I3Client:
 
         Raises:
             I3Error: If query fails
+
+        T093: Log IPC queries
         """
         if not self._connection:
             await self.connect()
 
         try:
-            return await self._connection.get_tree()
+            logger.debug("IPC query: GET_TREE")
+            tree = await self._connection.get_tree()
+            logger.debug(f"GET_TREE returned tree with {len(list(tree.leaves()))} leaf nodes")
+            return tree
         except Exception as e:
+            logger.error(f"GET_TREE failed: {e}")
             raise I3Error(f"Failed to get window tree: {e}")
 
     async def get_workspaces(self) -> List[Dict[str, Any]]:
@@ -75,12 +93,16 @@ class I3Client:
 
         Raises:
             I3Error: If query fails
+
+        T093: Log IPC queries
         """
         if not self._connection:
             await self.connect()
 
         try:
+            logger.debug("IPC query: GET_WORKSPACES")
             workspaces = await self._connection.get_workspaces()
+            logger.debug(f"GET_WORKSPACES returned {len(workspaces)} workspace(s)")
             return [
                 {
                     "num": ws.num,
@@ -92,6 +114,7 @@ class I3Client:
                 for ws in workspaces
             ]
         except Exception as e:
+            logger.error(f"GET_WORKSPACES failed: {e}")
             raise I3Error(f"Failed to get workspaces: {e}")
 
     async def get_outputs(self) -> List[Dict[str, Any]]:
@@ -102,12 +125,17 @@ class I3Client:
 
         Raises:
             I3Error: If query fails
+
+        T093: Log IPC queries
         """
         if not self._connection:
             await self.connect()
 
         try:
+            logger.debug("IPC query: GET_OUTPUTS")
             outputs = await self._connection.get_outputs()
+            active_outputs = [out for out in outputs if out.active]
+            logger.debug(f"GET_OUTPUTS returned {len(active_outputs)} active output(s)")
             return [
                 {
                     "name": out.name,
@@ -120,10 +148,10 @@ class I3Client:
                         "height": out.rect.height,
                     },
                 }
-                for out in outputs
-                if out.active  # Only return active outputs
+                for out in active_outputs
             ]
         except Exception as e:
+            logger.error(f"GET_OUTPUTS failed: {e}")
             raise I3Error(f"Failed to get outputs: {e}")
 
     async def get_marks(self) -> List[str]:
@@ -134,13 +162,19 @@ class I3Client:
 
         Raises:
             I3Error: If query fails
+
+        T093: Log IPC queries
         """
         if not self._connection:
             await self.connect()
 
         try:
-            return await self._connection.get_marks()
+            logger.debug("IPC query: GET_MARKS")
+            marks = await self._connection.get_marks()
+            logger.debug(f"GET_MARKS returned {len(marks)} mark(s)")
+            return marks
         except Exception as e:
+            logger.error(f"GET_MARKS failed: {e}")
             raise I3Error(f"Failed to get marks: {e}")
 
     async def command(self, cmd: str) -> List[Dict[str, Any]]:
@@ -154,14 +188,20 @@ class I3Client:
 
         Raises:
             I3Error: If command fails
+
+        T093: Log IPC commands
         """
         if not self._connection:
             await self.connect()
 
         try:
+            logger.debug(f"IPC command: {cmd}")
             results = await self._connection.command(cmd)
+            success_count = sum(1 for r in results if r.success)
+            logger.debug(f"RUN_COMMAND completed: {success_count}/{len(results)} succeeded")
             return [{"success": r.success, "error": getattr(r, "error", None)} for r in results]
         except Exception as e:
+            logger.error(f"RUN_COMMAND failed for '{cmd}': {e}")
             raise I3Error(f"Failed to execute command '{cmd}': {e}")
 
     # Helper methods for common queries

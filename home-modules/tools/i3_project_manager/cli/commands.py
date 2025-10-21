@@ -12,6 +12,7 @@ from typing import Optional
 from ..core.project import ProjectManager
 from ..core.daemon_client import DaemonClient, DaemonError
 from ..core.i3_client import I3Client, I3Error
+from .logging_config import init_logging, get_global_logger
 
 
 # ANSI color codes for output
@@ -2025,6 +2026,18 @@ def cli_main() -> int:
         version="i3pm 0.3.0 (Phase 7: Polish & Documentation)"
     )
 
+    # T093: Global logging flags
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose logging (INFO level)"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging (DEBUG level, includes verbose)"
+    )
+
     # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -2595,6 +2608,17 @@ def cli_main() -> int:
 
     # Parse arguments
     args = parser.parse_args()
+
+    # T093: Initialize logging based on flags
+    verbose = getattr(args, 'verbose', False)
+    debug = getattr(args, 'debug', False)
+    init_logging(verbose=verbose, debug=debug)
+
+    logger = get_global_logger()
+    if debug:
+        logger.debug("Debug logging enabled")
+    elif verbose:
+        logger.info("Verbose logging enabled")
 
     # No command = show help
     if not args.command:
