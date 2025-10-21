@@ -9,6 +9,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+try:
+    import argcomplete
+    ARGCOMPLETE_AVAILABLE = True
+except ImportError:
+    ARGCOMPLETE_AVAILABLE = False
+
 from ..core.project import ProjectManager
 from ..core.daemon_client import DaemonClient, DaemonError
 from ..core.i3_client import I3Client, I3Error
@@ -2013,7 +2019,23 @@ async def cmd_monitor(args: argparse.Namespace) -> int:
 
 
 def cli_main() -> int:
-    """Main CLI entry point."""
+    """Main CLI entry point.
+
+    T094: Shell completion enabled via argcomplete
+    """
+    # T094: Import completers if argcomplete is available
+    if ARGCOMPLETE_AVAILABLE:
+        from .completers import (
+            complete_project_names,
+            complete_window_classes,
+            complete_pattern_prefix,
+            complete_scope_values,
+            complete_desktop_files,
+            complete_filter_status,
+            complete_sort_fields,
+            complete_event_types,
+        )
+
     parser = argparse.ArgumentParser(
         prog="i3pm",
         description="i3 Project Manager - Unified CLI/TUI for i3 window manager projects",
@@ -2051,10 +2073,13 @@ def cli_main() -> int:
         help="Switch to a project",
         description="Switch to a project (shows project windows, hides others)"
     )
-    parser_switch.add_argument(
+    switch_project_arg = parser_switch.add_argument(
         "project",
         help="Project name to switch to"
     )
+    # T094: Add completion for project names
+    if ARGCOMPLETE_AVAILABLE:
+        switch_project_arg.completer = complete_project_names
     parser_switch.add_argument(
         "--no-launch",
         action="store_true",
@@ -2442,15 +2467,22 @@ def cli_main() -> int:
         "add-pattern",
         help="Add a pattern rule for window class matching"
     )
-    parser_app_classes_add_pattern.add_argument(
+    pattern_arg = parser_app_classes_add_pattern.add_argument(
         "pattern",
         help="Pattern string (e.g., 'glob:pwa-*', 'regex:^vim$', or literal 'Code')"
     )
-    parser_app_classes_add_pattern.add_argument(
+    # T094: Add completion for pattern prefixes
+    if ARGCOMPLETE_AVAILABLE:
+        pattern_arg.completer = complete_pattern_prefix
+
+    scope_arg = parser_app_classes_add_pattern.add_argument(
         "scope",
         choices=["scoped", "global"],
         help="Classification scope"
     )
+    # T094: Add completion for scope values
+    if ARGCOMPLETE_AVAILABLE:
+        scope_arg.completer = complete_scope_values
     parser_app_classes_add_pattern.add_argument(
         "--priority",
         type=int,
@@ -2605,6 +2637,10 @@ def cli_main() -> int:
         choices=["live", "events", "history", "tree"],
         help="Start in specific monitor mode"
     )
+
+    # T094: Enable shell completion if argcomplete is available
+    if ARGCOMPLETE_AVAILABLE:
+        argcomplete.autocomplete(parser)
 
     # Parse arguments
     args = parser.parse_args()
