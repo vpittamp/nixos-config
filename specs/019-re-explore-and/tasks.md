@@ -781,7 +781,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T030: Implement TUI application skeleton [US9]
+### T030: Implement TUI application skeleton [US9] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/app.py`
 
@@ -807,7 +807,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T031: Implement project browser screen [US9]
+### T031: Implement project browser screen [US9] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/screens/browser.py`
 
@@ -868,7 +868,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T033: Implement project editor screen [US9]
+### T033: Implement project editor screen [US9] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/screens/editor.py`
 
@@ -902,7 +902,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T034: Implement project wizard screen [US9]
+### T034: Implement project wizard screen [US9] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/screens/wizard.py`
 
@@ -936,7 +936,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T035: Implement layout manager screen [US9] [P]
+### T035: Implement layout manager screen [US9] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/screens/layout_manager.py`
 
@@ -966,7 +966,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T036: Implement monitor dashboard screen [US9]
+### T036: Implement monitor dashboard screen [US9] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/tui/screens/monitor.py`
 
@@ -996,7 +996,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T037: Implement CLI formatters for rich output [US9] [P]
+### T037: Implement CLI formatters for rich output [US9] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/formatters.py`
 
@@ -1021,7 +1021,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T038: Implement shell completions [US9] [P]
+### T038: Implement shell completions [US9] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/completions.py`
 

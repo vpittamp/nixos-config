@@ -574,3 +574,4 @@ See `docs/DARWIN_SETUP.md` for detailed setup instructions for your M1 MacBook P
 ---
 
 _Last updated: 2025-10-20 with Python testing workflows and i3 IPC patterns_
+- add the need to stage files when rebuilding nixos sytem

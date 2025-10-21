@@ -12,12 +12,11 @@ def main() -> int:
     """Main entry point with mode detection."""
     # Mode detection: TUI if no args, CLI if args present
     if len(sys.argv) == 1:
-        # TUI mode - will be implemented in Phase 6
-        print("TUI mode not yet implemented. Use CLI commands for now.")
-        print("Run 'i3pm --help' for available commands.")
-        return 1
+        # TUI mode - interactive Textual interface
+        from i3_project_manager.tui.app import run_tui
+        return run_tui()
 
-    # CLI mode - will be implemented in Phase 3-5
+    # CLI mode - argparse command processing
     from i3_project_manager.cli.commands import cli_main
     return cli_main()
 
