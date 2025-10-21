@@ -8,9 +8,10 @@ let
   # Python package with i3pm and all dependencies
   i3pmPackage = pkgs.python3Packages.buildPythonApplication {
     pname = "i3-project-manager";
-    version = "0.1.0";
+    version = "0.1.1";
 
-    src = ./i3_project_manager;
+    # Source is the tools directory containing both pyproject.toml and i3_project_manager/
+    src = ./.;
 
     format = "pyproject";
 

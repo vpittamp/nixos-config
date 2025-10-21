@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "i3-project-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "Unified CLI/TUI for i3 window manager project management"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,6 +45,9 @@ i3pm = "i3_project_manager.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["i3_project_manager*"]
+
+[tool.setuptools.package-data]
+i3_project_manager = ["py.typed"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
