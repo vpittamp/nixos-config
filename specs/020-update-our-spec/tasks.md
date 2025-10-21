@@ -99,23 +99,23 @@
 
 **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T031 [P] [US2] Unit test for isolated_xvfb context manager in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify Xvfb starts on :99, yields DISPLAY, terminates on exit (FR-084, mocked Xvfb)
-- [ ] T032 [P] [US2] Unit test for graceful termination in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify SIGTERM → wait → SIGKILL sequence (FR-088, FR-089)
-- [ ] T033 [P] [US2] Unit test for cleanup on timeout in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify resources cleaned after 10s timeout (FR-086, FR-089, SC-027)
-- [ ] T034 [P] [US2] Unit test for dependency check in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify check_xvfb_available() returns False when xvfb-run missing (FR-083)
-- [ ] T035 [P] [US2] Unit test for WM_CLASS parsing in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify regex extracts class from `WM_CLASS(STRING) = "instance", "class"` (FR-087)
-- [ ] T036 [P] [US2] Integration test for detection workflow in `tests/i3_project_manager/scenarios/test_detection_workflow.py` - mock Xvfb/xdotool/xprop, verify DetectionResult created with all fields (FR-132)
-- [ ] T037 [P] [US2] Integration test for bulk detection in `tests/i3_project_manager/integration/test_xvfb_detection.py` - verify 10 apps detected with progress indication, <60s total time (SC-022)
+- [X] T031 [P] [US2] Unit test for isolated_xvfb context manager in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify Xvfb starts on :99, yields DISPLAY, terminates on exit (FR-084, mocked Xvfb)
+- [X] T032 [P] [US2] Unit test for graceful termination in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify SIGTERM → wait → SIGKILL sequence (FR-088, FR-089)
+- [X] T033 [P] [US2] Unit test for cleanup on timeout in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify resources cleaned after 10s timeout (FR-086, FR-089, SC-027)
+- [X] T034 [P] [US2] Unit test for dependency check in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify check_xvfb_available() returns False when xvfb-run missing (FR-083)
+- [X] T035 [P] [US2] Unit test for WM_CLASS parsing in `tests/i3_project_manager/unit/test_xvfb_detection.py` - verify regex extracts class from `WM_CLASS(STRING) = "instance", "class"` (FR-087)
+- [X] T036 [P] [US2] Integration test for detection workflow in `tests/i3_project_manager/scenarios/test_detection_workflow.py` - mock Xvfb/xdotool/xprop, verify DetectionResult created with all fields (FR-132)
+- [X] T037 [P] [US2] Integration test for bulk detection in `tests/i3_project_manager/integration/test_xvfb_detection.py` - verify 10 apps detected with progress indication, <60s total time (SC-022)
 
 ### Implementation for User Story 2
 
-- [ ] T038 [P] [US2] Implement isolated_xvfb() context manager in `home-modules/tools/i3_project_manager/core/app_discovery.py` using subprocess.Popen for Xvfb, display_num parameter, SIGTERM/SIGKILL cleanup in finally block per research.md Decision 5 (FR-084, FR-088, FR-089)
-- [ ] T039 [P] [US2] Implement check_xvfb_available() in `home-modules/tools/i3_project_manager/core/app_discovery.py` using shutil.which() to check for Xvfb, xdotool, xprop binaries (FR-083)
-- [ ] T040 [US2] Implement detect_window_class_xvfb() in `home-modules/tools/i3_project_manager/core/app_discovery.py` accepting (desktop_file, timeout=10), launching app with isolated_xvfb display, polling for window with xdotool, extracting WM_CLASS with xprop, terminating app, returning detected class or None per quickstart.md Phase 2 (FR-084 through FR-089)
-- [ ] T041 [US2] Add detection result caching in `home-modules/tools/i3_project_manager/core/app_discovery.py` saving to `~/.cache/i3pm/detected-classes.json` with timestamp, cache_version, invalidation after 30 days (FR-091)
-- [ ] T042 [US2] Add CLI command `i3pm app-classes detect` in `home-modules/tools/i3_project_manager/cli/commands.py` with options (--all-missing, --isolated, --timeout, --cache, --verbose), dependency check, progress indication using rich.Progress, result display per contracts/cli-commands.md (FR-083, FR-090, FR-093)
-- [ ] T043 [US2] Add detection logging in detect_window_class_xvfb() writing to `~/.cache/i3pm/detection.log` with timestamp, app name, detected class, duration, errors (FR-094)
-- [ ] T044 [US2] Add fallback to guess algorithm in detect_window_class_xvfb() when Xvfb unavailable, timeout expires, or --skip-isolated flag specified (FR-092)
+- [X] T038 [P] [US2] Implement isolated_xvfb() context manager in `home-modules/tools/i3_project_manager/core/app_discovery.py` using subprocess.Popen for Xvfb, display_num parameter, SIGTERM/SIGKILL cleanup in finally block per research.md Decision 5 (FR-084, FR-088, FR-089)
+- [X] T039 [P] [US2] Implement check_xvfb_available() in `home-modules/tools/i3_project_manager/core/app_discovery.py` using shutil.which() to check for Xvfb, xdotool, xprop binaries (FR-083)
+- [X] T040 [US2] Implement detect_window_class_xvfb() in `home-modules/tools/i3_project_manager/core/app_discovery.py` accepting (desktop_file, timeout=10), launching app with isolated_xvfb display, polling for window with xdotool, extracting WM_CLASS with xprop, terminating app, returning detected class or None per quickstart.md Phase 2 (FR-084 through FR-089)
+- [X] T041 [US2] Add detection result caching in `home-modules/tools/i3_project_manager/core/app_discovery.py` saving to `~/.cache/i3pm/detected-classes.json` with timestamp, cache_version, invalidation after 30 days (FR-091)
+- [X] T042 [US2] Add CLI command `i3pm app-classes detect` in `home-modules/tools/i3_project_manager/cli/commands.py` with options (--all-missing, --isolated, --timeout, --cache, --verbose), dependency check, progress indication using rich.Progress, result display per contracts/cli-commands.md (FR-083, FR-090, FR-093)
+- [X] T043 [US2] Add detection logging in detect_window_class_xvfb() writing to `~/.cache/i3pm/detection.log` with timestamp, app name, detected class, duration, errors (FR-094)
+- [X] T044 [US2] Add fallback to guess algorithm in detect_window_class_xvfb() when Xvfb unavailable, timeout expires, or --skip-isolated flag specified (FR-092)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently. Users can detect WM_CLASS for apps and create pattern rules for them.
 
