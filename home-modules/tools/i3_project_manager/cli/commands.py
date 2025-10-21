@@ -307,6 +307,9 @@ async def cmd_create(args: argparse.Namespace) -> int:
     Returns:
         0 on success, 1 on error
     """
+    from .output import OutputFormatter
+    from .dryrun import dry_run_create_project
+
     # Validate required arguments
     if not args.name:
         print_error("Project name is required")
@@ -318,45 +321,70 @@ async def cmd_create(args: argparse.Namespace) -> int:
         print_info("Usage: i3pm create <name> <directory> [options]")
         return 1
 
+    json_mode = getattr(args, 'json', False)
+    dry_run = getattr(args, 'dry_run', False)
+    fmt = OutputFormatter(json_mode=json_mode)
+
     try:
         manager = ProjectManager()
 
         # Validate directory exists
         directory = Path(args.directory).resolve()
         if not directory.exists():
-            print_error(f"Directory does not exist: {directory}")
-            print_info(f"Create it first with: mkdir -p {directory}")
+            fmt.print_error(f"Directory does not exist: {directory}", f"Create it first with: mkdir -p {directory}")
+            fmt.output()
             return 1
 
         if not directory.is_dir():
-            print_error(f"Path is not a directory: {directory}")
+            fmt.print_error(f"Path is not a directory: {directory}")
+            fmt.output()
             return 1
 
+        # Prepare values
+        display_name = args.display_name if hasattr(args, 'display_name') and args.display_name else args.name
+        icon = args.icon if hasattr(args, 'icon') and args.icon else "📁"
+        scoped_classes = args.scoped_classes.split(',') if hasattr(args, 'scoped_classes') and args.scoped_classes else ["Ghostty", "Code"]
+
+        # Dry-run mode
+        if dry_run:
+            result = dry_run_create_project(args.name, directory, display_name, icon, scoped_classes)
+            if json_mode:
+                fmt.output(result.to_dict())
+            else:
+                print(result)
+            return 0 if result.success else 1
+
         # Create project
-        print_info(f"Creating project: {args.name}")
+        fmt.print_info(f"Creating project: {args.name}")
 
         project = await manager.create_project(
             name=args.name,
             directory=directory,
-            display_name=args.display_name if hasattr(args, 'display_name') and args.display_name else args.name,
-            icon=args.icon if hasattr(args, 'icon') and args.icon else "📁",
-            scoped_classes=args.scoped_classes.split(',') if hasattr(args, 'scoped_classes') and args.scoped_classes else ["Ghostty", "Code"],
+            display_name=display_name,
+            icon=icon,
+            scoped_classes=scoped_classes,
         )
 
-        print_success(f"Created project '{project.display_name or project.name}'")
-        print_info(f"  Name: {project.name}")
-        print_info(f"  Directory: {project.directory}")
-        print_info(f"  Icon: {project.icon}")
-        print_info(f"  Scoped classes: {', '.join(project.scoped_classes)}")
-        print_info(f"Switch to it with: i3pm switch {project.name}")
+        fmt.print_success(f"Created project '{project.display_name or project.name}'")
+        fmt.print_info(f"  Name: {project.name}")
+        fmt.print_info(f"  Directory: {project.directory}")
+        fmt.print_info(f"  Icon: {project.icon}")
+        fmt.print_info(f"  Scoped classes: {', '.join(project.scoped_classes)}")
+        fmt.print_info(f"Switch to it with: i3pm switch {project.name}")
+
+        if json_mode:
+            from .output import format_project_json
+            fmt.output(format_project_json(project, is_active=False, window_count=0))
 
         return 0
 
     except ValueError as e:
-        print_error(f"Validation error: {e}")
+        fmt.print_error(f"Validation error: {e}")
+        fmt.output()
         return 1
     except Exception as e:
-        print_error(f"Failed to create project: {e}")
+        fmt.print_error(f"Failed to create project: {e}")
+        fmt.output()
         return 1
 
 
@@ -795,28 +823,82 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
 
         elif subcommand == 'add-scoped':
             # Add scoped class
+            from .output import OutputFormatter
+            from .dryrun import dry_run_add_class
+
             class_name = args.class_name
+            json_mode = getattr(args, 'json', False)
+            dry_run = getattr(args, 'dry_run', False)
+            fmt = OutputFormatter(json_mode=json_mode)
+
             try:
+                # Check current classification
+                current_scope = config.get_classification(class_name)
+                already_classified = current_scope in ["scoped", "global"]
+
+                # Dry-run mode
+                if dry_run:
+                    result = dry_run_add_class(class_name, "scoped", already_classified, current_scope)
+                    if json_mode:
+                        fmt.output(result.to_dict())
+                    else:
+                        print(result)
+                    return 0 if result.success else 1
+
+                # Execute
                 config.add_scoped_class(class_name)
                 config.save()
-                print_success(f"Added '{class_name}' to scoped classes")
-                print_info("Windows of this class will now be project-specific")
+
+                fmt.print_success(f"Added '{class_name}' to scoped classes")
+                fmt.print_info("Windows of this class will now be project-specific")
+
+                if json_mode:
+                    fmt.output({"status": "success", "class": class_name, "scope": "scoped"})
+
                 return 0
             except ValueError as e:
-                print_error(str(e))
+                fmt.print_error(str(e))
+                fmt.output()
                 return 1
 
         elif subcommand == 'add-global':
             # Add global class
+            from .output import OutputFormatter
+            from .dryrun import dry_run_add_class
+
             class_name = args.class_name
+            json_mode = getattr(args, 'json', False)
+            dry_run = getattr(args, 'dry_run', False)
+            fmt = OutputFormatter(json_mode=json_mode)
+
             try:
+                # Check current classification
+                current_scope = config.get_classification(class_name)
+                already_classified = current_scope in ["scoped", "global"]
+
+                # Dry-run mode
+                if dry_run:
+                    result = dry_run_add_class(class_name, "global", already_classified, current_scope)
+                    if json_mode:
+                        fmt.output(result.to_dict())
+                    else:
+                        print(result)
+                    return 0 if result.success else 1
+
+                # Execute
                 config.add_global_class(class_name)
                 config.save()
-                print_success(f"Added '{class_name}' to global classes")
-                print_info("Windows of this class will now be visible in all projects")
+
+                fmt.print_success(f"Added '{class_name}' to global classes")
+                fmt.print_info("Windows of this class will now be visible in all projects")
+
+                if json_mode:
+                    fmt.output({"status": "success", "class": class_name, "scope": "global"})
+
                 return 0
             except ValueError as e:
-                print_error(str(e))
+                fmt.print_error(str(e))
+                fmt.output()
                 return 1
 
         elif subcommand == 'remove':
@@ -1261,13 +1343,30 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
         elif subcommand == 'add-pattern':
             # Add pattern rule (T025)
             from ..models.pattern import PatternRule
+            from .output import OutputFormatter
+            from .dryrun import dry_run_add_pattern
 
             pattern = args.pattern
             scope = args.scope
             priority = getattr(args, 'priority', 0)
             description = getattr(args, 'description', '')
+            json_mode = getattr(args, 'json', False)
+            dry_run = getattr(args, 'dry_run', False)
+            fmt = OutputFormatter(json_mode=json_mode)
 
             try:
+                # Check if pattern exists
+                pattern_exists = any(p.pattern == pattern for p in config.class_patterns)
+
+                # Dry-run mode
+                if dry_run:
+                    result = dry_run_add_pattern(pattern, scope, priority, description, pattern_exists)
+                    if json_mode:
+                        fmt.output(result.to_dict())
+                    else:
+                        print(result)
+                    return 0 if result.success else 1
+
                 # Create and add pattern rule
                 pattern_rule = PatternRule(
                     pattern=pattern,
@@ -1278,18 +1377,29 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 config.add_pattern(pattern_rule)
                 config.save()
 
-                print_success(f"Added pattern: {pattern} → {scope}")
+                fmt.print_success(f"Added pattern: {pattern} → {scope}")
                 if priority != 0:
-                    print_info(f"Priority: {priority}")
+                    fmt.print_info(f"Priority: {priority}")
                 if description:
-                    print_info(f"Description: {description}")
+                    fmt.print_info(f"Description: {description}")
 
                 # Suggest daemon reload
-                print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+                fmt.print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+
+                if json_mode:
+                    fmt.output({
+                        "status": "success",
+                        "pattern": pattern,
+                        "scope": scope,
+                        "priority": priority,
+                        "description": description
+                    })
+
                 return 0
 
             except ValueError as e:
-                print_error(f"Invalid pattern: {e}")
+                fmt.print_error(f"Invalid pattern: {e}")
+                fmt.output()
                 return 1
 
         elif subcommand == 'list-patterns':
@@ -1338,22 +1448,51 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
 
         elif subcommand == 'remove-pattern':
             # Remove pattern rule (T027)
-            pattern = args.pattern
+            from .output import OutputFormatter
+            from .dryrun import dry_run_remove_pattern
 
-            # Confirm removal unless --yes flag
-            if not getattr(args, 'yes', False):
-                response = input(f"Remove pattern '{pattern}'? [y/N]: ")
-                if response.lower() not in ['y', 'yes']:
-                    print_info("Cancelled")
-                    return 0
+            pattern = args.pattern
+            json_mode = getattr(args, 'json', False)
+            dry_run = getattr(args, 'dry_run', False)
+            fmt = OutputFormatter(json_mode=json_mode)
+
+            # Check if pattern exists
+            pattern_exists = any(p.pattern == pattern for p in config.class_patterns)
+
+            # Dry-run mode
+            if dry_run:
+                result = dry_run_remove_pattern(pattern, pattern_exists)
+                if json_mode:
+                    fmt.output(result.to_dict())
+                else:
+                    print(result)
+                return 0 if result.success else 1
+
+            # Confirm removal unless --yes flag or JSON mode
+            if not getattr(args, 'yes', False) and not json_mode:
+                import sys
+                if sys.stdin.isatty():
+                    response = input(f"Remove pattern '{pattern}'? [y/N]: ")
+                    if response.lower() not in ['y', 'yes']:
+                        fmt.print_info("Cancelled")
+                        return 0
+                else:
+                    fmt.print_error("Cannot confirm in non-interactive mode", "Use --yes to skip confirmation")
+                    fmt.output()
+                    return 1
 
             if config.remove_pattern(pattern):
                 config.save()
-                print_success(f"Removed pattern: {pattern}")
-                print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+                fmt.print_success(f"Removed pattern: {pattern}")
+                fmt.print_info("Run 'i3pm app-classes reload' to apply changes to daemon")
+
+                if json_mode:
+                    fmt.output({"status": "success", "pattern": pattern, "action": "removed"})
+
                 return 0
             else:
-                print_error(f"Pattern not found: {pattern}")
+                fmt.print_error(f"Pattern not found: {pattern}")
+                fmt.output()
                 return 1
 
         elif subcommand == 'test-pattern':
@@ -1986,6 +2125,11 @@ def cli_main() -> int:
         action="store_true",
         help="Output in JSON format"
     )
+    parser_create.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be created without creating"
+    )
 
     # i3pm show
     parser_show = subparsers.add_parser(
@@ -2096,6 +2240,11 @@ def cli_main() -> int:
         "class_name",
         help="Window class name (e.g., Code, Ghostty)"
     )
+    parser_app_classes_add_scoped.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be added without adding"
+    )
 
     # app-classes add-global
     parser_app_classes_add_global = app_classes_subparsers.add_parser(
@@ -2105,6 +2254,11 @@ def cli_main() -> int:
     parser_app_classes_add_global.add_argument(
         "class_name",
         help="Window class name (e.g., firefox, chrome)"
+    )
+    parser_app_classes_add_global.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be added without adding"
     )
 
     # app-classes remove
@@ -2294,6 +2448,11 @@ def cli_main() -> int:
         "--description",
         help="Optional description for the pattern"
     )
+    parser_app_classes_add_pattern.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be added without adding"
+    )
 
     # app-classes list-patterns (T026)
     parser_app_classes_list_patterns = app_classes_subparsers.add_parser(
@@ -2319,6 +2478,11 @@ def cli_main() -> int:
         "--yes", "-y",
         action="store_true",
         help="Skip confirmation prompt"
+    )
+    parser_app_classes_remove_pattern.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be removed without removing"
     )
 
     # app-classes test-pattern (T028)

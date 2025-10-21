@@ -212,8 +212,8 @@
 
 - [X] T090 [P] Implement consistent error messages with remediation steps across all CLI commands following SC-036 format "Error: <issue>. Remediation: <steps>" in `home-modules/tools/i3_project_manager/cli/commands.py`
 - [X] T091 [P] Implement JSON output format for all CLI commands with --json flag serializing to stdout, suppressing rich formatting per FR-125
-- [ ] T092 [P] Implement dry-run mode for all mutation commands (add-pattern, remove-pattern, detect, wizard save) with --dry-run flag showing what would change without applying per FR-125
-- [ ] T093 [P] Implement verbose logging for all commands with --verbose flag using logging.DEBUG level, showing subprocess calls, i3 IPC messages, timing per FR-125
+- [X] T092 [P] Implement dry-run mode for all mutation commands (add-pattern, remove-pattern, detect, wizard save) with --dry-run flag showing what would change without applying per FR-125
+- [X] T093 [P] Implement verbose logging for all commands with --verbose flag using logging.DEBUG level, showing subprocess calls, i3 IPC messages, timing per FR-125
 - [ ] T094 [P] Add shell completion for Bash in `home-modules/tools/i3_project_manager/cli/commands.py` using argcomplete decorators @autocomplete(choices=...) for pattern prefixes (glob:, regex:), scope values (scoped, global), filter values, sort values per contracts/cli-commands.md
 - [ ] T095 [P] Implement app-classes.json schema validation on daemon load in existing daemon code using JSON schema, logging detailed errors to systemd journal on validation failure (FR-130)
 - [ ] T096 [P] Add comprehensive docstrings (Google style) to all public APIs in models/, core/, tui/, cli/ modules per Principle X and FR-135
