@@ -207,6 +207,11 @@ class I3ProjectDaemon:
             logger.error(f"Failed to connect to i3: {e}")
             raise
 
+        # NOTE: We DO NOT call subscribe_events() here!
+        # i3ipc.aio.Connection.on() automatically subscribes to base events
+        # when you register handlers (it extracts "window" from "window::new" and subscribes).
+        # Calling subscribe() manually can cause conflicts.
+
         # Update IPC server with i3 connection (Feature 018)
         self.ipc_server.i3_connection = self.connection
         logger.info("IPC server updated with i3 connection")
@@ -268,9 +273,10 @@ class I3ProjectDaemon:
 
         # USER STORY 2: Automatic window tracking (Feature 021: T023 - pass window_rules getter)
         # Use wrappers to get current window_rules (updated by file watcher)
-        def get_window_rules_wrapper_new(conn, event):
+        # CRITICAL: Wrappers must be async to await the async handlers!
+        async def get_window_rules_wrapper_new(conn, event):
             """Wrapper to pass current window_rules to window::new handler."""
-            return on_window_new(
+            return await on_window_new(
                 conn, event,
                 state_manager=self.state_manager,
                 app_classification=app_classification,
@@ -278,9 +284,9 @@ class I3ProjectDaemon:
                 window_rules=self.window_rules  # Gets current value from daemon
             )
 
-        def get_window_rules_wrapper_title(conn, event):
+        async def get_window_rules_wrapper_title(conn, event):
             """Wrapper to pass current window_rules to window::title handler."""
-            return on_window_title(
+            return await on_window_title(
                 conn, event,
                 state_manager=self.state_manager,
                 app_classification=app_classification,
@@ -323,6 +329,13 @@ class I3ProjectDaemon:
         self.connection.subscribe("shutdown", self.connection.handle_shutdown_event)
 
         logger.info("Event handlers registered")
+
+        # CRITICAL: Explicitly subscribe to events AFTER registering handlers
+        # Even though conn.on() calls ensure_future(subscribe()), those are async tasks
+        # that may not execute before main() starts. Explicitly subscribing ensures
+        # we're subscribed before the event loop starts processing events.
+        await self.connection.subscribe_events()
+        logger.info("Explicit subscription completed")
 
     async def run(self) -> None:
         """Main event loop."""

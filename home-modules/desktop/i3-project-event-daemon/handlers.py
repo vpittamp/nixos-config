@@ -264,6 +264,9 @@ async def on_window_new(
     window_class = container.window_class or "unknown"
     window_title = container.name or ""
 
+    # DEBUG: Log all window::new events
+    logger.info(f"✓ WINDOW::NEW HANDLER CALLED: {window_id} ({window_class})")
+
     try:
         active_project = await state_manager.get_active_project()
 
