@@ -70,8 +70,8 @@ class WindowRule:
         Returns:
             True if rule matches window, False otherwise
         """
-        # Check pattern match
-        if not self.pattern_rule.matches(window_class):
+        # Check pattern match (pass both class and title)
+        if not self.pattern_rule.matches(window_class, window_title):
             return False
 
         # Check blacklist (for GLOBAL rules)

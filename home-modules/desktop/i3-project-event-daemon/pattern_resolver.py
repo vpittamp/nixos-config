@@ -122,7 +122,7 @@ def classify_window(
     # Priority 100: App classification patterns
     if app_classification_patterns:
         for pattern in app_classification_patterns:
-            if pattern.matches(window_class):
+            if pattern.matches(window_class, window_title):
                 return Classification(
                     scope=pattern.scope,
                     workspace=None,
