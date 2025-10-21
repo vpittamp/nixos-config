@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Literal, List
 
 # Import models
-from i3_project_manager.models.pattern import PatternRule
+from .pattern import PatternRule
 from .window_rules import WindowRule
 
 

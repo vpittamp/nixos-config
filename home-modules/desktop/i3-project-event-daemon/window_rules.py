@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List, Literal
 
-# Import PatternRule from i3pm package (included in daemon's Python environment)
-from i3_project_manager.models.pattern import PatternRule
+# Import PatternRule from local pattern module (copied from i3pm)
+from .pattern import PatternRule
 
 
 @dataclass

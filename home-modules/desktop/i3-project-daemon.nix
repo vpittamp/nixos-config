@@ -15,28 +15,12 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Import the i3pm package that's already defined in the programs.i3pm module
-  # This avoids building i3pm twice and creating conflicts
-  i3pmPackage = if config.programs.i3pm.enable
-    then config.programs.i3pm.package
-    else pkgs.python3Packages.buildPythonPackage {
-      pname = "i3-project-manager";
-      version = "0.3.0";
-      src = ../tools;
-      format = "pyproject";
-      propagatedBuildInputs = with pkgs.python3Packages; [
-        textual rich i3ipc argcomplete setuptools jsonschema
-      ];
-      nativeBuildInputs = with pkgs.python3Packages; [ setuptools wheel ];
-      doCheck = false;
-    };
-
-  # Python dependencies for the daemon (T033)
+  # Python dependencies for the daemon
+  # Note: PatternRule is now copied locally to avoid i3pm dependency
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     i3ipc        # i3 IPC library
     systemd      # systemd-python for sd_notify/watchdog/journald
     watchdog     # File system monitoring (Feature 021: T022)
-    i3pmPackage  # i3pm for shared Project models (PatternRule, etc.)
   ]);
 
   # Daemon package (T033)
