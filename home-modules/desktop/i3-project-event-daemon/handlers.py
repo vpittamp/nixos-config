@@ -397,6 +397,112 @@ async def on_window_mark(
             await event_buffer.add_event(entry)
 
 
+async def on_window_title(
+    conn: aio.Connection,
+    event: WindowEvent,
+    state_manager: StateManager,
+    event_buffer: Optional["EventBuffer"] = None,
+    app_classification: Optional["ApplicationClassification"] = None,
+    window_rules: Optional[List["WindowRule"]] = None,
+) -> None:
+    """Handle window::title events - re-classify window when title changes (US2, T033).
+
+    This is critical for PWA and terminal app classification:
+    - PWA patterns (pwa:YouTube) match FFPWA-* class AND title keyword
+    - Title patterns (title:^Yazi:) match window title for terminal apps
+    - When title changes, classification may change (e.g., terminal opens yazi)
+
+    Args:
+        conn: i3 async connection
+        event: Window event
+        state_manager: State manager
+        event_buffer: Event buffer for recording events
+        app_classification: App classification config
+        window_rules: Window rules for re-classification
+    """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.window
+    window_class = container.window_class or "unknown"
+    window_title = container.name or ""
+
+    try:
+        # Get active project for classification
+        active_project_name = await state_manager.get_active_project()
+        active_project_scoped_classes = None
+
+        if active_project_name:
+            active_project = await state_manager.get_project(active_project_name)
+            if active_project:
+                active_project_scoped_classes = active_project.scoped_classes
+
+        # Re-classify window with new title
+        from .pattern_resolver import classify_window
+
+        app_patterns = app_classification.class_patterns if app_classification else None
+        app_scoped = list(app_classification.scoped_classes) if app_classification else None
+        app_global = list(app_classification.global_classes) if app_classification else None
+
+        classification = classify_window(
+            window_class=window_class,
+            window_title=window_title,
+            active_project_scoped_classes=active_project_scoped_classes,
+            window_rules=window_rules,
+            app_classification_patterns=app_patterns,
+            app_classification_scoped=app_scoped,
+            app_classification_global=app_global,
+        )
+
+        logger.debug(
+            f"Re-classified window {window_id} ({window_class}) "
+            f"with title '{window_title}': {classification.scope} "
+            f"(source: {classification.source}, workspace: {classification.workspace})"
+        )
+
+        # Update window state with new classification
+        await state_manager.update_window(
+            window_id,
+            window_class=window_class,
+            title=window_title,
+        )
+
+        # If workspace changed, move window
+        if classification.workspace is not None:
+            current_workspace = container.workspace().name if container.workspace() else None
+            target_workspace = str(classification.workspace)
+
+            if current_workspace != target_workspace:
+                logger.info(
+                    f"Moving window {window_id} to workspace {target_workspace} "
+                    f"(title changed, new classification)"
+                )
+                await conn.command(f'[con_id="{container.id}"] move container to workspace {target_workspace}')
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error handling window::title event: {e}")
+        await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::title",
+                timestamp=datetime.now(),
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+                details={"new_title": window_title} if window_title else None,
+            )
+            await event_buffer.add_event(entry)
+
+
 async def on_window_close(
     conn: aio.Connection,
     event: WindowEvent,

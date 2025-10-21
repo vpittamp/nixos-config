@@ -38,6 +38,7 @@ from .handlers import (
     on_window_mark,
     on_window_close,
     on_window_focus,
+    on_window_title,
     on_workspace_init,
     on_workspace_empty,
     on_workspace_move,
@@ -266,9 +267,9 @@ class I3ProjectDaemon:
         )
 
         # USER STORY 2: Automatic window tracking (Feature 021: T023 - pass window_rules getter)
-        # Use lambda to get current window_rules (updated by file watcher)
-        def get_window_rules_wrapper(conn, event):
-            """Wrapper to pass current window_rules to handler."""
+        # Use wrappers to get current window_rules (updated by file watcher)
+        def get_window_rules_wrapper_new(conn, event):
+            """Wrapper to pass current window_rules to window::new handler."""
             return on_window_new(
                 conn, event,
                 state_manager=self.state_manager,
@@ -277,7 +278,17 @@ class I3ProjectDaemon:
                 window_rules=self.window_rules  # Gets current value from daemon
             )
 
-        self.connection.subscribe("window::new", get_window_rules_wrapper)
+        def get_window_rules_wrapper_title(conn, event):
+            """Wrapper to pass current window_rules to window::title handler."""
+            return on_window_title(
+                conn, event,
+                state_manager=self.state_manager,
+                app_classification=app_classification,
+                event_buffer=self.event_buffer,
+                window_rules=self.window_rules  # Gets current value from daemon
+            )
+
+        self.connection.subscribe("window::new", get_window_rules_wrapper_new)
         self.connection.subscribe(
             "window::mark",
             partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer)
@@ -290,6 +301,9 @@ class I3ProjectDaemon:
             "window::focus",
             partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer)
         )
+
+        # USER STORY 2: Title change re-classification (T033)
+        self.connection.subscribe("window::title", get_window_rules_wrapper_title)
 
         # USER STORY 3: Workspace monitoring
         self.connection.subscribe(
