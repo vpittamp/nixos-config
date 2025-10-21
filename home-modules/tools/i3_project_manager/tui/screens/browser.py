@@ -89,6 +89,10 @@ class ProjectBrowserScreen(Screen):
         table.zebra_stripes = True
         table.cursor_type = "row"
 
+        # Set initial focus to table, not search input
+        # This allows keyboard shortcuts to work immediately
+        table.focus()
+
         # Load projects and start refresh task
         await self.refresh_data()
 
@@ -337,10 +341,13 @@ class ProjectBrowserScreen(Screen):
         search_input.focus()
 
     def action_clear_search(self) -> None:
-        """Clear the search filter."""
+        """Clear the search filter and remove focus from search input."""
         search_input = self.query_one("#search", Input)
         search_input.value = ""
         self.filter_text = ""
+        # Remove focus from search input so keyboard shortcuts work
+        projects_table = self.query_one("#projects", DataTable)
+        projects_table.focus()
 
     def action_toggle_sort(self) -> None:
         """Toggle between sort modes."""

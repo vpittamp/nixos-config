@@ -54,7 +54,10 @@ class MonitorScreen(Screen):
                 yield history_table
 
             with TabPane("Tree"):
-                yield Static("Window tree inspector not yet implemented", id="tree_inspector")
+                tree_table = DataTable(id="tree_table")
+                tree_table.cursor_type = "row"
+                tree_table.zebra_stripes = True
+                yield tree_table
 
         yield Footer()
 
@@ -63,6 +66,7 @@ class MonitorScreen(Screen):
         await self._refresh_status()
         await self._refresh_events()
         await self._refresh_history()
+        await self._refresh_tree()
 
     async def _refresh_status(self) -> None:
         """Refresh daemon status."""
@@ -171,11 +175,78 @@ class MonitorScreen(Screen):
         except Exception as e:
             self.log.error(f"Failed to refresh history: {e}")
 
+    async def _refresh_tree(self) -> None:
+        """Refresh i3 window tree table."""
+        try:
+            # Import i3 client here to avoid circular imports
+            from i3_project_manager.core.i3_client import I3Client
+
+            async with I3Client() as i3:
+                tree = await i3.get_tree()
+                workspaces = await i3.get_workspaces()
+
+                table = self.query_one("#tree_table", DataTable)
+                table.clear(columns=True)
+
+                # Add columns
+                table.add_column("Type", width=12)
+                table.add_column("Name", width=30)
+                table.add_column("Class", width=20)
+                table.add_column("Workspace", width=15)
+                table.add_column("Marks", width=25)
+
+                # Helper to recursively extract windows from tree
+                def extract_windows(node, workspace_name=""):
+                    rows = []
+                    # If this node has a window, add it
+                    if hasattr(node, 'window') and node.window:
+                        window_class = getattr(node, 'window_class', None) or ""
+                        marks = ", ".join(node.marks) if node.marks else ""
+                        rows.append((
+                            "window",
+                            node.name or "",
+                            window_class,
+                            workspace_name,
+                            marks
+                        ))
+
+                    # Recurse into children
+                    for child in (node.nodes + node.floating_nodes):
+                        # Update workspace name if we're entering a workspace
+                        child_ws = workspace_name
+                        if hasattr(node, 'type') and node.type == 'workspace':
+                            child_ws = node.name
+                        rows.extend(extract_windows(child, child_ws))
+
+                    return rows
+
+                # Extract all windows
+                windows = extract_windows(tree)
+
+                # Add rows to table
+                for window_type, name, wclass, workspace, marks in windows:
+                    table.add_row(window_type, name[:30], wclass[:20], workspace, marks[:25])
+
+                if not windows:
+                    table.add_row("No windows", "", "", "", "")
+
+        except Exception as e:
+            self.log.error(f"Failed to refresh tree: {e}")
+            # Show error in table
+            try:
+                table = self.query_one("#tree_table", DataTable)
+                table.clear(columns=True)
+                table.add_column("Error", width=80)
+                table.add_row(f"Failed to load tree: {e}")
+            except:
+                pass
+
     async def action_refresh(self) -> None:
         """Force refresh dashboard data."""
         await self._refresh_status()
         await self._refresh_events()
         await self._refresh_history()
+        await self._refresh_tree()
         self.notify("Dashboard refreshed", severity="information")
 
     async def action_back(self) -> None:
