@@ -2060,7 +2060,7 @@ async def cmd_rules(args: argparse.Namespace) -> int:
         if scope_filter and scope_filter != "all":
             params["scope"] = scope_filter
 
-        result = await client.send_command("get_window_rules", params)
+        result = await client.call("get_window_rules", params)
 
         if json_mode:
             fmt.print_json(result)
@@ -2153,7 +2153,7 @@ async def cmd_classify(args: argparse.Namespace) -> int:
         if project_name:
             params["project_name"] = project_name
 
-        result = await client.send_command("classify_window", params)
+        result = await client.call("classify_window", params)
 
         if json_mode:
             fmt.print_json(result)
