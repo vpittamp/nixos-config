@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/vpittamp/nixos/i3-project-config.schema.json",
+  "title": "i3 Project Configuration",
+  "description": "Configuration schema for i3 project management system",
+  "type": "object",
+  "required": ["name", "directory", "scoped_classes"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Project name (filesystem-safe, alphanumeric with - or _)"
+    },
+    "directory": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to project directory"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-readable project name (defaults to name)"
+    },
+    "icon": {
+      "type": "string",
+      "maxLength": 4,
+      "description": "Unicode emoji or icon"
+    },
+    "scoped_classes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "List of application window classes to scope to this project"
+    },
+    "workspace_preferences": {
+      "type": "object",
+      "patternProperties": {
+        "^([1-9]|10)$": {
+          "type": "string",
+          "enum": ["primary", "secondary", "tertiary"],
+          "description": "Output role for workspace"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Workspace-to-output assignments (keys: 1-10)"
+    },
+    "auto_launch": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/auto_launch_app"
+      },
+      "description": "Applications to launch automatically when switching to project"
+    },
+    "saved_layouts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "List of saved layout names"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Project creation timestamp"
+    },
+    "modified_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last modification timestamp"
+    }
+  },
+  "definitions": {
+    "auto_launch_app": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command to execute"
+        },
+        "workspace": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Target workspace number (optional)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables (merged with PROJECT_DIR, PROJECT_NAME)"
+        },
+        "wait_for_mark": {
+          "type": "string",
+          "description": "Expected window mark (e.g., 'project:nixos')"
+        },
+        "wait_timeout": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 30.0,
+          "default": 5.0,
+          "description": "Timeout in seconds to wait for window"
+        },
+        "launch_delay": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10.0,
+          "default": 0.5,
+          "description": "Delay before launching (seconds)"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "nixos",
+      "directory": "/etc/nixos",
+      "display_name": "NixOS Configuration",
+      "icon": "❄️",
+      "scoped_classes": ["Ghostty", "Code"],
+      "workspace_preferences": {
+        "1": "primary",
+        "2": "secondary"
+      },
+      "auto_launch": [
+        {
+          "command": "ghostty",
+          "workspace": 1,
+          "env": {"PROJECT_DIR": "/etc/nixos"},
+          "wait_for_mark": "project:nixos"
+        },
+        {
+          "command": "code /etc/nixos",
+          "workspace": 2,
+          "env": {},
+          "wait_for_mark": "project:nixos"
+        }
+      ],
+      "saved_layouts": ["default", "debugging"],
+      "created_at": "2025-10-20T10:00:00Z",
+      "modified_at": "2025-10-20T14:30:00Z"
+    }
+  ]
+}

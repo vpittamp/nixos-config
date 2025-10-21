@@ -10,6 +10,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 import i3ipc
 
+# Import shared Project model from i3pm
+try:
+    from i3_project_manager.core.models import Project
+except ImportError:
+    # Fallback for development/testing without i3pm installed
+    Project = None  # type: ignore
+
 
 @dataclass
 class WindowInfo:
@@ -48,34 +55,9 @@ class WindowInfo:
             raise ValueError(f"Invalid con_id: {self.con_id}")
 
 
-@dataclass
-class ProjectConfig:
-    """Configuration for a single project."""
-
-    # Identity
-    name: str  # Unique project identifier (e.g., "nixos")
-    display_name: str  # Human-readable name (e.g., "NixOS")
-    icon: str  # Nerd Font icon or emoji
-
-    # Directory
-    directory: Path  # Project root directory
-
-    # Metadata
-    created: datetime = field(default_factory=datetime.now)
-    last_active: Optional[datetime] = None
-
-    def __post_init__(self) -> None:
-        """Validate project configuration."""
-        if not self.name:
-            raise ValueError("Project name cannot be empty")
-        if not self.name.replace("-", "").replace("_", "").isalnum():
-            raise ValueError(f"Invalid project name: {self.name}")
-        if len(self.name) > 64:
-            raise ValueError(f"Project name too long: {self.name}")
-        if not self.directory.is_absolute():
-            raise ValueError(f"Project directory must be absolute: {self.directory}")
-        if len(self.icon) != 1:
-            raise ValueError(f"Icon must be single character: {self.icon}")
+# ProjectConfig is now imported from i3_project_manager.core.models.Project
+# The daemon uses the shared Project model instead of maintaining a separate ProjectConfig.
+# This eliminates duplication and ensures consistency across the i3 project management system.
 
 
 @dataclass
@@ -218,7 +200,7 @@ class DaemonState:
     subscription_time: datetime = field(default_factory=datetime.now)
 
     # Configuration
-    projects: Dict[str, ProjectConfig] = field(default_factory=dict)  # project_name → ProjectConfig
+    projects: Dict[str, "Project"] = field(default_factory=dict)  # project_name → Project (from i3pm)
     scoped_classes: Set[str] = field(default_factory=set)  # Window classes that are project-scoped
     global_classes: Set[str] = field(default_factory=set)  # Window classes that are always global
 

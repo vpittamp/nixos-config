@@ -8,8 +8,9 @@
     ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
     ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
     # ./home-modules/desktop/i3-projects.nix  # REMOVED: Feature 010 (OLD STATIC SYSTEM)
-    ./home-modules/desktop/i3-project-manager.nix  # Feature 012: Project management scripts (CURRENT SYSTEM)
-    ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon (NEW SYSTEM)
+    # ./home-modules/desktop/i3-project-manager.nix  # REMOVED: Replaced by i3pm (Feature 019)
+    ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
+    ./home-modules/tools/i3-project-manager.nix    # Feature 019: i3pm CLI/TUI tool (unified solution)
     # ./home-modules/desktop/polybar.nix  # REMOVED: Migrated to i3bar (Feature 013)
     ./home-modules/desktop/i3blocks  # Feature 013: i3blocks status command for i3bar
   ];
@@ -17,8 +18,8 @@
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
 
-  # Feature 012: Enable i3 project manager (deploys scripts to ~/.config/i3/scripts/)
-  programs.i3ProjectManager.enable = true;
+  # Feature 019: Enable i3pm CLI/TUI tool (unified project management)
+  programs.i3pm.enable = true;
 
   # Feature 015: Enable i3 project event listener daemon
   services.i3ProjectEventListener = {

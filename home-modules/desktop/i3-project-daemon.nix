@@ -15,11 +15,21 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
+  # Import i3pm package for shared models
+  i3pmPackage = config.programs.i3pm.package or null;
+
   # Python dependencies for the daemon (T033)
-  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-    i3ipc        # i3 IPC library
-    systemd      # systemd-python for sd_notify/watchdog/journald
-  ]);
+  pythonEnv = if i3pmPackage != null then
+    pkgs.python3.withPackages (ps: with ps; [
+      i3ipc        # i3 IPC library
+      systemd      # systemd-python for sd_notify/watchdog/journald
+      i3pmPackage  # i3pm for shared Project models
+    ])
+  else
+    pkgs.python3.withPackages (ps: with ps; [
+      i3ipc
+      systemd
+    ]);
 
   # Daemon package (T033)
   daemonSrc = ./i3-project-event-daemon;

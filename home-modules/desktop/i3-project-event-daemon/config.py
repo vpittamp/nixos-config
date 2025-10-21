@@ -12,65 +12,50 @@ from typing import Dict, Optional
 import tempfile
 import os
 
-from .models import ProjectConfig, ApplicationClassification, ActiveProjectState
+from .models import ApplicationClassification, ActiveProjectState
+
+# Import Project from i3pm
+try:
+    from i3_project_manager.core.models import Project
+except ImportError:
+    logger.warning("i3pm not installed, using minimal project loading")
+    Project = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 
-def load_project_configs(config_dir: Path) -> Dict[str, ProjectConfig]:
-    """Load all project configurations from JSON files.
+def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
+    """Load all project configurations from JSON files using i3pm.
 
     Args:
         config_dir: Directory containing project JSON files (~/.config/i3/projects)
 
     Returns:
-        Dictionary mapping project names to ProjectConfig objects
+        Dictionary mapping project names to Project objects (from i3pm)
 
     Raises:
         ValueError: If project configurations are invalid
     """
-    projects: Dict[str, ProjectConfig] = {}
+    projects: Dict[str, "Project"] = {}
 
     if not config_dir.exists():
         logger.warning(f"Project config directory does not exist: {config_dir}")
         config_dir.mkdir(parents=True, exist_ok=True)
         return projects
 
-    for json_file in config_dir.glob("*.json"):
+    # Use i3pm's Project.list_all() method for consistent loading
+    if Project:
         try:
-            with open(json_file, "r") as f:
-                data = json.load(f)
+            all_projects = Project.list_all(config_dir)
+            for project in all_projects:
+                projects[project.name] = project
+                logger.debug(f"Loaded project: {project.name}")
+            logger.info(f"Loaded {len(projects)} project(s) via i3pm")
+        except Exception as e:
+            logger.error(f"Failed to load projects via i3pm: {e}")
+    else:
+        logger.error("i3pm not available, cannot load projects")
 
-            # Parse datetime fields
-            created = (
-                datetime.fromisoformat(data["created"])
-                if "created" in data
-                else datetime.now()
-            )
-            last_active = (
-                datetime.fromisoformat(data["last_active"])
-                if "last_active" in data and data["last_active"]
-                else None
-            )
-
-            # Create ProjectConfig
-            project = ProjectConfig(
-                name=data["name"],
-                display_name=data.get("display_name", data["name"]),
-                icon=data.get("icon", "📁"),
-                directory=Path(data["directory"]),
-                created=created,
-                last_active=last_active,
-            )
-
-            projects[project.name] = project
-            logger.debug(f"Loaded project: {project.name} from {json_file}")
-
-        except (KeyError, ValueError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to load project config from {json_file}: {e}")
-            continue
-
-    logger.info(f"Loaded {len(projects)} project(s)")
     return projects
 
 
