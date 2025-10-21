@@ -296,7 +296,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T011: Implement project switching logic [US1]
+### T011: Implement project switching logic [US1] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/core/project.py`
 
@@ -342,7 +342,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T013: Implement CLI switch command [US1]
+### T013: Implement CLI switch command [US1] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -367,7 +367,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T014: Implement CLI current command [US1] [P]
+### T014: Implement CLI current command [US1] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -390,7 +390,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T015: Implement CLI clear command [US1] [P]
+### T015: Implement CLI clear command [US1] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -545,7 +545,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T021: Implement project CRUD operations [US3]
+### T021: Implement project CRUD operations [US3] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/core/project.py`
 
@@ -570,7 +570,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T022: Implement CLI create command [US3]
+### T022: Implement CLI create command [US3] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -598,7 +598,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T023: Implement CLI edit command [US3] [P]
+### T023: Implement CLI edit command [US3] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -624,7 +624,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T024: Implement CLI delete command [US3] [P]
+### T024: Implement CLI delete command [US3] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -648,7 +648,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T025: Implement CLI list command [US3] [P]
+### T025: Implement CLI list command [US3] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -671,7 +671,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T026: Implement CLI show command [US3] [P]
+### T026: Implement CLI show command [US3] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 
@@ -700,7 +700,7 @@ Tasks are grouped into phases:
 
 ---
 
-### T027: Implement CLI validate command [US3] [P]
+### T027: Implement CLI validate command [US3] [P] - ✅ COMPLETED
 
 **File**: `home-modules/tools/i3_project_manager/cli/commands.py`
 

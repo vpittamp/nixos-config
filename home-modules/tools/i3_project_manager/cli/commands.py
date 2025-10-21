@@ -536,6 +536,539 @@ async def cmd_delete(args: argparse.Namespace) -> int:
         return 1
 
 
+async def cmd_validate(args: argparse.Namespace) -> int:
+    """Validate project configuration(s).
+
+    Args:
+        args: Parsed arguments with optional project name and flags
+
+    Returns:
+        0 if validation passes, 1 if validation fails
+    """
+    from ..validators.project_validator import ProjectValidator
+    import json
+
+    try:
+        validator = ProjectValidator()
+        manager = ProjectManager()
+
+        # Determine which projects to validate
+        if hasattr(args, 'project') and args.project:
+            # Validate single project
+            projects_to_validate = [args.project]
+        else:
+            # Validate all projects
+            all_projects = await manager.list_projects()
+            projects_to_validate = [p.name for p in all_projects]
+
+        # Validate each project
+        all_errors = []
+        all_warnings = []
+        validated_count = 0
+
+        for project_name in projects_to_validate:
+            try:
+                # Load project config file
+                config_file = manager.config_dir / f"{project_name}.json"
+
+                if not config_file.exists():
+                    print_error(f"Project config not found: {config_file}")
+                    all_errors.append({
+                        "project": project_name,
+                        "path": str(config_file),
+                        "message": "Configuration file not found"
+                    })
+                    continue
+
+                # Validate file
+                is_valid, errors = validator.validate_file(config_file)
+
+                # Collect errors (warnings not yet implemented in validator)
+                for error in errors:
+                    all_errors.append({
+                        "project": project_name,
+                        "path": error.path,
+                        "message": error.message
+                    })
+
+                validated_count += 1
+
+            except Exception as e:
+                print_error(f"Failed to validate project '{project_name}': {e}")
+                all_errors.append({
+                    "project": project_name,
+                    "path": "unknown",
+                    "message": str(e)
+                })
+
+        # Output results
+        if hasattr(args, 'json') and args.json:
+            # JSON output
+            result = {
+                "validated": validated_count,
+                "errors": all_errors,
+                "warnings": all_warnings,
+                "passed": len(all_errors) == 0
+            }
+            print(json.dumps(result, indent=2))
+        else:
+            # Rich formatted output
+            if len(all_errors) == 0 and len(all_warnings) == 0:
+                print_success(f"Validated {validated_count} project(s) - All checks passed ✓")
+                return 0
+
+            # Print validation summary
+            print(f"\n{Colors.BOLD}Validation Results:{Colors.RESET}")
+            print(f"  Projects validated: {validated_count}")
+            print(f"  Errors: {len(all_errors)}")
+            print(f"  Warnings: {len(all_warnings)}\n")
+
+            # Print errors
+            if all_errors:
+                print(f"{Colors.RED}{Colors.BOLD}Errors:{Colors.RESET}")
+                for error in all_errors:
+                    print(f"  {Colors.RED}✗{Colors.RESET} {error['project']}: {error['path']}")
+                    print(f"    {error['message']}")
+                print()
+
+            # Print warnings
+            if all_warnings:
+                print(f"{Colors.YELLOW}{Colors.BOLD}Warnings:{Colors.RESET}")
+                for warning in all_warnings:
+                    print(f"  {Colors.YELLOW}⚠{Colors.RESET} {warning['project']}: {warning['path']}")
+                    print(f"    {warning['message']}")
+                print()
+
+        # Return exit code based on errors
+        if all_errors:
+            print_error(f"Validation failed with {len(all_errors)} error(s)")
+            return 1
+        elif all_warnings:
+            print_warning(f"Validation passed with {len(all_warnings)} warning(s)")
+            return 0
+        else:
+            return 0
+
+    except Exception as e:
+        print_error(f"Validation failed: {e}")
+        return 1
+
+
+# ============================================================================
+# Phase 7: Monitoring Commands (T041-T044)
+# ============================================================================
+
+
+async def cmd_status(args: argparse.Namespace) -> int:
+    """Show daemon status and diagnostics.
+
+    Args:
+        args: Parsed arguments with optional --json flag
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        # Connect to daemon
+        daemon = DaemonClient()
+        await daemon.connect()
+
+        # Get status
+        status = await daemon.get_status()
+
+        # Display status
+        if hasattr(args, 'json') and args.json:
+            import json
+            print(json.dumps(status, indent=2))
+            return 0
+
+        # Rich formatted output
+        print(f"\n{Colors.BOLD}i3 Project Daemon Status{Colors.RESET}")
+        print(f"{Colors.GRAY}{'─' * 60}{Colors.RESET}")
+
+        # Connection status
+        daemon_status = f"{Colors.GREEN}RUNNING{Colors.RESET}"
+        print(f"\n{Colors.BOLD}Connection:{Colors.RESET}")
+        print(f"  Status: {daemon_status}")
+        print(f"  Socket: ~/.cache/i3-project/daemon.sock")
+
+        # Active project
+        active_project = status.get("active_project")
+        if active_project:
+            project_display = f"{Colors.GREEN}{active_project}{Colors.RESET}"
+        else:
+            project_display = f"{Colors.GRAY}None (global mode){Colors.RESET}"
+
+        print(f"\n{Colors.BOLD}Active Project:{Colors.RESET}")
+        print(f"  {project_display}")
+
+        # Window counts
+        tracked_windows = status.get("tracked_windows", 0)
+        total_windows = status.get("total_windows", 0)
+
+        print(f"\n{Colors.BOLD}Windows:{Colors.RESET}")
+        print(f"  Tracked: {tracked_windows}")
+        print(f"  Total: {total_windows}")
+
+        # Event statistics
+        event_count = status.get("event_count", 0)
+        event_rate = status.get("event_rate", 0.0)
+
+        print(f"\n{Colors.BOLD}Events:{Colors.RESET}")
+        print(f"  Total: {event_count}")
+        print(f"  Rate: {event_rate:.1f} events/sec")
+
+        # Uptime
+        uptime_seconds = status.get("uptime_seconds", 0)
+        uptime_str = f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60}m {uptime_seconds % 60}s"
+
+        print(f"\n{Colors.BOLD}Runtime:{Colors.RESET}")
+        print(f"  Uptime: {uptime_str}")
+
+        # Errors
+        error_count = status.get("error_count", 0)
+        if error_count > 0:
+            print(f"\n{Colors.BOLD}Errors:{Colors.RESET}")
+            print(f"  {Colors.RED}Count: {error_count}{Colors.RESET}")
+            print_info("Run 'i3pm events --type=error' to see error details")
+
+        print()  # Empty line at end
+
+        await daemon.close()
+        return 0
+
+    except DaemonError as e:
+        print_error(f"Daemon is not running")
+        print_info(f"Error: {e}")
+        print_info("Start the daemon with: systemctl --user start i3-project-event-listener")
+        print_info("Check daemon logs with: journalctl --user -u i3-project-event-listener -f")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        return 1
+
+
+async def cmd_events(args: argparse.Namespace) -> int:
+    """Show daemon events.
+
+    Args:
+        args: Parsed arguments with limit, type, follow, json flags
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        # Connect to daemon
+        daemon = DaemonClient()
+        await daemon.connect()
+
+        # Get limit and type filters
+        limit = args.limit if hasattr(args, 'limit') and args.limit else 20
+        event_type = args.type if hasattr(args, 'type') and args.type else None
+        follow = args.follow if hasattr(args, 'follow') and args.follow else False
+        json_output = args.json if hasattr(args, 'json') and args.json else False
+
+        if follow:
+            # Stream events continuously
+            print_info(f"Streaming events... (Ctrl+C to stop)")
+            if event_type:
+                print_info(f"Filter: {event_type}")
+            print()
+
+            last_event_id = 0
+
+            try:
+                while True:
+                    # Poll for new events
+                    events = await daemon.get_events(limit=100, event_type=event_type, since_id=last_event_id)
+
+                    for event in events:
+                        if json_output:
+                            import json
+                            print(json.dumps(event))
+                        else:
+                            # Format event
+                            timestamp = event.get("timestamp", "")
+                            evt_type = event.get("type", "unknown")
+                            details = event.get("details", {})
+
+                            # Color code by type
+                            type_color = {
+                                "window": Colors.BLUE,
+                                "workspace": Colors.GREEN,
+                                "output": Colors.YELLOW,
+                                "tick": Colors.GRAY,
+                                "error": Colors.RED,
+                            }.get(evt_type, Colors.RESET)
+
+                            print(f"{Colors.GRAY}{timestamp}{Colors.RESET} {type_color}{evt_type:10}{Colors.RESET} {details}")
+
+                        last_event_id = max(last_event_id, event.get("id", 0))
+
+                    # Sleep briefly before next poll
+                    await asyncio.sleep(0.1)
+
+            except KeyboardInterrupt:
+                print()
+                print_info("Stopped event stream")
+                await daemon.close()
+                return 0
+
+        else:
+            # Get historical events
+            events_response = await daemon.get_events(limit=limit, event_type=event_type)
+
+            # Extract events array from response
+            if isinstance(events_response, dict) and "events" in events_response:
+                events = events_response["events"]
+            elif isinstance(events_response, list):
+                events = events_response
+            else:
+                events = []
+
+            if json_output:
+                import json
+                print(json.dumps(events_response, indent=2))
+                await daemon.close()
+                return 0
+
+            # Display events
+            if not events:
+                print_info("No events found")
+                if event_type:
+                    print_info(f"Filter: {event_type}")
+                await daemon.close()
+                return 0
+
+            print(f"\n{Colors.BOLD}Recent Events{Colors.RESET}")
+            if event_type:
+                print(f"{Colors.GRAY}Filter: {event_type}{Colors.RESET}")
+            print(f"{Colors.GRAY}{'─' * 80}{Colors.RESET}\n")
+
+            # Print header
+            print(f"{Colors.BOLD}{'TIME':<12} {'TYPE':<20} {'DETAILS'}{Colors.RESET}")
+            print(f"{Colors.GRAY}{'─' * 90}{Colors.RESET}")
+
+            # Print events
+            for event in events:
+                timestamp = event.get("timestamp", "")[:12]  # Truncate timestamp
+                evt_type = event.get("event_type", "unknown")
+
+                # Format details based on event type
+                if evt_type.startswith("window::"):
+                    action = evt_type.split("::")[-1]
+                    win_class = event.get("window_class", "unknown")
+                    detail_str = f"{action} - {win_class}"
+                    base_type = "window"
+                elif evt_type.startswith("workspace::"):
+                    action = evt_type.split("::")[-1]
+                    ws_name = event.get("workspace_name", "?")
+                    detail_str = f"{action} - {ws_name}"
+                    base_type = "workspace"
+                elif evt_type == "tick":
+                    payload = event.get("tick_payload", "")
+                    project = event.get("project_name", "")
+                    detail_str = f"{payload} (project: {project})" if project else payload
+                    base_type = "tick"
+                elif evt_type.startswith("output::"):
+                    action = evt_type.split("::")[-1]
+                    detail_str = action
+                    base_type = "output"
+                else:
+                    detail_str = evt_type
+                    base_type = evt_type
+
+                # Color code by type
+                type_color = {
+                    "window": Colors.BLUE,
+                    "workspace": Colors.GREEN,
+                    "output": Colors.YELLOW,
+                    "tick": Colors.GRAY,
+                    "error": Colors.RED,
+                }.get(base_type, Colors.RESET)
+
+                print(f"{Colors.GRAY}{timestamp:<12}{Colors.RESET} {type_color}{evt_type:<20}{Colors.RESET} {detail_str}")
+
+            print(f"\n{Colors.GRAY}Showing {len(events)} event(s){Colors.RESET}")
+            print_info(f"Use --limit=N to show more events")
+            print_info(f"Use --follow to stream events in real-time")
+            print()
+
+        await daemon.close()
+        return 0
+
+    except DaemonError as e:
+        print_error(f"Daemon is not running")
+        print_info(f"Error: {e}")
+        print_info("Start the daemon with: systemctl --user start i3-project-event-listener")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        return 1
+
+
+async def cmd_windows(args: argparse.Namespace) -> int:
+    """Show tracked windows.
+
+    Args:
+        args: Parsed arguments with project, all, json flags
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        # Determine if we need i3 client or daemon client
+        show_all = args.all if hasattr(args, 'all') and args.all else False
+        project_filter = args.project if hasattr(args, 'project') and args.project else None
+        json_output = args.json if hasattr(args, 'json') and args.json else False
+
+        if show_all:
+            # Use i3 client to get all windows
+            i3 = I3Client()
+            await i3.connect()
+
+            tree = await i3.get_tree()
+            windows = await i3.get_all_windows(tree)
+
+            await i3.close()
+        else:
+            # Use daemon client to get tracked windows
+            daemon = DaemonClient()
+            await daemon.connect()
+
+            windows_response = await daemon.get_windows(project=project_filter)
+
+            await daemon.close()
+
+            # Extract windows array from response
+            if isinstance(windows_response, dict) and "windows" in windows_response:
+                windows = windows_response["windows"]
+            elif isinstance(windows_response, list):
+                windows = windows_response
+            else:
+                windows = []
+
+        if json_output:
+            import json
+            print(json.dumps([{
+                "id": w.get("id") or w.get("window_id"),
+                "class": w.get("class") or w.get("window_class"),
+                "title": w.get("title") or w.get("window_title"),
+                "workspace": w.get("workspace") or w.get("workspace_name"),
+                "marks": w.get("marks", []),
+            } for w in windows], indent=2))
+            return 0
+
+        # Display windows
+        if not windows:
+            if project_filter:
+                print_info(f"No windows found for project: {project_filter}")
+            else:
+                print_info("No tracked windows found")
+            return 0
+
+        print(f"\n{Colors.BOLD}Windows{Colors.RESET}")
+        if project_filter:
+            print(f"{Colors.GRAY}Project: {project_filter}{Colors.RESET}")
+        if show_all:
+            print(f"{Colors.GRAY}Showing all windows{Colors.RESET}")
+        else:
+            print(f"{Colors.GRAY}Showing tracked windows only{Colors.RESET}")
+        print(f"{Colors.GRAY}{'─' * 100}{Colors.RESET}\n")
+
+        # Print header
+        print(f"{Colors.BOLD}{'ID':<10} {'CLASS':<15} {'WORKSPACE':<10} {'MARKS':<20} {'TITLE'}{Colors.RESET}")
+        print(f"{Colors.GRAY}{'─' * 100}{Colors.RESET}")
+
+        # Print windows
+        for window in windows:
+            # Handle both daemon format (window_id, window_class) and i3 format (id, class)
+            win_id = str(window.get("window_id") or window.get("id", ""))[:8]
+            win_class = (window.get("window_class") or window.get("class", "unknown"))[:14]
+            workspace_name = window.get("workspace_name") or window.get("workspace", "?")
+            workspace = f"WS{workspace_name}" if not workspace_name.startswith("WS") else workspace_name
+            marks = window.get("marks", [])
+            marks_str = ", ".join(marks)[:18] if marks else ""
+            title = (window.get("window_title") or window.get("title", ""))[:40]
+
+            # Highlight project-marked windows
+            if any(m.startswith("project:") for m in marks):
+                win_class = f"{Colors.GREEN}{win_class}{Colors.RESET}"
+
+            print(f"{win_id:<10} {win_class:<15} {workspace:<10} {marks_str:<20} {title}")
+
+        print(f"\n{Colors.GRAY}Showing {len(windows)} window(s){Colors.RESET}")
+        print_info(f"Use --all to show all windows (not just tracked)")
+        print_info(f"Use --project=NAME to filter by project")
+        print()
+
+        return 0
+
+    except (DaemonError, I3Error) as e:
+        print_error(f"Error querying windows: {e}")
+        if isinstance(e, DaemonError):
+            print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        return 1
+
+
+async def cmd_monitor(args: argparse.Namespace) -> int:
+    """Launch TUI monitor dashboard.
+
+    Args:
+        args: Parsed arguments with optional mode
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        # Import TUI app
+        from ..tui.app import I3PMApp
+        from ..tui.screens.monitor import MonitorScreen
+
+        # Create app
+        app = I3PMApp()
+
+        # If mode specified, navigate to that tab
+        mode = args.mode if hasattr(args, 'mode') and args.mode else None
+
+        # Push monitor screen directly
+        async def on_mount():
+            screen = MonitorScreen()
+            await app.push_screen(screen)
+
+            # Navigate to specific tab if requested
+            if mode:
+                tab_map = {
+                    "live": 0,
+                    "events": 1,
+                    "history": 2,
+                    "tree": 3,
+                }
+                tab_index = tab_map.get(mode)
+                if tab_index is not None:
+                    # TODO: Switch to tab (implement in MonitorScreen)
+                    pass
+
+        # Override on_mount to push monitor screen
+        app.on_mount = on_mount
+
+        # Run TUI
+        await app.run_async()
+
+        return 0
+
+    except ImportError as e:
+        print_error(f"TUI not available: {e}")
+        print_info("The monitor dashboard requires Textual TUI framework")
+        return 1
+    except Exception as e:
+        print_error(f"Failed to launch monitor: {e}")
+        return 1
+
+
 # ============================================================================
 # CLI Entry Point
 # ============================================================================
@@ -681,6 +1214,101 @@ def cli_main() -> int:
         help="Keep saved layout files"
     )
 
+    # i3pm validate
+    parser_validate = subparsers.add_parser(
+        "validate",
+        help="Validate project configuration(s)",
+        description="Validate project configurations against schema and filesystem requirements"
+    )
+    parser_validate.add_argument(
+        "project",
+        nargs="?",
+        help="Project name to validate (validates all if omitted)"
+    )
+    parser_validate.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # ========================================================================
+    # Phase 7: Monitoring Commands
+    # ========================================================================
+
+    # i3pm status
+    parser_status = subparsers.add_parser(
+        "status",
+        help="Show daemon status and diagnostics",
+        description="Display daemon health, active project, and event statistics"
+    )
+    parser_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # i3pm events
+    parser_events = subparsers.add_parser(
+        "events",
+        help="Show daemon events",
+        description="Display recent daemon events or stream them in real-time"
+    )
+    parser_events.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Number of events to show (default: 20)"
+    )
+    parser_events.add_argument(
+        "--type",
+        choices=["window", "workspace", "output", "tick", "error"],
+        help="Filter by event type"
+    )
+    parser_events.add_argument(
+        "--follow", "-f",
+        action="store_true",
+        help="Stream events continuously (like tail -f)"
+    )
+    parser_events.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # i3pm windows
+    parser_windows = subparsers.add_parser(
+        "windows",
+        help="Show tracked windows",
+        description="List windows tracked by the project management system"
+    )
+    parser_windows.add_argument(
+        "--project",
+        help="Filter windows by project name"
+    )
+    parser_windows.add_argument(
+        "--all",
+        action="store_true",
+        help="Show all windows, not just tracked ones"
+    )
+    parser_windows.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # i3pm monitor
+    parser_monitor = subparsers.add_parser(
+        "monitor",
+        help="Launch TUI monitor dashboard",
+        description="Open the interactive monitoring dashboard"
+    )
+    parser_monitor.add_argument(
+        "mode",
+        nargs="?",
+        choices=["live", "events", "history", "tree"],
+        help="Start in specific monitor mode"
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -701,6 +1329,12 @@ def cli_main() -> int:
         "show": cmd_show,
         "edit": cmd_edit,
         "delete": cmd_delete,
+        "validate": cmd_validate,
+        # Phase 7: Monitoring commands
+        "status": cmd_status,
+        "events": cmd_events,
+        "windows": cmd_windows,
+        "monitor": cmd_monitor,
     }
 
     handler = command_handlers.get(args.command)

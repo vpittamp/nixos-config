@@ -14,14 +14,15 @@ import os
 
 from .models import ApplicationClassification, ActiveProjectState
 
+# Initialize logger first (before any usage)
+logger = logging.getLogger(__name__)
+
 # Import Project from i3pm
 try:
     from i3_project_manager.core.models import Project
 except ImportError:
     logger.warning("i3pm not installed, using minimal project loading")
     Project = None  # type: ignore
-
-logger = logging.getLogger(__name__)
 
 
 def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
