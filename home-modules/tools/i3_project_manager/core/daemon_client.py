@@ -139,14 +139,14 @@ class DaemonClient:
 
         Returns:
             Status dict with keys:
-                - daemon_connected: bool
-                - uptime_seconds: float
-                - pid: int
-                - active_project: Optional[str]
-                - total_windows: int
-                - tracked_windows: int
-                - event_count: int
-                - event_rate_per_second: float
+                - status: str - Status string ("running")
+                - connected: bool - Whether daemon is connected to i3
+                - uptime_seconds: float - Daemon uptime in seconds
+                - active_project: Optional[str] - Active project name
+                - window_count: int - Number of tracked windows
+                - workspace_count: int - Number of workspaces
+                - event_count: int - Total events processed
+                - error_count: int - Total errors encountered
 
         Raises:
             DaemonError: If request fails

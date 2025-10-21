@@ -62,13 +62,13 @@ class MonitorScreen(Screen):
                 status = await self.app.daemon_client.get_status()
 
                 self.query_one("#live_status", Static).update(
-                    f"Daemon Status: {'Connected' if status.get('daemon_connected') else 'Disconnected'}"
+                    f"Daemon Status: {'Connected' if status.get('connected') else 'Disconnected'}"
                 )
                 self.query_one("#active_project", Static).update(
                     f"Active Project: {status.get('active_project', 'None')}"
                 )
                 self.query_one("#tracked_windows", Static).update(
-                    f"Tracked Windows: {status.get('tracked_windows', 0)}"
+                    f"Tracked Windows: {status.get('window_count', 0)}"
                 )
                 self.query_one("#uptime", Static).update(
                     f"Uptime: {status.get('uptime_seconds', 0):.0f}s"

@@ -1647,12 +1647,12 @@ async def cmd_status(args: argparse.Namespace) -> int:
         print(f"  {project_display}")
 
         # Window counts
-        tracked_windows = status.get("tracked_windows", 0)
-        total_windows = status.get("total_windows", 0)
+        window_count = status.get("window_count", 0)
+        workspace_count = status.get("workspace_count", 0)
 
         print(f"\n{Colors.BOLD}Windows:{Colors.RESET}")
-        print(f"  Tracked: {tracked_windows}")
-        print(f"  Total: {total_windows}")
+        print(f"  Tracked: {window_count}")
+        print(f"  Workspaces: {workspace_count}")
 
         # Event statistics
         event_count = status.get("event_count", 0)
