@@ -5,10 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List, Literal
 
-# Import existing PatternRule from i3pm models
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tools"))
-from i3_project_manager.models.pattern import PatternRule
+# Import PatternRule from local pattern module
+from .pattern import PatternRule
 
 
 @dataclass

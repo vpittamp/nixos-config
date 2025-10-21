@@ -2,13 +2,10 @@
 
 from dataclasses import dataclass
 from typing import Optional, Literal, List
-from pathlib import Path
-import sys
 
-# Import models
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tools"))
-from i3_project_manager.models.pattern import PatternRule
-from window_rules import WindowRule
+# Import local models
+from .pattern import PatternRule
+from .window_rules import WindowRule
 
 
 @dataclass
