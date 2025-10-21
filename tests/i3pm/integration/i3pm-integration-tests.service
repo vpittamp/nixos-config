@@ -1,0 +1,46 @@
+[Unit]
+Description=i3pm Integration Test Runner
+Documentation=file:///etc/nixos/tests/i3pm/integration/README.md
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+
+# Working directory
+WorkingDirectory=/etc/nixos
+
+# Environment
+Environment=DISPLAY=:99
+Environment=HOME=%h
+Environment=PYTHONUNBUFFERED=1
+
+# Run the test with full nix-shell environment
+ExecStart=/run/current-system/sw/bin/nix-shell \
+    -p python3Packages.pytest \
+       python3Packages.pytest-asyncio \
+       python3Packages.textual \
+       python3Packages.psutil \
+       xorg.xorgserver \
+       i3 \
+       xdotool \
+       xterm \
+       procps \
+       coreutils \
+    --run "/etc/nixos/tests/i3pm/integration/run_simple_test.sh"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=i3pm-tests
+
+# Resource limits (prevent runaway tests)
+TimeoutStartSec=300
+TimeoutStopSec=30
+MemoryMax=2G
+CPUQuota=200%
+
+# Restart policy (don't restart on failure)
+Restart=no
+
+[Install]
+WantedBy=default.target
