@@ -217,7 +217,7 @@
 - [ ] T094 [P] Add shell completion for Bash in `home-modules/tools/i3_project_manager/cli/commands.py` using argcomplete decorators @autocomplete(choices=...) for pattern prefixes (glob:, regex:), scope values (scoped, global), filter values, sort values per contracts/cli-commands.md
 - [X] T095 [P] Implement app-classes.json schema validation on daemon load in existing daemon code using JSON schema, logging detailed errors to systemd journal on validation failure (FR-130)
 - [X] T096 [P] Add comprehensive docstrings (Google style) to all public APIs in models/, core/, tui/, cli/ modules per Principle X and FR-135
-- [ ] T097 [P] Create user guide sections in docs/ directory: "Pattern Rules", "Xvfb Detection", "Classification Wizard", "Window Inspector" with examples, troubleshooting, screenshots per quickstart.md
+- [X] T097 [P] Create user guide sections in docs/ directory: "Pattern Rules", "Xvfb Detection", "Classification Wizard", "Window Inspector" with examples, troubleshooting, screenshots per quickstart.md
 - [X] T098 [P] Update NixOS package in `home-modules/tools/i3-project-manager.nix` to version 0.3.0, add xvfb-run, xdotool, xprop to buildInputs, add argcomplete to propagatedBuildInputs per quickstart.md deployment section
 - [ ] T099 [P] Add user acceptance test scenarios in `tests/i3_project_manager/scenarios/test_acceptance.py` implementing all acceptance scenarios from spec.md User Stories 1-4 (FR-135)
 - [ ] T100 [P] Run quickstart.md validation by executing each code example, verifying outputs match expected results, fixing any discrepancies
