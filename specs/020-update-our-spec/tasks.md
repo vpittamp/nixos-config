@@ -210,8 +210,8 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T090 [P] Implement consistent error messages with remediation steps across all CLI commands following SC-036 format "Error: <issue>. Remediation: <steps>" in `home-modules/tools/i3_project_manager/cli/commands.py`
-- [ ] T091 [P] Implement JSON output format for all CLI commands with --json flag serializing to stdout, suppressing rich formatting per FR-125
+- [X] T090 [P] Implement consistent error messages with remediation steps across all CLI commands following SC-036 format "Error: <issue>. Remediation: <steps>" in `home-modules/tools/i3_project_manager/cli/commands.py`
+- [X] T091 [P] Implement JSON output format for all CLI commands with --json flag serializing to stdout, suppressing rich formatting per FR-125
 - [ ] T092 [P] Implement dry-run mode for all mutation commands (add-pattern, remove-pattern, detect, wizard save) with --dry-run flag showing what would change without applying per FR-125
 - [ ] T093 [P] Implement verbose logging for all commands with --verbose flag using logging.DEBUG level, showing subprocess calls, i3 IPC messages, timing per FR-125
 - [ ] T094 [P] Add shell completion for Bash in `home-modules/tools/i3_project_manager/cli/commands.py` using argcomplete decorators @autocomplete(choices=...) for pattern prefixes (glob:, regex:), scope values (scoped, global), filter values, sort values per contracts/cli-commands.md

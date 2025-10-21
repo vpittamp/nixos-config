@@ -45,6 +45,26 @@ def print_warning(message: str) -> None:
     print(f"{Colors.YELLOW}⚠{Colors.RESET} {message}")
 
 
+def print_error_with_remediation(error: str, remediation: str) -> None:
+    """Print error with remediation steps.
+
+    T090: Consistent error format following SC-036
+    Format: "Error: <issue>. Remediation: <steps>"
+
+    Args:
+        error: Description of the error
+        remediation: Steps to remediate the issue
+
+    Examples:
+        >>> print_error_with_remediation(
+        ...     "Window not found: 12345",
+        ...     "Use --click mode to select a visible window"
+        ... )
+    """
+    print(f"{Colors.RED}✗ Error:{Colors.RESET} {error}", file=sys.stderr)
+    print(f"{Colors.BLUE}  Remediation:{Colors.RESET} {remediation}", file=sys.stderr)
+
+
 # ============================================================================
 # Phase 3: Switch Commands (T012-T016)
 # ============================================================================
@@ -59,8 +79,13 @@ async def cmd_switch(args: argparse.Namespace) -> int:
     Returns:
         0 on success, 1 on error
     """
+    from .output import OutputFormatter, format_switch_result_json
+
     project_name = args.project
     no_launch = args.no_launch if hasattr(args, 'no_launch') else False
+    json_mode = getattr(args, 'json', False)
+
+    fmt = OutputFormatter(json_mode=json_mode)
 
     try:
         manager = ProjectManager()
@@ -69,27 +94,44 @@ async def cmd_switch(args: argparse.Namespace) -> int:
         try:
             project = await manager.get_project(project_name)
         except FileNotFoundError:
-            print_error(f"Project '{project_name}' not found")
-            print_info(f"Use 'i3pm list' to see available projects")
+            fmt.print_error(
+                f"Project '{project_name}' not found",
+                "Use 'i3pm list' to see available projects"
+            )
+            fmt.output()
             return 1
 
         # Switch to project
-        print_info(f"Switching to project: {project.display_name or project.name}")
+        fmt.print_info(f"Switching to project: {project.display_name or project.name}")
         success, elapsed_ms, error_msg = await manager.switch_to_project(
             project_name, no_launch=no_launch
         )
 
         if success:
-            print_success(f"Switched to '{project.display_name or project.name}' ({elapsed_ms:.0f}ms)")
+            fmt.print_success(f"Switched to '{project.display_name or project.name}' ({elapsed_ms:.0f}ms)")
             if no_launch:
-                print_info("Auto-launch disabled")
+                fmt.print_info("Auto-launch disabled")
+
+            fmt.output(format_switch_result_json(
+                project_name=project.display_name or project.name,
+                success=True,
+                elapsed_ms=elapsed_ms,
+                no_launch=no_launch
+            ))
             return 0
         else:
-            print_error(f"Failed to switch: {error_msg}")
+            fmt.print_error(f"Failed to switch: {error_msg}")
+            fmt.output(format_switch_result_json(
+                project_name=project_name,
+                success=False,
+                elapsed_ms=elapsed_ms,
+                error_msg=error_msg
+            ))
             return 1
 
     except Exception as e:
-        print_error(f"Unexpected error: {e}")
+        fmt.print_error(f"Unexpected error: {e}")
+        fmt.output()
         return 1
 
 
@@ -102,6 +144,11 @@ async def cmd_current(args: argparse.Namespace) -> int:
     Returns:
         0 on success, 1 on error
     """
+    from .output import OutputFormatter, format_project_json
+
+    json_mode = getattr(args, 'json', False)
+    fmt = OutputFormatter(json_mode=json_mode)
+
     try:
         manager = ProjectManager()
 
@@ -114,30 +161,40 @@ async def cmd_current(args: argparse.Namespace) -> int:
                 project = await manager.get_project(current)
                 window_count = await manager.get_project_window_count(current)
 
-                print(f"{Colors.BOLD}{project.display_name or project.name}{Colors.RESET}")
-                print(f"  Name: {project.name}")
-                print(f"  Directory: {project.directory}")
-                if project.icon:
-                    print(f"  Icon: {project.icon}")
-                print(f"  Windows: {window_count}")
-                print(f"  Scoped classes: {', '.join(project.scoped_classes)}")
+                if json_mode:
+                    fmt.output(format_project_json(project, is_active=True, window_count=window_count))
+                else:
+                    print(f"{Colors.BOLD}{project.display_name or project.name}{Colors.RESET}")
+                    print(f"  Name: {project.name}")
+                    print(f"  Directory: {project.directory}")
+                    if project.icon:
+                        print(f"  Icon: {project.icon}")
+                    print(f"  Windows: {window_count}")
+                    print(f"  Scoped classes: {', '.join(project.scoped_classes)}")
 
             except FileNotFoundError:
                 # Project exists in daemon but not in config
-                print(f"{Colors.BOLD}{current}{Colors.RESET}")
-                print_warning(f"Project config not found for '{current}'")
+                if json_mode:
+                    fmt.output({"name": current, "error": "config_not_found"})
+                else:
+                    print(f"{Colors.BOLD}{current}{Colors.RESET}")
+                    print_warning(f"Project config not found for '{current}'")
 
             return 0
         else:
-            print_info("No active project (global mode)")
+            if json_mode:
+                fmt.output({"active_project": None, "mode": "global"})
+            else:
+                print_info("No active project (global mode)")
             return 0
 
     except DaemonError as e:
-        print_error(f"Daemon error: {e}")
-        print_info("Is the i3-project-event-listener daemon running?")
+        fmt.print_error(f"Daemon error: {e}", "Is the i3-project-event-listener daemon running?")
+        fmt.output()
         return 1
     except Exception as e:
-        print_error(f"Unexpected error: {e}")
+        fmt.print_error(f"Unexpected error: {e}")
+        fmt.output()
         return 1
 
 
@@ -194,6 +251,11 @@ async def cmd_list(args: argparse.Namespace) -> int:
     Returns:
         0 on success, 1 on error
     """
+    from .output import OutputFormatter, format_project_list_json
+
+    json_mode = getattr(args, 'json', False)
+    fmt = OutputFormatter(json_mode=json_mode)
+
     try:
         manager = ProjectManager()
 
@@ -201,8 +263,11 @@ async def cmd_list(args: argparse.Namespace) -> int:
         projects = await manager.list_projects(sort_by=args.sort if hasattr(args, 'sort') else "modified")
 
         if not projects:
-            print_info("No projects found")
-            print_info(f"Create one with: i3pm create <name> <directory>")
+            if json_mode:
+                fmt.output({"total": 0, "projects": []})
+            else:
+                print_info("No projects found")
+                print_info(f"Create one with: i3pm create <name> <directory>")
             return 0
 
         # Get current project for highlighting
@@ -211,21 +276,25 @@ async def cmd_list(args: argparse.Namespace) -> int:
         except:
             current = None
 
-        # Print projects
-        print(f"{Colors.BOLD}Projects:{Colors.RESET}")
-        for project in projects:
-            is_current = project.name == current
-            marker = f"{Colors.GREEN}●{Colors.RESET}" if is_current else f"{Colors.GRAY}○{Colors.RESET}"
-            icon = f"{project.icon} " if project.icon else ""
-            name = f"{Colors.BOLD}{project.display_name or project.name}{Colors.RESET}" if is_current else (project.display_name or project.name)
+        if json_mode:
+            fmt.output(format_project_list_json(projects, current))
+        else:
+            # Print projects
+            print(f"{Colors.BOLD}Projects:{Colors.RESET}")
+            for project in projects:
+                is_current = project.name == current
+                marker = f"{Colors.GREEN}●{Colors.RESET}" if is_current else f"{Colors.GRAY}○{Colors.RESET}"
+                icon = f"{project.icon} " if project.icon else ""
+                name = f"{Colors.BOLD}{project.display_name or project.name}{Colors.RESET}" if is_current else (project.display_name or project.name)
 
-            print(f"  {marker} {icon}{name}")
-            print(f"     {Colors.GRAY}{project.directory}{Colors.RESET}")
+                print(f"  {marker} {icon}{name}")
+                print(f"     {Colors.GRAY}{project.directory}{Colors.RESET}")
 
         return 0
 
     except Exception as e:
-        print_error(f"Error listing projects: {e}")
+        fmt.print_error(f"Error listing projects: {e}")
+        fmt.output()
         return 1
 
 
@@ -1034,12 +1103,24 @@ async def cmd_app_classes(args: argparse.Namespace) -> int:
                 print_info("\nInspector cancelled")
                 return 0
             except ValueError as e:
-                print_error(str(e))
+                # T090: Consistent error format with remediation
+                error_msg = str(e)
+                if "Window not found" in error_msg:
+                    print_error_with_remediation(
+                        error_msg,
+                        "Use --click mode to select a visible window, or --focused to inspect the focused window"
+                    )
+                else:
+                    print_error_with_remediation(error_msg, "Check window ID and try again")
                 return 1
             except Exception as e:
-                print_error(f"Inspector failed: {e}")
-                import traceback
-                traceback.print_exc()
+                print_error_with_remediation(
+                    f"Inspector failed: {e}",
+                    "Check that i3 is running and i3ipc is installed. Use --verbose for details."
+                )
+                if hasattr(args, 'verbose') and args.verbose:
+                    import traceback
+                    traceback.print_exc()
                 return 1
 
         elif subcommand == 'suggest':
@@ -1827,6 +1908,11 @@ def cli_main() -> int:
         action="store_true",
         help="Don't auto-launch applications"
     )
+    parser_switch.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
 
     # i3pm current
     parser_current = subparsers.add_parser(
@@ -1834,12 +1920,22 @@ def cli_main() -> int:
         help="Show current active project",
         description="Display information about the currently active project"
     )
+    parser_current.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
 
     # i3pm clear
     parser_clear = subparsers.add_parser(
         "clear",
         help="Clear active project (global mode)",
         description="Return to global mode (no active project)"
+    )
+    parser_clear.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
     )
 
     # ========================================================================
@@ -1857,6 +1953,11 @@ def cli_main() -> int:
         choices=["name", "modified", "directory"],
         default="modified",
         help="Sort order (default: modified)"
+    )
+    parser_list.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
     )
 
     # i3pm create
@@ -1880,6 +1981,11 @@ def cli_main() -> int:
         "--scoped-classes",
         help="Comma-separated list of window classes (e.g., 'Ghostty,Code')"
     )
+    parser_create.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
 
     # i3pm show
     parser_show = subparsers.add_parser(
@@ -1888,6 +1994,11 @@ def cli_main() -> int:
         description="Display detailed information about a project"
     )
     parser_show.add_argument("project", help="Project name")
+    parser_show.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
 
     # i3pm edit
     parser_edit = subparsers.add_parser(
