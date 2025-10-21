@@ -176,16 +176,16 @@
 
 **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T068 [P] [US4] Unit test for window selection modes in `tests/i3_project_manager/unit/test_inspector.py` - verify click mode uses xdotool selectwindow, focused mode uses i3 GET_TREE find_focused (FR-112, mocked i3 IPC)
-- [ ] T069 [P] [US4] Unit test for property extraction in `tests/i3_project_manager/unit/test_inspector.py` - verify WindowProperties populated from i3 container (FR-113, FR-114)
-- [ ] T070 [P] [US4] TUI test for inspector launch in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify inspector loads window properties, displays table, shows classification using pytest-textual (FR-133)
-- [ ] T071 [P] [US4] TUI test for classification actions in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 's' marks as scoped, 'g' marks as global, saves immediately (FR-117, FR-119)
-- [ ] T072 [P] [US4] TUI test for live mode in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 'l' enables live mode, subscribes to i3 events, updates on window::title change <100ms (FR-120, SC-037)
-- [ ] T073 [P] [US4] TUI test for pattern creation in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 'p' opens pattern dialog, pre-fills window_class, creates pattern on confirm (integration with US1)
+- [X] T068 [P] [US4] Unit test for window selection modes in `tests/i3_project_manager/unit/test_inspector.py` - verify click mode uses xdotool selectwindow, focused mode uses i3 GET_TREE find_focused (FR-112, mocked i3 IPC)
+- [X] T069 [P] [US4] Unit test for property extraction in `tests/i3_project_manager/unit/test_inspector.py` - verify WindowProperties populated from i3 container (FR-113, FR-114)
+- [X] T070 [P] [US4] TUI test for inspector launch in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify inspector loads window properties, displays table, shows classification using pytest-textual (FR-133)
+- [X] T071 [P] [US4] TUI test for classification actions in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 's' marks as scoped, 'g' marks as global, saves immediately (FR-117, FR-119)
+- [X] T072 [P] [US4] TUI test for live mode in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 'l' enables live mode, subscribes to i3 events, updates on window::title change <100ms (FR-120, SC-037)
+- [X] T073 [P] [US4] TUI test for pattern creation in `tests/i3_project_manager/integration/test_inspector_workflow.py` - verify 'p' opens pattern dialog, pre-fills window_class, creates pattern on confirm (integration with US1)
 
 ### Implementation for User Story 4
 
-- [ ] T074 [P] [US4] Create WindowProperties dataclass in `home-modules/tools/i3_project_manager/models/inspector.py` with fields (window_id, window_class, instance, title, marks, workspace, current_classification, suggested_classification, reasoning) per data-model.md
+- [X] T074 [P] [US4] Create WindowProperties dataclass in `home-modules/tools/i3_project_manager/models/inspector.py` with fields (window_id, window_class, instance, title, marks, workspace, current_classification, suggested_classification, reasoning) per data-model.md
 - [ ] T075 [P] [US4] Create PropertyDisplay widget in `home-modules/tools/i3_project_manager/tui/widgets/property_display.py` extending Textual DataTable displaying window properties as key-value pairs, highlighting changes in yellow for 200ms per contracts/tui-inspector.md
 - [ ] T076 [US4] Implement inspect_window_focused() in `home-modules/tools/i3_project_manager/tui/inspector.py` using i3ipc.aio Connection, GET_TREE, find_focused(), returning WindowProperties per contracts/tui-inspector.md (FR-112)
 - [ ] T077 [P] [US4] Implement inspect_window_by_id() in `home-modules/tools/i3_project_manager/tui/inspector.py` accepting window_id parameter, using GET_TREE, find_by_id(), returning WindowProperties (FR-112)
