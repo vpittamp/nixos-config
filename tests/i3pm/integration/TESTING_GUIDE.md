@@ -356,20 +356,90 @@ jobs:
           systemctl --user show i3pm-integration-tests -p ExecMainStatus --value
 ```
 
+## Test Suites
+
+### Quick Validation Tests (`test_quick_validation.py`)
+**Runtime**: ~5 seconds
+**Purpose**: Fast validation of integration framework
+
+Tests:
+- Xvfb and i3 startup
+- Basic IPC verification
+- Environment setup/teardown
+
+**Run**:
+```bash
+python -m pytest tests/i3pm/integration/test_quick_validation.py -v
+```
+
+### Real Application Tests (`test_real_apps.py`)
+**Runtime**: ~30-60 seconds
+**Purpose**: Test with actual application launching
+
+Tests:
+- Launching terminals (xterm, alacritty)
+- Keyboard input with xdotool
+- Workspace switching
+- Multiple windows and cleanup
+- Project/layout file creation
+
+**Run**:
+```bash
+python -m pytest tests/i3pm/integration/test_real_apps.py -v -m integration
+```
+
+### User Workflow Tests (`test_user_workflows.py`) ⭐ NEW
+**Runtime**: ~60-120 seconds
+**Purpose**: Comprehensive end-to-end user workflows
+
+Tests:
+- ✅ Creating projects via CLI commands
+- ✅ Switching between projects
+- ✅ Opening applications in project context
+- ✅ Saving and restoring workspace layouts
+- ✅ Multi-project workflows
+- ✅ Full user session simulation
+
+**Run**:
+```bash
+# Run all user workflow tests
+python -m pytest tests/i3pm/integration/test_user_workflows.py -v -m integration
+
+# Run specific workflow test
+python -m pytest tests/i3pm/integration/test_user_workflows.py::test_full_user_session_workflow -v -s
+
+# Run via script
+./run_comprehensive_tests.sh
+```
+
+**Test Coverage**:
+1. `test_create_project_via_cli` - Project creation workflow
+2. `test_project_switching_workflow` - Switching between multiple projects
+3. `test_open_application_in_project_context` - App launching with project env
+4. `test_save_and_restore_layout` - Layout save/restore cycle
+5. `test_multiple_projects_workflow` - Managing 3+ projects
+6. `test_list_and_manage_projects` - Project listing and management
+7. `test_full_user_session_workflow` - Complete end-to-end user session
+
 ## Files
 
 - `test-runner` - CLI tool for managing tests
 - `i3pm-integration-tests.service` - systemd unit file
-- `run_integration_tests.sh` - Actual test execution script
+- `run_simple_test.sh` - Quick validation test runner
+- `run_comprehensive_tests.sh` - ⭐ Comprehensive user workflow runner
 - `test_quick_validation.py` - Fast validation tests (~5s)
 - `test_real_apps.py` - Full integration tests (~30-60s)
+- `test_user_workflows.py` - ⭐ User workflow tests (~60-120s)
 
 ## Summary
 
 **Before**: Tests abort when terminal disconnects
 **After**: Tests run reliably via systemd, survive any disconnection
 
-**Command**: `./test-runner start`
+**Quick Test**: `./test-runner start` (runs quick validation)
+**Comprehensive Test**: `./run_comprehensive_tests.sh` via systemd
 **Result**: Disconnect safely, check results anytime with `./test-runner logs`
 
 🎯 **Perfect for**: SSH sessions, long-running tests, CI/CD pipelines
+
+✅ **Coverage**: Framework setup, app launching, project management, full user workflows
