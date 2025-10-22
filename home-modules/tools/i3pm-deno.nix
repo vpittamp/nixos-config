@@ -18,6 +18,7 @@ let
       cat > $out/bin/i3pm <<EOF
 #!/usr/bin/env bash
 exec ${pkgs.deno}/bin/deno run \\
+  --no-lock \\
   --allow-net \\
   --allow-read=/run/user,/home \\
   --allow-env=XDG_RUNTIME_DIR,HOME,USER \\
