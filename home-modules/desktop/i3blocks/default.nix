@@ -156,9 +156,12 @@ in
     # Center: Project indicator (daemon-based, real-time)
     # Queries daemon every 2 seconds for active project state
     # Feature 015: Event-driven daemon integration
+    # Uses align=center to position in center of bar
     [project]
     command=${projectScript}
     interval=2
+    align=center
+    min_width=200
 
     # Right side: Network and DateTime
     [network]
