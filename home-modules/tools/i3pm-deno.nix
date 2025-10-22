@@ -15,13 +15,13 @@ let
       cp -r * $out/share/i3pm/
 
       mkdir -p $out/bin
-      cat > $out/bin/i3pm <<'EOF'
+      cat > $out/bin/i3pm <<EOF
 #!/usr/bin/env bash
-exec ${pkgs.deno}/bin/deno run \
-  --allow-net \
-  --allow-read=/run/user,/home \
-  --allow-env=XDG_RUNTIME_DIR,HOME,USER \
-  $out/share/i3pm/main.ts "$@"
+exec ${pkgs.deno}/bin/deno run \\
+  --allow-net \\
+  --allow-read=/run/user,/home \\
+  --allow-env=XDG_RUNTIME_DIR,HOME,USER \\
+  $out/share/i3pm/main.ts "\$@"
 EOF
       chmod +x $out/bin/i3pm
     '';
