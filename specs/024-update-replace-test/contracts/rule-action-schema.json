@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/rule-action.schema.json",
+  "title": "Window Rule Actions",
+  "description": "Schema for actions that can be executed when window rules match. Actions include workspace assignment, window marking, floating state control, and layout configuration.",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/WorkspaceAction"
+    },
+    {
+      "$ref": "#/definitions/MarkAction"
+    },
+    {
+      "$ref": "#/definitions/FloatAction"
+    },
+    {
+      "$ref": "#/definitions/LayoutAction"
+    }
+  ],
+  "definitions": {
+    "WorkspaceAction": {
+      "type": "object",
+      "title": "Workspace Assignment Action",
+      "description": "Moves window to a specific i3 workspace. This is the most common action type for automatic window placement. The window is moved using the i3 command '[con_id=\"{container_id}\"] move container to workspace number {target}'.",
+      "required": ["type", "target"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "workspace",
+          "description": "Action type discriminator. Must be 'workspace'."
+        },
+        "target": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "description": "Target workspace number. i3 supports workspaces 1-9. Workspace will be created if it doesn't exist."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "workspace",
+          "target": 1,
+          "description": "Move window to workspace 1 (typically terminal workspace)"
+        },
+        {
+          "type": "workspace",
+          "target": 2,
+          "description": "Move window to workspace 2 (typically code editor workspace)"
+        },
+        {
+          "type": "workspace",
+          "target": 5,
+          "description": "Move window to workspace 5"
+        }
+      ]
+    },
+    "MarkAction": {
+      "type": "object",
+      "title": "Window Marking Action",
+      "description": "Adds an i3 mark to the window. Marks are identifiers that allow targeting specific windows with i3 commands. Commonly used for project context tracking (e.g., 'project:nixos') or application type identification (e.g., 'terminal', 'browser'). The window is marked using the i3 command '[id={window_id}] mark --add \"{value}\"'.",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "mark",
+          "description": "Action type discriminator. Must be 'mark'."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Mark identifier. Must contain only alphanumeric characters, underscores, and hyphens. No spaces or special characters allowed. Common patterns: 'project:{name}', 'app-type', 'visible', 'hidden'."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "mark",
+          "value": "terminal",
+          "description": "Mark window as terminal for easy targeting"
+        },
+        {
+          "type": "mark",
+          "value": "project-nixos",
+          "description": "Mark window as belonging to NixOS project"
+        },
+        {
+          "type": "mark",
+          "value": "pwa-youtube",
+          "description": "Mark window as YouTube PWA"
+        },
+        {
+          "type": "mark",
+          "value": "visible",
+          "description": "Mark window as currently visible in project context"
+        }
+      ]
+    },
+    "FloatAction": {
+      "type": "object",
+      "title": "Floating State Action",
+      "description": "Sets the window's floating state. Floating windows appear on top of tiled windows and can be freely positioned and resized. Tiled windows are managed by i3's tiling layout algorithm. The floating state is set using the i3 command '[con_id=\"{container_id}\"] floating {enable|disable}'.",
+      "required": ["type", "enable"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "float",
+          "description": "Action type discriminator. Must be 'float'."
+        },
+        "enable": {
+          "type": "boolean",
+          "description": "True to make window floating (on top, freely movable). False to make window tiled (managed by i3 layout algorithm)."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "float",
+          "enable": true,
+          "description": "Make window floating (common for dialogs, popups, and floating tools)"
+        },
+        {
+          "type": "float",
+          "enable": false,
+          "description": "Force window to be tiled (useful for applications that default to floating)"
+        }
+      ]
+    },
+    "LayoutAction": {
+      "type": "object",
+      "title": "Container Layout Action",
+      "description": "Sets the layout mode for the window's parent container. Layout modes control how multiple windows are arranged within a container. This action affects the container's children, not just the matched window. The layout is set using the i3 command '[con_id=\"{container_id}\"] layout {mode}'.",
+      "required": ["type", "mode"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "layout",
+          "description": "Action type discriminator. Must be 'layout'."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["tabbed", "stacked", "splitv", "splith"],
+          "description": "Layout mode for the container. Modes: 'tabbed' = windows shown as tabs (like browser tabs), 'stacked' = windows stacked vertically with title bars visible, 'splitv' = vertical split (windows side by side), 'splith' = horizontal split (windows top/bottom)."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "layout",
+          "mode": "tabbed",
+          "description": "Use tabbed layout (common for code editors with multiple files)"
+        },
+        {
+          "type": "layout",
+          "mode": "stacked",
+          "description": "Use stacked layout (shows all window titles)"
+        },
+        {
+          "type": "layout",
+          "mode": "splitv",
+          "description": "Use vertical split (windows side by side)"
+        },
+        {
+          "type": "layout",
+          "mode": "splith",
+          "description": "Use horizontal split (windows stacked top/bottom)"
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "description": "Example 1: Move terminal to workspace 1",
+      "value": {
+        "type": "workspace",
+        "target": 1
+      }
+    },
+    {
+      "description": "Example 2: Mark window with project context",
+      "value": {
+        "type": "mark",
+        "value": "project-nixos"
+      }
+    },
+    {
+      "description": "Example 3: Make dialog window floating",
+      "value": {
+        "type": "float",
+        "enable": true
+      }
+    },
+    {
+      "description": "Example 4: Set container to tabbed layout",
+      "value": {
+        "type": "layout",
+        "mode": "tabbed"
+      }
+    },
+    {
+      "description": "Example 5: Multiple actions in a rule (VS Code workspace assignment)",
+      "value": [
+        {
+          "type": "workspace",
+          "target": 2
+        },
+        {
+          "type": "layout",
+          "mode": "tabbed"
+        },
+        {
+          "type": "mark",
+          "value": "editor"
+        }
+      ]
+    },
+    {
+      "description": "Example 6: PWA window management",
+      "value": [
+        {
+          "type": "workspace",
+          "target": 4
+        },
+        {
+          "type": "mark",
+          "value": "pwa-youtube"
+        }
+      ]
+    }
+  ]
+}

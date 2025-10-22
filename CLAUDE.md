@@ -207,6 +207,15 @@ nix flake lock --update-input nixpkgs
 
 ### Recent Updates (2025-10)
 
+- **Visual Window State Management** - Real-time window visualization (Feature 025 MVP)
+  - Tree and table views for hierarchical window state (outputs → workspaces → windows)
+  - Real-time updates with <100ms latency via daemon event subscriptions
+  - Multiple display modes: `--tree`, `--table`, `--live` (interactive TUI), `--json`
+  - Comprehensive Pydantic data models for layout save/restore (foundation for full feature)
+  - New command: `i3pm windows` with visualization modes
+  - Benefits: Visual understanding of window state, live monitoring, rich property display
+  - Documentation: `/etc/nixos/specs/025-visual-window-state/quickstart.md`
+
 - **Event-Driven i3 Project Management** - Real-time project synchronization (Feature 015)
   - Replaced polling-based system with event-driven daemon using i3 IPC subscriptions
   - Automatic window marking with project context (<100ms latency)
@@ -421,6 +430,57 @@ cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (curre
 cat /etc/nixos/docs/I3_PROJECT_EVENTS.md              # Troubleshooting guide (coming soon)
 ```
 
+## 🪟 Window State Visualization (Feature 025)
+
+View and monitor window state with multiple display modes:
+
+```bash
+# Tree view - hierarchical display (outputs → workspaces → windows)
+i3pm windows --tree    # or just `i3pm windows` (default)
+
+# Table view - sortable table with all window properties
+i3pm windows --table
+
+# Live TUI - interactive monitor with real-time updates
+i3pm windows --live    # Press Tab to switch between tree/table, H to toggle hidden windows, Q to quit
+
+# JSON output - for scripting/automation
+i3pm windows --json | jq '.outputs[0].workspaces[0].windows'
+```
+
+**Tree View Features:**
+- Visual hierarchy: 📺 Monitors → Workspaces → Windows
+- Status indicators: ● Focus, 🔸 Scoped, 🔒 Hidden, ⬜ Floating
+- Project tags: `[nixos]`, `[stacks]`
+- Real-time updates (<100ms latency)
+
+**Table View Features:**
+- Sortable columns: ID, Class, Title, Workspace, Output, Project, Status
+- Compact display for many windows
+- Easy scanning and comparison
+
+**Live TUI Features:**
+- Real-time monitoring with event subscriptions
+- Two tabs: Tree View and Table View
+- Keyboard navigation: Tab (switch tabs), H (toggle hidden windows), Q (quit)
+- Automatic refresh on window events
+- Hidden window filter: scoped windows from inactive projects are hidden by default (press H to show)
+
+**Common Use Cases:**
+```bash
+# Monitor window state during debugging
+i3pm windows --live
+
+# Quick check of current windows
+i3pm windows
+
+# Export window state for analysis
+i3pm windows --json > window-state.json
+
+# Pipe to other tools
+i3pm windows --json | jq '.total_windows'
+```
+
 ## 🐍 Python Project Testing & Monitoring
 
 ### i3 Project System Monitor
@@ -530,6 +590,66 @@ nix flake metadata
 # Evaluate specific option
 nix eval .#nixosConfigurations.<target>.config.<option>
 ```
+
+## 🤖 Claude Code Integration
+
+### Bash History Hook
+
+Claude Code can be configured to automatically register executed commands in your bash history using a hook.
+
+**Setup Instructions:**
+
+The bash history hook is **already configured and active** in your `claude-code.nix`.
+
+1. The hook automatically registers all bash commands executed by Claude Code in your `~/.bash_history`
+2. Commands are immediately available in:
+   - Ctrl+R (fzf history search - shows most recent first)
+   - Up/Down arrows (bash history navigation)
+   - All terminal sessions
+
+**Note:** New Claude Code sessions automatically load the hook configuration. If you modify the hook, rebuild with:
+
+```bash
+sudo nixos-rebuild switch --flake .#<target>
+# Or for home-manager only:
+home-manager switch --flake .#<user>@<target>
+```
+
+Then restart Claude Code to load the updated configuration.
+
+**How it works:**
+- Uses a `PostToolUse` hook that triggers after each Bash tool execution
+- The `claude-register-command` function appends commands to `~/.bash_history`
+- Commands are also added to the current shell's in-memory history
+- Uses the configured `HISTFILE` location (defaults to `~/.bash_history`)
+- Respects your existing bash history settings (size limits, deduplication, etc.)
+
+**Hook configuration** (already set in `claude-code.nix`):
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": {"tools": ["Bash"]},
+      "hooks": [{"type": "command", "command": "claude-register-command \"{{command}}\""}]
+    }]
+  }
+}
+```
+
+**Manual usage:**
+```bash
+# Register a command manually
+claude-register-command "ls -la /etc/nixos"
+
+# View recent history
+history | tail -20
+```
+
+**Benefits:**
+- Seamlessly integrates Claude Code commands with your bash workflow
+- Commands can be recalled with Ctrl+R (fzf history search)
+- Full command history available in all terminals
+- Works with existing bash history configuration
 
 ## 🔐 1Password Commands
 

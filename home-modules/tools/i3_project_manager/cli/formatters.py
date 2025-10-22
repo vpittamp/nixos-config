@@ -254,3 +254,166 @@ def print_warning(message: str) -> None:
         message: The warning message
     """
     console.print(format_warning(message))
+
+
+# ============================================================================
+# Feature 025: Window State Visualization Formatters (T034-T035)
+# ============================================================================
+
+
+def format_window_tree(tree_data: Dict[str, Any]) -> None:
+    """Format window tree as ASCII tree using Rich Tree (T034).
+
+    Args:
+        tree_data: Window tree data from daemon (outputs → workspaces → windows)
+    """
+    from rich.tree import Tree
+
+    # Create root tree
+    root = Tree(f"🪟 Window State ({tree_data['total_windows']} windows)", guide_style="dim")
+
+    for output in tree_data.get("outputs", []):
+        # Output node
+        output_label = f"📺 {output['name']} ({output['rect']['width']}x{output['rect']['height']})"
+        output_node = root.add(output_label, style="bold cyan")
+
+        for workspace in output.get("workspaces", []):
+            # Workspace node
+            focused = "●" if workspace.get("focused") else "○"
+            visible = "👁" if workspace.get("visible") else ""
+            ws_label = f"{focused} WS{workspace['number']}: {workspace['name']} - {len(workspace.get('windows', []))} windows {visible}"
+            ws_node = output_node.add(ws_label, style="bold yellow" if workspace.get("focused") else "yellow")
+
+            for window in workspace.get("windows", []):
+                # Window node
+                window_label = _format_window_tree_node(window)
+                window_style = "green" if window.get("focused") else "white"
+                ws_node.add(window_label, style=window_style)
+
+    console.print(root)
+
+
+def _format_window_tree_node(window: Dict) -> str:
+    """Format individual window node label for tree view.
+
+    Args:
+        window: Window data dict
+
+    Returns:
+        Formatted label string
+    """
+    window_class = window.get("window_class", "?")
+    title = window.get("title", "")
+    project = window.get("project")
+    hidden = window.get("hidden", False)
+    classification = window.get("classification", "global")
+    floating = window.get("floating", False)
+
+    # Truncate title
+    if len(title) > 40:
+        title = title[:37] + "..."
+
+    # Build label
+    parts = []
+
+    # Status indicators
+    if hidden:
+        parts.append("🔒")
+    elif classification == "scoped":
+        parts.append("🔸")
+
+    if floating:
+        parts.append("⬜")
+
+    # Class and title
+    parts.append(f"{window_class}: {title}")
+
+    # Project tag
+    if project:
+        parts.append(f"[{project}]")
+
+    return " ".join(parts)
+
+
+def format_window_table(tree_data: Dict[str, Any]) -> None:
+    """Format window state as table using Rich Table (T035).
+
+    Args:
+        tree_data: Window tree data from daemon
+    """
+    table = Table(title="Window State", show_header=True, header_style="bold cyan")
+
+    # Add columns
+    table.add_column("ID", justify="right", style="dim", width=8)
+    table.add_column("Class", style="green", width=20)
+    table.add_column("Title", style="white", width=35)
+    table.add_column("WS", justify="center", width=5)
+    table.add_column("Output", style="cyan", width=12)
+    table.add_column("Project", style="yellow", width=12)
+    table.add_column("Status", style="magenta", width=15)
+
+    # Extract all windows from tree
+    for output in tree_data.get("outputs", []):
+        for workspace in output.get("workspaces", []):
+            for window in workspace.get("windows", []):
+                # Format row
+                window_id = str(window.get("id", ""))
+                window_class = window.get("window_class", "")
+                title = window.get("title", "")
+                ws_num = str(window.get("workspace", "?"))
+                output_name = window.get("output", "")
+                project = window.get("project", "-") or "-"
+                status = _format_window_status(window)
+
+                # Truncate title
+                if len(title) > 35:
+                    title = title[:32] + "..."
+
+                table.add_row(
+                    window_id,
+                    window_class,
+                    title,
+                    ws_num,
+                    output_name,
+                    project,
+                    status,
+                )
+
+    console.print(table)
+
+
+def _format_window_status(window: Dict) -> str:
+    """Format window status string for table view.
+
+    Args:
+        window: Window data dict
+
+    Returns:
+        Status string with indicators
+    """
+    parts = []
+
+    if window.get("focused", False):
+        parts.append("●Focus")
+
+    if window.get("hidden", False):
+        parts.append("🔒Hidden")
+    elif window.get("classification") == "scoped":
+        parts.append("🔸Scoped")
+    else:
+        parts.append("Global")
+
+    if window.get("floating", False):
+        parts.append("Float")
+
+    return " ".join(parts)
+
+
+def format_window_json(tree_data: Dict[str, Any]) -> None:
+    """Format window state as JSON (T035).
+
+    Args:
+        tree_data: Window tree data from daemon
+    """
+    # Pretty-print JSON
+    console.print_json(json.dumps(tree_data, indent=2))

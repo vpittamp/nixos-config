@@ -8,36 +8,52 @@ from typing import Optional, List, Literal
 # Import PatternRule from local pattern module (copied from i3pm)
 from .pattern import PatternRule
 
+# Import structured action types (Feature 024)
+from .rule_action import RuleAction, action_from_dict, action_to_dict
+
 
 @dataclass
 class WindowRule:
     """Window classification rule with pattern matching and actions.
 
+    Feature 024 Enhancement: Now supports structured actions (actions field) in addition
+    to legacy format (workspace + command fields). Both formats are supported for
+    backwards compatibility.
+
     Attributes:
         pattern_rule: PatternRule instance for window class matching
-        workspace: Optional target workspace (1-9)
-        command: Optional i3 command to execute when rule matches
+        workspace: Optional target workspace (1-9) - LEGACY FORMAT
+        command: Optional i3 command to execute when rule matches - LEGACY FORMAT
+        actions: Optional list of structured actions - NEW FORMAT (Feature 024)
         modifier: Optional rule modifier (GLOBAL, DEFAULT, ON_CLOSE, TITLE)
         blacklist: List of window classes to exclude (only for GLOBAL modifier)
 
-    Examples:
-        >>> from i3_project_manager.models.pattern import PatternRule
-        >>> pattern = PatternRule("glob:FFPWA-*", "global", priority=200)
-        >>> rule = WindowRule(pattern, workspace=4)
-        >>> rule.matches("FFPWA-01K665SPD8EPMP3JTW02JM1M0Z")
-        True
-        >>> rule.workspace
-        4
+    Format Detection:
+        - If `actions` is provided: Use structured actions (new format)
+        - If `workspace` or `command` is provided: Use legacy format
+        - Both formats supported during transition period
 
+    Examples:
+        Legacy format (still works):
+        >>> from i3_project_manager.models.pattern import PatternRule
         >>> pattern = PatternRule("Code", "scoped", priority=250)
         >>> rule = WindowRule(pattern, workspace=2, command="floating disable")
         >>> rule.matches("Code")
         True
+
+        New format (Feature 024):
+        >>> from .rule_action import WorkspaceAction, LayoutAction
+        >>> pattern = PatternRule("Code", "scoped", priority=250)
+        >>> actions = [WorkspaceAction(target=2), LayoutAction(mode="tabbed")]
+        >>> rule = WindowRule(pattern, actions=actions)
+        >>> rule.actions
+        [WorkspaceAction(type='workspace', target=2), LayoutAction(type='layout', mode='tabbed')]
     """
 
     pattern_rule: PatternRule
-    workspace: Optional[int] = None
-    command: Optional[str] = None
+    workspace: Optional[int] = None  # Legacy format
+    command: Optional[str] = None  # Legacy format
+    actions: Optional[List[RuleAction]] = None  # New format (Feature 024)
     modifier: Optional[Literal["GLOBAL", "DEFAULT", "ON_CLOSE", "TITLE"]] = None
     blacklist: List[str] = field(default_factory=list)
 
@@ -91,7 +107,10 @@ class WindowRule:
         return self.pattern_rule.scope
 
     def to_json(self) -> dict:
-        """Serialize to JSON-compatible dict."""
+        """Serialize to JSON-compatible dict.
+
+        Supports both legacy format (workspace + command) and new format (actions).
+        """
         result = {
             "pattern_rule": {
                 "pattern": self.pattern_rule.pattern,
@@ -101,10 +120,17 @@ class WindowRule:
             }
         }
 
+        # Legacy format fields
         if self.workspace is not None:
             result["workspace"] = self.workspace
         if self.command:
             result["command"] = self.command
+
+        # New format field (Feature 024)
+        if self.actions is not None:
+            result["actions"] = [action_to_dict(action) for action in self.actions]
+
+        # Common fields
         if self.modifier:
             result["modifier"] = self.modifier
         if self.blacklist:
@@ -115,6 +141,9 @@ class WindowRule:
     @classmethod
     def from_json(cls, data: dict) -> "WindowRule":
         """Deserialize from JSON-compatible dict.
+
+        Supports both legacy format (workspace + command) and new format (actions).
+        Format is auto-detected based on presence of 'actions' field.
 
         Args:
             data: Dictionary with window rule fields
@@ -136,10 +165,16 @@ class WindowRule:
             description=pattern_data.get("description", ""),
         )
 
+        # Parse actions if present (new format)
+        actions = None
+        if "actions" in data:
+            actions = [action_from_dict(action_data) for action_data in data["actions"]]
+
         return cls(
             pattern_rule=pattern_rule,
-            workspace=data.get("workspace"),
-            command=data.get("command"),
+            workspace=data.get("workspace"),  # Legacy format
+            command=data.get("command"),  # Legacy format
+            actions=actions,  # New format (Feature 024)
             modifier=data.get("modifier"),
             blacklist=data.get("blacklist", []),
         )

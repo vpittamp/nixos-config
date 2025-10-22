@@ -6,18 +6,41 @@
 set -uo pipefail
 
 # Get clipboard history and let user select
-# Format: Show first 100 chars of text, keep ID in hidden column for actions
-selected=$(clipcatctl list | awk -F': ' '{
+# Format: Show timestamp (if available) and truncated text
+TIMESTAMP_LOG="$HOME/.cache/clipcat/timestamps.log"
+
+selected=$(clipcatctl list | awk -F': ' -v tslog="$TIMESTAMP_LOG" '
+BEGIN {
+  # Load timestamps into associative array
+  while ((getline line < tslog) > 0) {
+    split(line, parts, " ");
+    clip_id = parts[1];
+    timestamp = parts[2] " " parts[3];
+    timestamps[clip_id] = timestamp;
+  }
+  close(tslog);
+}
+{
   id = $1;
   $1 = "";
   text = substr($0, 2);  # Remove leading space
+
   # Truncate to 100 chars for list view
   if (length(text) > 100) {
     display = substr(text, 1, 100) "...";
   } else {
     display = text;
   }
-  printf "%s\t%s\n", id, display;
+
+  # Get timestamp if available, otherwise show placeholder
+  if (id in timestamps) {
+    ts = timestamps[id];
+  } else {
+    ts = "     --:--:--";  # Placeholder for old entries
+  }
+
+  # Format: ID \t [timestamp] text
+  printf "%s\t[%s] %s\n", id, ts, display;
 }' | fzf \
   --tmux=center,90%,80% \
   --ansi \
@@ -31,7 +54,7 @@ selected=$(clipcatctl list | awk -F': ' '{
   --prompt="Search: " \
   --preview="clipcatctl get {1}" \
   --preview-window=right:50%:wrap \
-  --bind="ctrl-d:execute-silent(clipcatctl remove {1})+reload(clipcatctl list | awk -F': ' '{id = \$1; \$1 = \"\"; text = substr(\$0, 2); if (length(text) > 100) {display = substr(text, 1, 100) \"...\";} else {display = text;} printf \"%s\\t%s\\n\", id, display;}')" \
+  --bind="ctrl-d:execute-silent(clipcatctl remove {1})+reload(clipcatctl list | awk -F': ' -v tslog=\"$HOME/.cache/clipcat/timestamps.log\" 'BEGIN {while ((getline line < tslog) > 0) {split(line, parts, \" \"); timestamps[parts[1]] = parts[2] \" \" parts[3];} close(tslog);} {id = \$1; \$1 = \"\"; text = substr(\$0, 2); if (length(text) > 100) {display = substr(text, 1, 100) \"...\";} else {display = text;} ts = (id in timestamps) ? timestamps[id] : \"     --:--:--\"; printf \"%s\\t[%s] %s\\n\", id, ts, display;}')" \
   --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
   --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
   --color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8) || exit 0

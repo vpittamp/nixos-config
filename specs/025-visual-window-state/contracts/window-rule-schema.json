@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://i3pm.local/schemas/window-rule.json",
+  "title": "Window Rule Schema",
+  "description": "Swallow criteria for window matching during layout restore",
+  "type": "object",
+  "properties": {
+    "class": {
+      "type": "string",
+      "description": "Window class regex pattern",
+      "minLength": 1
+    },
+    "instance": {
+      "type": "string",
+      "description": "Window instance regex pattern",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "description": "Window title regex pattern",
+      "minLength": 1
+    },
+    "window_role": {
+      "type": "string",
+      "description": "Window role regex pattern",
+      "minLength": 1
+    }
+  },
+  "anyOf": [
+    {"required": ["class"]},
+    {"required": ["instance"]},
+    {"required": ["title"]},
+    {"required": ["window_role"]}
+  ],
+  "additionalProperties": false
+}

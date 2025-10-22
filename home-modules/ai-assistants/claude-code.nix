@@ -5,6 +5,111 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
+  # Status line script - displays context remaining percentage and other info
+  statusLineScript = pkgs.writeShellScriptBin "claude-statusline" ''
+    #!/usr/bin/env bash
+    # Claude Code Status Line - Shows context, session info, model, and location
+    set -euo pipefail
+
+    # Read JSON input from stdin
+    input=$(cat)
+
+    # DEBUG: Uncomment to log raw JSON input for troubleshooting
+    # echo "=== $(date '+%Y-%m-%d %H:%M:%S') ===" >> /tmp/claude-statusline-debug.log
+    # echo "$input" | ${pkgs.jq}/bin/jq '.' >> /tmp/claude-statusline-debug.log 2>&1 || echo "$input" >> /tmp/claude-statusline-debug.log
+
+    # Extract all available fields
+    model=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.model.display_name // "Claude"')
+    model_id=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.model.id // ""')
+    cwd=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.workspace.current_dir // "~"')
+    session_id=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.session_id // ""')
+    message_count=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.message_count // 0')
+    transcript_path=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.transcript_path // ""')
+
+    # Try to get budget info (may not be available in current Claude Code version)
+    budget_used=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.budget.used // null')
+    budget_total=$(echo "$input" | ${pkgs.jq}/bin/jq -r '.budget.total // null')
+
+    # Calculate context remaining percentage
+    if [[ "$budget_used" != "null" && "$budget_total" != "null" && "$budget_total" -gt 0 ]]; then
+      # Use budget if available (preferred method)
+      context_percent=$((100 - (budget_used * 100 / budget_total)))
+      context_display="''${context_percent}%"
+    elif [[ -f "$transcript_path" ]]; then
+      # Fall back to transcript file size estimation
+      # Rough estimate: 1 token ≈ 4 bytes, 200k context = ~800KB
+      file_size=$(${pkgs.coreutils}/bin/stat -c%s "$transcript_path" 2>/dev/null || echo 0)
+      max_size=800000  # ~200k tokens
+      if [[ $file_size -gt 0 ]]; then
+        usage_percent=$((file_size * 100 / max_size))
+        context_percent=$((100 - usage_percent))
+        # Cap at reasonable bounds
+        [[ $context_percent -lt 0 ]] && context_percent=0
+        [[ $context_percent -gt 100 ]] && context_percent=100
+        context_display="~''${context_percent}%"
+      else
+        context_display="100%"
+      fi
+    else
+      # No data available
+      context_display="N/A"
+    fi
+
+    # Shorten session ID to first 8 characters
+    if [[ -n "$session_id" ]]; then
+      short_session="''${session_id:0:8}"
+    else
+      short_session=""
+    fi
+
+    # Shorten model name for compact display
+    short_model="$model"
+    [[ "$short_model" == "Claude 3.5 Sonnet" ]] && short_model="Sonnet"
+    [[ "$short_model" == "Claude 3 Opus" ]] && short_model="Opus"
+    [[ "$short_model" == "Claude 3 Haiku" ]] && short_model="Haiku"
+
+    # Shorten long paths (show last 2 directories)
+    if [[ "$cwd" == "$HOME"* ]]; then
+      short_cwd="~''${cwd#$HOME}"
+    else
+      short_cwd="$cwd"
+    fi
+
+    # Further shorten if needed (keep last 2 path components)
+    if [[ $(echo "$short_cwd" | tr -cd '/' | wc -c) -gt 2 ]]; then
+      short_cwd="...$(echo "$short_cwd" | rev | cut -d'/' -f1-2 | rev)"
+    fi
+
+    # Build status line components
+    # Format: Model | Path | Ctx: XX% | Msgs: N | ID: abcd1234
+    status_parts=()
+
+    # Model name (cyan)
+    status_parts+=("\033[36m''${short_model}\033[0m")
+
+    # Current directory (yellow)
+    status_parts+=("\033[33m''${short_cwd}\033[0m")
+
+    # Context remaining (magenta)
+    status_parts+=("\033[35mCtx: ''${context_display}\033[0m")
+
+    # Message count (green) - only if > 0
+    if [[ "$message_count" -gt 0 ]]; then
+      status_parts+=("\033[32m#''${message_count}\033[0m")
+    fi
+
+    # Session ID (blue) - only if available
+    if [[ -n "$short_session" ]]; then
+      status_parts+=("\033[34m''${short_session}\033[0m")
+    fi
+
+    # Join with separator
+    printf "%s" "''${status_parts[0]}"
+    for ((i=1; i<''${#status_parts[@]}; i++)); do
+      printf " | %s" "''${status_parts[i]}"
+    done
+  '';
+
   # Claude Code's home-manager module has Chromium dependencies that break on Darwin
   # Only enable on Linux where Chromium is available
   enableClaudeCode = pkgs.stdenv.isLinux;
@@ -43,10 +148,41 @@ lib.mkIf enableClaudeCode {
       autoConnectIde = true;
       includeCoAuthoredBy = true;
       messageIdleNotifThresholdMs = 60000;
+
+      # Status line configuration - shows context remaining and other info
+      statusLine = {
+        type = "command";
+        command = "${statusLineScript}/bin/claude-statusline";
+      };
       env = {
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
         OTEL_METRICS_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+      };
+
+      # Hooks - Commands that run in response to Claude Code events
+      # See: https://docs.claude.com/en/docs/claude-code/hooks
+      #
+      # Security Best Practices (per documentation):
+      # 1. Use absolute paths for scripts
+      # 2. Always quote shell variables with "$VAR" not $VAR
+      # 3. Validate and sanitize inputs in hook scripts
+      # 4. Set explicit timeouts for commands
+      # 5. Use external scripts for complex logic (maintainability)
+      hooks = {
+        PostToolUse = [{
+          # Match all Bash tool executions (case-sensitive)
+          matcher = "Bash";
+          hooks = [{
+            type = "command";
+            # Use absolute path to hook script stored in NixOS config
+            # This script receives JSON via stdin with structure:
+            # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
+            command = "/etc/nixos/scripts/claude-hooks/bash-history.sh";
+            # Set 5-second timeout (hook is simple, shouldn't take long)
+            timeout = 5;
+          }];
+        }];
       };
 
       # Permissions configuration for sandboxed environment

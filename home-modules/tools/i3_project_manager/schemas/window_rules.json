@@ -1,0 +1,459 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/window-rules-config.schema.json",
+  "title": "i3 Window Rules Configuration",
+  "description": "Configuration schema for dynamic window management rules in i3 window manager. Rules define how windows are automatically assigned to workspaces, marked, and managed based on window properties.",
+  "type": "object",
+  "required": ["version", "rules", "defaults"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "Configuration schema version. Currently only '1.0' is supported."
+    },
+    "rules": {
+      "type": "array",
+      "description": "List of window management rules evaluated in order. First matching rule is applied (first-match semantics).",
+      "items": {
+        "$ref": "#/definitions/WindowRule"
+      }
+    },
+    "defaults": {
+      "$ref": "#/definitions/DefaultActions",
+      "description": "Fallback behavior when no rule matches a window."
+    }
+  },
+  "definitions": {
+    "WindowRule": {
+      "type": "object",
+      "description": "A rule that matches windows based on properties and executes actions when matched.",
+      "required": ["name", "match_criteria", "actions", "priority"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Unique identifier for this rule. Must be unique across all rules in configuration.",
+          "examples": ["terminal-workspace-1", "vscode-project-workspace", "firefox-browser-global"]
+        },
+        "match_criteria": {
+          "$ref": "#/definitions/MatchCriteria",
+          "description": "Conditions that must be met for this rule to match a window."
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Actions to execute when this rule matches a window. All actions are executed in order.",
+          "items": {
+            "$ref": "#/definitions/RuleAction"
+          }
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["project", "global", "default"],
+          "description": "Rule priority level for evaluation order. 'project' (500) is highest, 'global' (200) is standard, 'default' (100) is lowest."
+        },
+        "focus": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, automatically switch workspace focus after moving window. Requires at least one workspace action."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this rule is active. Set to false to temporarily disable without removing."
+        }
+      },
+      "examples": [
+        {
+          "name": "terminal-workspace-1",
+          "match_criteria": {
+            "class": {
+              "pattern": "ghostty",
+              "match_type": "exact",
+              "case_sensitive": true
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 1
+            },
+            {
+              "type": "mark",
+              "value": "terminal"
+            }
+          ],
+          "priority": "global",
+          "focus": false,
+          "enabled": true
+        },
+        {
+          "name": "vscode-project-workspace",
+          "match_criteria": {
+            "class": {
+              "pattern": "Code",
+              "match_type": "exact"
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 2
+            },
+            {
+              "type": "layout",
+              "mode": "tabbed"
+            }
+          ],
+          "priority": "project",
+          "focus": true,
+          "enabled": true
+        }
+      ]
+    },
+    "MatchCriteria": {
+      "type": "object",
+      "description": "Window properties to match against. At least one criterion must be specified. All specified criteria must match (AND logic).",
+      "minProperties": 1,
+      "properties": {
+        "class": {
+          "$ref": "#/definitions/PatternMatch",
+          "description": "Match window class (X11 WM_CLASS property). Examples: 'Code', 'firefox', 'Ghostty'"
+        },
+        "instance": {
+          "$ref": "#/definitions/PatternMatch",
+          "description": "Match window instance (X11 WM_CLASS instance property). Examples: 'code', 'Navigator'"
+        },
+        "title": {
+          "$ref": "#/definitions/PatternMatch",
+          "description": "Match window title (_NET_WM_NAME property). Examples: 'main.py - VS Code', 'YouTube'"
+        },
+        "window_role": {
+          "$ref": "#/definitions/PatternMatch",
+          "description": "Match window role (WM_WINDOW_ROLE property). Examples: 'browser-window', 'GtkFileChooserDialog'"
+        },
+        "window_type": {
+          "type": "string",
+          "enum": ["normal", "dialog", "utility", "toolbar", "splash", "menu", "dropdown_menu", "popup_menu", "tooltip", "notification"],
+          "description": "Match window type (_NET_WM_WINDOW_TYPE property). Most windows are 'normal'."
+        },
+        "transient_for": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Match windows that are transient for (child of) a specific parent window ID. Used for dialogs and popups."
+        }
+      },
+      "examples": [
+        {
+          "class": {
+            "pattern": "firefox",
+            "match_type": "exact",
+            "case_sensitive": false
+          }
+        },
+        {
+          "class": {
+            "pattern": "FFPWA-*",
+            "match_type": "wildcard"
+          },
+          "title": {
+            "pattern": "YouTube",
+            "match_type": "exact"
+          }
+        },
+        {
+          "window_type": "dialog"
+        }
+      ]
+    },
+    "PatternMatch": {
+      "type": "object",
+      "description": "Pattern matching configuration for string fields. Supports exact match, regex, and shell-style wildcards.",
+      "required": ["pattern", "match_type"],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Match pattern. Interpretation depends on match_type.",
+          "examples": ["Code", "^Code.*", "FFPWA-*", ".*YouTube.*"]
+        },
+        "match_type": {
+          "type": "string",
+          "enum": ["exact", "regex", "wildcard"],
+          "description": "Type of pattern matching. 'exact' = literal string match, 'regex' = regular expression, 'wildcard' = shell-style glob patterns (* and ?)."
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to perform case-sensitive matching. Default is true."
+        }
+      },
+      "examples": [
+        {
+          "pattern": "Code",
+          "match_type": "exact",
+          "case_sensitive": true
+        },
+        {
+          "pattern": "^(Code|VSCodium)$",
+          "match_type": "regex",
+          "case_sensitive": true
+        },
+        {
+          "pattern": "FFPWA-*",
+          "match_type": "wildcard",
+          "case_sensitive": true
+        }
+      ]
+    },
+    "RuleAction": {
+      "description": "Action to execute when a rule matches. Multiple action types are supported via discriminated union on 'type' field.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/WorkspaceAction"
+        },
+        {
+          "$ref": "#/definitions/MarkAction"
+        },
+        {
+          "$ref": "#/definitions/FloatAction"
+        },
+        {
+          "$ref": "#/definitions/LayoutAction"
+        }
+      ]
+    },
+    "WorkspaceAction": {
+      "type": "object",
+      "description": "Move window to a specific workspace.",
+      "required": ["type", "target"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "workspace"
+        },
+        "target": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9,
+          "description": "Target workspace number (1-9). i3 supports workspaces 1-9."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "workspace",
+          "target": 2
+        }
+      ]
+    },
+    "MarkAction": {
+      "type": "object",
+      "description": "Add an i3 mark to the window for tracking and management. Marks are used to identify windows in i3 commands.",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "mark"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "description": "Mark identifier. Must contain only alphanumeric characters, underscores, and hyphens. No spaces or special characters."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "mark",
+          "value": "terminal"
+        },
+        {
+          "type": "mark",
+          "value": "project-nixos"
+        }
+      ]
+    },
+    "FloatAction": {
+      "type": "object",
+      "description": "Set window floating state. Floating windows appear on top of tiled windows and can be freely positioned.",
+      "required": ["type", "enable"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "float"
+        },
+        "enable": {
+          "type": "boolean",
+          "description": "True to make window floating, false to make it tiled."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "float",
+          "enable": true
+        }
+      ]
+    },
+    "LayoutAction": {
+      "type": "object",
+      "description": "Set container layout mode for the window's container.",
+      "required": ["type", "mode"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "layout"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["tabbed", "stacked", "splitv", "splith"],
+          "description": "Layout mode. 'tabbed' = windows as tabs, 'stacked' = windows stacked vertically with title bars, 'splitv' = vertical split, 'splith' = horizontal split."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "layout",
+          "mode": "tabbed"
+        }
+      ]
+    },
+    "DefaultActions": {
+      "type": "object",
+      "description": "Fallback behavior when no rule matches a window.",
+      "required": ["workspace", "focus"],
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "enum": ["current", "next_empty"],
+          "description": "Workspace assignment strategy. 'current' = place on currently focused workspace (i3 default), 'next_empty' = place on first empty workspace."
+        },
+        "focus": {
+          "type": "boolean",
+          "description": "Whether to focus workspace after assignment."
+        }
+      },
+      "examples": [
+        {
+          "workspace": "current",
+          "focus": true
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0",
+      "rules": [
+        {
+          "name": "terminal-project-scoped",
+          "match_criteria": {
+            "class": {
+              "pattern": "ghostty",
+              "match_type": "exact"
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 1
+            }
+          ],
+          "priority": "project",
+          "focus": false,
+          "enabled": true
+        },
+        {
+          "name": "vscode-project-workspace",
+          "match_criteria": {
+            "class": {
+              "pattern": "Code",
+              "match_type": "exact"
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 2
+            },
+            {
+              "type": "layout",
+              "mode": "tabbed"
+            }
+          ],
+          "priority": "project",
+          "focus": true,
+          "enabled": true
+        },
+        {
+          "name": "firefox-browser-global",
+          "match_criteria": {
+            "class": {
+              "pattern": "firefox",
+              "match_type": "exact",
+              "case_sensitive": false
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 3
+            }
+          ],
+          "priority": "global",
+          "focus": false,
+          "enabled": true
+        },
+        {
+          "name": "pwa-youtube",
+          "match_criteria": {
+            "class": {
+              "pattern": "FFPWA-*",
+              "match_type": "wildcard"
+            },
+            "title": {
+              "pattern": "YouTube",
+              "match_type": "exact"
+            }
+          },
+          "actions": [
+            {
+              "type": "workspace",
+              "target": 4
+            },
+            {
+              "type": "mark",
+              "value": "pwa-youtube"
+            }
+          ],
+          "priority": "global",
+          "focus": false,
+          "enabled": true
+        },
+        {
+          "name": "floating-dialogs",
+          "match_criteria": {
+            "window_type": "dialog"
+          },
+          "actions": [
+            {
+              "type": "float",
+              "enable": true
+            }
+          ],
+          "priority": "default",
+          "focus": false,
+          "enabled": true
+        }
+      ],
+      "defaults": {
+        "workspace": "current",
+        "focus": true
+      }
+    }
+  ]
+}

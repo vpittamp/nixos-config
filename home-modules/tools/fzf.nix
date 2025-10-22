@@ -16,6 +16,7 @@
     # Use fd for CTRL-P (file search) - remapped from CTRL-T in bash.nix
     fileWidgetCommand = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
 
+
     defaultOptions = [
       # Tmux integration - use centered popup like clipboard history
       # center = floating popup in middle of screen (like clipcat-fzf)

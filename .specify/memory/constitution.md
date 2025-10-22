@@ -1,34 +1,28 @@
 <!--
 Sync Impact Report:
-- Version: 1.2.0 → 1.3.0 (MINOR - New principles added for Python development and testing standards)
+- Version: 1.3.0 → 1.4.0 (MINOR - New principle added for forward-only development)
 - Modified principles:
   * None - existing principles remain unchanged
 - New principles created:
-  * Principle X: "Python Development & Testing Standards" (NEW)
-    - Establishes Python 3.11+ as standard for system tooling
-    - Async/await patterns for i3 IPC and daemon communication
-    - pytest as standard testing framework
-    - Type hints and validation standards
-  * Principle XI: "i3 IPC Alignment & State Authority" (NEW)
-    - i3's native IPC API as authoritative source of truth
-    - Mandatory use of i3 message types (GET_WORKSPACES, GET_OUTPUTS, GET_TREE, GET_MARKS)
-    - State synchronization patterns
-    - Event-driven architecture requirements
+  * Principle XII: "Forward-Only Development & Legacy Elimination" (NEW)
+    - Prohibits backwards compatibility considerations based on legacy code
+    - Mandates optimal solution design without legacy constraints
+    - Requires complete replacement of suboptimal code, not preservation
+    - Eliminates technical debt accumulation through legacy support
 - New sections added:
-  * Testing & Validation Standards - Automated testing requirements for Python projects
-  * Diagnostic & Monitoring Standards - Requirements for system observability
+  * None - principle added to existing Core Principles section
 - Updated sections:
   * None - existing sections remain compatible
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - Already compatible with new principles
-  ✅ .specify/templates/plan-template.md - Technical Context section compatible with Python projects
-  ✅ .specify/templates/tasks-template.md - Test task organization aligns with new testing principle
-  ⚠️ .specify/templates/commands/ - May benefit from Python-specific guidance updates
+  ✅ .specify/templates/spec-template.md - Already compatible, no backwards compatibility sections
+  ✅ .specify/templates/plan-template.md - Already focuses on optimal solutions
+  ✅ .specify/templates/tasks-template.md - Already encourages replacement over preservation
+  ⚠️ .specify/templates/commands/ - May benefit from guidance on replacing vs migrating
 - Follow-up TODOs:
-  * Consider creating docs/PYTHON_DEVELOPMENT.md for detailed Python patterns and best practices
-  * Consider creating docs/I3_IPC_PATTERNS.md for i3 integration guidance
-  * Update CLAUDE.md to mention Python project testing workflows
-  * Add example test scenarios to documentation
+  * Review existing codebase for legacy code that should be replaced rather than maintained
+  * Consider adding migration guide template that focuses on complete replacement workflows
+  * Update CLAUDE.md to emphasize replacement over backwards compatibility
+  * Add examples of complete replacements (e.g., Polybar → i3bar+i3blocks, polling → event-driven)
 -->
 
 # NixOS Modular Configuration Constitution
@@ -340,6 +334,37 @@ async with i3ipc.aio.Connection() as i3:
 
 **Rationale**: Feature 018 identified critical issues when custom state tracking (daemon databases, configuration files) drifts from i3's actual state. i3's IPC API is the single source of truth for window management state - workspace assignments, output configuration, window marks, and focus state all originate from i3. Event-driven architecture via i3 IPC subscriptions replaced polling-based systems in Feature 015, reducing CPU usage to <1% and eliminating race conditions. All monitoring, testing, and diagnostic tools must align with i3's state to ensure accurate debugging and validation. When building extensions to i3, query i3 IPC to validate assumptions rather than maintaining parallel state that can desync.
 
+### XII. Forward-Only Development & Legacy Elimination
+
+All solutions and features MUST be designed for optimal implementation without consideration for backwards compatibility with legacy code or assumptions about production versions requiring legacy support.
+
+**Rules**:
+- Feature implementations MUST pursue the optimal solution architecture without constraints from legacy code patterns
+- When creating improved logic or methodology, legacy code MUST be completely replaced, not preserved alongside new code
+- No compatibility layers, feature flags, or conditional logic MUST be added to support legacy implementations
+- Code duplication for backwards compatibility purposes is FORBIDDEN
+- Migration from legacy to new solutions MUST be complete and immediate, not gradual with dual support
+- Technical debt from backwards compatibility MUST NOT be introduced or accumulated
+- Legacy code that becomes obsolete through new implementations MUST be removed in the same commit/PR
+- Documentation MUST focus on current optimal solutions, not legacy approaches
+- "Deprecated but supported" states are NOT ALLOWED - code is either current or removed
+
+**Examples of This Principle**:
+- ✅ **Polybar → i3bar+i3blocks migration**: Completely replaced polybar with i3bar+i3blocks, removed all polybar configuration, no dual support
+- ✅ **Polling → Event-driven architecture**: Replaced entire polling system with i3 IPC subscriptions, no backwards compatibility for polling mode
+- ✅ **Static i3 config → Dynamic window rules**: Will completely replace static `for_window` directives with dynamic rules engine, no preservation of old patterns
+- ❌ **BAD: Adding feature flags for "legacy mode"**: Would violate this principle
+- ❌ **BAD: Keeping old code "just in case"**: Would violate this principle
+- ❌ **BAD: Gradual migration with dual code paths**: Would violate this principle
+
+**When Replacement is Required**:
+- New feature renders existing implementation suboptimal → Replace immediately
+- Better architectural pattern emerges → Replace existing pattern completely
+- Performance/maintainability improvements available → Replace without preserving old approach
+- Simpler solution discovered → Replace complex solution entirely
+
+**Rationale**: This project exists for personal productivity optimization, not as a product with external users dependent on stability. Every line of code maintained for backwards compatibility is technical debt that slows development, complicates architecture, and reduces clarity. The fastest path to optimal solutions is immediate, complete replacement of suboptimal code. This principle accelerates innovation by eliminating the burden of legacy support and ensures the codebase always represents the current best practices without historical baggage. Clean breaks are faster and clearer than gradual migrations with compatibility shims.
+
 ## Platform Support Standards
 
 ### Multi-Platform Compatibility
@@ -621,6 +646,7 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ Tiling WM standards - i3wm configuration, keyboard-first workflows, workspace isolation
 - ✅ Python standards - async patterns, pytest testing, type hints, Rich UI
 - ✅ i3 IPC alignment - state queries via native IPC, event-driven architecture
+- ✅ Forward-only development - optimal solutions without legacy compatibility preservation
 
 ### Complexity Justification
 
@@ -629,4 +655,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.3.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-20
+**Version**: 1.4.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-22

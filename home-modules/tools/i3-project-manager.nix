@@ -29,6 +29,9 @@ let
       # Layout management dependencies (Feature 022)
       psutil
 
+      # Feature 025: Data validation (Pydantic models)
+      pydantic
+
       # Phase 6: Window inspector dependencies
       # xdotool and xprop provided via buildInputs (system packages)
     ];

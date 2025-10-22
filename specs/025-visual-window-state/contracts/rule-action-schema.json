@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://i3pm.local/schemas/saved-layout.json",
+  "title": "Saved Layout Schema",
+  "description": "Complete saved layout for a project including all workspaces",
+  "type": "object",
+  "required": ["version", "project", "layout_name", "saved_at", "monitor_count", "monitor_config", "workspaces", "total_windows"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Layout format version"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name"
+    },
+    "layout_name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Layout identifier (filesystem-safe)"
+    },
+    "saved_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp"
+    },
+    "monitor_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of monitors"
+    },
+    "monitor_config": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "active", "width", "height"],
+        "properties": {
+          "name": {"type": "string"},
+          "active": {"type": "boolean"},
+          "width": {"type": "integer", "minimum": 1},
+          "height": {"type": "integer", "minimum": 1},
+          "x": {"type": "integer", "default": 0},
+          "y": {"type": "integer", "default": 0}
+        }
+      }
+    },
+    "workspaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/workspace_layout"
+      }
+    },
+    "total_windows": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata"
+    }
+  },
+  "$defs": {
+    "workspace_layout": {
+      "type": "object",
+      "required": ["number", "output", "layout", "windows", "saved_at", "window_count"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1, "maximum": 10},
+        "output": {"type": "string", "minLength": 1},
+        "layout": {"type": "string", "enum": ["splith", "splitv", "stacked", "tabbed", "default"]},
+        "windows": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/layout_window"}
+        },
+        "saved_at": {"type": "string", "format": "date-time"},
+        "window_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "layout_window": {
+      "type": "object",
+      "required": ["swallows", "geometry", "floating", "border", "layout"],
+      "properties": {
+        "swallows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "window-rule-schema.json"}
+        },
+        "launch_command": {"type": "string"},
+        "working_directory": {"type": "string"},
+        "environment": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "geometry": {
+          "type": "object",
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          }
+        },
+        "floating": {"type": "boolean"},
+        "border": {"type": "string", "enum": ["normal", "pixel", "none"]},
+        "layout": {"type": "string", "enum": ["splith", "splitv", "stacked", "tabbed"]},
+        "percent": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "i3pm": {
+          "type": "object",
+          "description": "i3pm extensions (stripped for vanilla i3 export)",
+          "properties": {
+            "project": {"type": "string"},
+            "classification": {"type": "string", "enum": ["scoped", "global"]},
+            "hidden": {"type": "boolean"},
+            "app_identifier": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

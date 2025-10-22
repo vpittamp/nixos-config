@@ -211,6 +211,136 @@ class DaemonClient:
 
         return await self.call("get_windows", params)
 
+    async def get_window_tree(self) -> Dict[str, Any]:
+        """Get hierarchical window state tree (monitors → workspaces → windows).
+
+        This queries the daemon for complete window state organized by output and workspace.
+        The daemon queries i3 IPC (GET_TREE, GET_WORKSPACES, GET_OUTPUTS) and returns
+        a hierarchical structure suitable for tree visualization.
+
+        Returns:
+            Window tree dict with keys:
+                - outputs: List[dict] - Output/monitor nodes, each containing:
+                    - name: str - Output name (e.g., "eDP-1")
+                    - active: bool - Whether output is active
+                    - rect: dict - Output geometry (x, y, width, height)
+                    - workspaces: List[dict] - Workspace nodes, each containing:
+                        - number: int - Workspace number
+                        - name: str - Workspace name
+                        - focused: bool - Whether workspace is focused
+                        - visible: bool - Whether workspace is visible
+                        - windows: List[dict] - Window nodes with full WindowState data
+                - total_windows: int - Total window count across all outputs
+
+        Raises:
+            DaemonError: If request fails or daemon not connected to i3
+
+        Example:
+            ```python
+            async with DaemonClient() as client:
+                tree = await client.get_window_tree()
+                for output in tree['outputs']:
+                    print(f"Monitor: {output['name']}")
+                    for ws in output['workspaces']:
+                        print(f"  Workspace {ws['number']}: {len(ws['windows'])} windows")
+            ```
+        """
+        return await self.call("get_window_tree")
+
+    async def subscribe_window_events(self):
+        """Subscribe to real-time window events from daemon.
+
+        Returns an async iterator that yields window event notifications.
+        Events include: new, close, focus, title, move, floating, fullscreen_mode, etc.
+
+        Yields:
+            Event dict with keys:
+                - event_type: str - Type of event ("window", "workspace", "output")
+                - change: str - Specific change ("new", "close", "focus", "title", etc.)
+                - window: Optional[dict] - Window data (for window events)
+                - workspace: Optional[dict] - Workspace data (for workspace events)
+                - output: Optional[dict] - Output data (for output events)
+                - timestamp: float - Event timestamp
+
+        Raises:
+            DaemonError: If subscription fails
+
+        Example:
+            ```python
+            async with DaemonClient() as client:
+                async for event in client.subscribe_window_events():
+                    if event['event_type'] == 'window' and event['change'] == 'new':
+                        print(f"New window: {event['window']['class']}")
+            ```
+
+        Note:
+            This is a long-lived connection. Make sure to handle cancellation properly.
+            The iterator will run until the connection is closed or an error occurs.
+        """
+        if not self._reader or not self._writer:
+            await self.connect()
+
+        # Send subscription request
+        self._request_id += 1
+        request = {
+            "jsonrpc": "2.0",
+            "method": "subscribe_events",
+            "params": {"event_types": ["window", "workspace", "output"]},
+            "id": self._request_id,
+        }
+
+        try:
+            # Send subscription request
+            request_json = json.dumps(request) + "\n"
+            self._writer.write(request_json.encode())
+            await asyncio.wait_for(self._writer.drain(), timeout=self.timeout)
+
+            # Read subscription confirmation
+            response_line = await asyncio.wait_for(
+                self._reader.readline(), timeout=self.timeout
+            )
+            response = json.loads(response_line.decode())
+
+            if "error" in response:
+                error = response["error"]
+                raise DaemonError(
+                    f"Subscription failed: {error.get('message', 'Unknown error')}"
+                )
+
+            # Now read events continuously
+            while True:
+                try:
+                    event_line = await self._reader.readline()
+                    if not event_line:
+                        # Connection closed
+                        break
+
+                    event = json.loads(event_line.decode())
+
+                    # Skip non-event messages (RPC responses)
+                    if "jsonrpc" in event and "method" not in event:
+                        continue
+
+                    # Yield event notification
+                    if "method" in event and event["method"] == "event":
+                        yield event.get("params", {})
+
+                except json.JSONDecodeError:
+                    # Skip invalid JSON lines
+                    continue
+                except asyncio.CancelledError:
+                    # Clean cancellation
+                    break
+                except Exception as e:
+                    raise DaemonError(f"Event stream error: {e}")
+
+        except asyncio.TimeoutError:
+            raise DaemonError("Subscription timeout")
+        except Exception as e:
+            if isinstance(e, DaemonError):
+                raise
+            raise DaemonError(f"Subscription error: {e}")
+
     async def ping(self) -> bool:
         """Ping daemon to check if it's alive.
 

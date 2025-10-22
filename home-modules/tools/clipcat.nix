@@ -17,7 +17,7 @@
     # Daemon settings (FR-079 through FR-089)
     daemonSettings = {
       daemonize = true;
-      max_history = 100;  # FR-080: Store 100 entries (meets SC-017: minimum 50)
+      max_history = 1000;  # FR-080: Store 1000 entries (increased from 100 to keep more history)
       history_file_path = "${config.xdg.cacheHome}/clipcat/clipcatd-history";  # FR-081
 
       watcher = {
@@ -77,4 +77,26 @@
 
   # The clipcat service automatically gets DISPLAY from the graphical-session.target
   # No additional systemd configuration needed - home-manager handles it
+
+  # Timestamp tracker service - logs timestamps for new clipboard entries
+  systemd.user.services.clipcat-timestamp-tracker = {
+    Unit = {
+      Description = "Clipcat Timestamp Tracker";
+      After = [ "clipcat.service" ];
+      Requires = [ "clipcat.service" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "/etc/nixos/scripts/clipcat-timestamp-tracker.sh";
+      Restart = "on-failure";
+      RestartSec = "5s";
+      # Set PATH to include necessary commands
+      Environment = "PATH=${pkgs.clipcat}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin";
+    };
+
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
+    };
+  };
 }

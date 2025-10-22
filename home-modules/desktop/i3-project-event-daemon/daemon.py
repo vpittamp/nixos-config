@@ -42,6 +42,7 @@ from .handlers import (
     on_workspace_init,
     on_workspace_empty,
     on_workspace_move,
+    on_output,  # Feature 024: R013
 )
 
 # Configure logging
@@ -324,6 +325,13 @@ class I3ProjectDaemon:
             "workspace::move",
             partial(on_workspace_move, state_manager=self.state_manager)
         )
+
+        # Feature 024: R013 - Multi-monitor output event handling
+        self.connection.subscribe(
+            "output",
+            partial(on_output, state_manager=self.state_manager, event_buffer=self.event_buffer)
+        )
+        logger.info("Subscribed to output events for monitor connect/disconnect detection")
 
         # Shutdown event (for i3 restart/exit)
         self.connection.subscribe("shutdown", self.connection.handle_shutdown_event)

@@ -204,6 +204,8 @@ class IPCServer:
                 result = await self._get_window_rules(params)
             elif method == "classify_window":
                 result = await self._classify_window(params)
+            elif method == "get_window_tree":
+                result = await self._get_window_tree(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -464,9 +466,9 @@ class IPCServer:
 
         # i3 tree dump (requires i3 connection)
         i3_tree = None
-        if include_tree and self.i3_connection and self.i3_connection.i3:
+        if include_tree and self.i3_connection and self.i3_connection.conn:
             try:
-                tree = await self.i3_connection.i3.get_tree()
+                tree = await self.i3_connection.conn.get_tree()
                 # Convert i3ipc tree to dict (recursive)
                 i3_tree = self._tree_to_dict(tree)
             except Exception as e:
@@ -651,3 +653,170 @@ class IPCServer:
         )
 
         return classification.to_json()
+
+    async def _get_window_tree(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get hierarchical window state tree (Feature 025: T016).
+
+        Queries i3 IPC for complete window state and organizes it hierarchically:
+        outputs → workspaces → windows
+
+        Args:
+            params: Query parameters (currently unused, reserved for future filters)
+
+        Returns:
+            Window tree dict with keys:
+                - outputs: List[dict] - Monitor/output nodes
+                - total_windows: int - Total window count
+
+        Raises:
+            Exception: If i3 connection unavailable or query fails
+        """
+        if not self.i3_connection or not self.i3_connection.conn:
+            raise Exception("i3 connection not available")
+
+        try:
+            # Query i3 IPC for current state
+            tree = await self.i3_connection.conn.get_tree()
+            workspaces = await self.i3_connection.conn.get_workspaces()
+            outputs_list = await self.i3_connection.conn.get_outputs()
+
+            # Build outputs structure
+            outputs = []
+            total_windows = 0
+
+            for output in outputs_list:
+                if not output.active or output.name.startswith("__"):
+                    continue  # Skip inactive and special outputs
+
+                output_node = {
+                    "name": output.name,
+                    "active": output.active,
+                    "rect": {
+                        "x": output.rect.x,
+                        "y": output.rect.y,
+                        "width": output.rect.width,
+                        "height": output.rect.height,
+                    },
+                    "workspaces": [],
+                }
+
+                # Find workspaces on this output
+                for ws in workspaces:
+                    if ws.output != output.name:
+                        continue
+
+                    workspace_node = {
+                        "number": ws.num,
+                        "name": ws.name,
+                        "focused": ws.focused,
+                        "visible": ws.visible,
+                        "windows": [],
+                    }
+
+                    # Find windows in this workspace
+                    ws_con = self._find_workspace_container(tree, ws.name)
+                    if ws_con:
+                        windows = self._extract_windows_from_container(ws_con, ws.num, output.name)
+                        workspace_node["windows"] = windows
+                        total_windows += len(windows)
+
+                    output_node["workspaces"].append(workspace_node)
+
+                outputs.append(output_node)
+
+            return {
+                "outputs": outputs,
+                "total_windows": total_windows,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get window tree: {e}")
+            raise Exception(f"Failed to query i3 window tree: {e}")
+
+    def _find_workspace_container(self, tree, workspace_name: str):
+        """Find workspace container in i3 tree by name.
+
+        Args:
+            tree: i3 tree root node
+            workspace_name: Workspace name to find
+
+        Returns:
+            Workspace container node or None
+        """
+        def search(node):
+            if node.type == "workspace" and node.name == workspace_name:
+                return node
+            for child in (node.nodes + node.floating_nodes):
+                result = search(child)
+                if result:
+                    return result
+            return None
+
+        return search(tree)
+
+    def _extract_windows_from_container(self, container, workspace_num: int, output_name: str) -> list:
+        """Extract all windows from container recursively.
+
+        Args:
+            container: i3 container node
+            workspace_num: Workspace number
+            output_name: Output name
+
+        Returns:
+            List of window dicts with WindowState-compatible structure
+        """
+        windows = []
+
+        def extract(node, depth=0):
+            # Check if this is an actual window (has window ID)
+            if node.window and node.window > 0:
+                # Get project from marks
+                project = None
+                for mark in node.marks:
+                    if mark.startswith("project:"):
+                        project = mark.split(":", 1)[1]
+                        break
+
+                # Determine classification from daemon state
+                classification = "global"
+                hidden = False
+                if node.window_class:
+                    if project and node.window_class in self.state_manager.state.scoped_classes:
+                        classification = "scoped"
+                    # Check if window is hidden (not on visible workspace or project mismatch)
+                    active_project = self.state_manager.state.active_project
+                    if classification == "scoped" and active_project and project != active_project:
+                        hidden = True
+
+                window_data = {
+                    "id": node.window,
+                    "window_class": node.window_class or "",
+                    "instance": node.window_instance or "",
+                    "title": node.name or "",
+                    "window_role": getattr(node.window_properties, 'window_role', None) if hasattr(node, 'window_properties') and node.window_properties else None,
+                    "workspace": workspace_num,
+                    "workspace_name": container.name if container.type == "workspace" else "",
+                    "output": output_name,
+                    "marks": node.marks,
+                    "floating": node.floating == "user_on",
+                    "focused": node.focused,
+                    "geometry": {
+                        "x": node.rect.x,
+                        "y": node.rect.y,
+                        "width": node.rect.width,
+                        "height": node.rect.height,
+                    },
+                    "pid": None,  # Not readily available from tree
+                    "project": project,
+                    "classification": classification,
+                    "hidden": hidden,
+                    "app_identifier": node.window_class,
+                }
+                windows.append(window_data)
+
+            # Recurse into child nodes
+            for child in (node.nodes + node.floating_nodes):
+                extract(child, depth + 1)
+
+        extract(container)
+        return windows

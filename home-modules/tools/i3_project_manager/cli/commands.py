@@ -1872,110 +1872,114 @@ async def cmd_events(args: argparse.Namespace) -> int:
 
 
 async def cmd_windows(args: argparse.Namespace) -> int:
-    """Show tracked windows.
+    """Show window state with multiple display modes (Feature 025: T030-T033).
 
     Args:
-        args: Parsed arguments with project, all, json flags
+        args: Parsed arguments with display mode flags (--tree, --table, --live, --json)
 
     Returns:
         0 on success, 1 on error
     """
     try:
-        # Determine if we need i3 client or daemon client
-        show_all = args.all if hasattr(args, 'all') and args.all else False
-        project_filter = args.project if hasattr(args, 'project') and args.project else None
-        json_output = args.json if hasattr(args, 'json') and args.json else False
+        # Get display mode flags
+        show_tree = getattr(args, 'tree', False)
+        show_table = getattr(args, 'table', False)
+        show_live = getattr(args, 'live', False)
+        show_json = getattr(args, 'json', False)
 
-        if show_all:
-            # Use i3 client to get all windows
-            i3 = I3Client()
-            await i3.connect()
+        # Get daemon client
+        daemon = DaemonClient()
+        await daemon.connect()
 
-            tree = await i3.get_tree()
-            windows = await i3.get_all_windows(tree)
+        # Query window tree from daemon
+        tree_data = await daemon.get_window_tree()
 
-            await i3.close()
-        else:
-            # Use daemon client to get tracked windows
-            daemon = DaemonClient()
-            await daemon.connect()
+        await daemon.close()
 
-            windows_response = await daemon.get_windows(project=project_filter)
-
-            await daemon.close()
-
-            # Extract windows array from response
-            if isinstance(windows_response, dict) and "windows" in windows_response:
-                windows = windows_response["windows"]
-            elif isinstance(windows_response, list):
-                windows = windows_response
-            else:
-                windows = []
-
-        if json_output:
-            import json
-            print(json.dumps([{
-                "id": w.get("id") or w.get("window_id"),
-                "class": w.get("class") or w.get("window_class"),
-                "title": w.get("title") or w.get("window_title"),
-                "workspace": w.get("workspace") or w.get("workspace_name"),
-                "marks": w.get("marks", []),
-            } for w in windows], indent=2))
+        # Handle --json mode (T033)
+        if show_json:
+            from .formatters import format_window_json
+            format_window_json(tree_data)
             return 0
 
-        # Display windows
-        if not windows:
-            if project_filter:
-                print_info(f"No windows found for project: {project_filter}")
-            else:
-                print_info("No tracked windows found")
+        # Handle --live mode (T032) - Launch TUI
+        if show_live:
+            from textual.app import App
+            from ..visualization.tree_view import WindowTreeView
+            from ..visualization.table_view import WindowTableView
+            from textual.widgets import TabbedContent, TabPane
+
+            class WindowMonitorApp(App):
+                """Window state monitor TUI application."""
+
+                TITLE = "i3pm Window State Monitor"
+                BINDINGS = [
+                    ("q", "quit", "Quit"),
+                    ("tab", "next_tab", "Next Tab"),
+                    ("h", "toggle_hidden", "Toggle Hidden"),
+                ]
+                CSS = """
+                Screen {
+                    background: $background;
+                }
+                TabbedContent {
+                    height: 100%;
+                }
+                """
+
+                def compose(self):
+                    with TabbedContent():
+                        with TabPane("Tree View", id="tree-tab"):
+                            yield WindowTreeView(auto_refresh=True)
+                        with TabPane("Table View", id="table-tab"):
+                            yield WindowTableView(auto_refresh=True)
+
+                def action_quit(self):
+                    """Quit the application."""
+                    self.exit()
+
+                def action_toggle_hidden(self):
+                    """Toggle showing hidden windows in active tab."""
+                    # Get the currently active tab
+                    tabbed_content = self.query_one(TabbedContent)
+                    active_pane = tabbed_content.active
+
+                    # Toggle show_hidden on the widget in the active pane
+                    if active_pane == "tree-tab":
+                        tree_view = self.query_one(WindowTreeView)
+                        tree_view.show_hidden = not tree_view.show_hidden
+                    elif active_pane == "table-tab":
+                        table_view = self.query_one(WindowTableView)
+                        table_view.show_hidden = not table_view.show_hidden
+
+            app = WindowMonitorApp()
+            await app.run_async()
             return 0
 
-        print(f"\n{Colors.BOLD}Windows{Colors.RESET}")
-        if project_filter:
-            print(f"{Colors.GRAY}Project: {project_filter}{Colors.RESET}")
-        if show_all:
-            print(f"{Colors.GRAY}Showing all windows{Colors.RESET}")
-        else:
-            print(f"{Colors.GRAY}Showing tracked windows only{Colors.RESET}")
-        print(f"{Colors.GRAY}{'─' * 100}{Colors.RESET}\n")
+        # Handle --table mode (T031)
+        if show_table:
+            from .formatters import format_window_table
+            format_window_table(tree_data)
+            return 0
 
-        # Print header
-        print(f"{Colors.BOLD}{'ID':<10} {'CLASS':<15} {'WORKSPACE':<10} {'MARKS':<20} {'TITLE'}{Colors.RESET}")
-        print(f"{Colors.GRAY}{'─' * 100}{Colors.RESET}")
-
-        # Print windows
-        for window in windows:
-            # Handle both daemon format (window_id, window_class) and i3 format (id, class)
-            win_id = str(window.get("window_id") or window.get("id", ""))[:8]
-            win_class = (window.get("window_class") or window.get("class", "unknown"))[:14]
-            workspace_name = window.get("workspace_name") or window.get("workspace") or "?"
-            workspace = f"WS{workspace_name}" if workspace_name != "?" and not workspace_name.startswith("WS") else workspace_name
-            marks = window.get("marks", [])
-            marks_str = ", ".join(marks)[:18] if marks else ""
-            title = (window.get("window_title") or window.get("title", ""))[:40]
-
-            # Highlight project-marked windows
-            if any(m.startswith("project:") for m in marks):
-                win_class = f"{Colors.GREEN}{win_class}{Colors.RESET}"
-
-            print(f"{win_id:<10} {win_class:<15} {workspace:<10} {marks_str:<20} {title}")
-
-        print(f"\n{Colors.GRAY}Showing {len(windows)} window(s){Colors.RESET}")
-        print_info(f"Use --all to show all windows (not just tracked)")
-        print_info(f"Use --project=NAME to filter by project")
-        print()
+        # Handle --tree mode (T030) or default
+        if show_tree or not (show_table or show_json or show_live):
+            from .formatters import format_window_tree
+            format_window_tree(tree_data)
+            return 0
 
         return 0
 
-    except (DaemonError, I3Error) as e:
-        print_error(f"Error querying windows: {e}")
-        if isinstance(e, DaemonError):
-            print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
+    except DaemonError as e:
+        print_error(f"Error querying window state: {e}")
+        print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
         return 1
     except Exception as e:
         print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
+
 
 
 async def cmd_monitor(args: argparse.Namespace) -> int:
@@ -2192,6 +2196,84 @@ async def cmd_classify(args: argparse.Namespace) -> int:
         else:
             print_error(f"Classification failed: {e}")
         return 1
+
+
+# ============================================================================
+# Feature 024: Window Rules Validation & Testing
+# ============================================================================
+
+
+async def cmd_validate_rules(args: argparse.Namespace) -> int:
+    """Validate window rules file against schema.
+
+    Feature 024: R015
+
+    Args:
+        args: Parsed arguments with file path and verbose flag
+
+    Returns:
+        0 if valid, 1 if invalid
+    """
+    from .validate_rules import validate_rules_file, format_validation_result
+
+    file_path = Path(args.file)
+    verbose = getattr(args, 'verbose', False)
+
+    # Validate
+    result = validate_rules_file(file_path)
+
+    # Format and print
+    output = format_validation_result(result, verbose=verbose)
+    print(output)
+
+    # Exit code: 0 if valid, 1 if invalid
+    return 0 if result.valid else 1
+
+
+async def cmd_test_rule(args: argparse.Namespace) -> int:
+    """Test window rule matching.
+
+    Feature 024: R017
+
+    Args:
+        args: Parsed arguments with window_class, window_title, file
+
+    Returns:
+        0 on success, 1 on error
+    """
+    from .test_rule import load_rules_for_testing, test_rule_match
+
+    window_class = args.window_class
+    window_title = getattr(args, 'window_title', "")
+    file_path = Path(args.file)
+
+    # Load rules
+    try:
+        rules = load_rules_for_testing(file_path)
+    except FileNotFoundError as e:
+        print_error(str(e))
+        return 1
+    except ValueError as e:
+        print_error(str(e))
+        return 1
+
+    if not rules:
+        print_info(f"No rules found in {file_path}")
+        return 0
+
+    print(f"{Colors.BOLD}Testing window properties against {len(rules)} rules from {file_path}{Colors.RESET}")
+    print(f"  Class: {Colors.BLUE}{window_class}{Colors.RESET}")
+    if window_title:
+        print(f"  Title: {Colors.BLUE}{window_title}{Colors.RESET}")
+    print()
+
+    # Test matching
+    result = test_rule_match(window_class, window_title, rules)
+
+    # Display result
+    print(result.format_for_display())
+
+    return 0
 
 
 # ============================================================================
@@ -2788,17 +2870,23 @@ def cli_main() -> int:
     # i3pm windows
     parser_windows = subparsers.add_parser(
         "windows",
-        help="Show tracked windows",
-        description="List windows tracked by the project management system"
+        help="Show window state with multiple display modes",
+        description="Visualize window state in tree, table, live TUI, or JSON formats (Feature 025)"
     )
     parser_windows.add_argument(
-        "--project",
-        help="Filter windows by project name"
-    )
-    parser_windows.add_argument(
-        "--all",
+        "--tree",
         action="store_true",
-        help="Show all windows, not just tracked ones"
+        help="Display as hierarchical tree (default)"
+    )
+    parser_windows.add_argument(
+        "--table",
+        action="store_true",
+        help="Display as sortable table"
+    )
+    parser_windows.add_argument(
+        "--live",
+        action="store_true",
+        help="Launch interactive TUI with real-time updates"
     )
     parser_windows.add_argument(
         "--json",
@@ -2861,6 +2949,50 @@ def cli_main() -> int:
         help="Output in JSON format"
     )
 
+    # Feature 024: i3pm validate-rules
+    parser_validate_rules = subparsers.add_parser(
+        "validate-rules",
+        help="Validate window rules file",
+        description="Validate window rules JSON file against schema and check for common issues"
+    )
+    parser_validate_rules.add_argument(
+        "--file",
+        type=Path,
+        default=Path("~/.config/i3/window-rules.json"),
+        help="Path to window rules file (default: ~/.config/i3/window-rules.json)"
+    )
+    parser_validate_rules.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show all issues including warnings"
+    )
+
+    # Feature 024: i3pm test-rule
+    parser_test_rule = subparsers.add_parser(
+        "test-rule",
+        help="Test window rule matching",
+        description="Test which rule matches given window properties"
+    )
+    parser_test_rule.add_argument(
+        "--class",
+        dest="window_class",
+        required=True,
+        help="Window class to test (e.g., 'Code', 'firefox')"
+    )
+    parser_test_rule.add_argument(
+        "--title",
+        dest="window_title",
+        default="",
+        help="Window title to test (optional)"
+    )
+    parser_test_rule.add_argument(
+        "--file",
+        type=Path,
+        default=Path("~/.config/i3/window-rules.json"),
+        help="Path to window rules file (default: ~/.config/i3/window-rules.json)"
+    )
+
     # T094: Enable shell completion if argcomplete is available
     if ARGCOMPLETE_AVAILABLE:
         argcomplete.autocomplete(parser)
@@ -2907,6 +3039,9 @@ def cli_main() -> int:
         # Feature 021: Window rules commands
         "rules": cmd_rules,
         "classify": cmd_classify,
+        # Feature 024: Window rules validation & testing
+        "validate-rules": cmd_validate_rules,
+        "test-rule": cmd_test_rule,
     }
 
     handler = command_handlers.get(args.command)

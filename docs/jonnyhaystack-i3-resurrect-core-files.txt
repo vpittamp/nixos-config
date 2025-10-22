@@ -1,0 +1,985 @@
+Directory structure:
+└── i3_resurrect/
+    ├── __init__.py
+    ├── config.py
+    ├── layout.py
+    ├── main.py
+    ├── programs.py
+    ├── treeutils.py
+    └── util.py
+
+================================================
+FILE: i3_resurrect/__init__.py
+================================================
+__all__ = ["config", "layout", "main", "programs", "treeutils", "util"]
+
+from . import config
+from . import layout
+from . import main
+from . import programs
+from . import treeutils
+from . import util
+
+
+
+================================================
+FILE: i3_resurrect/config.py
+================================================
+"""
+Lazy-initialized singleton for config.
+"""
+
+import json
+from pathlib import Path
+
+
+def create_default():
+    """
+    Creates the default config file.
+    """
+    global _config
+    global _config_dir
+    global _config_file
+
+    _config = {
+        "directory": "~/.i3/i3-resurrect/",
+        "window_command_mappings": [
+            {
+                "class": "^Gnome-terminal$",
+                "command": "gnome-terminal",
+            },
+        ],
+        "window_swallow_criteria": {},
+        "terminals": ["Gnome-terminal", "Alacritty"],
+    }
+
+    # Make config directory if it doesn't exist.
+    Path(_config_dir).mkdir(parents=True, exist_ok=True)
+
+    # Write default config.
+    with _config_file.open("w") as f:
+        f.write(json.dumps(_config, indent=2))
+
+
+def get(key, default):
+    """
+    Gets a config value.
+    """
+    global _config
+
+    # Load config if it hasn't already been loaded.
+    if _config is None:
+        try:
+            _config = json.loads(_config_file.read_text())
+        except json.decoder.JSONDecodeError as e:
+            print(f'Error in config file: "{str(e)}"')
+            exit(1)
+        except PermissionError as e:
+            print(f"Could not read config file: {str(e)}")
+            exit(1)
+        except FileNotFoundError:
+            # Create default config if no config exists.
+            create_default()
+
+    return _config.get(key, default)
+
+
+_config = None
+
+_config_dir = Path("~/.config/i3-resurrect/").expanduser()
+_config_file = _config_dir / "config.json"
+
+if not _config_file.is_file():
+    # Create default config if no config exists.
+    create_default()
+
+
+
+================================================
+FILE: i3_resurrect/layout.py
+================================================
+import json
+import shlex
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import i3ipc
+
+from . import treeutils
+from . import util
+
+
+def save(workspace, numeric, directory, profile, swallow_criteria):
+    """
+    Save an i3 workspace layout to a file.
+    """
+    workspace_id = util.filename_filter(workspace)
+    filename = f"workspace_{workspace_id}_layout.json"
+    if profile is not None:
+        filename = f"{profile}_layout.json"
+    layout_file = Path(directory) / filename
+
+    workspace_tree = treeutils.get_workspace_tree(workspace, numeric)
+
+    with layout_file.open("w") as f:
+        # Build new workspace tree suitable for restoring and write it to a
+        # file.
+        f.write(
+            json.dumps(
+                build_layout(workspace_tree, swallow_criteria),
+                indent=2,
+            )
+        )
+
+
+def read(workspace, directory, profile):
+    """
+    Read saved layout file.
+    """
+    workspace_id = util.filename_filter(workspace)
+    filename = f"workspace_{workspace_id}_layout.json"
+    if profile is not None:
+        filename = f"{profile}_layout.json"
+    layout_file = Path(directory) / filename
+
+    layout = None
+    try:
+        layout = json.loads(layout_file.read_text())
+    except FileNotFoundError:
+        if profile is not None:
+            util.eprint(f'Could not find saved layout for profile "{profile}"')
+        else:
+            util.eprint('Could not find saved layout for workspace "{workspace}"')
+        sys.exit(1)
+    return layout
+
+
+def restore(workspace_name, layout):
+    """
+    Restore an i3 workspace layout.
+    """
+    if layout == {}:
+        return
+    window_ids = []
+    placeholder_window_ids = []
+
+    # Get ids of all placeholder or normal windows in workspace.
+    ws = treeutils.get_workspace_tree(workspace_name, False)
+    windows = treeutils.get_leaves(ws)
+    for con in windows:
+        window_id = con["window"]
+        if is_placeholder(con):
+            # If window is a placeholder, add it to list of placeholder
+            # windows.
+            placeholder_window_ids.append(window_id)
+        else:
+            # Otherwise, add it to the list of regular windows.
+            window_ids.append(window_id)
+
+    # Unmap all non-placeholder windows in workspace.
+    for window_id in window_ids:
+        xdo_unmap_window(window_id)
+
+    # Remove any remaining placeholder windows in workspace so that we don't
+    # have duplicates.
+    for window_id in placeholder_window_ids:
+        xdo_kill_window(window_id)
+
+    try:
+        i3 = i3ipc.Connection()
+
+        # append_layout can only insert nodes so we must separately change the
+        # layout mode of the workspace node.
+        ws_layout_mode = layout.get("layout", "default")
+        tree = i3.get_tree()
+        focused = tree.find_focused()
+        workspace_node = focused.workspace()
+        workspace_node.command(f"layout {ws_layout_mode}")
+
+        # We don't want to pass the whole layout file because we don't want to
+        # append a new workspace. append_layout requires a file path so we must
+        # extract the part of the json that we want and store it in a tempfile.
+        restorable_layout = (
+            layout.get("nodes", []) + layout.get("floating_nodes", []),
+        )
+        restorable_layout_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix="i3-resurrect_",
+        )
+        restorable_layout_file.write(json.dumps(restorable_layout))
+        restorable_layout_file.flush()
+
+        # Create fresh placeholder windows by appending layout to workspace.
+        i3.command(f"append_layout {restorable_layout_file.name}")
+
+        # Move workspace to original output
+        if "output" in layout:
+            i3.command(
+                f'[workspace="{workspace_name}"] move workspace to output {layout["output"]}'
+            )
+
+        # Delete tempfile.
+        restorable_layout_file.close()
+    except Exception as e:
+        util.eprint(
+            "Error occurred restoring workspace layout. Note that if the layout was saved by a "
+            "version prior to 1.4.0 it must be recreated."
+        )
+        util.eprint(str(e))
+    finally:
+        # Map all unmapped windows. We use finally because we don't want the
+        # user to lose their windows no matter what.
+        for window_id in window_ids:
+            xdo_map_window(window_id)
+
+
+def build_layout(tree, swallow):
+    """
+    Builds a restorable layout tree with basic Python data structures which are
+    JSON serialisable.
+    """
+    processed = treeutils.process_node(tree, swallow)
+    return processed
+
+
+def is_placeholder(container):
+    """
+    Check if a container is a placeholder window.
+
+    Args:
+        container: The container to check.
+    """
+    return container["swallows"] not in [[], None]
+
+
+def xdo_unmap_window(window_id):
+    command = shlex.split(f"xdotool windowunmap {window_id}")
+    subprocess.call(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def xdo_map_window(window_id):
+    command = shlex.split(f"xdotool windowmap {window_id}")
+    subprocess.call(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+
+
+def xdo_kill_window(window_id):
+    command = shlex.split(f"xdotool windowkill {window_id}")
+    subprocess.call(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+
+
+
+================================================
+FILE: i3_resurrect/main.py
+================================================
+import sys
+from pathlib import Path
+
+import click
+import i3ipc
+from natsort import natsorted
+
+from . import config
+from . import layout
+from . import programs
+from . import util
+
+DEFAULT_DIRECTORY = config.get("directory", "~/.i3/i3-resurrect/")
+
+
+@click.group(
+    context_settings=dict(help_option_names=["-h", "--help"], max_content_width=150)
+)
+@click.version_option()
+def main():
+    pass
+
+
+@main.command("save")
+@click.option(
+    "--workspace", "-w", help="The workspace to save.\n[default: current workspace]"
+)
+@click.option(
+    "--numeric", "-n", is_flag=True, help="Select workspace by number instead of name."
+)
+@click.option(
+    "--directory",
+    "-d",
+    type=click.Path(file_okay=False, writable=True),
+    default=DEFAULT_DIRECTORY,
+    help="The directory to save the workspace to.\n[default: ~/.i3/i3-resurrect]",
+)
+@click.option(
+    "--profile", "-p", default=None, help=("The profile to save the workspace to.")
+)
+@click.option(
+    "--swallow",
+    "-s",
+    default="class,instance",
+    help=(
+        "The swallow criteria to use.\n"
+        "[options: class,instance,title,window_role]\n"
+        "[default: class,instance]"
+    ),
+)
+@click.option(
+    "--layout-only", "target", flag_value="layout_only", help="Only save layout."
+)
+@click.option(
+    "--programs-only",
+    "target",
+    flag_value="programs_only",
+    help="Only save running programs.",
+)
+def save_workspace(workspace, numeric, directory, profile, swallow, target):
+    """
+    Save an i3 workspace's layout and running programs to a file.
+    """
+    if workspace is None:
+        i3 = i3ipc.Connection()
+        workspace = i3.get_tree().find_focused().workspace().name
+
+    directory = util.resolve_directory(directory, profile)
+
+    # Create directory if non-existent.
+    Path(directory).mkdir(parents=True, exist_ok=True)
+
+    if target != "programs_only":
+        # Save workspace layout to file.
+        swallow_criteria = swallow.split(",")
+        layout.save(workspace, numeric, directory, profile, swallow_criteria)
+
+    if target != "layout_only":
+        # Save running programs to file.
+        programs.save(workspace, numeric, directory, profile)
+
+
+@main.command("restore")
+@click.option(
+    "--workspace", "-w", help="The workspace to restore.\n[default: current workspace]"
+)
+@click.option(
+    "--numeric", "-n", is_flag=True, help="Select workspace by number instead of name."
+)
+@click.option(
+    "--directory",
+    "-d",
+    type=click.Path(file_okay=False),
+    default=DEFAULT_DIRECTORY,
+    help="The directory to restore the workspace from.\n[default: ~/.i3/i3-resurrect]",
+)
+@click.option(
+    "--profile", "-p", default=None, help=("The profile to restore the workspace from.")
+)
+@click.option(
+    "--layout-only", "target", flag_value="layout_only", help="Only restore layout."
+)
+@click.option(
+    "--programs-only",
+    "target",
+    flag_value="programs_only",
+    help="Only restore running programs.",
+)
+def restore_workspace(workspace, numeric, directory, profile, target):
+    """
+    Restore i3 workspace layout and programs.
+    """
+    i3 = i3ipc.Connection()
+
+    if workspace is None:
+        workspace = i3.get_tree().find_focused().workspace().name
+
+    directory = util.resolve_directory(directory, profile)
+
+    if numeric and not workspace.isdigit():
+        util.eprint("Invalid workspace number.")
+        sys.exit(1)
+
+    # Get layout name from file.
+    workspace_layout = layout.read(workspace, directory, profile)
+    if "name" in workspace_layout and profile is None:
+        workspace_name = workspace_layout["name"]
+    else:
+        workspace_name = workspace
+
+    # Switch to the workspace which we are loading.
+    i3.command(f'workspace --no-auto-back-and-forth "{workspace_name}"')
+
+    if target != "programs_only":
+        # Load workspace layout.
+        layout.restore(workspace_name, workspace_layout)
+
+    if target != "layout_only":
+        # Restore programs.
+        saved_programs = programs.read(workspace, directory, profile)
+        programs.restore(workspace_name, saved_programs)
+
+
+@main.command("ls")
+@click.option(
+    "--directory",
+    "-d",
+    type=click.Path(file_okay=False),
+    default=DEFAULT_DIRECTORY,
+    help="The directory to search in.\n[default: ~/.i3/i3-resurrect]",
+)
+@click.argument(
+    "item", type=click.Choice(["workspaces", "profiles"]), default="workspaces"
+)
+def list_workspaces(directory, item):
+    """
+    List saved workspaces or profiles.
+    """
+    directory = util.resolve_directory(directory)
+
+    if item == "workspaces":
+        workspaces = []
+        for entry in directory.iterdir():
+            if entry.is_file():
+                name = entry.name
+                name = name[name.index("_") + 1 :]
+                workspace = name[: name.rfind("_")]
+                file_type = name[name.rfind("_") + 1 : name.index(".json")]
+                workspaces.append(f"Workspace {workspace} {file_type}")
+        workspaces = natsorted(workspaces)
+        for workspace in workspaces:
+            print(workspace)
+    else:
+        directory = directory / "profiles"
+        profiles = []
+        try:
+            for entry in directory.iterdir():
+                if entry.is_file():
+                    name = entry.name
+                    profile = name[: name.rfind("_")]
+                    file_type = name[name.rfind("_") + 1 : name.index(".json")]
+                    profiles.append(f"Profile {profile} {file_type}")
+            profiles = natsorted(profiles)
+            for profile in profiles:
+                print(profile)
+        except FileNotFoundError:
+            print("No profiles found")
+
+
+@main.command("rm")
+@click.option("--workspace", "-w", default=None, help="The saved workspace to delete.")
+@click.option(
+    "--directory",
+    "-d",
+    type=click.Path(file_okay=False),
+    default=DEFAULT_DIRECTORY,
+    help="The directory to delete from.\n[default: ~/.i3/i3-resurrect]",
+)
+@click.option("--profile", "-p", default=None, help=("The profile to delete."))
+@click.option(
+    "--layout-only",
+    "target",
+    flag_value="layout_only",
+    help="Only delete saved layout.",
+)
+@click.option(
+    "--programs-only",
+    "target",
+    flag_value="programs_only",
+    help="Only delete saved programs.",
+)
+def remove(workspace, directory, profile, target):
+    """
+    Remove saved layout or programs.
+    """
+    directory = util.resolve_directory(directory, profile)
+
+    if profile is not None:
+        programs_filename = f"{profile}_programs.json"
+        layout_filename = f"{profile}_layout.json"
+    elif workspace is not None:
+        workspace_id = util.filename_filter(workspace)
+        programs_filename = f"workspace_{workspace_id}_programs.json"
+        layout_filename = f"workspace_{workspace_id}_layout.json"
+    else:
+        util.eprint("Either --profile or --workspace must be specified.")
+        sys.exit(1)
+    programs_file = Path(directory) / programs_filename
+    layout_file = Path(directory) / layout_filename
+
+    if target != "programs_only":
+        # Delete programs file.
+        programs_file.unlink()
+
+    if target != "layout_only":
+        # Delete layout file.
+        layout_file.unlink()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+FILE: i3_resurrect/programs.py
+================================================
+import json
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import i3ipc
+import psutil
+
+from . import config
+from . import treeutils
+from . import util
+
+
+def save(workspace, numeric, directory, profile):
+    """
+    Save the commands to launch the programs open in the specified workspace
+    to a file.
+    """
+    workspace_id = util.filename_filter(workspace)
+    filename = f"workspace_{workspace_id}_programs.json"
+    if profile is not None:
+        filename = f"{profile}_programs.json"
+    programs_file = Path(directory) / filename
+
+    window_command_mappings = config.get("window_command_mappings", [])
+
+    programs = get_programs(workspace, numeric)
+
+    # Write list of commands to file as JSON.
+    with programs_file.open("w") as f:
+        f.write(json.dumps(programs, indent=2))
+
+
+def read(workspace, directory, profile):
+    """
+    Read saved programs file.
+    """
+    workspace_id = util.filename_filter(workspace)
+    filename = f"workspace_{workspace_id}_programs.json"
+    if profile is not None:
+        filename = f"{profile}_programs.json"
+    programs_file = Path(directory) / filename
+
+    programs = None
+    try:
+        programs = json.loads(programs_file.read_text())
+    except FileNotFoundError:
+        if profile is not None:
+            util.eprint(f'Could not find saved programs for profile "{profile}"')
+        else:
+            util.eprint(f'Could not find saved programs for workspace "{workspace}"')
+        sys.exit(1)
+    return programs
+
+
+def restore(workspace_name, saved_programs):
+    """
+    Restore the running programs from an i3 workspace.
+    """
+    # Remove already running programs from the list of program to restore.
+    running_programs = get_programs(workspace_name, False)
+    for program in running_programs:
+        if program in saved_programs:
+            saved_programs.remove(program)
+
+    i3 = i3ipc.Connection()
+    for entry in saved_programs:
+        cmdline = entry["command"]
+        working_directory = entry["working_directory"]
+
+        # If the working directory does not exist, set working directory to
+        # user's home directory.
+        if not Path(working_directory).exists():
+            working_directory = Path.home()
+
+        # If cmdline is array, join it into one string for use with i3's exec
+        # command.
+        if isinstance(cmdline, list):
+            # Quote each argument of the command in case some of
+            # them contain spaces. Also protect quotes contained in the
+            # arguments and those to be added from i3's command parser.
+            cmdline = [
+                '\\"' + arg.replace('"', '\\\\\\"') + '\\"'
+                for arg in cmdline
+                if arg != ""
+            ]
+            command = " ".join(cmdline)
+        else:
+            command = cmdline
+
+        # Execute command via i3 exec.
+        i3.command(f'exec "cd \\"{working_directory}\\" && {command}"')
+
+
+def get_programs(workspace, numeric):
+    """
+    Get running programs in specified workspace.
+
+    Args:
+        workspace: The workspace to search.
+        numeric: Identify workspace by number instead of name.
+    """
+    # Loop through windows and save commands to launch programs on saved
+    # workspace.
+    programs = []
+    for con, pid in windows_in_workspace(workspace, numeric):
+        if pid == 0:
+            continue
+
+        # Get process info for the window.
+        procinfo = psutil.Process(pid)
+
+        # Try to get absolute path to executable.
+        exe = None
+        try:
+            exe = procinfo.exe()
+        except Exception:
+            pass
+
+        # Create command to launch program.
+        command = get_window_command(
+            con["window_properties"],
+            procinfo.cmdline(),
+            exe,
+        )
+        if command in ([], ""):
+            continue
+
+        # Remove empty string arguments from command.
+        command = [arg for arg in command if arg != ""]
+
+        terminals = config.get("terminals", [])
+
+        try:
+            # Obtain working directory using psutil.
+            if con["window_properties"]["class"] in terminals:
+                # If the program is a terminal emulator, get the working
+                # directory from its first subprocess.
+                working_directory = procinfo.children()[0].cwd()
+            else:
+                working_directory = procinfo.cwd()
+        except Exception:
+            working_directory = str(Path.home())
+
+        # Add the command to the list.
+        programs.append({"command": command, "working_directory": working_directory})
+
+    return programs
+
+
+def windows_in_workspace(workspace, numeric):
+    """
+    Generator to iterate over windows in a workspace.
+
+    Args:
+        workspace: The name of the workspace whose windows to iterate over.
+    """
+    ws = treeutils.get_workspace_tree(workspace, numeric)
+    for con in treeutils.get_leaves(ws):
+        pid = get_window_pid(con)
+        yield (con, pid)
+
+
+def get_window_pid(con):
+    """
+    Get window PID using xprop.
+
+    Args:
+        con: The window container node whose PID to look up.
+    """
+    window_id = con["window"]
+    if window_id is None:
+        return 0
+
+    try:
+        xprop_output = (
+            subprocess.check_output(
+                shlex.split(f"xprop _NET_WM_PID -id {window_id}"),
+                stderr=subprocess.DEVNULL,
+            )
+            .decode("utf-8")
+            .split(" ")
+        )
+        pid = int(xprop_output[len(xprop_output) - 1])
+    except (subprocess.CalledProcessError, ValueError, IndexError):
+        return 0
+
+    return pid
+
+
+def get_window_command(window_properties, cmdline, exe):
+    """
+    Gets a window command.
+
+    This function starts with the process's cmdline, then loops through the
+    window mappings and scores each matching rule. The command mapping with the
+    highest score is then returned.
+    """
+    window_command_mappings = config.get("window_command_mappings", [])
+
+    # Remove empty args from cmdline.
+    cmdline = [arg for arg in cmdline if arg != ""]
+
+    # If cmdline has only one argument which is not a known executable path,
+    # try to split it. This means we can cover cases where the process
+    # overwrote its own cmdline, with the tradeoff that legitimate single
+    # argument cmdlines with a relative executable path containing spaces will
+    # be broken.
+    if len(cmdline) == 1 and shutil.which(cmdline[0]) is None:
+        cmdline = shlex.split(cmdline[0])
+    # Use the absolute executable path in case a relative path was used.
+    if exe is not None:
+        cmdline[0] = exe
+
+    command = cmdline
+
+    # If window command mappings is a dictionary in the config file, use the
+    # old way.
+    # TODO: Remove in 2.0.0
+    if isinstance(window_command_mappings, dict):
+        window_class = window_properties["class"]
+        if window_class in window_command_mappings:
+            command = window_command_mappings[window_class]
+        return command
+
+    # Find the mapping that gets the highest score.
+    current_score = 0
+    best_match = None
+    for rule in window_command_mappings:
+        # Calculate score.
+        score = calc_rule_match_score(rule, window_properties)
+
+        if score > current_score:
+            current_score = score
+            best_match = rule
+
+    # If no match found, just use the original cmdline.
+    if best_match is None:
+        return command
+
+    try:
+        if "command" not in best_match:
+            command = []
+        elif isinstance(best_match["command"], list):
+            command = [arg.format(*cmdline) for arg in best_match["command"]]
+        else:
+            command = shlex.split(best_match["command"].format(*cmdline))
+    except IndexError:
+        util.eprint(
+            "IndexError occurred while processing command mapping:\n"
+            f"  Mapping: {best_match}\n"
+            f"  Process cmdline: {cmdline}"
+        )
+
+    return command
+
+
+def calc_rule_match_score(rule, window_properties):
+    """
+    Score window command mapping match based on which criteria match.
+
+    Scoring is done based on which criteria are considered "more specific".
+    """
+    # Window properties and value to add to score when match is found.
+    criteria = {
+        "window_role": 1,
+        "class": 2,
+        "instance": 3,
+        "title": 10,
+    }
+
+    score = 0
+    for criterion in criteria:
+        if criterion in rule:
+            # Score is zero if there are any non-matching criteria.
+            if (
+                criterion not in window_properties
+                or rule[criterion] != window_properties[criterion]
+            ):
+                return 0
+            score += criteria[criterion]
+    return score
+
+
+
+================================================
+FILE: i3_resurrect/treeutils.py
+================================================
+import json
+import re
+import shlex
+import subprocess
+
+from . import config
+
+# The tree node attributes that we want to save.
+REQUIRED_ATTRIBUTES = [
+    "border",
+    "current_border_width",
+    "floating",
+    "fullscreen_mode",
+    "geometry",
+    "layout",
+    "marks",
+    "name",
+    "orientation",
+    "percent",
+    "scratchpad_state",
+    "sticky",
+    "type",
+    "workspace_layout",
+]
+
+
+def process_node(original, swallow):
+    """
+    Recursive function which traverses a layout tree and builds a new tree from
+    it which can be restored using append_layout and only contains attributes
+    necessary for accurately restoring the layout.
+    """
+    processed = {}
+
+    # Base case.
+    if original is None or original == {}:
+        return processed
+
+    # Set attributes.
+    for attribute in REQUIRED_ATTRIBUTES:
+        if attribute in original:
+            processed[attribute] = original[attribute]
+
+    # Keep output attribute for workspace nodes.
+    if "type" in original and original["type"] == "workspace":
+        processed["output"] = original["output"]
+
+    # Keep rect attribute for floating nodes.
+    if "type" in original and original["type"] == "floating_con":
+        processed["rect"] = original["rect"]
+
+    # Set swallow criteria if the node is a window.
+    if "window_properties" in original:
+        processed["swallows"] = [{}]
+        # Local variable for swallow criteria.
+        swallow_criteria = swallow
+        # Get swallow criteria from config.
+        window_swallow_mappings = config.get("window_swallow_criteria", {})
+        window_class = original["window_properties"].get("class", "")
+        # Swallow criteria from config override the command line parameters
+        # if present.
+        if window_class in window_swallow_mappings:
+            swallow_criteria = window_swallow_mappings[window_class]
+        for criterion in swallow_criteria:
+            if criterion in original["window_properties"]:
+                # Escape special characters in swallow criteria.
+                escaped = re.escape(original["window_properties"][criterion])
+                processed["swallows"][0][criterion] = escaped
+
+    # Recurse over child nodes (normal and floating).
+    for node_type in ["nodes", "floating_nodes"]:
+        if node_type in original and original[node_type] != []:
+            processed[node_type] = []
+            for child in original[node_type]:
+                # Step case.
+                processed[node_type].append(process_node(child, swallow))
+
+    return processed
+
+
+def get_workspace_tree(workspace, numeric):
+    """
+    Get full workspace layout tree from i3.
+    """
+    root = json.loads(subprocess.check_output(shlex.split("i3-msg -t get_tree")))
+    for output in root["nodes"]:
+        for container in output["nodes"]:
+            if container["type"] != "con":
+                pass
+            for ws in container["nodes"]:
+                # Select workspace and trigger name and num field
+                if numeric:
+                    if (
+                        workspace.isdigit()
+                        and "num" in ws
+                        and ws["num"] == int(workspace)
+                    ):
+                        return ws
+                elif ws["name"] == workspace:
+                    return ws
+    return {}
+
+
+def get_leaves(container):
+    """
+    Recursive generator for retrieving a list of a container's leaf nodes.
+
+    Args:
+        container: The container to traverse.
+    """
+    # Base cases.
+    if container is None:
+        return
+
+    nodes = container.get("nodes", []) + container.get("floating_nodes", [])
+
+    # Step case.
+    for node in nodes:
+        if "window_properties" in node:
+            yield node
+        yield from get_leaves(node)
+
+
+
+================================================
+FILE: i3_resurrect/util.py
+================================================
+import sys
+from os.path import expandvars
+from pathlib import Path
+
+
+def eprint(*args, **kwargs):
+    """
+    Function for printing to stderr.
+    """
+    print(*args, file=sys.stderr, **kwargs)
+
+
+def filename_filter(filename):
+    """
+    Take a string and return a valid filename constructed from the string.
+    """
+    blacklist = '/\\:*"<>|'
+    if filename is None:
+        return filename
+
+    # Remove blacklisted chars.
+    for char in blacklist:
+        filename = filename.replace(char, "")
+
+    return filename
+
+
+def resolve_directory(directory, profile=None):
+    directory = Path(expandvars(directory)).expanduser()
+    if profile is not None:
+        directory = directory / "profiles"
+    return directory
+
+

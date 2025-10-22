@@ -2,5 +2,28 @@
 
 from .detection import DetectionResult
 from .pattern import PatternRule
+from .layout import (
+    SwallowCriteria,
+    WindowState,
+    WindowGeometry,
+    MonitorInfo,
+    LaunchCommand,
+    LayoutWindow,
+    WorkspaceLayout,
+    SavedLayout,
+    WindowDiff,
+)
 
-__all__ = ["DetectionResult", "PatternRule"]
+__all__ = [
+    "DetectionResult",
+    "PatternRule",
+    "SwallowCriteria",
+    "WindowState",
+    "WindowGeometry",
+    "MonitorInfo",
+    "LaunchCommand",
+    "LayoutWindow",
+    "WorkspaceLayout",
+    "SavedLayout",
+    "WindowDiff",
+]

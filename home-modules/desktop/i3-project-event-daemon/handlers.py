@@ -8,13 +8,14 @@ import logging
 import time
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING, List
-from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent
+from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent, OutputEvent
 
 from .state import StateManager
 from .models import WindowInfo, WorkspaceInfo, ApplicationClassification, EventEntry
 from .config import save_active_project, load_active_project
 from .pattern_resolver import classify_window, Classification
 from .window_rules import WindowRule
+from .action_executor import apply_rule_actions  # Feature 024
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -314,12 +315,42 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # If rule specifies a workspace, move window to that workspace
-        if classification.workspace:
+        # Feature 024: Check if matched rule has structured actions
+        if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:
+            # NEW FORMAT: Execute structured actions
+            logger.info(f"Executing {len(classification.matched_rule.actions)} structured actions for window {window_id}")
+
+            # Create WindowInfo for action execution
+            window_info = WindowInfo(
+                window_id=window_id,
+                con_id=container.id,
+                window_class=window_class,
+                window_title=window_title,
+                window_instance=container.window_instance or "",
+                app_identifier=window_class,
+                project=active_project,
+                marks=[],
+                workspace=container.workspace().name if container.workspace() else "",
+                created=datetime.now(),
+            )
+
+            # Execute structured actions
+            focus = getattr(classification.matched_rule, 'focus', False)
+            await apply_rule_actions(
+                conn,
+                window_info,
+                classification.matched_rule.actions,
+                focus=focus,
+                event_buffer=event_buffer,
+            )
+            logger.info(f"Structured actions executed (new format)")
+
+        elif classification.workspace:
+            # LEGACY FORMAT: workspace field on classification
             await conn.command(
                 f'[id={window_id}] move container to workspace number {classification.workspace}'
             )
-            logger.info(f"Moved window {window_id} to workspace {classification.workspace}")
+            logger.info(f"Moved window {window_id} to workspace {classification.workspace} (legacy format)")
 
     except Exception as e:
         error_msg = str(e)
@@ -674,3 +705,71 @@ async def on_workspace_move(
     except Exception as e:
         logger.error(f"Error handling workspace::move event: {e}")
         await state_manager.increment_error_count()
+
+
+# ============================================================================
+# Feature 024: Multi-Monitor Output Event Handling
+# ============================================================================
+
+
+async def on_output(
+    conn: aio.Connection,
+    event: OutputEvent,
+    state_manager: StateManager,
+    event_buffer: Optional["EventBuffer"] = None,
+) -> None:
+    """Handle output events - monitor connect/disconnect (Feature 024: R012).
+
+    Detects when monitors are connected or disconnected and re-queries
+    workspace distribution to ensure workspaces are properly assigned.
+
+    Args:
+        conn: i3 async connection
+        event: Output event (mode change, connect, disconnect)
+        state_manager: State manager
+        event_buffer: Event buffer for recording events (Feature 017)
+    """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+
+    try:
+        # Re-query monitor/output configuration
+        outputs = await conn.get_outputs()
+        active_outputs = [o for o in outputs if o.active]
+
+        logger.info(
+            f"Output event detected: {len(active_outputs)} active outputs - "
+            f"{', '.join(o.name for o in active_outputs)}"
+        )
+
+        # Log configuration changes for debugging
+        for output in outputs:
+            if output.active:
+                logger.debug(
+                    f"  Active output: {output.name} ({output.rect.width}x{output.rect.height})"
+                )
+            else:
+                logger.debug(f"  Inactive output: {output.name}")
+
+        # TODO: Re-run workspace distribution if needed
+        # This would call workspace_manager.assign_workspaces_to_monitors()
+        # but we need to be careful not to disrupt active workspaces
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error handling output event: {e}")
+        await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="output",
+                timestamp=datetime.now(),
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)

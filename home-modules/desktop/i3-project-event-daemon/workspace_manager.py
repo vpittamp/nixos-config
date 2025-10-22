@@ -1,7 +1,10 @@
 """Workspace management for multi-monitor support."""
 
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -222,3 +225,75 @@ async def assign_workspaces_to_monitors(
             if preferred_role in role_map:
                 output_name = role_map[preferred_role]
                 await i3.command(f"workspace {ws_num} output {output_name}")
+
+
+async def validate_target_workspace(
+    conn,
+    workspace: int,
+) -> Tuple[bool, str]:
+    """Validate that target workspace exists on an active output.
+
+    Feature 024: Multi-monitor workspace validation
+
+    Queries i3 GET_WORKSPACES and GET_OUTPUTS to verify the target workspace
+    is assigned to an active output. This prevents assigning windows to
+    workspaces on disconnected monitors.
+
+    Args:
+        conn: i3ipc.aio.Connection instance
+        workspace: Target workspace number (1-9)
+
+    Returns:
+        Tuple of (valid: bool, error_message: str)
+        - (True, "") if workspace is valid and on active output
+        - (False, error_msg) if workspace is invalid or on inactive output
+
+    Examples:
+        >>> async with i3ipc.aio.Connection() as conn:
+        ...     valid, error = await validate_target_workspace(conn, 2)
+        ...     if valid:
+        ...         print("Workspace 2 is valid")
+    """
+    try:
+        # Query workspace assignments
+        workspaces = await conn.get_workspaces()
+        outputs = await conn.get_outputs()
+
+        # Build set of active output names
+        active_outputs = {o.name for o in outputs if o.active}
+
+        if not active_outputs:
+            return (False, "No active outputs detected")
+
+        # Find workspace assignment
+        workspace_info = next(
+            (ws for ws in workspaces if ws.num == workspace),
+            None
+        )
+
+        # If workspace doesn't exist yet, it's valid (will be created on current output)
+        if not workspace_info:
+            logger.debug(
+                f"Workspace {workspace} doesn't exist yet, will be created on current output"
+            )
+            return (True, "")
+
+        # Check if workspace's output is active
+        if workspace_info.output not in active_outputs:
+            error_msg = (
+                f"Workspace {workspace} is on inactive output '{workspace_info.output}'. "
+                f"Active outputs: {', '.join(active_outputs)}"
+            )
+            logger.warning(error_msg)
+            return (False, error_msg)
+
+        # Workspace is on active output
+        logger.debug(
+            f"Workspace {workspace} is valid (on active output '{workspace_info.output}')"
+        )
+        return (True, "")
+
+    except Exception as e:
+        error_msg = f"Error validating workspace {workspace}: {e}"
+        logger.error(error_msg)
+        return (False, error_msg)

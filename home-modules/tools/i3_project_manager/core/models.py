@@ -17,9 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 # Import PatternRule for enhanced app classification
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from models.pattern import PatternRule
+from ..models.pattern import PatternRule
 
 
 @dataclass

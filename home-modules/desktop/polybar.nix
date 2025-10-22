@@ -66,7 +66,7 @@ in
         font-2 = "Font Awesome 6 Brands:size=10;2";
 
         # Three-section layout: workspaces left, project center, system info right
-        modules-left = "i3";
+        modules-left = "monitor i3";
         modules-center = "project";
         modules-right = "cpu memory network date";
 
@@ -79,6 +79,19 @@ in
         cursor-scroll = "ns-resize";
 
         enable-ipc = true;
+      };
+
+      # Monitor Module - Display current monitor name
+      "module/monitor" = {
+        type = "custom/script";
+        exec = "echo \"\${MONITOR}\"";
+        format = "<label>";
+        format-prefix = "󰍹 ";  # Monitor icon
+        format-prefix-foreground = "#89dceb";  # Sky blue color (Catppuccin Mocha sky)
+        format-background = "#313244";  # Catppuccin Mocha surface0
+        format-padding = 2;
+        label = "%output%";
+        label-foreground = "#89dceb";  # Match prefix color
       };
 
       # Project Module - Uses i3pm daemon (Feature 015)

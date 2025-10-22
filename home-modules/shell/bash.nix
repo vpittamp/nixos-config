@@ -256,6 +256,24 @@
       export FZF_CTRL_T_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
       export FZF_ALT_C_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
       export FZF_CTRL_R_OPTS="--tmux=center,90%,80% --scheme=history --highlight-line"
+
+      # Override FZF's CTRL-R to use bash history file directly
+      # This includes commands from Claude Code via the PostToolUse hook
+      # Default FZF uses 'fc -lnr' which only reads in-memory history
+      # Our override reads from ~/.bash_history file directly
+      __fzf_history__() {
+        local output opts
+        opts="--scheme=history --bind=ctrl-r:toggle-sort --highlight-line ''\${FZF_CTRL_R_OPTS-} +m"
+
+        # Read bash history file, reverse it (newest first), remove duplicates
+        output=$(cat ~/.bash_history | tac | awk '!seen[$0]++' | FZF_DEFAULT_OPTS="''$opts" fzf --query "''$READLINE_LINE") || return
+        READLINE_LINE="''$output"
+        if [[ -z "''$READLINE_POINT" ]]; then
+          echo "''$READLINE_LINE"
+        else
+          READLINE_POINT=0x7fffffff
+        fi
+      }
       
       # Terminal configuration moved to TERM settings below
       
@@ -558,13 +576,35 @@
       # Example: i3-launch-on 4 code
       i3-launch-on() {
         if [ $# -lt 2 ]; then
-          echo "Usage: i3-launch-on <workspace_number> <command> [args...]"
+          echo "Usage: i3-launch-on \<workspace_number\> \<command\> [args...]"
           return 1
         fi
         local workspace="$1"
         shift
         # Switch to workspace twice to lock focus, preventing race condition
         i3-msg "workspace number $workspace; exec $*; workspace number $workspace" >/dev/null
+      }
+
+      # Claude Code hook: Register commands in bash history
+      # Usage: claude-register-command "command string"
+      # This is meant to be used as a Claude Code hook to capture bash commands
+      claude-register-command() {
+        local cmd="$1"
+        if [ -z "$cmd" ]; then
+          echo "Usage: claude-register-command \"command string\"" >&2
+          return 1
+        fi
+
+        # Get history file location (default to ~/.bash_history)
+        local hist_file="''${HISTFILE:-$HOME/.bash_history}"
+
+        # Append command to history file
+        echo "$cmd" >> "$hist_file"
+
+        # Also add to current shell's in-memory history
+        history -s "$cmd"
+
+        return 0
       }
 
       # Firefox history launcher with fzf and preview pane
