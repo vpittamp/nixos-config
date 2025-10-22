@@ -10,8 +10,23 @@ let
 
     nativeBuildInputs = [ pkgs.deno ];
 
+    # Set DENO_DIR to a writable location and cache dependencies
+    DENO_DIR = ".deno-cache";
+
+    configurePhase = ''
+      export DENO_DIR=$PWD/.deno-cache
+      mkdir -p $DENO_DIR
+
+      # Cache dependencies before compilation
+      # This downloads all dependencies into the cache
+      deno cache \
+        --reload \
+        main.ts
+    '';
+
     buildPhase = ''
       # Compile TypeScript to standalone executable
+      # The cache is already populated from configurePhase
       # Permissions are baked into the binary at compile time
       deno compile \
         --allow-net \
@@ -25,6 +40,9 @@ let
       mkdir -p $out/bin
       cp i3pm $out/bin/
     '';
+
+    # Allow network access during build for downloading dependencies
+    __noChroot = true;
 
     meta = with lib; {
       description = "i3 project management CLI tool";
