@@ -59,11 +59,14 @@ if [ ${#PROJECT_KEYS[@]} -eq 0 ] || ([ ${#PROJECT_KEYS[@]} -eq 1 ] && [ "${PROJE
     exit 0
 fi
 
-# fzf options
-OPTS='--height=40% --reverse --border --prompt="Switch Project > " --header="Enter: Switch | Esc: Cancel"'
-
-# Run fzf and get selection
-SELECTED=$(echo -n "$PROJECT_LIST" | fzf $OPTS || true)
+# Run fzf with proper options (no variables to avoid quoting issues)
+SELECTED=$(echo -n "$PROJECT_LIST" | fzf \
+    --height=40% \
+    --reverse \
+    --border \
+    --prompt="Switch Project > " \
+    --header="Enter: Switch | Esc: Cancel" \
+    || true)
 
 # Exit if no selection
 if [ -z "$SELECTED" ]; then
