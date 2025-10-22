@@ -10,7 +10,7 @@
     # ./home-modules/desktop/i3-projects.nix  # REMOVED: Feature 010 (OLD STATIC SYSTEM)
     # ./home-modules/desktop/i3-project-manager.nix  # REMOVED: Replaced by i3pm (Feature 019)
     ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
-    ./home-modules/tools/i3-project-manager.nix    # Feature 019: i3pm CLI/TUI tool (unified solution)
+    # ./home-modules/tools/i3-project-manager.nix  # REMOVED: Replaced by i3pm Deno (Feature 027)
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./home-modules/desktop/polybar.nix  # Re-enabled: Better centering support than i3bar
     # ./home-modules/desktop/i3blocks  # REMOVED: Switched back to polybar for center modules
@@ -19,8 +19,8 @@
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
 
-  # Feature 019: Enable i3pm CLI/TUI tool (unified project management)
-  programs.i3pm.enable = true;
+  # Feature 019: Enable i3pm CLI/TUI tool (unified project management) - DISABLED for Feature 027
+  # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
   # Feature 015: Enable i3 project event listener daemon
   services.i3ProjectEventListener = {
