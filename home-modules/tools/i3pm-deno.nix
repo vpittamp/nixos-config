@@ -35,15 +35,17 @@ let
     nativeBuildInputs = [ pkgs.deno ];
 
     buildPhase = ''
-      # Use pre-cached dependencies from denoDeps
-      export DENO_DIR=${denoDeps}
+      # Copy dependencies to writable location
+      export DENO_DIR=$PWD/.deno
+      mkdir -p $DENO_DIR
+      cp -r ${denoDeps}/* $DENO_DIR/
+      chmod -R +w $DENO_DIR
 
       # Compile TypeScript to standalone executable
       # The cache is already populated from denoDeps
-      # Use --no-remote and --cached-only to prevent network access during compilation
+      # Use --cached-only to use local cache only
       # Permissions are baked into the binary at compile time
       deno compile \
-        --no-remote \
         --cached-only \
         --allow-net \
         --allow-read=/run/user,/home \
