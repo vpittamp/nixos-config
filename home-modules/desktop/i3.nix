@@ -168,9 +168,9 @@
     bindsym $mod+Shift+8 move container to workspace $ws8
     bindsym $mod+Shift+9 move container to workspace $ws9
 
-    # Project management keybindings (T049: rofi switcher)
-    bindsym $mod+p exec ~/.config/i3/scripts/rofi-project-switcher.sh
-    bindsym $mod+Shift+p exec ~/.config/i3/scripts/project-clear.sh
+    # Project management keybindings (fzf-based switcher)
+    bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-project-switcher.sh
+    bindsym $mod+Shift+p exec i3pm clear
 
     # T022: Project-aware application launchers
     bindsym $mod+c exec ~/.config/i3/scripts/launch-code.sh
