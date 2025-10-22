@@ -19,9 +19,7 @@ let
 #!/usr/bin/env bash
 exec ${pkgs.deno}/bin/deno run \\
   --no-lock \\
-  --allow-net \\
-  --allow-read=/run/user,/home \\
-  --allow-env=XDG_RUNTIME_DIR,HOME,USER \\
+  -A \\
   $out/share/i3pm/main.ts "\$@"
 EOF
       chmod +x $out/bin/i3pm
