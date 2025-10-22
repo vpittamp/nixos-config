@@ -22,8 +22,19 @@ in
     enable = true;
     package = polybarPkg;
 
-    # Dummy script since we start polybar from i3
-    script = "";
+    # Polybar launch script (runs on each monitor)
+    script = ''
+      # Kill any existing polybar instances
+      ${pkgs.procps}/bin/pkill polybar || true
+
+      # Wait for processes to exit
+      sleep 1
+
+      # Launch polybar on each connected monitor
+      for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do
+        MONITOR=$m ${polybarPkg}/bin/polybar --reload main &
+      done
+    '';
 
     config = {
       "bar/main" = {
@@ -223,15 +234,28 @@ in
       };
     };
 
-    # Workaround: Add i3 module foreground colors via extraConfig
-    # These don't seem to work when defined in the module config above
-    extraConfig = ''
-      [module/i3]
-      label-focused-foreground = #cdd6f4
-      label-unfocused-foreground = #bac2de
-      label-visible-foreground = #cdd6f4
-      label-urgent-foreground = #1e1e2e
+    # No extraConfig needed - all settings are in the main config above
+  };
+
+  # Create polybar launch script that i3 can call
+  home.file.".config/polybar/launch.sh" = {
+    text = ''
+      #!/${pkgs.bash}/bin/bash
+      # Polybar launch script for i3
+      # Kills existing instances and launches on all monitors
+
+      # Kill any existing polybar instances
+      ${pkgs.procps}/bin/pkill polybar || true
+
+      # Wait for processes to exit
+      sleep 1
+
+      # Launch polybar on each connected monitor
+      for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do
+        MONITOR=$m ${polybarPkg}/bin/polybar --reload main &
+      done
     '';
+    executable = true;
   };
 
   # Disable the polybar systemd service - polybar is started by i3 instead
