@@ -46,9 +46,14 @@
     "XTerm*color15" = "#a6adc8";
 
     # Window settings
-    "XTerm*internalBorder" = 2;
+    "XTerm*internalBorder" = 0;
+    "XTerm*borderWidth" = 0;
     "XTerm*saveLines" = 1000;
     "XTerm*scrollBar" = false;
+
+    # Clean appearance
+    "XTerm*cursorBlink" = false;
+    "XTerm*borderColor" = "#1e1e2e";
 
     # Fix backspace
     "XTerm*backarrowKey" = false;
