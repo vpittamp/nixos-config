@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Clear screen at start and on exit
+trap 'clear' EXIT
+
 # Get i3pm path
 I3PM="i3pm"
 
@@ -60,7 +63,6 @@ if [ ${#PROJECT_KEYS[@]} -eq 0 ] || ([ ${#PROJECT_KEYS[@]} -eq 1 ] && [ "${PROJE
 fi
 
 # Run fzf in fullscreen mode with dark Catppuccin Mocha theme
-# Using --height=100% to fill the entire terminal
 SELECTED=$(echo -n "$PROJECT_LIST" | fzf \
     --height=100% \
     --reverse \
@@ -74,6 +76,9 @@ SELECTED=$(echo -n "$PROJECT_LIST" | fzf \
     --color="marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8" \
     --color="border:#6c7086" \
     || true)
+
+# Clear screen immediately after fzf exits
+clear
 
 # Exit if no selection
 if [ -z "$SELECTED" ]; then
@@ -93,10 +98,10 @@ done <<< "$PROJECT_LIST"
 if [ $INDEX -lt ${#PROJECT_KEYS[@]} ]; then
     SELECTED_NAME="${PROJECT_KEYS[$INDEX]}"
     
-    # Handle selection
+    # Handle selection (redirect output to suppress success messages)
     if [ "$SELECTED_NAME" = "__CLEAR__" ]; then
-        $I3PM clear
+        $I3PM clear >/dev/null 2>&1
     else
-        $I3PM switch "$SELECTED_NAME"
+        $I3PM switch "$SELECTED_NAME" >/dev/null 2>&1
     fi
 fi

@@ -169,7 +169,7 @@
     bindsym $mod+Shift+9 move container to workspace $ws9
 
     # Project management keybindings (fzf-based switcher)
-    bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-project-switcher.sh
+    bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 +sb -bg '#1e1e2e' -fg '#cdd6f4' -bc -borderwidth 0 -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh
     bindsym $mod+Shift+p exec i3pm clear
 
     # T022: Project-aware application launchers
