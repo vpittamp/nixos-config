@@ -218,41 +218,145 @@ deno task test:watch
 - **Linting**: Enforced by `deno lint` (recommended rules)
 - **Types**: Strict TypeScript with no implicit any
 
+## Environment Variables
+
+The CLI uses the following environment variables:
+
+- **XDG_RUNTIME_DIR**: Location of daemon Unix socket (required)
+  - Default socket path: `$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock`
+  - Typically: `/run/user/<uid>/i3-project-daemon/ipc.sock`
+
+- **HOME**: Used for project directory resolution and validation
+- **USER**: Used for generating default project directories
+
+All environment variables are embedded at compile time with `--allow-env`.
+
+## Logging and Debugging
+
+### Verbose Logging
+
+```bash
+# Show connection and RPC request information
+i3pm --verbose project list
+i3pm --verbose windows --live
+```
+
+### Debug Logging
+
+```bash
+# Show detailed socket, RPC, and terminal state information
+i3pm --debug daemon status
+i3pm --debug project switch nixos
+```
+
+Debug logging includes:
+- Socket connection details and paths
+- Full JSON-RPC request/response payloads
+- Terminal state changes (raw mode, alternate screen)
+- Signal handling events (SIGINT, SIGWINCH)
+- Validation details for daemon responses
+
 ## Troubleshooting
 
 ### Daemon Not Running
+
+**Symptom**: `Failed to connect to daemon` error
 
 ```bash
 # Check daemon status
 systemctl --user status i3-project-event-listener
 
+# View daemon logs
+journalctl --user -u i3-project-event-listener -n 50
+
 # Start daemon
 systemctl --user start i3-project-event-listener
+
+# Restart daemon
+systemctl --user restart i3-project-event-listener
 ```
 
 ### Socket Connection Issues
+
+**Symptom**: `Socket not found` or `Permission denied` errors
 
 ```bash
 # Verify socket exists
 ls -l $XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock
 
+# Check XDG_RUNTIME_DIR is set
+echo $XDG_RUNTIME_DIR
+
 # Test socket manually
 echo '{"jsonrpc":"2.0","method":"get_status","id":1}' | \
   nc -U $XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock
+
+# Debug socket connection
+i3pm --debug daemon status
+```
+
+### Request Timeout
+
+**Symptom**: `Request timeout for method: <method>` error
+
+```bash
+# Check daemon is responsive
+i3pm daemon status
+
+# View recent daemon events for errors
+i3pm daemon events --limit=20
+
+# Restart daemon if hung
+systemctl --user restart i3-project-event-listener
 ```
 
 ### Terminal State Issues
 
+**Symptom**: Cursor missing, terminal garbled, or raw mode stuck after Ctrl+C
+
 If terminal state is corrupted after exiting live TUI:
 
 ```bash
-# Restore terminal
+# Restore terminal (preferred)
 reset
 
 # Or restore specific settings
 echo -e "\x1b[?25h"  # Show cursor
+echo -e "\x1b[?1049l"  # Exit alternate screen
 stty sane             # Restore terminal settings
+
+# Restart shell if needed
+exec $SHELL
 ```
+
+### Binary Not Found After Rebuild
+
+**Symptom**: `command not found: i3pm` after `nixos-rebuild`
+
+```bash
+# Verify binary is in PATH
+which i3pm
+
+# Check if home-manager module is loaded
+home-manager packages | grep i3pm
+
+# Rebuild explicitly
+sudo nixos-rebuild switch --flake .#<hostname>
+
+# Or rebuild home-manager only
+home-manager switch --flake .#<user>@<hostname>
+```
+
+### Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Failed to connect to daemon` | Daemon not running | `systemctl --user start i3-project-event-listener` |
+| `Socket not found` | XDG_RUNTIME_DIR not set | Check environment variables |
+| `Permission denied` | Socket file permissions | Check file ownership: `ls -l $XDG_RUNTIME_DIR/i3-project-daemon/` |
+| `Request timeout` | Daemon hung or slow | Restart daemon |
+| `Project not found` | Typo in project name | Run `i3pm project list` to see valid names |
+| `Validation error` | Daemon protocol mismatch | Ensure daemon and CLI versions are compatible |
 
 ## References
 
