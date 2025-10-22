@@ -196,8 +196,8 @@
     # Launch polybar on all monitors (re-enabled for center module support)
     exec_always --no-startup-id ~/.config/polybar/launch.sh
 
-    # Assign workspaces to monitors on startup and monitor change
-    exec_always --no-startup-id ~/.config/i3/scripts/assign-workspace-monitor.sh
+    # Detect monitors and assign workspaces on startup/reload
+    exec_always --no-startup-id ~/.config/i3/scripts/detect-monitors.sh
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
@@ -347,4 +347,16 @@
     Categories=Development;RevisionControl;
     StartupWMClass=ghostty
   '';
+
+  # Install workspace reassignment script (for manual trigger and project-based reassignment)
+  home.file.".config/i3/scripts/reassign-workspaces.sh" = {
+    source = ./scripts/reassign-workspaces.sh;
+    executable = true;
+  };
+
+  # Install monitor detection script (for startup/reload)
+  home.file.".config/i3/scripts/detect-monitors.sh" = {
+    source = ./scripts/detect-monitors.sh;
+    executable = true;
+  };
 }
