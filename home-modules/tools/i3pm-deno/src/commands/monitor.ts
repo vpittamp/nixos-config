@@ -3,6 +3,8 @@
  */
 
 import { parseArgs } from "@std/cli/parse-args";
+import { DaemonClient } from "../client.ts";
+import { MonitorDashboard } from "../ui/monitor-dashboard.ts";
 
 interface MonitorCommandOptions {
   verbose?: boolean;
@@ -23,10 +25,13 @@ DESCRIPTION:
   Launches a multi-pane TUI showing:
   - Daemon status (real-time)
   - Event stream (scrolling)
-  - Window state (tree/table)
+  - Window state (tree view)
 
 KEYS:
-  Tab       Switch pane focus
+  Tab       Cycle pane focus
+  S         Focus status pane
+  E         Focus events pane
+  W         Focus windows pane
   Q         Quit
   Ctrl+C    Exit
 
@@ -49,5 +54,21 @@ export async function monitorCommand(
     showHelp();
   }
 
-  console.log("Interactive monitor dashboard - Coming soon in Phase 8");
+  // Create daemon client
+  const client = new DaemonClient();
+
+  try {
+    // Connect to daemon
+    await client.connect();
+
+    // Create and run dashboard
+    const dashboard = new MonitorDashboard(client);
+    await dashboard.run();
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Failed to start monitor: ${err.message}`);
+      Deno.exit(1);
+    }
+    throw err;
+  }
 }

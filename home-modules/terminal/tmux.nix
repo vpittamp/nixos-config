@@ -42,7 +42,7 @@
       set -ga terminal-overrides ",screen-256color:Tc"
       set -ga terminal-overrides ",tmux-256color:Tc"
       set -sg escape-time 0
-      set -g focus-events off
+      set -g focus-events on
       set -g detach-on-destroy off
       set -g repeat-time 1000
 
@@ -50,9 +50,6 @@
       # Use 'latest' window-size to track most recent active client
       # This fixes the issue where tmux limits to smallest client (VSCode)
       set -g window-size latest
-
-      # Enable aggressive-resize for better window handling
-      setw -g aggressive-resize on
 
       # Text wrapping settings
       setw -g wrap-search on
@@ -81,6 +78,10 @@
       set -ga terminal-overrides ',xterm*:Tc'
       set -ga terminal-overrides ',xterm-256color:Tc'
 
+      # Ghostty terminal settings - modern terminal with excellent feature support
+      set -ga terminal-overrides ',ghostty*:Tc'
+      set -ga terminal-overrides ',ghostty*:RGB'
+
       # Allow passthrough for proper color handling, but disable for VSCode
       if-shell '[ -z "$VSCODE_TERMINAL" ]' \
         'set -g allow-passthrough on' \
@@ -88,7 +89,7 @@
 
       # Handle Konsole-specific environment
       if-shell '[ -n "$KONSOLE_VERSION" ]' \
-        'set -g aggressive-resize on; set -g window-size latest'
+        'set -g window-size latest'
 
       # Basic terminal features
       set -as terminal-features ",*:RGB"
@@ -169,7 +170,8 @@
       bind -n M-4 select-window -t 4
 
       # Copy mode with KDE clipboard integration
-      bind Enter copy-mode
+      # Use prefix+[ for copy mode (default tmux behavior)
+      # 'Enter' key remains default (execute command in normal mode, copy in copy mode)
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
 
@@ -226,39 +228,38 @@
       bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
       bind -n WheelDownPane select-pane -t= \; send-keys -M
 
-      # In copy mode, scroll only 1 line at a time for precision
-      bind -T copy-mode-vi WheelUpPane send-keys -X -N 1 scroll-up
-      bind -T copy-mode-vi WheelDownPane send-keys -X -N 1 scroll-down
+      # In copy mode, scroll 5 lines at a time for faster scrolling
+      bind -T copy-mode-vi WheelUpPane send-keys -X -N 5 scroll-up
+      bind -T copy-mode-vi WheelDownPane send-keys -X -N 5 scroll-down
 
       # Mouse behavior with KDE Plasma clipboard integration
-      unbind -n MouseDown3Pane
-      unbind -T copy-mode-vi MouseDown3Pane
+      # Right-click paste enabled (use Shift+Right-click for terminal context menu)
 
       # Enhanced mouse copy that integrates with KDE clipboard
-      # This preserves the smooth selection experience while adding clipboard sync
-      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-no-clear "\
+      # Mouse drag exits copy mode after copying (native terminal feel)
+      bind -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "\
         if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
           wl-copy; \
         else \
           xclip -selection clipboard -in; \
         fi"
 
-      # Double-click to select word and copy to clipboard
+      # Double-click to select word and copy to clipboard (exits copy mode)
       bind -T copy-mode-vi DoubleClick1Pane \
         select-pane \; \
         send-keys -X select-word \; \
-        send-keys -X copy-pipe-no-clear "\
+        send-keys -X copy-pipe-and-cancel "\
           if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
             wl-copy; \
           else \
             xclip -selection clipboard -in; \
           fi"
 
-      # Triple-click to select line and copy to clipboard
+      # Triple-click to select line and copy to clipboard (exits copy mode)
       bind -T copy-mode-vi TripleClick1Pane \
         select-pane \; \
         send-keys -X select-line \; \
-        send-keys -X copy-pipe-no-clear "\
+        send-keys -X copy-pipe-and-cancel "\
           if [ -n \"\$WAYLAND_DISPLAY\" ]; then \
             wl-copy; \
           else \

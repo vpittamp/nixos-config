@@ -12,6 +12,7 @@ import type {
 } from "./models.ts";
 import { connectWithRetry, getSocketPath } from "./utils/socket.ts";
 import { parseDaemonConnectionError } from "./utils/errors.ts";
+import * as logger from "./utils/logger.ts";
 
 /**
  * Pending request tracking
@@ -50,12 +51,17 @@ export class DaemonClient {
    */
   async connect(): Promise<void> {
     if (this.conn) {
+      logger.verbose("Already connected to daemon");
       return; // Already connected
     }
 
+    logger.debugSocket("Connecting to daemon", this.socketPath);
+
     try {
       this.conn = await connectWithRetry(this.socketPath);
+      logger.verbose(`Connected to daemon at ${this.socketPath}`);
     } catch (err) {
+      logger.debugSocket("Connection failed", this.socketPath);
       const friendlyError = parseDaemonConnectionError(
         err instanceof Error ? err : new Error(String(err)),
       );
@@ -78,6 +84,11 @@ export class DaemonClient {
       await this.connect();
     }
 
+    // Start read loop if not already running
+    if (!this.readLoopActive) {
+      this.startReadLoop();
+    }
+
     const id = ++this.requestId;
     const request: JsonRpcRequest = {
       jsonrpc: "2.0",
@@ -86,14 +97,19 @@ export class DaemonClient {
       id,
     };
 
+    // Log request
+    logger.debugRpcRequest(method, params);
+
     // Send request
     const requestData = JSON.stringify(request) + "\n";
     await this.conn!.write(this.encoder.encode(requestData));
+    logger.verbose(`Sent RPC request: ${method}`);
 
     // Wait for response
     return new Promise<T>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
+        logger.debugRpcResponse(method, "TIMEOUT");
         reject(
           new Error(
             `Request timeout for method: ${method}\n` +
@@ -213,6 +229,7 @@ export class DaemonClient {
   private handleResponse(response: JsonRpcResponse): void {
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
+      logger.debug(`Received response for unknown request ID: ${response.id}`);
       return;
     }
 
@@ -220,12 +237,15 @@ export class DaemonClient {
     clearTimeout(pending.timeout);
 
     if (response.error) {
+      logger.debugRpcResponse(`request-${response.id}`, response.error);
       pending.reject(
         new Error(
           `RPC Error (${response.error.code}): ${response.error.message}`,
         ),
       );
     } else {
+      logger.debugRpcResponse(`request-${response.id}`, response.result);
+      logger.verbose(`Received RPC response for request ID ${response.id}`);
       pending.resolve(response.result);
     }
   }

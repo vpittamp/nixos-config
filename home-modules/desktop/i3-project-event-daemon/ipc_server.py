@@ -1,6 +1,8 @@
 """JSON-RPC IPC server for daemon queries.
 
 Exposes daemon state via UNIX socket with systemd socket activation support.
+
+Updated: 2025-10-22 - Added Deno CLI compatibility (aliases + response formats)
 """
 
 import asyncio
@@ -8,6 +10,7 @@ import json
 import logging
 import os
 import socket
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -187,11 +190,27 @@ class IPCServer:
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
-                result = await self._get_windows(params)
+                # Return hierarchical tree structure (outputs array)
+                tree_result = await self._get_window_tree(params)
+                result = tree_result.get("outputs", [])
             elif method == "switch_project":
                 result = await self._switch_project(params)
             elif method == "get_events":
-                result = await self._get_events(params)
+                # Return events array (not dict with stats) for CLI
+                # Note: CLI expects simplified diagnostic events, not full i3 event structure
+                events_result = await self._get_events(params)
+                events = events_result.get("events", [])
+                # Adapt to simpler format for CLI
+                result = [
+                    {
+                        "event_id": evt["event_id"],
+                        "event_type": evt["event_type"].split("::")[0],  # "window::focus" -> "window"
+                        "change": evt["event_type"].split("::")[ 1] if "::" in evt["event_type"] else "",
+                        "container": None,  # Diagnostic events don't have full container
+                        "timestamp": int(datetime.fromisoformat(evt["timestamp"].replace("Z", "+00:00")).timestamp()),
+                    }
+                    for evt in events
+                ]
             elif method == "list_monitors":
                 result = await self._list_monitors()
             elif method == "subscribe_events":
@@ -206,6 +225,44 @@ class IPCServer:
                 result = await self._classify_window(params)
             elif method == "get_window_tree":
                 result = await self._get_window_tree(params)
+
+            # Method aliases for Deno CLI compatibility
+            elif method == "list_projects":
+                # Convert get_projects dict to array format for CLI
+                projects_dict = await self._get_projects()
+                result = [
+                    {
+                        "name": name,
+                        "display_name": proj["display_name"],
+                        "icon": proj["icon"],
+                        "directory": proj["directory"],
+                        "scoped_classes": [],  # TODO: Get from config
+                        "created_at": 0,  # TODO: Add to state
+                        "last_used_at": 0,  # TODO: Add to state
+                    }
+                    for name, proj in projects_dict.get("projects", {}).items()
+                ]
+            elif method == "get_current_project":
+                # Adapt get_active_project response format for CLI
+                active = await self._get_active_project()
+                result = {"project": active.get("project_name")}
+            elif method == "list_rules":
+                # Return rules array adapted to CLI format
+                import uuid
+                rules_result = await self._get_window_rules(params)
+                rules = rules_result.get("rules", [])
+                # Adapt format: pattern -> class_pattern, add rule_id and enabled
+                result = [
+                    {
+                        "rule_id": str(uuid.uuid5(uuid.NAMESPACE_DNS, rule["pattern"])),
+                        "class_pattern": rule["pattern"],
+                        "scope": rule["scope"],
+                        "priority": rule["priority"],
+                        "enabled": True,  # TODO: Track enabled state
+                    }
+                    for rule in rules
+                ]
+
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -229,7 +286,14 @@ class IPCServer:
         return {
             "status": "running",
             "connected": self.state_manager.state.is_connected,
-            **stats,
+            "uptime": stats.get("uptime_seconds", 0),  # Rename for CLI
+            "active_project": stats.get("active_project"),
+            "window_count": stats.get("window_count", 0),
+            "workspace_count": stats.get("workspace_count", 0),
+            "event_count": stats.get("event_count", 0),
+            "error_count": stats.get("error_count", 0),
+            "version": "1.0.0",  # TODO: Get from package metadata
+            "socket_path": str(self.server.sockets[0].getsockname()) if self.server and self.server.sockets else "/run/user/1000/i3-project-daemon/ipc.sock",
         }
 
     async def _get_active_project(self) -> Dict[str, Any]:
@@ -692,15 +756,20 @@ class IPCServer:
                 if not output.active or output.name.startswith("__"):
                     continue  # Skip inactive and special outputs
 
+                # Find current workspace for this output
+                current_ws_name = next((ws.name for ws in workspaces if ws.output == output.name and ws.visible), "1")
+
                 output_node = {
                     "name": output.name,
                     "active": output.active,
-                    "rect": {
+                    "primary": output.primary,
+                    "geometry": {
                         "x": output.rect.x,
                         "y": output.rect.y,
                         "width": output.rect.width,
                         "height": output.rect.height,
                     },
+                    "current_workspace": current_ws_name,
                     "workspaces": [],
                 }
 
@@ -714,6 +783,7 @@ class IPCServer:
                         "name": ws.name,
                         "focused": ws.focused,
                         "visible": ws.visible,
+                        "output": output.name,
                         "windows": [],
                     }
 
@@ -792,29 +862,28 @@ class IPCServer:
                     if classification == "scoped" and active_project and project != active_project:
                         hidden = True
 
+                # Format workspace as string (CLI expects "1" or "1:name")
+                workspace_name = container.name if container.type == "workspace" else ""
+                workspace_str = workspace_name if workspace_name else str(workspace_num)
+
                 window_data = {
                     "id": node.window,
-                    "window_class": node.window_class or "",
+                    "class": node.window_class or "",
                     "instance": node.window_instance or "",
                     "title": node.name or "",
-                    "window_role": getattr(node.window_properties, 'window_role', None) if hasattr(node, 'window_properties') and node.window_properties else None,
-                    "workspace": workspace_num,
-                    "workspace_name": container.name if container.type == "workspace" else "",
+                    "workspace": workspace_str,
                     "output": output_name,
                     "marks": node.marks,
                     "floating": node.floating == "user_on",
                     "focused": node.focused,
+                    "hidden": hidden,
+                    "fullscreen": node.fullscreen_mode > 0,
                     "geometry": {
                         "x": node.rect.x,
                         "y": node.rect.y,
                         "width": node.rect.width,
                         "height": node.rect.height,
                     },
-                    "pid": None,  # Not readily available from tree
-                    "project": project,
-                    "classification": classification,
-                    "hidden": hidden,
-                    "app_identifier": node.window_class,
                 }
                 windows.append(window_data)
 

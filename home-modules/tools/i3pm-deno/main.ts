@@ -91,6 +91,14 @@ async function main(): Promise<void> {
     showHelp();
   }
 
+  // Initialize logging
+  const { enableVerbose, enableDebug } = await import("./src/utils/logger.ts");
+  if (args.debug) {
+    enableDebug();
+  } else if (args.verbose) {
+    enableVerbose();
+  }
+
   // Get command
   const command = String(args._[0]);
   const commandArgs = args._.slice(1);

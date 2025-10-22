@@ -5,6 +5,12 @@
  */
 
 import { parseArgs } from "@std/cli/parse-args";
+import { DaemonClient } from "../client.ts";
+import { OutputSchema } from "../validation.ts";
+import type { Output } from "../models.ts";
+import { renderTree, renderLegend as renderTreeLegend } from "../ui/tree.ts";
+import { renderTable, renderLegend as renderTableLegend } from "../ui/table.ts";
+import { z } from "zod";
 
 interface WindowsCommandOptions {
   verbose?: boolean;
@@ -29,6 +35,7 @@ OPTIONS:
   --hidden          Show hidden windows (scoped to inactive projects)
   --project <name>  Filter by project
   --output <name>   Filter by output (monitor)
+  --legend          Show legend for status indicators
   -h, --help        Show this help message
 
 EXAMPLES:
@@ -48,6 +55,68 @@ LIVE TUI KEYS:
 }
 
 /**
+ * Filter outputs by project or output name
+ */
+function filterOutputs(
+  outputs: Output[],
+  filters: { project?: string; output?: string },
+): Output[] {
+  let filtered = outputs;
+
+  // Filter by output name
+  if (filters.output) {
+    filtered = filtered.filter((o) => o.name === filters.output);
+  }
+
+  // Filter by project (filter windows with project mark)
+  if (filters.project) {
+    filtered = filtered.map((output) => ({
+      ...output,
+      workspaces: output.workspaces.map((ws) => ({
+        ...ws,
+        windows: ws.windows.filter((w) =>
+          w.marks.some((m) => m === `project:${filters.project}`)
+        ),
+      })),
+    }));
+  }
+
+  return filtered;
+}
+
+/**
+ * Fetch window state from daemon
+ */
+async function getWindowState(
+  client: DaemonClient,
+  options: WindowsCommandOptions,
+): Promise<Output[]> {
+  try {
+    const response = await client.request("get_windows");
+
+    if (options.debug) {
+      console.error("DEBUG: Raw response:", JSON.stringify(response, null, 2));
+    }
+
+    // Validate response with Zod
+    const OutputArraySchema = z.array(OutputSchema);
+    const validated = OutputArraySchema.parse(response);
+
+    return validated;
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      console.error("Error: Invalid daemon response format");
+      if (options.debug) {
+        console.error("Validation errors:", err.errors);
+      }
+      console.error("This may indicate a protocol version mismatch");
+      Deno.exit(1);
+    }
+    throw err;
+  }
+}
+
+/**
  * Windows command router
  */
 export async function windowsCommand(
@@ -55,17 +124,105 @@ export async function windowsCommand(
   options: WindowsCommandOptions,
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
-    boolean: ["help", "tree", "table", "json", "live", "hidden"],
+    boolean: ["help", "tree", "table", "json", "live", "hidden", "legend"],
     string: ["project", "output"],
     alias: { h: "help" },
-    default: { tree: true },
+    default: {},
   });
 
   if (parsed.help) {
     showHelp();
   }
 
-  // TODO: Implement window visualization
-  console.log("Windows visualization - Coming soon in Phase 4");
-  console.log("Foundation is complete, command implementation pending");
+  // Show legend if requested
+  if (parsed.legend) {
+    console.log(parsed.table ? renderTableLegend() : renderTreeLegend());
+    return;
+  }
+
+  // Determine output mode (default to tree)
+  const isLive = parsed.live === true;
+  const isTable = parsed.table === true;
+  const isJson = parsed.json === true;
+  const isTree = !isTable && !isJson && !isLive;
+
+  // Live mode is handled separately (T023)
+  if (isLive) {
+    const client = new DaemonClient();
+
+    try {
+      await client.connect();
+
+      if (options.verbose) {
+        console.error("Connected to daemon, starting live TUI...");
+      }
+
+      // Import and launch live TUI
+      const { LiveTUI } = await import("../ui/live.ts");
+      const tui = new LiveTUI(client);
+      await tui.run();
+
+      return;
+    } catch (err) {
+      if (err instanceof Error) {
+        console.error(`Error: ${err.message}`);
+
+        if (err.message.includes("Failed to connect")) {
+          console.error("\nThe daemon is not running. Start it with:");
+          console.error("  systemctl --user start i3-project-event-listener");
+        }
+      } else {
+        console.error("Error:", err);
+      }
+
+      Deno.exit(1);
+    }
+  }
+
+  // Connect to daemon
+  const client = new DaemonClient();
+
+  try {
+    await client.connect();
+
+    if (options.verbose) {
+      console.error("Connected to daemon");
+    }
+
+    // Fetch window state
+    const outputs = await getWindowState(client, options);
+
+    // Apply filters
+    const filtered = filterOutputs(outputs, {
+      project: parsed.project as string | undefined,
+      output: parsed.output as string | undefined,
+    });
+
+    // Render output based on mode
+    if (isJson) {
+      // JSON mode (T021)
+      console.log(JSON.stringify(filtered, null, 2));
+    } else if (isTable) {
+      // Table mode (T020)
+      console.log(renderTable(filtered, { showHidden: parsed.hidden === true }));
+    } else {
+      // Tree mode (T019) - default
+      console.log(renderTree(filtered, { showHidden: parsed.hidden === true }));
+    }
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Error: ${err.message}`);
+
+      if (err.message.includes("Failed to connect")) {
+        console.error("\nThe daemon is not running. Start it with:");
+        console.error("  systemctl --user start i3-project-event-listener");
+      }
+    } else {
+      console.error("Error:", err);
+    }
+
+    Deno.exit(1);
+  } finally {
+    client.close();
+  }
 }

@@ -62,7 +62,7 @@
 
 ---
 
-## Phase 4: User Story 2 - Real-time Window State Visualization (Priority: P2)
+## Phase 4: User Story 2 - Real-time Window State Visualization (Priority: P2) ✅ COMPLETE
 
 **Goal**: Provide multiple visualization formats for window state with real-time updates
 
@@ -70,15 +70,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Implement tree view formatter in `src/ui/tree.ts`: hierarchical rendering (outputs → workspaces → windows), visual indicators (● focus, 🔸 scoped, 🔒 hidden, ⬜ floating), project tags ([nixos], [stacks]), Unicode box-drawing characters for tree structure
-- [ ] T018 [P] [US2] Implement table view formatter in `src/ui/table.ts`: column definitions (ID, Class, Title, WS, Output, Project, Status), unicodeWidth() for column alignment, header rendering with separators, row formatting with padding, status icon concatenation
-- [ ] T019 [US2] Implement `i3pm windows` command (tree mode) in `src/commands/windows.ts`: call daemon's get_windows RPC method, validate response with Zod OutputSchema array, filter hidden windows by default, render tree view using tree.ts formatter, handle empty state (no windows)
-- [ ] T020 [US2] Add `--table` flag support in `src/commands/windows.ts`: same get_windows call, render table view using table.ts formatter, handle empty state with message
-- [ ] T021 [US2] Add `--json` flag support in `src/commands/windows.ts`: same get_windows call, output raw JSON with JSON.stringify(result, null, 2), no validation errors to stdout
-- [ ] T022 [US2] Implement live TUI in `src/ui/live.ts`: LiveTUI class with run() method, alternate screen buffer management (enter: \x1b[?1049h, exit: \x1b[?1049l), cursor hiding/showing, raw mode for keyboard input, event subscription via daemon client, refresh() method calling get_windows, keyboard handler (Tab: switch view, H: toggle hidden, Q: quit, Ctrl+C: exit), terminal resize handler (SIGWINCH), cleanup/exit with terminal restoration
-- [ ] T023 [US2] Add `--live` flag support in `src/commands/windows.ts`: instantiate LiveTUI class, pass daemon client, call run() method, handle exit gracefully, ensure terminal restoration on errors
+- [X] T017 [P] [US2] Implement tree view formatter in `src/ui/tree.ts`: hierarchical rendering (outputs → workspaces → windows), visual indicators (● focus, 🔸 scoped, 🔒 hidden, ⬜ floating), project tags ([nixos], [stacks]), Unicode box-drawing characters for tree structure
+- [X] T018 [P] [US2] Implement table view formatter in `src/ui/table.ts`: column definitions (ID, Class, Title, WS, Output, Project, Status), unicodeWidth() for column alignment, header rendering with separators, row formatting with padding, status icon concatenation
+- [X] T019 [US2] Implement `i3pm windows` command (tree mode) in `src/commands/windows.ts`: call daemon's get_windows RPC method, validate response with Zod OutputSchema array, filter hidden windows by default, render tree view using tree.ts formatter, handle empty state (no windows)
+- [X] T020 [US2] Add `--table` flag support in `src/commands/windows.ts`: same get_windows call, render table view using table.ts formatter, handle empty state with message
+- [X] T021 [US2] Add `--json` flag support in `src/commands/windows.ts`: same get_windows call, output raw JSON with JSON.stringify(result, null, 2), no validation errors to stdout
+- [X] T022 [US2] Implement live TUI in `src/ui/live.ts`: LiveTUI class with run() method, alternate screen buffer management (enter: \x1b[?1049h, exit: \x1b[?1049l), cursor hiding/showing, raw mode for keyboard input, event subscription via daemon client, refresh() method calling get_windows, keyboard handler (Tab: switch view, H: toggle hidden, Q: quit, Ctrl+C: exit), terminal resize handler (SIGWINCH), cleanup/exit with terminal restoration
+- [X] T023 [US2] Add `--live` flag support in `src/commands/windows.ts`: instantiate LiveTUI class, pass daemon client, call run() method, handle exit gracefully, ensure terminal restoration on errors
+  - **Bug Fix (2025-10-22)**: Fixed event notification field name mismatch in live.ts. Daemon sends both `type` (from handlers.py real-time events) and `event_type` (from event buffer broadcasts). Live TUI now checks both fields for compatibility.
 
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently (project switching + window visualization)
+**Checkpoint**: ✅ User Story 2 (window visualization with tree, table, JSON, and live modes) is fully functional and testable independently
 
 ---
 
@@ -99,7 +100,7 @@
 
 ---
 
-## Phase 6: User Story 4 - Daemon Status and Event Monitoring (Priority: P4)
+## Phase 6: User Story 4 - Daemon Status and Event Monitoring (Priority: P4) ✅ COMPLETE
 
 **Goal**: Provide visibility into daemon health and event history for troubleshooting
 
@@ -107,14 +108,14 @@
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] Implement `i3pm daemon status` command in `src/commands/daemon.ts`: call daemon's get_status RPC method, validate response with Zod DaemonStatusSchema, format multi-line output (status, connected, uptime in human-readable format, active project, window/workspace/event counts, version, socket path), handle daemon unavailable error with actionable systemctl command
-- [ ] T029 [US4] Implement `i3pm daemon events` command in `src/commands/daemon.ts`: parse flags (--limit, --type, --since-id) using parseArgs(), call daemon's get_events RPC method with params, validate response with Zod EventNotificationSchema array, format output in reverse chronological order (newest first) with event_id, timestamp (human-readable), event_type:change, container info (window class/title or workspace name), handle empty event history, display total events and ID range
+- [X] T028 [US4] Implement `i3pm daemon status` command in `src/commands/daemon.ts`: call daemon's get_status RPC method, validate response with Zod DaemonStatusSchema, format multi-line output (status, connected, uptime in human-readable format, active project, window/workspace/event counts, version, socket path), handle daemon unavailable error with actionable systemctl command
+- [X] T029 [US4] Implement `i3pm daemon events` command in `src/commands/daemon.ts`: parse flags (--limit, --type, --since-id) using parseArgs(), call daemon's get_events RPC method with params, validate response with Zod EventNotificationSchema array, format output in reverse chronological order (newest first) with event_id, timestamp (human-readable), event_type:change, container info (window class/title or workspace name), handle empty event history, display total events and ID range
 
-**Checkpoint**: Daemon monitoring commands (status, events) should now be functional for troubleshooting
+**Checkpoint**: ✅ Daemon monitoring commands (status, events) are fully functional for troubleshooting
 
 ---
 
-## Phase 7: User Story 5 - Window Classification and Rule Management (Priority: P5)
+## Phase 7: User Story 5 - Window Classification and Rule Management (Priority: P5) ✅ COMPLETE
 
 **Goal**: Enable management and testing of window classification rules
 
@@ -122,17 +123,17 @@
 
 ### Implementation for User Story 5
 
-- [ ] T030 [P] [US5] Implement `i3pm rules list` command in `src/commands/rules.ts`: call daemon's list_rules RPC method, validate response with Zod WindowRuleSchema array, format output showing rule number, class pattern, scope (scoped/global), priority, enabled state
-- [ ] T031 [P] [US5] Implement `i3pm rules classify` command in `src/commands/rules.ts`: parse flags (--class, --instance) using parseArgs(), call daemon's classify_window RPC method, format output showing classification result (class, instance, scope, matched rule with ID and priority), handle no matching rule case
-- [ ] T032 [P] [US5] Implement `i3pm rules validate` command in `src/commands/rules.ts`: call daemon's list_rules RPC method, validate each rule's regex patterns (class_pattern, instance_pattern), check for rule conflicts (same pattern with different scopes at same priority), display validation results, exit with code 1 if validation fails
-- [ ] T033 [P] [US5] Implement `i3pm rules test` command in `src/commands/rules.ts`: parse --class flag, call daemon's classify_window RPC method, display all matching rules (not just final winner), show evaluation order by priority, display final classification result
-- [ ] T034 [US5] Implement `i3pm app-classes` command in `src/commands/app-classes.ts`: call daemon's get_app_classes RPC method, validate response with Zod ApplicationClassSchema arrays (scoped, global), format output in two sections (Scoped Applications, Global Applications), display class name, display name, icon, description for each
+- [X] T030 [P] [US5] Implement `i3pm rules list` command in `src/commands/rules.ts`: call daemon's list_rules RPC method, validate response with Zod WindowRuleSchema array, format output showing rule number, class pattern, scope (scoped/global), priority, enabled state
+- [X] T031 [P] [US5] Implement `i3pm rules classify` command in `src/commands/rules.ts`: parse flags (--class, --instance) using parseArgs(), call daemon's classify_window RPC method, format output showing classification result (class, instance, scope, matched rule with ID and priority), handle no matching rule case
+- [X] T032 [P] [US5] Implement `i3pm rules validate` command in `src/commands/rules.ts`: call daemon's list_rules RPC method, validate each rule's regex patterns (class_pattern, instance_pattern), check for rule conflicts (same pattern with different scopes at same priority), display validation results, exit with code 1 if validation fails
+- [X] T033 [P] [US5] Implement `i3pm rules test` command in `src/commands/rules.ts`: parse --class flag, call daemon's classify_window RPC method, display all matching rules (not just final winner), show evaluation order by priority, display final classification result
+- [X] T034 [US5] Implement `i3pm app-classes` command in `src/commands/app-classes.ts`: call daemon's get_app_classes RPC method, validate response with Zod ApplicationClassSchema arrays (scoped, global), format output in two sections (Scoped Applications, Global Applications), display class name, display name, icon, description for each
 
-**Checkpoint**: All window classification commands (list, classify, validate, test, app-classes) should now be functional
+**Checkpoint**: ✅ All window classification commands (list, classify, validate, test, app-classes) are fully functional
 
 ---
 
-## Phase 8: User Story 6 - Interactive Monitor Dashboard (Priority: P6)
+## Phase 8: User Story 6 - Interactive Monitor Dashboard (Priority: P6) ✅ COMPLETE
 
 **Goal**: Provide holistic real-time monitoring dashboard for system debugging
 
@@ -140,10 +141,10 @@
 
 ### Implementation for User Story 6
 
-- [ ] T035 [US6] Implement monitor dashboard in `src/ui/monitor-dashboard.ts`: MonitorDashboard class with multi-pane layout (daemon status pane, event stream pane, window state pane), alternate screen buffer management, cursor hiding, raw mode keyboard input, pane rendering methods (renderStatusPane(), renderEventsPane(), renderWindowsPane()), refresh rate limiting (<250ms between refreshes), event subscription for real-time updates, keyboard handler (Tab: switch pane focus, Q: quit, Ctrl+C: exit), terminal resize handler, cleanup/exit with terminal restoration
-- [ ] T036 [US6] Implement `i3pm monitor` command in `src/commands/monitor.ts`: instantiate MonitorDashboard class, pass daemon client, call run() method, handle exit gracefully, ensure terminal restoration on errors
+- [X] T035 [US6] Implement monitor dashboard in `src/ui/monitor-dashboard.ts`: MonitorDashboard class with multi-pane layout (daemon status pane, event stream pane, window state pane), alternate screen buffer management, cursor hiding, raw mode keyboard input, pane rendering methods (renderStatusPane(), renderEventsPane(), renderWindowsPane()), refresh rate limiting (<250ms between refreshes), event subscription for real-time updates, keyboard handler (Tab: switch pane focus, S/E/W: focus specific panes, Q: quit, Ctrl+C: exit), terminal resize handler, cleanup/exit with terminal restoration
+- [X] T036 [US6] Implement `i3pm monitor` command in `src/commands/monitor.ts`: instantiate MonitorDashboard class, pass daemon client, call run() method, handle exit gracefully, ensure terminal restoration on errors
 
-**Checkpoint**: Interactive monitor dashboard should now be functional for holistic debugging sessions
+**Checkpoint**: ✅ Interactive monitor dashboard is fully functional for holistic debugging sessions
 
 ---
 
@@ -161,9 +162,9 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T040 [P] Add comprehensive help text for all commands: implement --help flag handler in main.ts, add help text for each parent command (project, windows, daemon, rules, monitor, app-classes), add help text for each subcommand with usage examples, format help output with proper indentation and examples
-- [ ] T041 [P] Implement --verbose flag support: add verbose logging to daemon client connection, log all RPC requests/responses when --verbose is enabled, log event notifications in live modes
-- [ ] T042 [P] Implement --debug flag support: add debug logging for socket connection details, log Zod validation details, log terminal state changes (raw mode, alternate screen), log signal handling events
+- [X] T040 [P] Add comprehensive help text for all commands: implement --help flag handler in main.ts, add help text for each parent command (project, windows, daemon, rules, monitor, app-classes), add help text for each subcommand with usage examples, format help output with proper indentation and examples
+- [X] T041 [P] Implement --verbose flag support: created logger utility in src/utils/logger.ts, integrated into main.ts to enable verbose logging globally, added verbose logging to daemon client connection and RPC requests, log event notifications in live modes
+- [X] T042 [P] Implement --debug flag support: created comprehensive debug logging functions in logger.ts (debugRpcRequest, debugRpcResponse, debugSocket, debugTerminal, debugSignal, debugValidation), integrated into daemon client for socket and RPC debugging, debug flag implies verbose logging
 - [ ] T043 Handle all edge cases from spec.md: daemon not running error message with systemctl command, socket connection timeout with retry notification, terminal resize during live TUI (trigger redraw), malformed JSON-RPC responses (validation error message), empty window state (friendly "No windows open" message), long window titles (truncation with ellipsis at column boundary), keyboard interrupt (Ctrl+C) with cleanup and exit code 130, concurrent project switch requests (show queue/blocking message), non-existent project directory (warning but allow switch), project directory not accessible (warning with permission hint)
 - [ ] T044 [P] Validate against quickstart.md workflows: test "Workflow 1: Start Working on a Project" (list → switch → current → windows), verify completion time <5 seconds per SC-001, test "Workflow 2: Debug Window Visibility Issue" (current → windows --live with H toggle → rules classify → daemon events), test "Workflow 3: Create New Project" (create → show → switch → windows), verify completion time <30 seconds, test "Workflow 4: Monitor System in Real-Time" (windows --live, daemon events, monitor), verify all three modes work as expected
 - [ ] T045 Performance validation: measure CLI startup time (should be <300ms per SC-003), measure project switch time (should be <2s per SC-001), measure window state query time (should be <500ms), measure live TUI update latency (should be <100ms per FR-030, SC-004), verify binary size (should be <20MB per SC-002), measure memory usage during extended live monitoring session (should be <50MB after 1 hour per SC-005)
