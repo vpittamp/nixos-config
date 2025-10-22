@@ -27,8 +27,11 @@ let
     buildPhase = ''
       # Compile TypeScript to standalone executable
       # The cache is already populated from configurePhase
+      # Use --no-remote and --cached-only to prevent network access during compilation
       # Permissions are baked into the binary at compile time
       deno compile \
+        --no-remote \
+        --cached-only \
         --allow-net \
         --allow-read=/run/user,/home \
         --allow-env=XDG_RUNTIME_DIR,HOME,USER \
