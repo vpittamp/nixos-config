@@ -20,6 +20,7 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 import signal
 import psutil
+import i3ipc.aio
 
 
 @dataclass
@@ -59,6 +60,7 @@ class IntegrationTestFramework:
         self.display = display
         self.resolution = resolution
         self.env: Optional[TestEnvironment] = None
+        self.i3: Optional[Any] = None  # i3ipc.aio.Connection
 
     async def setup_environment(self) -> TestEnvironment:
         """Set up complete test environment.
@@ -138,6 +140,12 @@ class IntegrationTestFramework:
                 print(f"    i3 log contents:")
                 print(log_file.read_text())
             raise RuntimeError("i3 failed to start")
+
+        # Initialize i3ipc connection
+        print("  Connecting to i3 IPC...")
+        self.i3 = i3ipc.aio.Connection()
+        await self.i3.connect()
+        print("  i3 IPC connected!")
 
         print("  Test environment ready!")
         self.env = env

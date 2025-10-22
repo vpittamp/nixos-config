@@ -1,0 +1,39 @@
+/* Layout Manager Screen Styles */
+
+.hidden {
+    display: none;
+}
+
+#input_container {
+    height: auto;
+    padding: 1;
+    background: $panel;
+    border: solid $primary;
+    margin-bottom: 1;
+}
+
+#input_label {
+    margin-bottom: 1;
+}
+
+#layouts_table {
+    height: 1fr;
+    margin-bottom: 1;
+}
+
+.actions {
+    height: auto;
+    padding: 1;
+}
+
+Button {
+    margin-right: 1;
+}
+
+.title {
+    text-align: center;
+    text-style: bold;
+    padding: 1;
+    background: $primary;
+    color: $text;
+}

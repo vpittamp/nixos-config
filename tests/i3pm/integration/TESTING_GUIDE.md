@@ -15,20 +15,42 @@ We run tests via a systemd user service that:
 
 ## Quick Start
 
-### 1. Install the Test Service
+### Option 1: Run Standalone (Fastest)
+
+Run tests directly with all dependencies included (no systemd setup needed):
+
+```bash
+cd /etc/nixos/tests/i3pm/integration
+
+# Quick validation test (~5s)
+./run_quick_test_standalone.sh
+
+# Comprehensive user workflow tests (~60-120s)
+./run_comprehensive_tests.sh
+```
+
+**Best for**: Quick testing, development, viewing tests live with VNC
+
+### Option 2: Run via systemd (Background)
+
+Run tests in background, survives terminal disconnect:
+
+#### 1. Install the Test Service
 
 ```bash
 cd /etc/nixos/tests/i3pm/integration
 ./test-runner install
 ```
 
-### 2. Start Tests
+#### 2. Start Tests
 
 ```bash
 ./test-runner start
 ```
 
 **You can now disconnect your terminal safely!**
+
+**Best for**: Long-running tests, SSH sessions, CI/CD
 
 ### 3. Monitor Progress
 
@@ -423,13 +445,16 @@ python -m pytest tests/i3pm/integration/test_user_workflows.py::test_full_user_s
 
 ## Files
 
-- `test-runner` - CLI tool for managing tests
+- `test-runner` - CLI tool for managing tests (systemd-based)
 - `i3pm-integration-tests.service` - systemd unit file
-- `run_simple_test.sh` - Quick validation test runner
-- `run_comprehensive_tests.sh` - ⭐ Comprehensive user workflow runner
+- `run_simple_test.sh` - Quick validation test runner (requires systemd)
+- `run_quick_test_standalone.sh` - ⭐ Standalone quick test (includes all deps)
+- `run_comprehensive_tests.sh` - ⭐ Comprehensive user workflow runner (includes all deps)
 - `test_quick_validation.py` - Fast validation tests (~5s)
 - `test_real_apps.py` - Full integration tests (~30-60s)
 - `test_user_workflows.py` - ⭐ User workflow tests (~60-120s)
+- `test_tui_interactions.py` - ⭐ TUI interaction tests
+- `test_daemon_integration.py` - ⭐ Daemon integration tests
 
 ## Summary
 

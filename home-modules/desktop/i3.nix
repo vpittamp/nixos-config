@@ -32,41 +32,48 @@
     # to ensure workspaces show on i3bar even before dynamic assignment runs
 
     # Application to workspace assignments
-    # Terminal applications (Ghostty, Konsole, etc.)
-    assign [class="ghostty"] $ws1
-    assign [class="Ghostty"] $ws1
-    assign [class="konsole"] $ws1
-    assign [class="Konsole"] $ws1
-    assign [class="Alacritty"] $ws1
-    assign [class="alacritty"] $ws1
+    # NOTE: Project-scoped applications (Ghostty, Code) should NOT have static assign rules
+    # as they need dynamic workspace placement for layout restore to work correctly.
+    # The daemon handles project-aware window placement via marks.
 
-    # VS Code and Code editors
-    assign [class="Code"] $ws2
-    assign [class="code"] $ws2
-    assign [class="VSCodium"] $ws2
+    # Terminal applications (Ghostty, Konsole, etc.) - DISABLED for layout restore
+    # assign [class="ghostty"] $ws1
+    # assign [class="Ghostty"] $ws1
+    # assign [class="konsole"] $ws1
+    # assign [class="Konsole"] $ws1
+    # assign [class="Alacritty"] $ws1
+    # assign [class="alacritty"] $ws1
 
-    # Firefox browser
-    assign [class="firefox"] $ws3
-    assign [class="Firefox"] $ws3
-    assign [class="Navigator"] $ws3
+    # VS Code and Code editors - DISABLED for layout restore
+    # assign [class="Code"] $ws2
+    # assign [class="code"] $ws2
+    # assign [class="VSCodium"] $ws2
 
-    # YouTube PWA - matches FFPWA pattern with YouTube
+    # Firefox browser - GLOBAL (always WS3) - TEMPORARILY DISABLED
+    # assign [class="firefox"] $ws3
+    # assign [class="Firefox"] $ws3
+    # assign [class="Navigator"] $ws3
+
+    # YouTube PWA - GLOBAL (always WS4) - TEMPORARILY DISABLED
     # PWAs use the pattern FFPWA-<profileid>, we match by title/name
-    assign [class="^FFPWA-.*" title="YouTube"] $ws4
-    for_window [class="^FFPWA-.*" title=".*YouTube.*"] move to workspace $ws4
+    # assign [class="^FFPWA-.*" title="YouTube"] $ws4
+    # for_window [class="^FFPWA-.*" title=".*YouTube.*"] move to workspace $ws4
 
-    # Yazi file manager - match by title since ghostty doesn't support --class
-    for_window [class="ghostty" title="^Yazi:.*"] move to workspace $ws5
+    # Google AI (Gemini) PWA - GLOBAL (always WS8) - TEMPORARILY DISABLED
+    # for_window [class="^FFPWA-.*" title=".*Gemini.*"] move to workspace $ws8
+    # for_window [class="^FFPWA-.*" title=".*Google AI.*"] move to workspace $ws8
 
-    # K9s Kubernetes manager - match by title set via wrapper script
-    for_window [class="ghostty" title="^K9s-Workspace$"] move to workspace $ws6
+    # NOTE: The following scoped app rules are DISABLED to allow layout restore
+    # to place windows on any workspace. The daemon handles these via window-rules.json.
 
-    # Lazygit - match by title set via wrapper script
-    for_window [class="ghostty" title="^Lazygit-Workspace$"] move to workspace $ws7
+    # Yazi file manager - SCOPED (disabled for layout restore)
+    # for_window [class="ghostty" title="^Yazi:.*"] move to workspace $ws5
 
-    # Google AI (Gemini) PWA - match by title pattern
-    for_window [class="^FFPWA-.*" title=".*Gemini.*"] move to workspace $ws8
-    for_window [class="^FFPWA-.*" title=".*Google AI.*"] move to workspace $ws8
+    # K9s Kubernetes manager - SCOPED (disabled for layout restore)
+    # for_window [class="ghostty" title="^K9s-Workspace$"] move to workspace $ws6
+
+    # Lazygit - SCOPED (disabled for layout restore)
+    # for_window [class="ghostty" title="^Lazygit-Workspace$"] move to workspace $ws7
 
     # Terminal (Shift+Return for floating)
     # NOTE: $mod+Return is now handled by project-aware launcher (see line ~166)

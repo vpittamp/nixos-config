@@ -26,6 +26,9 @@ let
       # Phase 7: Schema validation (T095)
       jsonschema
 
+      # Layout management dependencies (Feature 022)
+      psutil
+
       # Phase 6: Window inspector dependencies
       # xdotool and xprop provided via buildInputs (system packages)
     ];
