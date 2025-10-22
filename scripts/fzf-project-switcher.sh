@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-# Clear screen at start and on exit
-trap 'clear' EXIT
+# Clear screen at start and on exit, hide cursor
+trap 'tput cnorm; clear' EXIT
+tput civis  # Hide cursor
 
 # Get i3pm path
 I3PM="i3pm"
@@ -63,14 +64,16 @@ if [ ${#PROJECT_KEYS[@]} -eq 0 ] || ([ ${#PROJECT_KEYS[@]} -eq 1 ] && [ "${PROJE
 fi
 
 # Run fzf in fullscreen mode with dark Catppuccin Mocha theme
+# --no-info hides the "3/3" match count
 SELECTED=$(echo -n "$PROJECT_LIST" | fzf \
     --height=100% \
     --reverse \
     --border=rounded \
-    --prompt="󰉋  " \
-    --pointer="▶" \
+    --no-info \
+    --prompt="  " \
+    --pointer=">" \
     --marker="✓" \
-    --header="󰌽  Switch Project  |  Enter: Switch  |  Esc: Cancel" \
+    --header="  Switch Project  |  Enter: Switch  |  Esc: Cancel" \
     --color="bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8" \
     --color="fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc" \
     --color="marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8" \

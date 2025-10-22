@@ -53,6 +53,8 @@
 
     # Clean appearance
     "XTerm*cursorBlink" = false;
+    "XTerm*cursorOffTime" = 0;
+    "XTerm*cursorOnTime" = 0;
     "XTerm*borderColor" = "#1e1e2e";
 
     # Fix backspace
