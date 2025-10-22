@@ -235,11 +235,18 @@
       project-edit = "~/.config/i3/scripts/project-edit.sh";
       project-delete = "~/.config/i3/scripts/project-delete.sh";
 
-      # Short aliases for common commands
-      pswitch = "~/.config/i3/scripts/project-switch.sh";
-      pclear = "~/.config/i3/scripts/project-clear.sh";
-      plist = "~/.config/i3/scripts/project-list.sh";
-      pcurrent = "~/.config/i3/scripts/project-current.sh";
+      # Short aliases for common commands (Feature 027: Using Deno CLI)
+      pswitch = "i3pm project switch";
+      pclear = "i3pm project clear";
+      plist = "i3pm project list";
+      pcurrent = "i3pm project current";
+
+      # Additional i3pm aliases
+      iwin = "i3pm windows";
+      iwinlive = "i3pm windows --live";
+      iwintable = "i3pm windows --table";
+      dstatus = "i3pm daemon status";
+      devents = "i3pm daemon events";
     };
     
     initExtra = ''

@@ -53,30 +53,8 @@ in
     # Install i3pm binary
     home.packages = [ i3pm ];
 
-    # Create shell aliases for convenience (optional)
-    programs.bash.shellAliases = lib.mkIf config.programs.bash.enable {
-      pswitch = "i3pm project switch";
-      pclear = "i3pm project clear";
-      plist = "i3pm project list";
-      pcurrent = "i3pm project current";
-      iwin = "i3pm windows";
-      iwinlive = "i3pm windows --live";
-      iwintable = "i3pm windows --table";
-      dstatus = "i3pm daemon status";
-      devents = "i3pm daemon events";
-    };
-
-    # Fish shell aliases (if using fish)
-    programs.fish.shellAliases = lib.mkIf config.programs.fish.enable {
-      pswitch = "i3pm project switch";
-      pclear = "i3pm project clear";
-      plist = "i3pm project list";
-      pcurrent = "i3pm project current";
-      iwin = "i3pm windows";
-      iwinlive = "i3pm windows --live";
-      iwintable = "i3pm windows --table";
-      dstatus = "i3pm daemon status";
-      devents = "i3pm daemon events";
-    };
+    # Note: Shell aliases are managed in home-modules/shell/bash.nix
+    # to avoid conflicts. The bash.nix file should be updated to use
+    # the new i3pm commands instead of the old shell scripts.
   };
 }
