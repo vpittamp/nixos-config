@@ -22,7 +22,7 @@ let
 
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = lib.fakeHash;
+    outputHash = "sha256-q0Zj+jQ1M9dZd9X8Fb9SzBpwZsDXZbgw0FDsdxR+sFA=";
   };
 
   # i3pm Deno CLI - Compiled TypeScript CLI for i3 project management
