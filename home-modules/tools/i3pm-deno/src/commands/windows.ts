@@ -11,11 +11,15 @@ import type { Output } from "../models.ts";
 import { renderTree, renderLegend as renderTreeLegend } from "../ui/tree.ts";
 import { renderTable, renderLegend as renderTableLegend } from "../ui/table.ts";
 import { z } from "zod";
+import { setup, Spinner } from "@cli-ux";
 
 interface WindowsCommandOptions {
   verbose?: boolean;
   debug?: boolean;
 }
+
+// Initialize CLI-UX formatter for semantic colors
+const { formatter } = setup();
 
 /**
  * Show windows command help
@@ -105,11 +109,11 @@ async function getWindowState(
     return validated;
   } catch (err) {
     if (err instanceof z.ZodError) {
-      console.error("Error: Invalid daemon response format");
+      console.error(formatter.error("Invalid daemon response format"));
       if (options.debug) {
-        console.error("Validation errors:", err.errors);
+        console.error(formatter.dim("Validation errors:"), err.errors);
       }
-      console.error("This may indicate a protocol version mismatch");
+      console.error(formatter.warning("This may indicate a protocol version mismatch"));
       Deno.exit(1);
     }
     throw err;
@@ -148,14 +152,14 @@ export async function windowsCommand(
 
   // Live mode is handled separately (T023)
   if (isLive) {
+    const spinner = new Spinner({ message: "Connecting to daemon...", showAfter: 0 });
+    spinner.start();
+
     const client = new DaemonClient();
 
     try {
       await client.connect();
-
-      if (options.verbose) {
-        console.error("Connected to daemon, starting live TUI...");
-      }
+      spinner.finish(formatter.success("Connected to daemon"));
 
       // Import and launch live TUI
       const { LiveTUI } = await import("../ui/live.ts");
@@ -164,33 +168,39 @@ export async function windowsCommand(
 
       return;
     } catch (err) {
+      spinner.stop();
+
       if (err instanceof Error) {
-        console.error(`Error: ${err.message}`);
+        console.error(formatter.error(err.message));
 
         if (err.message.includes("Failed to connect")) {
-          console.error("\nThe daemon is not running. Start it with:");
-          console.error("  systemctl --user start i3-project-event-listener");
+          console.error(formatter.info("\nThe daemon is not running. Start it with:"));
+          console.error(formatter.dim("  systemctl --user start i3-project-event-listener"));
         }
       } else {
-        console.error("Error:", err);
+        console.error(formatter.error(String(err)));
       }
 
       Deno.exit(1);
     }
   }
 
-  // Connect to daemon
+  // Connect to daemon with progress indicator
+  const spinner = new Spinner({ message: "Fetching window state...", showAfter: 100 });
+  spinner.start();
+
   const client = new DaemonClient();
 
   try {
     await client.connect();
 
-    if (options.verbose) {
-      console.error("Connected to daemon");
-    }
-
     // Fetch window state
     const outputs = await getWindowState(client, options);
+    spinner.stop();
+
+    if (options.verbose) {
+      console.error(formatter.success("Window state retrieved"));
+    }
 
     // Apply filters
     const filtered = filterOutputs(outputs, {
@@ -210,15 +220,17 @@ export async function windowsCommand(
       console.log(renderTree(filtered, { showHidden: parsed.hidden === true }));
     }
   } catch (err) {
+    spinner.stop();
+
     if (err instanceof Error) {
-      console.error(`Error: ${err.message}`);
+      console.error(formatter.error(err.message));
 
       if (err.message.includes("Failed to connect")) {
-        console.error("\nThe daemon is not running. Start it with:");
-        console.error("  systemctl --user start i3-project-event-listener");
+        console.error(formatter.info("\nThe daemon is not running. Start it with:"));
+        console.error(formatter.dim("  systemctl --user start i3-project-event-listener"));
       }
     } else {
-      console.error("Error:", err);
+      console.error(formatter.error(String(err)));
     }
 
     Deno.exit(1);
