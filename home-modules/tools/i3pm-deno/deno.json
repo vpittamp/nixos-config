@@ -1,9 +1,11 @@
 {
+  "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
   "tasks": {
-    "dev": "deno run -A main.ts",
-    "compile": "deno compile -A --output=i3pm main.ts",
-    "test": "deno test -A",
-    "test:watch": "deno test --watch -A"
+    "dev": "deno run -A --no-lock main.ts",
+    "compile": "deno compile -A --no-lock --output=i3pm main.ts",
+    "test": "deno test -A --no-lock",
+    "test:watch": "deno test --watch -A --no-lock",
+    "check": "deno check main.ts"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.0",
