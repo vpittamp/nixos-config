@@ -1,9 +1,9 @@
 {
   "tasks": {
-    "dev": "deno run --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER main.ts",
-    "compile": "deno compile --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER --output=i3pm main.ts",
-    "test": "deno test --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER",
-    "test:watch": "deno test --watch --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER"
+    "dev": "deno run -A main.ts",
+    "compile": "deno compile -A --output=i3pm main.ts",
+    "test": "deno test -A",
+    "test:watch": "deno test --watch -A"
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1.0.0",
@@ -13,14 +13,7 @@
   },
   "compilerOptions": {
     "strict": true,
-    "lib": ["deno.window"],
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "alwaysStrict": true
+    "lib": ["deno.window"]
   },
   "lint": {
     "rules": {
