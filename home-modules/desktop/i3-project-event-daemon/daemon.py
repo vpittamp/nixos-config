@@ -20,17 +20,25 @@ except ImportError:
     SYSTEMD_AVAILABLE = False
     print("Warning: systemd-python not available, running without systemd integration", file=sys.stderr)
 
-from .config import load_project_configs, load_app_classification, load_active_project
+from .config import (
+    load_project_configs,
+    load_app_classification,
+    load_active_project,
+    reload_window_rules,
+    WindowRulesWatcher
+)
 from .state import StateManager
 from .connection import ResilientI3Connection
 from .ipc_server import IPCServer
 from .event_buffer import EventBuffer
+from .window_rules import WindowRule
 from .handlers import (
     on_tick,
     on_window_new,
     on_window_mark,
     on_window_close,
     on_window_focus,
+    on_window_title,
     on_workspace_init,
     on_workspace_empty,
     on_workspace_move,
@@ -139,6 +147,8 @@ class I3ProjectDaemon:
         self.event_buffer: Optional[EventBuffer] = None  # Feature 017: Event storage
         self.health_monitor: Optional[DaemonHealthMonitor] = None
         self.shutdown_event = asyncio.Event()
+        self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
+        self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -148,7 +158,12 @@ class I3ProjectDaemon:
         self.state_manager = StateManager()
 
         # Create IPC server first (needed for event buffer callback)
-        self.ipc_server = await IPCServer.from_systemd_socket(self.state_manager, event_buffer=None)
+        # Pass window_rules_getter for Feature 021: T025, T026
+        self.ipc_server = await IPCServer.from_systemd_socket(
+            self.state_manager,
+            event_buffer=None,
+            window_rules_getter=lambda: self.window_rules
+        )
 
         # Create event buffer with broadcast callback (Feature 017: T019)
         self.event_buffer = EventBuffer(max_size=500, broadcast_callback=self.ipc_server.broadcast_event_entry)
@@ -192,12 +207,41 @@ class I3ProjectDaemon:
             logger.error(f"Failed to connect to i3: {e}")
             raise
 
+        # NOTE: We DO NOT call subscribe_events() here!
+        # i3ipc.aio.Connection.on() automatically subscribes to base events
+        # when you register handlers (it extracts "window" from "window::new" and subscribes).
+        # Calling subscribe() manually can cause conflicts.
+
         # Update IPC server with i3 connection (Feature 018)
         self.ipc_server.i3_connection = self.connection
         logger.info("IPC server updated with i3 connection")
 
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
+
+        # Load window rules (Feature 021: T022)
+        window_rules_file = self.config_dir / "window-rules.json"
+        try:
+            self.window_rules = reload_window_rules(window_rules_file)
+            logger.info(f"Loaded {len(self.window_rules)} window rule(s)")
+        except Exception as e:
+            logger.warning(f"Failed to load window rules: {e}")
+            self.window_rules = []
+
+        # Setup window rules file watcher (Feature 021: T022)
+        def on_rules_reload():
+            """Callback for window rules file changes."""
+            self.window_rules = reload_window_rules(window_rules_file, self.window_rules)
+
+        self.rules_watcher = WindowRulesWatcher(
+            config_file=window_rules_file,
+            reload_callback=on_rules_reload,
+            debounce_ms=100
+        )
+        # Set event loop for async debouncing
+        self.rules_watcher.set_event_loop(asyncio.get_event_loop())
+        # Start watching
+        self.rules_watcher.start()
 
         logger.info("Daemon initialization complete")
 
@@ -227,11 +271,30 @@ class I3ProjectDaemon:
             partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir, event_buffer=self.event_buffer)
         )
 
-        # USER STORY 2: Automatic window tracking
-        self.connection.subscribe(
-            "window::new",
-            partial(on_window_new, state_manager=self.state_manager, app_classification=app_classification, event_buffer=self.event_buffer)
-        )
+        # USER STORY 2: Automatic window tracking (Feature 021: T023 - pass window_rules getter)
+        # Use wrappers to get current window_rules (updated by file watcher)
+        # CRITICAL: Wrappers must be async to await the async handlers!
+        async def get_window_rules_wrapper_new(conn, event):
+            """Wrapper to pass current window_rules to window::new handler."""
+            return await on_window_new(
+                conn, event,
+                state_manager=self.state_manager,
+                app_classification=app_classification,
+                event_buffer=self.event_buffer,
+                window_rules=self.window_rules  # Gets current value from daemon
+            )
+
+        async def get_window_rules_wrapper_title(conn, event):
+            """Wrapper to pass current window_rules to window::title handler."""
+            return await on_window_title(
+                conn, event,
+                state_manager=self.state_manager,
+                app_classification=app_classification,
+                event_buffer=self.event_buffer,
+                window_rules=self.window_rules  # Gets current value from daemon
+            )
+
+        self.connection.subscribe("window::new", get_window_rules_wrapper_new)
         self.connection.subscribe(
             "window::mark",
             partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer)
@@ -244,6 +307,9 @@ class I3ProjectDaemon:
             "window::focus",
             partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer)
         )
+
+        # USER STORY 2: Title change re-classification (T033)
+        self.connection.subscribe("window::title", get_window_rules_wrapper_title)
 
         # USER STORY 3: Workspace monitoring
         self.connection.subscribe(
@@ -263,6 +329,13 @@ class I3ProjectDaemon:
         self.connection.subscribe("shutdown", self.connection.handle_shutdown_event)
 
         logger.info("Event handlers registered")
+
+        # CRITICAL: Explicitly subscribe to events AFTER registering handlers
+        # Even though conn.on() calls ensure_future(subscribe()), those are async tasks
+        # that may not execute before main() starts. Explicitly subscribing ensures
+        # we're subscribed before the event loop starts processing events.
+        await self.connection.subscribe_events()
+        logger.info("Explicit subscription completed")
 
     async def run(self) -> None:
         """Main event loop."""
@@ -302,6 +375,10 @@ class I3ProjectDaemon:
         # Signal systemd we're stopping
         if self.health_monitor:
             self.health_monitor.notify_stopping()
+
+        # Stop window rules watcher (Feature 021: T022)
+        if self.rules_watcher:
+            self.rules_watcher.stop()
 
         # Stop IPC server
         if self.ipc_server:

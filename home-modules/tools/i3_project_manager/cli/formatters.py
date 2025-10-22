@@ -123,8 +123,8 @@ def format_project_details(project: Project, daemon_status: Optional[Dict[str, A
         lines.append("")
         if daemon_status.get("active_project") == project.name:
             lines.append("[bold green]Status:[/bold green] Active")
-            if "tracked_windows" in daemon_status:
-                lines.append(f"[bold green]Windows:[/bold green] {daemon_status['tracked_windows']}")
+            if "window_count" in daemon_status:
+                lines.append(f"[bold green]Windows:[/bold green] {daemon_status['window_count']}")
 
     # Metadata
     lines.append("")
@@ -146,7 +146,7 @@ def format_status(status: Dict[str, Any]) -> Panel:
     """
     lines = []
 
-    daemon_connected = status.get("daemon_connected", False)
+    daemon_connected = status.get("connected", False)
     if daemon_connected:
         lines.append("[bold green]Daemon Status:[/bold green] Connected ✓")
     else:
@@ -168,11 +168,11 @@ def format_status(status: Dict[str, Any]) -> Panel:
     else:
         lines.append("[bold cyan]Active Project:[/bold cyan] [dim]None[/dim]")
 
-    if status.get("tracked_windows") is not None:
-        lines.append(f"[bold cyan]Tracked Windows:[/bold cyan] {status['tracked_windows']}")
+    if status.get("window_count") is not None:
+        lines.append(f"[bold cyan]Tracked Windows:[/bold cyan] {status['window_count']}")
 
-    if status.get("events_processed") is not None:
-        lines.append(f"[bold cyan]Events Processed:[/bold cyan] {status['events_processed']}")
+    if status.get("event_count") is not None:
+        lines.append(f"[bold cyan]Events Processed:[/bold cyan] {status['event_count']}")
 
     content = "\n".join(lines)
     return Panel(content, title="i3pm Status", border_style="cyan")

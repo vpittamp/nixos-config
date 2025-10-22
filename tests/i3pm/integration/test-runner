@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# i3pm Integration Test Runner
+# Runs tests via systemd user service (survives terminal disconnect)
+
+set -euo pipefail
+
+SERVICE_FILE="/etc/nixos/tests/i3pm/integration/i3pm-integration-tests.service"
+SERVICE_NAME="i3pm-integration-tests"
+LOG_DIR="/tmp/i3pm_integration_tests"
+
+show_usage() {
+    cat <<EOF
+i3pm Integration Test Runner
+
+Usage:
+  test-runner start              Start integration tests (survives disconnect)
+  test-runner status             Show test status
+  test-runner logs [-f]          View test logs (-f to follow)
+  test-runner stop               Stop running tests
+  test-runner install            Install systemd service
+  test-runner uninstall          Uninstall systemd service
+  test-runner help               Show this help
+
+Examples:
+  # Run tests and disconnect terminal safely:
+  test-runner start
+
+  # Monitor progress:
+  test-runner logs -f
+
+  # Check if tests finished:
+  test-runner status
+
+  # View results:
+  test-runner logs | less
+
+EOF
+}
+
+install_service() {
+    echo "Installing systemd user service..."
+
+    local user_service_dir="${HOME}/.config/systemd/user"
+    mkdir -p "$user_service_dir"
+
+    # Copy service file
+    cp "$SERVICE_FILE" "$user_service_dir/$SERVICE_NAME.service"
+
+    # Reload systemd
+    systemctl --user daemon-reload
+
+    echo "✅ Service installed: $SERVICE_NAME"
+    echo ""
+    echo "To start tests:"
+    echo "  test-runner start"
+}
+
+uninstall_service() {
+    echo "Uninstalling systemd user service..."
+
+    # Stop if running
+    systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+
+    # Remove service file
+    rm -f "${HOME}/.config/systemd/user/$SERVICE_NAME.service"
+
+    # Reload systemd
+    systemctl --user daemon-reload
+
+    echo "✅ Service uninstalled"
+}
+
+start_tests() {
+    # Check if service is installed
+    if ! systemctl --user list-unit-files | grep -q "$SERVICE_NAME"; then
+        echo "Service not installed. Installing now..."
+        install_service
+        echo ""
+    fi
+
+    echo "Starting integration tests..."
+    echo ""
+
+    # Cleanup any previous runs
+    echo "Cleaning up previous test processes..."
+    pkill -f "Xvfb :99" 2>/dev/null || true
+    pkill -f "i3.*DISPLAY=:99" 2>/dev/null || true
+    pkill -f "xterm.*DISPLAY=:99" 2>/dev/null || true
+    sleep 1
+
+    # Start the service
+    systemctl --user start "$SERVICE_NAME"
+
+    echo "✅ Tests started via systemd service"
+    echo ""
+    echo "Monitor progress:"
+    echo "  test-runner logs -f"
+    echo ""
+    echo "Check status:"
+    echo "  test-runner status"
+    echo ""
+    echo "You can now safely disconnect your terminal."
+    echo "Tests will continue running in the background."
+}
+
+show_status() {
+    echo "=== Test Service Status ==="
+    systemctl --user status "$SERVICE_NAME" --no-pager || true
+    echo ""
+
+    echo "=== Recent Logs (last 20 lines) ==="
+    journalctl --user -u "$SERVICE_NAME" -n 20 --no-pager || echo "No logs available"
+}
+
+show_logs() {
+    local follow_flag=""
+    if [ "${1:-}" = "-f" ]; then
+        follow_flag="-f"
+    fi
+
+    journalctl --user -u "$SERVICE_NAME" $follow_flag --no-pager
+}
+
+stop_tests() {
+    echo "Stopping integration tests..."
+
+    systemctl --user stop "$SERVICE_NAME"
+
+    # Cleanup processes
+    echo "Cleaning up test processes..."
+    pkill -f "Xvfb :99" 2>/dev/null || true
+    pkill -f "i3.*DISPLAY=:99" 2>/dev/null || true
+    pkill -f "xterm.*DISPLAY=:99" 2>/dev/null || true
+
+    echo "✅ Tests stopped and cleaned up"
+}
+
+# Main command router
+case "${1:-help}" in
+    start)
+        start_tests
+        ;;
+    status)
+        show_status
+        ;;
+    logs)
+        show_logs "${2:-}"
+        ;;
+    stop)
+        stop_tests
+        ;;
+    install)
+        install_service
+        ;;
+    uninstall)
+        uninstall_service
+        ;;
+    help|--help|-h)
+        show_usage
+        ;;
+    *)
+        echo "Error: Unknown command '$1'"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac

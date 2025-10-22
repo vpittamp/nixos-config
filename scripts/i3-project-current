@@ -69,11 +69,11 @@ EOF
 get_active_project() {
     local format="${1:-text}"
 
-    # Query daemon
-    response=$(send_request "get_active_project")
+    # Query daemon status (consistent with i3pm status command)
+    response=$(send_request "get_status")
 
-    # Extract project name
-    project_name=$(echo "$response" | grep -o '"project_name":"[^"]*"' | cut -d'"' -f4 || echo "null")
+    # Extract project name using jq for proper JSON parsing
+    project_name=$(echo "$response" | jq -r '.result.active_project // "null"')
 
     if [[ "$project_name" == "null" || -z "$project_name" ]]; then
         case "$format" in
@@ -93,9 +93,9 @@ get_active_project() {
     # Get project details
     projects_response=$(send_request "get_projects")
 
-    # Extract project icon and display name
-    icon=$(echo "$projects_response" | grep -A 3 "\"$project_name\"" | grep '"icon"' | cut -d'"' -f4 || echo "📁")
-    display_name=$(echo "$projects_response" | grep -A 3 "\"$project_name\"" | grep '"display_name"' | cut -d'"' -f4 || echo "$project_name")
+    # Extract project icon and display_name using jq
+    icon=$(echo "$projects_response" | jq -r ".result.projects.\"$project_name\".icon // \"📁\"")
+    display_name=$(echo "$projects_response" | jq -r ".result.projects.\"$project_name\".display_name // \"$project_name\"")
 
     case "$format" in
         text)

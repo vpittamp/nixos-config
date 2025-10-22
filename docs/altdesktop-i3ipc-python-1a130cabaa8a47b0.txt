@@ -1,0 +1,1837 @@
+Directory structure:
+└── examples/
+    ├── README.md
+    ├── app-on-ws-init.py
+    ├── asyncio-i3status-wrapper.py
+    ├── command-on-exit.py
+    ├── disable-standby-fs.py
+    ├── floating-mode.py
+    ├── focus-last.py
+    ├── focus-next-visible.py
+    ├── focused-windows.py
+    ├── i3-cmd.py
+    ├── i3-container-commander.py
+    ├── i3-cycle-focus.py
+    ├── i3-debug-console.py
+    ├── ipc-trace.py
+    ├── nth_window_in_workspace.py
+    ├── open-floating-on-ws.py
+    ├── stop-application-on-unfocus.py
+    ├── tiling-indicator.py
+    ├── workspace-new.py
+    ├── workspace_renumber.py
+    └── i3-focus/
+        ├── focus-app.py
+        ├── focus-current-app-window.py
+        ├── focus-window.py
+        ├── history-server.py
+        └── tools/
+            ├── __init__.py
+            ├── app.py
+            ├── lists.py
+            ├── menu.py
+            └── sockets.py
+
+================================================
+FILE: examples/README.md
+================================================
+# i3ipc-python Examples
+
+You can contribute examples by adding your python scripts to this folder. If your script is useful, someone might help you improve and maintain it. You can also request a new script by [posting a script request](https://github.com/altdesktop/i3ipc-python/issues) on the issue tracker.
+
+
+
+================================================
+FILE: examples/app-on-ws-init.py
+================================================
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+import i3ipc
+
+i3 = i3ipc.Connection()
+
+parser = ArgumentParser(description="""Open the given application each time the
+    given workspace is created. For instance, running 'app-on-ws-init.py 6
+    i3-sensible-terminal' should open your terminal as soon as you create the
+    workspace 6.
+    """)
+
+parser.add_argument('--workspace',
+                    metavar='WS_NAME',
+                    nargs='+',
+                    required=True,
+                    help='The name of the workspaces to run the command on')
+parser.add_argument('--command',
+                    metavar='CMD',
+                    required=True,
+                    help='The command to run on the newly initted workspace')
+
+args = parser.parse_args()
+
+
+def on_workspace(i3, e):
+    if e.current.name in args.workspace and not len(e.current.leaves()):
+        i3.command('exec {}'.format(args.command))
+
+
+i3.on('workspace::focus', on_workspace)
+
+i3.main()
+
+
+
+================================================
+FILE: examples/asyncio-i3status-wrapper.py
+================================================
+#!/usr/bin/env python3
+# This module is an example of how to use i3ipc with asyncio event loop. It
+# implements an i3status wrapper that handles a special keybinding to switch
+# keyboard layout, while also displaying current layout in i3bar.
+#
+# The keyboard layout switcher can be activated by adding something like this
+# to i3 config:
+#
+#       bindsym KEYS nop switch_layout
+
+import asyncio
+import collections
+import json
+import subprocess
+import sys
+import tempfile
+
+import i3ipc
+
+configure_i3_status = False
+try:
+    # Unfortunately i3status does not have a simple way to set the
+    # output_format outside of its configuration file. If not set, it will
+    # guess the output format in a very hacky way by looking at the parent
+    # process name which is horrible for embedders. So, we try to "fool" it
+    # into using i3bar output format by changing the process title with
+    # setproctitle module (install with pip3 install --user setproctitle).
+
+    # Of course, this is not needed if output_format is set explicitly in the
+    # config file. This is only done for demonstration purposes.
+    import setproctitle
+    setproctitle.setproctitle('i3bar')
+except ImportError:
+    # Configure i3status by explicitly setting "i3bar" as output_format
+    configure_i3_status = True
+
+    I3STATUS_CFG = '''
+    general {
+            output_format = "i3bar"
+            colors = true
+            interval = 5
+    }
+
+    order += "disk /"
+    order += "load"
+    order += "tztime local"
+
+    tztime local {
+            format = "%Y-%m-%d %H:%M:%S"
+    }
+
+    load {
+            format = "%1min"
+    }
+
+    disk "/" {
+            format = "%avail"
+    }
+    '''
+
+
+class Status(object):
+    def __init__(self):
+        self.current_status = collections.OrderedDict()
+        # the first write does not contain a leading newline since it
+        # represents the first item in a json array.
+        self.first_write = True
+        self.layouts = ['us', 'us intl']
+        self.current_layout = -1
+        self.command_handlers = {'switch_layout': lambda: self.switch_layout()}
+        # perform a switch now, which will force the keyboard layout to be
+        # shown before other data
+        self.switch_layout()
+
+    def switch_layout(self):
+        self.current_layout = (self.current_layout + 1) % len(self.layouts)
+        new_layout = self.layouts[self.current_layout]
+        subprocess.call('setxkbmap {}'.format(new_layout), shell=True)
+        self.update([{'name': 'keyboard_layout', 'markup': 'none', 'full_text': new_layout}])
+
+    def dispatch_command(self, command):
+        c = command.split(' ')
+        if (len(c) < 2 or c[0] != 'nop' or c[1] not in self.command_handlers):
+            return
+        self.command_handlers[c[1]]()
+        self.repaint()
+
+    def merge(self, status_update):
+        for item in status_update:
+            self.current_status[item['name']] = item
+
+    def update(self, new_status):
+        self.merge(new_status)
+
+    def repaint(self):
+        template = '{}' if self.first_write else ',{}'
+        self.first_write = False
+        sys.stdout.write(
+            template.format(
+                json.dumps([item for item in self.current_status.values() if item],
+                           separators=(',', ':'))))
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+
+    @asyncio.coroutine
+    def i3status_reader(self):
+        def handle_i3status_payload(line):
+            self.update(json.loads(line))
+            self.repaint()
+
+        if configure_i3_status:
+            # use a custom i3 status configuration to ensure we get json output
+            cfg_file = tempfile.NamedTemporaryFile(mode='w+b')
+            cfg_file.write(I3STATUS_CFG.encode('utf8'))
+            cfg_file.flush()
+            create = asyncio.create_subprocess_exec('i3status',
+                                                    '-c',
+                                                    cfg_file.name,
+                                                    stdout=asyncio.subprocess.PIPE)
+        else:
+            create = asyncio.create_subprocess_exec('i3status', stdout=asyncio.subprocess.PIPE)
+        i3status = yield from create
+        # forward first line, version information
+        sys.stdout.write((yield from i3status.stdout.readline()).decode('utf8'))
+        # forward second line, an opening list bracket (no idea why this
+        # exists)
+        sys.stdout.write((yield from i3status.stdout.readline()).decode('utf8'))
+        # third line is a json payload
+        handle_i3status_payload((yield from i3status.stdout.readline()).decode('utf8'))
+        while True:
+            # all subsequent lines are json payload with a leading comma
+            handle_i3status_payload((yield from i3status.stdout.readline()).decode('utf8')[1:])
+
+
+status = Status()
+
+i3 = i3ipc.Connection()
+i3.on('binding::run', lambda i3, e: status.dispatch_command(e.binding.command))
+i3.event_socket_setup()
+loop = asyncio.get_event_loop()
+loop.add_reader(i3.sub_socket, lambda: i3.event_socket_poll())
+loop.run_until_complete(status.i3status_reader())
+
+
+
+================================================
+FILE: examples/command-on-exit.py
+================================================
+#!/usr/bin/env python3
+
+# This example shows how to run a command when i3 exits
+#
+# https://faq.i3wm.org/question/3468/run-a-command-when-i3-exits/
+
+# This is the command to run
+COMMAND = ['echo', 'hello, world']
+
+from subprocess import Popen
+import i3ipc
+
+
+def on_shutdown(i3):
+    Popen(COMMAND)
+
+
+i3 = i3ipc.Connection()
+
+i3.on('ipc_shutdown', on_shutdown)
+
+i3.main()
+
+
+
+================================================
+FILE: examples/disable-standby-fs.py
+================================================
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+from subprocess import call
+import i3ipc
+
+i3 = i3ipc.Connection()
+
+parser = ArgumentParser(prog='disable-standby-fs',
+                        description='''
+        Disable standby (dpms) and screensaver when a window becomes fullscreen
+        or exits fullscreen-mode. Requires `xorg-xset`.
+        ''')
+
+args = parser.parse_args()
+
+
+def find_fullscreen(con):
+    # XXX remove me when this method is available on the con in a release
+    return [c for c in con.descendents() if c.type == 'con' and c.fullscreen_mode]
+
+
+def set_dpms(state):
+    if state:
+        print('setting dpms on')
+        call(['xset', 's', 'on'])
+        call(['xset', '+dpms'])
+    else:
+        print('setting dpms off')
+        call(['xset', 's', 'off'])
+        call(['xset', '-dpms'])
+
+
+def on_fullscreen_mode(i3, e):
+    set_dpms(not len(find_fullscreen(i3.get_tree())))
+
+
+def on_window_close(i3, e):
+    if not len(find_fullscreen(i3.get_tree())):
+        set_dpms(True)
+
+
+i3.on('window::fullscreen_mode', on_fullscreen_mode)
+i3.on('window::close', on_window_close)
+
+i3.main()
+
+
+
+================================================
+FILE: examples/floating-mode.py
+================================================
+#!/usr/bin/env python3
+
+# budRich@budlabs - 2019
+#
+# this will make all new windows floating
+# due to the way i3 handles for_window rules
+# setting a "global rule" to make all new
+# windows floating, may have undesired side effects.
+#
+# https://github.com/i3/i3/issues/3628
+# https://github.com/i3/i3/pull/3188
+# https://old.reddit.com/r/i3wm/comments/85ctji/when_windows_are_floating_by_default_how_do_i/
+
+from i3ipc import Connection
+
+i3 = Connection()
+
+
+def set_floating(i3, event):
+    event.container.command('floating enable')
+
+
+i3.on('window::new', set_floating)
+i3.main()
+
+
+
+================================================
+FILE: examples/focus-last.py
+================================================
+#!/usr/bin/env python3
+
+import os
+import socket
+import selectors
+import tempfile
+import threading
+from argparse import ArgumentParser
+import i3ipc
+
+SOCKET_DIR = '{}/i3_focus_last.{}{}'.format(tempfile.gettempdir(), os.geteuid(),
+                                            os.getenv("DISPLAY"))
+SOCKET_FILE = '{}/socket'.format(SOCKET_DIR)
+MAX_WIN_HISTORY = 15
+
+
+class FocusWatcher:
+    def __init__(self):
+        self.i3 = i3ipc.Connection()
+        self.i3.on('window::focus', self.on_window_focus)
+        # Make a directory with permissions that restrict access to
+        # the user only.
+        os.makedirs(SOCKET_DIR, mode=0o700, exist_ok=True)
+        self.listening_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if os.path.exists(SOCKET_FILE):
+            os.remove(SOCKET_FILE)
+        self.listening_socket.bind(SOCKET_FILE)
+        self.listening_socket.listen(1)
+        self.window_list = []
+        self.window_list_lock = threading.RLock()
+
+    def on_window_focus(self, i3conn, event):
+        with self.window_list_lock:
+            window_id = event.container.id
+            if window_id in self.window_list:
+                self.window_list.remove(window_id)
+            self.window_list.insert(0, window_id)
+            if len(self.window_list) > MAX_WIN_HISTORY:
+                del self.window_list[MAX_WIN_HISTORY:]
+
+    def launch_i3(self):
+        self.i3.main()
+
+    def launch_server(self):
+        selector = selectors.DefaultSelector()
+
+        def accept(sock):
+            conn, addr = sock.accept()
+            selector.register(conn, selectors.EVENT_READ, read)
+
+        def read(conn):
+            data = conn.recv(1024)
+            if data == b'switch':
+                with self.window_list_lock:
+                    tree = self.i3.get_tree()
+                    windows = set(w.id for w in tree.leaves())
+                    for window_id in self.window_list[1:]:
+                        if window_id not in windows:
+                            self.window_list.remove(window_id)
+                        else:
+                            self.i3.command('[con_id=%s] focus' % window_id)
+                            break
+            elif not data:
+                selector.unregister(conn)
+                conn.close()
+
+        selector.register(self.listening_socket, selectors.EVENT_READ, accept)
+
+        while True:
+            for key, event in selector.select():
+                callback = key.data
+                callback(key.fileobj)
+
+    def run(self):
+        t_i3 = threading.Thread(target=self.launch_i3)
+        t_server = threading.Thread(target=self.launch_server)
+        for t in (t_i3, t_server):
+            t.start()
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(prog='focus-last.py',
+                            description='''
+        Focus last focused window.
+
+        This script should be launch from the .xsessionrc without argument.
+
+        Then you can bind this script with the `--switch` option to one of your
+        i3 keybinding.
+        ''')
+    parser.add_argument('--switch',
+                        dest='switch',
+                        action='store_true',
+                        help='Switch to the previous window',
+                        default=False)
+    args = parser.parse_args()
+
+    if not args.switch:
+        focus_watcher = FocusWatcher()
+        focus_watcher.run()
+    else:
+        client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client_socket.connect(SOCKET_FILE)
+        client_socket.send(b'switch')
+        client_socket.close()
+
+
+
+================================================
+FILE: examples/focus-next-visible.py
+================================================
+#!/usr/bin/env python3
+"""
+focus-next-visible.py - cycles input focus between visible windows on workspace
+
+- requires the `xprop` utility
+
+ Usage:
+
+    # focus next visible window
+    bindsym $mod+n exec --no-startup-id focus-next-visible.py
+
+    # focus previous visible window
+    bindsym $mod+Shift+n exec --no-startup-id focus-next-visible.py reverse
+
+
+https://faq.i3wm.org/question/6937/move-focus-from-tabbed-container-to-win...
+
+"""
+
+from sys import argv
+from itertools import cycle
+from subprocess import check_output
+
+import i3ipc
+
+
+def get_windows_on_ws(conn):
+    return filter(lambda x: x.window, conn.get_tree().find_focused().workspace().descendents())
+
+
+def find_visible_windows(windows_on_workspace):
+    visible_windows = []
+    for w in windows_on_workspace:
+
+        try:
+            xprop = check_output(['xprop', '-id', str(w.window)]).decode()
+        except FileNotFoundError:
+            raise SystemExit("The `xprop` utility is not found!" " Please install it and retry.")
+
+        if '_NET_WM_STATE_HIDDEN' not in xprop:
+            visible_windows.append(w)
+
+    return visible_windows
+
+
+if __name__ == '__main__':
+
+    conn = i3ipc.Connection()
+
+    visible_windows = find_visible_windows(get_windows_on_ws(conn))
+
+    if len(argv) > 1 and argv[1] == "reverse":
+        cycle_windows = cycle(reversed(visible_windows))
+    else:
+        cycle_windows = cycle(visible_windows)
+
+    for window in cycle_windows:
+        if window.focused:
+            focus_to = next(cycle_windows)
+            conn.command('[id="%d"] focus' % focus_to.window)
+            break
+
+
+
+================================================
+FILE: examples/focused-windows.py
+================================================
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+import i3ipc
+
+i3 = i3ipc.Connection()
+
+
+def focused_windows():
+    tree = i3.get_tree()
+
+    workspaces = tree.workspaces()
+    for workspace in workspaces:
+        container = workspace
+
+        while container:
+            if not hasattr(container, 'focus') or not container.focus:
+                break
+
+            container_id = container.focus[0]
+            container = container.find_by_id(container_id)
+
+        if container:
+            coname = container.name
+            wsname = workspace.name
+
+            print('WS', wsname + ':', coname)
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(description='Print the names of the focused window of each workspace.')
+    parser.parse_args()
+
+    focused_windows()
+
+
+
+================================================
+FILE: examples/i3-cmd.py
+================================================
+#!/usr/bin/python3
+
+import i3ipc
+from argparse import ArgumentParser
+from subprocess import check_output, Popen, CalledProcessError
+from sys import exit
+from os.path import basename
+
+history = []
+
+parser = ArgumentParser(prog='i3-cmd',
+                        description='''
+                        i3-cmd is a dmenu-based script that sends the given
+                        command to i3.
+                        ''',
+                        epilog='''
+                        Additional arguments after "--" will be passed to
+                        the menu command.
+                        ''')
+
+parser.add_argument('--menu', default='dmenu', help='The menu command to run (ex: --menu=rofi)')
+
+try:
+    with open('/tmp/i3-cmd-history') as f:
+        history = f.read().split('\n')
+except FileNotFoundError:
+    pass
+
+i3 = i3ipc.Connection()
+
+(args, menu_args) = parser.parse_known_args()
+
+if len(menu_args) and menu_args[0] == '--':
+    menu_args = menu_args[1:]
+
+# set default menu args for supported menus
+if basename(args.menu) == 'dmenu':
+    menu_args += ['-i', '-f']
+elif basename(args.menu) == 'rofi':
+    menu_args += ['-show', '-dmenu', '-p', 'i3-cmd: ']
+
+cmd = ''
+
+try:
+    cmd = check_output([args.menu] + menu_args, input=bytes('\n'.join(history),
+                                                            'UTF-8')).decode('UTF-8').strip()
+except CalledProcessError as e:
+    exit(e.returncode)
+
+if not cmd:
+    # nothing to do
+    exit(0)
+
+result = i3.command(cmd)
+
+cmd_success = True
+
+for r in result:
+    if not r.success:
+        cmd_success = False
+        Popen(['notify-send', 'i3-cmd error', r.error])
+
+if cmd_success:
+    with open('/tmp/i3-cmd-history', 'w') as f:
+        try:
+            history.remove(cmd)
+        except ValueError:
+            pass
+        history.insert(0, cmd)
+        f.write('\n'.join(history))
+
+
+
+================================================
+FILE: examples/i3-container-commander.py
+================================================
+#!/usr/bin/env python3
+
+# This example shows how to implement a simple, but highly configurable window
+# switcher (like a much improved "alt-tab") with iterative dmenu calls. This
+# script works well for most use cases with no arguments.
+#
+# https://faq.i3wm.org/question/228/how-do-i-find-an-app-buried-in-some-workspace-by-its-title/
+
+from argparse import ArgumentParser
+from subprocess import check_output
+from os.path import basename
+import i3ipc
+
+i3 = i3ipc.Connection()
+
+parser = ArgumentParser(prog='i3-container-commander.py',
+                        description='''
+        i3-container-commander.py is a simple but highly configurable
+        dmenu-based script for creating dynamic context-based commands for
+        controlling top-level windows. With no arguments, it is an efficient
+        and ergonomical window switcher.
+        ''',
+                        epilog='''
+        Additional arguments found after "--" will be passed to dmenu.
+        ''')
+
+parser.add_argument('--group-by',
+                    metavar='PROPERTY',
+                    default='window_class',
+                    help='''A container property to initially group windows for selection or
+        "none" to skip the grouping step. This works best for properties of
+        type string. See <http://i3wm.org/docs/ipc.html#_tree_reply> for a list
+        of properties. (default: "window_class")''')
+
+parser.add_argument('--command',
+                    metavar='COMMAND',
+                    default='focus',
+                    help='''The command to execute on the container that you end up
+        selecting. The command should be a single command or comma-separated
+        list such as what is passed to i3-msg. The command will only affect the
+        selected container (it will be selected by criteria). (default: "focus")''')
+
+parser.add_argument('--item-format',
+                    metavar='FORMAT_STRING',
+                    default='{workspace.name}: {container.name}',
+                    help='''A Python format string to use to display the menu items. The
+        format string will have the container and workspace available as
+        template variables. (default: '{workspace.name}: {container.name}')
+        ''')
+
+parser.add_argument('--menu', default='dmenu', help='The menu command to run (ex: --menu=rofi)')
+
+(args, menu_args) = parser.parse_known_args()
+
+if len(menu_args) and menu_args[0] == '--':
+    menu_args = menu_args[1:]
+
+# set default menu args for supported menus
+if basename(args.menu) == 'dmenu':
+    menu_args += ['-i', '-f']
+elif basename(args.menu) == 'rofi':
+    menu_args += ['-show', '-dmenu']
+
+
+def find_group(container):
+    return str(getattr(container, args.group_by)) if args.group_by != 'none' else ''
+
+
+def show_menu(items, prompt):
+    menu_input = bytes(str.join('\n', items), 'UTF-8')
+    menu_cmd = [args.menu] + ['-l', str(len(items)), '-p', prompt] + menu_args
+    menu_result = check_output(menu_cmd, input=menu_input)
+    return menu_result.decode('UTF-8').strip()
+
+
+def show_container_menu(containers):
+    def do_format(c):
+        return args.item_format.format(workspace=c.workspace(), container=c)
+
+    items = [do_format(c) for c in containers]
+    items.sort()
+
+    menu_result = show_menu(items, args.command)
+    for c in containers:
+        if do_format(c) == menu_result:
+            return c
+
+
+containers = i3.get_tree().leaves()
+
+if args.group_by:
+    groups = dict()
+
+    for c in containers:
+        g = find_group(c)
+        if g:
+            groups[g] = groups[g] + 1 if g in groups else 1
+
+    if len(groups) > 1:
+        chosen_group = show_menu(['{} ({})'.format(k, v) for k, v in groups.items()], args.group_by)
+        chosen_group = chosen_group[:chosen_group.rindex(' ')]
+        containers = list(filter(lambda c: find_group(c) == chosen_group, containers))
+
+if len(containers):
+    chosen_container = containers[0] if len(containers) == 1 else show_container_menu(containers)
+
+    if chosen_container:
+        chosen_container.command(args.command)
+
+
+
+================================================
+FILE: examples/i3-cycle-focus.py
+================================================
+#!/usr/bin/env python3
+#
+# provides alt+tab functionality between windows, switching
+# between n windows; example i3 conf to use:
+#     exec_always --no-startup-id i3-cycle-focus.py --history 2
+#     bindsym $mod1+Tab exec --no-startup-id i3-cycle-focus.py --switch
+
+import os
+import asyncio
+from argparse import ArgumentParser
+import logging
+
+from i3ipc.aio import Connection
+
+SOCKET_FILE = '/tmp/.i3-cycle-focus.sock'
+MAX_WIN_HISTORY = 16
+UPDATE_DELAY = 2.0
+
+
+def on_shutdown(i3_conn, e):
+    os._exit(0)
+
+
+class FocusWatcher:
+    def __init__(self):
+        self.i3 = None
+        self.window_list = []
+        self.update_task = None
+        self.window_index = 1
+
+    async def connect(self):
+        self.i3 = await Connection().connect()
+        self.i3.on('window::focus', self.on_window_focus)
+        self.i3.on('shutdown', on_shutdown)
+
+    async def update_window_list(self, window_id):
+        if UPDATE_DELAY != 0.0:
+            await asyncio.sleep(UPDATE_DELAY)
+
+        logging.info('updating window list')
+        if window_id in self.window_list:
+            self.window_list.remove(window_id)
+
+        self.window_list.insert(0, window_id)
+
+        if len(self.window_list) > MAX_WIN_HISTORY:
+            del self.window_list[MAX_WIN_HISTORY:]
+
+        self.window_index = 1
+        logging.info('new window list: {}'.format(self.window_list))
+
+    async def get_valid_windows(self):
+        tree = await self.i3.get_tree()
+        if args.active_workspace:
+            return set(w.id for w in tree.find_focused().workspace().leaves())
+        elif args.visible_workspaces:
+            ws_list = []
+            w_set = set()
+            outputs = await self.i3.get_outputs()
+            for item in outputs:
+                if item.active:
+                    ws_list.append(item.current_workspace)
+            for ws in tree.workspaces():
+                if str(ws.name) in ws_list:
+                    for w in ws.leaves():
+                        w_set.add(w.id)
+            return w_set
+        else:
+            return set(w.id for w in tree.leaves())
+
+    async def on_window_focus(self, i3conn, event):
+        logging.info('got window focus event')
+        if args.ignore_float and (event.container.floating == "user_on"
+                                  or event.container.floating == "auto_on"):
+            logging.info('not handling this floating window')
+            return
+
+        if self.update_task is not None:
+            self.update_task.cancel()
+
+        logging.info('scheduling task to update window list')
+        self.update_task = asyncio.create_task(self.update_window_list(event.container.id))
+
+    async def run(self):
+        async def handle_switch(reader, writer):
+            data = await reader.read(1024)
+            logging.info('received data: {}'.format(data))
+            if data == b'switch':
+                logging.info('switching window')
+                windows = await self.get_valid_windows()
+                logging.info('valid windows = {}'.format(windows))
+                for window_id in self.window_list[self.window_index:]:
+                    if window_id not in windows:
+                        self.window_list.remove(window_id)
+                    else:
+                        if self.window_index < (len(self.window_list) - 1):
+                            self.window_index += 1
+                        else:
+                            self.window_index = 0
+                        logging.info('focusing window id={}'.format(window_id))
+                        await self.i3.command('[con_id={}] focus'.format(window_id))
+                        break
+
+        server = await asyncio.start_unix_server(handle_switch, SOCKET_FILE)
+        await server.serve_forever()
+
+
+async def send_switch():
+    reader, writer = await asyncio.open_unix_connection(SOCKET_FILE)
+
+    logging.info('sending switch message')
+    writer.write('switch'.encode())
+    await writer.drain()
+
+    logging.info('closing the connection')
+    writer.close()
+    await writer.wait_closed()
+
+
+async def run_server():
+    focus_watcher = FocusWatcher()
+    await focus_watcher.connect()
+    await focus_watcher.run()
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(prog='i3-cycle-focus.py',
+                            description="""
+        Cycle backwards through the history of focused windows (aka Alt-Tab).
+        This script should be launched from ~/.xsession or ~/.xinitrc.
+        Use the `--history` option to set the maximum number of windows to be
+        stored in the focus history (Default 16 windows).
+        Use the `--delay` option to set the delay between focusing the
+        selected window and updating the focus history (Default 2.0 seconds).
+        Use a value of 0.0 seconds to toggle focus only between the current
+        and the previously focused window. Use the `--ignore-floating` option
+        to exclude all floating windows when cycling and updating the focus
+        history. Use the `--visible-workspaces` option to include windows on
+        visible workspaces only when cycling the focus history. Use the
+        `--active-workspace` option to include windows on the active workspace
+        only when cycling the focus history.
+
+        To trigger focus switching, execute the script from a keybinding with
+        the `--switch` option.""")
+    parser.add_argument('--history',
+                        dest='history',
+                        help='Maximum number of windows in the focus history',
+                        type=int)
+    parser.add_argument('--delay',
+                        dest='delay',
+                        help='Delay before updating focus history',
+                        type=float)
+    parser.add_argument('--ignore-floating',
+                        dest='ignore_float',
+                        action='store_true',
+                        help='Ignore floating windows '
+                        'when cycling and updating the focus history')
+    parser.add_argument('--visible-workspaces',
+                        dest='visible_workspaces',
+                        action='store_true',
+                        help='Include windows on visible '
+                        'workspaces only when cycling the focus history')
+    parser.add_argument('--active-workspace',
+                        dest='active_workspace',
+                        action='store_true',
+                        help='Include windows on the '
+                        'active workspace only when cycling the focus history')
+    parser.add_argument('--switch',
+                        dest='switch',
+                        action='store_true',
+                        help='Switch to the previous window',
+                        default=False)
+    parser.add_argument('--debug', dest='debug', action='store_true', help='Turn on debug logging')
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if args.history:
+        MAX_WIN_HISTORY = args.history
+    if args.delay:
+        UPDATE_DELAY = args.delay
+    else:
+        if args.delay == 0.0:
+            UPDATE_DELAY = args.delay
+    if args.switch:
+        asyncio.run(send_switch())
+    else:
+        asyncio.run(run_server())
+
+
+
+================================================
+FILE: examples/i3-debug-console.py
+================================================
+#!/usr/bin/env python3
+
+import i3ipc
+from curses import wrapper
+
+
+def con_type_to_text(con):
+    if con.type != 'con':
+        return con.type
+    if len(con.nodes):
+        return 'container'
+    else:
+        return 'view'
+
+
+def layout_txt(con):
+    if con.layout == 'splith':
+        return 'HORIZ'
+    elif con.layout == 'splitv':
+        return 'VERT'
+    else:
+        return ''
+
+
+def container_to_text(con, indent):
+    t = con_type_to_text(con)
+    txt = (' ' * indent) + '('
+    txt += t + ' ' + layout_txt(con)
+
+    if con.focused:
+        txt += ' focus'
+
+    has_children = len(con.nodes)
+
+    for c in con.nodes:
+        txt += '\n'
+        txt += container_to_text(c, indent + 4)
+
+    if has_children:
+        txt += '\n' + (' ' * indent)
+
+    txt += ')'
+
+    return txt
+
+
+last_txt = ''
+
+
+def main(stdscr):
+    ipc = i3ipc.Connection()
+
+    def on_event(ipc, e):
+        txt = ''
+        for ws in ipc.get_tree().workspaces():
+            txt += container_to_text(ws, 0) + '\n'
+
+        global last_txt
+        if txt == last_txt:
+            return
+
+        stdscr.clear()
+        for l in txt:
+            try:
+                stdscr.addstr(l)
+            except Exception:
+                break
+        stdscr.refresh()
+        last_txt = txt
+
+    on_event(ipc, None)
+
+    ipc.on('window', on_event)
+    ipc.on('binding', on_event)
+    ipc.on('workspace', on_event)
+
+    ipc.main()
+
+
+wrapper(main)
+
+
+
+================================================
+FILE: examples/ipc-trace.py
+================================================
+#!/usr/bin/env python3
+
+import i3ipc
+from time import strftime, gmtime
+
+i3 = i3ipc.Connection()
+
+
+def print_separator():
+    print('-----')
+
+
+def print_time():
+    print(strftime(strftime("%Y-%m-%d %H:%M:%S", gmtime())))
+
+
+def print_con_info(con):
+    if con:
+        print('Id: %s' % con.id)
+        print('Name: %s' % con.name)
+    else:
+        print('(none)')
+
+
+def on_window(i3, e):
+    print_separator()
+    print('Got window event:')
+    print_time()
+    print('Change: %s' % e.change)
+    print_con_info(e.container)
+
+
+def on_workspace(i3, e):
+    print_separator()
+    print('Got workspace event:')
+    print_time()
+    print('Change: %s' % e.change)
+    print('Current:')
+    print_con_info(e.current)
+    print('Old:')
+    print_con_info(e.old)
+
+
+# TODO subscribe to all events
+
+i3.on('window', on_window)
+i3.on('workspace', on_workspace)
+
+i3.main()
+
+
+
+================================================
+FILE: examples/nth_window_in_workspace.py
+================================================
+#!/usr/bin/env python3
+
+# * Can go straight to a window given a workspace, integer-index of window pair.
+#   (for instance for mapping keys to windows in a mode for that)
+# * Can also go to workspace, or cycle through the windows on that.
+#   (as opposed to going there and the button not having a use while there)
+
+from itertools import cycle
+from subprocess import check_output
+import i3ipc
+
+
+def get_windows_on_ws(conn):
+    return filter(lambda x: x.window, conn.get_tree().find_focused().workspace().descendents())
+
+
+def workspace_by_name(conn, workspace):
+    return next(filter(lambda ws: ws.name == workspace, conn.get_tree().workspaces()), None)
+
+
+def window_is_visible(w):
+    try:
+        xprop = check_output(['xprop', '-id', str(w.window)]).decode()
+    except FileNotFoundError:
+        raise SystemExit("The `xprop` utility is not found! Please install it and retry.")
+
+    return '_NET_WM_STATE_HIDDEN' not in xprop
+
+
+def pick_from_list(lst, n, alt=None):
+    cnt = len(lst)
+    return lst[max(0, min(n, cnt - 1))] if cnt > 0 else alt
+
+
+def with_prev(gen):
+    """Takes a generator, and returns the elements, with the previous element.
+The first element only appears as previous. (and the last never-as)
+NOTE: maybe add optionals `w_first` and `w_last`"""
+    prev = next(gen)
+    for el in gen:
+        yield prev, el
+        prev = el
+
+
+def main(args):
+    conn = i3ipc.Connection()
+
+    workspace = workspace_by_name(conn, args.workspace)  # Find workspace.
+    if workspace is None:
+        print("Workspace %s not found, making it." % args.workspace)
+        conn.command("workspace " + args.workspace)
+
+    else:
+        windows = list(workspace.leaves())  # Find windows in there.
+        if args.filter == 'visible':
+            windows = filter(window_is_visible, windows)
+        elif args.filter != 'none':
+            print("WARN: currently only support `visible` as window filter.")
+
+        window = None
+        if args.select.isdigit():  # Pick `nth` window in there.
+            window = pick_from_list(list(windows), int(args.select))
+        # If any selected, cycle next.
+        elif args.select in ['c', 'r', 'cycle', 'reverse']:
+            cycle_windows = cycle(windows)
+            prev, cur_win = \
+                next(((p,w) for _i, (p, w)  # Where current window in cycle.
+                      in zip(range(len(windows)+1), with_prev(cycle_windows))
+                      if w.focused), (None,None))
+            if cur_win is None:  # Not in cycle, start with first.
+                window = pick_from_list(list(windows), 0)
+            else:
+                if args.select in ['c', 'cycle']:
+                    window = next(cycle_windows)
+                else:
+                    window = prev
+
+        if window != None:
+            print("Focussing %d" % window.window)
+            conn.command('[id="%d"] focus' % window.window)
+        else:
+            print("Did not find window(%s) going to workspace anyway." % args.select)
+            conn.command("workspace " + args.workspace)
+
+    if args.mode != 'no':
+        conn.command("mode " + args.mode)
+
+
+if __name__ == '__main__':
+
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(prog='nth_window_in_workspace.py',
+                            description="""Program to:
+* Select the nth window from a workspace. (i.e. for mapping each window to a key)
+* Go to workspace, or cycle through the windows of the workspace.
+  (improvement on just going to the workspace)""")
+
+    parser.add_argument('workspace', help="Name of workspace to go to.")
+    parser.add_argument('select',
+                        default='0',
+                        help="""If integer, that index in workspace.
+if `c`,`cycle` cycle forward if already on same workspace. `r`,`reverse` goes
+backward.
+If none apply goes to the first window in the workspace.""")
+    parser.add_argument("--filter",
+                        default='none',
+                        help="filters to apply, i.e. `visible` or `none`(default)")
+    parser.add_argument("--mode",
+                        default='default',
+                        help="""Convenience feature;
+what to change the i3-mode to afterwards. So you can exit the mode after you're done.
+Defaultly it goes back to `default`, can set it to `no` to not change mode at all.""")
+
+    main(parser.parse_args())
+
+
+
+================================================
+FILE: examples/open-floating-on-ws.py
+================================================
+#!/usr/bin/env python3
+
+# This example shows how to make any window that opens on a workspace floating
+
+# All workspaces that start with a string in this list will have their windows
+# open floating
+FLOATING_WORKSPACES = ['3']
+
+
+def is_ws_floating(name):
+    for floating_ws in FLOATING_WORKSPACES:
+        if name.startswith(floating_ws):
+            return True
+
+    return False
+
+
+import i3ipc
+
+i3 = i3ipc.Connection()
+
+
+def on_window_open(i3, e):
+    ws = i3.get_tree().find_focused().workspace()
+    if is_ws_floating(ws.name):
+        e.container.command('floating toggle')
+
+
+i3.on('window::new', on_window_open)
+
+i3.main()
+
+
+
+================================================
+FILE: examples/stop-application-on-unfocus.py
+================================================
+#!/usr/bin/env python3
+"""
+Stop an application when unfocused using SIGSTOP
+Restart it when focused again using SIGCONT
+Useful to save battery / reduce CPU load when running browsers.
+
+Warning: if more than one process with the same name are being run, they
+will all be stopped/restarted
+
+Federico Ceratto <federico@firelet.net>
+License: GPLv3
+"""
+
+import atexit
+import i3ipc
+import psutil
+from argparse import ArgumentParser
+
+
+class FocusMonitor(object):
+    def __init__(self, args):
+        self.had_focus = False
+        self.class_name = args.class_name
+        self.process_name = args.process_name
+        self.debug = args.debug
+        self.conn = i3ipc.Connection()
+        self.conn.on('window::focus', self.focus_change)
+        atexit.register(self.continue_at_exit)
+
+    def stop_cont(self, cont=True):
+        """Send SIGSTOP/SIGCONT to processes called <name>
+        """
+        for proc in psutil.process_iter():
+            if proc.name() == self.process_name:
+                sig = psutil.signal.SIGCONT if cont else psutil.signal.SIGSTOP
+                proc.send_signal(sig)
+                if self.debug:
+                    sig = 'CONT' if cont else 'STOP'
+                    print("Sent SIG%s to process %d" % (sig, proc.pid))
+
+    def focus_change(self, i3conn, event):
+        """Detect focus change on a process with class class_name.
+        On change, stop/continue the process called process_name
+        """
+        has_focus_now = (event.container.window_class == self.class_name)
+        if self.had_focus ^ has_focus_now:
+            # The monitored application changed focus state
+            self.had_focus = has_focus_now
+            self.stop_cont(has_focus_now)
+
+    def continue_at_exit(self):
+        """Send SIGCONT on script termination"""
+        self.stop_cont(True)
+
+    def run(self):
+        try:
+            self.conn.main()
+        except KeyboardInterrupt:
+            print('Exiting on keyboard interrupt')
+
+
+def parse_args():
+    ap = ArgumentParser()
+    ap.add_argument('class_name')
+    ap.add_argument('process_name')
+    ap.add_argument('-d', '--debug', action='store_true')
+    return ap.parse_args()
+
+
+def main():
+    args = parse_args()
+    fm = FocusMonitor(args)
+    fm.run()
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+================================================
+FILE: examples/tiling-indicator.py
+================================================
+#!/usr/bin/env python3
+import i3ipc
+
+i3 = i3ipc.Connection()
+splitv_text = 'V'
+splith_text = 'H'
+last = ''
+
+
+def on_event(self, _):
+    global last
+    layout = i3.get_tree().find_focused().parent.layout
+    if layout == 'splitv' and not layout == last:
+        print(splitv_text)
+    elif layout == 'splith' and not layout == last:
+        print(splith_text)
+    elif layout != last:
+        print(' ')
+    last = layout
+
+
+# Subscribe to events
+i3.on("window::focus", on_event)
+i3.on("binding", on_event)
+
+# Start the main loop and wait for events to come in.
+i3.main()
+
+
+
+================================================
+FILE: examples/workspace-new.py
+================================================
+#!/usr/bin/env python3
+
+import i3ipc
+import re
+from argparse import ArgumentParser
+
+
+def main():
+    parser = ArgumentParser(description='''
+    Simple script to go to a new workspace. It will switch to a workspace with the lowest available number.
+    ''')
+    parser.parse_args()
+
+    i3 = i3ipc.Connection()
+
+    workspaces = i3.get_workspaces()
+    numbered_workspaces = filter(lambda w: w.name[0].isdigit(), workspaces)
+    numbers = list(map(lambda w: int(re.search(r'^([0-9]+)', w.name).group(0)),
+                       numbered_workspaces))
+
+    new = 0
+
+    for i in range(1, max(numbers) + 2):
+        if i not in numbers:
+            new = i
+            break
+
+    i3.command("workspace %s" % new)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+================================================
+FILE: examples/workspace_renumber.py
+================================================
+#!/usr/bin/env python3
+
+import i3ipc
+
+# make connection to i3 ipc
+i3 = i3ipc.Connection()
+
+
+# check if workspaces are all in order
+def workspaces_ordered(i3conn):
+    last_workspace = 0
+    for i in sorted(i3conn.get_workspaces(), key=lambda x: x.num):
+        number = int(i.num)
+        if number != last_workspace + 1:
+            return False
+        last_workspace += 1
+    return True
+
+
+# find all the workspaces that are out of order and
+# the least possible valid workspace number that is unassigned
+def find_disordered(i3conn):
+    disordered = []
+    least_number = None
+    workspaces = sorted(i3conn.get_workspaces(), key=lambda x: x.num)
+    occupied_workspaces = [int(x.num) for x in workspaces]
+    last_workspace = 0
+    for i in workspaces:
+        number = int(i.num)
+        if number != last_workspace + 1:
+            disordered.append(number)
+            if least_number is None and last_workspace + 1 not in occupied_workspaces:
+                least_number = last_workspace + 1
+        last_workspace += 1
+    return (disordered, least_number)
+
+
+# renumber all the workspaces that appear out of order from the others
+def fix_ordering(i3conn):
+    if workspaces_ordered(i3conn):
+        return
+    else:
+        workspaces = i3conn.get_tree().workspaces()
+        disordered_workspaces, least_number = find_disordered(i3conn)
+        containers = list(filter(lambda x: x.num in disordered_workspaces, workspaces))
+        for c in containers:
+            for i in c.leaves():
+                i.command("move container to workspace %s" % least_number)
+            least_number += 1
+    return
+
+
+# callback for when workspace focus changes
+def on_workspace_focus(i3conn, e):
+    fix_ordering(i3conn)
+
+
+if __name__ == '__main__':
+    i3.on('workspace::focus', on_workspace_focus)
+    i3.main()
+
+
+
+================================================
+FILE: examples/i3-focus/focus-app.py
+================================================
+#!/usr/bin/env python3
+
+import re
+from argparse import ArgumentParser
+from functools import reduce
+import i3ipc
+from tools import App, Lists, Menu, Sockets
+
+parser = ArgumentParser(prog='i3-app-focus.py',
+                        description='''
+        i3-app-focus.py is dmenu-based script for creating dynamic app switcher.
+        ''',
+                        epilog='''
+        Additional arguments found after "--" will be passed to dmenu.
+        ''')
+parser.add_argument('--menu', default='dmenu', help='The menu command to run (ex: --menu=rofi)')
+parser.add_argument('--socket-file', default='/tmp/i3-app-focus.socket', help='Socket file path')
+(args, menu_args) = parser.parse_known_args()
+
+sockets = Sockets(args.socket_file)
+containers_info = sockets.get_containers_history()
+
+apps = list(map(App, containers_info))
+apps_uniq = reduce(Lists.accum_uniq_apps, apps, [])
+
+i3 = i3ipc.Connection()
+menu = Menu(i3, args.menu, menu_args)
+menu.show_menu_app(apps_uniq)
+
+
+
+================================================
+FILE: examples/i3-focus/focus-current-app-window.py
+================================================
+#!/usr/bin/env python3
+
+import re
+from argparse import ArgumentParser
+from functools import reduce
+import i3ipc
+from tools import App, Lists, Menu, Sockets
+
+parser = ArgumentParser(prog='i3-app-focus.py',
+                        description='''
+        i3-app-focus.py is dmenu-based script for creating dynamic app switcher.
+        ''',
+                        epilog='''
+        Additional arguments found after "--" will be passed to dmenu.
+        ''')
+parser.add_argument('--menu', default='dmenu', help='The menu command to run (ex: --menu=rofi)')
+parser.add_argument('--socket-file', default='/tmp/i3-app-focus.socket', help='Socket file path')
+(args, menu_args) = parser.parse_known_args()
+
+sockets = Sockets(args.socket_file)
+containers_info = sockets.get_containers_history()
+
+containers_info_by_focused_app = Lists.find_all_by_focused_app(containers_info)
+
+i3 = i3ipc.Connection()
+menu = Menu(i3, args.menu, menu_args)
+menu.show_menu_container_info(containers_info_by_focused_app)
+
+
+
+================================================
+FILE: examples/i3-focus/focus-window.py
+================================================
+#!/usr/bin/env python3
+
+import re
+from argparse import ArgumentParser
+from functools import reduce
+import i3ipc
+from tools import App, Lists, Menu, Sockets
+
+parser = ArgumentParser(prog='i3-app-focus.py',
+                        description='''
+        i3-app-focus.py is dmenu-based script for creating dynamic app switcher.
+        ''',
+                        epilog='''
+        Additional arguments found after "--" will be passed to dmenu.
+        ''')
+parser.add_argument('--menu', default='dmenu', help='The menu command to run (ex: --menu=rofi)')
+parser.add_argument('--socket-file', default='/tmp/i3-app-focus.socket', help='Socket file path')
+(args, menu_args) = parser.parse_known_args()
+
+sockets = Sockets(args.socket_file)
+containers_info = sockets.get_containers_history()
+
+i3 = i3ipc.Connection()
+menu = Menu(i3, args.menu, menu_args)
+menu.show_menu_container_info(containers_info)
+
+
+
+================================================
+FILE: examples/i3-focus/history-server.py
+================================================
+#!/usr/bin/env python3
+
+import os
+import socket
+import selectors
+import threading
+import json
+from argparse import ArgumentParser
+import i3ipc
+
+MAX_WIN_HISTORY = 15
+
+parser = ArgumentParser(prog='i3-app-focus.py', description='''''', epilog='''''')
+parser.add_argument('--socket-file', default='/tmp/i3-app-focus.socket', help='Socket file path')
+(args, other) = parser.parse_known_args()
+
+
+class FocusWatcher:
+    def __init__(self):
+        self.i3 = i3ipc.Connection()
+        self.i3.on(i3ipc.Event.WINDOW_FOCUS, self._on_window_focus)
+        self.i3.on(i3ipc.Event.WINDOW_CLOSE, self._on_window_close)
+        self.listening_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        if os.path.exists(args.socket_file):
+            os.remove(args.socket_file)
+        self.listening_socket.bind(args.socket_file)
+        self.listening_socket.listen(2)
+        self.window_list = []
+        self.window_list_lock = threading.RLock()
+
+    def run(self):
+        t_i3 = threading.Thread(target=self._launch_i3)
+        t_server = threading.Thread(target=self._launch_server)
+        for t in (t_i3, t_server):
+            t.start()
+
+    def _on_window_focus(self, i3conn, event):
+        window_id = event.container.id
+        con = self.i3.get_tree().find_by_id(window_id)
+        if not self._is_window(con):
+            return
+
+        with self.window_list_lock:
+            if window_id in self.window_list:
+                self.window_list.remove(window_id)
+
+            self.window_list.insert(0, window_id)
+
+            if len(self.window_list) > MAX_WIN_HISTORY:
+                del self.window_list[MAX_WIN_HISTORY:]
+
+    def _on_window_close(self, i3conn, event):
+        window_id = event.container.id
+        with self.window_list_lock:
+            if window_id in self.window_list:
+                self.window_list.remove(window_id)
+
+    def _launch_i3(self):
+        self.i3.main()
+
+    def _launch_server(self):
+        selector = selectors.DefaultSelector()
+
+        def accept(sock):
+            conn, addr = sock.accept()
+            tree = self.i3.get_tree()
+            info = []
+            with self.window_list_lock:
+                for window_id in self.window_list:
+                    con = tree.find_by_id(window_id)
+                    if con:
+                        info.append({
+                            "id": con.id,
+                            "window": con.window,
+                            "window_title": con.window_title,
+                            "window_class": con.window_class,
+                            "window_role": con.window_role,
+                            "focused": con.focused
+                        })
+
+            conn.send(json.dumps(info).encode())
+            conn.close()
+
+        selector.register(self.listening_socket, selectors.EVENT_READ, accept)
+
+        while True:
+            for key, event in selector.select():
+                callback = key.data
+                callback(key.fileobj)
+
+    @staticmethod
+    def _is_window(con):
+        return not con.nodes and con.type == "con" and (con.parent and con.parent.type != "dockarea"
+                                                        or True)
+
+
+focus_watcher = FocusWatcher()
+focus_watcher.run()
+
+
+
+================================================
+FILE: examples/i3-focus/tools/__init__.py
+================================================
+from .app import App
+from .lists import Lists
+from .menu import Menu
+from .sockets import Sockets
+
+
+
+================================================
+FILE: examples/i3-focus/tools/app.py
+================================================
+import re
+import i3ipc
+
+
+class App:
+    def __init__(self, container_info):
+        self._container_info = container_info
+
+    def get_con_id(self):
+        return self._container_info["id"]
+
+    def get_window_class(self):
+        return self._container_info["window_class"]
+
+    def get_title(self):
+        window_class = self._container_info["window_class"]
+        method_name = '_get_title_' + window_class.replace('-', '_').lower()
+        method = getattr(self, method_name, self._get_title_based_on_class)
+        return method()
+
+    def _get_title_based_on_class(self):
+        return self._container_info["window_class"].replace('-', ' ').title()
+
+    def _get_title_based_on_title(self):
+        return re.match(r"^.*?\s*(?P<title>[^-—]+)$",
+                        self._container_info["window_title"]).group("title")
+
+    # App specific functions
+
+    def _get_title_google_chrome(self):
+        is_browser_in_app_mode = self._container_info["window_role"] == "pop-up"
+        if is_browser_in_app_mode:
+            return self._get_title_based_on_title() + ' (Chrome)'
+
+        return self._get_title_based_on_class()
+
+    def _get_title_st_256color(self):
+        title = self._get_title_based_on_title()
+
+        if self._container_info["window_title"] != "Simple Terminal":
+            return title + ' (ST)'
+
+        return title
+
+
+
+================================================
+FILE: examples/i3-focus/tools/lists.py
+================================================
+from . import App
+
+
+class Lists:
+    @staticmethod
+    def accum_uniq_apps(result, app):
+        exists = False
+        for a in result:
+            if a.get_title() == app.get_title():
+                exists = True
+
+        if not exists:
+            result.append(app)
+
+        return result
+
+    @staticmethod
+    def find_all_by_focused_app(infos):
+        for i in infos:
+            if i["focused"]:
+                focused_info = i
+
+        focused_app = App(focused_info)
+
+        focused_app_windows_by_class = list(
+            filter(lambda i: App(i).get_title() == focused_app.get_title(), infos))
+        return focused_app_windows_by_class
+
+    @staticmethod
+    def find_app_by_title(title, apps):
+        for a in apps:
+            if a.get_title() == title:
+                return a
+
+
+
+================================================
+FILE: examples/i3-focus/tools/menu.py
+================================================
+from collections import deque
+from subprocess import check_output
+from . import Lists, App
+
+
+class Menu:
+    def __init__(self, i3, menu, menu_args):
+        self._i3 = i3
+        self._menu = menu
+        self._menu_args = menu_args
+
+    def show_menu(self, items):
+        menu_input = bytes(str.join('\n', items), 'UTF-8')
+        menu_cmd = [self._menu] + ['-l', str(len(items))] + self._menu_args
+        menu_result = check_output(menu_cmd, input=menu_input)
+        return menu_result.decode().strip()
+
+    def show_menu_app(self, apps):
+        titles = list(map(lambda a: a.get_title(), apps))
+        selected_title = self.show_menu(titles)
+        selected_app = Lists.find_app_by_title(selected_title, apps)
+        tree = self._i3.get_tree()
+        con = tree.find_by_id(selected_app.get_con_id())
+        con.command('focus')
+
+    def show_menu_container_info(self, containers_info):
+        titles = self._get_titles_with_app_prefix(containers_info)
+        titles_with_suffix = self._add_uniqu_suffix(titles)
+        infos_by_title = dict(zip(titles_with_suffix, containers_info))
+        selected_title = self.show_menu(titles_with_suffix)
+        selected_info = infos_by_title[selected_title]
+        tree = self._i3.get_tree()
+        con = tree.find_by_id(selected_info["id"])
+        con.command('focus')
+
+    def _get_titles_with_app_prefix(self, containers_info):
+        return list(map(lambda i: App(i).get_title() + ': ' + i["window_title"], containers_info))
+
+    def _add_uniqu_suffix(self, titles):
+        counters = dict()
+        titles_with_suffix = []
+        for title in titles:
+            counters[title] = counters[title] + 1 if title in counters else 1
+            if counters[title] > 1:
+                title = f'{title} ({counters[title]})'
+
+            titles_with_suffix.append(title)
+
+        return titles_with_suffix
+
+
+
+================================================
+FILE: examples/i3-focus/tools/sockets.py
+================================================
+import socket
+import json
+
+
+class Sockets:
+    def __init__(self, socket_file):
+        self._socket_file = socket_file
+        self._client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+
+    def get_containers_history(self):
+        self._client.connect(self._socket_file)
+        history_json = self._client.recv(4096).decode()
+        self._client.close()
+        return json.loads(history_json)
+
+

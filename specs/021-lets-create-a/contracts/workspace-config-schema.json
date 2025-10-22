@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.config/i3/workspace-config.schema.json",
+  "title": "i3 Workspace Configuration",
+  "description": "Workspace metadata (names, icons, output assignments) for i3 window manager",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["number"],
+    "properties": {
+      "number": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9,
+        "description": "Workspace number (1-9)"
+      },
+      "name": {
+        "type": "string",
+        "description": "Human-readable workspace name (displayed in i3bar)",
+        "examples": ["Terminal", "Editor", "Browser", "Media", "Files"]
+      },
+      "icon": {
+        "type": "string",
+        "description": "Unicode icon/emoji for workspace (displayed in i3bar)",
+        "examples": ["󰨊", "", "󰈹", "", "󰉋"]
+      },
+      "default_output_role": {
+        "type": "string",
+        "enum": ["auto", "primary", "secondary", "tertiary"],
+        "default": "auto",
+        "description": "Default output assignment role. 'auto' uses monitor count rules: 1 monitor (all primary), 2 monitors (WS 1-2 primary, 3-9 secondary), 3+ monitors (WS 1-2 primary, 3-5 secondary, 6-9 tertiary)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "minItems": 1,
+  "maxItems": 9,
+  "uniqueItems": true,
+  "examples": [
+    [
+      {"number": 1, "name": "Terminal", "icon": "󰨊", "default_output_role": "primary"},
+      {"number": 2, "name": "Editor", "icon": "", "default_output_role": "primary"},
+      {"number": 3, "name": "Browser", "icon": "󰈹", "default_output_role": "secondary"},
+      {"number": 4, "name": "Media", "icon": "", "default_output_role": "secondary"},
+      {"number": 5, "name": "Files", "icon": "󰉋", "default_output_role": "secondary"},
+      {"number": 6, "name": "Chat", "icon": "󰭹", "default_output_role": "tertiary"},
+      {"number": 7, "name": "Email", "icon": "󰇮", "default_output_role": "tertiary"},
+      {"number": 8, "name": "Music", "icon": "󰝚", "default_output_role": "tertiary"},
+      {"number": 9, "name": "Misc", "icon": "󰇙", "default_output_role": "tertiary"}
+    ]
+  ]
+}

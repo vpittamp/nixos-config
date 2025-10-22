@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .state import StateManager
+from .window_rules import WindowRule
+from .pattern_resolver import classify_window
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,8 @@ class IPCServer:
         self,
         state_manager: StateManager,
         event_buffer: Optional[Any] = None,
-        i3_connection: Optional[Any] = None
+        i3_connection: Optional[Any] = None,
+        window_rules_getter: Optional[callable] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -31,10 +34,12 @@ class IPCServer:
             state_manager: StateManager instance for queries
             event_buffer: EventBuffer instance for event history (Feature 017)
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
+            window_rules_getter: Callable that returns current window rules list (Feature 021)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
         self.i3_connection = i3_connection
+        self.window_rules_getter = window_rules_getter
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -44,7 +49,8 @@ class IPCServer:
         cls,
         state_manager: StateManager,
         event_buffer: Optional[Any] = None,
-        i3_connection: Optional[Any] = None
+        i3_connection: Optional[Any] = None,
+        window_rules_getter: Optional[callable] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -52,11 +58,12 @@ class IPCServer:
             state_manager: StateManager instance
             event_buffer: EventBuffer instance for event history (Feature 017)
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
+            window_rules_getter: Callable that returns current window rules list (Feature 021)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -193,6 +200,10 @@ class IPCServer:
                 result = await self._reload_config()
             elif method == "get_diagnostic_state":
                 result = await self._get_diagnostic_state(params)
+            elif method == "get_window_rules":
+                result = await self._get_window_rules(params)
+            elif method == "classify_window":
+                result = await self._classify_window(params)
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -547,3 +558,96 @@ class IPCServer:
             result["floating_nodes"] = [self._tree_to_dict(child) for child in node.floating_nodes]
 
         return result
+
+    async def _get_window_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get window rules with optional scope filter (Feature 021: T025).
+
+        Args:
+            params: Query parameters with optional scope filter
+
+        Returns:
+            Dictionary with rules list and count
+
+        Example:
+            Request: {"method": "get_window_rules", "params": {"scope": "scoped"}}
+            Response: {"rules": [...], "count": 5}
+        """
+        if not self.window_rules_getter:
+            return {"rules": [], "count": 0, "error": "Window rules not available"}
+
+        # Get current window rules
+        window_rules = self.window_rules_getter()
+
+        # Apply scope filter if provided
+        scope_filter = params.get("scope")
+        if scope_filter:
+            window_rules = [r for r in window_rules if r.scope == scope_filter]
+
+        # Serialize rules to dict
+        rules_data = [
+            {
+                "pattern": r.pattern_rule.pattern,
+                "scope": r.scope,
+                "priority": r.priority,
+                "workspace": r.workspace,
+                "description": r.pattern_rule.description,
+                "modifier": r.modifier,
+            }
+            for r in window_rules
+        ]
+
+        return {
+            "rules": rules_data,
+            "count": len(rules_data),
+        }
+
+    async def _classify_window(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Classify a window using the 4-level precedence system (Feature 021: T026).
+
+        Args:
+            params: Classification parameters
+                - window_class (required): Window WM_CLASS
+                - window_title (optional): Window title
+                - project_name (optional): Active project name
+
+        Returns:
+            Classification result with scope, workspace, source
+
+        Example:
+            Request: {"method": "classify_window", "params": {"window_class": "Code", "project_name": "nixos"}}
+            Response: {"scope": "scoped", "workspace": null, "source": "project", "matched_pattern": null}
+        """
+        window_class = params.get("window_class")
+        if not window_class:
+            raise ValueError("window_class parameter is required")
+
+        window_title = params.get("window_title", "")
+        project_name = params.get("project_name")
+
+        # Get active project's scoped classes
+        active_project_scoped_classes = None
+        if project_name and project_name in self.state_manager.state.projects:
+            project = self.state_manager.state.projects[project_name]
+            active_project_scoped_classes = project.scoped_classes
+
+        # Get window rules
+        window_rules = None
+        if self.window_rules_getter:
+            window_rules = self.window_rules_getter()
+
+        # Get app classification
+        app_classification_scoped = list(self.state_manager.state.scoped_classes)
+        app_classification_global = list(self.state_manager.state.global_classes)
+
+        # Classify
+        classification = classify_window(
+            window_class=window_class,
+            window_title=window_title,
+            active_project_scoped_classes=active_project_scoped_classes,
+            window_rules=window_rules,
+            app_classification_patterns=None,  # TODO: Extract from app classification
+            app_classification_scoped=app_classification_scoped,
+            app_classification_global=app_classification_global,
+        )
+
+        return classification.to_json()

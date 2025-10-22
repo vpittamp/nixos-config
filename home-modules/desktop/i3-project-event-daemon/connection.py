@@ -87,12 +87,14 @@ class ResilientI3Connection:
         try:
             # Subscribe to all event types we'll be handling
             # This is required for i3ipc.aio - it's not automatic
+            # IMPORTANT: Subscribe to generic events (WINDOW, WORKSPACE) not specific ones (WINDOW_NEW)!
+            # i3ipc library dispatches to specific handlers (window::new, window::title) automatically
             from i3ipc import Event
 
             await self.conn.subscribe([
                 Event.TICK,
-                Event.WINDOW,
-                Event.WORKSPACE,
+                Event.WINDOW,      # Dispatches to window::new, window::title, window::focus, etc.
+                Event.WORKSPACE,   # Dispatches to workspace::init, workspace::empty, etc.
                 Event.SHUTDOWN,
             ])
 

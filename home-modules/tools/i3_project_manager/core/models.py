@@ -14,7 +14,12 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+# Import PatternRule for enhanced app classification
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from models.pattern import PatternRule
 
 
 @dataclass
@@ -289,6 +294,12 @@ class LayoutWindow:
     launch_env: Dict[str, str] = field(default_factory=dict)
     expected_marks: List[str] = field(default_factory=list)  # e.g., ["project:nixos"]
 
+    # Application relaunching fields (FR-002, FR-003)
+    cwd: Optional[str] = None  # Working directory for launch
+    launch_timeout: float = 5.0  # Timeout for window appearance (seconds)
+    max_retries: int = 3  # Retry attempts if launch fails
+    retry_delay: float = 1.0  # Delay between retries (seconds)
+
     def __post_init__(self):
         """Validate window configuration."""
         if not self.window_class:
@@ -447,24 +458,57 @@ class SavedLayout:
 
 @dataclass
 class AppClassification:
-    """Global application classification."""
+    """Global application classification with pattern-based matching."""
 
-    scoped_classes: List[str] = field(
-        default_factory=list
-    )  # Default scoped classes
+    scoped_classes: List[str] = field(default_factory=list)  # Default scoped classes
     global_classes: List[str] = field(default_factory=list)  # Always global
-    class_patterns: Dict[str, str] = field(
-        default_factory=dict
-    )  # {pattern: scope}
+    class_patterns: List[PatternRule] = field(default_factory=list)  # Pattern rules
+
+    def __post_init__(self):
+        """Convert dict items to PatternRule instances."""
+        if isinstance(self.class_patterns, list) and self.class_patterns:
+            # Convert dict items to PatternRule instances
+            converted = []
+            for item in self.class_patterns:
+                if isinstance(item, PatternRule):
+                    converted.append(item)
+                elif isinstance(item, dict):
+                    converted.append(
+                        PatternRule(
+                            pattern=item["pattern"],
+                            scope=item["scope"],
+                            priority=item.get("priority", 100),
+                            description=item.get("description", "")
+                        )
+                    )
+                else:
+                    raise ValueError(f"Invalid class_patterns item: expected PatternRule or dict, got {type(item)}")
+            self.class_patterns = converted
 
     def to_json(self) -> dict:
         """Serialize to JSON."""
-        return asdict(self)
+        return {
+            "scoped_classes": self.scoped_classes,
+            "global_classes": self.global_classes,
+            "class_patterns": [
+                {
+                    "pattern": p.pattern,
+                    "scope": p.scope,
+                    "priority": p.priority,
+                    "description": p.description,
+                }
+                for p in self.class_patterns
+            ]
+        }
 
     @classmethod
     def from_json(cls, data: dict) -> "AppClassification":
         """Deserialize from JSON."""
-        return cls(**data)
+        return cls(
+            scoped_classes=data.get("scoped_classes", []),
+            global_classes=data.get("global_classes", []),
+            class_patterns=data.get("class_patterns", []),
+        )
 
     def save(
         self, config_file: Path = Path.home() / ".config/i3/app-classes.json"

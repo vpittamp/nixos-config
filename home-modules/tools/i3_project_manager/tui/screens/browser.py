@@ -48,6 +48,7 @@ class ProjectBrowserScreen(Screen):
         Binding("m", "monitor", "Monitor"),
         Binding("n", "new_project", "New"),
         Binding("d", "delete_project", "Delete"),
+        Binding("c", "clear_project", "Clear"),
         Binding("slash", "focus_search", "Search", key_display="/"),
         Binding("escape", "clear_search", "Clear"),
         Binding("s", "toggle_sort", "Sort"),
@@ -88,6 +89,10 @@ class ProjectBrowserScreen(Screen):
         table.add_columns("Icon", "Name", "Directory", "Apps", "Layouts", "Modified")
         table.zebra_stripes = True
         table.cursor_type = "row"
+
+        # Set initial focus to table, not search input
+        # This allows keyboard shortcuts to work immediately
+        table.focus()
 
         # Load projects and start refresh task
         await self.refresh_data()
@@ -337,10 +342,13 @@ class ProjectBrowserScreen(Screen):
         search_input.focus()
 
     def action_clear_search(self) -> None:
-        """Clear the search filter."""
+        """Clear the search filter and remove focus from search input."""
         search_input = self.query_one("#search", Input)
         search_input.value = ""
         self.filter_text = ""
+        # Remove focus from search input so keyboard shortcuts work
+        projects_table = self.query_one("#projects", DataTable)
+        projects_table.focus()
 
     def action_toggle_sort(self) -> None:
         """Toggle between sort modes."""
@@ -358,3 +366,16 @@ class ProjectBrowserScreen(Screen):
         self.sort_reverse = not self.sort_reverse
         order = "descending" if self.sort_reverse else "ascending"
         self.notify(f"Sort order: {order}", severity="information")
+
+    def action_clear_project(self) -> None:
+        """Clear active project (return to global mode)."""
+        # Send tick event to daemon to clear project
+        import subprocess
+        try:
+            subprocess.run(["i3-msg", "-t", "send_tick", "clear"], check=True, capture_output=True)
+            self.notify("Cleared active project - now in global mode", severity="information")
+            self.active_project = None
+        except subprocess.CalledProcessError as e:
+            self.notify(f"Failed to clear project: {e}", severity="error")
+        except FileNotFoundError:
+            self.notify("i3-msg not found - cannot clear project", severity="error")

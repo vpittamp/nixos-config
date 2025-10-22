@@ -26,6 +26,9 @@ let
       # Phase 7: Schema validation (T095)
       jsonschema
 
+      # Layout management dependencies (Feature 022)
+      psutil
+
       # Phase 6: Window inspector dependencies
       # xdotool and xprop provided via buildInputs (system packages)
     ];
@@ -98,8 +101,10 @@ in {
 
     # Bash completion and aliases
     programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
-      # i3pm shell completion
-      eval "$(register-python-argcomplete i3pm)"
+      # i3pm shell completion (only if argcomplete is available)
+      if command -v register-python-argcomplete &> /dev/null; then
+        eval "$(register-python-argcomplete i3pm)"
+      fi
 
       # Backward compatibility aliases (replace old bash scripts)
       alias i3-project-switch='i3pm switch'
@@ -120,10 +125,12 @@ in {
 
     # Zsh completion and aliases
     programs.zsh.initExtra = mkIf cfg.enableZshIntegration ''
-      # i3pm shell completion
-      autoload -U bashcompinit
-      bashcompinit
-      eval "$(register-python-argcomplete i3pm)"
+      # i3pm shell completion (only if argcomplete is available)
+      if command -v register-python-argcomplete &> /dev/null; then
+        autoload -U bashcompinit
+        bashcompinit
+        eval "$(register-python-argcomplete i3pm)"
+      fi
 
       # Backward compatibility aliases
       alias i3-project-switch='i3pm switch'

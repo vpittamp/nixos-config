@@ -206,6 +206,47 @@ class I3Client:
 
     # Helper methods for common queries
 
+    async def get_all_windows(self, tree: Optional[i3ipc.aio.Con] = None) -> List[Dict[str, Any]]:
+        """Get all windows from the i3 tree.
+
+        Args:
+            tree: Optional pre-fetched tree (if None, will fetch via get_tree())
+
+        Returns:
+            List of window dicts with keys: id, window_class, title, workspace, marks, rect
+
+        Raises:
+            I3Error: If query fails
+        """
+        if tree is None:
+            tree = await self.get_tree()
+
+        windows = []
+
+        def find_windows(con):
+            """Recursively find all windows."""
+            if con.window:
+                windows.append(
+                    {
+                        "id": con.window,
+                        "window_class": con.window_class,
+                        "title": con.name,
+                        "workspace": con.workspace().name if con.workspace() else None,
+                        "marks": con.marks,
+                        "rect": {
+                            "x": con.rect.x,
+                            "y": con.rect.y,
+                            "width": con.rect.width,
+                            "height": con.rect.height,
+                        },
+                    }
+                )
+            for child in con.nodes + con.floating_nodes:
+                find_windows(child)
+
+        find_windows(tree)
+        return windows
+
     async def get_windows_by_mark(self, mark: str) -> List[Dict[str, Any]]:
         """Get all windows with a specific mark.
 

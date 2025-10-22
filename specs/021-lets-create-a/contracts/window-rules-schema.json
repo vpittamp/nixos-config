@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.config/i3/window-rules.schema.json",
+  "title": "i3 Window Rules Configuration",
+  "description": "Dynamic window classification rules for i3 window manager",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["pattern_rule"],
+    "properties": {
+      "pattern_rule": {
+        "type": "object",
+        "description": "Pattern matching rule for window classification",
+        "required": ["pattern", "scope"],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Pattern string with optional prefix: glob:*, regex:^...$, or literal. Examples: 'glob:pwa-*', 'regex:^vim$', 'Code'",
+            "examples": ["glob:pwa-*", "regex:^(neo)?vim$", "Code", "title:^Yazi:.*"]
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["scoped", "global"],
+            "description": "Classification scope: scoped (project-specific) or global (always visible)"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "default": 0,
+            "description": "Matching priority (higher = evaluated first). Reserved ranges: 0-99 (low), 100-199 (normal), 200-299 (high), 300-999 (critical)"
+          },
+          "description": {
+            "type": "string",
+            "default": "",
+            "description": "Human-readable description of this pattern rule"
+          }
+        },
+        "additionalProperties": false
+      },
+      "workspace": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9,
+        "description": "Target workspace number for this window (1-9)"
+      },
+      "command": {
+        "type": "string",
+        "description": "i3 command to execute when this rule matches. Supports variable substitution: $CLASS, $INSTANCE, $TITLE, $CONID, $WINID, $ROLE, $TYPE",
+        "examples": [
+          "floating enable",
+          "move to workspace 4",
+          "exec notify-send \"Window opened\" \"$CLASS on workspace $WS\"",
+          "[con_id=$CONID] focus"
+        ]
+      },
+      "modifier": {
+        "type": "string",
+        "enum": ["GLOBAL", "DEFAULT", "ON_CLOSE", "TITLE"],
+        "description": "Rule modifier: GLOBAL (matches all windows), DEFAULT (fallback if no match), ON_CLOSE (triggers on window close), TITLE (special title formatting)"
+      },
+      "blacklist": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "Window class to exclude from GLOBAL rule"
+        },
+        "description": "List of window classes to exclude (only valid with GLOBAL modifier)",
+        "examples": [["URxvt", "Alacritty"]]
+      }
+    },
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "modifier": {"const": "GLOBAL"}
+          },
+          "required": ["modifier"]
+        },
+        "then": {
+          "description": "GLOBAL rules may have blacklist"
+        },
+        "else": {
+          "if": {
+            "required": ["blacklist"]
+          },
+          "then": {
+            "description": "Blacklist only valid with GLOBAL modifier",
+            "not": {}
+          }
+        }
+      }
+    ]
+  },
+  "examples": [
+    [
+      {
+        "pattern_rule": {
+          "pattern": "glob:FFPWA-*",
+          "scope": "global",
+          "priority": 200,
+          "description": "Firefox PWAs (all global)"
+        },
+        "workspace": 4
+      },
+      {
+        "pattern_rule": {
+          "pattern": "title:^Yazi:.*",
+          "scope": "scoped",
+          "priority": 300,
+          "description": "Yazi file manager in terminal"
+        },
+        "workspace": 5
+      },
+      {
+        "pattern_rule": {
+          "pattern": "Code",
+          "scope": "scoped",
+          "priority": 250,
+          "description": "VS Code editor"
+        },
+        "workspace": 2
+      },
+      {
+        "pattern_rule": {
+          "pattern": "glob:*",
+          "scope": "global",
+          "priority": 10,
+          "description": "Default: all unmatched windows"
+        },
+        "modifier": "DEFAULT"
+      }
+    ]
+  ]
+}

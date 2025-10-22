@@ -15,21 +15,13 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Import i3pm package for shared models
-  i3pmPackage = config.programs.i3pm.package or null;
-
-  # Python dependencies for the daemon (T033)
-  pythonEnv = if i3pmPackage != null then
-    pkgs.python3.withPackages (ps: with ps; [
-      i3ipc        # i3 IPC library
-      systemd      # systemd-python for sd_notify/watchdog/journald
-      i3pmPackage  # i3pm for shared Project models
-    ])
-  else
-    pkgs.python3.withPackages (ps: with ps; [
-      i3ipc
-      systemd
-    ]);
+  # Python dependencies for the daemon
+  # Note: PatternRule is now copied locally to avoid i3pm dependency
+  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    i3ipc        # i3 IPC library
+    systemd      # systemd-python for sd_notify/watchdog/journald
+    watchdog     # File system monitoring (Feature 021: T022)
+  ]);
 
   # Daemon package (T033)
   daemonSrc = ./i3-project-event-daemon;
@@ -162,25 +154,22 @@ in
     };
 
     # Install CLI tools (T010, T011, T029-T032)
+    # NOTE: i3-project-* commands are deprecated in favor of i3pm CLI (Feature 022)
+    # Keeping only daemon-specific diagnostic tools
     home.packages = with pkgs; [
       pythonEnv  # Python environment for daemon
 
-      # CLI tools as wrapper scripts
-      (writeShellScriptBin "i3-project-switch" (builtins.readFile ../../scripts/i3-project-switch))
-      (writeShellScriptBin "i3-project-current" (builtins.readFile ../../scripts/i3-project-current))
-      (writeShellScriptBin "i3-project-list" (builtins.readFile ../../scripts/i3-project-list))
-      (writeShellScriptBin "i3-project-create" (builtins.readFile ../../scripts/i3-project-create))
+      # Daemon diagnostic tools (not replaced by i3pm)
       (writeShellScriptBin "i3-project-daemon-status" (builtins.readFile ../../scripts/i3-project-daemon-status))
       (writeShellScriptBin "i3-project-daemon-events" (builtins.readFile ../../scripts/i3-project-daemon-events))
     ];
 
-    # Shell aliases (T034)
-    # Use mkForce to override existing pclear alias from bash.nix (Feature 012)
+    # Shell aliases (T034) - Feature 022: Migrated to use i3pm CLI
+    # NOTE: These aliases are now redundant since i3pm module provides identical aliases
+    # Kept for backward compatibility during transition
     programs.bash.shellAliases = mkIf cfg.enable {
-      pswitch = lib.mkForce "i3-project-switch";
-      pcurrent = lib.mkForce "i3-project-current";
-      plist = lib.mkForce "i3-project-list";
-      pclear = lib.mkForce "i3-project-switch --clear";  # Override old Feature 012 alias
+      # Deprecated: Use i3pm directly instead
+      # pswitch, pcurrent, plist, pclear are provided by i3pm module
     };
   };
 }
