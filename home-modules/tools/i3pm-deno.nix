@@ -1,62 +1,29 @@
 { config, lib, pkgs, ... }:
 
 let
-  # Deno dependencies - fixed-output derivation for dependency caching
-  denoDeps = pkgs.stdenv.mkDerivation {
-    pname = "i3pm-deno-deps";
-    version = "2.0.0";
-
-    src = ./i3pm-deno;
-
-    nativeBuildInputs = [ pkgs.deno ];
-
-    buildPhase = ''
-      export DENO_DIR=$out
-      deno cache main.ts
-    '';
-
-    installPhase = ''
-      # Dependencies are already in $out from DENO_DIR
-      echo "Deno dependencies cached"
-    '';
-
-    outputHashMode = "recursive";
-    outputHashAlgo = "sha256";
-    outputHash = "sha256-q0Zj+jQ1M9dZd9X8Fb9SzBpwZsDXZbgw0FDsdxR+sFA=";
-  };
-
-  # i3pm Deno CLI - Compiled TypeScript CLI for i3 project management
+  # i3pm Deno CLI - Wrapper script that runs TypeScript with Deno runtime
   i3pm = pkgs.stdenv.mkDerivation {
     pname = "i3pm";
     version = "2.0.0";
 
     src = ./i3pm-deno;
 
-    nativeBuildInputs = [ pkgs.deno ];
-
-    buildPhase = ''
-      # Copy dependencies to writable location
-      export DENO_DIR=$PWD/.deno
-      mkdir -p $DENO_DIR
-      cp -r ${denoDeps}/* $DENO_DIR/
-      chmod -R +w $DENO_DIR
-
-      # Compile TypeScript to standalone executable
-      # The cache is already populated from denoDeps
-      # Use --cached-only to use local cache only
-      # Permissions are baked into the binary at compile time
-      deno compile \
-        --cached-only \
-        --allow-net \
-        --allow-read=/run/user,/home \
-        --allow-env=XDG_RUNTIME_DIR,HOME,USER \
-        --output=i3pm \
-        main.ts
-    '';
+    dontBuild = true;
 
     installPhase = ''
+      mkdir -p $out/share/i3pm
+      cp -r * $out/share/i3pm/
+
       mkdir -p $out/bin
-      cp i3pm $out/bin/
+      cat > $out/bin/i3pm <<'EOF'
+#!/usr/bin/env bash
+exec ${pkgs.deno}/bin/deno run \
+  --allow-net \
+  --allow-read=/run/user,/home \
+  --allow-env=XDG_RUNTIME_DIR,HOME,USER \
+  $out/share/i3pm/main.ts "$@"
+EOF
+      chmod +x $out/bin/i3pm
     '';
 
     meta = with lib; {
