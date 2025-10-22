@@ -186,30 +186,15 @@
     bindsym $mod+Shift+r restart
     bindsym $mod+Shift+e exec "i3-msg exit"
 
-    # i3bar configuration (Feature 013: Migrated from polybar)
-    # Native i3 status bar with i3blocks status command
-    bar {
-      position bottom
-      status_command ${pkgs.i3blocks}/bin/i3blocks
-      workspace_buttons yes
-      binding_mode_indicator yes
-      font pango:FiraCode Nerd Font 10
-
-      colors {
-        background #1e1e2e
-        statusline #cdd6f4
-        separator  #6c7086
-
-        # Workspace button colors (border, background, text)
-        focused_workspace  #b4befe #45475a #cdd6f4
-        active_workspace   #89b4fa #313244 #cdd6f4
-        inactive_workspace #313244 #1e1e2e #bac2de
-        urgent_workspace   #f38ba8 #f38ba8 #1e1e2e
-      }
-    }
+    # Polybar configuration (Re-enabled for center module support)
+    # Polybar is started via exec_always below
+    # No i3bar configuration - polybar handles the status bar
 
     # Autostart - import environment variables for systemd services
     exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
+
+    # Launch polybar on all monitors (re-enabled for center module support)
+    exec_always --no-startup-id ${pkgs.procps}/bin/pkill polybar; sleep 1; for m in $(${pkgs.xorg.xrandr}/bin/xrandr --query | ${pkgs.gnugrep}/bin/grep " connected" | ${pkgs.coreutils}/bin/cut -d" " -f1); do MONITOR=$m ${pkgs.polybar}/bin/polybar --reload main & done
 
     # Assign workspaces to monitors on startup and monitor change
     exec_always --no-startup-id ~/.config/i3/scripts/assign-workspace-monitor.sh

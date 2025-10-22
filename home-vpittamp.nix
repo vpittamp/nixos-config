@@ -11,8 +11,8 @@
     # ./home-modules/desktop/i3-project-manager.nix  # REMOVED: Replaced by i3pm (Feature 019)
     ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
     ./home-modules/tools/i3-project-manager.nix    # Feature 019: i3pm CLI/TUI tool (unified solution)
-    # ./home-modules/desktop/polybar.nix  # REMOVED: Migrated to i3bar (Feature 013)
-    ./home-modules/desktop/i3blocks  # Feature 013: i3blocks status command for i3bar
+    ./home-modules/desktop/polybar.nix  # Re-enabled: Better centering support than i3bar
+    # ./home-modules/desktop/i3blocks  # REMOVED: Switched back to polybar for center modules
   ];
 
   home.username = "vpittamp";

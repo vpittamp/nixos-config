@@ -1,0 +1,240 @@
+# Polybar Configuration for i3
+# Restored from Feature 013 with updated i3pm daemon integration
+{ config, lib, pkgs, ... }:
+
+let
+  polybarPkg = pkgs.polybar.override {
+    i3Support = true;
+    alsaSupport = true;
+    pulseSupport = true;
+  };
+
+  # Get i3pm package from the i3pm module
+  i3pm = config.programs.i3pm.package;
+in
+{
+  # Install polybar package
+  home.packages = [ polybarPkg ];
+
+  # We still need services.polybar enabled to generate the config file
+  # but we disable the systemd service afterwards (polybar started by i3)
+  services.polybar = {
+    enable = true;
+    package = polybarPkg;
+
+    # Dummy script since we start polybar from i3
+    script = "";
+
+    config = {
+      "bar/main" = {
+        monitor = "\${env:MONITOR:}";
+        monitor-strict = true;
+        width = "100%";
+        height = 27;
+        radius = 0;
+        fixed-center = true;
+        bottom = true;  # Position at bottom
+
+        background = "#1e1e2e";  # Catppuccin Mocha base
+        foreground = "#cdd6f4";  # Catppuccin Mocha text
+
+        line-size = 3;
+        line-color = "#f5e0dc";  # Catppuccin Mocha rosewater
+
+        border-size = 0;
+        border-color = "#00000000";
+
+        padding-left = 1;
+        padding-right = 1;
+
+        module-margin-left = 1;
+        module-margin-right = 1;
+
+        font-0 = "FiraCode Nerd Font:size=10;2";
+        font-1 = "Font Awesome 6 Free:style=Solid:size=10;2";
+        font-2 = "Font Awesome 6 Brands:size=10;2";
+
+        # Three-section layout: workspaces left, project center, system info right
+        modules-left = "i3";
+        modules-center = "project";
+        modules-right = "cpu memory network date";
+
+        # System tray disabled to prevent multi-monitor conflicts
+        # Only one polybar instance can manage the system tray at a time
+        # tray-position = "right";
+        # tray-padding = 2;
+
+        cursor-click = "pointer";
+        cursor-scroll = "ns-resize";
+
+        enable-ipc = true;
+      };
+
+      # Project Module - Uses i3pm daemon (Feature 015)
+      "module/project" = {
+        type = "custom/script";
+        exec = "${pkgs.writeShellScript "polybar-project-display" ''
+          #!${pkgs.bash}/bin/bash
+          # Display current project for polybar
+          # Uses i3pm CLI for consistent logic (Feature 022)
+
+          # Query i3pm daemon for current project
+          RESULT=$(${i3pm}/bin/i3pm current --json 2>/dev/null)
+
+          if [ $? -ne 0 ] || [ -z "$RESULT" ]; then
+            # Daemon not running or error
+            echo "⚠ Daemon"
+            exit 0
+          fi
+
+          # Check if in global mode
+          MODE=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.mode // empty')
+          if [ "$MODE" = "global" ]; then
+            # Global mode (no active project)
+            echo "∅ Global"
+            exit 0
+          fi
+
+          # Extract project info
+          ICON=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.icon // "📁"')
+          NAME=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.name // "unknown"')
+
+          # Display with icon
+          echo "$ICON $NAME"
+        ''}";
+        interval = 2;
+
+        # Click to switch project (using fzf switcher)
+        click-left = "${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
+        # Right click to clear project
+        click-right = "${i3pm}/bin/i3pm clear";
+
+        format = "<label>";
+        format-prefix = " ";
+        format-prefix-foreground = "#b4befe";  # Catppuccin Mocha lavender
+        format-underline = "#b4befe";
+
+        label = "%output%";
+        label-foreground = "#cdd6f4";
+      };
+
+      # i3 Workspaces Module
+      "module/i3" = {
+        type = "internal/i3";
+        format = "<label-state> <label-mode>";
+        index-sort = true;
+        wrapping-scroll = false;
+        pin-workspaces = true;  # Only show workspaces on their assigned monitor
+
+        # Mode indicator (resize, etc)
+        label-mode-padding = 2;
+        label-mode-foreground = "#1e1e2e";
+        label-mode-background = "#f38ba8";  # Catppuccin Mocha red
+
+        # Focused workspace
+        "label-focused" = "%name%";
+        "label-focused-foreground" = "#cdd6f4";  # Light text
+        "label-focused-background" = "#45475a";  # Catppuccin Mocha surface1
+        "label-focused-underline" = "#b4befe";   # Catppuccin Mocha lavender
+        "label-focused-padding" = 2;
+
+        # Unfocused workspace
+        "label-unfocused" = "%name%";
+        "label-unfocused-foreground" = "#bac2de";  # Catppuccin Mocha subtext1
+        "label-unfocused-padding" = 2;
+
+        # Visible workspace (on other monitor)
+        "label-visible" = "%name%";
+        "label-visible-foreground" = "#cdd6f4";
+        "label-visible-background" = "#313244";  # Catppuccin Mocha surface0
+        "label-visible-underline" = "#45475a";
+        "label-visible-padding" = 2;
+
+        # Urgent workspace
+        "label-urgent" = "%name%";
+        "label-urgent-foreground" = "#1e1e2e";
+        "label-urgent-background" = "#f38ba8";  # Catppuccin Mocha red
+        "label-urgent-padding" = 2;
+      };
+
+      # Date Module
+      "module/date" = {
+        type = "internal/date";
+        interval = 5;
+
+        date = "%a %b %d";
+        date-alt = "%A, %B %d";
+
+        time = "%H:%M";
+        time-alt = "%H:%M:%S";
+
+        format-prefix = " ";
+        format-prefix-foreground = "#f9e2af";  # Catppuccin Mocha yellow
+        format-underline = "#f9e2af";
+
+        label = "%date% %time%";
+      };
+
+      # CPU Module
+      "module/cpu" = {
+        type = "internal/cpu";
+        interval = 2;
+        format-prefix = " ";
+        format-prefix-foreground = "#a6e3a1";  # Catppuccin Mocha green
+        format-underline = "#a6e3a1";
+        label = "%percentage:2%%";
+      };
+
+      # Memory Module
+      "module/memory" = {
+        type = "internal/memory";
+        interval = 2;
+        format-prefix = " ";
+        format-prefix-foreground = "#89b4fa";  # Catppuccin Mocha blue
+        format-underline = "#89b4fa";
+        label = "%percentage_used%%";
+      };
+
+      # Network Module
+      "module/network" = {
+        type = "internal/network";
+        interface-type = "wired";
+        interval = 3;
+
+        format-connected = "<label-connected>";
+        format-connected-underline = "#94e2d5";  # Catppuccin Mocha teal
+        label-connected = " %local_ip%";
+
+        format-disconnected = "<label-disconnected>";
+        label-disconnected = "󰌙 Disconnected";
+        label-disconnected-foreground = "#585b70";  # Catppuccin Mocha surface2
+      };
+
+      # Settings
+      "settings" = {
+        screenchange-reload = true;
+        pseudo-transparency = false;
+      };
+
+      # Global WM Settings
+      "global/wm" = {
+        margin-top = 0;
+        margin-bottom = 0;
+      };
+    };
+
+    # Workaround: Add i3 module foreground colors via extraConfig
+    # These don't seem to work when defined in the module config above
+    extraConfig = ''
+      [module/i3]
+      label-focused-foreground = #cdd6f4
+      label-unfocused-foreground = #bac2de
+      label-visible-foreground = #cdd6f4
+      label-urgent-foreground = #1e1e2e
+    '';
+  };
+
+  # Disable the polybar systemd service - polybar is started by i3 instead
+  # This avoids X11 authentication issues and properly inherits i3's environment
+  systemd.user.services.polybar.Install.WantedBy = lib.mkForce [];
+}
