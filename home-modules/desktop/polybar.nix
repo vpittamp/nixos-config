@@ -9,8 +9,11 @@ let
     pulseSupport = true;
   };
 
-  # Get i3pm package from the i3pm module
-  i3pm = config.programs.i3pm.package;
+  # Create wrapper script to call i3pm from PATH
+  # (i3pm is installed via home.packages in i3pm-deno.nix)
+  i3pmWrapper = pkgs.writeShellScript "i3pm-caller" ''
+    exec ${config.home.profileDirectory}/bin/i3pm "$@"
+  '';
 in
 {
   # Install polybar package
@@ -103,7 +106,7 @@ in
           # Uses i3pm CLI for consistent logic (Feature 022)
 
           # Query i3pm daemon for current project
-          RESULT=$(${i3pm}/bin/i3pm current --json 2>/dev/null)
+          RESULT=$(${i3pmWrapper} current --json 2>/dev/null)
 
           if [ $? -ne 0 ] || [ -z "$RESULT" ]; then
             # Daemon not running or error
@@ -131,7 +134,7 @@ in
         # Click to switch project (using fzf switcher)
         click-left = "${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
         # Right click to clear project
-        click-right = "${i3pm}/bin/i3pm clear";
+        click-right = "${i3pmWrapper} clear";
 
         format = "<label>";
         format-prefix = " ";
