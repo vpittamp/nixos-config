@@ -25,6 +25,11 @@ BEGIN {
   $1 = "";
   text = substr($0, 2);  # Remove leading space
 
+  # For multiline content, show only the first line in list view
+  # Replace literal \n with a unicode ellipsis to indicate more content
+  gsub(/\\n.*/, " ⋯", text);
+  gsub(/\\t/, " ", text);  # Replace tabs with spaces for cleaner display
+
   # Truncate to 100 chars for list view
   if (length(text) > 100) {
     display = substr(text, 1, 100) "...";
@@ -52,9 +57,9 @@ BEGIN {
   --with-nth=2 \
   --header="Clipboard History - Enter to paste, Ctrl-D to delete, ESC to cancel" \
   --prompt="Search: " \
-  --preview="clipcatctl get {1}" \
+  --preview="printf '%b' \"\$(clipcatctl get {1})\"" \
   --preview-window=right:50%:wrap \
-  --bind="ctrl-d:execute-silent(clipcatctl remove {1})+reload(clipcatctl list | awk -F': ' -v tslog=\"$HOME/.cache/clipcat/timestamps.log\" 'BEGIN {while ((getline line < tslog) > 0) {split(line, parts, \" \"); timestamps[parts[1]] = parts[2] \" \" parts[3];} close(tslog);} {id = \$1; \$1 = \"\"; text = substr(\$0, 2); if (length(text) > 100) {display = substr(text, 1, 100) \"...\";} else {display = text;} ts = (id in timestamps) ? timestamps[id] : \"     --:--:--\"; printf \"%s\\t[%s] %s\\n\", id, ts, display;}')" \
+  --bind="ctrl-d:execute-silent(clipcatctl remove {1})+reload(clipcatctl list | awk -F': ' -v tslog=\"$HOME/.cache/clipcat/timestamps.log\" 'BEGIN {while ((getline line < tslog) > 0) {split(line, parts, \" \"); timestamps[parts[1]] = parts[2] \" \" parts[3];} close(tslog);} {id = \$1; \$1 = \"\"; text = substr(\$0, 2); gsub(/\\\\n.*/, \" ⋯\", text); gsub(/\\\\t/, \" \", text); if (length(text) > 100) {display = substr(text, 1, 100) \"...\";} else {display = text;} ts = (id in timestamps) ? timestamps[id] : \"     --:--:--\"; printf \"%s\\t[%s] %s\\n\", id, ts, display;}')" \
   --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
   --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
   --color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8) || exit 0

@@ -1,0 +1,246 @@
+/**
+ * Zod Validation Schemas for i3pm Deno CLI
+ *
+ * Runtime type validation for daemon responses and user input.
+ * These schemas ensure data integrity and provide clear error messages.
+ */
+
+import { z } from "zod";
+import type {
+  ApplicationClass,
+  ClassifyWindowResult,
+  ClearProjectResult,
+  DaemonStatus,
+  EventNotification,
+  Output,
+  OutputGeometry,
+  Project,
+  SwitchProjectResult,
+  WindowGeometry,
+  WindowRule,
+  WindowState,
+  Workspace,
+} from "./models.ts";
+
+// ============================================================================
+// Core Window Management Schemas
+// ============================================================================
+
+export const WindowGeometrySchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().int().nonnegative(),
+  height: z.number().int().nonnegative(),
+});
+
+export type WindowGeometryValidated = z.infer<typeof WindowGeometrySchema>;
+
+export const WindowStateSchema = z.object({
+  id: z.number().int().positive(),
+  class: z.string().min(1),
+  instance: z.string().optional(),
+  title: z.string(),
+  workspace: z.string().regex(/^\d+(:.+)?$/),
+  output: z.string().min(1),
+  marks: z.array(z.string()),
+  focused: z.boolean(),
+  hidden: z.boolean(),
+  floating: z.boolean(),
+  fullscreen: z.boolean(),
+  geometry: WindowGeometrySchema,
+});
+
+export type WindowStateValidated = z.infer<typeof WindowStateSchema>;
+
+export const WorkspaceSchema = z.object({
+  number: z.number().int().min(1).max(999),
+  name: z.string().min(1),
+  focused: z.boolean(),
+  visible: z.boolean(),
+  output: z.string().min(1),
+  windows: z.array(WindowStateSchema),
+});
+
+export type WorkspaceValidated = z.infer<typeof WorkspaceSchema>;
+
+export const OutputGeometrySchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
+export type OutputGeometryValidated = z.infer<typeof OutputGeometrySchema>;
+
+export const OutputSchema = z.object({
+  name: z.string().min(1),
+  active: z.boolean(),
+  primary: z.boolean(),
+  geometry: OutputGeometrySchema,
+  current_workspace: z.string().min(1),
+  workspaces: z.array(WorkspaceSchema),
+});
+
+export type OutputValidated = z.infer<typeof OutputSchema>;
+
+// ============================================================================
+// Project Management Schemas
+// ============================================================================
+
+export const ProjectSchema = z.object({
+  name: z
+    .string()
+    .regex(/^[a-z0-9-]+$/, "Project name must be lowercase alphanumeric with hyphens"),
+  display_name: z.string().min(1),
+  icon: z.string().max(4), // Unicode emoji typically 1-4 bytes
+  directory: z.string().min(1).regex(/^\//, "Directory must be absolute path"),
+  scoped_classes: z.array(z.string()),
+  created_at: z.number().int().positive(),
+  last_used_at: z.number().int().positive(),
+});
+
+export type ProjectValidated = z.infer<typeof ProjectSchema>;
+
+// ============================================================================
+// Event System Schemas
+// ============================================================================
+
+export const EventTypeSchema = z.enum([
+  "window",
+  "workspace",
+  "output",
+  "binding",
+  "shutdown",
+  "tick",
+]);
+
+export const EventNotificationSchema = z.object({
+  event_id: z.number().int().nonnegative(),
+  event_type: EventTypeSchema,
+  change: z.string(),
+  container: z.union([WindowStateSchema, WorkspaceSchema, OutputSchema, z.null()]),
+  timestamp: z.number().int().positive(),
+});
+
+export type EventNotificationValidated = z.infer<typeof EventNotificationSchema>;
+
+// ============================================================================
+// Daemon Status Schemas
+// ============================================================================
+
+export const DaemonStatusSchema = z.object({
+  status: z.enum(["running", "stopped"]),
+  connected: z.boolean(),
+  uptime: z.number().nonnegative(),
+  active_project: z.string().nullable(),
+  window_count: z.number().int().nonnegative(),
+  workspace_count: z.number().int().nonnegative(),
+  event_count: z.number().int().nonnegative(),
+  error_count: z.number().int().nonnegative(),
+  version: z.string(),
+  socket_path: z.string().min(1),
+});
+
+export type DaemonStatusValidated = z.infer<typeof DaemonStatusSchema>;
+
+// ============================================================================
+// Window Classification Schemas
+// ============================================================================
+
+export const WindowRuleSchema = z.object({
+  rule_id: z.string().uuid(),
+  class_pattern: z.string().min(1),
+  instance_pattern: z.string().optional(),
+  scope: z.enum(["scoped", "global"]),
+  priority: z.number().int().nonnegative(),
+  enabled: z.boolean(),
+});
+
+export type WindowRuleValidated = z.infer<typeof WindowRuleSchema>;
+
+export const ApplicationClassSchema = z.object({
+  class_name: z.string().min(1),
+  display_name: z.string().min(1),
+  scope: z.enum(["scoped", "global"]),
+  icon: z.string().max(4).optional(),
+  description: z.string().optional(),
+});
+
+export type ApplicationClassValidated = z.infer<typeof ApplicationClassSchema>;
+
+// ============================================================================
+// RPC Response Schemas
+// ============================================================================
+
+export const SwitchProjectResultSchema = z.object({
+  previous_project: z.string().nullable(),
+  new_project: z.string(),
+  windows_hidden: z.number().int().nonnegative(),
+  windows_shown: z.number().int().nonnegative(),
+});
+
+export type SwitchProjectResultValidated = z.infer<typeof SwitchProjectResultSchema>;
+
+export const ClearProjectResultSchema = z.object({
+  previous_project: z.string().nullable(),
+  windows_shown: z.number().int().nonnegative(),
+});
+
+export type ClearProjectResultValidated = z.infer<typeof ClearProjectResultSchema>;
+
+export const ClassifyWindowResultSchema = z.object({
+  class: z.string(),
+  instance: z.string().optional(),
+  scope: z.enum(["scoped", "global"]),
+  matched_rule: z
+    .object({
+      rule_id: z.string().uuid(),
+      priority: z.number().int().nonnegative(),
+    })
+    .optional(),
+});
+
+export type ClassifyWindowResultValidated = z.infer<typeof ClassifyWindowResultSchema>;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Validate and parse daemon response
+ */
+export function validateResponse<T>(schema: z.ZodSchema<T>, data: unknown): T {
+  try {
+    return schema.parse(data);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      const issues = err.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+      throw new Error(
+        `Invalid daemon response:\n  ${issues.join("\n  ")}\n\n` +
+          "This may indicate a protocol version mismatch between CLI and daemon.",
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Validate project name format
+ */
+export function validateProjectName(name: string): boolean {
+  return /^[a-z0-9-]+$/.test(name);
+}
+
+/**
+ * Validate directory path format
+ */
+export function validateDirectory(path: string): boolean {
+  return path.startsWith("/");
+}
+
+/**
+ * Validate workspace name format
+ */
+export function validateWorkspaceName(name: string): boolean {
+  return /^\d+(:.+)?$/.test(name);
+}

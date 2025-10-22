@@ -70,3 +70,9 @@ result-*
 # Test output
 test-results.json
 report.json
+
+# Deno
+deno.lock
+.deno/
+i3pm
+*.js.map

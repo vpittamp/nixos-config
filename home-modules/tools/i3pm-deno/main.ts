@@ -1,0 +1,155 @@
+#!/usr/bin/env -S deno run --allow-net --allow-read=/run/user,/home --allow-env=XDG_RUNTIME_DIR,HOME,USER
+
+/**
+ * i3pm Deno CLI - Main Entry Point
+ *
+ * Version: 2.0.0
+ * Description: i3 project management CLI tool
+ */
+
+import { parseArgs } from "@std/cli/parse-args";
+
+const VERSION = "2.0.0";
+
+/**
+ * Show version information
+ */
+function showVersion(): void {
+  console.log(`i3pm ${VERSION}`);
+  Deno.exit(0);
+}
+
+/**
+ * Show main help text
+ */
+function showHelp(): void {
+  console.log(`
+i3pm ${VERSION} - i3 project management CLI tool
+
+USAGE:
+  i3pm [OPTIONS] <COMMAND>
+
+GLOBAL OPTIONS:
+  -h, --help       Show help information
+  -v, --version    Show version information
+  --verbose        Enable verbose logging
+  --debug          Enable debug logging
+
+COMMANDS:
+  project          Project management commands
+  windows          Window state visualization
+  daemon           Daemon status and event monitoring
+  rules            Window classification rules
+  monitor          Interactive monitoring dashboard
+  app-classes      Application class management
+
+Run 'i3pm <command> --help' for more information on a specific command.
+
+EXAMPLES:
+  i3pm project list                    List all projects
+  i3pm project switch nixos            Switch to nixos project
+  i3pm windows --live                  Live window visualization
+  i3pm daemon status                   Show daemon status
+  i3pm rules list                      List classification rules
+  i3pm monitor                         Launch monitoring dashboard
+
+For detailed documentation, see:
+  /etc/nixos/specs/027-update-the-spec/quickstart.md
+`);
+  Deno.exit(0);
+}
+
+/**
+ * Show command not found error
+ */
+function showCommandNotFound(command: string): never {
+  console.error(`Error: Unknown command '${command}'`);
+  console.error("");
+  console.error("Run 'i3pm --help' to see available commands");
+  Deno.exit(1);
+}
+
+/**
+ * Main CLI entry point
+ */
+async function main(): Promise<void> {
+  const args = parseArgs(Deno.args, {
+    boolean: ["help", "version", "verbose", "debug"],
+    alias: {
+      h: "help",
+      v: "version",
+    },
+    stopEarly: true,
+  });
+
+  // Handle global flags
+  if (args.version) {
+    showVersion();
+  }
+
+  if (args.help || args._.length === 0) {
+    showHelp();
+  }
+
+  // Get command
+  const command = String(args._[0]);
+  const commandArgs = args._.slice(1);
+
+  // Route to command handler
+  switch (command) {
+    case "project":
+      {
+        const { projectCommand } = await import("./src/commands/project.ts");
+        await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "windows":
+      {
+        const { windowsCommand } = await import("./src/commands/windows.ts");
+        await windowsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "daemon":
+      {
+        const { daemonCommand } = await import("./src/commands/daemon.ts");
+        await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "rules":
+      {
+        const { rulesCommand } = await import("./src/commands/rules.ts");
+        await rulesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "monitor":
+      {
+        const { monitorCommand } = await import("./src/commands/monitor.ts");
+        await monitorCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "app-classes":
+      {
+        const { appClassesCommand } = await import("./src/commands/app-classes.ts");
+        await appClassesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    default:
+      showCommandNotFound(command);
+  }
+}
+
+// Run main
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (err) {
+    console.error("Fatal error:", err instanceof Error ? err.message : String(err));
+    Deno.exit(1);
+  }
+}

@@ -95,6 +95,7 @@ let
     dbaeumer.vscode-eslint
     ms-python.python
     golang.go
+    denoland.vscode-deno
     # rust-lang.rust-analyzer  # Disabled on Darwin - has native build issues
 
     # Theme and UI
@@ -134,6 +135,7 @@ let
     "dbaeumer.vscode-eslint"
     "ms-python.python"
     "golang.go"
+    "denoland.vscode-deno"
     # "rust-lang.rust-analyzer"  # Disabled on Darwin
     "pkief.material-icon-theme"
     "zhuangtongfa.material-theme"
