@@ -59,14 +59,12 @@ if [ ${#PROJECT_KEYS[@]} -eq 0 ] || ([ ${#PROJECT_KEYS[@]} -eq 1 ] && [ "${PROJE
     exit 0
 fi
 
-# Run fzf with dark Catppuccin Mocha theme
-# Colors from Catppuccin Mocha palette
+# Run fzf in fullscreen mode with dark Catppuccin Mocha theme
+# Using --height=100% to fill the entire terminal
 SELECTED=$(echo -n "$PROJECT_LIST" | fzf \
-    --height=50% \
+    --height=100% \
     --reverse \
     --border=rounded \
-    --margin=1,2 \
-    --padding=1 \
     --prompt="󰉋  " \
     --pointer="▶" \
     --marker="✓" \
