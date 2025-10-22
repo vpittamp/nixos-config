@@ -112,8 +112,11 @@ i3pm windows --live            # Live TUI with real-time updates
 
 ```bash
 i3pm daemon status             # Show daemon status
-i3pm daemon events             # Show recent events
-i3pm daemon events --type=window --limit=50  # Filter events
+i3pm daemon events             # Show recent events (last 20)
+i3pm daemon events --limit=50  # Show last 50 events
+i3pm daemon events --type=window  # Filter by event type
+i3pm daemon events --follow    # Live event stream (like tail -f)
+i3pm daemon events -f --type=window  # Follow only window events
 ```
 
 ### Window Classification

@@ -31,16 +31,18 @@ STATUS OPTIONS:
   No additional options
 
 EVENTS OPTIONS:
-  --limit <n>       Number of events to show (default: 20)
+  --limit <n>       Number of events to show (default: 20, ignored with --follow)
   --type <type>     Filter by event type (window, workspace, output, tick)
   --since-id <id>   Show events since specific event ID
+  --follow, -f      Follow event stream in real-time (like tail -f)
 
 EXAMPLES:
-  i3pm daemon status
   i3pm daemon events
   i3pm daemon events --limit=50
   i3pm daemon events --type=window
   i3pm daemon events --since-id=1500
+  i3pm daemon events --follow              # Live event stream
+  i3pm daemon events -f --type=window      # Follow only window events
 `);
   Deno.exit(0);
 }
@@ -125,6 +127,8 @@ async function eventsCommand(
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
     string: ["limit", "type", "since-id"],
+    boolean: ["follow"],
+    alias: { f: "follow" },
     default: { limit: "20" },
   });
 
@@ -134,8 +138,18 @@ async function eventsCommand(
   const sinceId = parsed["since-id"]
     ? parseInt(parsed["since-id"] as string, 10)
     : undefined;
+  const follow = parsed.follow as boolean;
 
   try {
+    // If follow mode only, skip historical events
+    if (follow && sinceId === undefined) {
+      console.log("Following event stream... (Press Ctrl+C to exit)");
+      console.log("─".repeat(80));
+      await followEventStream(client, eventType, options);
+      return;
+    }
+
+    // Fetch historical events
     const params: {
       limit?: number;
       event_type?: string;
@@ -207,6 +221,15 @@ async function eventsCommand(
     const lastId = events[events.length - 1].event_id;
     console.log(`Event ID range: ${firstId} to ${lastId}`);
     console.log(`Total events shown: ${events.length}`);
+
+    // If follow mode, continue streaming
+    if (follow) {
+      console.log("");
+      console.log("Following event stream... (Press Ctrl+C to exit)");
+      console.log("─".repeat(80));
+
+      await followEventStream(client, eventType, options);
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       console.error("Error: Invalid daemon response format");
@@ -216,6 +239,99 @@ async function eventsCommand(
       Deno.exit(1);
     }
     throw err;
+  }
+}
+
+/**
+ * Follow event stream in real-time
+ */
+async function followEventStream(
+  client: DaemonClient,
+  eventTypeFilter: string | undefined,
+  options: DaemonCommandOptions,
+): Promise<void> {
+  // Setup Ctrl+C handler
+  let running = true;
+  const sigintHandler = () => {
+    running = false;
+    console.log("\n\nStopped following events");
+  };
+  Deno.addSignalListener("SIGINT", sigintHandler);
+
+  try {
+    // Subscribe to events
+    const eventTypes = eventTypeFilter ? [eventTypeFilter] : ["window", "workspace", "output", "tick"];
+
+    await client.subscribe(eventTypes, async (notification) => {
+      if (!running) return;
+
+      // Parse event from notification
+      const params = notification.params as {
+        event?: EventNotification;
+        type?: string;
+        event_type?: string;
+        change?: string;
+        container?: unknown;
+        timestamp?: number;
+        event_id?: number;
+      };
+
+      let event: EventNotification;
+
+      if (params.event) {
+        // Full event notification
+        event = params.event;
+      } else {
+        // Construct event from notification params
+        const eventType = params.type || params.event_type || "unknown";
+        event = {
+          event_id: params.event_id || Date.now(),
+          event_type: eventType as any,
+          change: params.change || notification.method || "unknown",
+          container: params.container || null,
+          timestamp: params.timestamp || Date.now(),
+        };
+      }
+
+      // Filter by event type if specified
+      if (eventTypeFilter && event.event_type !== eventTypeFilter) {
+        return;
+      }
+
+      // Format and display event
+      const timestamp = formatTimestamp(event.timestamp);
+      const eventType = event.event_type;
+      const change = event.change;
+
+      // Format container info
+      let containerInfo = "";
+      if (event.container) {
+        const container = event.container as {
+          class?: string;
+          title?: string;
+          name?: string;
+        };
+        if (container.class && container.title) {
+          containerInfo = `${container.class} (${container.title})`;
+        } else if (container.name) {
+          containerInfo = container.name;
+        }
+      }
+
+      console.log(
+        `[${event.event_id}] ${timestamp} - ${eventType}:${change}${
+          containerInfo ? " - " + containerInfo : ""
+        }`,
+      );
+    });
+
+    // Keep running until Ctrl+C
+    while (running) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } finally {
+    // Cleanup signal handler
+    Deno.removeSignalListener("SIGINT", sigintHandler);
   }
 }
 

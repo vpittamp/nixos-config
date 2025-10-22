@@ -109,9 +109,9 @@
 ### Implementation for User Story 4
 
 - [X] T028 [US4] Implement `i3pm daemon status` command in `src/commands/daemon.ts`: call daemon's get_status RPC method, validate response with Zod DaemonStatusSchema, format multi-line output (status, connected, uptime in human-readable format, active project, window/workspace/event counts, version, socket path), handle daemon unavailable error with actionable systemctl command
-- [X] T029 [US4] Implement `i3pm daemon events` command in `src/commands/daemon.ts`: parse flags (--limit, --type, --since-id) using parseArgs(), call daemon's get_events RPC method with params, validate response with Zod EventNotificationSchema array, format output in reverse chronological order (newest first) with event_id, timestamp (human-readable), event_type:change, container info (window class/title or workspace name), handle empty event history, display total events and ID range
+- [X] T029 [US4] Implement `i3pm daemon events` command in `src/commands/daemon.ts`: parse flags (--limit, --type, --since-id, --follow/-f) using parseArgs(), call daemon's get_events RPC method with params for historical events, validate response with Zod EventNotificationSchema array, format output in reverse chronological order (newest first) with event_id, timestamp (human-readable), event_type:change, container info (window class/title or workspace name), handle empty event history, display total events and ID range, **PLUS** live streaming mode with --follow flag that subscribes to real-time event stream (like tail -f), supports event type filtering, graceful Ctrl+C handling
 
-**Checkpoint**: ✅ Daemon monitoring commands (status, events) are fully functional for troubleshooting
+**Checkpoint**: ✅ Daemon monitoring commands (status, events, events --follow) are fully functional for troubleshooting
 
 ---
 
