@@ -421,8 +421,17 @@ class I3Client:
         Raises:
             I3Error: If command fails
         """
-        results = await self.command(f"nop {payload}")
-        return all(r["success"] for r in results)
+        if not self._connection:
+            await self.connect()
+
+        try:
+            logger.debug(f"IPC send_tick: {payload}")
+            await self._connection.send_tick(payload)
+            logger.debug(f"Tick event sent successfully: {payload}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send tick '{payload}': {e}")
+            raise I3Error(f"Failed to send tick: {e}")
 
     async def __aenter__(self):
         """Async context manager entry."""

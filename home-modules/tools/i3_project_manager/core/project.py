@@ -232,22 +232,22 @@ class ProjectManager:
 
             # Wait for daemon to process (query status until active_project changes)
             daemon = await self._get_daemon()
-            max_wait = 0.5  # 500ms max wait
-            poll_interval = 0.05  # 50ms polling
+            max_wait = 2.0  # 2 seconds max wait (increased from 500ms)
+            poll_interval = 0.1  # 100ms polling (increased from 50ms for less CPU usage)
             elapsed = 0.0
 
             while elapsed < max_wait:
+                await asyncio.sleep(poll_interval)  # Wait first to give daemon time to process tick
+                elapsed += poll_interval
                 status = await daemon.get_status()
                 if status.get("active_project") == name:
                     break
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
 
-            # Verify switch succeeded
+            # Final verification
             status = await daemon.get_status()
             if status.get("active_project") != name:
                 elapsed_ms = (time.time() - start_time) * 1000
-                return False, elapsed_ms, "Daemon did not activate project"
+                return False, elapsed_ms, f"Daemon did not activate project (current: {status.get('active_project')})"
 
             # Auto-launch applications if configured and not disabled
             if not no_launch and project.auto_launch:
@@ -277,21 +277,27 @@ class ProjectManager:
             # Get i3 client
             i3 = await self._get_i3()
 
-            # Send tick event to daemon
-            await i3.send_tick("project:clear")
+            # Send tick event to daemon (use "project:none" consistent with daemon handler)
+            await i3.send_tick("project:none")
 
             # Wait for daemon to process
             daemon = await self._get_daemon()
-            max_wait = 0.5  # 500ms max wait
-            poll_interval = 0.05  # 50ms polling
+            max_wait = 2.0  # 2 seconds max wait (increased from 500ms)
+            poll_interval = 0.1  # 100ms polling
             elapsed = 0.0
 
             while elapsed < max_wait:
+                await asyncio.sleep(poll_interval)  # Wait first to give daemon time
+                elapsed += poll_interval
                 status = await daemon.get_status()
                 if status.get("active_project") is None:
                     break
-                await asyncio.sleep(poll_interval)
-                elapsed += poll_interval
+
+            # Final verification
+            status = await daemon.get_status()
+            if status.get("active_project") is not None:
+                elapsed_ms = (time.time() - start_time) * 1000
+                return False, elapsed_ms, f"Failed to clear (still active: {status.get('active_project')})"
 
             elapsed_ms = (time.time() - start_time) * 1000
             return True, elapsed_ms, None
