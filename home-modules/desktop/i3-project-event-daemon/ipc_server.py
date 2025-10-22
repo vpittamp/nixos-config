@@ -380,7 +380,10 @@ class IPCServer:
             event_data: Event data to broadcast
         """
         if not self.subscribed_clients:
+            logger.debug(f"No subscribed clients to broadcast to (event: {event_data.get('type')})")
             return
+
+        logger.debug(f"Broadcasting event to {len(self.subscribed_clients)} clients: {event_data}")
 
         notification = {
             "jsonrpc": "2.0",
@@ -394,6 +397,7 @@ class IPCServer:
             try:
                 writer.write(message)
                 await writer.drain()
+                logger.debug(f"Successfully sent event to client")
             except Exception as e:
                 logger.error(f"Failed to broadcast to client: {e}")
                 self.subscribed_clients.discard(writer)

@@ -282,7 +282,8 @@ class I3ProjectDaemon:
                 state_manager=self.state_manager,
                 app_classification=app_classification,
                 event_buffer=self.event_buffer,
-                window_rules=self.window_rules  # Gets current value from daemon
+                window_rules=self.window_rules,  # Gets current value from daemon
+                ipc_server=self.ipc_server  # Feature 025: broadcast events to subscribed clients
             )
 
         async def get_window_rules_wrapper_title(conn, event):
@@ -292,21 +293,22 @@ class I3ProjectDaemon:
                 state_manager=self.state_manager,
                 app_classification=app_classification,
                 event_buffer=self.event_buffer,
-                window_rules=self.window_rules  # Gets current value from daemon
+                window_rules=self.window_rules,  # Gets current value from daemon
+                ipc_server=self.ipc_server  # Feature 025: broadcast events to subscribed clients
             )
 
         self.connection.subscribe("window::new", get_window_rules_wrapper_new)
         self.connection.subscribe(
             "window::mark",
-            partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer)
+            partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
         )
         self.connection.subscribe(
             "window::close",
-            partial(on_window_close, state_manager=self.state_manager, event_buffer=self.event_buffer)
+            partial(on_window_close, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
         )
         self.connection.subscribe(
             "window::focus",
-            partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer)
+            partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
         )
 
         # USER STORY 2: Title change re-classification (T033)

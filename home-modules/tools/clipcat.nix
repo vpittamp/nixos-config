@@ -10,6 +10,17 @@
     xsel   # Alternative clipboard tool
   ];
 
+  # Ensure clipcat has access to X11 display
+  systemd.user.services.clipcat = {
+    Unit = {
+      After = lib.mkForce [ "graphical-session.target" ];
+    };
+    Service = {
+      # Ensure DISPLAY is available from the graphical session
+      Environment = lib.mkForce [ ];  # Clear any restrictive environment
+    };
+  };
+
   services.clipcat = {
     enable = true;
     package = pkgs.clipcat;

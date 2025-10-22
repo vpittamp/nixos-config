@@ -241,6 +241,7 @@ async def on_window_new(
     app_classification: ApplicationClassification,
     event_buffer: Optional["EventBuffer"] = None,
     window_rules: Optional[List[WindowRule]] = None,
+    ipc_server: Optional["IPCServer"] = None,
 ) -> None:
     """Handle window::new events - auto-mark and classify new windows (T014, T023).
 
@@ -257,6 +258,7 @@ async def on_window_new(
         app_classification: Application classification config
         event_buffer: Event buffer for recording events (Feature 017)
         window_rules: Window rules from window-rules.json (Feature 021)
+        ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -374,12 +376,22 @@ async def on_window_new(
             )
             await event_buffer.add_event(entry)
 
+        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
+        if ipc_server and ipc_server.subscribed_clients:
+            await ipc_server.broadcast_event({
+                "type": "window",
+                "change": "new",
+                "window_id": window_id,
+                "window_class": window_class,
+            })
+
 
 async def on_window_mark(
     conn: aio.Connection,
     event: WindowEvent,
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
+    ipc_server: Optional["IPCServer"] = None,
 ) -> None:
     """Handle window::mark events - track mark changes (T015).
 
@@ -388,6 +400,7 @@ async def on_window_mark(
         event: Window event
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
+        ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -430,6 +443,15 @@ async def on_window_mark(
             )
             await event_buffer.add_event(entry)
 
+        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
+        if ipc_server and ipc_server.subscribed_clients:
+            await ipc_server.broadcast_event({
+                "type": "window",
+                "change": "mark",
+                "window_id": window_id,
+                "window_class": window_class,
+            })
+
 
 async def on_window_title(
     conn: aio.Connection,
@@ -438,6 +460,7 @@ async def on_window_title(
     event_buffer: Optional["EventBuffer"] = None,
     app_classification: Optional["ApplicationClassification"] = None,
     window_rules: Optional[List["WindowRule"]] = None,
+    ipc_server: Optional["IPCServer"] = None,
 ) -> None:
     """Handle window::title events - re-classify window when title changes (US2, T033).
 
@@ -530,12 +553,22 @@ async def on_window_title(
             )
             await event_buffer.add_event(entry)
 
+        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
+        if ipc_server and ipc_server.subscribed_clients:
+            await ipc_server.broadcast_event({
+                "type": "window",
+                "change": "title",
+                "window_id": window_id,
+                "window_class": window_class,
+            })
+
 
 async def on_window_close(
     conn: aio.Connection,
     event: WindowEvent,
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
+    ipc_server: Optional["IPCServer"] = None,
 ) -> None:
     """Handle window::close events - remove from tracking (T016).
 
@@ -544,6 +577,7 @@ async def on_window_close(
         event: Window event
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
+        ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -577,12 +611,22 @@ async def on_window_close(
             )
             event_buffer.add_event(entry)
 
+        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
+        if ipc_server and ipc_server.subscribed_clients:
+            await ipc_server.broadcast_event({
+                "type": "window",
+                "change": "close",
+                "window_id": window_id,
+                "window_class": window_class,
+            })
+
 
 async def on_window_focus(
     conn: aio.Connection,
     event: WindowEvent,
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
+    ipc_server: Optional["IPCServer"] = None,
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
@@ -623,6 +667,15 @@ async def on_window_focus(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
+
+        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
+        if ipc_server and ipc_server.subscribed_clients:
+            await ipc_server.broadcast_event({
+                "type": "window",
+                "change": "focus",
+                "window_id": window_id,
+                "window_class": window_class,
+            })
 
 
 # ============================================================================

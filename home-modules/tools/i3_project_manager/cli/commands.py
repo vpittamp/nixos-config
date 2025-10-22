@@ -1912,7 +1912,8 @@ async def cmd_windows(args: argparse.Namespace) -> int:
             class WindowMonitorApp(App):
                 """Window state monitor TUI application."""
 
-                TITLE = "i3pm Window State Monitor"
+                TITLE = "i3pm Window State Monitor v0.3.0-dev"
+                SUB_TITLE = "Real-time window visualization"
                 BINDINGS = [
                     ("q", "quit", "Quit"),
                     ("tab", "next_tab", "Next Tab"),
@@ -1926,6 +1927,12 @@ async def cmd_windows(args: argparse.Namespace) -> int:
                     height: 100%;
                 }
                 """
+
+                def __init__(self, *args, **kwargs):
+                    """Initialize app with Ctrl+C handling."""
+                    super().__init__(*args, **kwargs)
+                    self._ctrl_c_count = 0
+                    self._ctrl_c_timer = None
 
                 def compose(self):
                     with TabbedContent():
@@ -1952,8 +1959,33 @@ async def cmd_windows(args: argparse.Namespace) -> int:
                         table_view = self.query_one(WindowTableView)
                         table_view.show_hidden = not table_view.show_hidden
 
+                def on_key(self, event):
+                    """Handle key events for double Ctrl+C detection."""
+                    if event.key == "ctrl+c":
+                        self._ctrl_c_count += 1
+
+                        # Stop existing timer if any
+                        if self._ctrl_c_timer:
+                            self._ctrl_c_timer.stop()
+
+                        # Reset counter after 1 second
+                        def reset_counter():
+                            self._ctrl_c_count = 0
+
+                        self._ctrl_c_timer = self.set_timer(1.0, reset_counter)
+
+                        # Exit on second Ctrl+C
+                        if self._ctrl_c_count >= 2:
+                            self.exit()
+                        else:
+                            self.notify("Press Ctrl+C again to quit", severity="information", timeout=1)
+
+                        event.stop()
+                        event.prevent_default()
+
             app = WindowMonitorApp()
-            await app.run_async()
+            # Run with alternate screen to properly restore terminal on exit
+            await app.run_async(inline=False, mouse=True)
             return 0
 
         # Handle --table mode (T031)
@@ -2308,7 +2340,7 @@ def cli_main() -> int:
     parser.add_argument(
         "--version",
         action="version",
-        version="i3pm 0.3.0 (Phase 7: Polish & Documentation)"
+        version="i3pm 0.3.0-dev (Feature 025: Real-time Window Visualization)"
     )
 
     # T093: Global logging flags

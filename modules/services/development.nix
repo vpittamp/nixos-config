@@ -60,6 +60,7 @@
     # Development tools
     vscode
     nodejs_20
+    deno
     python3
     go
     rustc

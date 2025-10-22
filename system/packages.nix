@@ -69,6 +69,7 @@ let
 
     # Language support
     nodejs_20
+    deno
     python3
     go
     rustc

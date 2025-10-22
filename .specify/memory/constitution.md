@@ -1,28 +1,31 @@
 <!--
 Sync Impact Report:
-- Version: 1.3.0 → 1.4.0 (MINOR - New principle added for forward-only development)
+- Version: 1.4.0 → 1.5.0 (MINOR - New principle added for Deno CLI development standards)
 - Modified principles:
   * None - existing principles remain unchanged
 - New principles created:
-  * Principle XII: "Forward-Only Development & Legacy Elimination" (NEW)
-    - Prohibits backwards compatibility considerations based on legacy code
-    - Mandates optimal solution design without legacy constraints
-    - Requires complete replacement of suboptimal code, not preservation
-    - Eliminates technical debt accumulation through legacy support
+  * Principle XIII: "Deno CLI Development Standards" (NEW)
+    - Mandates Deno runtime (1.40+) for all new CLI tool development
+    - Requires heavy reliance on Deno standard library modules
+    - Specifies @std/cli/parse-args for command-line argument parsing (minimist-style API)
+    - Mandates TypeScript with strict type safety for all Deno code
+    - Requires compilation to standalone executables for distribution
+    - Establishes Deno as replacement for Python in CLI contexts
 - New sections added:
   * None - principle added to existing Core Principles section
 - Updated sections:
   * None - existing sections remain compatible
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - Already compatible, no backwards compatibility sections
-  ✅ .specify/templates/plan-template.md - Already focuses on optimal solutions
-  ✅ .specify/templates/tasks-template.md - Already encourages replacement over preservation
-  ⚠️ .specify/templates/commands/ - May benefit from guidance on replacing vs migrating
+  ✅ .specify/templates/spec-template.md - Already technology-agnostic, compatible with Deno specs
+  ✅ .specify/templates/plan-template.md - Already supports language-specific implementation planning
+  ✅ .specify/templates/tasks-template.md - Already accommodates varied tech stacks
+  ⚠️ .specify/templates/commands/ - May benefit from Deno CLI creation examples
 - Follow-up TODOs:
-  * Review existing codebase for legacy code that should be replaced rather than maintained
-  * Consider adding migration guide template that focuses on complete replacement workflows
-  * Update CLAUDE.md to emphasize replacement over backwards compatibility
-  * Add examples of complete replacements (e.g., Polybar → i3bar+i3blocks, polling → event-driven)
+  * Begin TypeScript/Deno CLI rewrite (Feature 026) using Deno std library extensively
+  * Create Deno CLI project structure template in home-modules/tools/
+  * Document Deno compilation and NixOS packaging patterns
+  * Evaluate replacing other Python CLI tools with Deno implementations
+  * Add Deno CLI examples to CLAUDE.md
 -->
 
 # NixOS Modular Configuration Constitution
@@ -365,6 +368,86 @@ All solutions and features MUST be designed for optimal implementation without c
 
 **Rationale**: This project exists for personal productivity optimization, not as a product with external users dependent on stability. Every line of code maintained for backwards compatibility is technical debt that slows development, complicates architecture, and reduces clarity. The fastest path to optimal solutions is immediate, complete replacement of suboptimal code. This principle accelerates innovation by eliminating the burden of legacy support and ensures the codebase always represents the current best practices without historical baggage. Clean breaks are faster and clearer than gradual migrations with compatibility shims.
 
+### XIII. Deno CLI Development Standards
+
+All new CLI tool development MUST use Deno runtime with TypeScript and heavy reliance on Deno standard library modules.
+
+**Rules**:
+- CLI tools MUST be implemented using Deno runtime version 1.40+ for modern standard library features
+- Command-line argument parsing MUST use `parseArgs()` from `@std/cli/parse-args` (minimist-style API)
+- Interactive prompts MUST use utilities from `@std/cli` (promptSecret for passwords, prompt for input)
+- Terminal formatting MUST use ANSI utilities from `@std/cli/unstable-ansi` for colors and escape codes
+- String width calculations for terminal display MUST use `unicodeWidth()` from `@std/cli/unicode-width`
+- File I/O MUST use Deno standard library modules (`@std/fs`, `@std/path`) where available
+- JSON operations MUST use Deno standard library `@std/json` or built-in JSON APIs
+- HTTP/networking MUST use Deno standard library `@std/http` or native Deno.serve/fetch APIs
+- TypeScript MUST be used with strict type checking enabled (strict mode in deno.json)
+- Distribution MUST be via compiled standalone executables (`deno compile`) - no runtime installation required
+- Third-party npm packages MAY be used only when Deno std library lacks required functionality
+- CLI tools MUST provide `--help` and `--version` flags following standard conventions
+- Error messages MUST be user-friendly with actionable guidance (daemon not running, connection failed, etc.)
+
+**Deno Standard Library CLI Module Usage** (from `@std/cli`):
+- `parseArgs(args, options)`: Command-line argument parser with support for flags, options, boolean values, defaults, aliases
+- `promptSecret(message, options)`: Secure password input with hidden characters
+- `prompt(message, options)`: Interactive text input prompting
+- `unicodeWidth(str)`: Calculate display width of strings containing Unicode characters (critical for table formatting)
+- ANSI escape code utilities: Colors, cursor movement, screen clearing, text styling
+
+**TypeScript Type Safety Requirements**:
+- All function signatures MUST include explicit parameter and return types
+- Public APIs MUST use interfaces or type definitions for contracts
+- Data validation MUST use type guards or runtime validation (Zod recommended for complex schemas)
+- Avoid `any` type - use `unknown` with type guards when type is truly dynamic
+
+**Project Structure Pattern**:
+```
+home-modules/tools/<tool-name>/
+├── deno.json                # Deno configuration (tasks, imports, compiler options)
+├── main.ts                  # Entry point with parseArgs() CLI handling
+├── mod.ts                   # Public API exports
+├── src/
+│   ├── commands/           # Command implementations
+│   ├── models.ts           # Type definitions and interfaces
+│   ├── client.ts           # IPC/daemon client logic
+│   └── ui/                 # Terminal UI components (if applicable)
+├── tests/
+│   └── <feature>_test.ts   # Deno.test() test suites
+└── README.md               # Module documentation
+```
+
+**Example - parseArgs() Usage**:
+```typescript
+import { parseArgs } from "@std/cli/parse-args";
+
+const args = parseArgs(Deno.args, {
+  boolean: ["live", "tree", "table", "json", "version", "help"],
+  string: ["project", "format"],
+  default: { format: "tree" },
+  alias: { h: "help", v: "version" },
+});
+
+if (args.help) {
+  console.log("Usage: i3pm windows [options]");
+  Deno.exit(0);
+}
+```
+
+**Compilation and Distribution**:
+```bash
+# Compile to standalone executable
+deno compile --allow-net --allow-read --output=i3pm main.ts
+
+# NixOS packaging - use buildDenoApplication or custom derivation
+```
+
+**When to Use Deno vs Python**:
+- **Use Deno for**: CLI tools, terminal UIs, JSON-RPC clients, standalone utilities, fast startup requirements
+- **Use Python for**: i3 event daemons with i3ipc-python, complex async workflows with asyncio, Rich terminal UIs, pytest-based testing frameworks
+- **Migration path**: Replace Python CLI tools with Deno equivalents when performance, distribution, or startup time is critical (e.g., Feature 026 TypeScript/Deno CLI rewrite)
+
+**Rationale**: Feature 026 (TypeScript/Deno CLI Rewrite) establishes Deno as the modern standard for CLI tool development. Deno's built-in TypeScript support eliminates build complexity, the extensive standard library reduces third-party dependencies, and compiled executables remove runtime installation requirements. The `parseArgs()` function from `@std/cli/parse-args` provides a mature, well-documented API for command-line parsing that rivals popular Node.js libraries. Deno's security model (explicit permissions) and fast startup time make it ideal for CLI tools that need to execute quickly and reliably. This principle positions Deno as the replacement for Python in CLI contexts while preserving Python's strengths in daemon/event-driven architectures.
+
 ## Platform Support Standards
 
 ### Multi-Platform Compatibility
@@ -655,4 +738,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.4.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-22
+**Version**: 1.5.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-22

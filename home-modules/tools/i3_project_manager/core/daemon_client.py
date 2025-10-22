@@ -322,7 +322,7 @@ class DaemonClient:
                         continue
 
                     # Yield event notification
-                    if "method" in event and event["method"] == "event":
+                    if "method" in event and event["method"] == "event_notification":
                         yield event.get("params", {})
 
                 except json.JSONDecodeError:
