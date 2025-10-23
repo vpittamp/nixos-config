@@ -59,6 +59,12 @@ export class DaemonClient {
 
     try {
       this.conn = await connectWithRetry(this.socketPath);
+
+      // Unref the connection so it doesn't block process exit
+      // This allows quick commands to exit immediately without waiting
+      // for the 5-second Deno default timeout
+      this.conn.unref();
+
       logger.verbose(`Connected to daemon at ${this.socketPath}`);
     } catch (err) {
       logger.debugSocket("Connection failed", this.socketPath);
