@@ -12,32 +12,30 @@ let
   projectScript = pkgs.writeShellScript "i3blocks-project" ''
     #!${pkgs.bash}/bin/bash
     # Project context indicator for i3blocks
-    # Uses i3pm CLI for consistent logic with all project management tools
+    # Reads current project from i3 config directory
 
-    # Query i3pm for current project
-    RESULT=$(${i3pm}/bin/i3pm current --json 2>/dev/null)
+    # Check for active project file
+    ACTIVE_PROJECT_FILE="$HOME/.config/i3/active-project"
 
-    if [ $? -ne 0 ] || [ -z "$RESULT" ]; then
-      # Daemon not running or error
-      TEXT="⚠ Daemon"
-      COLOR="#f38ba8"  # Red (Catppuccin Mocha - error)
-      ${pkgs.coreutils}/bin/echo "<span foreground='$COLOR'>$TEXT</span>"
-      exit 0
-    fi
-
-    # Check if in global mode
-    MODE=$(${pkgs.coreutils}/bin/echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.mode // empty')
-    if [ "$MODE" = "global" ]; then
-      # Global mode (no active project)
+    if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+      # No active project - global mode
       TEXT="∅ Global"
       COLOR="#6c7086"  # Overlay0 (Catppuccin Mocha - dimmed)
       ${pkgs.coreutils}/bin/echo "<span foreground='$COLOR'>$TEXT</span>"
       exit 0
     fi
 
-    # Extract project info
-    ICON=$(${pkgs.coreutils}/bin/echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.icon // "📁"')
-    NAME=$(${pkgs.coreutils}/bin/echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.name // "unknown"')
+    # Read active project info directly from JSON file
+    ICON=$(${pkgs.jq}/bin/jq -r '.icon // "📁"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
+    NAME=$(${pkgs.jq}/bin/jq -r '.name // "unknown"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
+
+    if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+      # Invalid or empty project file - global mode
+      TEXT="∅ Global"
+      COLOR="#6c7086"  # Overlay0 (Catppuccin Mocha - dimmed)
+      ${pkgs.coreutils}/bin/echo "<span foreground='$COLOR'>$TEXT</span>"
+      exit 0
+    fi
 
     # Build text
     TEXT="$ICON $NAME"
