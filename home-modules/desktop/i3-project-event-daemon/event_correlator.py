@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # Correlation configuration
-CONFIDENCE_THRESHOLD = 0.60  # 60% minimum confidence to establish correlation
+CONFIDENCE_THRESHOLD = 0.35  # 35% minimum confidence (lowered temporarily - hierarchy not implemented)
 DETECTION_WINDOW_MS = 5000.0  # 5 seconds time window for detecting correlations
 
 # Weights for confidence scoring (must sum to 1.0)
@@ -34,7 +34,7 @@ WEIGHTS = {
 
 # Known IDE → language server patterns for name similarity
 IDE_LANGUAGE_SERVER_PATTERNS = {
-    "code": ["rust-analyzer", "typescript-language-server", "pyright", "gopls", "clangd"],
+    "code": ["rust-analyzer", "typescript-language-server", "pyright", "gopls", "clangd", "git", "node", "npm", "deno"],
     "nvim": ["rust-analyzer", "typescript-language-server", "pyright", "gopls", "clangd"],
     "emacs": ["eglot", "lsp-mode", "rust-analyzer", "gopls"],
     "vim": ["rust-analyzer", "gopls", "pyright"],
@@ -86,6 +86,7 @@ class EventCorrelator:
         for window_event in window_events:
             child_events = []
             factors_list = []
+            all_candidates = []  # Track all for debugging
 
             for process_event in process_events:
                 # Calculate correlation factors
@@ -98,6 +99,9 @@ class EventCorrelator:
                 # Calculate confidence score
                 confidence = self._calculate_confidence(factors)
 
+                # Store for debugging
+                all_candidates.append((process_event, factors, confidence))
+
                 # Check if above threshold
                 if confidence >= CONFIDENCE_THRESHOLD:
                     child_events.append(process_event)
@@ -105,6 +109,19 @@ class EventCorrelator:
                     logger.debug(
                         f"Correlation found: window {window_event.window_class} → "
                         f"process {process_event.process_name} (confidence: {confidence:.2f})"
+                    )
+
+            # Debug: Log top 3 candidates even if they didn't pass threshold
+            if not child_events and all_candidates:
+                all_candidates.sort(key=lambda x: x[2], reverse=True)
+                top_3 = all_candidates[:3]
+                logger.debug(f"No correlations above {CONFIDENCE_THRESHOLD:.0%} for window '{window_event.window_class}'")
+                for proc_event, factors, conf in top_3:
+                    logger.debug(
+                        f"  Candidate: {proc_event.process_name} - "
+                        f"confidence={conf:.2f} (timing={factors.timing_score:.2f}, "
+                        f"hierarchy={factors.hierarchy_score:.2f}, name={factors.name_score:.2f}, "
+                        f"workspace={factors.workspace_score:.2f})"
                     )
 
             # If we found correlated children, create EventCorrelation
