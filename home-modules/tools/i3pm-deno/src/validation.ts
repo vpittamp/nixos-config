@@ -114,12 +114,55 @@ export const EventTypeSchema = z.enum([
   "tick",
 ]);
 
+// Unified event schema with source field (Feature: Unified Event System)
 export const EventNotificationSchema = z.object({
   event_id: z.number().int().nonnegative(),
-  event_type: EventTypeSchema,
-  change: z.string(),
-  container: z.union([WindowStateSchema, WorkspaceSchema, OutputSchema, z.null()]),
-  timestamp: z.number().int().positive(),
+  event_type: z.string(), // Now accepts any event type (window::new, daemon::start, query::status, etc.)
+  source: z.enum(["i3", "ipc", "daemon"]), // Event source
+  timestamp: z.string(), // ISO 8601 timestamp string
+
+  // Legacy fields (for backward compatibility with i3 event stream)
+  change: z.string().optional(),
+  container: z.union([WindowStateSchema, WorkspaceSchema, OutputSchema, z.null()]).optional(),
+
+  // Window event fields
+  window_id: z.number().int().positive().optional(),
+  window_class: z.string().optional(),
+  window_title: z.string().optional(),
+  window_instance: z.string().optional(),
+  workspace_name: z.string().optional(),
+
+  // Project event fields
+  project_name: z.string().nullable().optional(),
+  project_directory: z.string().optional(),
+  old_project: z.string().nullable().optional(),
+  new_project: z.string().nullable().optional(),
+  windows_affected: z.number().int().nonnegative().optional(),
+
+  // Tick event fields
+  tick_payload: z.string().optional(),
+
+  // Output event fields
+  output_name: z.string().optional(),
+  output_count: z.number().int().nonnegative().optional(),
+
+  // Query event fields
+  query_method: z.string().optional(),
+  query_params: z.record(z.any()).optional(),
+  query_result_count: z.number().int().nonnegative().optional(),
+
+  // Config event fields
+  config_type: z.string().optional(),
+  rules_added: z.number().int().nonnegative().optional(),
+  rules_removed: z.number().int().nonnegative().optional(),
+
+  // Daemon event fields
+  daemon_version: z.string().optional(),
+  i3_socket: z.string().optional(),
+
+  // Processing metadata
+  processing_duration_ms: z.number().nonnegative(),
+  error: z.string().nullable().optional(),
 });
 
 export type EventNotificationValidated = z.infer<typeof EventNotificationSchema>;

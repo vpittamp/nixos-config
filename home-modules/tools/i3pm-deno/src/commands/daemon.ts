@@ -233,31 +233,51 @@ async function eventsCommand(
     console.log("─".repeat(80));
 
     for (const event of events.reverse()) {
-      const timestamp = formatTimestamp(event.timestamp);
+      const timestamp = new Date(event.timestamp).toLocaleString();
       const eventType = event.event_type;
-      const change = event.change;
+      const source = event.source;
 
-      // Format container info
-      let containerInfo = "";
-      if (event.container) {
-        const container = event.container as {
-          class?: string;
-          title?: string;
-          name?: string;
-        };
-        if (container.class && container.title) {
-          // Window event
-          containerInfo = `${container.class} (${container.title})`;
-        } else if (container.name) {
-          // Workspace or output event
-          containerInfo = container.name;
-        }
+      // Format source badge with color
+      let sourceBadge = "";
+      if (source === "i3") {
+        sourceBadge = formatter.dim("[i3]");
+      } else if (source === "ipc") {
+        sourceBadge = formatter.info("[ipc]");
+      } else if (source === "daemon") {
+        sourceBadge = formatter.success("[daemon]");
       }
 
+      // Format event-specific details
+      let details = "";
+      if (event.window_class) {
+        details = `${event.window_class}`;
+        if (event.window_title) {
+          details += ` (${event.window_title})`;
+        }
+      } else if (event.project_name) {
+        details = `project: ${event.project_name}`;
+      } else if (event.tick_payload) {
+        details = `payload: ${event.tick_payload}`;
+      } else if (event.output_name) {
+        details = `output: ${event.output_name}`;
+      } else if (event.query_method) {
+        details = `method: ${event.query_method}`;
+      } else if (event.daemon_version) {
+        details = `version: ${event.daemon_version}`;
+      }
+
+      // Format duration
+      const duration = event.processing_duration_ms
+        ? formatter.dim(` (${event.processing_duration_ms.toFixed(2)}ms)`)
+        : "";
+
+      // Format error if present
+      const error = event.error ? formatter.error(` ERROR: ${event.error}`) : "";
+
       console.log(
-        `[${event.event_id}] ${timestamp} - ${eventType}:${change}${
-          containerInfo ? " - " + containerInfo : ""
-        }`,
+        `[${event.event_id}] ${sourceBadge} ${timestamp} - ${formatter.bold(eventType)}${
+          details ? " - " + details : ""
+        }${duration}${error}`,
       );
     }
 
