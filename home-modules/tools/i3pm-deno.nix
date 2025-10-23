@@ -1,10 +1,13 @@
 { config, lib, pkgs, ... }:
 
 let
+  # Read version from VERSION file (single source of truth)
+  version = lib.strings.fileContents ./i3pm-deno/VERSION;
+
   # i3pm Deno CLI - Wrapper script that runs TypeScript with Deno runtime
   i3pm = pkgs.stdenv.mkDerivation {
     pname = "i3pm";
-    version = "2.1.4";
+    inherit version;
 
     src = ./i3pm-deno;
 

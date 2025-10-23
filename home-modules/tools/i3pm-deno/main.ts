@@ -3,13 +3,15 @@
 /**
  * i3pm Deno CLI - Main Entry Point
  *
- * Version: 2.0.0
  * Description: i3 project management CLI tool
  */
 
 import { parseArgs } from "@std/cli/parse-args";
 
-const VERSION = "2.0.0";
+// Read version from VERSION file at runtime
+const VERSION = await Deno.readTextFile(
+  new URL("./VERSION", import.meta.url)
+).then(v => v.trim());
 
 /**
  * Show version information
