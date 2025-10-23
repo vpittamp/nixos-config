@@ -166,10 +166,10 @@ function formatEvent(event: EventNotification, formatter: any, options?: { showA
     sourceBadge = formatter.success("[daemon]");
   } else if (source === "systemd") {
     // Feature 029: T020 - systemd source badge (distinct color)
-    sourceBadge = formatter.warn("[systemd]");  // Yellow/orange for system events
+    sourceBadge = formatter.bold("[systemd]");  // Bold for system events (distinct from others)
   } else if (source === "proc") {
     // Feature 029: T020 - proc source badge (distinct color)
-    sourceBadge = formatter.error("[proc]");    // Magenta/red for process events
+    sourceBadge = formatter.error("[proc]");    // Red/magenta for process events
   }
 
   // Generate human-readable description based on event type
