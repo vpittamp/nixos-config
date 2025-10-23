@@ -14,6 +14,10 @@ let
       mkdir -p $out/share/i3pm
       cp -r * $out/share/i3pm/
 
+      # Copy cli-ux library into the package
+      mkdir -p $out/share/cli-ux
+      cp -r ${./cli-ux}/* $out/share/cli-ux/
+
       mkdir -p $out/bin
       cat > $out/bin/i3pm <<EOF
 #!/usr/bin/env bash
