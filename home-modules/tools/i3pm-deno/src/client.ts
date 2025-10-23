@@ -145,6 +145,9 @@ export class DaemonClient {
       await this.connect();
     }
 
+    // Re-ref the connection for subscriptions since we need to keep the event loop alive
+    this.conn.ref();
+
     // Add handler to list
     this.notificationHandlers.push(handler);
 
