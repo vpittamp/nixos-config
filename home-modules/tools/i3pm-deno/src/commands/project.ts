@@ -108,6 +108,10 @@ async function listProjects(options: ProjectCommandOptions): Promise<void> {
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -130,6 +134,10 @@ async function currentProject(options: ProjectCommandOptions): Promise<void> {
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -175,6 +183,10 @@ async function switchProject(projectName: string, options: ProjectCommandOptions
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -201,6 +213,10 @@ async function clearProject(options: ProjectCommandOptions): Promise<void> {
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -291,6 +307,10 @@ async function createProject(args: string[], options: ProjectCommandOptions): Pr
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -327,6 +347,10 @@ async function showProject(projectName: string, options: ProjectCommandOptions):
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -383,6 +407,10 @@ async function validateProjects(options: ProjectCommandOptions): Promise<void> {
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
@@ -408,6 +436,10 @@ async function deleteProject(projectName: string, options: ProjectCommandOptions
   } finally {
     await client.close();
   }
+
+  // Force exit to avoid event loop blocking from pending read operations
+  // See: https://github.com/denoland/deno/issues/4284
+  Deno.exit(0);
 }
 
 /**
