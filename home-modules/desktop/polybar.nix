@@ -97,44 +97,53 @@ in
         label-foreground = "#89dceb";  # Match prefix color
       };
 
-      # Project Module - Uses i3pm daemon (Feature 015)
+      # Project Module - Real-time updates via inotify file watching
       "module/project" = {
         type = "custom/script";
         exec = "${pkgs.writeShellScript "polybar-project-display" ''
           #!${pkgs.bash}/bin/bash
-          # Display current project for polybar
-          # Uses i3pm CLI for consistent logic (Feature 022)
+          # Display current project for polybar with real-time updates
+          # Uses inotifywait to watch for file changes
 
-          # Query i3pm daemon for current project
-          RESULT=$(${i3pmWrapper} current --json 2>/dev/null)
+          ACTIVE_PROJECT_FILE="$HOME/.config/i3/active-project"
 
-          if [ $? -ne 0 ] || [ -z "$RESULT" ]; then
-            # Daemon not running or error
-            echo "⚠ Daemon"
-            exit 0
-          fi
+          # Function to display current project
+          display_project() {
+            if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+              # No active project - global mode
+              echo "∅ Global"
+              return
+            fi
 
-          # Check if in global mode
-          MODE=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.mode // empty')
-          if [ "$MODE" = "global" ]; then
-            # Global mode (no active project)
-            echo "∅ Global"
-            exit 0
-          fi
+            # Read active project info directly from JSON file
+            ICON=$(${pkgs.jq}/bin/jq -r '.icon // "📁"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
+            NAME=$(${pkgs.jq}/bin/jq -r '.name // "unknown"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
 
-          # Extract project info
-          ICON=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.icon // "📁"')
-          NAME=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.name // "unknown"')
+            if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
+              # Invalid or empty project file - global mode
+              echo "∅ Global"
+              return
+            fi
 
-          # Display with icon
-          echo "$ICON $NAME"
+            # Display with icon and name
+            echo "$ICON $NAME"
+          }
+
+          # Display initial state
+          display_project
+
+          # Watch for changes using inotifywait (real-time updates)
+          ${pkgs.inotify-tools}/bin/inotifywait -m -e modify,create,delete,moved_to "$ACTIVE_PROJECT_FILE" 2>/dev/null | \
+          while read -r; do
+            display_project
+          done
         ''}";
-        interval = 2;
+        tail = true;
 
         # Click to switch project (using fzf switcher)
         click-left = "${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
         # Right click to clear project
-        click-right = "${i3pmWrapper} clear";
+        click-right = "${i3pmWrapper} project clear";
 
         format = "<label>";
         format-prefix = " ";
