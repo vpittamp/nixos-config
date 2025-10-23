@@ -221,7 +221,7 @@ nix flake lock --update-input nixpkgs
   - Automatic window marking with project context (<100ms latency)
   - Long-running systemd daemon with socket activation and watchdog monitoring
   - JSON-RPC IPC server for CLI tool communication
-  - New commands: `i3-project-daemon-status`, `i3-project-daemon-events`, `i3-project-create`
+  - Commands: `i3pm daemon status`, `i3pm daemon events`, `i3pm project create`
   - Benefits: No race conditions, instant updates, <1% CPU usage, <15MB memory
   - Documentation: `/etc/nixos/specs/015-create-a-new/quickstart.md`
 
@@ -316,13 +316,13 @@ The following shell aliases are available for project management:
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `i3-project-switch <name>` | `pswitch` | Switch to a project |
-| `i3-project-switch --clear` | `pclear` | Clear active project (global mode) |
-| `i3-project-list` | `plist` | List all available projects |
-| `i3-project-current` | `pcurrent` | Show current active project |
-| `i3-project-create` | - | Create a new project |
-| `i3-project-daemon-status` | - | Show daemon status and diagnostics |
-| `i3-project-daemon-events` | - | Show recent daemon events for debugging |
+| `i3pm project switch <name>` | `pswitch` | Switch to a project |
+| `i3pm project clear` | `pclear` | Clear active project (global mode) |
+| `i3pm project list` | `plist` | List all available projects |
+| `i3pm project current` | `pcurrent` | Show current active project |
+| `i3pm project create` | - | Create a new project |
+| `i3pm daemon status` | - | Show daemon status and diagnostics |
+| `i3pm daemon events` | - | Show recent daemon events for debugging |
 
 ### Daemon Management
 
@@ -331,7 +331,7 @@ The event-based daemon runs as a systemd user service:
 ```bash
 # Check daemon status
 systemctl --user status i3-project-event-listener
-i3-project-daemon-status
+i3pm daemon status
 
 # View daemon logs
 journalctl --user -u i3-project-event-listener -f
@@ -340,7 +340,10 @@ journalctl --user -u i3-project-event-listener -f
 systemctl --user restart i3-project-event-listener
 
 # View recent events
-i3-project-daemon-events --limit=20
+i3pm daemon events --limit=20
+
+# Follow event stream in real-time
+i3pm daemon events --follow
 ```
 
 ### Common Workflows
@@ -394,26 +397,26 @@ After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspa
 ### Troubleshooting
 
 **Daemon not running:**
-1. Check daemon status: `i3-project-daemon-status`
+1. Check daemon status: `i3pm daemon status`
 2. View logs: `journalctl --user -u i3-project-event-listener -n 50`
 3. Restart daemon: `systemctl --user restart i3-project-event-listener`
 
 **Windows not auto-marking:**
-1. Check recent events: `i3-project-daemon-events --limit=20 --type=window`
+1. Check recent events: `i3pm daemon events --limit=20 --type=window`
 2. Verify window class in scoped_classes: `cat ~/.config/i3/app-classes.json`
 3. Reload daemon config: Send tick event or restart daemon
 
 **Applications not opening in project context:**
-1. Check active project: `i3-project-current` or `pcurrent`
+1. Check active project: `i3pm project current` or `pcurrent`
 2. Verify project directory exists
-3. Check daemon is running: `i3-project-daemon-status`
+3. Check daemon is running: `i3pm daemon status`
 4. Try clearing and reactivating: `Win+Shift+P` then `Win+P`
 
 **Windows from old project still visible:**
 1. Check i3bar shows correct project
-2. Verify project switch completed: `i3-project-current`
-3. Check daemon processed switch: `i3-project-daemon-events | grep tick`
-4. Try switching again: `i3-project-switch <project-name>`
+2. Verify project switch completed: `i3pm project current`
+3. Check daemon processed switch: `i3pm daemon events | grep tick`
+4. Try switching again: `i3pm project switch <project-name>`
 
 **Edit project configuration:**
 ```bash

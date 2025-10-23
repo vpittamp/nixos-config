@@ -153,15 +153,11 @@ in
       };
     };
 
-    # Install CLI tools (T010, T011, T029-T032)
-    # NOTE: i3-project-* commands are deprecated in favor of i3pm CLI (Feature 022)
-    # Keeping only daemon-specific diagnostic tools
+    # Install CLI tools
+    # NOTE: All daemon diagnostic tools are now provided by i3pm CLI (Feature 022)
+    # Use 'i3pm daemon status' and 'i3pm daemon events' instead
     home.packages = with pkgs; [
       pythonEnv  # Python environment for daemon
-
-      # Daemon diagnostic tools (not replaced by i3pm)
-      (writeShellScriptBin "i3-project-daemon-status" (builtins.readFile ../../scripts/i3-project-daemon-status))
-      (writeShellScriptBin "i3-project-daemon-events" (builtins.readFile ../../scripts/i3-project-daemon-events))
     ];
 
     # Shell aliases (T034) - Feature 022: Migrated to use i3pm CLI
