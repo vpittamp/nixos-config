@@ -93,6 +93,7 @@ async def query_systemd_journal(
         # Feature 029: Task T012 - JSON parsing
         stdout_text = stdout.decode('utf-8', errors='replace')
         journal_entries = _parse_journalctl_output(stdout_text)
+        logger.debug(f"Parsed {len(journal_entries)} total journal entries")
 
         # Filter by unit pattern if specified
         # Feature 029: Task T013 - Event filtering
@@ -101,6 +102,8 @@ async def query_systemd_journal(
         else:
             # Default filter: only application-related units
             journal_entries = _filter_application_units(journal_entries)
+
+        logger.debug(f"After filtering: {len(journal_entries)} app-related entries")
 
         # Convert to EventEntry objects
         # Feature 029: Task T014 - EventEntry creation
