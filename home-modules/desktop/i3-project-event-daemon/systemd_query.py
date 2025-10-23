@@ -182,7 +182,8 @@ def _filter_by_unit_pattern(entries: List[Dict[str, Any]], pattern: str) -> List
 
     filtered = []
     for entry in entries:
-        unit = entry.get("_SYSTEMD_UNIT", "")
+        # Check both _SYSTEMD_USER_UNIT (for user services) and _SYSTEMD_UNIT (for system services)
+        unit = entry.get("_SYSTEMD_USER_UNIT") or entry.get("_SYSTEMD_UNIT", "")
         if regex.match(unit):
             filtered.append(entry)
 
@@ -206,7 +207,8 @@ def _filter_application_units(entries: List[Dict[str, Any]]) -> List[Dict[str, A
     """
     filtered = []
     for entry in entries:
-        unit = entry.get("_SYSTEMD_UNIT", "")
+        # Check both _SYSTEMD_USER_UNIT (for user services) and _SYSTEMD_UNIT (for system services)
+        unit = entry.get("_SYSTEMD_USER_UNIT") or entry.get("_SYSTEMD_UNIT", "")
 
         # Match application service patterns
         if unit.startswith("app-") and unit.endswith(".service"):
@@ -241,7 +243,8 @@ def _create_event_from_journal_entry(entry: Dict[str, Any], event_id: int) -> Ev
     timestamp = datetime.fromtimestamp(timestamp_us / 1_000_000)
 
     # Extract systemd fields
-    systemd_unit = entry.get("_SYSTEMD_UNIT", "")
+    # Check both _SYSTEMD_USER_UNIT (for user services) and _SYSTEMD_UNIT (for system services)
+    systemd_unit = entry.get("_SYSTEMD_USER_UNIT") or entry.get("_SYSTEMD_UNIT", "")
     systemd_message = entry.get("MESSAGE", "")
     systemd_pid = entry.get("_PID")
     journal_cursor = entry.get("__CURSOR")
