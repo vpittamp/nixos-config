@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/vpittamp/nixos/specs/029-linux-system-log/event-entry.schema.json",
+  "title": "EventEntry",
+  "description": "Unified event log entry for i3pm event system with systemd and /proc monitoring support",
+  "type": "object",
+  "required": ["event_id", "event_type", "timestamp", "source"],
+  "properties": {
+    "event_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Incremental ID for event ordering"
+    },
+    "event_type": {
+      "type": "string",
+      "description": "Event type in format {source}::{category}::{action}",
+      "examples": [
+        "window::new",
+        "window::close",
+        "window::focus",
+        "project::switch",
+        "systemd::service::start",
+        "systemd::service::stop",
+        "process::start"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when event occurred"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["i3", "ipc", "daemon", "systemd", "proc"],
+      "description": "Event source: i3 window manager, IPC client, daemon internal, systemd journal, or proc filesystem"
+    },
+    "processing_duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0.0,
+      "description": "Time daemon took to process event in milliseconds"
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error message if event processing failed"
+    },
+    "client_pid": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "PID of client that triggered event (for IPC events)"
+    },
+    "window_id": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "X11 window ID for window events"
+    },
+    "window_class": {
+      "type": ["string", "null"],
+      "description": "Window class (WM_CLASS) for window events"
+    },
+    "window_title": {
+      "type": ["string", "null"],
+      "description": "Window title for window events"
+    },
+    "window_instance": {
+      "type": ["string", "null"],
+      "description": "Window instance (WM_CLASS instance) for window events"
+    },
+    "workspace_name": {
+      "type": ["string", "null"],
+      "description": "Workspace name where window event occurred"
+    },
+    "project_name": {
+      "type": ["string", "null"],
+      "description": "Associated project name for project events"
+    },
+    "project_directory": {
+      "type": ["string", "null"],
+      "description": "Project directory path for project events"
+    },
+    "old_project": {
+      "type": ["string", "null"],
+      "description": "Previous project name for project switch events"
+    },
+    "new_project": {
+      "type": ["string", "null"],
+      "description": "New project name for project switch events"
+    },
+    "windows_affected": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of windows shown/hidden by project event"
+    },
+    "tick_payload": {
+      "type": ["string", "null"],
+      "description": "Raw tick payload from i3 tick event"
+    },
+    "output_name": {
+      "type": ["string", "null"],
+      "description": "Monitor/output name for output events"
+    },
+    "output_count": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Total active monitor count for output events"
+    },
+    "query_method": {
+      "type": ["string", "null"],
+      "description": "IPC method called for query events"
+    },
+    "query_params": {
+      "type": ["object", "null"],
+      "description": "Request parameters for query events"
+    },
+    "query_result_count": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of results returned by query"
+    },
+    "config_type": {
+      "type": ["string", "null"],
+      "enum": [null, "app_classification", "window_rules"],
+      "description": "Configuration type for config events"
+    },
+    "rules_added": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of rules added in config event"
+    },
+    "rules_removed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of rules removed in config event"
+    },
+    "daemon_version": {
+      "type": ["string", "null"],
+      "description": "Daemon version for daemon lifecycle events"
+    },
+    "i3_socket": {
+      "type": ["string", "null"],
+      "description": "i3 socket path for daemon lifecycle events"
+    },
+    "systemd_unit": {
+      "type": ["string", "null"],
+      "description": "systemd service unit name (e.g., 'app-firefox-123.service') for systemd events",
+      "examples": ["app-firefox-123.service", "code.service"]
+    },
+    "systemd_message": {
+      "type": ["string", "null"],
+      "description": "systemd journal message (e.g., 'Started Firefox Web Browser') for systemd events",
+      "examples": ["Started Firefox Web Browser", "Started Code - OSS"]
+    },
+    "systemd_pid": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Process ID from systemd journal _PID field"
+    },
+    "journal_cursor": {
+      "type": ["string", "null"],
+      "description": "systemd journal cursor for event position (used for pagination)"
+    },
+    "process_pid": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Process ID for proc filesystem events"
+    },
+    "process_name": {
+      "type": ["string", "null"],
+      "maxLength": 16,
+      "description": "Command name from /proc/{pid}/comm (kernel limit 16 chars)"
+    },
+    "process_cmdline": {
+      "type": ["string", "null"],
+      "maxLength": 503,
+      "description": "Full command line from /proc/{pid}/cmdline (sanitized, truncated to 500 chars + '...')"
+    },
+    "process_parent_pid": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Parent process ID from /proc/{pid}/stat for hierarchy detection"
+    },
+    "process_start_time": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Process start time in jiffies from /proc/{pid}/stat (for correlation timing)"
+    }
+  },
+  "examples": [
+    {
+      "event_id": 1000,
+      "event_type": "window::new",
+      "timestamp": "2025-10-23T07:28:47.123456Z",
+      "source": "i3",
+      "processing_duration_ms": 6.8,
+      "window_id": 94392938473,
+      "window_class": "Code",
+      "window_title": "main.rs",
+      "window_instance": "code",
+      "workspace_name": "1:term",
+      "project_name": "nixos"
+    },
+    {
+      "event_id": 1001,
+      "event_type": "systemd::service::start",
+      "timestamp": "2025-10-23T07:28:46.500000Z",
+      "source": "systemd",
+      "processing_duration_ms": 0.5,
+      "systemd_unit": "app-firefox-12345.service",
+      "systemd_message": "Started Firefox Web Browser",
+      "systemd_pid": 54321,
+      "journal_cursor": "s=abc123def456..."
+    },
+    {
+      "event_id": 1002,
+      "event_type": "process::start",
+      "timestamp": "2025-10-23T07:28:48.200000Z",
+      "source": "proc",
+      "processing_duration_ms": 1.2,
+      "process_pid": 54322,
+      "process_name": "rust-analyzer",
+      "process_cmdline": "/usr/bin/rust-analyzer",
+      "process_parent_pid": 54320,
+      "process_start_time": 12345678
+    }
+  ]
+}

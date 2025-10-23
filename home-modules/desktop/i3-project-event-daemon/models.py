@@ -196,16 +196,82 @@ class EventEntry:
     daemon_version: Optional[str] = None        # Daemon version
     i3_socket: Optional[str] = None             # i3 socket path
 
+    # ===== SYSTEMD EVENTS (systemd::*) =====
+    # Feature 029: Linux System Log Integration - User Story 1
+    systemd_unit: Optional[str] = None          # Service unit name (e.g., "app-firefox-123.service")
+    systemd_message: Optional[str] = None       # systemd message (e.g., "Started Firefox Web Browser")
+    systemd_pid: Optional[int] = None           # Process ID from journal _PID field
+    journal_cursor: Optional[str] = None        # Journal cursor for event position (for pagination)
+
+    # ===== PROCESS EVENTS (process::*) =====
+    # Feature 029: Linux System Log Integration - User Story 2
+    process_pid: Optional[int] = None           # Process ID
+    process_name: Optional[str] = None          # Command name from /proc/{pid}/comm
+    process_cmdline: Optional[str] = None       # Full command line (sanitized, truncated to 500 chars)
+    process_parent_pid: Optional[int] = None    # Parent process ID from /proc/{pid}/stat
+    process_start_time: Optional[int] = None    # Process start time from /proc/{pid}/stat (for correlation)
+
     def __post_init__(self) -> None:
         """Validate event entry."""
         if self.event_id < 0:
             raise ValueError(f"Invalid event_id: {self.event_id}")
         if not self.event_type:
             raise ValueError("event_type cannot be empty")
-        if self.source not in ("i3", "ipc", "daemon"):
-            raise ValueError(f"Invalid source: {self.source} (must be 'i3', 'ipc', or 'daemon')")
+        if self.source not in ("i3", "ipc", "daemon", "systemd", "proc"):
+            raise ValueError(f"Invalid source: {self.source} (must be 'i3', 'ipc', 'daemon', 'systemd', or 'proc')")
         if self.processing_duration_ms < 0:
             raise ValueError(f"Invalid processing_duration_ms: {self.processing_duration_ms}")
+
+        # Feature 029: Validate systemd events must have systemd_unit
+        if self.source == "systemd" and not self.systemd_unit:
+            raise ValueError("systemd events must have systemd_unit")
+
+        # Feature 029: Validate proc events must have process_pid and process_name
+        if self.source == "proc":
+            if not self.process_pid or not self.process_name:
+                raise ValueError("proc events must have process_pid and process_name")
+
+
+@dataclass
+class EventCorrelation:
+    """Correlation between a parent event and related child events.
+
+    Feature 029: Linux System Log Integration - User Story 3
+    Used to show relationships like:
+    - GUI window creation → backend process spawns
+    - Process spawn → subprocess spawns
+    """
+
+    # Correlation metadata
+    correlation_id: int                     # Unique correlation ID
+    created_at: datetime                    # When correlation was detected
+    confidence_score: float                 # 0.0-1.0 confidence in correlation accuracy
+
+    # Event relationships
+    parent_event_id: int                    # Parent event (e.g., window::new)
+    child_event_ids: List[int]              # Child events (e.g., process::start[])
+    correlation_type: str                   # "window_to_process" | "process_to_subprocess"
+
+    # Timing information
+    time_delta_ms: float                    # Time between parent and first child event
+    detection_window_ms: float = 5000.0     # Time window used for detection (default 5s)
+
+    # Correlation factors (for debugging)
+    timing_factor: float = 0.0              # 0.0-1.0 score for timing proximity
+    hierarchy_factor: float = 0.0           # 0.0-1.0 score for process hierarchy match
+    name_similarity: float = 0.0            # 0.0-1.0 score for name similarity
+    workspace_match: bool = False           # Whether events happened in same workspace
+
+    def __post_init__(self) -> None:
+        """Validate correlation."""
+        if not 0.0 <= self.confidence_score <= 1.0:
+            raise ValueError(f"confidence_score must be 0.0-1.0, got {self.confidence_score}")
+        if self.time_delta_ms < 0:
+            raise ValueError(f"time_delta_ms cannot be negative: {self.time_delta_ms}")
+        if self.correlation_type not in ("window_to_process", "process_to_subprocess"):
+            raise ValueError(f"Invalid correlation_type: {self.correlation_type}")
+        if not self.child_event_ids:
+            raise ValueError("child_event_ids cannot be empty")
 
 
 @dataclass

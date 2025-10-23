@@ -115,10 +115,11 @@ export const EventTypeSchema = z.enum([
 ]);
 
 // Unified event schema with source field (Feature: Unified Event System)
+// Extended for Feature 029: Linux System Log Integration
 export const EventNotificationSchema = z.object({
   event_id: z.number().int().nonnegative(),
-  event_type: z.string(), // Now accepts any event type (window::new, daemon::start, query::status, etc.)
-  source: z.enum(["i3", "ipc", "daemon"]), // Event source
+  event_type: z.string(), // Now accepts any event type (window::new, daemon::start, query::status, systemd::service::start, process::start, etc.)
+  source: z.enum(["i3", "ipc", "daemon", "systemd", "proc"]), // Event source (Feature 029: added systemd, proc)
   timestamp: z.string(), // ISO 8601 timestamp string
 
   // Legacy fields (for backward compatibility with i3 event stream)
@@ -159,6 +160,19 @@ export const EventNotificationSchema = z.object({
   // Daemon event fields
   daemon_version: z.string().nullable().optional(),
   i3_socket: z.string().nullable().optional(),
+
+  // systemd event fields (Feature 029: Linux System Log Integration - User Story 1)
+  systemd_unit: z.string().nullable().optional(), // Service unit name (e.g., "app-firefox-123.service")
+  systemd_message: z.string().nullable().optional(), // systemd message (e.g., "Started Firefox Web Browser")
+  systemd_pid: z.number().int().positive().nullable().optional(), // Process ID from journal _PID field
+  journal_cursor: z.string().nullable().optional(), // Journal cursor for event position
+
+  // Process event fields (Feature 029: Linux System Log Integration - User Story 2)
+  process_pid: z.number().int().positive().nullable().optional(), // Process ID
+  process_name: z.string().nullable().optional(), // Command name from /proc/{pid}/comm
+  process_cmdline: z.string().nullable().optional(), // Full command line (sanitized, truncated)
+  process_parent_pid: z.number().int().positive().nullable().optional(), // Parent process ID
+  process_start_time: z.number().int().nonnegative().nullable().optional(), // Process start time (jiffies)
 
   // Processing metadata
   processing_duration_ms: z.number().nonnegative(),
