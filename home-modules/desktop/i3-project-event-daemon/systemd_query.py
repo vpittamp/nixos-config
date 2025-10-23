@@ -273,7 +273,6 @@ def _create_event_from_journal_entry(entry: Dict[str, Any], event_id: int) -> Ev
         timestamp=timestamp,
         event_type=event_type,
         source="systemd",
-        correlation_id=None,
         processing_duration_ms=0.0,
 
         # systemd-specific fields
