@@ -300,8 +300,12 @@ async function eventsCommand(
   } catch (err) {
     if (err instanceof z.ZodError) {
       console.error("Error: Invalid daemon response format");
+      console.error("Validation errors:");
+      for (const error of err.errors) {
+        console.error(`  - ${error.path.join('.')}: ${error.message}`);
+      }
       if (options.debug) {
-        console.error("Validation errors:", err.errors);
+        console.error("\nFull error details:", JSON.stringify(err.errors, null, 2));
       }
       Deno.exit(1);
     }
