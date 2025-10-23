@@ -106,7 +106,7 @@ async function listProjects(options: ProjectCommandOptions): Promise<void> {
     console.error(err instanceof Error ? err.message : String(err));
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -128,7 +128,7 @@ async function currentProject(options: ProjectCommandOptions): Promise<void> {
     console.error(err instanceof Error ? err.message : String(err));
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -173,7 +173,7 @@ async function switchProject(projectName: string, options: ProjectCommandOptions
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -199,7 +199,7 @@ async function clearProject(options: ProjectCommandOptions): Promise<void> {
     console.error(err instanceof Error ? err.message : String(err));
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -289,7 +289,7 @@ async function createProject(args: string[], options: ProjectCommandOptions): Pr
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -325,7 +325,7 @@ async function showProject(projectName: string, options: ProjectCommandOptions):
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -381,7 +381,7 @@ async function validateProjects(options: ProjectCommandOptions): Promise<void> {
     console.error(err instanceof Error ? err.message : String(err));
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 
@@ -406,7 +406,7 @@ async function deleteProject(projectName: string, options: ProjectCommandOptions
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
 

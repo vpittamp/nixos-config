@@ -146,6 +146,10 @@ export class DaemonClient {
       await this.connect();
     }
 
+    if (!this.conn) {
+      throw new Error("Failed to establish connection");
+    }
+
     // Re-ref the connection for subscriptions since we need to keep the event loop alive
     this.conn.ref();
 
@@ -278,7 +282,7 @@ export class DaemonClient {
   /**
    * Close connection and clean up
    */
-  close(): void {
+  async close(): Promise<void> {
     this.readLoopActive = false;
 
     // Reject all pending requests
@@ -297,12 +301,8 @@ export class DaemonClient {
       }
       this.conn = null;
     }
-  }
 
-  /**
-   * Wait for read loop to finish
-   */
-  async waitForReadLoop(): Promise<void> {
+    // Wait for read loop to finish
     if (this.readLoopPromise) {
       await this.readLoopPromise;
     }

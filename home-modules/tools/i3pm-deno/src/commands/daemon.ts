@@ -5,7 +5,14 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../client.ts";
 import { DaemonStatusSchema, EventNotificationSchema } from "../validation.ts";
-import type { DaemonStatus, EventNotification } from "../models.ts";
+import type {
+  DaemonStatus,
+  EventNotification,
+  EventType,
+  Output,
+  WindowState,
+  Workspace,
+} from "../models.ts";
 import { z } from "zod";
 import { setup, Spinner } from "@cli-ux";
 
@@ -317,9 +324,9 @@ async function followEventStream(
         const eventType = params.type || params.event_type || "unknown";
         event = {
           event_id: params.event_id || Date.now(),
-          event_type: eventType as any,
+          event_type: eventType as EventType,
           change: params.change || notification.method || "unknown",
-          container: params.container || null,
+          container: (params.container as WindowState | Workspace | Output) || null,
           timestamp: params.timestamp || Date.now(),
         };
       }
@@ -425,6 +432,6 @@ export async function daemonCommand(
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }

@@ -420,6 +420,6 @@ export async function rulesCommand(
 
     Deno.exit(1);
   } finally {
-    client.close();
+    await client.close();
   }
 }
