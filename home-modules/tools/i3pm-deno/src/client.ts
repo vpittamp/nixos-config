@@ -85,8 +85,14 @@ export class DaemonClient {
 
   /**
    * Send JSON-RPC request and wait for response
+   *
+   * @param timeout - Request timeout in milliseconds (default: 5000)
    */
-  async request<T = unknown>(method: string, params?: unknown): Promise<T> {
+  async request<T = unknown>(
+    method: string,
+    params?: unknown,
+    timeout: number = 5000
+  ): Promise<T> {
     if (!this.conn) {
       await this.connect();
     }
@@ -111,28 +117,28 @@ export class DaemonClient {
     // read response directly without persistent loop.
     // This allows quick commands to exit immediately.
     if (!this.readLoopActive) {
-      return await this.readSingleResponse<T>(id, method);
+      return await this.readSingleResponse<T>(id, method, timeout);
     }
 
     // If read loop is active (subscriptions), use the existing mechanism
     return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      const timeoutHandle = setTimeout(() => {
         this.pendingRequests.delete(id);
         logger.debugRpcResponse(method, "TIMEOUT");
         reject(
           new Error(
             `Request timeout for method: ${method}\n` +
-              "The daemon did not respond within 5 seconds.\n" +
+              `The daemon did not respond within ${timeout / 1000} seconds.\n` +
               "Try restarting the daemon:\n" +
               "  systemctl --user restart i3-project-event-listener",
           ),
         );
-      }, 5000);
+      }, timeout);
 
       this.pendingRequests.set(id, {
         resolve: resolve as (value: unknown) => void,
         reject,
-        timeout,
+        timeout: timeoutHandle,
       });
     });
   }
@@ -140,7 +146,7 @@ export class DaemonClient {
   /**
    * Read a single response message without starting persistent loop
    */
-  private async readSingleResponse<T>(id: number, method: string): Promise<T> {
+  private async readSingleResponse<T>(id: number, method: string, timeout: number): Promise<T> {
     const buffer = new Uint8Array(8192);
     let partial = "";
 
@@ -151,12 +157,12 @@ export class DaemonClient {
         reject(
           new Error(
             `Request timeout for method: ${method}\n` +
-              "The daemon did not respond within 5 seconds.\n" +
+              `The daemon did not respond within ${timeout / 1000} seconds.\n` +
               "Try restarting the daemon:\n" +
               "  systemctl --user restart i3-project-event-listener",
           ),
         );
-      }, 5000);
+      }, timeout);
     });
 
     // Read response with timeout

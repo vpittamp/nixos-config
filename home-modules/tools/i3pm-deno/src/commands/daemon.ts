@@ -469,7 +469,9 @@ async function eventsCommand(
       params.since = since;
     }
 
-    const response = await client.request("get_events", params);
+    // Feature 029: Use longer timeout for systemd queries (can take 5-10s for large time windows)
+    const timeout = (source === "systemd" || source === "all") ? 30000 : 5000;
+    const response = await client.request("get_events", params, timeout);
 
     if (options.debug) {
       console.error("DEBUG: Raw response:", JSON.stringify(response, null, 2));

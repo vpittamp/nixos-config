@@ -10,6 +10,7 @@ User Story: US1 - View System Service Launches
 import asyncio
 import json
 import logging
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -126,6 +127,103 @@ async def query_systemd_journal(
 
     except FileNotFoundError:
         # Feature 029: Task T015 - Error handling
+        logger.warning("journalctl command not found - systemd journal queries unavailable")
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error querying systemd journal: {e}", exc_info=True)
+        return []
+
+
+def query_systemd_journal_sync(
+    since: str,
+    until: Optional[str] = None,
+    unit_pattern: Optional[str] = None,
+    limit: int = 1000,
+    timeout: float = 25.0
+) -> List[EventEntry]:
+    """Synchronous version of query_systemd_journal for thread pool execution.
+
+    Feature 029: Watchdog fix - runs in thread pool to avoid blocking event loop
+
+    This is a synchronous wrapper that uses subprocess.run() instead of
+    asyncio.create_subprocess_exec(). Called via asyncio.to_thread() to
+    prevent long queries from blocking the daemon's watchdog pings.
+
+    Args:
+        since: Time specification for --since parameter
+        until: Optional time specification for --until parameter
+        unit_pattern: Optional unit name pattern filter
+        limit: Maximum number of entries to return (default 1000)
+        timeout: Query timeout in seconds (default 10.0)
+
+    Returns:
+        List of EventEntry objects with source="systemd"
+        Empty list if journalctl unavailable or query fails
+    """
+    # Build journalctl command
+    cmd = [
+        "journalctl",
+        "--user",
+        "--output=json",
+        f"--since={since}",
+    ]
+
+    if until:
+        cmd.append(f"--until={until}")
+
+    logger.debug(f"Executing journalctl query (sync): {' '.join(cmd)}")
+
+    try:
+        # Execute journalctl synchronously with timeout
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            text=False  # Get bytes, we'll decode manually
+        )
+
+        # Check return code
+        if result.returncode != 0:
+            stderr_text = result.stderr.decode('utf-8', errors='replace')
+            logger.warning(f"journalctl query failed (exit code {result.returncode}): {stderr_text}")
+            return []
+
+        # Parse newline-delimited JSON output
+        stdout_text = result.stdout.decode('utf-8', errors='replace')
+        journal_entries = _parse_journalctl_output(stdout_text)
+        logger.debug(f"Parsed {len(journal_entries)} total journal entries")
+
+        # Filter by unit pattern if specified
+        if unit_pattern:
+            journal_entries = _filter_by_unit_pattern(journal_entries, unit_pattern)
+        else:
+            # Default filter: only application-related units
+            journal_entries = _filter_application_units(journal_entries)
+
+        logger.debug(f"After filtering: {len(journal_entries)} app-related entries")
+
+        # Apply limit after filtering
+        journal_entries = journal_entries[:limit]
+        logger.debug(f"After limit ({limit}): {len(journal_entries)} entries")
+
+        # Convert to EventEntry objects
+        events = []
+        for idx, entry in enumerate(journal_entries):
+            try:
+                event = _create_event_from_journal_entry(entry, event_id=idx)
+                events.append(event)
+            except Exception as e:
+                logger.warning(f"Failed to create EventEntry from journal entry: {e}")
+                continue
+
+        logger.info(f"Retrieved {len(events)} systemd events from journal (since={since})")
+        return events
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"journalctl query timed out after {timeout}s")
+        return []
+    except FileNotFoundError:
         logger.warning("journalctl command not found - systemd journal queries unavailable")
         return []
     except Exception as e:

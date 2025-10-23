@@ -488,9 +488,11 @@ class IPCServer:
                         all_events.extend(buffer_events)
 
                 # Get systemd events if requested
+                # Feature 029: Run in thread pool to avoid blocking watchdog
                 if source in ("systemd", "all"):
                     since = params.get("since", "1 hour ago")
-                    systemd_events = await systemd_query.query_systemd_journal(
+                    systemd_events = await asyncio.to_thread(
+                        systemd_query.query_systemd_journal_sync,
                         since=since,
                         limit=limit
                     )
@@ -630,7 +632,9 @@ class IPCServer:
             limit = params.get("limit", 1000)
 
             # Query systemd journal via systemd_query module
-            events = await systemd_query.query_systemd_journal(
+            # Feature 029: Run in thread pool to avoid blocking watchdog
+            events = await asyncio.to_thread(
+                systemd_query.query_systemd_journal_sync,
                 since=since,
                 until=until,
                 unit_pattern=unit_pattern,
