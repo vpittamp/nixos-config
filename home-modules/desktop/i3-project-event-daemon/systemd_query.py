@@ -50,12 +50,13 @@ async def query_systemd_journal(
     Feature 029: Task T011 - Core journalctl query function
     """
     # Build journalctl command
+    # Note: Don't use --lines here because it returns the LAST N entries globally,
+    # not the first N from --since. We'll apply limit after filtering instead.
     cmd = [
         "journalctl",
         "--user",
         "--output=json",
         f"--since={since}",
-        f"--lines={limit}",
     ]
 
     if until:
@@ -104,6 +105,10 @@ async def query_systemd_journal(
             journal_entries = _filter_application_units(journal_entries)
 
         logger.debug(f"After filtering: {len(journal_entries)} app-related entries")
+
+        # Apply limit after filtering (since we removed --lines from journalctl)
+        journal_entries = journal_entries[:limit]
+        logger.debug(f"After limit ({limit}): {len(journal_entries)} entries")
 
         # Convert to EventEntry objects
         # Feature 029: Task T014 - EventEntry creation
