@@ -182,6 +182,30 @@ export const EventNotificationSchema = z.object({
 export type EventNotificationValidated = z.infer<typeof EventNotificationSchema>;
 
 // ============================================================================
+// Event Correlation Schemas (Feature 029: US3)
+// ============================================================================
+
+export const EventCorrelationSchema = z.object({
+  correlation_id: z.number().int().nonnegative(),
+  created_at: z.string(), // ISO 8601 timestamp
+  confidence_score: z.number().min(0.0).max(1.0),
+
+  parent_event_id: z.number().int().nonnegative(),
+  child_event_ids: z.array(z.number().int().nonnegative()).min(1),
+  correlation_type: z.enum(["window_to_process", "process_to_subprocess"]),
+
+  time_delta_ms: z.number().nonnegative(),
+  detection_window_ms: z.number().nonnegative(),
+
+  timing_factor: z.number().min(0.0).max(1.0),
+  hierarchy_factor: z.number().min(0.0).max(1.0),
+  name_similarity: z.number().min(0.0).max(1.0),
+  workspace_match: z.boolean(),
+});
+
+export type EventCorrelation = z.infer<typeof EventCorrelationSchema>;
+
+// ============================================================================
 // Daemon Status Schemas
 // ============================================================================
 

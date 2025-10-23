@@ -207,6 +207,17 @@ nix flake lock --update-input nixpkgs
 
 ### Recent Updates (2025-10)
 
+- **Linux System Log Integration** - Multi-source event monitoring and correlation (Feature 029)
+  - Unified event stream from systemd journals, /proc filesystem, and i3 events
+  - Real-time process monitoring with 500ms polling (<5% CPU overhead)
+  - Multi-factor correlation detection (timing, hierarchy, name similarity, workspace)
+  - Commands: `i3pm daemon events --source=systemd|proc|all`, `--correlate` flag
+  - Event sources: `systemd` (service logs), `proc` (process spawns), `i3` (window events)
+  - Example: Query systemd logs with `--since="1 hour ago"`, monitor process spawns
+  - Correlation display: Shows window → process relationships with confidence scores
+  - Benefits: Debug application startup, correlate GUI with backend, unified monitoring
+  - Documentation: `/etc/nixos/specs/029-linux-system-log/quickstart.md`
+
 - **Visual Window State Management** - Real-time window visualization (Feature 025 MVP)
   - Tree and table views for hierarchical window state (outputs → workspaces → windows)
   - Real-time updates with <100ms latency via daemon event subscriptions

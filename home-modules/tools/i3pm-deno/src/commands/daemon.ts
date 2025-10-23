@@ -4,7 +4,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../client.ts";
-import { DaemonStatusSchema, EventNotificationSchema } from "../validation.ts";
+import { DaemonStatusSchema, EventNotificationSchema, EventCorrelationSchema } from "../validation.ts";
 import type {
   DaemonStatus,
   EventNotification,
@@ -13,6 +13,7 @@ import type {
   WindowState,
   Workspace,
 } from "../models.ts";
+import type { EventCorrelation } from "../validation.ts";
 import { z } from "zod";
 import { setup, Spinner } from "@cli-ux";
 
@@ -48,6 +49,7 @@ EVENTS OPTIONS:
   --since <time>    Time specification for systemd queries (e.g., "1 hour ago", "today")
   --since-id <id>   Show events since specific event ID
   --follow, -f      📡 Live stream events in real-time (like tail -f)
+  --correlate       🔗 Show event correlations (window → process relationships)
 
 EXAMPLES:
   # Show recent events with human-readable descriptions
@@ -79,6 +81,10 @@ EXAMPLES:
   # Advanced filtering
   i3pm daemon events --since-id=1500
   i3pm daemon events --source=ipc --type=query --limit=50
+
+  # Event correlation (Feature 029: US3)
+  i3pm daemon events --correlate              # Show correlated window → process relationships
+  i3pm daemon events --correlate --limit=10   # Show last 10 events with correlations
 `);
   Deno.exit(0);
 }
@@ -341,6 +347,60 @@ function formatEvent(event: EventNotification, formatter: any, options?: { showA
 }
 
 /**
+ * Format correlation in hierarchical display (Feature 029: T055)
+ * Shows parent event → child events with confidence scores
+ */
+function formatCorrelation(
+  correlation: EventCorrelation,
+  events: EventNotification[],
+  formatter: any
+): void {
+  const eventsById = new Map<number, EventNotification>();
+  for (const event of events) {
+    eventsById.set(event.event_id, event);
+  }
+
+  // Display correlation header with confidence
+  const confidence = (correlation.confidence_score * 100).toFixed(0);
+  console.log(
+    `    ${formatter.dim("└─>")} ${formatter.bold("🔗 Correlated processes")} (confidence: ${formatter.success(confidence + "%")})`
+  );
+
+  // Display each child event indented
+  for (let i = 0; i < correlation.child_event_ids.length; i++) {
+    const childId = correlation.child_event_ids[i];
+    const childEvent = eventsById.get(childId);
+
+    if (!childEvent) continue;
+
+    const isLast = i === correlation.child_event_ids.length - 1;
+    const prefix = isLast ? "└─" : "├─";
+
+    // Calculate time delta for this child
+    const timeDeltaMs = i === 0 ? correlation.time_delta_ms : 0; // Only show delta for first child
+    const timeDelta = timeDeltaMs > 0
+      ? ` ${formatter.dim(`+${(timeDeltaMs / 1000).toFixed(1)}s`)}`
+      : "";
+
+    // Format child process info
+    const processName = childEvent.process_name || "unknown";
+    const pid = childEvent.process_pid ? ` (PID ${childEvent.process_pid})` : "";
+
+    // Show correlation factors for first child (most relevant)
+    let factors = "";
+    if (i === 0) {
+      const timingPct = (correlation.timing_factor * 100).toFixed(0);
+      const namePct = (correlation.name_similarity * 100).toFixed(0);
+      factors = ` ${formatter.dim(`[timing: ${timingPct}%, name: ${namePct}%]`)}`;
+    }
+
+    console.log(
+      `        ${formatter.dim(prefix)} ${formatter.bold(processName)}${pid}${timeDelta}${factors}`
+    );
+  }
+}
+
+/**
  * T028: Implement `i3pm daemon status` command
  */
 async function statusCommand(
@@ -422,7 +482,7 @@ async function eventsCommand(
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
     string: ["limit", "type", "source", "since-id", "since"],
-    boolean: ["follow"],
+    boolean: ["follow", "correlate"],
     alias: { f: "follow" },
     default: { limit: "20" },
   });
@@ -436,6 +496,7 @@ async function eventsCommand(
     : undefined;
   const since = parsed.since as string | undefined;  // Feature 029: T018 - Time spec for systemd queries
   const follow = parsed.follow as boolean;
+  const correlate = parsed.correlate as boolean;  // Feature 029: T054 - Show correlations
 
   try {
     // If follow mode only, skip historical events
@@ -489,12 +550,39 @@ async function eventsCommand(
       return;
     }
 
+    // Feature 029: T054-T055 - Query and display correlations if requested
+    let correlations: EventCorrelation[] = [];
+    if (correlate) {
+      try {
+        const correlationResponse = await client.request("query_correlations", { limit: 100 }, 5000);
+        const CorrelationArraySchema = z.array(EventCorrelationSchema);
+        correlations = CorrelationArraySchema.parse(correlationResponse) as EventCorrelation[];
+      } catch (err) {
+        if (options.debug) {
+          console.error("DEBUG: Error fetching correlations:", err);
+        }
+        // Continue without correlations
+      }
+    }
+
+    // Build correlation index for quick lookup
+    const correlationsByParent = new Map<number, EventCorrelation>();
+    for (const corr of correlations) {
+      correlationsByParent.set(corr.parent_event_id, corr);
+    }
+
     // Display events in reverse chronological order (newest first)
     console.log(`\nRecent Events (${events.length} shown):`);
     console.log("─".repeat(80));
 
     for (const event of events.reverse()) {
       formatEvent(event, formatter);
+
+      // Feature 029: T055 - Display correlations hierarchically
+      if (correlate && correlationsByParent.has(event.event_id)) {
+        const correlation = correlationsByParent.get(event.event_id)!;
+        formatCorrelation(correlation, events, formatter);
+      }
     }
 
     console.log("─".repeat(80));

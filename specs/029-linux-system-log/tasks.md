@@ -118,23 +118,23 @@
 
 ### Implementation for User Story 3
 
-- [ ] T044 [P] [US3] Create EventCorrelation model in `home-modules/desktop/i3-project-event-daemon/models.py`: define EventCorrelation dataclass with correlation_id, parent_event_id, child_event_ids, confidence_score, timing/hierarchy/name factors
-- [ ] T045 [P] [US3] Create SQLite tables in migration script: `event_correlations` and `correlation_children` tables per data-model.md schema
-- [ ] T046 [US3] Implement correlation detection in `home-modules/desktop/i3-project-event-daemon/event_correlator.py`: `async def detect_correlations(event_buffer, time_window=5000)` - scan recent events for timing/hierarchy/name matches
-- [ ] T047 [US3] Implement confidence scoring in `event_correlator.py`: `def calculate_confidence(timing_factor, hierarchy_factor, name_similarity, workspace_match)` with weighted formula (40%, 30%, 20%, 10%)
-- [ ] T048 [US3] Implement timing proximity calculation in `event_correlator.py`: calculate milliseconds between parent and child events
-- [ ] T049 [US3] Implement hierarchy detection in `event_correlator.py`: read `/proc/{child_pid}/stat` field 4 (parent PID), match against window event PIDs or systemd PIDs
-- [ ] T050 [US3] Implement name similarity in `event_correlator.py`: compare window_class to process_name using string distance algorithm (Levenshtein or similar)
-- [ ] T051 [US3] Implement workspace matching in `event_correlator.py`: compare workspace_name from window event to i3 IPC current workspace at process spawn time
-- [ ] T052 [US3] Add correlation storage in `event_correlator.py`: insert EventCorrelation into database, update event_correlations and correlation_children tables
-- [ ] T053 [US3] Add IPC methods in `ipc_server.py`: `get_correlation(event_id)`, `query_correlations(correlation_type, min_confidence, limit)`
-- [ ] T054 [US3] Add `--correlate` flag in `daemon.ts`: query correlations via IPC, display in hierarchical format with indentation
-- [ ] T055 [P] [US3] Implement correlation display formatting in `daemon.ts`: show parent event, indented child events with time delta and confidence score
-- [ ] T056 [US3] Write unit test `tests/i3-project-daemon/unit/test_event_correlator.py`: test confidence scoring with known factor values
-- [ ] T057 [US3] Write unit test for timing proximity: verify 5-second window detection
-- [ ] T058 [US3] Write unit test for name similarity: test "Code" vs "rust-analyzer" scoring
-- [ ] T059 [US3] Write integration test `tests/i3-project-daemon/integration/test_correlation.py`: create window event, spawn related process, verify correlation detected
-- [ ] T060 [US3] Manual test: Launch VS Code, wait for rust-analyzer spawn, run `i3pm daemon events --correlate`, verify hierarchical display matches acceptance scenario
+- [X] T044 [P] [US3] Create EventCorrelation model in `home-modules/desktop/i3-project-event-daemon/models.py`: define EventCorrelation dataclass with correlation_id, parent_event_id, child_event_ids, confidence_score, timing/hierarchy/name factors
+- [X] T045 [P] [US3] Create SQLite tables in migration script: `event_correlations` and `correlation_children` tables per data-model.md schema
+- [X] T046 [US3] Implement correlation detection in `home-modules/desktop/i3-project-event-daemon/event_correlator.py`: `async def detect_correlations(event_buffer, time_window=5000)` - scan recent events for timing/hierarchy/name matches
+- [X] T047 [US3] Implement confidence scoring in `event_correlator.py`: `def calculate_confidence(timing_factor, hierarchy_factor, name_similarity, workspace_match)` with weighted formula (40%, 30%, 20%, 10%)
+- [X] T048 [US3] Implement timing proximity calculation in `event_correlator.py`: calculate milliseconds between parent and child events
+- [X] T049 [US3] Implement hierarchy detection in `event_correlator.py`: read `/proc/{child_pid}/stat` field 4 (parent PID), match against window event PIDs or systemd PIDs
+- [X] T050 [US3] Implement name similarity in `event_correlator.py`: compare window_class to process_name using string distance algorithm (Levenshtein or similar)
+- [X] T051 [US3] Implement workspace matching in `event_correlator.py`: compare workspace_name from window event to i3 IPC current workspace at process spawn time
+- [X] T052 [US3] Add correlation storage in `event_correlator.py`: insert EventCorrelation into database, update event_correlations and correlation_children tables
+- [X] T053 [US3] Add IPC methods in `ipc_server.py`: `get_correlation(event_id)`, `query_correlations(correlation_type, min_confidence, limit)`
+- [X] T054 [US3] Add `--correlate` flag in `daemon.ts`: query correlations via IPC, display in hierarchical format with indentation
+- [X] T055 [P] [US3] Implement correlation display formatting in `daemon.ts`: show parent event, indented child events with time delta and confidence score
+- [X] T056 [US3] Write unit test `tests/i3-project-daemon/unit/test_event_correlator.py`: test confidence scoring with known factor values
+- [X] T057 [US3] Write unit test for timing proximity: verify 5-second window detection
+- [X] T058 [US3] Write unit test for name similarity: test "Code" vs "rust-analyzer" scoring
+- [X] T059 [US3] Write integration test `tests/i3-project-daemon/integration/test_correlation.py`: create window event, spawn related process, verify correlation detected
+- [X] T060 [US3] Manual test: Launch VS Code, wait for rust-analyzer spawn, run `i3pm daemon events --correlate`, verify hierarchical display matches acceptance scenario
 
 **Checkpoint**: User Story 3 complete - event correlation working with confidence scoring 🎉
 
@@ -144,13 +144,13 @@
 
 **Purpose**: Final integration, documentation, and cross-story improvements
 
-- [ ] T061 [P] [Polish] Update `home-modules/desktop/i3-project-event-daemon/README.md` with complete usage examples for all three user stories
-- [ ] T062 [P] [Polish] Update CLAUDE.md with new event source commands and examples
-- [ ] T063 [P] [Polish] Add comprehensive error messages for common failure cases (journalctl unavailable, /proc not accessible, correlation disabled)
-- [ ] T064 [P] [Polish] Add daemon startup logging: log when systemd query module initialized, proc monitoring started, correlation enabled
-- [ ] T065 [Polish] Performance optimization: profile proc monitoring CPU usage, optimize allowlist matching if needed
-- [ ] T066 [Polish] Integration test for unified stream: verify `--source=all` shows chronologically sorted events from all sources (i3, systemd, proc)
-- [ ] T067 [Polish] End-to-end test: launch Firefox → verify systemd::service::start → verify window::new → verify events appear in `--source=all`
+- [X] T061 [P] [Polish] Update `home-modules/desktop/i3-project-event-daemon/README.md` with complete usage examples for all three user stories
+- [X] T062 [P] [Polish] Update CLAUDE.md with new event source commands and examples
+- [X] T063 [P] [Polish] Add comprehensive error messages for common failure cases (journalctl unavailable, /proc not accessible, correlation disabled)
+- [X] T064 [P] [Polish] Add daemon startup logging: log when systemd query module initialized, proc monitoring started, correlation enabled
+- [X] T065 [Polish] Performance optimization: profile proc monitoring CPU usage, optimize allowlist matching if needed
+- [X] T066 [Polish] Integration test for unified stream: verify `--source=all` shows chronologically sorted events from all sources (i3, systemd, proc)
+- [X] T067 [Polish] End-to-end test: launch Firefox → verify systemd::service::start → verify window::new → verify events appear in `--source=all`
 
 **Checkpoint**: Feature complete and polished 🎉
 

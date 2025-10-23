@@ -19,8 +19,9 @@ from typing import Any, Dict, Optional
 from .state import StateManager
 from .window_rules import WindowRule
 from .pattern_resolver import classify_window
-from .models import EventEntry
+from .models import EventEntry, EventCorrelation
 from . import systemd_query  # Feature 029: systemd journal integration
+from .event_correlator import EventCorrelator  # Feature 029: event correlation
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class IPCServer:
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
+        self.event_correlator = EventCorrelator()  # Feature 029: Event correlation
 
     @classmethod
     async def from_systemd_socket(
@@ -207,6 +209,12 @@ class IPCServer:
             elif method == "query_systemd_events":
                 # Feature 029: T016 - Query systemd journal events
                 result = await self._query_systemd_events(params)
+            elif method == "get_correlation":
+                # Feature 029: T053 - Get correlation by event ID
+                result = await self._get_correlation(params)
+            elif method == "query_correlations":
+                # Feature 029: T053 - Query correlations with filters
+                result = await self._query_correlations(params)
             elif method == "list_monitors":
                 result = await self._list_monitors()
             elif method == "subscribe_events":
@@ -476,8 +484,9 @@ class IPCServer:
                 # Unified event stream: merge events from multiple sources
                 all_events = []
 
-                # Get buffer events (i3, ipc, daemon)
-                if source in ("all",) or (self.event_buffer and source not in ("systemd", "proc")):
+                # Get buffer events (i3, ipc, daemon, proc)
+                # Note: proc events are in event_buffer, not separate storage
+                if source in ("all", "proc") or (self.event_buffer and source not in ("systemd",)):
                     if self.event_buffer:
                         buffer_events = self.event_buffer.get_events(
                             limit=limit,
@@ -598,7 +607,7 @@ class IPCServer:
             if e.process_parent_pid is not None:
                 event_dict["process_parent_pid"] = e.process_parent_pid
             if e.process_start_time is not None:
-                event_dict["process_start_time"] = e.process_start_time
+                event_dict["process_start_time"] = int(e.process_start_time.timestamp() * 1000)
 
             events_data.append(event_dict)
 
@@ -673,6 +682,150 @@ class IPCServer:
                 duration_ms=duration_ms,
                 error=error_msg,
             )
+
+    async def _get_correlation(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get correlation by event ID (Feature 029: T053).
+
+        Args:
+            params: Query parameters:
+                - event_id: Event ID to get correlation for [required]
+
+        Returns:
+            Correlation dictionary if found, None otherwise
+
+        Example:
+            {"event_id": 1234}
+            -> {"correlation_id": 1, "parent_event_id": 1234, "confidence_score": 0.85, ...}
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+        result = None
+
+        try:
+            event_id = params.get("event_id")
+            if event_id is None:
+                raise ValueError("event_id parameter is required")
+
+            # Check if event is a parent
+            correlations = self.event_correlator.get_correlations_by_parent(event_id)
+            if correlations:
+                correlation = correlations[0]  # Return first (should be only one)
+                result = self._correlation_to_dict(correlation)
+                return result
+
+            # Check if event is a child
+            correlations = self.event_correlator.get_correlations_by_child(event_id)
+            if correlations:
+                correlation = correlations[0]  # Return first
+                result = self._correlation_to_dict(correlation)
+                return result
+
+            # No correlation found
+            return None
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting correlation: {e}", exc_info=True)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::correlation",
+                params={"event_id": params.get("event_id")},
+                result_count=1 if result else 0,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _query_correlations(self, params: Dict[str, Any]) -> list:
+        """Query correlations with filters (Feature 029: T053).
+
+        Args:
+            params: Query parameters:
+                - correlation_type: Filter by type ("window_to_process", "process_to_subprocess") [optional]
+                - min_confidence: Minimum confidence score (0.0-1.0) [optional]
+                - limit: Maximum number of correlations (default 100) [optional]
+
+        Returns:
+            List of correlation dictionaries
+
+        Example:
+            {"min_confidence": 0.7, "limit": 50}
+            -> [{"correlation_id": 1, "confidence_score": 0.85, ...}, ...]
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            correlation_type = params.get("correlation_type")
+            min_confidence = params.get("min_confidence", 0.0)
+            limit = params.get("limit", 100)
+
+            # Get all correlations from correlator
+            all_correlations = list(self.event_correlator.correlations.values())
+
+            # Apply filters
+            filtered = all_correlations
+
+            if correlation_type:
+                filtered = [c for c in filtered if c.correlation_type == correlation_type]
+
+            if min_confidence > 0:
+                filtered = [c for c in filtered if c.confidence_score >= min_confidence]
+
+            # Sort by confidence (highest first)
+            filtered.sort(key=lambda c: c.confidence_score, reverse=True)
+
+            # Apply limit
+            filtered = filtered[:limit]
+
+            # Convert to dicts
+            result = [self._correlation_to_dict(c) for c in filtered]
+
+            logger.info(f"Queried {len(result)} correlations (total: {len(all_correlations)})")
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error querying correlations: {e}", exc_info=True)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::correlations",
+                params={
+                    "type": correlation_type,
+                    "min_confidence": min_confidence,
+                    "limit": limit
+                },
+                result_count=len(result) if 'result' in locals() else 0,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    def _correlation_to_dict(self, correlation: EventCorrelation) -> Dict[str, Any]:
+        """Convert EventCorrelation to dictionary for JSON serialization.
+
+        Args:
+            correlation: EventCorrelation instance
+
+        Returns:
+            Dictionary representation
+        """
+        return {
+            "correlation_id": correlation.correlation_id,
+            "created_at": correlation.created_at.isoformat(),
+            "confidence_score": correlation.confidence_score,
+            "parent_event_id": correlation.parent_event_id,
+            "child_event_ids": correlation.child_event_ids,
+            "correlation_type": correlation.correlation_type,
+            "time_delta_ms": correlation.time_delta_ms,
+            "detection_window_ms": correlation.detection_window_ms,
+            "timing_factor": correlation.timing_factor,
+            "hierarchy_factor": correlation.hierarchy_factor,
+            "name_similarity": correlation.name_similarity,
+            "workspace_match": correlation.workspace_match,
+        }
 
     async def _list_monitors(self) -> Dict[str, Any]:
         """List all connected monitor clients (Feature 017).

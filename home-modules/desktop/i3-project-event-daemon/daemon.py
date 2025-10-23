@@ -45,6 +45,7 @@ from .handlers import (
     on_workspace_move,
     on_output,  # Feature 024: R013
 )
+from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from datetime import datetime
 import time
 
@@ -153,6 +154,7 @@ class I3ProjectDaemon:
         self.shutdown_event = asyncio.Event()
         self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
+        self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -263,6 +265,10 @@ class I3ProjectDaemon:
         self.rules_watcher.set_event_loop(asyncio.get_event_loop())
         # Start watching
         self.rules_watcher.start()
+
+        # Feature 029: T033 - Initialize process monitor
+        self.proc_monitor = ProcessMonitor(poll_interval=0.5)
+        logger.info("Process monitor initialized")
 
         logger.info("Daemon initialization complete")
 
@@ -394,6 +400,41 @@ class I3ProjectDaemon:
         if self.health_monitor:
             watchdog_task = asyncio.create_task(self.health_monitor.watchdog_loop())
 
+        # Feature 029: T033 - Start process monitoring
+        if self.proc_monitor and self.event_buffer:
+            async def proc_event_callback(event: EventEntry):
+                """Callback to handle process events."""
+                await self.event_buffer.add_event(event)
+                logger.debug(f"Process event captured: {event.process_name} (PID {event.process_pid})")
+
+            await self.proc_monitor.start(proc_event_callback)
+            logger.info("Process monitoring started")
+
+        # Feature 029: T046-T052 - Start periodic correlation detection
+        correlation_task = None
+        if self.ipc_server and self.event_buffer:
+            async def run_correlation_detection():
+                """Periodically detect correlations in recent events."""
+                while True:
+                    try:
+                        await asyncio.sleep(10)  # Run every 10 seconds
+
+                        # Get recent events (last 100)
+                        events = self.event_buffer.get_events(limit=100)
+
+                        # Run correlation detection
+                        if self.ipc_server.event_correlator:
+                            correlations = await self.ipc_server.event_correlator.detect_correlations(events)
+                            if correlations:
+                                logger.debug(f"Detected {len(correlations)} new correlations")
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        logger.error(f"Error in correlation detection: {e}")
+
+            correlation_task = asyncio.create_task(run_correlation_detection())
+            logger.info("Correlation detection started")
+
         try:
             # Run i3 event loop (blocks until shutdown)
             if self.connection:
@@ -404,6 +445,20 @@ class I3ProjectDaemon:
             raise
 
         finally:
+            # Feature 029: Stop process monitoring
+            if self.proc_monitor:
+                await self.proc_monitor.stop()
+                logger.info("Process monitoring stopped")
+
+            # Feature 029: Stop correlation detection
+            if correlation_task:
+                correlation_task.cancel()
+                try:
+                    await correlation_task
+                except asyncio.CancelledError:
+                    pass
+                logger.info("Correlation detection stopped")
+
             # Cancel watchdog task
             if watchdog_task:
                 watchdog_task.cancel()
