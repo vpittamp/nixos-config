@@ -91,11 +91,6 @@ export class DaemonClient {
       await this.connect();
     }
 
-    // Start read loop if not already running
-    if (!this.readLoopActive) {
-      this.startReadLoop();
-    }
-
     const id = ++this.requestId;
     const request: JsonRpcRequest = {
       jsonrpc: "2.0",
@@ -112,7 +107,14 @@ export class DaemonClient {
     await this.conn!.write(this.encoder.encode(requestData));
     logger.verbose(`Sent RPC request: ${method}`);
 
-    // Wait for response
+    // For simple request-response (no active subscriptions),
+    // read response directly without persistent loop.
+    // This allows quick commands to exit immediately.
+    if (!this.readLoopActive) {
+      return await this.readSingleResponse<T>(id, method);
+    }
+
+    // If read loop is active (subscriptions), use the existing mechanism
     return new Promise<T>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
@@ -133,6 +135,81 @@ export class DaemonClient {
         timeout,
       });
     });
+  }
+
+  /**
+   * Read a single response message without starting persistent loop
+   */
+  private async readSingleResponse<T>(id: number, method: string): Promise<T> {
+    const buffer = new Uint8Array(8192);
+    let partial = "";
+
+    // Set timeout for response
+    let timeoutId: number | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new Error(
+            `Request timeout for method: ${method}\n` +
+              "The daemon did not respond within 5 seconds.\n" +
+              "Try restarting the daemon:\n" +
+              "  systemctl --user restart i3-project-event-listener",
+          ),
+        );
+      }, 5000);
+    });
+
+    // Read response with timeout
+    const responsePromise = (async (): Promise<T> => {
+      while (this.conn) {
+        const n = await this.conn.read(buffer);
+        if (n === null) {
+          throw new Error("Connection closed while waiting for response");
+        }
+
+        partial += this.decoder.decode(buffer.subarray(0, n));
+        const lines = partial.split("\n");
+        partial = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          try {
+            const msg = JSON.parse(line) as JsonRpcResponse;
+
+            // Check if this is our response
+            if ("id" in msg && msg.id === id) {
+              if (msg.error) {
+                logger.debugRpcResponse(method, msg.error);
+                throw new Error(
+                  `RPC Error (${msg.error.code}): ${msg.error.message}`,
+                );
+              }
+              logger.debugRpcResponse(method, msg.result);
+              logger.verbose(`Received RPC response for request ID ${id}`);
+              return msg.result as T;
+            }
+          } catch (err) {
+            if (err instanceof Error && err.message.startsWith("RPC Error")) {
+              throw err;
+            }
+            console.error("Failed to parse JSON-RPC message:", line);
+            console.error(err);
+          }
+        }
+      }
+
+      throw new Error("Connection lost while waiting for response");
+    })();
+
+    try {
+      return await Promise.race([responsePromise, timeoutPromise]);
+    } finally {
+      // Clear timeout to prevent it from keeping the event loop alive
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   /**
