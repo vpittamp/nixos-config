@@ -25,6 +25,7 @@ SUBCOMMANDS:
   classify          Test window classification
   validate          Validate all rules
   test              Test rule matching
+  discover          Discover window pattern for application
 
 OPTIONS:
   -h, --help        Show this help message
@@ -42,11 +43,30 @@ VALIDATE OPTIONS:
 TEST OPTIONS:
   --class <name>    Window class to test
 
+DISCOVER OPTIONS:
+  --app <name>      Application name to discover (required)
+  --workspace <N>   Assign to workspace (1-9)
+  --scope <scope>   Classify as 'scoped' or 'global'
+  --method <method> Launch method: 'direct' or 'rofi' (default: direct)
+  --timeout <secs>  Wait timeout in seconds (default: 10.0)
+  --keep-window     Don't close window after discovery
+  --json            Output JSON format
+  --scan            Scan currently open windows (instant, no launching)
+  --compare         Compare discovered patterns with existing rules (use with --scan)
+  --verbose         Show detailed output including correct rules (use with --compare)
+  --registry        Discover all apps from application-registry.json
+
 EXAMPLES:
   i3pm rules list
   i3pm rules classify --class Ghostty --instance ghostty
   i3pm rules validate
   i3pm rules test --class Firefox
+  i3pm rules discover --scan                           # Scan open windows (instant)
+  i3pm rules discover --scan --compare                 # Compare with existing rules
+  i3pm rules discover --scan --compare --verbose       # Show all rules including correct ones
+  i3pm rules discover --app pavucontrol
+  i3pm rules discover --app vscode --workspace 1 --scope scoped
+  i3pm rules discover --registry
 `);
   Deno.exit(0);
 }
@@ -354,6 +374,79 @@ async function testCommand(
 }
 
 /**
+ * T026: Implement `i3pm rules discover` command
+ */
+async function discoverCommand(
+  args: (string | number)[],
+  options: RulesCommandOptions,
+): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    string: ["app", "workspace", "scope", "method", "timeout"],
+    boolean: ["keep-window", "json", "registry", "scan", "compare", "verbose"],
+  });
+
+  // Build command for Python CLI
+  const pythonCli = "/etc/nixos/home-modules/tools/i3-window-rules-service/i3-window-rules";
+  const cmdArgs: string[] = [];
+
+  if (parsed.scan) {
+    // Scan open windows (instant discovery)
+    cmdArgs.push("scan");
+    if (parsed.json) cmdArgs.push("--json");
+    if (parsed.compare) cmdArgs.push("--compare");
+    if (parsed.verbose) cmdArgs.push("--verbose");
+  } else if (parsed.registry) {
+    // Bulk discovery from registry
+    cmdArgs.push("bulk");
+    if (parsed.json) cmdArgs.push("--json");
+    if (parsed.timeout) cmdArgs.push("--timeout", String(parsed.timeout));
+  } else {
+    // Single app discovery
+    if (!parsed.app) {
+      console.error("Error: --app flag is required (or use --scan/--registry for bulk discovery)");
+      console.error('Run "i3pm rules discover --help" for usage information');
+      Deno.exit(1);
+    }
+
+    cmdArgs.push("discover");
+    cmdArgs.push("--app", String(parsed.app));
+    if (parsed.workspace) cmdArgs.push("--workspace", String(parsed.workspace));
+    if (parsed.scope) cmdArgs.push("--scope", String(parsed.scope));
+    if (parsed.method) cmdArgs.push("--method", String(parsed.method));
+    if (parsed.timeout) cmdArgs.push("--timeout", String(parsed.timeout));
+    if (parsed["keep-window"]) cmdArgs.push("--keep-window");
+    if (parsed.json) cmdArgs.push("--json");
+  }
+
+  if (options.verbose) {
+    console.error(`Executing: ${pythonCli} ${cmdArgs.join(" ")}`);
+  }
+
+  try {
+    // Execute Python CLI
+    const command = new Deno.Command(pythonCli, {
+      args: cmdArgs,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    const { code } = await command.output();
+
+    if (code !== 0) {
+      console.error(`\nDiscovery command failed with exit code ${code}`);
+      Deno.exit(code);
+    }
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Error executing discovery: ${err.message}`);
+    } else {
+      console.error("Error executing discovery:", err);
+    }
+    Deno.exit(1);
+  }
+}
+
+/**
  * Rules command router
  */
 export async function rulesCommand(
@@ -400,6 +493,12 @@ export async function rulesCommand(
       case "test":
         await testCommand(client, subcommandArgs, options);
         break;
+
+      case "discover":
+        // Discovery doesn't need daemon connection
+        await client.close();
+        await discoverCommand(subcommandArgs, options);
+        return; // Exit early since discover handles its own execution
 
       default:
         console.error(`Unknown subcommand: ${subcommand}`);

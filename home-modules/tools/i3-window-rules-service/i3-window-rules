@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Wrapper script for i3-window-rules-service CLI
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Add the tools directory to PYTHONPATH so Python can find our modules
+export PYTHONPATH="$SCRIPT_DIR/..:$PYTHONPATH"
+
+# Run Python CLI directly
+exec python3 "$SCRIPT_DIR/cli.py" "$@"

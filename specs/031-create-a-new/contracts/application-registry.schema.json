@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-application-registry.json",
+  "title": "i3 Application Registry",
+  "description": "Defines applications with launch commands, pattern expectations, and NixOS integration",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for migration compatibility",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "applications": {
+      "type": "array",
+      "description": "Application definitions for discovery and validation",
+      "items": {
+        "$ref": "#/definitions/applicationDefinition"
+      }
+    }
+  },
+  "required": ["version", "applications"],
+  "definitions": {
+    "applicationDefinition": {
+      "type": "object",
+      "description": "Defines an application with launch command and pattern expectations",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Application identifier (lowercase, alphanumeric + dash)",
+          "pattern": "^[a-z0-9-]+$",
+          "examples": ["vscode", "firefox", "pavucontrol"]
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable name",
+          "minLength": 1,
+          "examples": ["VS Code", "Firefox", "Volume Control"]
+        },
+        "command": {
+          "type": "string",
+          "description": "Base launch command",
+          "minLength": 1,
+          "examples": ["code", "firefox", "pavucontrol"]
+        },
+        "rofi_name": {
+          "type": "string",
+          "description": "Name as it appears in rofi (if different from display_name)"
+        },
+        "parameters": {
+          "type": "string",
+          "description": "Additional command parameters with variable substitution",
+          "examples": ["$PROJECT_DIR", "--work-tree=$PROJECT_DIR", "--new-window"]
+        },
+        "expected_pattern_type": {
+          "type": "string",
+          "description": "Expected pattern type for this application",
+          "enum": ["class", "title", "title_regex", "pwa"]
+        },
+        "expected_class": {
+          "type": "string",
+          "description": "Expected WM_CLASS value (if known)"
+        },
+        "expected_title_contains": {
+          "type": "string",
+          "description": "Expected title substring (if known)"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Application scope classification",
+          "enum": ["scoped", "global"]
+        },
+        "preferred_workspace": {
+          "type": "integer",
+          "description": "Preferred workspace number (1-9)",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "desktop_file_path": {
+          "type": "string",
+          "description": "Path to .desktop file for NixOS customization",
+          "pattern": "^(/|~/).*\\.desktop$"
+        },
+        "nix_package": {
+          "type": "string",
+          "description": "NixOS package name",
+          "pattern": "^pkgs\\.[a-zA-Z0-9_-]+$",
+          "examples": ["pkgs.vscode", "pkgs.firefox", "pkgs.pavucontrol"]
+        }
+      },
+      "required": ["name", "display_name", "command", "expected_pattern_type", "scope"],
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["expected_class"] },
+        { "required": ["expected_title_contains"] }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "applications": [
+        {
+          "name": "vscode",
+          "display_name": "VS Code",
+          "command": "code",
+          "parameters": "$PROJECT_DIR",
+          "expected_pattern_type": "class",
+          "expected_class": "Code",
+          "scope": "scoped",
+          "preferred_workspace": 1,
+          "nix_package": "pkgs.vscode"
+        },
+        {
+          "name": "lazygit",
+          "display_name": "Lazygit",
+          "command": "ghostty -e lazygit",
+          "parameters": "--work-tree=$PROJECT_DIR",
+          "expected_pattern_type": "title",
+          "expected_title_contains": "lazygit",
+          "scope": "scoped",
+          "preferred_workspace": 2,
+          "nix_package": "pkgs.lazygit"
+        },
+        {
+          "name": "firefox",
+          "display_name": "Firefox",
+          "command": "firefox",
+          "expected_pattern_type": "class",
+          "expected_class": "firefox",
+          "scope": "global",
+          "preferred_workspace": 5,
+          "nix_package": "pkgs.firefox"
+        },
+        {
+          "name": "youtube-pwa",
+          "display_name": "YouTube",
+          "command": "firefox-pwa site launch 01JAX7G82H4BF9JNMXZKZ2Q5AS",
+          "rofi_name": "YouTube",
+          "expected_pattern_type": "pwa",
+          "expected_class": "FFPWA-01JAX7G82H4BF9JNMXZKZ2Q5AS",
+          "scope": "global",
+          "preferred_workspace": 7
+        }
+      ]
+    }
+  ]
+}

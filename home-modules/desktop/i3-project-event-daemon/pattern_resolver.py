@@ -37,8 +37,8 @@ class Classification:
 
     def __post_init__(self):
         """Validate classification."""
-        if self.workspace is not None and not (1 <= self.workspace <= 9):
-            raise ValueError(f"Workspace must be 1-9, got {self.workspace}")
+        if self.workspace is not None and self.workspace < 1:
+            raise ValueError(f"Workspace must be >= 1, got {self.workspace}")
 
     def to_json(self) -> dict:
         """Serialize to JSON-compatible dict."""

@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-window-rules.json",
+  "title": "i3 Window Rules Configuration",
+  "description": "Defines window matching patterns and workspace assignments for i3 window manager",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for migration compatibility",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "rules": {
+      "type": "array",
+      "description": "Window matching rules with workspace assignments",
+      "items": {
+        "$ref": "#/definitions/windowRule"
+      }
+    }
+  },
+  "required": ["version", "rules"],
+  "definitions": {
+    "windowRule": {
+      "type": "object",
+      "description": "Associates a pattern with workspace assignment and scope",
+      "properties": {
+        "pattern": {
+          "$ref": "#/definitions/pattern"
+        },
+        "workspace": {
+          "type": "integer",
+          "description": "Target workspace number (1-9)",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "scope": {
+          "type": "string",
+          "description": "Application scope classification",
+          "enum": ["scoped", "global"]
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this rule is active",
+          "default": true
+        },
+        "application_name": {
+          "type": "string",
+          "description": "Friendly application name (e.g., 'VSCode', 'Firefox')",
+          "minLength": 1,
+          "examples": ["VSCode", "Firefox", "Pavucontrol"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about this rule"
+        }
+      },
+      "required": ["pattern", "workspace", "scope", "application_name"],
+      "additionalProperties": false
+    },
+    "pattern": {
+      "type": "object",
+      "description": "Window matching pattern with type and value",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Type of pattern matching",
+          "enum": ["class", "title", "title_regex", "pwa"]
+        },
+        "value": {
+          "type": "string",
+          "description": "Pattern value (class name, title substring, or regex)",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this pattern matches"
+        },
+        "priority": {
+          "type": "integer",
+          "description": "Pattern priority (lower = higher priority, 0-100)",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 10
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Whether matching is case-sensitive",
+          "default": true
+        }
+      },
+      "required": ["type", "value"],
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "rules": [
+        {
+          "pattern": {
+            "type": "class",
+            "value": "Code",
+            "description": "VSCode editor",
+            "priority": 10,
+            "case_sensitive": true
+          },
+          "workspace": 1,
+          "scope": "scoped",
+          "enabled": true,
+          "application_name": "VSCode",
+          "notes": "Project-specific code editor"
+        },
+        {
+          "pattern": {
+            "type": "title",
+            "value": "lazygit",
+            "description": "Lazygit terminal UI",
+            "priority": 10,
+            "case_sensitive": false
+          },
+          "workspace": 2,
+          "scope": "scoped",
+          "enabled": true,
+          "application_name": "Lazygit"
+        },
+        {
+          "pattern": {
+            "type": "class",
+            "value": "FFPWA-01JAX7G82H4BF9JNMXZKZ2Q5AS",
+            "description": "YouTube PWA",
+            "priority": 10,
+            "case_sensitive": true
+          },
+          "workspace": 7,
+          "scope": "global",
+          "enabled": true,
+          "application_name": "YouTube"
+        }
+      ]
+    }
+  ]
+}

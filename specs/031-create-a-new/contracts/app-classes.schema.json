@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/i3-app-classes.json",
+  "title": "i3 Application Classes Configuration",
+  "description": "Classifies window classes as scoped (project-specific) or global (always visible)",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for migration compatibility",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "scoped_classes": {
+      "type": "array",
+      "description": "Window classes for project-scoped applications (hidden when project inactive)",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "examples": [["Code", "ghostty", "title:lazygit", "title:yazi"]]
+    },
+    "global_classes": {
+      "type": "array",
+      "description": "Window classes for globally visible applications (always visible across projects)",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "examples": [["firefox", "FFPWA-*", "Pavucontrol", "1Password"]]
+    }
+  },
+  "required": ["version", "scoped_classes", "global_classes"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "version": "1.0.0",
+      "scoped_classes": [
+        "Code",
+        "ghostty",
+        "title:lazygit",
+        "title:yazi"
+      ],
+      "global_classes": [
+        "firefox",
+        "FFPWA-01JAX7G82H4BF9JNMXZKZ2Q5AS",
+        "Pavucontrol",
+        "1Password"
+      ]
+    }
+  ]
+}
