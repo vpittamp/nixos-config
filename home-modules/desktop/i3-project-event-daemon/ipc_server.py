@@ -200,20 +200,9 @@ class IPCServer:
                 result = await self._switch_project(params)
             elif method == "get_events":
                 # Return events array (not dict with stats) for CLI
-                # Note: CLI expects simplified diagnostic events, not full i3 event structure
+                # Unified event system: Return full event data with source field
                 events_result = await self._get_events(params)
-                events = events_result.get("events", [])
-                # Adapt to simpler format for CLI
-                result = [
-                    {
-                        "event_id": evt["event_id"],
-                        "event_type": evt["event_type"].split("::")[0],  # "window::focus" -> "window"
-                        "change": evt["event_type"].split("::")[ 1] if "::" in evt["event_type"] else "",
-                        "container": None,  # Diagnostic events don't have full container
-                        "timestamp": int(datetime.fromisoformat(evt["timestamp"].replace("Z", "+00:00")).timestamp()),
-                    }
-                    for evt in events
-                ]
+                result = events_result.get("events", [])
             elif method == "list_monitors":
                 result = await self._list_monitors()
             elif method == "subscribe_events":
