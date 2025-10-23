@@ -236,7 +236,8 @@ export async function windowsCommand(
     Deno.exit(1);
   } finally {
     await client.close();
+    // Force exit to avoid event loop blocking from pending read operations
+    // See: https://github.com/denoland/deno/issues/4284
+    Deno.exit(0);
   }
-
-  // Force exit to avoid event loop blocking from pending read operations
 }
