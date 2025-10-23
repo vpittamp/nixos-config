@@ -126,39 +126,39 @@ export const EventNotificationSchema = z.object({
   container: z.union([WindowStateSchema, WorkspaceSchema, OutputSchema, z.null()]).optional(),
 
   // Window event fields
-  window_id: z.number().int().positive().optional(),
-  window_class: z.string().optional(),
-  window_title: z.string().optional(),
-  window_instance: z.string().optional(),
-  workspace_name: z.string().optional(),
+  window_id: z.number().int().positive().nullable().optional(),
+  window_class: z.string().nullable().optional(),
+  window_title: z.string().nullable().optional(),
+  window_instance: z.string().nullable().optional(),
+  workspace_name: z.string().nullable().optional(),
 
   // Project event fields
   project_name: z.string().nullable().optional(),
-  project_directory: z.string().optional(),
+  project_directory: z.string().nullable().optional(),
   old_project: z.string().nullable().optional(),
   new_project: z.string().nullable().optional(),
-  windows_affected: z.number().int().nonnegative().optional(),
+  windows_affected: z.number().int().nonnegative().nullable().optional(),
 
   // Tick event fields
-  tick_payload: z.string().optional(),
+  tick_payload: z.string().nullable().optional(),
 
   // Output event fields
-  output_name: z.string().optional(),
-  output_count: z.number().int().nonnegative().optional(),
+  output_name: z.string().nullable().optional(),
+  output_count: z.number().int().nonnegative().nullable().optional(),
 
   // Query event fields
-  query_method: z.string().optional(),
-  query_params: z.record(z.any()).optional(),
-  query_result_count: z.number().int().nonnegative().optional(),
+  query_method: z.string().nullable().optional(),
+  query_params: z.record(z.any()).nullable().optional(),
+  query_result_count: z.number().int().nonnegative().nullable().optional(),
 
   // Config event fields
-  config_type: z.string().optional(),
-  rules_added: z.number().int().nonnegative().optional(),
-  rules_removed: z.number().int().nonnegative().optional(),
+  config_type: z.string().nullable().optional(),
+  rules_added: z.number().int().nonnegative().nullable().optional(),
+  rules_removed: z.number().int().nonnegative().nullable().optional(),
 
   // Daemon event fields
-  daemon_version: z.string().optional(),
-  i3_socket: z.string().optional(),
+  daemon_version: z.string().nullable().optional(),
+  i3_socket: z.string().nullable().optional(),
 
   // Processing metadata
   processing_duration_ms: z.number().nonnegative(),
