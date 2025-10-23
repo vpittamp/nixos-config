@@ -26,6 +26,7 @@ import {
   formatInvalidProjectNameError,
   formatProjectNotFoundError,
 } from "../utils/errors.ts";
+import { Spinner } from "@cli-ux";
 
 interface ProjectCommandOptions {
   verbose?: boolean;
@@ -135,6 +136,12 @@ async function currentProject(options: ProjectCommandOptions): Promise<void> {
  * Switch to a project
  */
 async function switchProject(projectName: string, options: ProjectCommandOptions): Promise<void> {
+  const spinner = new Spinner({
+    message: `Switching to ${projectName}...`,
+    showAfter: 0
+  });
+  spinner.start();
+
   const client = createClient();
 
   try {
@@ -142,6 +149,7 @@ async function switchProject(projectName: string, options: ProjectCommandOptions
       project_name: projectName,
     });
     const validated = validateResponse(SwitchProjectResultSchema, result);
+    spinner.stop();
 
     console.log(green("✓") + ` Switched to project: ${cyan(validated.new_project)}`);
     console.log("");
@@ -153,6 +161,7 @@ async function switchProject(projectName: string, options: ProjectCommandOptions
       console.log(gray(`Previous project: ${validated.previous_project}`));
     }
   } catch (err) {
+    spinner.stop();
     const message = err instanceof Error ? err.message : String(err);
 
     // Check for project not found error

@@ -7,11 +7,15 @@ import { DaemonClient } from "../client.ts";
 import { DaemonStatusSchema, EventNotificationSchema } from "../validation.ts";
 import type { DaemonStatus, EventNotification } from "../models.ts";
 import { z } from "zod";
+import { setup, Spinner } from "@cli-ux";
 
 interface DaemonCommandOptions {
   verbose?: boolean;
   debug?: boolean;
 }
+
+// Initialize CLI-UX formatter for semantic colors
+const { formatter } = setup();
 
 function showHelp(): void {
   console.log(`
@@ -79,8 +83,12 @@ async function statusCommand(
   client: DaemonClient,
   options: DaemonCommandOptions,
 ): Promise<void> {
+  const spinner = new Spinner({ message: "Fetching daemon status...", showAfter: 0 });
+  spinner.start();
+
   try {
     const response = await client.request("get_status");
+    spinner.stop();
 
     if (options.debug) {
       console.error("DEBUG: Raw response:", JSON.stringify(response, null, 2));
@@ -89,27 +97,50 @@ async function statusCommand(
     // Validate response with Zod
     const status = DaemonStatusSchema.parse(response) as DaemonStatus;
 
-    // Format and display status
-    console.log("\nDaemon Status:");
-    console.log("─".repeat(60));
-    console.log(`  Status:           ${status.status}`);
-    console.log(`  Connected to i3:  ${status.connected ? "yes" : "no"}`);
-    console.log(`  Uptime:           ${formatUptime(status.uptime)}`);
-    console.log(
-      `  Active Project:   ${status.active_project || "Global (no project)"}`,
-    );
+    // Format and display status with colors
+    console.log(formatter.bold("\nDaemon Status:"));
+    console.log(formatter.dim("─".repeat(60)));
+
+    // Status with color coding
+    const statusText = status.status === "running"
+      ? formatter.success("running")
+      : formatter.error(status.status);
+    console.log(`  Status:           ${statusText}`);
+
+    // Connected status
+    const connectedText = status.connected
+      ? formatter.success("yes")
+      : formatter.error("no");
+    console.log(`  Connected to i3:  ${connectedText}`);
+
+    console.log(`  Uptime:           ${formatter.dim(formatUptime(status.uptime))}`);
+
+    // Active project
+    const projectText = status.active_project
+      ? formatter.bold(status.active_project)
+      : formatter.dim("Global (no project)");
+    console.log(`  Active Project:   ${projectText}`);
+
     console.log(`  Windows:          ${status.window_count}`);
     console.log(`  Workspaces:       ${status.workspace_count}`);
-    console.log(`  Events Processed: ${status.event_count}`);
-    console.log(`  Errors:           ${status.error_count}`);
-    console.log(`  Version:          ${status.version}`);
-    console.log(`  Socket:           ${status.socket_path}`);
-    console.log("─".repeat(60));
+    console.log(`  Events Processed: ${formatter.dim(status.event_count.toString())}`);
+
+    // Errors with warning color if > 0
+    const errorText = status.error_count > 0
+      ? formatter.warning(status.error_count.toString())
+      : formatter.dim("0");
+    console.log(`  Errors:           ${errorText}`);
+
+    console.log(`  Version:          ${formatter.dim(status.version)}`);
+    console.log(`  Socket:           ${formatter.dim(status.socket_path)}`);
+    console.log(formatter.dim("─".repeat(60)));
   } catch (err) {
+    spinner.stop();
+
     if (err instanceof z.ZodError) {
-      console.error("Error: Invalid daemon response format");
+      console.error(formatter.error("Invalid daemon response format"));
       if (options.debug) {
-        console.error("Validation errors:", err.errors);
+        console.error(formatter.dim("Validation errors:"), err.errors);
       }
       Deno.exit(1);
     }
