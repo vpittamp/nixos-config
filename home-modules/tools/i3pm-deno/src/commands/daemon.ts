@@ -43,8 +43,9 @@ STATUS OPTIONS:
 
 EVENTS OPTIONS:
   --limit <n>       Number of events to show (default: 20, ignored with --follow)
-  --type <type>     Filter by event type (window, workspace, output, tick, project, query, config, daemon)
-  --source <src>    Filter by event source (i3, ipc, daemon)
+  --type <type>     Filter by event type (window, workspace, output, tick, project, query, config, daemon, systemd, process)
+  --source <src>    Filter by event source (i3, ipc, daemon, systemd, proc, all)
+  --since <time>    Time specification for systemd queries (e.g., "1 hour ago", "today")
   --since-id <id>   Show events since specific event ID
   --follow, -f      📡 Live stream events in real-time (like tail -f)
 
@@ -57,15 +58,23 @@ EXAMPLES:
   i3pm daemon events --type=window         # Only window events
   i3pm daemon events --type=project        # Only project switches
 
-  # Filter by event source
+  # Filter by event source (Feature 029: Linux System Log Integration)
   i3pm daemon events --source=i3           # Only i3 window manager events
   i3pm daemon events --source=ipc          # Only user-initiated operations
   i3pm daemon events --source=daemon       # Only daemon lifecycle events
+  i3pm daemon events --source=systemd      # Only systemd service events
+  i3pm daemon events --source=proc         # Only process monitoring events
+  i3pm daemon events --source=all          # Unified stream from all sources
 
   # Live streaming (real-time monitoring)
   i3pm daemon events --follow              # Watch all events live
   i3pm daemon events -f --type=window      # Watch only window events live
   i3pm daemon events -f --source=i3        # Watch only i3 events live
+
+  # Systemd journal queries (Feature 029)
+  i3pm daemon events --source=systemd --since="1 hour ago"
+  i3pm daemon events --source=systemd --since=today --limit=100
+  i3pm daemon events --source=all --since="30 minutes ago"
 
   # Advanced filtering
   i3pm daemon events --since-id=1500
@@ -155,6 +164,12 @@ function formatEvent(event: EventNotification, formatter: any, options?: { showA
     sourceBadge = formatter.info("[ipc]");
   } else if (source === "daemon") {
     sourceBadge = formatter.success("[daemon]");
+  } else if (source === "systemd") {
+    // Feature 029: T020 - systemd source badge (distinct color)
+    sourceBadge = formatter.warn("[systemd]");  // Yellow/orange for system events
+  } else if (source === "proc") {
+    // Feature 029: T020 - proc source badge (distinct color)
+    sourceBadge = formatter.error("[proc]");    // Magenta/red for process events
   }
 
   // Generate human-readable description based on event type
@@ -232,6 +247,48 @@ function formatEvent(event: EventNotification, formatter: any, options?: { showA
   } else if (eventType === "daemon::connect") {
     const socket = event.i3_socket || "unknown";
     description = `Connected to i3 (${socket})`;
+  }
+
+  // Feature 029: T019 - systemd events
+  else if (eventType === "systemd::service::start") {
+    const unit = event.systemd_unit || "unknown";
+    const message = event.systemd_message || "";
+    const pid = event.systemd_pid ? ` (PID ${event.systemd_pid})` : "";
+    description = `Service started: ${formatter.bold(unit)}${pid}`;
+    if (message && !message.includes(unit)) {
+      description += formatter.dim(` - ${message}`);
+    }
+  } else if (eventType === "systemd::service::stop") {
+    const unit = event.systemd_unit || "unknown";
+    const message = event.systemd_message || "";
+    description = `Service stopped: ${formatter.bold(unit)}`;
+    if (message && !message.includes(unit)) {
+      description += formatter.dim(` - ${message}`);
+    }
+  } else if (eventType === "systemd::service::failed") {
+    const unit = event.systemd_unit || "unknown";
+    const message = event.systemd_message || "";
+    description = `Service failed: ${formatter.error(unit)}`;
+    if (message) {
+      description += formatter.dim(` - ${message}`);
+    }
+  } else if (eventType === "systemd::unit::event") {
+    const unit = event.systemd_unit || "unknown";
+    const message = event.systemd_message || "no details";
+    description = `Unit event: ${formatter.bold(unit)} - ${formatter.dim(message)}`;
+  }
+
+  // Feature 029: Process events (for future US2 implementation)
+  else if (eventType === "process::start") {
+    const name = event.process_name || "unknown";
+    const cmdline = event.process_cmdline || "";
+    const pid = event.process_pid ? ` (PID ${event.process_pid})` : "";
+    description = `Process started: ${formatter.bold(name)}${pid}`;
+    if (cmdline && cmdline !== name) {
+      // Truncate long command lines for display
+      const truncated = cmdline.length > 60 ? cmdline.substring(0, 57) + "..." : cmdline;
+      description += formatter.dim(` - ${truncated}`);
+    }
   }
 
   // Tick events
@@ -364,7 +421,7 @@ async function eventsCommand(
   options: DaemonCommandOptions,
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
-    string: ["limit", "type", "source", "since-id"],
+    string: ["limit", "type", "source", "since-id", "since"],
     boolean: ["follow"],
     alias: { f: "follow" },
     default: { limit: "20" },
@@ -377,6 +434,7 @@ async function eventsCommand(
   const sinceId = parsed["since-id"]
     ? parseInt(parsed["since-id"] as string, 10)
     : undefined;
+  const since = parsed.since as string | undefined;  // Feature 029: T018 - Time spec for systemd queries
   const follow = parsed.follow as boolean;
 
   try {
@@ -394,6 +452,7 @@ async function eventsCommand(
       event_type?: string;
       source?: string;
       since_id?: number;
+      since?: string;  // Feature 029: T018 - Time spec for systemd queries
     } = { limit };
 
     if (eventType) {
@@ -404,6 +463,10 @@ async function eventsCommand(
     }
     if (sinceId !== undefined) {
       params.since_id = sinceId;
+    }
+    // Feature 029: T018 - Pass since parameter for systemd queries
+    if (since) {
+      params.since = since;
     }
 
     const response = await client.request("get_events", params);

@@ -25,9 +25,9 @@
 
 **Purpose**: Minimal setup - feature extends existing daemon, no new project needed
 
-- [ ] T001 [P] [Setup] Create new Python modules in `home-modules/desktop/i3-project-event-daemon/`: systemd_query.py, proc_monitor.py, event_correlator.py (empty shells for now)
-- [ ] T002 [P] [Setup] Create test directory structure: `tests/i3-project-daemon/unit/` and `tests/i3-project-daemon/integration/`
-- [ ] T003 [P] [Setup] Update `home-modules/desktop/i3-project-event-daemon/README.md` with feature overview and new module descriptions
+- [X] T001 [P] [Setup] Create new Python modules in `home-modules/desktop/i3-project-event-daemon/`: systemd_query.py, proc_monitor.py, event_correlator.py (empty shells for now)
+- [X] T002 [P] [Setup] Create test directory structure: `tests/i3-project-daemon/unit/` and `tests/i3-project-daemon/integration/`
+- [X] T003 [P] [Setup] Update `home-modules/desktop/i3-project-event-daemon/README.md` with feature overview and new module descriptions
 
 **Checkpoint**: Project structure ready for implementation
 
@@ -39,13 +39,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 [Foundation] Extend EventEntry source validation in `home-modules/desktop/i3-project-event-daemon/models.py:206` to include "systemd", "proc"
-- [ ] T005 [P] [Foundation] Add systemd event fields to EventEntry in `models.py`: systemd_unit, systemd_message, systemd_pid, journal_cursor (all Optional[str])
-- [ ] T006 [P] [Foundation] Add process event fields to EventEntry in `models.py`: process_pid, process_name, process_cmdline, process_parent_pid, process_start_time (all Optional types)
-- [ ] T007 [Foundation] Add EventEntry validation in `__post_init__` for systemd events (must have systemd_unit) and proc events (must have process_pid and process_name)
-- [ ] T008 [P] [Foundation] Update Deno EventNotificationSchema in `home-modules/tools/i3pm-deno/src/validation.ts` to include new source enum values and optional fields
-- [ ] T009 [P] [Foundation] Create SQLite migration script `home-modules/desktop/i3-project-event-daemon/migrations/029_add_systemd_proc_fields.sql` to add new columns to event_log table
-- [ ] T010 [Foundation] Run migration script and verify schema changes with `sqlite3 ~/.config/i3/event_log.db ".schema event_log"`
+- [X] T004 [Foundation] Extend EventEntry source validation in `home-modules/desktop/i3-project-event-daemon/models.py:206` to include "systemd", "proc"
+- [X] T005 [P] [Foundation] Add systemd event fields to EventEntry in `models.py`: systemd_unit, systemd_message, systemd_pid, journal_cursor (all Optional[str])
+- [X] T006 [P] [Foundation] Add process event fields to EventEntry in `models.py`: process_pid, process_name, process_cmdline, process_parent_pid, process_start_time (all Optional types)
+- [X] T007 [Foundation] Add EventEntry validation in `__post_init__` for systemd events (must have systemd_unit) and proc events (must have process_pid and process_name)
+- [X] T008 [P] [Foundation] Update Deno EventNotificationSchema in `home-modules/tools/i3pm-deno/src/validation.ts` to include new source enum values and optional fields
+- [X] T009 [P] [Foundation] Create SQLite migration script `home-modules/desktop/i3-project-event-daemon/migrations/029_add_systemd_proc_fields.sql` to add new columns to event_log table
+- [X] T010 [Foundation] Run migration script and verify schema changes with `sqlite3 ~/.config/i3/event_log.db ".schema event_log"`
 
 **Checkpoint**: Foundation ready - EventEntry model supports all event sources, user story implementation can now begin
 
@@ -59,16 +59,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Implement journalctl query function in `home-modules/desktop/i3-project-event-daemon/systemd_query.py`: `async def query_systemd_journal(since, until, unit_pattern, limit) -> List[EventEntry]`
-- [ ] T012 [P] [US1] Implement JSON parsing for journalctl output in `systemd_query.py`: parse `__REALTIME_TIMESTAMP`, `_SYSTEMD_UNIT`, `MESSAGE`, `_PID` fields
-- [ ] T013 [P] [US1] Implement systemd event filtering in `systemd_query.py`: filter for "app-*.service" and "*.desktop" unit patterns
-- [ ] T014 [US1] Implement EventEntry creation from systemd journal entries in `systemd_query.py`: set source="systemd", event_type="systemd::service::start", map JSON fields to EventEntry
-- [ ] T015 [US1] Add error handling for journalctl command failures in `systemd_query.py`: return empty list with warning message if journalctl unavailable
-- [ ] T016 [US1] Add IPC method `query_systemd_events()` in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`: register method, call systemd_query.query_systemd_journal(), return EventEntry list as JSON
-- [ ] T017 [US1] Extend `query_events()` IPC method in `ipc_server.py` to support `source="systemd"` and `source="all"` parameters, merge systemd events with existing events sorted by timestamp
-- [ ] T018 [US1] Update Deno CLI `daemon.ts` in `home-modules/tools/i3pm-deno/src/commands/daemon.ts`: add `--source` flag support for "systemd", "proc", "all" values
-- [ ] T019 [P] [US1] Add systemd event formatting in `daemon.ts` formatEvent() function: handle "systemd::service::start" event type with systemd_message display
-- [ ] T020 [P] [US1] Add [systemd] source badge formatting in `daemon.ts`: distinct color/style for systemd events
+- [X] T011 [P] [US1] Implement journalctl query function in `home-modules/desktop/i3-project-event-daemon/systemd_query.py`: `async def query_systemd_journal(since, until, unit_pattern, limit) -> List[EventEntry]`
+- [X] T012 [P] [US1] Implement JSON parsing for journalctl output in `systemd_query.py`: parse `__REALTIME_TIMESTAMP`, `_SYSTEMD_UNIT`, `MESSAGE`, `_PID` fields
+- [X] T013 [P] [US1] Implement systemd event filtering in `systemd_query.py`: filter for "app-*.service" and "*.desktop" unit patterns
+- [X] T014 [US1] Implement EventEntry creation from systemd journal entries in `systemd_query.py`: set source="systemd", event_type="systemd::service::start", map JSON fields to EventEntry
+- [X] T015 [US1] Add error handling for journalctl command failures in `systemd_query.py`: return empty list with warning message if journalctl unavailable
+- [X] T016 [US1] Add IPC method `query_systemd_events()` in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`: register method, call systemd_query.query_systemd_journal(), return EventEntry list as JSON
+- [X] T017 [US1] Extend `query_events()` IPC method in `ipc_server.py` to support `source="systemd"` and `source="all"` parameters, merge systemd events with existing events sorted by timestamp
+- [X] T018 [US1] Update Deno CLI `daemon.ts` in `home-modules/tools/i3pm-deno/src/commands/daemon.ts`: add `--source` flag support for "systemd", "proc", "all" values
+- [X] T019 [P] [US1] Add systemd event formatting in `daemon.ts` formatEvent() function: handle "systemd::service::start" event type with systemd_message display
+- [X] T020 [P] [US1] Add [systemd] source badge formatting in `daemon.ts`: distinct color/style for systemd events
 - [ ] T021 [US1] Write unit test `tests/i3-project-daemon/unit/test_systemd_query.py`: test JSON parsing with sample journalctl output
 - [ ] T022 [US1] Write unit test for systemd event filtering: verify "app-*" pattern matching
 - [ ] T023 [US1] Write integration test `tests/i3-project-daemon/integration/test_systemd_integration.py`: query actual journal, verify EventEntry conversion
