@@ -46,18 +46,30 @@ EVENTS OPTIONS:
   --type <type>     Filter by event type (window, workspace, output, tick, project, query, config, daemon)
   --source <src>    Filter by event source (i3, ipc, daemon)
   --since-id <id>   Show events since specific event ID
-  --follow, -f      Follow event stream in real-time (like tail -f)
+  --follow, -f      📡 Live stream events in real-time (like tail -f)
 
 EXAMPLES:
+  # Show recent events with human-readable descriptions
   i3pm daemon events
   i3pm daemon events --limit=50
-  i3pm daemon events --type=window
-  i3pm daemon events --source=i3           # Only i3 events
-  i3pm daemon events --source=ipc          # Only IPC events (queries, project switches)
+
+  # Filter by event type
+  i3pm daemon events --type=window         # Only window events
+  i3pm daemon events --type=project        # Only project switches
+
+  # Filter by event source
+  i3pm daemon events --source=i3           # Only i3 window manager events
+  i3pm daemon events --source=ipc          # Only user-initiated operations
   i3pm daemon events --source=daemon       # Only daemon lifecycle events
+
+  # Live streaming (real-time monitoring)
+  i3pm daemon events --follow              # Watch all events live
+  i3pm daemon events -f --type=window      # Watch only window events live
+  i3pm daemon events -f --source=i3        # Watch only i3 events live
+
+  # Advanced filtering
   i3pm daemon events --since-id=1500
-  i3pm daemon events --follow              # Live event stream
-  i3pm daemon events -f --type=window      # Follow only window events
+  i3pm daemon events --source=ipc --type=query --limit=50
 `);
   Deno.exit(0);
 }
@@ -85,6 +97,173 @@ function formatUptime(seconds: number): string {
 function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp);
   return date.toLocaleString();
+}
+
+/**
+ * Format time in relative format (e.g., "2s ago", "5m ago")
+ */
+function formatRelativeTime(timestamp: string): string {
+  const now = Date.now();
+  const eventTime = new Date(timestamp).getTime();
+  const diffMs = now - eventTime;
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 60) {
+    return `${diffSec}s ago`;
+  } else if (diffSec < 3600) {
+    const minutes = Math.floor(diffSec / 60);
+    return `${minutes}m ago`;
+  } else if (diffSec < 86400) {
+    const hours = Math.floor(diffSec / 3600);
+    return `${hours}h ago`;
+  } else {
+    const days = Math.floor(diffSec / 86400);
+    return `${days}d ago`;
+  }
+}
+
+/**
+ * Format a single event in a user-readable way
+ */
+function formatEvent(event: EventNotification, formatter: any): void {
+  const relativeTime = formatRelativeTime(event.timestamp);
+  const eventType = event.event_type;
+  const source = event.source;
+
+  // Format source badge with color
+  let sourceBadge = "";
+  if (source === "i3") {
+    sourceBadge = formatter.dim("[i3]");
+  } else if (source === "ipc") {
+    sourceBadge = formatter.info("[ipc]");
+  } else if (source === "daemon") {
+    sourceBadge = formatter.success("[daemon]");
+  }
+
+  // Generate human-readable description based on event type
+  let description = "";
+
+  // Window events
+  if (eventType === "window::new") {
+    const app = event.window_class || "unknown";
+    const title = event.window_title ? ` "${event.window_title}"` : "";
+    description = `New window opened: ${formatter.bold(app)}${title}`;
+  } else if (eventType === "window::close") {
+    const app = event.window_class || "unknown";
+    description = `Window closed: ${formatter.bold(app)}`;
+  } else if (eventType === "window::focus") {
+    const app = event.window_class || "unknown";
+    const title = event.window_title ? ` "${event.window_title}"` : "";
+    description = `Focused window: ${formatter.bold(app)}${title}`;
+  } else if (eventType === "window::mark") {
+    const app = event.window_class || "unknown";
+    description = `Window marked: ${formatter.bold(app)}`;
+  } else if (eventType === "window::title") {
+    const app = event.window_class || "unknown";
+    const title = event.window_title ? ` to "${event.window_title}"` : "";
+    description = `Window title changed: ${formatter.bold(app)}${title}`;
+  }
+
+  // Workspace events
+  else if (eventType === "workspace::init") {
+    description = `New workspace created`;
+  } else if (eventType === "workspace::empty") {
+    description = `Workspace became empty`;
+  } else if (eventType === "workspace::move") {
+    description = `Workspace moved to different output`;
+  }
+
+  // Project events
+  else if (eventType === "project::switch") {
+    const from = event.old_project || "none";
+    const to = event.new_project || "none";
+    description = `Switched project: ${formatter.dim(from)} → ${formatter.bold(to)}`;
+  } else if (eventType === "project::clear") {
+    const from = event.old_project || "unknown";
+    description = `Cleared project: ${formatter.dim(from)} → ${formatter.dim("global")}`;
+  }
+
+  // Query events
+  else if (eventType === "query::status") {
+    description = `Daemon status queried`;
+  } else if (eventType === "query::projects") {
+    const count = event.query_result_count || 0;
+    description = `Projects listed (${count} project${count !== 1 ? 's' : ''})`;
+  } else if (eventType === "query::windows") {
+    const count = event.query_result_count || 0;
+    description = `Windows queried (${count} window${count !== 1 ? 's' : ''})`;
+  } else if (eventType === "query::events") {
+    const count = event.query_result_count || 0;
+    description = `Events queried (${count} event${count !== 1 ? 's' : ''})`;
+  } else if (eventType === "query::rules") {
+    const count = event.query_result_count || 0;
+    description = `Window rules queried (${count} rule${count !== 1 ? 's' : ''})`;
+  }
+
+  // Config events
+  else if (eventType === "config::reload") {
+    description = `Configuration reloaded`;
+  } else if (eventType === "rules::reload") {
+    const count = event.rules_added || 0;
+    description = `Window rules reloaded (${count} rule${count !== 1 ? 's' : ''})`;
+  }
+
+  // Daemon events
+  else if (eventType === "daemon::start") {
+    const version = event.daemon_version || "unknown";
+    description = `Daemon started (v${version})`;
+  } else if (eventType === "daemon::connect") {
+    const socket = event.i3_socket || "unknown";
+    description = `Connected to i3 (${socket})`;
+  }
+
+  // Tick events
+  else if (eventType === "tick") {
+    if (event.tick_payload?.startsWith("project:")) {
+      const project = event.tick_payload.split(":")[1];
+      if (project === "none") {
+        description = `Project cleared via tick event`;
+      } else {
+        description = `Project switched via tick: ${formatter.bold(project)}`;
+      }
+    } else {
+      description = `Tick event: ${event.tick_payload || "empty"}`;
+    }
+  }
+
+  // Output events
+  else if (eventType === "output") {
+    const output = event.output_name || "unknown";
+    description = `Monitor configuration changed: ${formatter.bold(output)}`;
+  }
+
+  // Fallback for unknown event types
+  else {
+    description = `${eventType}`;
+  }
+
+  // Add workspace context if present
+  if (event.workspace_name && !description.includes("workspace")) {
+    description += formatter.dim(` [workspace: ${event.workspace_name}]`);
+  }
+
+  // Add project context if present
+  if (event.project_name && !description.includes("project")) {
+    description += formatter.dim(` [project: ${event.project_name}]`);
+  }
+
+  // Format duration
+  const duration = event.processing_duration_ms
+    ? formatter.dim(` ${event.processing_duration_ms.toFixed(1)}ms`)
+    : "";
+
+  // Format error if present
+  const error = event.error ? formatter.error(` ⚠ ${event.error}`) : "";
+
+  // Output the formatted event
+  console.log(
+    `${formatter.dim(relativeTime.padEnd(8))} ${sourceBadge} ${description}${duration}${error}`
+  );
 }
 
 /**
@@ -233,52 +412,7 @@ async function eventsCommand(
     console.log("─".repeat(80));
 
     for (const event of events.reverse()) {
-      const timestamp = new Date(event.timestamp).toLocaleString();
-      const eventType = event.event_type;
-      const source = event.source;
-
-      // Format source badge with color
-      let sourceBadge = "";
-      if (source === "i3") {
-        sourceBadge = formatter.dim("[i3]");
-      } else if (source === "ipc") {
-        sourceBadge = formatter.info("[ipc]");
-      } else if (source === "daemon") {
-        sourceBadge = formatter.success("[daemon]");
-      }
-
-      // Format event-specific details
-      let details = "";
-      if (event.window_class) {
-        details = `${event.window_class}`;
-        if (event.window_title) {
-          details += ` (${event.window_title})`;
-        }
-      } else if (event.project_name) {
-        details = `project: ${event.project_name}`;
-      } else if (event.tick_payload) {
-        details = `payload: ${event.tick_payload}`;
-      } else if (event.output_name) {
-        details = `output: ${event.output_name}`;
-      } else if (event.query_method) {
-        details = `method: ${event.query_method}`;
-      } else if (event.daemon_version) {
-        details = `version: ${event.daemon_version}`;
-      }
-
-      // Format duration
-      const duration = event.processing_duration_ms
-        ? formatter.dim(` (${event.processing_duration_ms.toFixed(2)}ms)`)
-        : "";
-
-      // Format error if present
-      const error = event.error ? formatter.error(` ERROR: ${event.error}`) : "";
-
-      console.log(
-        `[${event.event_id}] ${sourceBadge} ${timestamp} - ${formatter.bold(eventType)}${
-          details ? " - " + details : ""
-        }${duration}${error}`,
-      );
+      formatEvent(event, formatter);
     }
 
     console.log("─".repeat(80));
@@ -369,31 +503,8 @@ async function followEventStream(
         return;
       }
 
-      // Format and display event
-      const timestamp = formatTimestamp(event.timestamp);
-      const eventType = event.event_type;
-      const change = event.change;
-
-      // Format container info
-      let containerInfo = "";
-      if (event.container) {
-        const container = event.container as {
-          class?: string;
-          title?: string;
-          name?: string;
-        };
-        if (container.class && container.title) {
-          containerInfo = `${container.class} (${container.title})`;
-        } else if (container.name) {
-          containerInfo = container.name;
-        }
-      }
-
-      console.log(
-        `[${event.event_id}] ${timestamp} - ${eventType}:${change}${
-          containerInfo ? " - " + containerInfo : ""
-        }`,
-      );
+      // Format and display event using new user-readable format
+      formatEvent(event, formatter);
     });
 
     // Keep running until Ctrl+C
