@@ -43,7 +43,8 @@ STATUS OPTIONS:
 
 EVENTS OPTIONS:
   --limit <n>       Number of events to show (default: 20, ignored with --follow)
-  --type <type>     Filter by event type (window, workspace, output, tick)
+  --type <type>     Filter by event type (window, workspace, output, tick, project, query, config, daemon)
+  --source <src>    Filter by event source (i3, ipc, daemon)
   --since-id <id>   Show events since specific event ID
   --follow, -f      Follow event stream in real-time (like tail -f)
 
@@ -51,6 +52,9 @@ EXAMPLES:
   i3pm daemon events
   i3pm daemon events --limit=50
   i3pm daemon events --type=window
+  i3pm daemon events --source=i3           # Only i3 events
+  i3pm daemon events --source=ipc          # Only IPC events (queries, project switches)
+  i3pm daemon events --source=daemon       # Only daemon lifecycle events
   i3pm daemon events --since-id=1500
   i3pm daemon events --follow              # Live event stream
   i3pm daemon events -f --type=window      # Follow only window events
@@ -164,7 +168,7 @@ async function eventsCommand(
   options: DaemonCommandOptions,
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
-    string: ["limit", "type", "since-id"],
+    string: ["limit", "type", "source", "since-id"],
     boolean: ["follow"],
     alias: { f: "follow" },
     default: { limit: "20" },
@@ -173,6 +177,7 @@ async function eventsCommand(
   // Parse parameters
   const limit = parseInt(parsed.limit as string, 10);
   const eventType = parsed.type as string | undefined;
+  const source = parsed.source as string | undefined;
   const sinceId = parsed["since-id"]
     ? parseInt(parsed["since-id"] as string, 10)
     : undefined;
@@ -191,11 +196,15 @@ async function eventsCommand(
     const params: {
       limit?: number;
       event_type?: string;
+      source?: string;
       since_id?: number;
     } = { limit };
 
     if (eventType) {
       params.event_type = eventType;
+    }
+    if (source) {
+      params.source = source;
     }
     if (sinceId !== undefined) {
       params.since_id = sinceId;

@@ -47,6 +47,7 @@ class EventBuffer:
         self,
         limit: int = 100,
         event_type: Optional[str] = None,
+        source: Optional[str] = None,
         since_id: Optional[int] = None
     ) -> List[EventEntry]:
         """Retrieve events with optional filtering.
@@ -54,17 +55,22 @@ class EventBuffer:
         Args:
             limit: Maximum number of events to return (default: 100)
             event_type: Filter by event type prefix (e.g., "window", "workspace")
+            source: Filter by event source ("i3", "ipc", "daemon")
             since_id: Only return events with ID greater than this value
 
         Returns:
             List of EventEntry objects (most recent first)
         """
+        # Start with all events
+        filtered = list(self.events)
+
         # Filter by event type if specified
-        filtered = self.events
         if event_type:
-            filtered = [e for e in self.events if e.event_type.startswith(event_type)]
-        else:
-            filtered = list(self.events)
+            filtered = [e for e in filtered if e.event_type.startswith(event_type)]
+
+        # Filter by source if specified
+        if source:
+            filtered = [e for e in filtered if e.source == source]
 
         # Filter by since_id if specified
         if since_id is not None:

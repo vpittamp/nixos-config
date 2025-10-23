@@ -32,6 +32,7 @@ from .connection import ResilientI3Connection
 from .ipc_server import IPCServer
 from .event_buffer import EventBuffer
 from .window_rules import WindowRule
+from .models import EventEntry
 from .handlers import (
     on_tick,
     on_window_new,
@@ -44,6 +45,8 @@ from .handlers import (
     on_workspace_move,
     on_output,  # Feature 024: R013
 )
+from datetime import datetime
+import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -153,6 +156,7 @@ class I3ProjectDaemon:
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
+        start_time = time.perf_counter()
         logger.info("Initializing i3 project event daemon...")
 
         # Create state manager
@@ -202,8 +206,24 @@ class I3ProjectDaemon:
 
         # Connect to i3 with retry
         try:
+            connect_start = time.perf_counter()
             await self.connection.connect_with_retry(max_attempts=10)
             self.state_manager.state.is_connected = True
+
+            # Log daemon::connect event (unified event system)
+            connect_duration_ms = (time.perf_counter() - connect_start) * 1000
+            if self.event_buffer:
+                i3_socket = os.environ.get("I3SOCK", "auto-detected")
+                entry = EventEntry(
+                    event_id=self.event_buffer.event_counter,
+                    event_type="daemon::connect",
+                    timestamp=datetime.now(),
+                    source="daemon",
+                    i3_socket=i3_socket,
+                    processing_duration_ms=connect_duration_ms,
+                )
+                await self.event_buffer.add_event(entry)
+                logger.info(f"Logged daemon::connect event (duration: {connect_duration_ms:.2f}ms)")
         except ConnectionError as e:
             logger.error(f"Failed to connect to i3: {e}")
             raise
@@ -245,6 +265,20 @@ class I3ProjectDaemon:
         self.rules_watcher.start()
 
         logger.info("Daemon initialization complete")
+
+        # Log daemon::start event (unified event system)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        if self.event_buffer:
+            entry = EventEntry(
+                event_id=self.event_buffer.event_counter,
+                event_type="daemon::start",
+                timestamp=datetime.now(),
+                source="daemon",
+                daemon_version="1.0.0",  # TODO: Get from package metadata
+                processing_duration_ms=duration_ms,
+            )
+            await self.event_buffer.add_event(entry)
+            logger.info(f"Logged daemon::start event (duration: {duration_ms:.2f}ms)")
 
     async def register_event_handlers(self) -> None:
         """Register all i3 event handlers."""

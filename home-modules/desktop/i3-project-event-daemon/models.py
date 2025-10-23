@@ -142,23 +142,59 @@ class WorkspaceInfo:
 
 @dataclass
 class EventEntry:
-    """Event log entry for event stream display (Feature 017)."""
+    """Unified event log entry for all system events.
 
-    # Event metadata
-    event_id: int  # Incremental ID for event ordering
-    event_type: str  # "window::new", "window::close", "tick", "workspace::init", etc.
-    timestamp: datetime  # When event occurred
+    Covers three event categories:
+    - i3 events (window::*, workspace::*, output, tick)
+    - IPC events (project::*, query::*, config::*, rules::*)
+    - Daemon events (daemon::*)
+    """
 
-    # Event payload (varies by type)
-    window_id: Optional[int] = None  # Window ID if applicable
-    window_class: Optional[str] = None  # Window class if applicable
-    workspace_name: Optional[str] = None  # Workspace name if applicable
-    project_name: Optional[str] = None  # Project name if applicable
-    tick_payload: Optional[str] = None  # Tick event payload if type is "tick"
+    # ===== METADATA (Always present) =====
+    event_id: int                       # Incremental ID for event ordering
+    event_type: str                     # "window::new", "project::switch", "query::status", etc.
+    timestamp: datetime                 # When event occurred
+    source: str                         # "i3" | "ipc" | "daemon"
+    processing_duration_ms: float = 0.0 # Time daemon took to handle event
+    error: Optional[str] = None         # Error message if processing failed
 
-    # Processing info
-    processing_duration_ms: float = 0.0  # Time daemon took to handle event
-    error: Optional[str] = None  # If event processing failed
+    # ===== SOURCE CONTEXT (Optional) =====
+    client_pid: Optional[int] = None    # PID of client that triggered (for IPC events)
+
+    # ===== WINDOW EVENTS (window::*) =====
+    window_id: Optional[int] = None
+    window_class: Optional[str] = None
+    window_title: Optional[str] = None
+    window_instance: Optional[str] = None
+    workspace_name: Optional[str] = None
+
+    # ===== PROJECT EVENTS (project::*) =====
+    project_name: Optional[str] = None          # Project name
+    project_directory: Optional[str] = None     # Project directory path
+    old_project: Optional[str] = None           # Previous project (for switch/clear)
+    new_project: Optional[str] = None           # New project (for switch)
+    windows_affected: Optional[int] = None      # Number of windows shown/hidden
+
+    # ===== TICK EVENTS (tick) =====
+    tick_payload: Optional[str] = None          # Raw tick payload
+
+    # ===== OUTPUT EVENTS (output) =====
+    output_name: Optional[str] = None           # Monitor name
+    output_count: Optional[int] = None          # Total active monitors
+
+    # ===== QUERY EVENTS (query::*) =====
+    query_method: Optional[str] = None          # IPC method called
+    query_params: Optional[Dict[str, Any]] = None  # Request parameters
+    query_result_count: Optional[int] = None    # Number of results returned
+
+    # ===== CONFIG EVENTS (config::*, rules::*) =====
+    config_type: Optional[str] = None           # "app_classification" | "window_rules"
+    rules_added: Optional[int] = None           # Number of rules added
+    rules_removed: Optional[int] = None         # Number of rules removed
+
+    # ===== DAEMON EVENTS (daemon::*) =====
+    daemon_version: Optional[str] = None        # Daemon version
+    i3_socket: Optional[str] = None             # i3 socket path
 
     def __post_init__(self) -> None:
         """Validate event entry."""
@@ -166,6 +202,8 @@ class EventEntry:
             raise ValueError(f"Invalid event_id: {self.event_id}")
         if not self.event_type:
             raise ValueError("event_type cannot be empty")
+        if self.source not in ("i3", "ipc", "daemon"):
+            raise ValueError(f"Invalid source: {self.source} (must be 'i3', 'ipc', or 'daemon')")
         if self.processing_duration_ms < 0:
             raise ValueError(f"Invalid processing_duration_ms: {self.processing_duration_ms}")
 

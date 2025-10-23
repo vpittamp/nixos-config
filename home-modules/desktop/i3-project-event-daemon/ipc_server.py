@@ -3,6 +3,7 @@
 Exposes daemon state via UNIX socket with systemd socket activation support.
 
 Updated: 2025-10-22 - Added Deno CLI compatibility (aliases + response formats)
+Updated: 2025-10-23 - Added unified event logging for all IPC methods
 """
 
 import asyncio
@@ -10,6 +11,7 @@ import json
 import logging
 import os
 import socket
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -17,6 +19,7 @@ from typing import Any, Dict, Optional
 from .state import StateManager
 from .window_rules import WindowRule
 from .pattern_resolver import classify_window
+from .models import EventEntry
 
 logger = logging.getLogger(__name__)
 
@@ -280,21 +283,90 @@ class IPCServer:
                 "id": request_id,
             }
 
+    async def _log_ipc_event(
+        self,
+        event_type: str,
+        client_pid: Optional[int] = None,
+        params: Optional[Dict[str, Any]] = None,
+        result_count: Optional[int] = None,
+        project_name: Optional[str] = None,
+        old_project: Optional[str] = None,
+        new_project: Optional[str] = None,
+        windows_affected: Optional[int] = None,
+        config_type: Optional[str] = None,
+        rules_count: Optional[int] = None,
+        duration_ms: float = 0.0,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log an IPC event to the event buffer.
+
+        Args:
+            event_type: Event type (e.g., "query::status", "project::switch")
+            client_pid: Client process ID
+            params: Request parameters
+            result_count: Number of results returned (for queries)
+            project_name: Project name (for project events)
+            old_project: Previous project (for switches)
+            new_project: New project (for switches)
+            windows_affected: Number of windows affected
+            config_type: Config type for config events
+            rules_count: Number of rules for rule events
+            duration_ms: Processing duration
+            error: Error message if failed
+        """
+        if not self.event_buffer:
+            return
+
+        entry = EventEntry(
+            event_id=self.event_buffer.event_counter,
+            event_type=event_type,
+            timestamp=datetime.now(),
+            source="ipc",
+            client_pid=client_pid,
+            query_method=event_type if event_type.startswith("query::") else None,
+            query_params=params,
+            query_result_count=result_count,
+            project_name=project_name,
+            old_project=old_project,
+            new_project=new_project,
+            windows_affected=windows_affected,
+            config_type=config_type,
+            rules_added=rules_count,
+            processing_duration_ms=duration_ms,
+            error=error,
+        )
+        await self.event_buffer.add_event(entry)
+
     async def _get_status(self) -> Dict[str, Any]:
         """Get daemon status."""
-        stats = await self.state_manager.get_stats()
-        return {
-            "status": "running",
-            "connected": self.state_manager.state.is_connected,
-            "uptime": stats.get("uptime_seconds", 0),  # Rename for CLI
-            "active_project": stats.get("active_project"),
-            "window_count": stats.get("window_count", 0),
-            "workspace_count": stats.get("workspace_count", 0),
-            "event_count": stats.get("event_count", 0),
-            "error_count": stats.get("error_count", 0),
-            "version": "1.0.0",  # TODO: Get from package metadata
-            "socket_path": str(self.server.sockets[0].getsockname()) if self.server and self.server.sockets else "/run/user/1000/i3-project-daemon/ipc.sock",
-        }
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            stats = await self.state_manager.get_stats()
+            result = {
+                "status": "running",
+                "connected": self.state_manager.state.is_connected,
+                "uptime": stats.get("uptime_seconds", 0),  # Rename for CLI
+                "active_project": stats.get("active_project"),
+                "window_count": stats.get("window_count", 0),
+                "workspace_count": stats.get("workspace_count", 0),
+                "event_count": stats.get("event_count", 0),
+                "error_count": stats.get("error_count", 0),
+                "version": "1.0.0",  # TODO: Get from package metadata
+                "socket_path": str(self.server.sockets[0].getsockname()) if self.server and self.server.sockets else "/run/user/1000/i3-project-daemon/ipc.sock",
+            }
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::status",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _get_active_project(self) -> Dict[str, Any]:
         """Get active project info."""
@@ -306,41 +378,73 @@ class IPCServer:
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts."""
-        projects = self.state_manager.state.projects
-        result = {}
+        start_time = time.perf_counter()
+        error_msg = None
 
-        for name, config in projects.items():
-            windows = await self.state_manager.get_windows_by_project(name)
-            result[name] = {
-                "display_name": config.display_name,
-                "icon": config.icon,
-                "directory": str(config.directory),
-                "window_count": len(windows),
-            }
+        try:
+            projects = self.state_manager.state.projects
+            result = {}
 
-        return {"projects": result}
+            for name, config in projects.items():
+                windows = await self.state_manager.get_windows_by_project(name)
+                result[name] = {
+                    "display_name": config.display_name,
+                    "icon": config.icon,
+                    "directory": str(config.directory),
+                    "window_count": len(windows),
+                }
+
+            return {"projects": result}
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::projects",
+                result_count=len(self.state_manager.state.projects),
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _get_windows(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Query windows with filters."""
-        project = params.get("project")
+        start_time = time.perf_counter()
+        error_msg = None
 
-        if project:
-            windows = await self.state_manager.get_windows_by_project(project)
-        else:
-            windows = list(self.state_manager.state.window_map.values())
+        try:
+            project = params.get("project")
 
-        return {
-            "windows": [
-                {
-                    "window_id": w.window_id,
-                    "class": w.window_class,
-                    "title": w.window_title,
-                    "project": w.project,
-                    "workspace": w.workspace,
-                }
-                for w in windows
-            ]
-        }
+            if project:
+                windows = await self.state_manager.get_windows_by_project(project)
+            else:
+                windows = list(self.state_manager.state.window_map.values())
+
+            result = {
+                "windows": [
+                    {
+                        "window_id": w.window_id,
+                        "class": w.window_class,
+                        "title": w.window_title,
+                        "project": w.project,
+                        "workspace": w.workspace,
+                    }
+                    for w in windows
+                ]
+            }
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::windows",
+                params={"project": params.get("project")} if params.get("project") else None,
+                result_count=len(windows) if 'windows' in locals() else 0,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _switch_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Trigger project switch."""
@@ -353,42 +457,60 @@ class IPCServer:
         """Return recent events for diagnostics (Feature 017).
 
         Args:
-            params: Query parameters (limit, event_type, since_id)
+            params: Query parameters (limit, event_type, source, since_id)
 
         Returns:
             Dictionary with events list and buffer stats
         """
-        if not self.event_buffer:
-            return {"events": [], "stats": {"total_events": 0, "buffer_size": 0, "max_size": 0}}
+        start_time = time.perf_counter()
+        error_msg = None
 
-        limit = params.get("limit", 100)
-        event_type = params.get("event_type")
-        since_id = params.get("since_id")
+        try:
+            if not self.event_buffer:
+                return {"events": [], "stats": {"total_events": 0, "buffer_size": 0, "max_size": 0}}
 
-        # Get events from buffer
-        events = self.event_buffer.get_events(limit=limit, event_type=event_type, since_id=since_id)
+            limit = params.get("limit", 100)
+            event_type = params.get("event_type")
+            source = params.get("source")
+            since_id = params.get("since_id")
 
-        # Convert EventEntry objects to dict
-        events_data = [
-            {
-                "event_id": e.event_id,
-                "event_type": e.event_type,
-                "timestamp": e.timestamp.isoformat(),
-                "window_id": e.window_id,
-                "window_class": e.window_class,
-                "workspace_name": e.workspace_name,
-                "project_name": e.project_name,
-                "tick_payload": e.tick_payload,
-                "processing_duration_ms": e.processing_duration_ms,
-                "error": e.error,
+            # Get events from buffer
+            events = self.event_buffer.get_events(limit=limit, event_type=event_type, source=source, since_id=since_id)
+
+            # Convert EventEntry objects to dict
+            events_data = [
+                {
+                    "event_id": e.event_id,
+                    "event_type": e.event_type,
+                    "timestamp": e.timestamp.isoformat(),
+                    "source": e.source,
+                    "window_id": e.window_id,
+                    "window_class": e.window_class,
+                    "workspace_name": e.workspace_name,
+                    "project_name": e.project_name,
+                    "tick_payload": e.tick_payload,
+                    "processing_duration_ms": e.processing_duration_ms,
+                    "error": e.error,
+                }
+                for e in events
+            ]
+
+            return {
+                "events": events_data,
+                "stats": self.event_buffer.get_stats()
             }
-            for e in events
-        ]
-
-        return {
-            "events": events_data,
-            "stats": self.event_buffer.get_stats()
-        }
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::events",
+                params={"limit": params.get("limit"), "event_type": params.get("event_type")},
+                result_count=len(events) if 'events' in locals() else 0,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _list_monitors(self) -> Dict[str, Any]:
         """List all connected monitor clients (Feature 017).
@@ -489,8 +611,23 @@ class IPCServer:
 
     async def _reload_config(self) -> Dict[str, Any]:
         """Reload project configs from disk."""
-        # TODO: Implement config reload
-        return {"success": True, "message": "Config reloaded"}
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            # TODO: Implement config reload
+            return {"success": True, "message": "Config reloaded"}
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="config::reload",
+                config_type="project_configs",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _get_diagnostic_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get complete diagnostic snapshot (Feature 018).
@@ -642,34 +779,50 @@ class IPCServer:
             Request: {"method": "get_window_rules", "params": {"scope": "scoped"}}
             Response: {"rules": [...], "count": 5}
         """
-        if not self.window_rules_getter:
-            return {"rules": [], "count": 0, "error": "Window rules not available"}
+        start_time = time.perf_counter()
+        error_msg = None
 
-        # Get current window rules
-        window_rules = self.window_rules_getter()
+        try:
+            if not self.window_rules_getter:
+                return {"rules": [], "count": 0, "error": "Window rules not available"}
 
-        # Apply scope filter if provided
-        scope_filter = params.get("scope")
-        if scope_filter:
-            window_rules = [r for r in window_rules if r.scope == scope_filter]
+            # Get current window rules
+            window_rules = self.window_rules_getter()
 
-        # Serialize rules to dict
-        rules_data = [
-            {
-                "pattern": r.pattern_rule.pattern,
-                "scope": r.scope,
-                "priority": r.priority,
-                "workspace": r.workspace,
-                "description": r.pattern_rule.description,
-                "modifier": r.modifier,
+            # Apply scope filter if provided
+            scope_filter = params.get("scope")
+            if scope_filter:
+                window_rules = [r for r in window_rules if r.scope == scope_filter]
+
+            # Serialize rules to dict
+            rules_data = [
+                {
+                    "pattern": r.pattern_rule.pattern,
+                    "scope": r.scope,
+                    "priority": r.priority,
+                    "workspace": r.workspace,
+                    "description": r.pattern_rule.description,
+                    "modifier": r.modifier,
+                }
+                for r in window_rules
+            ]
+
+            return {
+                "rules": rules_data,
+                "count": len(rules_data),
             }
-            for r in window_rules
-        ]
-
-        return {
-            "rules": rules_data,
-            "count": len(rules_data),
-        }
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::rules",
+                params={"scope": params.get("scope")} if params.get("scope") else None,
+                result_count=len(rules_data) if 'rules_data' in locals() else 0,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _classify_window(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Classify a window using the 4-level precedence system (Feature 021: T026).
