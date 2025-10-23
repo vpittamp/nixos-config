@@ -85,9 +85,11 @@
   networking.firewall = {
     allowedTCPPorts = [
       22     # SSH
-      3389   # RDP
       8080   # Web services
       # RustDesk ports managed by rustdesk service
+    ];
+    interfaces."tailscale0".allowedTCPPorts = [
+      3389   # RDP via Tailscale only
     ];
     # Tailscale
     checkReversePath = "loose";
