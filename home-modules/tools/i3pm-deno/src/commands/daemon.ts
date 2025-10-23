@@ -128,8 +128,22 @@ function formatRelativeTime(timestamp: string): string {
 /**
  * Format a single event in a user-readable way
  */
-function formatEvent(event: EventNotification, formatter: any): void {
-  const relativeTime = formatRelativeTime(event.timestamp);
+function formatEvent(event: EventNotification, formatter: any, options?: { showAbsoluteTime?: boolean }): void {
+  // For live streams, show absolute time (HH:MM:SS) for clarity
+  // For historical events, show relative time (2m ago, 5h ago)
+  let timeDisplay: string;
+  if (options?.showAbsoluteTime) {
+    const date = new Date(event.timestamp);
+    timeDisplay = date.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  } else {
+    timeDisplay = formatRelativeTime(event.timestamp);
+  }
+
   const eventType = event.event_type;
   const source = event.source;
 
@@ -265,7 +279,7 @@ function formatEvent(event: EventNotification, formatter: any): void {
 
   // Output the formatted event
   console.log(
-    `${formatter.dim(relativeTime.padEnd(8))} ${sourceBadge} ${description}${duration}${error}`
+    `${formatter.dim(timeDisplay.padEnd(9))} ${sourceBadge} ${description}${duration}${error}`
   );
 }
 
@@ -483,7 +497,8 @@ async function followEventStream(
       }
 
       // Format and display event using new user-readable format
-      formatEvent(event, formatter);
+      // Use absolute time (HH:MM:SS) for live streams since timestamps won't update
+      formatEvent(event, formatter, { showAbsoluteTime: true });
     });
 
     // Keep running until Ctrl+C
