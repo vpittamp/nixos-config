@@ -4,7 +4,7 @@ let
   # i3pm Deno CLI - Wrapper script that runs TypeScript with Deno runtime
   i3pm = pkgs.stdenv.mkDerivation {
     pname = "i3pm";
-    version = "2.1.2";
+    version = "2.1.3";
 
     src = ./i3pm-deno;
 

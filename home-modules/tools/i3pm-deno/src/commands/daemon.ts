@@ -368,74 +368,22 @@ async function followEventStream(
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   } finally {
-    // Cleanup signal handler
-    Deno.removeSignalListener("SIGINT", sigintHandler);
-  }
-}
-
-/**
- * Daemon command router
- */
-export async function daemonCommand(
-  args: (string | number)[],
-  options: DaemonCommandOptions,
-): Promise<void> {
-  const parsed = parseArgs(args.map(String), {
-    boolean: ["help"],
-    alias: { h: "help" },
-    stopEarly: true,
-  });
-
-  if (parsed.help || parsed._.length === 0) {
-    showHelp();
   }
 
-  const subcommand = parsed._[0] as string;
-  const subcommandArgs = parsed._.slice(1);
 
-  // Connect to daemon
-  const client = new DaemonClient();
+  }
 
-  try {
-    await client.connect();
 
-    if (options.verbose) {
-      console.error("Connected to daemon");
-    }
 
-    // Route to subcommand
-    switch (subcommand) {
-      case "status":
-        await statusCommand(client, options);
-        break;
 
-      case "events":
-        await eventsCommand(client, subcommandArgs, options);
-        break;
 
-      default:
-        console.error(`Unknown subcommand: ${subcommand}`);
-        console.error('Run "i3pm daemon --help" for usage information');
-        Deno.exit(1);
-    }
-  } catch (err) {
-    if (err instanceof Error) {
-      console.error(`Error: ${err.message}`);
 
-      if (err.message.includes("Failed to connect")) {
-        console.error("\nThe daemon is not running. Start it with:");
-        console.error("  systemctl --user start i3-project-event-listener");
-      }
-    } else {
-      console.error("Error:", err);
-    }
 
-    Deno.exit(1);
+
+
   } finally {
     await client.close();
   }
 
   // Force exit to avoid event loop blocking from pending read operations
-  // See: https://github.com/denoland/deno/issues/4284
-  Deno.exit(0);
 }
