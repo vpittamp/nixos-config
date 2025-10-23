@@ -16,28 +16,21 @@ import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
-from .models import ApplicationClassification, ActiveProjectState
+from .models import ApplicationClassification, ActiveProjectState, Project
 from .window_rules import WindowRule, load_window_rules as _load_window_rules_impl
 
 # Initialize logger first (before any usage)
 logger = logging.getLogger(__name__)
 
-# Import Project from i3pm
-try:
-    from i3_project_manager.core.models import Project
-except ImportError:
-    logger.warning("i3pm not installed, using minimal project loading")
-    Project = None  # type: ignore
-
 
 def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
-    """Load all project configurations from JSON files using i3pm.
+    """Load all project configurations from JSON files.
 
     Args:
         config_dir: Directory containing project JSON files (~/.config/i3/projects)
 
     Returns:
-        Dictionary mapping project names to Project objects (from i3pm)
+        Dictionary mapping project names to Project objects
 
     Raises:
         ValueError: If project configurations are invalid
@@ -49,63 +42,82 @@ def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
         config_dir.mkdir(parents=True, exist_ok=True)
         return projects
 
-    # Use i3pm's Project.list_all() method for consistent loading
-    if Project:
-        try:
-            all_projects = Project.list_all(config_dir)
-            for project in all_projects:
+    # Load projects directly from JSON files (Feature 030: remove i3pm dependency)
+    try:
+        for json_file in config_dir.glob("*.json"):
+            try:
+                with open(json_file) as f:
+                    project_data = json.load(f)
+
+                # Create simple project object from JSON data
+                from .models import Project as DaemonProject
+                project = DaemonProject(
+                    name=project_data["name"],
+                    display_name=project_data.get("display_name", project_data["name"]),
+                    icon=project_data.get("icon", ""),
+                    directory=Path(project_data["directory"]),
+                    scoped_classes=set(project_data.get("scoped_classes", []))
+                )
                 projects[project.name] = project
-                logger.debug(f"Loaded project: {project.name}")
-            logger.info(f"Loaded {len(projects)} project(s) via i3pm")
-        except Exception as e:
-            logger.error(f"Failed to load projects via i3pm: {e}")
-    else:
-        logger.error("i3pm not available, cannot load projects")
+                logger.debug(f"Loaded project: {project.name} from {json_file.name}")
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.error(f"Failed to load project from {json_file}: {e}")
+                continue
+
+        logger.info(f"Loaded {len(projects)} project(s) from {config_dir}")
+    except Exception as e:
+        logger.error(f"Failed to load projects: {e}")
 
     return projects
 
 
 def load_app_classification(config_file: Path) -> ApplicationClassification:
-    """Load application classification from JSON file using i3pm model.
+    """Load application classification from JSON file.
 
     Args:
         config_file: Path to app-classes.json
 
     Returns:
-        ApplicationClassification object from i3pm with patterns support
+        ApplicationClassification object with scoped/global classes
 
     Raises:
         ValueError: If configuration is invalid
     """
-    # Use i3pm's AppClassification.load() method
+    # Feature 030: Load directly from JSON (remove i3pm dependency)
     try:
-        from i3_project_manager.core.models import AppClassification as I3pmAppClassification
+        if not config_file.exists():
+            logger.warning(f"App classification file does not exist: {config_file}, using defaults")
+            return ApplicationClassification(
+                scoped_classes={"Code", "ghostty", "Alacritty", "Yazi"},
+                global_classes={"firefox", "chromium-browser", "k9s"},
+            )
 
-        app_class = I3pmAppClassification.load(config_file)
+        with open(config_file) as f:
+            data = json.load(f)
 
-        # Convert to daemon's ApplicationClassification model (if different)
-        # For now, log and return compatible structure
+        scoped_classes = set(data.get("scoped_classes", []))
+        global_classes = set(data.get("global_classes", []))
+
         logger.info(
             f"Loaded application classification: "
-            f"{len(app_class.scoped_classes)} scoped, "
-            f"{len(app_class.global_classes)} global, "
-            f"{len(app_class.class_patterns)} patterns"
+            f"{len(scoped_classes)} scoped, "
+            f"{len(global_classes)} global"
         )
 
-        # Return daemon's ApplicationClassification from sets
         return ApplicationClassification(
-            scoped_classes=set(app_class.scoped_classes),
-            global_classes=set(app_class.global_classes),
+            scoped_classes=scoped_classes,
+            global_classes=global_classes,
         )
 
-    except ImportError:
-        logger.warning("i3pm not available, using default classification")
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Failed to load application classification from {config_file}: {e}")
+        logger.warning("Using default classification")
         return ApplicationClassification(
             scoped_classes={"Code", "ghostty", "Alacritty", "Yazi"},
             global_classes={"firefox", "chromium-browser", "k9s"},
         )
     except Exception as e:
-        logger.error(f"Failed to load application classification: {e}")
+        logger.error(f"Unexpected error loading application classification: {e}")
         raise
 
 

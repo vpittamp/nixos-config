@@ -55,9 +55,23 @@ class WindowInfo:
             raise ValueError(f"Invalid con_id: {self.con_id}")
 
 
-# ProjectConfig is now imported from i3_project_manager.core.models.Project
-# The daemon uses the shared Project model instead of maintaining a separate ProjectConfig.
-# This eliminates duplication and ensures consistency across the i3 project management system.
+# Feature 030: Standalone Project model (remove i3_project_manager dependency)
+@dataclass
+class Project:
+    """Project configuration for workspace/window management."""
+
+    name: str  # Unique project identifier
+    display_name: str  # Human-readable name
+    icon: str  # Unicode emoji or icon
+    directory: Path  # Project directory
+    scoped_classes: Set[str] = field(default_factory=set)  # App classes scoped to this project
+
+    def __post_init__(self) -> None:
+        """Validate project configuration."""
+        if not self.name:
+            raise ValueError("Project name cannot be empty")
+        if not self.directory.exists():
+            raise ValueError(f"Project directory does not exist: {self.directory}")
 
 
 @dataclass

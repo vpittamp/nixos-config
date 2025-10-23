@@ -417,3 +417,217 @@ export interface RulesOptions extends GlobalOptions {
   class?: string;
   instance?: string;
 }
+
+// ============================================================================
+// Layout Persistence Entities (Feature 030: Production Readiness)
+// ============================================================================
+
+export enum LayoutMode {
+  SplitH = "splith",
+  SplitV = "splitv",
+  Tabbed = "tabbed",
+  Stacked = "stacked",
+}
+
+export interface WindowPlaceholder {
+  /** Expected WM_CLASS */
+  windowClass?: string;
+
+  /** Expected WM_CLASS instance */
+  instance?: string;
+
+  /** Regex pattern for window title */
+  titlePattern?: string;
+
+  /** Command to launch application */
+  launchCommand: string;
+
+  /** Target position and size */
+  geometry: WindowGeometry;
+
+  /** Target floating state */
+  floating: boolean;
+
+  /** Marks to apply after swallow */
+  marks?: string[];
+}
+
+export interface Container {
+  /** Container layout mode */
+  layout: LayoutMode;
+
+  /** Percent of parent container space (0.0-1.0) */
+  percent?: number;
+
+  /** Child containers */
+  nodes: Container[];
+}
+
+export interface WorkspaceLayout {
+  /** Workspace number (1-99) */
+  workspaceNum: number;
+
+  /** Workspace name (if named) */
+  workspaceName?: string;
+
+  /** Assigned monitor/output */
+  output: string;
+
+  /** Container layout mode */
+  layoutMode: LayoutMode;
+
+  /** Container tree structure */
+  containers: Container[];
+
+  /** Window placeholders for restoration */
+  windows: WindowPlaceholder[];
+}
+
+export interface Resolution {
+  /** Width in pixels */
+  width: number;
+
+  /** Height in pixels */
+  height: number;
+}
+
+export interface Position {
+  /** X coordinate */
+  x: number;
+
+  /** Y coordinate */
+  y: number;
+}
+
+export interface Monitor {
+  /** Output name (e.g., "eDP-1", "DP-1") */
+  name: string;
+
+  /** Output is currently active */
+  active: boolean;
+
+  /** Primary display flag */
+  primary: boolean;
+
+  /** Currently visible workspace */
+  currentWorkspace?: string;
+
+  /** Display resolution */
+  resolution?: Resolution;
+
+  /** Display position in multi-monitor setup */
+  position: Position;
+}
+
+export interface MonitorConfiguration {
+  /** Configuration name (e.g., "dual-monitor", "laptop-only") */
+  name: string;
+
+  /** Monitor definitions */
+  monitors: Monitor[];
+
+  /** Workspace → output mapping */
+  workspaceAssignments: Record<number, string>;
+
+  /** Configuration creation time */
+  createdAt: Date;
+}
+
+export interface LayoutSnapshot {
+  /** Unique layout name within project */
+  name: string;
+
+  /** Associated project name */
+  project: string;
+
+  /** Snapshot timestamp */
+  createdAt: Date;
+
+  /** Monitor arrangement at capture time */
+  monitorConfig: MonitorConfiguration;
+
+  /** Layouts for each workspace */
+  workspaceLayouts: WorkspaceLayout[];
+
+  /** Additional metadata (tags, description) */
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Event System Extensions (Feature 029: Linux System Log Integration)
+// ============================================================================
+
+export enum EventSource {
+  I3 = "i3",
+  Systemd = "systemd",
+  Proc = "proc",
+}
+
+export interface Event {
+  /** Unique event identifier (UUID) */
+  eventId: string;
+
+  /** Event origin */
+  source: EventSource;
+
+  /** Type of event */
+  eventType: string;
+
+  /** Event occurrence time */
+  timestamp: Date;
+
+  /** Event-specific payload */
+  data: Record<string, unknown>;
+
+  /** Related event ID (UUID) */
+  correlationId?: string;
+
+  /** Correlation confidence (0.0-1.0) */
+  confidenceScore?: number;
+}
+
+// ============================================================================
+// Classification System (Feature 030: Production Readiness)
+// ============================================================================
+
+export enum ScopeType {
+  Scoped = "scoped",
+  Global = "global",
+}
+
+export enum PatternType {
+  Class = "class",
+  Instance = "instance",
+  Title = "title",
+}
+
+export enum RuleSource {
+  System = "system",
+  User = "user",
+}
+
+export interface ClassificationRule {
+  /** Regex pattern matching window property */
+  pattern: string;
+
+  /** Scoped or global classification */
+  scopeType: ScopeType;
+
+  /** Rule precedence (higher wins) */
+  priority: number;
+
+  /** What property to match */
+  patternType: PatternType;
+
+  /** System-wide or user-defined */
+  source: RuleSource;
+}
+
+// ============================================================================
+// Extended Project Model (Feature 030: Production Readiness)
+// ============================================================================
+
+export interface ProjectExtended extends Project {
+  /** Saved workspace layouts */
+  layoutSnapshots?: LayoutSnapshot[];
+}

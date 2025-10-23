@@ -201,6 +201,8 @@ class IPCServer:
                 result = tree_result.get("outputs", [])
             elif method == "switch_project":
                 result = await self._switch_project(params)
+            elif method == "clear_project":
+                result = await self._clear_project(params)
             elif method == "get_events":
                 # Return events array (not dict with stats) for CLI
                 # Unified event system: Return full event data with source field
@@ -230,21 +232,39 @@ class IPCServer:
             elif method == "get_window_tree":
                 result = await self._get_window_tree(params)
 
+            # Feature 030: Production readiness methods (T016)
+            elif method == "daemon.status":
+                result = await self._daemon_status()
+            elif method == "daemon.events":
+                result = await self._daemon_events(params)
+            elif method == "daemon.diagnose":
+                result = await self._daemon_diagnose(params)
+            elif method == "layout.save":
+                result = await self._layout_save(params)
+            elif method == "layout.restore":
+                result = await self._layout_restore(params)
+            elif method == "layout.list":
+                result = await self._layout_list(params)
+            elif method == "layout.delete":
+                result = await self._layout_delete(params)
+            elif method == "layout.info":
+                result = await self._layout_info(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
-                # Convert get_projects dict to array format for CLI
-                projects_dict = await self._get_projects()
+                # Convert Project objects to array format for CLI (Feature 030)
+                projects = self.state_manager.state.projects
                 result = [
                     {
-                        "name": name,
-                        "display_name": proj["display_name"],
-                        "icon": proj["icon"],
-                        "directory": proj["directory"],
-                        "scoped_classes": [],  # TODO: Get from config
-                        "created_at": 0,  # TODO: Add to state
-                        "last_used_at": 0,  # TODO: Add to state
+                        "name": proj.name,
+                        "display_name": proj.display_name,
+                        "icon": proj.icon or "",  # Ensure not null
+                        "directory": str(proj.directory),
+                        "scoped_classes": list(proj.scoped_classes) if proj.scoped_classes else [],
+                        "created_at": 1,  # Placeholder: TODO add created_at to Project model
+                        "last_used_at": 1,  # Placeholder: TODO add last_used_at tracking
                     }
-                    for name, proj in projects_dict.get("projects", {}).items()
+                    for proj in projects.values()
                 ]
             elif method == "get_current_project":
                 # Adapt get_active_project response format for CLI
@@ -448,11 +468,164 @@ class IPCServer:
             )
 
     async def _switch_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Trigger project switch."""
+        """Switch to a project and return results.
+
+        Args:
+            params: Switch parameters with project_name
+
+        Returns:
+            Dictionary with previous_project, new_project, windows_hidden, windows_shown
+        """
+        start_time = time.perf_counter()
         project_name = params.get("project_name")
-        # Trigger via tick event
-        # TODO: Implement project switch trigger
-        return {"success": True, "message": f"Switched to project: {project_name}"}
+        error_msg = None
+
+        try:
+            if not project_name:
+                raise ValueError("project_name parameter is required")
+
+            # Verify project exists
+            if project_name not in self.state_manager.state.projects:
+                raise ValueError(f"Project not found: {project_name}")
+
+            # Get current project before switch
+            previous_project = self.state_manager.state.active_project
+
+            # Count current windows
+            all_windows = list(self.state_manager.state.window_map.values())
+            scoped_windows = [w for w in all_windows if w.window_class in self.state_manager.state.scoped_classes]
+
+            # Calculate windows that will be hidden (scoped windows from other projects)
+            windows_to_hide = len([w for w in scoped_windows if w.project != project_name and w.project is not None])
+
+            # Calculate windows that will be shown (scoped windows from new project)
+            windows_to_show = len([w for w in scoped_windows if w.project == project_name])
+
+            # Directly switch the project by updating state
+            # Import needed for project switching
+            from datetime import datetime
+            from .config import save_active_project
+            from .models import ActiveProjectState
+
+            await self.state_manager.set_active_project(project_name)
+
+            # Save active project state to disk
+            from pathlib import Path
+            active_state = ActiveProjectState(
+                project_name=project_name,
+                activated_at=datetime.now(),
+                previous_project=previous_project
+            )
+            config_dir = Path.home() / ".config" / "i3"
+            config_file = config_dir / "active-project.json"
+            save_active_project(active_state, config_file)
+
+            # Update window visibility based on new project
+            if self.i3_connection and self.i3_connection.conn:
+                # Hide scoped windows from other projects
+                for window in all_windows:
+                    if window.window_class not in self.state_manager.state.scoped_classes:
+                        continue  # Skip global windows
+
+                    if window.project == project_name:
+                        # Show windows from new project
+                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
+                    elif window.project is not None and window.project != project_name:
+                        # Hide windows from other projects
+                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad')
+
+            return {
+                "previous_project": previous_project,
+                "new_project": project_name,
+                "windows_hidden": windows_to_hide,
+                "windows_shown": windows_to_show,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::switch",
+                old_project=previous_project if 'previous_project' in locals() else None,
+                new_project=project_name,
+                windows_affected=windows_to_hide + windows_to_show if 'windows_to_hide' in locals() else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _clear_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clear active project (enter global mode).
+
+        Args:
+            params: Clear parameters (currently unused)
+
+        Returns:
+            Dictionary with previous_project and windows_shown
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            # Get current project before clearing
+            previous_project = self.state_manager.state.active_project
+
+            if previous_project is None:
+                # Already in global mode
+                return {
+                    "previous_project": None,
+                    "windows_shown": 0,
+                }
+
+            # Count scoped windows that will be shown when clearing project
+            all_windows = list(self.state_manager.state.window_map.values())
+            scoped_windows = [w for w in all_windows if w.window_class in self.state_manager.state.scoped_classes]
+            windows_to_show = len([w for w in scoped_windows if w.project != previous_project])
+
+            # Directly clear the project by updating state
+            from datetime import datetime
+            from .config import save_active_project
+            from .models import ActiveProjectState
+
+            await self.state_manager.set_active_project(None)
+
+            # Save cleared state to disk
+            from pathlib import Path
+            active_state = ActiveProjectState(
+                project_name=None,
+                activated_at=datetime.now(),
+                previous_project=previous_project
+            )
+            config_dir = Path.home() / ".config" / "i3"
+            config_file = config_dir / "active-project.json"
+            save_active_project(active_state, config_file)
+
+            # Show all scoped windows when clearing project
+            if self.i3_connection and self.i3_connection.conn:
+                for window in scoped_windows:
+                    if window.project != previous_project:
+                        # Move hidden windows back from scratchpad
+                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
+
+            return {
+                "previous_project": previous_project,
+                "windows_shown": windows_to_show,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::clear",
+                old_project=previous_project if 'previous_project' in locals() else None,
+                new_project=None,
+                windows_affected=windows_to_show if 'windows_to_show' in locals() else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     async def _get_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return recent events for diagnostics (Feature 017).
@@ -1395,3 +1568,538 @@ class IPCServer:
 
         extract(container)
         return windows
+
+    # ========================================================================
+    # Feature 030: Production Readiness Methods (T016)
+    # ========================================================================
+
+    async def _daemon_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive daemon health and status
+
+        Implements daemon.status JSON-RPC method from daemon-ipc.json
+
+        Feature 030 (T029): Includes recovery status and i3 reconnection stats
+        """
+        import os
+        from .monitoring.health import get_health_metrics
+
+        start_time = time.perf_counter()
+
+        try:
+            # Get health metrics
+            health = get_health_metrics()
+            health.update_resource_usage()
+
+            stats = await self.state_manager.get_stats()
+
+            result = {
+                "running": True,
+                "uptime_seconds": health.uptime_seconds,
+                "pid": os.getpid(),
+                "memory_mb": health.memory_rss_mb,
+                "event_count": health.total_events_processed,
+                "error_count": health.total_errors,
+                "last_event_time": datetime.fromtimestamp(health.last_event_time).isoformat() if health.last_event_time else None,
+                "i3_connected": health.i3_connected,
+                "active_project": stats.get("active_project"),
+            }
+
+            # Feature 030 (T029): Add recovery status
+            if hasattr(self, 'startup_recovery_result') and self.startup_recovery_result:
+                result["recovery"] = {
+                    "startup_recovery_performed": True,
+                    "startup_recovery_success": self.startup_recovery_result.success,
+                    "actions_taken": self.startup_recovery_result.actions_taken,
+                    "recovery_timestamp": self.startup_recovery_result.timestamp.isoformat(),
+                }
+            else:
+                result["recovery"] = {
+                    "startup_recovery_performed": False,
+                }
+
+            # Feature 030 (T029): Add i3 reconnection stats
+            if hasattr(self, 'i3_reconnection_manager') and self.i3_reconnection_manager:
+                reconnect_stats = self.i3_reconnection_manager.get_stats()
+                result["i3_reconnection"] = reconnect_stats
+            else:
+                result["i3_reconnection"] = {
+                    "is_connected": health.i3_connected,
+                    "reconnection_count": 0,
+                }
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::daemon_status",
+                duration_ms=duration_ms,
+            )
+
+    async def _daemon_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Query recent events from circular buffer with filtering
+
+        Implements daemon.events JSON-RPC method from daemon-ipc.json
+
+        Args:
+            params: Query parameters
+                - source: Filter by event source (i3, systemd, proc, all)
+                - event_type: Filter by event type
+                - limit: Maximum events to return (default: 20, max: 500)
+                - since: ISO timestamp to filter events after
+                - correlate: Include correlation analysis
+        """
+        start_time = time.perf_counter()
+
+        try:
+            if not self.event_buffer:
+                return {
+                    "events": [],
+                    "total_events": 0,
+                    "buffer_size": 0,
+                }
+
+            # Extract parameters
+            source_filter = params.get("source", "all")
+            event_type_filter = params.get("event_type")
+            limit = min(params.get("limit", 20), 500)
+            since_str = params.get("since")
+            include_correlation = params.get("correlate", False)
+
+            # Parse since timestamp
+            since_dt = None
+            if since_str:
+                try:
+                    since_dt = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
+                except ValueError:
+                    logger.warning(f"Invalid 'since' timestamp: {since_str}")
+
+            # Get events from buffer
+            all_events = self.event_buffer.get_events(limit=limit)
+
+            # Apply filters
+            filtered_events = []
+            for event in all_events:
+                # Filter by source
+                if source_filter != "all" and event.source != source_filter:
+                    continue
+
+                # Filter by event type
+                if event_type_filter and event.event_type != event_type_filter:
+                    continue
+
+                # Filter by timestamp
+                if since_dt and event.timestamp < since_dt:
+                    continue
+
+                filtered_events.append(event)
+
+            # Convert to response format
+            events_data = []
+            for event in filtered_events:
+                event_dict = {
+                    "event_id": str(event.event_id),
+                    "source": event.source,
+                    "event_type": event.event_type,
+                    "timestamp": event.timestamp.isoformat(),
+                    "data": event.to_dict(),  # Include all event data
+                }
+
+                # Add correlation if requested
+                if include_correlation and event.correlation_id:
+                    event_dict["correlation_id"] = str(event.correlation_id)
+                    event_dict["confidence_score"] = event.confidence_score
+
+                events_data.append(event_dict)
+
+            result = {
+                "events": events_data,
+                "total_events": len(self.event_buffer.buffer),
+                "buffer_size": self.event_buffer.max_size,
+            }
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::daemon_events",
+                result_count=len(result.get("events", [])),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _daemon_diagnose(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate comprehensive diagnostic snapshot
+
+        Implements daemon.diagnose JSON-RPC method from daemon-ipc.json
+
+        Args:
+            params: Diagnostic options
+                - include_events: Include recent event history (default: true)
+                - include_i3_tree: Include complete i3 window tree (default: true)
+                - include_config: Include current configuration (default: true)
+        """
+        from .monitoring.diagnostics import generate_diagnostic_snapshot
+
+        start_time = time.perf_counter()
+
+        try:
+            # Extract parameters
+            include_events = params.get("include_events", True)
+            include_i3_tree = params.get("include_i3_tree", True)
+            include_config = params.get("include_config", True)
+
+            # Generate snapshot
+            snapshot = await generate_diagnostic_snapshot(
+                include_i3_tree=include_i3_tree,
+                include_events=include_events,
+                event_limit=100,
+                sanitize=True,
+            )
+
+            # Get daemon status
+            daemon_status = await self._daemon_status()
+
+            # Build diagnostic result
+            result = {
+                "timestamp": snapshot.timestamp,
+                "daemon_status": daemon_status,
+            }
+
+            if include_events:
+                result["events"] = snapshot.recent_events
+
+            if include_i3_tree:
+                result["i3_tree"] = snapshot.i3_tree
+                result["i3_outputs"] = snapshot.i3_outputs
+                result["i3_workspaces"] = snapshot.i3_workspaces
+
+            if include_config:
+                result["projects"] = snapshot.projects
+                result["classification_rules"] = snapshot.classification_rules
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::daemon_diagnose",
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _layout_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Capture and save current workspace layout
+
+        Implements layout.save JSON-RPC method from daemon-ipc.json
+        Feature 030: Tasks T030-T035 (Layout capture and persistence)
+
+        Args:
+            params: Save parameters
+                - project: Project name
+                - name: Layout name
+                - workspaces: Optional list of workspace numbers to capture
+                - discover_commands: Discover launch commands (default: true)
+        """
+        start_time = time.perf_counter()
+
+        try:
+            project = params.get("project")
+            layout_name = params.get("name")
+
+            if not project or not layout_name:
+                raise ValueError("Both 'project' and 'name' are required")
+
+            # Import layout module
+            from .layout import capture_layout, save_layout
+
+            # Capture current layout (T030-T033)
+            snapshot = await capture_layout(
+                self.i3_connection,
+                name=layout_name,
+                project=project,
+            )
+
+            # Save to disk (T034-T035)
+            filepath = save_layout(snapshot)
+
+            result = {
+                "success": True,
+                "name": layout_name,
+                "project": project,
+                "file_path": str(filepath),
+                "total_windows": snapshot.metadata.get("total_windows", 0),
+                "total_workspaces": snapshot.metadata.get("total_workspaces", 0),
+                "total_monitors": snapshot.metadata.get("total_monitors", 0),
+            }
+
+            logger.info(f"Layout saved: {project}/{layout_name} ({result['total_windows']} windows)")
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="layout::save",
+                project_name=params.get("project"),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _layout_restore(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Restore workspace layout from snapshot
+
+        Implements layout.restore JSON-RPC method from daemon-ipc.json
+        Feature 030: Tasks T036-T040 (Layout restoration)
+
+        Args:
+            params: Restore parameters
+                - project: Project name
+                - name: Layout name
+                - workspaces: Optional list of workspace numbers to restore
+                - adapt_monitors: Adapt to current monitor config (default: true)
+                - dry_run: Validate without restoring (default: false)
+        """
+        start_time = time.perf_counter()
+
+        try:
+            project = params.get("project", "global")
+            layout_name = params.get("name")
+            adapt_monitors = params.get("adapt_monitors", True)
+            dry_run = params.get("dry_run", False)
+
+            if not layout_name:
+                raise ValueError("'name' parameter is required")
+
+            # Import layout module
+            from .layout import restore_layout
+
+            if dry_run:
+                # Just validate layout exists
+                from .layout import load_layout
+                snapshot = load_layout(layout_name, project)
+                if not snapshot:
+                    raise ValueError(f"Layout not found: {layout_name} (project: {project})")
+
+                result = {
+                    "success": True,
+                    "dry_run": True,
+                    "name": layout_name,
+                    "project": project,
+                    "total_windows": snapshot.metadata.get("total_windows", 0),
+                    "total_workspaces": snapshot.metadata.get("total_workspaces", 0),
+                }
+
+            else:
+                # Restore layout (T036-T040)
+                restore_results = await restore_layout(
+                    self.i3_connection,
+                    name=layout_name,
+                    project=project,
+                    adapt_monitors=adapt_monitors,
+                )
+
+                result = {
+                    "success": restore_results["success"],
+                    "name": layout_name,
+                    "project": project,
+                    "windows_launched": restore_results["windows_launched"],
+                    "windows_swallowed": restore_results["windows_swallowed"],
+                    "windows_failed": restore_results["windows_failed"],
+                    "duration_seconds": restore_results.get("duration_seconds", 0),
+                    "errors": restore_results.get("errors", []),
+                }
+
+                logger.info(
+                    f"Layout restored: {project}/{layout_name} "
+                    f"({result['windows_swallowed']}/{result['windows_launched']} windows)"
+                )
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="layout::restore",
+                project_name=params.get("project"),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _layout_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        List saved layout snapshots
+
+        Implements layout.list JSON-RPC method
+        Feature 030: Task T043 (CLI list command)
+
+        Args:
+            params: List parameters
+                - project: Filter by project name (optional)
+
+        Returns:
+            Dictionary with layouts array
+        """
+        start_time = time.perf_counter()
+
+        try:
+            project = params.get("project")
+
+            # Import layout module
+            from .layout import list_layouts
+
+            # Get layouts
+            layouts = list_layouts(project=project)
+
+            result = {
+                "layouts": layouts,
+            }
+
+            logger.info(f"Listed layouts: {len(layouts)} found (project: {project or 'all'})")
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::layout_list",
+                project_name=params.get("project"),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _layout_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Delete a saved layout snapshot
+
+        Implements layout.delete JSON-RPC method
+        Feature 030: Task T044 (CLI delete command)
+
+        Args:
+            params: Delete parameters
+                - name: Layout name (required)
+                - project: Project name (default: "global")
+
+        Returns:
+            Dictionary with success status
+        """
+        start_time = time.perf_counter()
+
+        try:
+            name = params.get("name")
+            project = params.get("project", "global")
+
+            if not name:
+                raise ValueError("'name' parameter is required")
+
+            # Import layout module
+            from .layout import delete_layout
+
+            # Delete layout
+            success = delete_layout(name=name, project=project)
+
+            if not success:
+                raise ValueError(f"Layout not found: {name} (project: {project})")
+
+            result = {
+                "success": True,
+                "name": name,
+                "project": project,
+            }
+
+            logger.info(f"Deleted layout: {project}/{name}")
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="layout::delete",
+                project_name=params.get("project"),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _layout_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get detailed information about a saved layout
+
+        Implements layout.info JSON-RPC method
+        Feature 030: Task T048 (CLI info command)
+
+        Args:
+            params: Info parameters
+                - name: Layout name (required)
+                - project: Project name (default: "global")
+
+        Returns:
+            Dictionary with detailed layout information
+        """
+        start_time = time.perf_counter()
+
+        try:
+            name = params.get("name")
+            project = params.get("project", "global")
+
+            if not name:
+                raise ValueError("'name' parameter is required")
+
+            # Import layout module
+            from .layout import load_layout
+
+            # Load layout
+            snapshot = load_layout(name=name, project=project)
+
+            if not snapshot:
+                raise ValueError(f"Layout not found: {name} (project: {project})")
+
+            # Build detailed info
+            workspaces = []
+            for ws_layout in snapshot.workspace_layouts:
+                ws_info = {
+                    "workspace_num": ws_layout.workspace_num,
+                    "workspace_name": ws_layout.workspace_name if ws_layout.workspace_name else "",
+                    "output": ws_layout.output,
+                    "window_count": len(ws_layout.windows),
+                }
+                workspaces.append(ws_info)
+
+            monitors = []
+            for monitor in snapshot.monitor_config.monitors:
+                mon_info = {
+                    "name": monitor.name,
+                    "width": monitor.resolution.width if monitor.resolution else 0,
+                    "height": monitor.resolution.height if monitor.resolution else 0,
+                    "primary": monitor.primary,
+                }
+                monitors.append(mon_info)
+
+            result = {
+                "name": snapshot.name,
+                "project": snapshot.project,
+                "created_at": snapshot.created_at.isoformat(),
+                "total_windows": snapshot.metadata.get("total_windows", 0),
+                "total_workspaces": snapshot.metadata.get("total_workspaces", 0),
+                "total_monitors": snapshot.metadata.get("total_monitors", 0),
+                "workspaces": workspaces,
+                "monitors": monitors,
+            }
+
+            logger.info(f"Retrieved layout info: {project}/{name}")
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::layout_info",
+                project_name=params.get("project"),
+                params=params,
+                duration_ms=duration_ms,
+            )

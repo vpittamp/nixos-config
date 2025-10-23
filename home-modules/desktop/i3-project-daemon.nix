@@ -15,12 +15,19 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Python dependencies for the daemon
+  # Python dependencies for the daemon (Updated: 2025-10-23 for Feature 030)
   # Note: PatternRule is now copied locally to avoid i3pm dependency
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    # Core daemon dependencies
     i3ipc        # i3 IPC library
     systemd      # systemd-python for sd_notify/watchdog/journald
     watchdog     # File system monitoring (Feature 021: T022)
+
+    # Feature 030: Production readiness dependencies (T001)
+    pydantic     # Data validation for layout models
+    pytest       # Testing framework
+    pytest-asyncio  # Async test support
+    pytest-cov   # Coverage reporting
   ]);
 
   # Daemon package (T033)
@@ -28,11 +35,13 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
+    version = "1.0.15-fix-set-active-project";  # Feature 030: Fix method name (set_active_project not switch_project)
     src = daemonSrc;
 
     installPhase = ''
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
+      # Feature 030: Direct JSON loading, fix IPC response
     '';
   };
 
@@ -67,9 +76,11 @@ in
     #   }
     # ];
 
-    # Create runtime directory for IPC socket
+    # Create runtime and data directories
     systemd.user.tmpfiles.rules = [
       "d %t/i3-project-daemon 0700 - - -"
+      "d %h/.local/share/i3pm 0755 - - -"  # Feature 030: Layout snapshot storage
+      "d %h/.local/share/i3pm/layouts 0755 - - -"
     ];
 
     # Socket unit for socket activation (T028)
@@ -112,6 +123,7 @@ in
         ReadWritePaths = [
           "%t/i3-project-daemon"
           "%h/.config/i3"
+          "%h/.local/share/i3pm"  # Feature 030: Layout snapshot storage
         ];
         NoNewPrivileges = true;
         RestrictRealtime = true;

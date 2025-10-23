@@ -35,12 +35,19 @@ USAGE:
 SUBCOMMANDS:
   status            Show daemon status
   events            Show recent events
+  diagnose          Generate comprehensive diagnostic snapshot
 
 OPTIONS:
   -h, --help        Show this help message
 
 STATUS OPTIONS:
   No additional options
+
+DIAGNOSE OPTIONS:
+  --no-events       Exclude event history from snapshot
+  --no-tree         Exclude i3 window tree from snapshot
+  --no-config       Exclude configuration from snapshot
+  --output <file>   Write snapshot to file (default: stdout)
 
 EVENTS OPTIONS:
   --limit <n>       Number of events to show (default: 20, ignored with --follow)
@@ -664,6 +671,89 @@ async function followEventStream(
 }
 
 /**
+ * T049: Implement `i3pm daemon diagnose` command
+ */
+async function diagnoseCommand(
+  client: DaemonClient,
+  args: (string | number)[],
+  options: DaemonCommandOptions,
+): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    string: ["output"],
+    boolean: ["no-events", "no-tree", "no-config"],
+  });
+
+  const outputFile = parsed.output as string | undefined;
+  const includeEvents = !parsed["no-events"];
+  const includeTree = !parsed["no-tree"];
+  const includeConfig = !parsed["no-config"];
+
+  const spinner = new Spinner({
+    message: "Generating diagnostic snapshot...",
+    showAfter: 0,
+  });
+  spinner.start();
+
+  try {
+    const params = {
+      include_events: includeEvents,
+      include_i3_tree: includeTree,
+      include_config: includeConfig,
+    };
+
+    // Longer timeout for diagnostic operations (may need to query systemd, i3 tree, etc.)
+    const response = await client.request("daemon.diagnose", params, 30000);
+
+    if (options.debug) {
+      console.error("DEBUG: Raw response:", JSON.stringify(response, null, 2));
+    }
+
+    // Validate response - allowing any object for flexibility
+    const DiagnosticSchema = z.object({
+      timestamp: z.string(),
+      daemon_status: z.any(),
+      events: z.array(z.any()).optional(),
+      i3_tree: z.any().optional(),
+      i3_outputs: z.array(z.any()).optional(),
+      i3_workspaces: z.array(z.any()).optional(),
+      projects: z.array(z.any()).optional(),
+      classification_rules: z.array(z.any()).optional(),
+    });
+
+    const result = DiagnosticSchema.parse(response);
+    spinner.stop();
+
+    // Format the snapshot
+    const formattedSnapshot = JSON.stringify(result, null, 2);
+
+    // Output to file or stdout
+    if (outputFile) {
+      await Deno.writeTextFile(outputFile, formattedSnapshot);
+      console.log(formatter.success(`\n✓ Diagnostic snapshot saved`));
+      console.log(formatter.dim("─".repeat(60)));
+      console.log(`  File:       ${formatter.bold(outputFile)}`);
+      console.log(`  Size:       ${formatter.dim(formattedSnapshot.length + " bytes")}`);
+      console.log(`  Timestamp:  ${new Date(result.timestamp).toLocaleString()}`);
+      console.log(formatter.dim("─".repeat(60)));
+    } else {
+      // Output to stdout
+      console.log(formattedSnapshot);
+    }
+  } catch (err) {
+    spinner.stop();
+
+    if (err instanceof z.ZodError) {
+      console.error(formatter.error("Invalid daemon response format"));
+      if (options.debug) {
+        console.error(formatter.dim("Validation errors:"), err.errors);
+      }
+      Deno.exit(1);
+    }
+    throw err;
+  }
+}
+
+/**
  * Daemon command router
  */
 export async function daemonCommand(
@@ -701,6 +791,10 @@ export async function daemonCommand(
 
       case "events":
         await eventsCommand(client, subcommandArgs, options);
+        break;
+
+      case "diagnose":
+        await diagnoseCommand(client, subcommandArgs, options);
         break;
 
       default:

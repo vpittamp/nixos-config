@@ -59,9 +59,9 @@ class WindowRule:
 
     def __post_init__(self):
         """Validate window rule configuration."""
-        if self.workspace is not None and not (1 <= self.workspace <= 9):
+        if self.workspace is not None and not (1 <= self.workspace <= 99):
             raise ValueError(
-                f"Workspace must be 1-9, got {self.workspace}"
+                f"Workspace must be 1-99, got {self.workspace}"
             )
 
         valid_modifiers = ["GLOBAL", "DEFAULT", "ON_CLOSE", "TITLE"]

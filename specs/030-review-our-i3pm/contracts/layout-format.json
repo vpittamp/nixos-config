@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "i3pm Layout Snapshot Format",
+  "description": "JSON schema for workspace layout snapshots compatible with i3's append_layout format",
+  "version": "2.0.0",
+
+  "definitions": {
+    "geometry": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "integer", "description": "X position in pixels" },
+        "y": { "type": "integer", "description": "Y position in pixels" },
+        "width": { "type": "integer", "minimum": 1, "description": "Width in pixels" },
+        "height": { "type": "integer", "minimum": 1, "description": "Height in pixels" }
+      },
+      "required": ["x", "y", "width", "height"]
+    },
+
+    "swallow_criteria": {
+      "type": "object",
+      "description": "i3 swallow criteria for window matching",
+      "properties": {
+        "class": { "type": "string", "description": "Regex pattern for WM_CLASS" },
+        "instance": { "type": "string", "description": "Regex pattern for WM_CLASS instance" },
+        "title": { "type": "string", "description": "Regex pattern for WM_NAME" },
+        "window_role": { "type": "string", "description": "Regex pattern for WM_WINDOW_ROLE" }
+      },
+      "additionalProperties": false
+    },
+
+    "window_placeholder": {
+      "type": "object",
+      "description": "Window placeholder for layout restoration",
+      "properties": {
+        "swallow": { "$ref": "#/definitions/swallow_criteria" },
+        "launch_command": { "type": "string", "minLength": 1, "description": "Command to launch application" },
+        "geometry": { "$ref": "#/definitions/geometry" },
+        "floating": { "type": "boolean", "default": false },
+        "marks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Marks to apply after window is swallowed"
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional metadata (not used by i3)",
+          "properties": {
+            "window_class": { "type": "string" },
+            "instance": { "type": "string" },
+            "title": { "type": "string" },
+            "pid": { "type": "integer" },
+            "discovered_from": { "type": "string", "enum": ["desktop_file", "proc_cmdline", "user_provided"] }
+          }
+        }
+      },
+      "required": ["swallow", "launch_command", "geometry"]
+    },
+
+    "container": {
+      "type": "object",
+      "description": "i3 container in layout tree",
+      "properties": {
+        "type": { "type": "string", "enum": ["con", "floating_con"], "description": "Container type" },
+        "layout": { "type": "string", "enum": ["splith", "splitv", "stacked", "tabbed", "dockarea", "output"], "description": "Layout mode" },
+        "percent": { "type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Size as percentage of parent" },
+        "geometry": { "$ref": "#/definitions/geometry" },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/container" },
+          "description": "Child containers"
+        },
+        "swallows": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/swallow_criteria" },
+          "description": "Window swallow criteria"
+        }
+      },
+      "required": ["type"]
+    },
+
+    "workspace_layout": {
+      "type": "object",
+      "description": "Layout for a single workspace",
+      "properties": {
+        "workspace_num": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "workspace_name": { "type": "string", "description": "Optional workspace name" },
+        "output": { "type": "string", "description": "Assigned monitor output" },
+        "layout_mode": { "type": "string", "enum": ["splith", "splitv", "stacked", "tabbed"] },
+        "containers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/container" },
+          "description": "Container tree structure (i3 format)"
+        },
+        "windows": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/window_placeholder" },
+          "description": "Window placeholders (i3pm extension)"
+        }
+      },
+      "required": ["workspace_num", "output", "layout_mode", "windows"]
+    },
+
+    "monitor": {
+      "type": "object",
+      "description": "Monitor/output definition",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Output name (e.g., 'eDP-1')" },
+        "active": { "type": "boolean" },
+        "primary": { "type": "boolean", "default": false },
+        "resolution": {
+          "type": "object",
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["width", "height"]
+        },
+        "position": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "integer" },
+            "y": { "type": "integer" }
+          },
+          "required": ["x", "y"]
+        }
+      },
+      "required": ["name", "active", "position"]
+    },
+
+    "monitor_configuration": {
+      "type": "object",
+      "description": "Monitor arrangement and workspace assignments",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Configuration name" },
+        "monitors": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/monitor" },
+          "minItems": 1
+        },
+        "workspace_assignments": {
+          "type": "object",
+          "description": "Workspace number to output name mapping",
+          "patternProperties": {
+            "^[1-9][0-9]?$": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "monitors", "workspace_assignments", "created_at"]
+    }
+  },
+
+  "type": "object",
+  "description": "Complete layout snapshot",
+  "properties": {
+    "schema_version": { "type": "string", "const": "2.0" },
+    "name": { "type": "string", "pattern": "^[a-z0-9-]+$", "minLength": 1, "maxLength": 50 },
+    "project": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "monitor_config": { "$ref": "#/definitions/monitor_configuration" },
+    "workspace_layouts": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/workspace_layout" },
+      "minItems": 1
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional user-defined metadata",
+      "properties": {
+        "description": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "required": ["schema_version", "name", "project", "created_at", "monitor_config", "workspace_layouts"],
+
+  "examples": [
+    {
+      "schema_version": "2.0",
+      "name": "daily-dev",
+      "project": "nixos",
+      "created_at": "2025-10-23T14:30:00Z",
+      "monitor_config": {
+        "name": "dual-monitor",
+        "monitors": [
+          {
+            "name": "eDP-1",
+            "active": true,
+            "primary": true,
+            "resolution": { "width": 1920, "height": 1080 },
+            "position": { "x": 0, "y": 0 }
+          },
+          {
+            "name": "DP-1",
+            "active": true,
+            "primary": false,
+            "resolution": { "width": 2560, "height": 1440 },
+            "position": { "x": 1920, "y": 0 }
+          }
+        ],
+        "workspace_assignments": {
+          "1": "eDP-1",
+          "2": "eDP-1",
+          "3": "DP-1",
+          "4": "DP-1"
+        },
+        "created_at": "2025-10-23T14:30:00Z"
+      },
+      "workspace_layouts": [
+        {
+          "workspace_num": 1,
+          "workspace_name": "term",
+          "output": "eDP-1",
+          "layout_mode": "splith",
+          "containers": [],
+          "windows": [
+            {
+              "swallow": {
+                "class": "^org\\.kde\\.ghostty$",
+                "instance": "^ghostty$"
+              },
+              "launch_command": "ghostty",
+              "geometry": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+              "floating": false,
+              "marks": ["project:nixos"],
+              "metadata": {
+                "window_class": "org.kde.ghostty",
+                "instance": "ghostty",
+                "title": "Terminal",
+                "discovered_from": "desktop_file"
+              }
+            }
+          ]
+        },
+        {
+          "workspace_num": 2,
+          "workspace_name": "code",
+          "output": "eDP-1",
+          "layout_mode": "tabbed",
+          "containers": [],
+          "windows": [
+            {
+              "swallow": {
+                "class": "^Code$",
+                "instance": "^code$"
+              },
+              "launch_command": "code /etc/nixos",
+              "geometry": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+              "floating": false,
+              "marks": ["project:nixos"],
+              "metadata": {
+                "window_class": "Code",
+                "instance": "code",
+                "title": "/etc/nixos - Visual Studio Code",
+                "discovered_from": "desktop_file"
+              }
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "description": "Daily development layout for NixOS project",
+        "tags": ["development", "fullstack"],
+        "notes": "Terminal on workspace 1, code on workspace 2, browser on workspace 3"
+      }
+    }
+  ],
+
+  "notes": [
+    "Layout files are stored at: ~/.config/i3/layouts/{project_name}-{layout_name}.json",
+    "The 'containers' array uses i3's native format for compatibility with append_layout",
+    "The 'windows' array is an i3pm extension for launch command storage",
+    "During restoration, launch commands execute and windows are swallowed into containers",
+    "Monitor adaptation reassigns workspaces if current config differs from saved config",
+    "Swallow criteria use regex patterns (Perl-compatible)",
+    "Launch commands are discovered from desktop files, /proc/{pid}/cmdline, or user input"
+  ]
+}

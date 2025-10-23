@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "i3pm Daemon IPC Protocol",
+  "description": "JSON-RPC 2.0 protocol specification for communication between i3pm CLI and event daemon",
+  "version": "2.0.0",
+  "transport": "UNIX domain socket",
+  "socket_path": "/run/user/{uid}/i3pm/daemon.sock",
+  "authentication": "UID-based via SO_PEERCRED",
+
+  "methods": {
+    "daemon.status": {
+      "description": "Get daemon health and status information",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "running": { "type": "boolean", "description": "Daemon is running" },
+          "uptime_seconds": { "type": "number", "description": "Seconds since daemon start" },
+          "pid": { "type": "integer", "description": "Daemon process ID" },
+          "memory_mb": { "type": "number", "description": "Current memory usage in MB" },
+          "event_count": { "type": "integer", "description": "Total events processed" },
+          "error_count": { "type": "integer", "description": "Total errors encountered" },
+          "last_event_time": { "type": "string", "format": "date-time", "description": "Timestamp of most recent event" },
+          "i3_connected": { "type": "boolean", "description": "Connected to i3 IPC" },
+          "active_project": { "type": "string", "nullable": true, "description": "Currently active project name" }
+        },
+        "required": ["running", "uptime_seconds", "pid", "memory_mb", "event_count", "error_count", "i3_connected", "active_project"]
+      },
+      "example_request": {
+        "jsonrpc": "2.0",
+        "method": "daemon.status",
+        "params": {},
+        "id": 1
+      },
+      "example_response": {
+        "jsonrpc": "2.0",
+        "result": {
+          "running": true,
+          "uptime_seconds": 86400,
+          "pid": 12345,
+          "memory_mb": 14.2,
+          "event_count": 5432,
+          "error_count": 0,
+          "last_event_time": "2025-10-23T14:30:00Z",
+          "i3_connected": true,
+          "active_project": "nixos"
+        },
+        "id": 1
+      }
+    },
+
+    "daemon.events": {
+      "description": "Query recent events from circular buffer with filtering",
+      "params": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["i3", "systemd", "proc", "all"],
+            "default": "all",
+            "description": "Event source filter"
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Filter by event type (e.g., 'window', 'workspace', 'tick')"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Max events to return"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Return events after this timestamp"
+          },
+          "correlate": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include correlation analysis"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event_id": { "type": "string", "format": "uuid" },
+                "source": { "type": "string", "enum": ["i3", "systemd", "proc"] },
+                "event_type": { "type": "string" },
+                "timestamp": { "type": "string", "format": "date-time" },
+                "data": { "type": "object", "additionalProperties": true },
+                "correlation_id": { "type": "string", "format": "uuid", "nullable": true },
+                "confidence_score": { "type": "number", "minimum": 0.0, "maximum": 1.0, "nullable": true }
+              },
+              "required": ["event_id", "source", "event_type", "timestamp", "data"]
+            }
+          },
+          "total_events": { "type": "integer", "description": "Total events in buffer" },
+          "buffer_size": { "type": "integer", "description": "Max buffer capacity" }
+        },
+        "required": ["events", "total_events", "buffer_size"]
+      }
+    },
+
+    "daemon.diagnose": {
+      "description": "Generate comprehensive diagnostic snapshot",
+      "params": {
+        "type": "object",
+        "properties": {
+          "include_events": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include recent event history"
+          },
+          "include_i3_tree": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include complete i3 window tree"
+          },
+          "include_config": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include current configuration"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "daemon_status": { "$ref": "#/methods/daemon.status/result" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/methods/daemon.events/result/properties/events/items" }
+          },
+          "i3_tree": { "type": "object", "additionalProperties": true },
+          "i3_outputs": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "i3_workspaces": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "projects": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "classification_rules": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          }
+        },
+        "required": ["timestamp", "daemon_status"]
+      }
+    },
+
+    "project.list": {
+      "description": "List all available projects",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+                "display_name": { "type": "string" },
+                "icon": { "type": "string" },
+                "directory": { "type": "string" },
+                "created_at": { "type": "string", "format": "date-time" },
+                "scoped_classes": { "type": "array", "items": { "type": "string" } },
+                "layout_count": { "type": "integer", "description": "Number of saved layouts" }
+              },
+              "required": ["name", "display_name", "directory", "created_at"]
+            }
+          },
+          "active_project": { "type": "string", "nullable": true }
+        },
+        "required": ["projects", "active_project"]
+      }
+    },
+
+    "project.switch": {
+      "description": "Switch to a different project",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$",
+            "description": "Project to switch to"
+          },
+          "clear": {
+            "type": "boolean",
+            "default": false,
+            "description": "Clear active project (global mode)"
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          { "required": ["project_name"] },
+          { "required": ["clear"], "properties": { "clear": { "const": true } } }
+        ]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "previous_project": { "type": "string", "nullable": true },
+          "new_project": { "type": "string", "nullable": true },
+          "windows_hidden": { "type": "integer", "description": "Windows moved to scratchpad" },
+          "windows_shown": { "type": "integer", "description": "Windows made visible" },
+          "latency_ms": { "type": "number", "description": "Project switch latency" }
+        },
+        "required": ["previous_project", "new_project", "windows_hidden", "windows_shown", "latency_ms"]
+      }
+    },
+
+    "windows.query": {
+      "description": "Query current window state with filtering",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Filter by project name"
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Filter by workspace"
+          },
+          "output": {
+            "type": "string",
+            "description": "Filter by output/monitor"
+          },
+          "visible_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "Only show visible windows"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer" },
+                "window_class": { "type": "string", "nullable": true },
+                "instance": { "type": "string", "nullable": true },
+                "title": { "type": "string" },
+                "workspace": { "type": "string" },
+                "output": { "type": "string" },
+                "marks": { "type": "array", "items": { "type": "string" } },
+                "floating": { "type": "boolean" },
+                "geometry": {
+                  "type": "object",
+                  "properties": {
+                    "x": { "type": "integer" },
+                    "y": { "type": "integer" },
+                    "width": { "type": "integer" },
+                    "height": { "type": "integer" }
+                  },
+                  "required": ["x", "y", "width", "height"]
+                },
+                "pid": { "type": "integer", "nullable": true },
+                "visible": { "type": "boolean" }
+              },
+              "required": ["id", "title", "workspace", "output", "marks", "floating", "geometry", "visible"]
+            }
+          },
+          "total_windows": { "type": "integer" },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "active": { "type": "boolean" },
+                "window_count": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "required": ["windows", "total_windows", "outputs"]
+      }
+    },
+
+    "layout.save": {
+      "description": "Capture current workspace layout and save snapshot",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "name": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Layout name" },
+          "workspaces": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1, "maximum": 99 },
+            "description": "Specific workspaces to capture (default: all)"
+          },
+          "discover_commands": {
+            "type": "boolean",
+            "default": true,
+            "description": "Discover launch commands for windows"
+          }
+        },
+        "required": ["project", "name"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "layout_file": { "type": "string", "description": "Path to saved layout file" },
+          "workspaces_captured": { "type": "integer" },
+          "windows_captured": { "type": "integer" },
+          "commands_discovered": { "type": "integer" },
+          "commands_missing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "window_class": { "type": "string" },
+                "title": { "type": "string" }
+              }
+            },
+            "description": "Windows without discovered launch commands"
+          },
+          "monitor_config": { "type": "string", "description": "Associated monitor configuration name" }
+        },
+        "required": ["layout_file", "workspaces_captured", "windows_captured", "commands_discovered", "commands_missing", "monitor_config"]
+      }
+    },
+
+    "layout.restore": {
+      "description": "Restore workspace layout from snapshot",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "name": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "workspaces": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1, "maximum": 99 },
+            "description": "Specific workspaces to restore (default: all)"
+          },
+          "adapt_monitors": {
+            "type": "boolean",
+            "default": true,
+            "description": "Adapt layout to current monitor configuration"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "default": false,
+            "description": "Validate layout without restoring"
+          }
+        },
+        "required": ["project", "name"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "workspaces_restored": { "type": "integer" },
+          "windows_launched": { "type": "integer" },
+          "windows_failed": { "type": "integer" },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "window_class": { "type": "string" },
+                "launch_command": { "type": "string" },
+                "error": { "type": "string" }
+              }
+            }
+          },
+          "latency_ms": { "type": "number", "description": "Total restoration time" }
+        },
+        "required": ["success", "workspaces_restored", "windows_launched", "windows_failed", "failures", "latency_ms"]
+      }
+    }
+  },
+
+  "errors": {
+    "codes": {
+      "-32700": "Parse error - Invalid JSON",
+      "-32600": "Invalid Request - JSON-RPC format error",
+      "-32601": "Method not found",
+      "-32602": "Invalid params",
+      "-32603": "Internal error",
+      "-32000": "Authentication failed (UID mismatch)",
+      "-32001": "Daemon not running",
+      "-32002": "i3 IPC connection failed",
+      "-32003": "Project not found",
+      "-32004": "Layout not found",
+      "-32005": "Invalid configuration",
+      "-32006": "State consistency error"
+    },
+    "format": {
+      "type": "object",
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": { "type": "integer" },
+            "message": { "type": "string" },
+            "data": { "type": "object", "additionalProperties": true }
+          },
+          "required": ["code", "message"]
+        },
+        "id": { "type": ["string", "number", "null"] }
+      },
+      "required": ["jsonrpc", "error", "id"]
+    }
+  },
+
+  "notes": [
+    "All timestamps use ISO 8601 format (RFC 3339)",
+    "UUID fields use RFC 4122 format",
+    "File paths are absolute UNIX paths",
+    "Sensitive data (passwords, tokens) are sanitized in all responses",
+    "Authentication via SO_PEERCRED is transparent to clients",
+    "All methods support optional 'timeout_ms' parameter (default: 5000ms)"
+  ]
+}

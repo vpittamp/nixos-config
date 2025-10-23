@@ -41,6 +41,7 @@ COMMANDS:
   project          Project management commands
   windows          Window state visualization
   daemon           Daemon status and event monitoring
+  layout           Workspace layout persistence (save/restore)
   rules            Window classification rules
   monitor          Interactive monitoring dashboard
   app-classes      Application class management
@@ -52,6 +53,8 @@ EXAMPLES:
   i3pm project switch nixos            Switch to nixos project
   i3pm windows --live                  Live window visualization
   i3pm daemon status                   Show daemon status
+  i3pm layout save my-layout           Save current workspace layout
+  i3pm layout restore my-layout        Restore saved layout
   i3pm rules list                      List classification rules
   i3pm monitor                         Launch monitoring dashboard
 
@@ -125,6 +128,13 @@ async function main(): Promise<void> {
       {
         const { daemonCommand } = await import("./src/commands/daemon.ts");
         await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "layout":
+      {
+        const { layoutCommand } = await import("./src/commands/layout.ts");
+        await layoutCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 

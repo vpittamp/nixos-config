@@ -15,7 +15,7 @@
       update_ms = 2000;
 
       # Processes sorting - "pid", "program", "arguments", "threads", "user", "memory", "cpu lazy", "cpu direct"
-      proc_sorting = "memory";
+      proc_sorting = "cpu direct";
 
       # Reverse sorting order
       proc_reversed = true;
