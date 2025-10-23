@@ -108,7 +108,10 @@ function formatRelativeTime(timestamp: string): string {
   const diffMs = now - eventTime;
   const diffSec = Math.floor(diffMs / 1000);
 
-  if (diffSec < 60) {
+  // For very recent events (< 2 seconds), show "just now"
+  if (diffSec < 2) {
+    return `now`;
+  } else if (diffSec < 60) {
     return `${diffSec}s ago`;
   } else if (diffSec < 3600) {
     const minutes = Math.floor(diffSec / 60);
