@@ -62,7 +62,8 @@ export class DaemonClient {
 
       // Unref the connection so it doesn't block process exit
       // This allows quick commands to exit immediately without waiting
-      // for the 5-second Deno default timeout
+      // for the 5-second Deno default timeout.
+      // Connection will be re-ref'd if subscribe() is called for long-running operations.
       this.conn.unref();
 
       logger.verbose(`Connected to daemon at ${this.socketPath}`);
