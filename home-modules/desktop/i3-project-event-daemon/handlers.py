@@ -379,15 +379,7 @@ async def on_window_new(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
-
-        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
-        if ipc_server and ipc_server.subscribed_clients:
-            await ipc_server.broadcast_event({
-                "type": "window",
-                "change": "new",
-                "window_id": window_id,
-                "window_class": window_class,
-            })
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
 
 async def on_window_mark(
@@ -447,15 +439,7 @@ async def on_window_mark(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
-
-        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
-        if ipc_server and ipc_server.subscribed_clients:
-            await ipc_server.broadcast_event({
-                "type": "window",
-                "change": "mark",
-                "window_id": window_id,
-                "window_class": window_class,
-            })
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
 
 async def on_window_title(
@@ -560,15 +544,7 @@ async def on_window_title(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
-
-        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
-        if ipc_server and ipc_server.subscribed_clients:
-            await ipc_server.broadcast_event({
-                "type": "window",
-                "change": "title",
-                "window_id": window_id,
-                "window_class": window_class,
-            })
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
 
 async def on_window_close(
@@ -619,15 +595,7 @@ async def on_window_close(
                 error=error_msg,
             )
             event_buffer.add_event(entry)
-
-        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
-        if ipc_server and ipc_server.subscribed_clients:
-            await ipc_server.broadcast_event({
-                "type": "window",
-                "change": "close",
-                "window_id": window_id,
-                "window_class": window_class,
-            })
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
 
 async def on_window_focus(
@@ -677,15 +645,7 @@ async def on_window_focus(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
-
-        # Broadcast to subscribed IPC clients (Feature 025: real-time window state updates)
-        if ipc_server and ipc_server.subscribed_clients:
-            await ipc_server.broadcast_event({
-                "type": "window",
-                "change": "focus",
-                "window_id": window_id,
-                "window_class": window_class,
-            })
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
 
 # ============================================================================
