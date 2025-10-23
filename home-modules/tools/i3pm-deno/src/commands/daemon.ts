@@ -471,32 +471,8 @@ async function followEventStream(
       if (!running) return;
 
       // Parse event from notification
-      const params = notification.params as {
-        event?: EventNotification;
-        type?: string;
-        event_type?: string;
-        change?: string;
-        container?: unknown;
-        timestamp?: number;
-        event_id?: number;
-      };
-
-      let event: EventNotification;
-
-      if (params.event) {
-        // Full event notification
-        event = params.event;
-      } else {
-        // Construct event from notification params
-        const eventType = params.type || params.event_type || "unknown";
-        event = {
-          event_id: params.event_id || Date.now(),
-          event_type: eventType as EventType,
-          change: params.change || notification.method || "unknown",
-          container: (params.container as WindowState | Workspace | Output) || null,
-          timestamp: params.timestamp || Date.now(),
-        };
-      }
+      // The daemon now broadcasts full EventEntry objects with unified schema
+      const event = notification.params as EventNotification;
 
       // Filter by event type if specified
       if (eventTypeFilter && event.event_type !== eventTypeFilter) {

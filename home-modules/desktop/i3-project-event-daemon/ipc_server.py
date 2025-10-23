@@ -584,15 +584,49 @@ class IPCServer:
             event_entry: EventEntry instance to broadcast
         """
         # Convert EventEntry to dict for JSON serialization
+        # Include all unified event system fields
         event_data = {
             "event_id": event_entry.event_id,
             "event_type": event_entry.event_type,
             "timestamp": event_entry.timestamp.isoformat(),
+            "source": event_entry.source,
+
+            # Window event fields
             "window_id": event_entry.window_id,
             "window_class": event_entry.window_class,
+            "window_title": event_entry.window_title,
+            "window_instance": event_entry.window_instance,
             "workspace_name": event_entry.workspace_name,
+
+            # Project event fields
             "project_name": event_entry.project_name,
+            "project_directory": event_entry.project_directory,
+            "old_project": event_entry.old_project,
+            "new_project": event_entry.new_project,
+            "windows_affected": event_entry.windows_affected,
+
+            # Tick event fields
             "tick_payload": event_entry.tick_payload,
+
+            # Output event fields
+            "output_name": event_entry.output_name,
+            "output_count": event_entry.output_count,
+
+            # Query event fields
+            "query_method": event_entry.query_method,
+            "query_params": event_entry.query_params,
+            "query_result_count": event_entry.query_result_count,
+
+            # Config event fields
+            "config_type": event_entry.config_type,
+            "rules_added": event_entry.rules_added,
+            "rules_removed": event_entry.rules_removed,
+
+            # Daemon event fields
+            "daemon_version": event_entry.daemon_version,
+            "i3_socket": event_entry.i3_socket,
+
+            # Processing metadata
             "processing_duration_ms": event_entry.processing_duration_ms,
             "error": event_entry.error,
         }
