@@ -7,7 +7,7 @@
 import type { DaemonClient } from "../client.ts";
 import type { Output } from "../models.ts";
 import { renderTree } from "./tree.ts";
-import { renderTable } from "./table.ts";
+import { renderTable, ChangeTracker } from "./table.ts";
 
 /**
  * View modes for live TUI
@@ -69,11 +69,13 @@ export class LiveTUI {
   private encoder: TextEncoder;
   private decoder: TextDecoder;
   private refreshTimer: number | null = null;
+  private changeTracker: ChangeTracker;
 
   constructor(client: DaemonClient) {
     this.client = client;
     this.encoder = new TextEncoder();
     this.decoder = new TextDecoder();
+    this.changeTracker = new ChangeTracker(3000); // 3 second expiry
 
     this.state = {
       viewMode: "tree",
@@ -150,9 +152,9 @@ export class LiveTUI {
           eventType === "workspace" ||
           eventType === "output"
         ) {
-          // Throttle refreshes to avoid excessive redraws
+          // Throttle refreshes to avoid excessive redraws (50ms = 20fps max)
           const now = Date.now();
-          if (now - this.state.lastRefresh > 100) {
+          if (now - this.state.lastRefresh > 50) {
             await this.refresh();
           }
         }
@@ -246,7 +248,10 @@ export class LiveTUI {
     // Render content based on view mode
     const content = this.state.viewMode === "tree"
       ? renderTree(this.state.outputs, { showHidden: this.state.showHidden })
-      : renderTable(this.state.outputs, { showHidden: this.state.showHidden });
+      : renderTable(this.state.outputs, {
+          showHidden: this.state.showHidden,
+          changeTracker: this.changeTracker
+        });
 
     await this.writeToStdout(content);
 
