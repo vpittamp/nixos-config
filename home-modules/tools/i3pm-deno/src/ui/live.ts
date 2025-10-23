@@ -69,7 +69,6 @@ export class LiveTUI {
   private encoder: TextEncoder;
   private decoder: TextDecoder;
   private refreshTimer: number | null = null;
-  private lastCtrlC: number = 0;
 
   constructor(client: DaemonClient) {
     this.client = client;
@@ -120,18 +119,8 @@ export class LiveTUI {
    * Setup signal handlers
    */
   private setupSignalHandlers(): void {
-    // Handle Ctrl+C gracefully
-    Deno.addSignalListener("SIGINT", () => {
-      const now = Date.now();
-      if (now - this.lastCtrlC < 1000) {
-        // Double Ctrl+C - immediate exit
-        this.state.running = false;
-      } else {
-        // First Ctrl+C - show message
-        this.lastCtrlC = now;
-        // Will be caught by keyboard handler
-      }
-    });
+    // Note: Ctrl+C is handled directly in raw mode keyboard handler (handleKeyboard)
+    // Using Deno.addSignalListener("SIGINT") conflicts with raw mode input
 
     // Handle terminal resize
     Deno.addSignalListener("SIGWINCH", () => {
@@ -179,12 +168,18 @@ export class LiveTUI {
    * Handle keyboard input
    */
   private async handleKeyboard(): Promise<void> {
-    const buffer = new Uint8Array(4);
+    const buffer = new Uint8Array(16);
 
     while (this.state.running) {
       try {
         const n = await Deno.stdin.read(buffer);
         if (n === null) break;
+
+        // Check for Ctrl+C BEFORE decoding (best practice)
+        if (buffer[0] === 0x03) {
+          this.state.running = false;
+          break;
+        }
 
         const key = this.decoder.decode(buffer.slice(0, n));
 
@@ -204,7 +199,6 @@ export class LiveTUI {
 
           case KEYS.LOWER_Q:
           case KEYS.UPPER_Q:
-          case KEYS.CTRL_C:
             // Exit
             this.state.running = false;
             break;
@@ -281,8 +275,7 @@ export class LiveTUI {
     return `\n${ANSI.DIM}${"=".repeat(80)}${ANSI.RESET}\n` +
       `${ANSI.GREEN}[Tab]${ANSI.RESET} Switch View  ` +
       `${ANSI.GREEN}[H]${ANSI.RESET} Toggle Hidden  ` +
-      `${ANSI.GREEN}[Q]${ANSI.RESET} Quit  ` +
-      `${ANSI.GREEN}[Ctrl+C]${ANSI.RESET} Exit\n`;
+      `${ANSI.GREEN}[Q]${ANSI.RESET} or ${ANSI.GREEN}[Ctrl+C]${ANSI.RESET} Exit\n`;
   }
 
   /**
