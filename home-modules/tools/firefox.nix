@@ -370,8 +370,4 @@ in
     BROWSER = "${pkgs.firefox}/bin/firefox";
   };
 
-  # Create symlink for firefoxpwa native messaging host
-  # This ensures the extension can find the native component
-  home.file.".mozilla/native-messaging-hosts/firefoxpwa.json".source =
-    "${pkgs.firefoxpwa}/lib/mozilla/native-messaging-hosts/firefoxpwa.json";
 }

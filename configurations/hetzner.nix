@@ -67,6 +67,7 @@
 
   # XRDP for i3wm remote access
   services.xrdp-i3.enable = true;
+  services.xrdp-i3.openFirewall = false;
 
   # i3 Project Workspace Management (Feature 010)
   services.i3ProjectWorkspace.enable = true;

@@ -37,6 +37,37 @@ in {
       defaultWindowManager = "i3-xrdp-session";
       openFirewall = cfg.openFirewall;
       port = cfg.port;
+      extraConfDirCommands = ''
+        cat > $out/startwm.sh <<'EOF'
+        #!/bin/sh
+        . /etc/profile
+
+        if [ -f /run/current-system/sw/libexec/pulseaudio-xrdp-module/pulseaudio_xrdp_init ]; then
+          /run/current-system/sw/libexec/pulseaudio-xrdp-module/pulseaudio_xrdp_init
+        fi
+
+        exec i3-xrdp-session
+        EOF
+        chmod +x $out/startwm.sh
+
+        cat >> $out/xrdp.ini <<'EOF'
+
+        # Device redirection settings
+        [Channels]
+        rdpdr=true
+        rdpsnd=true
+        drdynvc=true
+        cliprdr=true
+
+        [Sessions]
+        use_fastpath=both
+        require_credentials=yes
+        bulk_compression=yes
+        new_cursors=yes
+        use_bitmap_cache=yes
+        use_bitmap_compression=yes
+        EOF
+      '';
 
       # Session Management: Using xrdp upstream defaults
       #
@@ -56,44 +87,8 @@ in {
       # If multiple sessions accumulate, the issue is likely session matching logic,
       # not cleanup configuration.
       #
-      # No extraConfDirCommands - use xrdp defaults as-is
+      # extraConfDirCommands above adds i3-specific startwm.sh and tuning
     };
-
-    # Create XRDP startup script for i3
-    environment.etc."xrdp/startwm.sh" = {
-      enable = true;
-      mode = "0755";
-      text = ''
-        #!/bin/sh
-        . /etc/profile
-
-        # Set up audio if available
-        if [ -f /run/current-system/sw/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init ]; then
-          /run/current-system/sw/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init
-        fi
-
-        # Start i3 session
-        exec i3-xrdp-session
-      '';
-    };
-
-    # Configure XRDP settings
-    environment.etc."xrdp/xrdp.ini".text = mkAfter ''
-      # Device redirection settings
-      [Channels]
-      rdpdr=true
-      rdpsnd=true
-      drdynvc=true
-      cliprdr=true
-
-      [Sessions]
-      use_fastpath=both
-      require_credentials=yes
-      bulk_compression=yes
-      new_cursors=yes
-      use_bitmap_cache=yes
-      use_bitmap_compression=yes
-    '';
 
     # NOTE: sesman.ini configuration is handled via services.xrdp.extraConfDirCommands above
     # Do NOT use environment.etc."xrdp/sesman.ini" as the service uses a NixOS store path
