@@ -127,13 +127,28 @@ async function listProjects(args: (string | number)[], options: ProjectCommandOp
 /**
  * Show current project
  */
-async function currentProject(options: ProjectCommandOptions): Promise<void> {
+async function currentProject(args: (string | number)[], options: ProjectCommandOptions): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    boolean: ["json"],
+  });
+
   const client = createClient();
 
   try {
-    const result = await client.request<{ project: string | null }>("get_current_project");
+    const result = await client.request<{
+      name: string | null;
+      display_name: string | null;
+      icon: string | null;
+      directory: string | null;
+    }>("get_current_project");
 
-    if (result.project === null) {
+    if (parsed.json) {
+      // JSON output for scripting (app launcher wrapper script expects this)
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.name === null) {
       // Output plain text when piped, colored when interactive
       if (Deno.stdout.isTerminal()) {
         console.log(dim("Global") + " " + gray("(no active project)"));
@@ -143,9 +158,9 @@ async function currentProject(options: ProjectCommandOptions): Promise<void> {
     } else {
       // Output plain text when piped, colored when interactive
       if (Deno.stdout.isTerminal()) {
-        console.log(cyan(result.project));
+        console.log(cyan(result.name));
       } else {
-        console.log(result.project);  // Plain text for scripting
+        console.log(result.name);  // Plain text for scripting
       }
     }
   } catch (err) {
@@ -485,7 +500,7 @@ export async function projectCommand(
       break;
 
     case "current":
-      await currentProject(options);
+      await currentProject(subcommandArgs, options);
       break;
 
     case "switch":

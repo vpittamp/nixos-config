@@ -15,6 +15,9 @@
     ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
     # ./home-modules/desktop/polybar.nix  # REMOVED: Replaced by event-driven i3bar
     # ./home-modules/desktop/i3blocks  # REMOVED: Switched to i3bar with event subscriptions
+    ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
+    ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
+    ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];
 
   home.username = "vpittamp";

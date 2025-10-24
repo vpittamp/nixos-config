@@ -46,6 +46,7 @@ COMMANDS:
   monitors         Workspace-to-monitor mapping configuration
   monitor          Interactive monitoring dashboard
   app-classes      Application class management
+  apps             Application registry management (Feature 034)
 
 Run 'i3pm <command> --help' for more information on a specific command.
 
@@ -60,6 +61,8 @@ EXAMPLES:
   i3pm monitors config show            Show workspace distribution config
   i3pm monitors reassign               Redistribute workspaces
   i3pm monitor                         Launch monitoring dashboard
+  i3pm apps list                       List all applications
+  i3pm apps launch vscode              Launch VS Code with project context
 
 For detailed documentation, see:
   /etc/nixos/specs/027-update-the-spec/quickstart.md
@@ -166,6 +169,13 @@ async function main(): Promise<void> {
       {
         const { appClassesCommand } = await import("./src/commands/app-classes.ts");
         await appClassesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "apps":
+      {
+        const { appsCommand } = await import("./src/commands/apps.ts");
+        await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 

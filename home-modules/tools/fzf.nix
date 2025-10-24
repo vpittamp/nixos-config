@@ -6,15 +6,13 @@
     enable = true;
     enableBashIntegration = true;
 
-    # Use fd for faster file searching (replaces default find command)
-    # fd is smarter - respects .gitignore and ignores .git directories
-    defaultCommand = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
-
-    # Also use fd when triggered with ALT-C (directory search)
-    changeDirWidgetCommand = "${pkgs.fd}/bin/fd --type d --hidden --exclude .git";
-
-    # Use fd for CTRL-P (file search) - remapped from CTRL-T in bash.nix
-    fileWidgetCommand = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
+    # Use fzf's built-in --walker for file searching
+    # walker is fast, respects .gitignore, and is built into fzf
+    # Note: Commands are set to empty to trigger fzf's built-in walker
+    # Walker options are configured via FZF_*_OPTS in bash.nix
+    defaultCommand = "";
+    changeDirWidgetCommand = "";
+    fileWidgetCommand = "";
 
 
     defaultOptions = [

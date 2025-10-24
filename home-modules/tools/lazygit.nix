@@ -8,18 +8,18 @@
     lazydocker
   ];
 
-  # Create desktop entries for TUI apps to launch in terminal
-  xdg.dataFile."applications/lazygit.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Lazygit
-    Comment=Simple terminal UI for git commands
-    Exec=ghostty -e lazygit
-    Icon=git
-    Terminal=false
-    Categories=Development;RevisionControl;
-    Keywords=git;vcs;version control;
-  '';
+  # Desktop entries now managed by app-registry.nix (Feature 034)
+  # xdg.dataFile."applications/lazygit.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=Lazygit
+  #   Comment=Simple terminal UI for git commands
+  #   Exec=ghostty -e lazygit
+  #   Icon=git
+  #   Terminal=false
+  #   Categories=Development;RevisionControl;
+  #   Keywords=git;vcs;version control;
+  # '';
 
   xdg.dataFile."applications/lazydocker.desktop".text = ''
     [Desktop Entry]

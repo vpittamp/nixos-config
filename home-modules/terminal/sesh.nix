@@ -30,24 +30,9 @@
       };
 
       # Session configurations
-      # Configured sessions for i3 project workspace integration
-      session = [
-        # NixOS Configuration Project
-        {
-          name = "nixos";
-          path = "/etc/nixos";
-          startup_command = "git status";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first --long /etc/nixos";
-        }
-
-        # Stacks Project
-        {
-          name = "stacks";
-          path = "~/stacks";
-          startup_command = "git status";
-          preview_command = "eza --all --git --icons --color=always --group-directories-first --long ~/stacks";
-        }
-      ];
+      # No predefined sessions - sesh will automatically create sessions
+      # based on directory paths from `sesh connect <path>`
+      # session = [];
 
       # Window definitions for multi-window sessions
       window = [

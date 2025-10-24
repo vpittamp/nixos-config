@@ -60,6 +60,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Walker application launcher
+    elephant = {
+      url = "github:abenz1267/elephant";
+    };
+
+    walker = {
+      url = "github:abenz1267/walker";
+      inputs.elephant.follows = "elephant";
+    };
+
     # REMOVED: MangoWC Wayland Compositor (experimental, archived)
     # mangowc = {
     #   url = "github:DreamMaoMao/mangowc";

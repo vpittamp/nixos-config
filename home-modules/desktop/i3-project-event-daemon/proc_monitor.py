@@ -218,7 +218,8 @@ class ProcessMonitor:
             # Filter: only interesting processes
             # Feature 029: Task T028 - Process filtering
             process_name = process_info.get("process_name", "")
-            if not self._is_interesting_process(process_name):
+            # Skip processes with empty names (short-lived/zombie processes)
+            if not process_name or not self._is_interesting_process(process_name):
                 return
 
             # Create EventEntry

@@ -133,6 +133,7 @@ As a system administrator, I need the window rules system to automatically align
 - **Scoped app launched without project**: When a scoped application is launched in global mode (no active project), system either (a) prompts user to select a project first, or (b) launches in default mode without project context based on registry config
 - **Registry update during active session**: When registry is updated and system is rebuilt while applications are running, existing windows continue with old rules but new launches use new rules; daemon detects config change and reloads
 - **PWA ID changes**: When a PWA is reinstalled and gets a new FFPWA ID, registry must be updated with new ID; old desktop file becomes orphaned and should be cleaned up
+- **Legacy code removal**: When the registry system is implemented, ALL existing launch scripts, keybindings, and launcher mechanisms are removed in the same commit. No gradual migration period, no backwards compatibility mode. The system immediately uses only the registry-based launcher.
 
 ## Requirements *(mandatory)*
 
@@ -189,6 +190,13 @@ As a system administrator, I need the window rules system to automatically align
 - **FR-029**: Global applications launched from the registry MUST remain visible across all projects regardless of active project state
 - **FR-030**: System MUST support session management integration where terminal applications receive both PROJECT_DIR and SESSION_NAME variables for sesh/tmux integration
 
+#### Legacy Code Removal
+
+- **FR-031**: Implementation MUST remove all legacy launch scripts (launch-code.sh, launch-ghostty.sh, and any other custom application launchers in ~/.local/bin/ or ~/scripts/) in the same commit that introduces the registry system
+- **FR-032**: Implementation MUST update all i3 keybindings to reference the new unified launcher, removing references to old script paths
+- **FR-033**: Implementation MUST NOT include backwards compatibility modes, feature flags, or gradual migration paths - the registry system immediately becomes the sole application launching mechanism
+- **FR-034**: Implementation MUST document all removed legacy code in the commit message for reference
+
 ### Key Entities
 
 - **Application Registry Entry**: Represents a launchable application with properties: unique name (identifier), human-readable display name, base command (executable), optional parameters (with variable templates), scope classification (scoped/global), expected window class pattern, preferred workspace number (1-9), icon name/path, NixOS package reference, multi-instance flag
@@ -208,6 +216,7 @@ As a system administrator, I need the window rules system to automatically align
 - **SC-006**: Window rules automatically align with registry scope definitions for registered applications without manual window-rules.json editing
 - **SC-007**: CLI commands execute in under 500ms and provide equivalent functionality to GUI launcher
 - **SC-008**: Configuration drift between registry definitions and actual launcher behavior is eliminated (what's in registry matches what user sees and executes)
+- **SC-009**: All legacy launch scripts and old launcher mechanisms are completely removed from the codebase with zero backwards compatibility code remaining (verified by absence of launch-*.sh files and old keybinding patterns)
 
 ## Assumptions
 
@@ -215,7 +224,7 @@ As a system administrator, I need the window rules system to automatically align
 - **Home-manager for desktop files**: Desktop file generation uses home-manager's declarative approach (requires rebuild for changes to take effect), ensuring full reproducibility and declarative management consistent with NixOS philosophy.
 - **Launcher choice**: System will use rofi for the unified launcher interface, leveraging its GUI-focused design, icon/color support, and native XDG desktop integration for a polished user experience with 70+ applications.
 - **Variable scope**: Initial variable set is limited to project-related values (`$PROJECT_DIR`, `$PROJECT_NAME`, `$SESSION_NAME`, `$WORKSPACE`). Future expansion could include environment variables (`$HOME`, `$USER`), time-based variables, or custom user-defined variables.
-- **Backward compatibility**: Existing hard-coded launch scripts (launch-code.sh, launch-ghostty.sh, etc.) will be migrated to registry entries and deprecated. i3 keybindings will be updated to use the new generic launcher instead of script paths.
+- **No backwards compatibility (Constitution XII)**: This feature follows the Forward-Only Development principle. Existing hard-coded launch scripts (launch-code.sh, launch-ghostty.sh, etc.) will be COMPLETELY REMOVED in the same commit that introduces the registry system. Old i3 keybindings will be replaced entirely with new launcher keybindings. No compatibility layers, feature flags, or dual-mode support will be implemented. The migration is immediate and complete - the optimal solution replaces legacy code with zero preservation of old patterns.
 - **Window rules generation**: Automatic window-rules.json generation is enabled by default, with manual rules taking priority via the priority system to handle edge cases and allow overrides when needed.
 - **Single registry file**: All applications are defined in one JSON file. For larger deployments, the registry could be split into multiple files (e.g., per-category) and merged during build, but single-file is the initial design for simplicity.
 - **Launch wrapper script**: A generic launcher wrapper script handles variable resolution and command execution. This script is referenced in desktop file Exec lines and invoked by CLI commands, providing a single point of launch logic.

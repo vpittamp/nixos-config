@@ -283,9 +283,8 @@ class IPCServer:
                     for proj in projects.values()
                 ]
             elif method == "get_current_project":
-                # Adapt get_active_project response format for CLI
-                active = await self._get_active_project()
-                result = {"project": active.get("project_name")}
+                # Return full project details for app launcher wrapper script
+                result = await self._get_active_project()
             elif method == "list_rules":
                 # Return rules array adapted to CLI format
                 import uuid
@@ -406,11 +405,39 @@ class IPCServer:
             )
 
     async def _get_active_project(self) -> Dict[str, Any]:
-        """Get active project info."""
+        """Get active project info with full project details.
+
+        Returns:
+            Dictionary with project details or None values if no active project.
+            Format matches what the app launcher wrapper script expects.
+        """
         project_name = await self.state_manager.get_active_project()
+
+        if project_name is None:
+            return {
+                "name": None,
+                "display_name": None,
+                "icon": None,
+                "directory": None,
+            }
+
+        # Get full project details from state
+        projects = self.state_manager.state.projects
+        if project_name not in projects:
+            logger.warning(f"Active project '{project_name}' not found in state")
+            return {
+                "name": project_name,
+                "display_name": project_name,
+                "icon": "",
+                "directory": None,
+            }
+
+        project = projects[project_name]
         return {
-            "project_name": project_name,
-            "is_global": project_name is None,
+            "name": project.name,
+            "display_name": project.display_name,
+            "icon": project.icon or "",
+            "directory": str(project.directory),
         }
 
     async def _get_projects(self) -> Dict[str, Any]:
@@ -1140,6 +1167,19 @@ class IPCServer:
             # Daemon event fields
             "daemon_version": event_entry.daemon_version,
             "i3_socket": event_entry.i3_socket,
+
+            # Systemd event fields (Feature 029)
+            "systemd_unit": event_entry.systemd_unit,
+            "systemd_message": event_entry.systemd_message,
+            "systemd_pid": event_entry.systemd_pid,
+            "journal_cursor": event_entry.journal_cursor,
+
+            # Process event fields (Feature 029)
+            "process_pid": event_entry.process_pid,
+            "process_name": event_entry.process_name,
+            "process_cmdline": event_entry.process_cmdline,
+            "process_parent_pid": event_entry.process_parent_pid,
+            "process_start_time": event_entry.process_start_time.isoformat() if hasattr(event_entry.process_start_time, 'isoformat') else event_entry.process_start_time,
 
             # Processing metadata
             "processing_duration_ms": event_entry.processing_duration_ms,

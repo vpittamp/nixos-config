@@ -42,8 +42,8 @@ in {
         #!/bin/sh
         . /etc/profile
 
-        if [ -f /run/current-system/sw/libexec/pulseaudio-xrdp-module/pulseaudio_xrdp_init ]; then
-          /run/current-system/sw/libexec/pulseaudio-xrdp-module/pulseaudio_xrdp_init
+        if [ -f ${pkgs.pulseaudio-module-xrdp}/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init ]; then
+          ${pkgs.pulseaudio-module-xrdp}/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init
         fi
 
         exec i3-xrdp-session

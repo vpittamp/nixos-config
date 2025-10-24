@@ -80,14 +80,15 @@
       # Nix single-user mode for containers (harmless on WSL)
       NIX_REMOTE = "";
 
-      # FZF configuration - Commands only (options are set in initExtra)
-      # These must be in sessionVariables to be available before fzf bash integration loads
-      FZF_DEFAULT_COMMAND = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
-      FZF_CTRL_T_COMMAND = "${pkgs.fd}/bin/fd --type f --hidden --exclude .git";
-      FZF_ALT_C_COMMAND = "${pkgs.fd}/bin/fd --type d --hidden --exclude .git";
+      # FZF configuration - Using built-in walker (no external commands needed)
+      # Setting these to empty strings enables fzf's built-in walker
+      # Walker options (--walker, --walker-skip) are set in initExtra via FZF_*_OPTS
+      FZF_DEFAULT_COMMAND = "";
+      FZF_CTRL_T_COMMAND = "";
+      FZF_ALT_C_COMMAND = "";
 
       # FZF_CTRL_T_OPTS, FZF_ALT_C_OPTS, and FZF_CTRL_R_OPTS are set in initExtra
-      # due to complex quoting requirements for preview commands
+      # due to complex quoting requirements for preview commands and walker options
     } // lib.optionalAttrs pkgs.stdenv.isLinux {
       # SSL Certificate configuration (Linux only)
       # macOS uses its own certificate store
@@ -257,11 +258,13 @@
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
 
-      # FZF widget options - must be set here due to quoting issues in sessionVariables
+      # FZF widget options with built-in walker
       # These override the defaults for Ctrl+P, Alt+C, and Ctrl+R
       # Using centered popup format (90%,80%) matching clipboard history style
-      export FZF_CTRL_T_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
-      export FZF_ALT_C_OPTS="--tmux=center,90%,80% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
+      # Walker options: file,dir,follow,hidden for full traversal
+      # Walker skip: common directories to ignore (.git, node_modules, target, .direnv, etc.)
+      export FZF_CTRL_T_OPTS="--walker file,dir,follow,hidden --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache --tmux=center,90%,80% --scheme=path --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' --preview-window=right:60%:wrap"
+      export FZF_ALT_C_OPTS="--walker dir,follow,hidden --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache --tmux=center,90%,80% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
       export FZF_CTRL_R_OPTS="--tmux=center,90%,80% --scheme=history --highlight-line"
 
       # Override FZF's CTRL-R to use bash history file directly
@@ -463,16 +466,15 @@
           search_dirs=("$@")
         fi
 
-        # Build fd command with multiple search paths
-        local fd_results
-        fd_results=$(${pkgs.fd}/bin/fd --type f --hidden --exclude .git "''${search_dirs[@]}")
-
-        # Pass to fzf with preview
-        echo "$fd_results" | ${pkgs.fzf}/bin/fzf \
+        # Use fzf with built-in walker (no external fd needed)
+        # Change to the first search directory to make walker paths relative
+        (cd "''${search_dirs[0]}" && ${pkgs.fzf}/bin/fzf \
+          --walker file,dir,follow,hidden \
+          --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache \
           --tmux=center,90%,80% \
           --scheme=path \
           --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' \
-          --preview-window=right:60%:wrap
+          --preview-window=right:60%:wrap)
       }
 
       # Override the default fzf-file-widget to use our custom search

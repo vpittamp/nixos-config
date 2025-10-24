@@ -1,0 +1,175 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/user/nixos-config/schemas/application-registry.json",
+  "title": "Application Registry",
+  "description": "Declarative application launcher registry for unified project-aware application launching",
+  "type": "object",
+  "required": ["version", "applications"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for compatibility checking",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+    "applications": {
+      "type": "array",
+      "description": "List of registered applications",
+      "items": {
+        "$ref": "#/definitions/ApplicationEntry"
+      },
+      "minItems": 0
+    }
+  },
+  "definitions": {
+    "ApplicationEntry": {
+      "type": "object",
+      "description": "A single application entry in the registry",
+      "required": ["name", "display_name", "command"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for the application (kebab-case)",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 50,
+          "examples": ["vscode", "firefox", "ghostty-terminal"]
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable name shown in launcher",
+          "minLength": 1,
+          "maxLength": 100,
+          "examples": ["VS Code", "Firefox Browser", "Ghostty Terminal"]
+        },
+        "command": {
+          "type": "string",
+          "description": "Base executable command (no arguments)",
+          "minLength": 1,
+          "pattern": "^[^;|&`$(){}]+$",
+          "examples": ["code", "firefox", "ghostty"]
+        },
+        "parameters": {
+          "type": "string",
+          "description": "Command-line arguments with optional variable templates",
+          "pattern": "^[^;|&`]+$",
+          "examples": [
+            "$PROJECT_DIR",
+            "--work-tree=$PROJECT_DIR",
+            "-e lazygit --work-tree=$PROJECT_DIR"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "description": "Application scope relative to projects",
+          "enum": ["scoped", "global"],
+          "default": "global",
+          "examples": ["scoped", "global"]
+        },
+        "expected_class": {
+          "type": "string",
+          "description": "WM_CLASS pattern for window matching (regex)",
+          "examples": ["Code", "firefox", "^Ghostty$"]
+        },
+        "expected_title_contains": {
+          "type": "string",
+          "description": "Window title substring for matching (if expected_class not applicable)",
+          "examples": ["VS Code", "Mozilla Firefox"]
+        },
+        "preferred_workspace": {
+          "type": "integer",
+          "description": "Target workspace number for new windows",
+          "minimum": 1,
+          "maximum": 9,
+          "examples": [1, 2, 3]
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon name (from icon theme) or absolute path to icon file",
+          "examples": ["vscode", "firefox", "/home/user/.icons/custom.png"]
+        },
+        "nix_package": {
+          "type": "string",
+          "description": "NixOS package reference for documentation and validation",
+          "examples": ["pkgs.vscode", "pkgs.firefox", "pkgs.alacritty"]
+        },
+        "multi_instance": {
+          "type": "boolean",
+          "description": "Allow multiple windows of this application",
+          "default": true,
+          "examples": [true, false]
+        },
+        "fallback_behavior": {
+          "type": "string",
+          "description": "Behavior when project context is unavailable",
+          "enum": ["skip", "use_home", "error"],
+          "default": "skip",
+          "examples": ["skip", "use_home", "error"]
+        },
+        "categories": {
+          "type": "array",
+          "description": "Additional XDG desktop entry categories",
+          "items": {
+            "type": "string",
+            "examples": ["Development", "IDE", "Utility", "Network"]
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Application description for tooltips and documentation",
+          "maxLength": 200,
+          "examples": ["Code editor with project integration"]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0.0",
+      "applications": [
+        {
+          "name": "vscode",
+          "display_name": "VS Code",
+          "command": "code",
+          "parameters": "$PROJECT_DIR",
+          "scope": "scoped",
+          "expected_class": "Code",
+          "preferred_workspace": 1,
+          "icon": "vscode",
+          "nix_package": "pkgs.vscode",
+          "multi_instance": true,
+          "fallback_behavior": "skip",
+          "categories": ["Development", "IDE"],
+          "description": "Visual Studio Code editor"
+        },
+        {
+          "name": "firefox",
+          "display_name": "Firefox",
+          "command": "firefox",
+          "scope": "global",
+          "expected_class": "firefox",
+          "preferred_workspace": 2,
+          "icon": "firefox",
+          "nix_package": "pkgs.firefox",
+          "multi_instance": false,
+          "categories": ["Network", "WebBrowser"],
+          "description": "Mozilla Firefox web browser"
+        },
+        {
+          "name": "lazygit",
+          "display_name": "Lazygit",
+          "command": "ghostty",
+          "parameters": "-e lazygit --work-tree=$PROJECT_DIR",
+          "scope": "scoped",
+          "expected_class": "ghostty",
+          "preferred_workspace": 3,
+          "icon": "git",
+          "nix_package": "pkgs.lazygit",
+          "fallback_behavior": "error",
+          "categories": ["Development", "VersionControl"],
+          "description": "Terminal UI for git commands"
+        }
+      ]
+    }
+  ]
+}

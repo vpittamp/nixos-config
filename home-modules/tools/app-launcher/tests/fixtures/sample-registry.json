@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "applications": [
+    {
+      "name": "vscode",
+      "display_name": "VS Code",
+      "command": "code",
+      "parameters": "$PROJECT_DIR",
+      "scope": "scoped",
+      "expected_class": "Code",
+      "preferred_workspace": 1,
+      "icon": "vscode",
+      "nix_package": "pkgs.vscode",
+      "multi_instance": true,
+      "fallback_behavior": "skip"
+    },
+    {
+      "name": "ghostty",
+      "display_name": "Ghostty Terminal",
+      "command": "ghostty",
+      "parameters": "-e sesh $SESSION_NAME",
+      "scope": "scoped",
+      "expected_class": "ghostty",
+      "preferred_workspace": 3,
+      "icon": "terminal",
+      "nix_package": "pkgs.alacritty",
+      "multi_instance": true,
+      "fallback_behavior": "skip"
+    },
+    {
+      "name": "firefox",
+      "display_name": "Firefox",
+      "command": "firefox",
+      "parameters": "",
+      "scope": "global",
+      "expected_class": "firefox",
+      "preferred_workspace": 2,
+      "icon": "firefox",
+      "nix_package": "pkgs.firefox",
+      "multi_instance": false,
+      "fallback_behavior": "skip"
+    },
+    {
+      "name": "lazygit",
+      "display_name": "Lazygit",
+      "command": "ghostty",
+      "parameters": "-e lazygit --work-tree=$PROJECT_DIR",
+      "scope": "scoped",
+      "expected_class": "ghostty",
+      "preferred_workspace": 3,
+      "icon": "git",
+      "nix_package": "pkgs.lazygit",
+      "multi_instance": true,
+      "fallback_behavior": "error"
+    }
+  ]
+}

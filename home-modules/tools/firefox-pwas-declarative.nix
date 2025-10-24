@@ -12,7 +12,7 @@ let
 
   # Script to install and manage PWAs
   managePWAsScript = pkgs.writeShellScript "manage-pwas" ''
-    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:${pkgs.imagemagick}/bin:$PATH"
+    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:${pkgs.imagemagick}/bin:${pkgs.gawk}/bin:$PATH"
     FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
     DESKTOP_DIR="$HOME/.local/share/applications"
     STATE_FILE="$HOME/.config/firefoxpwa/installed-pwas.json"

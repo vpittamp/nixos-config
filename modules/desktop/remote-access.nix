@@ -20,8 +20,8 @@
       . /etc/profile
 
       # Set up audio if available
-      if [ -f /run/current-system/sw/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init ]; then
-        /run/current-system/sw/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init
+      if [ -f ${pkgs.pulseaudio-module-xrdp}/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init ]; then
+        ${pkgs.pulseaudio-module-xrdp}/libexec/pulsaudio-xrdp-module/pulseaudio_xrdp_init
       fi
 
       # Start Plasma X11 session with custom wrapper

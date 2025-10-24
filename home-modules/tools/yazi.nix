@@ -42,18 +42,18 @@ in
     # Add yazi-fzf to packages
     home.packages = [ yazi-fzf ];
 
-    # Create desktop entries for yazi
-    xdg.dataFile."applications/yazi.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Yazi
-      Comment=Blazing fast terminal file manager
-      Exec=ghostty -e yazi
-      Icon=folder
-      Terminal=false
-      Categories=System;FileTools;FileManager;
-      Keywords=file;manager;explorer;terminal;
-    '';
+    # Desktop entries now managed by app-registry.nix (Feature 034)
+    # xdg.dataFile."applications/yazi.desktop".text = ''
+    #   [Desktop Entry]
+    #   Type=Application
+    #   Name=Yazi
+    #   Comment=Blazing fast terminal file manager
+    #   Exec=ghostty -e yazi
+    #   Icon=folder
+    #   Terminal=false
+    #   Categories=System;FileTools;FileManager;
+    #   Keywords=file;manager;explorer;terminal;
+    # '';
 
     xdg.dataFile."applications/yazi-fzf.desktop".text = ''
       [Desktop Entry]

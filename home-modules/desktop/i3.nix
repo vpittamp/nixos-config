@@ -3,6 +3,9 @@
 { config, lib, pkgs, ... }:
 
 {
+  # Feature 034: Application launcher now uses Walker (configured in walker.nix)
+  # Legacy rofi configuration archived in i3-launcher.nix
+
   # Generate i3 config file directly (works with XRDP)
   home.file.".config/i3/config".text = ''
     # i3 config file (v4)
@@ -75,9 +78,10 @@
     # Lazygit - SCOPED (disabled for layout restore)
     # for_window [class="ghostty" title="^Lazygit-Workspace$"] move to workspace $ws7
 
-    # Terminal (Shift+Return for floating)
+    # Terminal (Shift+Return for floating) - DISABLED for Feature 034
     # NOTE: $mod+Return is now handled by project-aware launcher (see line ~166)
-    bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
+    # NOTE: $mod+Shift+Return is now handled by app-launcher-wrapper terminal selector (see line ~192)
+    # bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
     for_window [class="floating_terminal"] floating enable
 
     # Floating fzf launcher window - remove borders, center on monitor, mark to exclude from daemon rules
@@ -87,10 +91,16 @@
     # Window management
     bindsym $mod+Shift+q kill
 
-    # Application launcher
-    bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -display-drun Applications
+    # Application launcher (Feature 034: Unified launcher with Walker)
+    # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)
+    bindsym $mod+d exec ${config.programs.walker.package}/bin/walker
+    # Alternative: rofi (legacy, commented out)
+    # bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -show-icons
+    # FZF fallbacks for specific use cases
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-send-to-window.sh
+    # Walker alternative keybinding (Alt+Space for muscle memory)
+    bindsym Mod1+space exec ${config.programs.walker.package}/bin/walker
 
     # Keybinding cheatsheet (F1 for help)
     bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
@@ -108,8 +118,8 @@
     bindsym $mod+Shift+s exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
 
     # Quick launch (non-project-aware)
-    # NOTE: $mod+c, $mod+g, $mod+y are now handled by project-aware launchers (see line ~166)
-    bindsym $mod+b exec firefox
+    # NOTE: $mod+c, $mod+g, $mod+y, $mod+b are now handled by project-aware launchers (see line ~185-190)
+    # bindsym $mod+b exec firefox  # DISABLED: Conflicts with $mod+b for btop (line ~190)
     bindsym $mod+Shift+b exec ${pkgs.ghostty}/bin/ghostty -e bash -c fh
     bindsym $mod+Shift+f exec ${pkgs.xfce.thunar}/bin/thunar
     bindsym $mod+k exec ${pkgs.ghostty}/bin/ghostty -e ~/.local/bin/k9s-workspace
@@ -173,11 +183,14 @@
     bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh
     bindsym $mod+Shift+p exec i3pm project clear
 
-    # T022: Project-aware application launchers
-    bindsym $mod+c exec ~/.config/i3/scripts/launch-code.sh
-    bindsym $mod+Return exec ~/.config/i3/scripts/launch-ghostty.sh
-    bindsym $mod+g exec ~/.config/i3/scripts/launch-lazygit.sh
-    bindsym $mod+y exec ~/.config/i3/scripts/launch-yazi.sh
+    # Project-aware application launchers (Feature 034: Unified Application Launcher)
+    bindsym $mod+c exec ~/.local/bin/app-launcher-wrapper.sh vscode
+    bindsym $mod+Return exec ~/.local/bin/app-launcher-wrapper.sh ghostty
+    bindsym $mod+g exec ~/.local/bin/app-launcher-wrapper.sh lazygit
+    bindsym $mod+y exec ~/.local/bin/app-launcher-wrapper.sh yazi
+    bindsym $mod+b exec ~/.local/bin/app-launcher-wrapper.sh btop
+    # Global terminal selector (no project required)
+    bindsym $mod+Shift+Return exec ~/.local/bin/app-launcher-wrapper.sh terminal
 
     # T042: Monitor detection/workspace reassignment keybinding
     bindsym $mod+Shift+m exec ~/.config/i3/scripts/reassign-workspaces.sh
@@ -191,8 +204,8 @@
     # Top bar: System monitoring (CPU, memory, disk, network, temperature)
     # Bottom bar: Project context and workspaces (event-driven via i3pm daemon)
 
-    # Autostart - import environment variables for systemd services
-    exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
+    # Autostart - import full login environment so user systemd services inherit PATH/etc
+    exec --no-startup-id ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
@@ -352,4 +365,5 @@
     source = ./scripts/reassign-workspaces.sh;
     executable = true;
   };
+
 }
