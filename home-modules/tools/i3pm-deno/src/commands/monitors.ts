@@ -4,12 +4,15 @@
  */
 
 import { parseArgs } from "@std/cli/parse-args";
+import { Table } from "@cliffy/table";
 import { DaemonClient } from "../client.ts";
 import {
   WorkspaceMonitorConfigSchema,
   ConfigValidationResultSchema,
   ReloadConfigResponseSchema,
   ReassignWorkspacesResponseSchema,
+  GetMonitorsResponseSchema,
+  GetWorkspacesResponseSchema,
   validateResponse,
   createDefaultConfig,
 } from "../models_monitors.ts";
@@ -112,10 +115,11 @@ export async function monitorsCommand(
       break;
 
     case "status":
+      await statusCommand(parsed, options);
+      break;
+
     case "workspaces":
-      console.error(`Error: '${subcommand}' command not yet implemented (Phase 4: US2)`);
-      console.error("These commands will be available after User Story 2 is complete.");
-      Deno.exit(1);
+      await workspacesCommand(parsed, options);
       break;
 
     default:
@@ -454,6 +458,112 @@ async function reassignCommand(
         }
         Deno.exit(1);
       }
+    }
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Error: ${err.message}`);
+      Deno.exit(1);
+    }
+    throw err;
+  }
+}
+
+/**
+ * T039: Status command - Show current monitor assignments
+ */
+async function statusCommand(
+  parsed: any,
+  _options: MonitorsCommandOptions,
+): Promise<void> {
+  const client = new DaemonClient();
+
+  try {
+    await client.connect();
+
+    const response = await client.request("get_monitors");
+    const monitors = validateResponse(GetMonitorsResponseSchema, response);
+
+    if (parsed.json) {
+      console.log(JSON.stringify(monitors, null, 2));
+    } else {
+      console.log("\n📺 Monitor Status\n");
+
+      // Create table with monitor information
+      const table = new Table()
+        .header(["Output", "Role", "Primary", "Resolution", "Current WS", "Active"])
+        .body(
+          monitors.map((m) => [
+            m.name,
+            m.role || "-",
+            m.primary ? "✓" : "",
+            `${m.rect.width}x${m.rect.height}`,
+            m.current_workspace || "-",
+            m.active ? "✓" : "✗",
+          ]),
+        );
+
+      table.render();
+
+      const activeCount = monitors.filter((m) => m.active).length;
+      console.log(`\nActive monitors: ${activeCount}\n`);
+    }
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Error: ${err.message}`);
+      Deno.exit(1);
+    }
+    throw err;
+  }
+}
+
+/**
+ * T040: Workspaces command - Show workspace-to-output assignments
+ */
+async function workspacesCommand(
+  parsed: any,
+  _options: MonitorsCommandOptions,
+): Promise<void> {
+  const client = new DaemonClient();
+
+  try {
+    await client.connect();
+
+    const response = await client.request("get_workspaces");
+    const workspaces = validateResponse(GetWorkspacesResponseSchema, response);
+
+    if (parsed.json) {
+      console.log(JSON.stringify(workspaces, null, 2));
+    } else {
+      console.log("\n📊 Workspace Assignments\n");
+
+      // Create table with workspace information
+      const table = new Table()
+        .header([
+          "WS",
+          "Current Output",
+          "Target Role",
+          "Target Output",
+          "Source",
+          "Visible",
+          "Windows",
+        ])
+        .body(
+          workspaces.map((ws) => [
+            ws.workspace_num.toString(),
+            ws.output_name || "-",
+            ws.target_role || "-",
+            ws.target_output || "-",
+            ws.source,
+            ws.visible ? "✓" : "",
+            ws.window_count.toString(),
+          ]),
+        );
+
+      table.render();
+
+      const visibleCount = workspaces.filter((ws) => ws.visible).length;
+      console.log(`\nTotal workspaces: ${workspaces.length}`);
+      console.log(`Visible: ${visibleCount}\n`);
     }
   } catch (err) {
     if (err instanceof Error) {
