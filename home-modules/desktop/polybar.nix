@@ -97,51 +97,69 @@ in
         label-foreground = "#89dceb";  # Match prefix color
       };
 
-      # Project Module - Real-time updates via inotify file watching
+      # Project Module - Real-time updates via daemon polling
       "module/project" = {
         type = "custom/script";
         exec = "${pkgs.writeShellScript "polybar-project-display" ''
           #!${pkgs.bash}/bin/bash
-          # Display current project for polybar with real-time updates
-          # Uses inotifywait to watch for file changes
-
-          ACTIVE_PROJECT_FILE="$HOME/.config/i3/active-project"
+          # Display current project for polybar via i3pm daemon
+          # Polls daemon every 2 seconds (daemon updates via tick events)
 
           # Function to display current project
           display_project() {
-            if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+            # Query daemon for current project
+            CURRENT=$(${i3pmWrapper} project current 2>/dev/null)
+
+            if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
               # No active project - global mode
               echo "∅ Global"
               return
             fi
 
-            # Read active project info directly from JSON file
-            ICON=$(${pkgs.jq}/bin/jq -r '.icon // "📁"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
-            NAME=$(${pkgs.jq}/bin/jq -r '.name // "unknown"' "$ACTIVE_PROJECT_FILE" 2>/dev/null)
+            # Get project info from daemon
+            PROJECT_INFO=$(${i3pmWrapper} project list --json 2>/dev/null | \
+              ${pkgs.jq}/bin/jq -r ".[] | select(.name == \"$CURRENT\") | \"\\(.icon // \"📁\") \\(.display_name // .name)\"")
 
-            if [ -z "$NAME" ] || [ "$NAME" = "null" ]; then
-              # Invalid or empty project file - global mode
-              echo "∅ Global"
-              return
+            if [ -n "$PROJECT_INFO" ]; then
+              echo "$PROJECT_INFO"
+            else
+              # Fallback if project info not found
+              echo "📁 $CURRENT"
             fi
-
-            # Display with icon and name
-            echo "$ICON $NAME"
           }
 
-          # Display initial state
+          # Display current state
           display_project
-
-          # Watch for changes using inotifywait (real-time updates)
-          ${pkgs.inotify-tools}/bin/inotifywait -m -e modify,create,delete,moved_to "$ACTIVE_PROJECT_FILE" 2>/dev/null | \
-          while read -r; do
-            display_project
-          done
         ''}";
-        tail = true;
+        interval = 2;  # Poll every 2 seconds
 
-        # Click to switch project (using fzf switcher)
-        click-left = "${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
+        # Click to switch project (using rofi)
+        click-left = "${pkgs.writeShellScript "polybar-project-switcher" ''
+          #!${pkgs.bash}/bin/bash
+          # Get list of projects with icons and display names
+          PROJECT_LIST=$(${i3pmWrapper} project list --json 2>/dev/null)
+
+          if [ -z "$PROJECT_LIST" ] || [ "$PROJECT_LIST" = "[]" ]; then
+            ${pkgs.libnotify}/bin/notify-send "i3pm" "No projects configured"
+            exit 0
+          fi
+
+          # Format for rofi: "icon display_name"
+          FORMATTED=$(echo "$PROJECT_LIST" | ${pkgs.jq}/bin/jq -r '.[] | "\\(.icon // "📁") \\(.display_name // .name)\t\\(.name)"')
+
+          # Show rofi menu
+          SELECTED=$(echo "$FORMATTED" | ${pkgs.coreutils}/bin/cut -f1 | \
+            ${pkgs.rofi}/bin/rofi -dmenu -i -p "Switch Project" -theme-str 'window {width: 400px;}')
+
+          if [ -n "$SELECTED" ]; then
+            # Get the project name corresponding to the selection
+            PROJECT_NAME=$(echo "$FORMATTED" | ${pkgs.gnugrep}/bin/grep -F "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+
+            if [ -n "$PROJECT_NAME" ]; then
+              ${i3pmWrapper} project switch "$PROJECT_NAME"
+            fi
+          fi
+        ''}";
         # Right click to clear project
         click-right = "${i3pmWrapper} project clear";
 
