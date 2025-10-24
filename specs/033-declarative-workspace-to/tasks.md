@@ -170,9 +170,9 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T069 [P] Update CLAUDE.md with new CLI commands (`i3pm monitors` subcommands) and configuration file location
-- [ ] T070 [P] Create NixOS module wrapper in `home-modules/tools/i3pm-cli/default.nix` to compile Deno CLI to executable and install to PATH
-- [ ] T071 [P] Update existing `home-modules/tools/i3pm-daemon/default.nix` to include new Python modules and dependencies
+- [X] T069 [P] Update CLAUDE.md with new CLI commands (`i3pm monitors` subcommands) and configuration file location
+- [X] T070 [P] Create NixOS module wrapper in `home-modules/tools/i3pm-cli/default.nix` to compile Deno CLI to executable and install to PATH
+- [X] T071 [P] Update existing `home-modules/tools/i3pm-daemon/default.nix` to include new Python modules and dependencies
 - [ ] T072 Add error handling for common edge cases: config file missing, daemon not running, invalid output names, workspace on inactive output
 - [ ] T073 Add user-friendly error messages for daemon connection failures (suggest systemctl commands)
 - [ ] T074 Verify quickstart.md examples work end-to-end (run each command example and validate output)
