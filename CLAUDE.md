@@ -236,13 +236,13 @@ nix flake lock --update-input nixpkgs
   - Benefits: No race conditions, instant updates, <1% CPU usage, <15MB memory
   - Documentation: `/etc/nixos/specs/015-create-a-new/quickstart.md`
 
-- **Migrated from Polybar to i3bar + i3blocks** - Native i3 status bar (Feature 013)
-  - Replaced polybar with i3's native i3bar for workspace indicators
-  - Implemented i3blocks for status command with system information blocks
-  - Added project context indicator that updates via daemon query (not signals)
-  - System info blocks: CPU usage, memory usage, network status, date/time
-  - Configuration in `home-modules/desktop/i3blocks/` with shell scripts
-  - Benefits: Better i3 integration, simpler configuration, more reliable workspace sync
+- **Event-Driven i3bar Status Bar** - Real-time status updates via daemon subscriptions
+  - Replaced Polybar with native i3bar using event-driven protocol
+  - Status bar subscribes to i3pm daemon events for instant updates (<100ms latency)
+  - Status blocks: project context, CPU, memory, network, date/time
+  - Catppuccin Mocha theme with workspace buttons
+  - Configuration in `home-modules/desktop/i3bar.nix` with event-driven script
+  - Benefits: Instant project updates, native i3 integration, lower resource usage (no polling)
 
 ### Recent Updates (2025-09)
 
