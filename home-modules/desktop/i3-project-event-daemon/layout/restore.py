@@ -176,14 +176,22 @@ class LayoutRestore:
             f"{len(current_monitors)} current monitors"
         )
 
-        # Build output name mapping
+        # Feature 033: Use declarative workspace-to-monitor distribution
+        # This ensures restored workspaces go to the correct monitors according to config
+        workspace_to_output = self._get_workspace_distribution(current_monitors)
+
+        # Build output name mapping for backwards compatibility
         output_mapping = self._build_output_mapping(saved_monitors, current_monitors)
 
         # Adapt workspace layouts
         adapted_workspaces = []
         for ws_layout in snapshot.workspace_layouts:
-            # Map output name
-            new_output = output_mapping.get(ws_layout.output, current_monitors[0].name if current_monitors else "unknown")
+            # Feature 033: Determine target output from workspace-to-monitor config
+            # Falls back to output_mapping if workspace not in distribution
+            new_output = workspace_to_output.get(
+                ws_layout.workspace_num,
+                output_mapping.get(ws_layout.output, current_monitors[0].name if current_monitors else "unknown")
+            )
 
             # Get monitor for scaling
             saved_monitor = next((m for m in saved_monitors if m.name == ws_layout.output), None)
@@ -214,6 +222,68 @@ class LayoutRestore:
         snapshot.workspace_layouts = adapted_workspaces
 
         return snapshot
+
+    def _get_workspace_distribution(
+        self,
+        current_monitors: List[Monitor]
+    ) -> Dict[int, str]:
+        """
+        Get workspace-to-output mapping from Feature 033 configuration
+
+        Uses MonitorConfigManager to determine which output each workspace
+        should be placed on based on the declarative distribution rules.
+
+        Args:
+            current_monitors: Current monitor configuration
+
+        Returns:
+            Dictionary mapping workspace_num → output_name
+        """
+        workspace_to_output = {}
+
+        try:
+            # Import Feature 033 components
+            from ..monitor_config_manager import MonitorConfigManager
+            from ..workspace_manager import get_monitor_configs
+
+            # Load configuration
+            config_manager = MonitorConfigManager()
+            config = config_manager.load_config()
+
+            # Get monitor configurations with assigned roles (async call wrapped)
+            # Note: We can't use await here since this is a sync method
+            # So we'll use a simplified version that just assigns roles based on config
+
+            # Assign monitor roles based on primary flag and output_preferences
+            monitor_roles = config_manager.assign_monitor_roles(current_monitors)
+
+            # Get workspace distribution for current monitor count
+            distribution = config_manager.get_workspace_distribution(len(current_monitors))
+
+            # Build workspace → output mapping
+            for role, workspace_nums in distribution.items():
+                # Find output with this role
+                output_name = monitor_roles.get(role)
+                if output_name:
+                    for ws_num in workspace_nums:
+                        workspace_to_output[ws_num] = output_name
+
+            # Apply workspace_preferences overrides
+            for ws_num, role in config.workspace_preferences.items():
+                output_name = monitor_roles.get(role)
+                if output_name:
+                    workspace_to_output[ws_num] = output_name
+
+            logger.info(
+                f"Feature 033: Mapped {len(workspace_to_output)} workspaces "
+                f"using declarative distribution ({len(current_monitors)} monitors)"
+            )
+
+        except Exception as e:
+            logger.warning(f"Could not load workspace distribution from Feature 033: {e}")
+            logger.info("Falling back to legacy output mapping")
+
+        return workspace_to_output
 
     def _build_output_mapping(
         self,
