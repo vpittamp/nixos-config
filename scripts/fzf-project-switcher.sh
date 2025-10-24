@@ -12,7 +12,7 @@ tput civis  # Hide cursor
 I3PM="i3pm"
 
 # Get active project (suppress warnings)
-ACTIVE_PROJECT=$($I3PM current --json 2>&1 | grep -v '^Warning:' | jq -r '.name // ""')
+ACTIVE_PROJECT=$($I3PM project current 2>&1 | grep -v '^Warning:' | tr -d '\n')
 
 # Build project list
 PROJECT_LIST=""
@@ -25,7 +25,7 @@ if [ -n "$ACTIVE_PROJECT" ]; then
 fi
 
 # Get projects from i3pm and format for fzf (suppress warnings)
-PROJECTS_JSON=$($I3PM list --json 2>&1 | grep -v '^Warning:')
+PROJECTS_JSON=$($I3PM project list --json 2>&1 | grep -v '^Warning:')
 
 while IFS= read -r project; do
     NAME=$(echo "$project" | jq -r '.name')
@@ -54,7 +54,7 @@ while IFS= read -r project; do
     
     PROJECT_LIST="$PROJECT_LIST$LINE"$'\n'
     PROJECT_KEYS+=("$NAME")
-done < <(echo "$PROJECTS_JSON" | jq -c '.projects[]')
+done < <(echo "$PROJECTS_JSON" | jq -c '.[]')
 
 # Exit if no projects
 if [ ${#PROJECT_KEYS[@]} -eq 0 ] || ([ ${#PROJECT_KEYS[@]} -eq 1 ] && [ "${PROJECT_KEYS[0]}" = "__CLEAR__" ]); then

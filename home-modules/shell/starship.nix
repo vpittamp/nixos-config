@@ -66,7 +66,7 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname\${custom.tmux}\${custom.nixos_generation}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = "$os$username$hostname\${custom.nixos_generation}\${custom.nixos_generation_warning}\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
 
       os = {
         disabled = false;
@@ -96,18 +96,47 @@ in
         format = "@[$hostname]($style) ";
       };
 
+      custom.nixos_generation = {
+        description = "Display current NixOS generation and commit";
+        when = ''[ -n "${NIXOS_GENERATION_INFO_SHORT:-}" ] || command -v nixos-generation-info >/dev/null 2>&1'';
+        command = ''
+          if [ -n "${NIXOS_GENERATION_INFO_SHORT:-}" ]; then
+            printf '%s' "${NIXOS_GENERATION_INFO_SHORT}"
+          elif command -v nixos-generation-info >/dev/null 2>&1; then
+            nixos-generation-info --short
+          else
+            printf '%s' 'gunknown@unknown'
+          fi
+        '';
+        style = "bold fg:${colors.mauve}";
+        format = "[$output]($style) ";
+      };
+
+      custom.nixos_generation_warning = {
+        description = "Warn when running generation lags behind latest switch";
+        when = ''[ "${NIXOS_GENERATION_INFO_OUT_OF_SYNC:-0}" = "1" ] || {
+            command -v nixos-generation-info >/dev/null 2>&1 &&
+            [ "$(nixos-generation-info --status 2>/dev/null || echo in-sync)" = "out-of-sync" ];
+          }'';
+        command = ''
+          if [ -z "${NIXOS_GENERATION_INFO_LATEST:-}" ]; then
+            if command -v nixos-generation-info >/dev/null 2>&1; then
+              printf '%s' "⚠ $(nixos-generation-info --short | sed 's/@.*//')"
+            else
+              printf '%s' '⚠ out-of-sync'
+            fi
+          else
+            printf '%s' "⚠ ${NIXOS_GENERATION_INFO_LATEST}"
+          fi
+        '';
+        style = "bold fg:${colors.red}";
+        format = "[$output]($style) ";
+      };
+
       custom.tmux = {
         when = "test -n \"$TMUX\"";
         command = "echo \"$TMUX_PANE\"";
         style = "bold fg:${colors.sky}";
-        format = "[$output]($style) ";
-      };
-
-      custom.nixos_generation = {
-        description = "Warn if running system is not the latest generation";
-        when = ''[ "$(readlink /run/current-system 2>/dev/null)" != "$(readlink -f /nix/var/nix/profiles/system 2>/dev/null)" ]'';
-        command = "echo '⚠ OUT-OF-SYNC'";
-        style = "bold fg:${colors.red}";
         format = "[$output]($style) ";
       };
 

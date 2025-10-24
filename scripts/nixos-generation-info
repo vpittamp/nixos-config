@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# Report NixOS generation metadata in several formats.
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: nixos-generation-info [--short] [--json] [--export] [--status] [--help]
+
+Options:
+  --short    Emit a compact prompt-friendly string (e.g. g123@abc1234⚠*)
+  --json     Emit machine-readable JSON describing the current generation
+  --export   Emit shell assignments suitable for eval to populate env vars
+  --status   Print only the sync status: "in-sync" or "out-of-sync"
+  --help     Show this help message
+
+The command inspects /run/current-system and /nix/var/nix/profiles/system
+links and, when available, sources /run/current-system/etc/nixos-metadata to
+embed build metadata written at switch time.
+EOF
+}
+
+format="default"
+
+while (( $# )); do
+  case "$1" in
+    --short)
+      format="short"
+      ;;
+    --json)
+      format="json"
+      ;;
+    --export)
+      format="export"
+      ;;
+    --status)
+      format="status"
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      echo "nixos-generation-info: unknown option '$1'" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+json_escape() {
+  local value="$1"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$value" | jq -Rr @json
+  else
+    # Fallback JSON escaping: replace backslash and double quote; control chars omitted
+    printf '"'
+    local i c
+    for (( i = 0; i < ${#value}; i++ )); do
+      c=${value:i:1}
+      case "$c" in
+        "\\") printf '\\\\' ;;
+        '"') printf '\\"' ;;
+        $'\n') printf '\\n' ;;
+        $'\r') printf '\\r' ;;
+        $'\t') printf '\\t' ;;
+        *) printf '%s' "$c" ;;
+      esac
+    done
+    printf '"'
+  fi
+}
+
+current_system_target=$(readlink -f /run/current-system 2>/dev/null || printf '')
+latest_profile_link=$(readlink /nix/var/nix/profiles/system 2>/dev/null || printf '')
+latest_system_target=$(readlink -f /nix/var/nix/profiles/system 2>/dev/null || printf '')
+
+current_generation="unknown"
+if [[ -n "$current_system_target" ]]; then
+  for link in /nix/var/nix/profiles/system-*-link; do
+    [[ -e "$link" ]] || continue
+    if [[ $(readlink -f "$link" 2>/dev/null || printf '') == "$current_system_target" ]]; then
+      current_generation=${link##*/}
+      current_generation=${current_generation#system-}
+      current_generation=${current_generation%-link}
+      break
+    fi
+  done
+fi
+
+latest_generation="unknown"
+if [[ -n "$latest_profile_link" ]]; then
+  latest_generation=${latest_profile_link#system-}
+  latest_generation=${latest_generation%-link}
+fi
+
+metadata_file="/run/current-system/etc/nixos-metadata"
+
+metadata_available=0
+commit="unknown"
+short_commit="unknown"
+build_date="unknown"
+dirty_flag="unknown"
+source_url=""
+nixpkgs_rev="unknown"
+home_manager_rev="unknown"
+
+if [[ -f "$metadata_file" ]]; then
+  metadata_available=1
+  set +u
+  # shellcheck disable=SC1090
+  source "$metadata_file"
+  set -u
+  commit=${GIT_COMMIT:-unknown}
+  short_commit=${GIT_SHORT_COMMIT:-${commit:0:7}}
+  build_date=${BUILD_DATE:-${GIT_LAST_MODIFIED:-unknown}}
+  dirty_flag=${GIT_DIRTY:-unknown}
+  source_url=${GIT_SOURCE_URL:-}
+  nixpkgs_rev=${NIXPKGS_REV:-unknown}
+  home_manager_rev=${HOME_MANAGER_REV:-unknown}
+else
+  if [[ -f /run/current-system/configuration-revision ]]; then
+    commit=$(< /run/current-system/configuration-revision)
+    short_commit=${commit:0:7}
+  fi
+fi
+
+if [[ -z "$short_commit" || "$short_commit" == "unknown" ]] && [[ "$commit" != "unknown" ]]; then
+  short_commit=${commit:0:7}
+fi
+
+if [[ "$dirty_flag" == "true" ]]; then
+  dirty_symbol='*'
+  dirty_export=1
+elif [[ "$dirty_flag" == "false" ]]; then
+  dirty_symbol=''
+  dirty_export=0
+else
+  dirty_symbol=''
+  dirty_export=0
+fi
+
+out_of_sync=0
+if [[ -n "$current_system_target" && -n "$latest_system_target" && "$current_system_target" != "$latest_system_target" ]]; then
+  out_of_sync=1
+elif [[ "$current_generation" != "unknown" && "$latest_generation" != "unknown" && "$current_generation" != "$latest_generation" ]]; then
+  out_of_sync=1
+fi
+
+status="in-sync"
+[[ $out_of_sync -eq 1 ]] && status="out-of-sync"
+
+short_output="g${current_generation:-unknown}@${short_commit:-unknown}${dirty_symbol}"
+[[ $out_of_sync -eq 1 ]] && short_output+="⚠"
+
+case "$format" in
+  default)
+    echo "Current generation: g${current_generation:-unknown}"
+    if [[ "$latest_generation" != "unknown" ]]; then
+      echo "Latest generation:  g${latest_generation}"
+    fi
+    echo "Status:             $status"
+    echo "Commit:             ${commit:-unknown}"
+    echo "Short commit:       ${short_commit:-unknown}"
+    echo "Metadata available: ${metadata_available}"
+    echo "Build date:         ${build_date:-unknown}"
+    if [[ -n "$source_url" ]]; then
+      echo "Source URL:         $source_url"
+    fi
+    if [[ "$nixpkgs_rev" != "unknown" ]]; then
+      echo "nixpkgs rev:        $nixpkgs_rev"
+    fi
+    if [[ "$home_manager_rev" != "unknown" ]]; then
+      echo "home-manager rev:   $home_manager_rev"
+    fi
+    ;;
+  short)
+    printf '%s\n' "$short_output"
+    ;;
+  status)
+    printf '%s\n' "$status"
+    ;;
+  export)
+    printf 'NIXOS_GENERATION_INFO_GENERATION=%q\n' "g${current_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_GENERATION_RAW=%q\n' "${current_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_LATEST=%q\n' "g${latest_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_LATEST_RAW=%q\n' "${latest_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_STATUS=%q\n' "$status"
+    printf 'NIXOS_GENERATION_INFO_OUT_OF_SYNC=%q\n' "$out_of_sync"
+    printf 'NIXOS_GENERATION_INFO_SHORT=%q\n' "$short_output"
+    printf 'NIXOS_GENERATION_INFO_COMMIT=%q\n' "$commit"
+    printf 'NIXOS_GENERATION_INFO_SHORT_COMMIT=%q\n' "$short_commit"
+    printf 'NIXOS_GENERATION_INFO_BUILD_DATE=%q\n' "$build_date"
+    printf 'NIXOS_GENERATION_INFO_DIRTY=%q\n' "$dirty_export"
+    printf 'NIXOS_GENERATION_INFO_METADATA=%q\n' "$metadata_available"
+    printf 'NIXOS_GENERATION_INFO_SOURCE_URL=%q\n' "$source_url"
+    printf 'NIXOS_GENERATION_INFO_NIXPKGS_REV=%q\n' "$nixpkgs_rev"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_REV=%q\n' "$home_manager_rev"
+    ;;
+  json)
+    printf '{'
+    printf '\n  "generation": %s,' "$(json_escape "g${current_generation:-unknown}")"
+    printf '\n  "generationRaw": %s,' "$(json_escape "${current_generation:-unknown}")"
+    printf '\n  "latestGeneration": %s,' "$(json_escape "g${latest_generation:-unknown}")"
+    printf '\n  "latestGenerationRaw": %s,' "$(json_escape "${latest_generation:-unknown}")"
+    printf '\n  "status": %s,' "$(json_escape "$status")"
+    printf '\n  "outOfSync": %s,' "$out_of_sync"
+    printf '\n  "commit": %s,' "$(json_escape "$commit")"
+    printf '\n  "shortCommit": %s,' "$(json_escape "$short_commit")"
+    printf '\n  "dirty": %s,' "$dirty_export"
+    printf '\n  "metadata": %s,' "$metadata_available"
+    printf '\n  "buildDate": %s,' "$(json_escape "$build_date")"
+    printf '\n  "sourceUrl": %s,' "$(json_escape "$source_url")"
+    printf '\n  "nixpkgsRev": %s,' "$(json_escape "$nixpkgs_rev")"
+    printf '\n  "homeManagerRev": %s,' "$(json_escape "$home_manager_rev")"
+    printf '\n  "short": %s' "$(json_escape "$short_output")"
+    printf '\n}\n'
+    ;;
+  *)
+    echo "nixos-generation-info: unsupported format '$format'" >&2
+    exit 1
+    ;;
+esac

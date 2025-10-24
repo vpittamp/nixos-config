@@ -252,8 +252,12 @@ main() {
 
     # Main process: Listen for click events on stdin (blocking)
     while read -r click_event; do
+        # Debug: Log click events to file
+        echo "[$(date '+%H:%M:%S')] Received: $click_event" >> /tmp/i3bar-click-debug.log
+
         # Handle click event if it looks like JSON
         if [[ "$click_event" =~ ^\{ ]]; then
+            echo "[$(date '+%H:%M:%S')] Handling JSON click event" >> /tmp/i3bar-click-debug.log
             handle_click_event "$click_event" &
         fi
     done
