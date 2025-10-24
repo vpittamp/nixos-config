@@ -239,26 +239,31 @@ main() {
     initial_status=$(build_status_line)
     echo "$initial_status,"
 
-    # Fork process to handle click events from stdin
+    # Start status generation in background
+    # This process subscribes to daemon events and outputs status lines
+    (
+        "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
+            # Build and output new status line on each daemon event
+            status_line=$(build_status_line)
+            echo "$status_line,"
+        done
+    ) &
+    STATUS_PID=$!
+
+    # Main process: Listen for click events on stdin (blocking)
     while read -r click_event; do
-        # Check if it's a click event (starts with '{')
+        # Handle click event if it looks like JSON
         if [[ "$click_event" =~ ^\{ ]]; then
             handle_click_event "$click_event" &
         fi
-    done &
-    CLICK_HANDLER_PID=$!
-
-    # Subscribe to daemon events and rebuild status on each event
-    # Subscribe to all event types since project switches are 'ipc' events
-    "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
-        # Build and output new status line
-        status_line=$(build_status_line)
-        echo "$status_line,"
     done
 
-    # Clean up click handler on exit
-    kill $CLICK_HANDLER_PID 2>/dev/null || true
+    # Cleanup on exit
+    kill $STATUS_PID 2>/dev/null || true
 }
+
+# Trap to ensure cleanup
+trap 'kill $STATUS_PID 2>/dev/null' EXIT
 
 # Run main
 main

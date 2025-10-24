@@ -81,6 +81,9 @@ in
       # Separator
       separator_symbol " | "
 
+      # Enable verbose logging for debugging click events
+      verbose yes
+
       # Colors (Catppuccin Mocha theme)
       colors {
         background #1e1e2e
