@@ -83,6 +83,37 @@ in
       "d %h/.local/share/i3pm/layouts 0755 - - -"
     ];
 
+    # Feature 033: Generate default workspace-to-monitor mapping configuration
+    # Creates config file only if it doesn't already exist (force=false)
+    xdg.configFile."i3/workspace-monitor-mapping.json" = {
+      enable = true;
+      force = false;  # Don't overwrite existing config
+      text = builtins.toJSON {
+        version = "1.0";
+        distribution = {
+          "1_monitor" = {
+            primary = [ 1 2 3 4 5 6 7 8 9 10 ];
+            secondary = [];
+            tertiary = [];
+          };
+          "2_monitors" = {
+            primary = [ 1 2 ];
+            secondary = [ 3 4 5 6 7 8 9 10 ];
+            tertiary = [];
+          };
+          "3_monitors" = {
+            primary = [ 1 2 ];
+            secondary = [ 3 4 5 ];
+            tertiary = [ 6 7 8 9 10 ];
+          };
+        };
+        workspace_preferences = {};
+        output_preferences = {};
+        debounce_ms = 1000;
+        enable_auto_reassign = true;
+      };
+    };
+
     # Socket unit for socket activation (T028)
     systemd.user.sockets.i3-project-event-listener = {
       Unit = {

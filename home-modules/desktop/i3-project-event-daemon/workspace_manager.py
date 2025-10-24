@@ -1,8 +1,15 @@
-"""Workspace management for multi-monitor support."""
+"""Workspace management for multi-monitor support.
+
+Feature 033: Refactored to use declarative configuration from workspace-monitor-mapping.json
+instead of hardcoded distribution rules.
+"""
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
 import logging
+
+from .monitor_config_manager import MonitorConfigManager
+from .models import MonitorRole
 
 logger = logging.getLogger(__name__)
 
@@ -90,18 +97,18 @@ class MonitorConfig:
         }
 
 
-async def get_monitor_configs(i3) -> List[MonitorConfig]:
+async def get_monitor_configs(
+    i3,
+    config_manager: Optional[MonitorConfigManager] = None
+) -> List[MonitorConfig]:
     """Get active monitor configurations with role assignments.
 
-    Queries i3 GET_OUTPUTS and assigns roles based on monitor count and primary flag.
-
-    Distribution rules:
-    - 1 monitor: all workspaces on primary
-    - 2 monitors: WS 1-2 primary, WS 3-9 secondary
-    - 3+ monitors: WS 1-2 primary, WS 3-5 secondary, WS 6-9 tertiary
+    Feature 033: Now uses MonitorConfigManager for role assignment based on
+    declarative configuration (output_preferences) instead of hardcoded rules.
 
     Args:
         i3: i3ipc.aio.Connection instance
+        config_manager: Optional MonitorConfigManager instance (creates new if None)
 
     Returns:
         List of MonitorConfig objects with assigned roles
@@ -112,67 +119,53 @@ async def get_monitor_configs(i3) -> List[MonitorConfig]:
         ...     print(len(monitors))
         1
     """
+    # Get active outputs from i3
     outputs = await i3.get_outputs()
     active_outputs = [o for o in outputs if o.active]
 
     if not active_outputs:
         raise RuntimeError("No active outputs found")
 
-    # Assign roles based on count and primary flag
-    if len(active_outputs) == 1:
-        # Single monitor: everything on primary
-        return [MonitorConfig.from_i3_output(active_outputs[0], "primary")]
+    # Use config manager to assign roles (Feature 033)
+    if config_manager is None:
+        config_manager = MonitorConfigManager()
 
-    elif len(active_outputs) == 2:
-        # Dual monitor: primary and secondary
-        primary = next((o for o in active_outputs if o.primary), active_outputs[0])
-        secondary = next((o for o in active_outputs if o != primary), active_outputs[1])
+    # Convert i3 outputs to Pydantic MonitorConfig models for role assignment
+    from .models import MonitorConfig as PydanticMonitorConfig
+    pydantic_monitors = [
+        PydanticMonitorConfig.from_i3_output(o)
+        for o in active_outputs
+    ]
 
-        return [
-            MonitorConfig.from_i3_output(primary, "primary"),
-            MonitorConfig.from_i3_output(secondary, "secondary"),
-        ]
+    # Get role assignments from config
+    role_assignments = config_manager.assign_monitor_roles(pydantic_monitors)
 
-    else:
-        # Triple+ monitor: primary, secondary, tertiary
-        primary = next((o for o in active_outputs if o.primary), active_outputs[0])
+    # Build MonitorConfig (dataclass) list with assigned roles
+    monitors = []
+    for output in active_outputs:
+        role = role_assignments.get(output.name, MonitorRole.PRIMARY).value
+        monitors.append(MonitorConfig.from_i3_output(output, role))
 
-        # Remaining outputs assigned as secondary, tertiary, etc.
-        remaining = [o for o in active_outputs if o != primary]
-        secondary = remaining[0] if remaining else None
-        tertiary = remaining[1] if len(remaining) > 1 else None
-
-        monitors = [MonitorConfig.from_i3_output(primary, "primary")]
-
-        if secondary:
-            monitors.append(MonitorConfig.from_i3_output(secondary, "secondary"))
-
-        if tertiary:
-            monitors.append(MonitorConfig.from_i3_output(tertiary, "tertiary"))
-
-        # Additional monitors beyond 3 get "tertiary" role
-        for extra in remaining[2:]:
-            monitors.append(MonitorConfig.from_i3_output(extra, "tertiary"))
-
-        return monitors
+    return monitors
 
 
 async def assign_workspaces_to_monitors(
     i3,
     monitors: List[MonitorConfig],
     workspace_preferences: Optional[Dict[int, str]] = None,
+    config_manager: Optional[MonitorConfigManager] = None,
 ) -> None:
-    """Assign workspaces to monitors based on distribution rules.
+    """Assign workspaces to monitors based on declarative configuration.
 
-    Distribution rules:
-    - 1 monitor: WS 1-9 on primary
-    - 2 monitors: WS 1-2 on primary, WS 3-9 on secondary
-    - 3+ monitors: WS 1-2 on primary, WS 3-5 on secondary, WS 6-9 on tertiary
+    Feature 033: Now uses workspace-monitor-mapping.json configuration instead
+    of hardcoded distribution rules. Respects workspace_preferences from config
+    file and optional runtime overrides.
 
     Args:
         i3: i3ipc.aio.Connection instance
         monitors: List of MonitorConfig objects with roles
-        workspace_preferences: Optional project-specific workspace preferences
+        workspace_preferences: Optional runtime workspace preferences (overrides config)
+        config_manager: Optional MonitorConfigManager instance (creates new if None)
 
     Examples:
         >>> async with i3ipc.aio.Connection() as i3:
@@ -182,48 +175,36 @@ async def assign_workspaces_to_monitors(
     # Build role-to-output-name mapping
     role_map = {m.role: m.name for m in monitors}
 
-    # Determine workspace distribution based on monitor count
+    # Load configuration (Feature 033)
+    if config_manager is None:
+        config_manager = MonitorConfigManager()
+
+    # Get workspace distribution from config
     monitor_count = len(monitors)
+    distribution = config_manager.get_workspace_distribution(monitor_count)
 
-    if monitor_count == 1:
-        # All workspaces on primary
-        primary_output = role_map["primary"]
-        for ws_num in range(1, 10):
-            await i3.command(f"workspace {ws_num} output {primary_output}")
+    # Apply distribution rules from config
+    for role, workspace_nums in distribution.items():
+        if role.value in role_map:
+            output_name = role_map[role.value]
+            for ws_num in workspace_nums:
+                logger.debug(f"Assigning workspace {ws_num} to {output_name} ({role.value})")
+                await i3.command(f"workspace {ws_num} output {output_name}")
 
-    elif monitor_count == 2:
-        # WS 1-2 on primary, WS 3-9 on secondary
-        primary_output = role_map["primary"]
-        secondary_output = role_map["secondary"]
+    # Apply workspace preferences from config file
+    config = config_manager.load_config()
+    for ws_num, role in config.workspace_preferences.items():
+        if role.value in role_map:
+            output_name = role_map[role.value]
+            logger.debug(f"Applying config preference: workspace {ws_num} → {output_name} ({role})")
+            await i3.command(f"workspace {ws_num} output {output_name}")
 
-        for ws_num in range(1, 3):
-            await i3.command(f"workspace {ws_num} output {primary_output}")
-
-        for ws_num in range(3, 10):
-            await i3.command(f"workspace {ws_num} output {secondary_output}")
-
-    else:
-        # WS 1-2 on primary, WS 3-5 on secondary, WS 6-9 on tertiary
-        primary_output = role_map["primary"]
-        secondary_output = role_map.get("secondary")
-        tertiary_output = role_map.get("tertiary")
-
-        for ws_num in range(1, 3):
-            await i3.command(f"workspace {ws_num} output {primary_output}")
-
-        if secondary_output:
-            for ws_num in range(3, 6):
-                await i3.command(f"workspace {ws_num} output {secondary_output}")
-
-        if tertiary_output:
-            for ws_num in range(6, 10):
-                await i3.command(f"workspace {ws_num} output {tertiary_output}")
-
-    # Apply workspace preferences if provided
+    # Apply runtime workspace preferences (highest priority, overrides config)
     if workspace_preferences:
         for ws_num, preferred_role in workspace_preferences.items():
             if preferred_role in role_map:
                 output_name = role_map[preferred_role]
+                logger.debug(f"Applying runtime preference: workspace {ws_num} → {output_name} ({preferred_role})")
                 await i3.command(f"workspace {ws_num} output {output_name}")
 
 

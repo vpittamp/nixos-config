@@ -250,6 +250,16 @@ class IPCServer:
             elif method == "layout.info":
                 result = await self._layout_info(params)
 
+            # Feature 033: Workspace-to-monitor mapping methods
+            elif method == "get_monitor_config":
+                result = await self._get_monitor_config()
+            elif method == "validate_monitor_config":
+                result = await self._validate_monitor_config(params)
+            elif method == "reload_monitor_config":
+                result = await self._reload_monitor_config()
+            elif method == "reassign_workspaces":
+                result = await self._reassign_workspaces(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -2102,4 +2112,213 @@ class IPCServer:
                 project_name=params.get("project"),
                 params=params,
                 duration_ms=duration_ms,
+            )
+
+    # ======================================================================
+    # Feature 033: Declarative Workspace-to-Monitor Mapping Methods
+    # ======================================================================
+
+    async def _get_monitor_config(self) -> Dict[str, Any]:
+        """Get current workspace-to-monitor configuration.
+
+        Feature 033: T021
+
+        Returns:
+            Configuration dict from workspace-monitor-mapping.json
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .monitor_config_manager import MonitorConfigManager
+
+            config_manager = MonitorConfigManager()
+            config = config_manager.load_config()
+
+            # Convert Pydantic model to dict for JSON serialization
+            return config.model_dump()
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting monitor config: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::monitor_config",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _validate_monitor_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate workspace-to-monitor configuration file.
+
+        Feature 033: T022
+
+        Args:
+            params: Optional params dict with:
+                - config_path: str (optional) - Path to config file
+
+        Returns:
+            ValidationResult dict with valid, issues, and config fields
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from pathlib import Path
+            from .monitor_config_manager import MonitorConfigManager
+
+            # Get config path from params or use default
+            config_path_str = params.get("config_path")
+            if config_path_str:
+                config_path = Path(config_path_str)
+            else:
+                config_path = MonitorConfigManager.DEFAULT_CONFIG_PATH
+
+            # Validate configuration
+            validation_result = MonitorConfigManager.validate_config_file(config_path)
+
+            # Convert Pydantic models to dicts
+            result_dict = {
+                "valid": validation_result.valid,
+                "issues": [issue.model_dump() for issue in validation_result.issues],
+                "config": validation_result.config.model_dump() if validation_result.config else None,
+            }
+
+            return result_dict
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error validating monitor config: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="config::validate_monitor",
+                params=params,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _reload_monitor_config(self) -> Dict[str, Any]:
+        """Reload workspace-to-monitor configuration from disk.
+
+        Feature 033: T023
+
+        Returns:
+            Dict with success status and change summary
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .monitor_config_manager import MonitorConfigManager
+
+            config_manager = MonitorConfigManager()
+
+            # Force reload from disk
+            new_config = config_manager.load_config(force_reload=True)
+
+            # Get summary of changes (simplified - just report success)
+            changes = [
+                f"Configuration reloaded from {config_manager.config_path}",
+                f"Distribution rules updated for {len(new_config.distribution.model_dump())} monitor configurations",
+                f"Workspace preferences: {len(new_config.workspace_preferences)} entries",
+            ]
+
+            logger.info(f"Monitor configuration reloaded: {config_manager.config_path}")
+
+            return {
+                "success": True,
+                "changes": changes,
+                "error": None,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error reloading monitor config: {e}")
+            return {
+                "success": False,
+                "changes": [],
+                "error": str(e),
+            }
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="config::reload_monitor",
+                config_type="workspace_monitor_mapping",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _reassign_workspaces(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Reassign all workspaces to monitors based on configuration.
+
+        Feature 033: T020
+
+        Args:
+            params: Optional params dict with:
+                - dry_run: bool (default False) - Preview without applying
+
+        Returns:
+            Dict with success status, assignments_made count, and errors list
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .monitor_config_manager import MonitorConfigManager
+            from .workspace_manager import get_monitor_configs, assign_workspaces_to_monitors
+
+            dry_run = params.get("dry_run", False)
+
+            # Get i3 connection
+            i3 = self.state_manager.i3
+            if not i3:
+                raise RuntimeError("i3 connection not available")
+
+            # Get monitor configurations with roles
+            config_manager = MonitorConfigManager()
+            monitors = await get_monitor_configs(i3, config_manager)
+
+            if not monitors:
+                return {
+                    "success": False,
+                    "assignments_made": 0,
+                    "errors": ["No active monitors detected"],
+                }
+
+            # Count workspaces to be assigned
+            distribution = config_manager.get_workspace_distribution(len(monitors))
+            total_workspaces = sum(len(ws_list) for ws_list in distribution.values())
+
+            # Apply workspace assignments (unless dry-run)
+            if not dry_run:
+                await assign_workspaces_to_monitors(i3, monitors, config_manager=config_manager)
+                logger.info(f"Reassigned {total_workspaces} workspaces to {len(monitors)} monitors")
+            else:
+                logger.info(f"Dry-run: Would reassign {total_workspaces} workspaces to {len(monitors)} monitors")
+
+            return {
+                "success": True,
+                "assignments_made": total_workspaces if not dry_run else 0,
+                "errors": [],
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error reassigning workspaces: {e}")
+            return {
+                "success": False,
+                "assignments_made": 0,
+                "errors": [str(e)],
+            }
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="workspace::reassign",
+                params=params,
+                duration_ms=duration_ms,
+                error=error_msg,
             )

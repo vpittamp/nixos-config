@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "i3ipc>=2.2.1",
     "systemd-python>=235",
+    "pydantic>=2.0.0",
 ]
 
 [project.scripts]

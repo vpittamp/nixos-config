@@ -11,8 +11,10 @@
     "@std/cli": "jsr:@std/cli@^1.0.0",
     "@std/fs": "jsr:@std/fs@^1.0.0",
     "@std/path": "jsr:@std/path@^1.0.0",
+    "@std/json": "jsr:@std/json@^1.0.0",
     "zod": "npm:zod@^3.22.0",
-    "@cli-ux": "../cli-ux/mod.ts"
+    "@cli-ux": "../cli-ux/mod.ts",
+    "@cliffy/table": "jsr:@cliffy/table@^1.0.0-rc.3"
   },
   "compilerOptions": {
     "strict": true,

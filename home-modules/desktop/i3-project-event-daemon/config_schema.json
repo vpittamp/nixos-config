@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workspace-to-Monitor Mapping Configuration",
+  "description": "Configuration schema for declarative workspace distribution across monitors",
+  "type": "object",
+  "required": ["version", "distribution"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version",
+      "default": "1.0",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "distribution": {
+      "type": "object",
+      "description": "Default workspace distribution rules by monitor count",
+      "required": ["1_monitor", "2_monitors", "3_monitors"],
+      "properties": {
+        "1_monitor": {
+          "$ref": "#/definitions/monitorDistribution",
+          "description": "Distribution for 1-monitor setup"
+        },
+        "2_monitors": {
+          "$ref": "#/definitions/monitorDistribution",
+          "description": "Distribution for 2-monitor setup"
+        },
+        "3_monitors": {
+          "$ref": "#/definitions/monitorDistribution",
+          "description": "Distribution for 3+ monitor setup"
+        }
+      },
+      "additionalProperties": false
+    },
+    "workspace_preferences": {
+      "type": "object",
+      "description": "Explicit workspace-to-role assignments (overrides distribution)",
+      "patternProperties": {
+        "^[1-9]\\d*$": {
+          "$ref": "#/definitions/monitorRole"
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "output_preferences": {
+      "type": "object",
+      "description": "Preferred output names for each role (with fallbacks)",
+      "properties": {
+        "primary": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Preferred outputs for primary role"
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Preferred outputs for secondary role"
+        },
+        "tertiary": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Preferred outputs for tertiary role"
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "debounce_ms": {
+      "type": "integer",
+      "description": "Debounce delay for monitor change events (milliseconds)",
+      "minimum": 0,
+      "maximum": 5000,
+      "default": 1000
+    },
+    "enable_auto_reassign": {
+      "type": "boolean",
+      "description": "Automatically reassign workspaces on monitor changes",
+      "default": true
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "monitorRole": {
+      "type": "string",
+      "enum": ["primary", "secondary", "tertiary"],
+      "description": "Monitor role assignment"
+    },
+    "monitorDistribution": {
+      "type": "object",
+      "description": "Workspace distribution for a specific monitor configuration",
+      "properties": {
+        "primary": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Workspaces assigned to primary monitor",
+          "default": []
+        },
+        "secondary": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Workspaces assigned to secondary monitor",
+          "default": []
+        },
+        "tertiary": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Workspaces assigned to tertiary monitor",
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

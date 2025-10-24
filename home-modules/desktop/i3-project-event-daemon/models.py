@@ -328,3 +328,229 @@ class DaemonState:
 
         if self.pid == 0:
             self.pid = os.getpid()
+
+
+# ============================================================================
+# Monitor Configuration Models (Feature 033)
+# ============================================================================
+# Pydantic models for declarative workspace-to-monitor mapping configuration.
+# These models provide runtime validation for the JSON configuration file at
+# ~/.config/i3/workspace-monitor-mapping.json
+
+from enum import Enum
+from pydantic import BaseModel, Field, field_validator
+
+
+class MonitorRole(str, Enum):
+    """Monitor role assignment."""
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+    TERTIARY = "tertiary"
+
+
+class MonitorDistribution(BaseModel):
+    """Workspace distribution for a specific monitor role."""
+    primary: List[int] = Field(default_factory=list, description="Workspaces on primary monitor")
+    secondary: List[int] = Field(default_factory=list, description="Workspaces on secondary monitor")
+    tertiary: List[int] = Field(default_factory=list, description="Workspaces on tertiary monitor")
+
+    @field_validator("primary", "secondary", "tertiary")
+    @classmethod
+    def validate_workspace_numbers(cls, v: List[int]) -> List[int]:
+        """Ensure workspace numbers are positive integers."""
+        for ws_num in v:
+            if ws_num <= 0:
+                raise ValueError(f"Workspace number must be positive: {ws_num}")
+        return v
+
+
+class DistributionRules(BaseModel):
+    """Distribution rules for different monitor counts."""
+    one_monitor: MonitorDistribution = Field(
+        alias="1_monitor",
+        description="Distribution for 1-monitor setup"
+    )
+    two_monitors: MonitorDistribution = Field(
+        alias="2_monitors",
+        description="Distribution for 2-monitor setup"
+    )
+    three_monitors: MonitorDistribution = Field(
+        alias="3_monitors",
+        description="Distribution for 3+ monitor setup"
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class WorkspaceMonitorConfig(BaseModel):
+    """Root configuration model for workspace-to-monitor mapping."""
+
+    version: str = Field(default="1.0", description="Configuration version")
+
+    distribution: DistributionRules = Field(
+        description="Default workspace distribution rules by monitor count"
+    )
+
+    workspace_preferences: Dict[int, MonitorRole] = Field(
+        default_factory=dict,
+        description="Explicit workspace-to-role assignments (overrides distribution)"
+    )
+
+    output_preferences: Dict[MonitorRole, List[str]] = Field(
+        default_factory=dict,
+        description="Preferred output names for each role (with fallbacks)"
+    )
+
+    debounce_ms: int = Field(
+        default=1000,
+        ge=0,
+        le=5000,
+        description="Debounce delay for monitor change events (ms)"
+    )
+
+    enable_auto_reassign: bool = Field(
+        default=True,
+        description="Automatically reassign workspaces on monitor changes"
+    )
+
+    @field_validator("workspace_preferences")
+    @classmethod
+    def validate_workspace_preferences(cls, v: Dict[int, MonitorRole]) -> Dict[int, MonitorRole]:
+        """Ensure workspace numbers in preferences are positive integers."""
+        for ws_num in v.keys():
+            if ws_num <= 0:
+                raise ValueError(f"Workspace number must be positive: {ws_num}")
+        return v
+
+    model_config = {
+        "use_enum_values": True,
+        "json_schema_extra": {
+            "example": {
+                "version": "1.0",
+                "distribution": {
+                    "1_monitor": {"primary": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+                    "2_monitors": {"primary": [1, 2], "secondary": [3, 4, 5, 6, 7, 8, 9, 10]},
+                    "3_monitors": {"primary": [1, 2], "secondary": [3, 4, 5], "tertiary": [6, 7, 8, 9, 10]},
+                },
+                "workspace_preferences": {18: "secondary", 42: "tertiary"},
+                "output_preferences": {
+                    "primary": ["rdp0", "DP-1", "eDP-1"],
+                    "secondary": ["rdp1", "HDMI-1"],
+                    "tertiary": ["rdp2", "HDMI-2"],
+                },
+                "debounce_ms": 1000,
+                "enable_auto_reassign": True,
+            }
+        }
+    }
+
+
+class OutputRect(BaseModel):
+    """Output geometry (position and size)."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class MonitorConfig(BaseModel):
+    """Represents a physical monitor/output."""
+
+    name: str = Field(description="Output name from i3 IPC (e.g., rdp0, DP-1)")
+    active: bool = Field(description="Whether output is currently active")
+    primary: bool = Field(description="Whether this is the xrandr primary output")
+    role: Optional[MonitorRole] = Field(None, description="Assigned role (primary/secondary/tertiary)")
+    rect: OutputRect = Field(description="Output position and size")
+    current_workspace: Optional[str] = Field(None, description="Workspace currently visible on this output")
+
+    # Additional i3 output fields
+    make: Optional[str] = Field(None, description="Monitor manufacturer")
+    model: Optional[str] = Field(None, description="Monitor model")
+    serial: Optional[str] = Field(None, description="Monitor serial number")
+
+    @classmethod
+    def from_i3_output(cls, output: Any) -> "MonitorConfig":
+        """Create MonitorConfig from i3ipc Output object."""
+        return cls(
+            name=output.name,
+            active=output.active,
+            primary=output.primary,
+            rect=OutputRect(
+                x=output.rect.x,
+                y=output.rect.y,
+                width=output.rect.width,
+                height=output.rect.height,
+            ),
+            current_workspace=output.current_workspace,
+            make=output.make,
+            model=output.model,
+            serial=output.serial,
+        )
+
+
+class WorkspaceAssignment(BaseModel):
+    """Represents the assignment of a workspace to an output."""
+
+    workspace_num: int = Field(description="Workspace number")
+    output_name: Optional[str] = Field(None, description="Current output name (from i3 IPC)")
+    target_role: Optional[MonitorRole] = Field(None, description="Target role (from config)")
+    target_output: Optional[str] = Field(None, description="Resolved target output name")
+    source: str = Field(description="Assignment source: 'default', 'explicit', 'runtime'")
+    visible: bool = Field(description="Whether workspace is visible on an active output")
+    window_count: int = Field(default=0, description="Number of windows on this workspace")
+
+    @classmethod
+    def from_i3_workspace(cls, workspace: Any, target_role: Optional[MonitorRole] = None) -> "WorkspaceAssignment":
+        """Create WorkspaceAssignment from i3ipc Workspace object."""
+        return cls(
+            workspace_num=workspace.num,
+            output_name=workspace.output,
+            target_role=target_role,
+            source="runtime",  # Will be updated by assignment logic
+            visible=workspace.visible,
+        )
+
+
+class MonitorSystemState(BaseModel):
+    """Complete monitor and workspace state."""
+
+    monitors: List[MonitorConfig] = Field(description="All detected monitors")
+    workspaces: List[WorkspaceAssignment] = Field(description="All workspace assignments")
+    active_monitor_count: int = Field(description="Number of active monitors")
+    primary_output: Optional[str] = Field(None, description="Primary output name")
+    last_updated: float = Field(description="Timestamp of last state update (Unix epoch)")
+
+    @property
+    def active_monitors(self) -> List[MonitorConfig]:
+        """Get only active monitors."""
+        return [m for m in self.monitors if m.active]
+
+    @property
+    def orphaned_workspaces(self) -> List[WorkspaceAssignment]:
+        """Get workspaces on inactive outputs."""
+        active_output_names = {m.name for m in self.active_monitors}
+        return [ws for ws in self.workspaces if ws.output_name not in active_output_names]
+
+
+class ValidationIssue(BaseModel):
+    """Single validation issue."""
+    severity: str = Field(description="Severity: 'error' or 'warning'")
+    field: str = Field(description="Field path (e.g., 'distribution.2_monitors.primary')")
+    message: str = Field(description="Human-readable error message")
+
+
+class ConfigValidationResult(BaseModel):
+    """Result of configuration validation."""
+    valid: bool = Field(description="Whether configuration is valid")
+    issues: List[ValidationIssue] = Field(default_factory=list, description="Validation issues")
+    config: Optional[WorkspaceMonitorConfig] = Field(None, description="Parsed config if valid")
+
+    @property
+    def errors(self) -> List[ValidationIssue]:
+        """Get only error-level issues."""
+        return [issue for issue in self.issues if issue.severity == "error"]
+
+    @property
+    def warnings(self) -> List[ValidationIssue]:
+        """Get only warning-level issues."""
+        return [issue for issue in self.issues if issue.severity == "warning"]
