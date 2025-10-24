@@ -98,10 +98,10 @@ in
 
       custom.nixos_generation = {
         description = "Display current NixOS generation and commit";
-        when = ''[ -n "${NIXOS_GENERATION_INFO_SHORT:-}" ] || command -v nixos-generation-info >/dev/null 2>&1'';
+        when = ''[ -n "''${NIXOS_GENERATION_INFO_SHORT:-}" ] || command -v nixos-generation-info >/dev/null 2>&1'';
         command = ''
-          if [ -n "${NIXOS_GENERATION_INFO_SHORT:-}" ]; then
-            printf '%s' "${NIXOS_GENERATION_INFO_SHORT}"
+          if [ -n "''${NIXOS_GENERATION_INFO_SHORT:-}" ]; then
+            printf '%s' "''${NIXOS_GENERATION_INFO_SHORT}"
           elif command -v nixos-generation-info >/dev/null 2>&1; then
             nixos-generation-info --short
           else
@@ -114,19 +114,26 @@ in
 
       custom.nixos_generation_warning = {
         description = "Warn when running generation lags behind latest switch";
-        when = ''[ "${NIXOS_GENERATION_INFO_OUT_OF_SYNC:-0}" = "1" ] || {
-            command -v nixos-generation-info >/dev/null 2>&1 &&
-            [ "$(nixos-generation-info --status 2>/dev/null || echo in-sync)" = "out-of-sync" ];
-          }'';
-        command = ''
-          if [ -z "${NIXOS_GENERATION_INFO_LATEST:-}" ]; then
-            if command -v nixos-generation-info >/dev/null 2>&1; then
-              printf '%s' "⚠ $(nixos-generation-info --short | sed 's/@.*//')"
-            else
-              printf '%s' '⚠ out-of-sync'
-            fi
+        when = ''
+          if [ "''${NIXOS_GENERATION_INFO_OUT_OF_SYNC:-0}" = "1" ]; then
+            exit 0
+          fi
+
+          if command -v nixos-generation-info >/dev/null 2>&1; then
+            status=$(nixos-generation-info --status 2>/dev/null || echo in-sync)
+            [ "$status" = "out-of-sync" ]
           else
-            printf '%s' "⚠ ${NIXOS_GENERATION_INFO_LATEST}"
+            exit 1
+          fi
+        '';
+        command = ''
+          if [ -n "''${NIXOS_GENERATION_INFO_LATEST:-}" ]; then
+            printf '%s' "⚠ ''${NIXOS_GENERATION_INFO_LATEST}"
+          elif command -v nixos-generation-info >/dev/null 2>&1; then
+            latest=$(nixos-generation-info --short 2>/dev/null | sed 's/@.*//' || printf 'gunknown')
+            printf '%s' "⚠ ''${latest}"
+          else
+            printf '%s' '⚠ out-of-sync'
           fi
         '';
         style = "bold fg:${colors.red}";

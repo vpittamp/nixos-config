@@ -80,6 +80,23 @@ diff \
   /nix/var/nix/profiles/system-$gen2-link/etc/nixos-metadata
 ```
 
+### Terminal Prompt Integration
+
+Your Starship prompt now reads the generation metadata automatically:
+
+- `nixos-generation-info --export` runs once per shell (and again after each rebuild) to populate `NIXOS_GENERATION_INFO_*` environment variables.
+- `nixos-generation-info --short` renders a compact string like `g776@abc1234` (appending `*` when the build was dirty and `⚠` when the running system lags behind the latest profile).
+- A new Starship segment shows the short string in mauve; if the running system falls behind the latest switch, a red warning with the latest generation (for example `⚠ g777`) appears right next to it.
+- Inside tmux panes the behaviour is identical, so you can see the same generation details everywhere.
+
+Additional helper outputs:
+
+```bash
+nixos-generation-info           # Human-readable summary of the current build
+nixos-generation-info --json    # Machine-readable JSON payload
+nixos-generation-info --status  # Simple "in-sync" / "out-of-sync" check
+```
+
 ## How It Works
 
 The flake automatically embeds metadata into each system build:

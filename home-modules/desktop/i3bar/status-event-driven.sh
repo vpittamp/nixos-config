@@ -255,6 +255,9 @@ main() {
         # Debug: Log click events to file
         echo "[$(date '+%H:%M:%S')] Received: $click_event" >> /tmp/i3bar-click-debug.log
 
+        # Strip leading comma if present (i3bar sends events as JSON array elements)
+        click_event="${click_event#,}"
+
         # Handle click event if it looks like JSON
         if [[ "$click_event" =~ ^\{ ]]; then
             echo "[$(date '+%H:%M:%S')] Handling JSON click event" >> /tmp/i3bar-click-debug.log
