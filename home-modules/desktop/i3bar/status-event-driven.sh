@@ -212,8 +212,9 @@ main() {
     echo '{"version":1,"click_events":true}'
     echo '['
 
-    # Output initial empty status line
-    echo '[],'
+    # Output initial status line with current state
+    initial_status=$(build_status_line)
+    echo "$initial_status,"
 
     # Subscribe to daemon events and rebuild status on each event
     "$I3PM_BIN" daemon events --follow --type=project,window 2>/dev/null | while read -r event; do
