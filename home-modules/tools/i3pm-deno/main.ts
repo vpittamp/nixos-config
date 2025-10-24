@@ -43,6 +43,7 @@ COMMANDS:
   daemon           Daemon status and event monitoring
   layout           Workspace layout persistence (save/restore)
   rules            Window classification rules
+  monitors         Workspace-to-monitor mapping configuration
   monitor          Interactive monitoring dashboard
   app-classes      Application class management
 
@@ -56,6 +57,8 @@ EXAMPLES:
   i3pm layout save my-layout           Save current workspace layout
   i3pm layout restore my-layout        Restore saved layout
   i3pm rules list                      List classification rules
+  i3pm monitors config show            Show workspace distribution config
+  i3pm monitors reassign               Redistribute workspaces
   i3pm monitor                         Launch monitoring dashboard
 
 For detailed documentation, see:
@@ -142,6 +145,13 @@ async function main(): Promise<void> {
       {
         const { rulesCommand } = await import("./src/commands/rules.ts");
         await rulesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "monitors":
+      {
+        const { monitorsCommand } = await import("./src/commands/monitors.ts");
+        await monitorsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
