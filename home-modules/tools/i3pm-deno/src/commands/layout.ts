@@ -662,7 +662,8 @@ export async function layoutCommand(
   }
 
   const subcommand = parsed._[0] as string;
-  const subcommandArgs = parsed._.slice(1);
+  // Pass remaining args starting from position 1, preserving flags
+  const subcommandArgs = args.slice(1);
 
   // Connect to daemon
   const client = new DaemonClient();
