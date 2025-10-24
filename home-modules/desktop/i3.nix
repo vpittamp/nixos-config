@@ -80,8 +80,9 @@
     bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
     for_window [class="floating_terminal"] floating enable
 
-    # Floating fzf launcher window - remove borders and title bar
-    for_window [instance="fzf-launcher"] floating enable, border pixel 0
+    # Floating fzf launcher window - remove borders, center on monitor, mark to exclude from daemon rules
+    # The mark prevents the daemon from moving this window (daemon checks for _global_ui mark)
+    for_window [instance="fzf-launcher"] floating enable, border pixel 0, move position center, mark _global_ui
 
     # Window management
     bindsym $mod+Shift+q kill
@@ -170,7 +171,7 @@
 
     # Project management keybindings (fzf-based switcher)
     bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh
-    bindsym $mod+Shift+p exec i3pm clear
+    bindsym $mod+Shift+p exec i3pm project clear
 
     # T022: Project-aware application launchers
     bindsym $mod+c exec ~/.config/i3/scripts/launch-code.sh

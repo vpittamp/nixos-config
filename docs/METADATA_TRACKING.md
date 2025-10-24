@@ -80,21 +80,20 @@ diff \
   /nix/var/nix/profiles/system-$gen2-link/etc/nixos-metadata
 ```
 
-### Terminal Prompt Integration
+### i3 Status Bar Integration
 
-Your Starship prompt now reads the generation metadata automatically:
+The top i3bar now includes a “gXY hmZZ” segment driven by this metadata:
 
-- `nixos-generation-info --export` runs once per shell (and again after each rebuild) to populate `NIXOS_GENERATION_INFO_*` environment variables.
-- `nixos-generation-info --short` renders a compact string like `g776@abc1234` (appending `*` when the build was dirty and `⚠` when the running system lags behind the latest profile).
-- A new Starship segment shows the short string in mauve; if the running system falls behind the latest switch, a red warning with the latest generation (for example `⚠ g777`) appears right next to it.
-- Inside tmux panes the behaviour is identical, so you can see the same generation details everywhere.
+- `nixos-generation-info --export` feeds the status script; it surfaces both the system (`g782`) and Home Manager (`hm16`) generations and flips the text to red with a `⚠` suffix whenever either side is out of sync.
+- The script reuses the same helper, so any rebuild instantly updates the bar without delaying new terminals.
 
-Additional helper outputs:
+Additional helper outputs remain available for ad-hoc use:
 
 ```bash
 nixos-generation-info           # Human-readable summary of the current build
 nixos-generation-info --json    # Machine-readable JSON payload
 nixos-generation-info --status  # Simple "in-sync" / "out-of-sync" check
+nixos-generation-info --warning # Prefixed warning string for prompt integrations
 ```
 
 ## How It Works

@@ -31,6 +31,75 @@ COLOR_OVERLAY2="#9399b2"
 COLOR_SURFACE2="#585b70"
 COLOR_BASE="#1e1e2e"
 
+escape_json_string() {
+    local str="$1"
+    local out=""
+    local char
+    local i
+    for (( i = 0; i < ${#str}; i++ )); do
+        char=${str:i:1}
+        case "$char" in
+            '"') out+='\\"' ;;
+            '\\') out+='\\\\' ;;
+            $'\n') out+='\\n' ;;
+            $'\r') out+='\\r' ;;
+            $'\t') out+='\\t' ;;
+            *) out+="$char" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
+get_generation_block() {
+    if ! command -v nixos-generation-info >/dev/null 2>&1; then
+        return
+    fi
+
+    local export_data
+    if ! export_data=$(nixos-generation-info --export 2>/dev/null); then
+        return
+    fi
+
+    local short status warning hm_short color text
+    eval "$export_data"
+
+    short=${NIXOS_GENERATION_INFO_SHORT:-}
+    hm_short=${NIXOS_GENERATION_INFO_HOME_MANAGER_SHORT:-}
+    status=${NIXOS_GENERATION_INFO_STATUS:-unknown}
+    warning=${NIXOS_GENERATION_INFO_WARNING_PARTS:-}
+
+    if [ -z "$short" ]; then
+        short="generation unknown"
+    fi
+
+    if [ -n "$hm_short" ] && [[ "$short" != *"$hm_short"* ]]; then
+        short="$short $hm_short"
+    fi
+
+    color="$COLOR_MAUVE"
+    if [ "$status" = "out-of-sync" ]; then
+        color="$COLOR_RED"
+        if [ -n "$warning" ]; then
+            short="$short ⚠ $warning"
+        else
+            short="$short ⚠"
+        fi
+    fi
+
+    text="  $short"
+    text=$(escape_json_string "$text")
+
+    cat <<EOF
+{
+  "full_text": "$text",
+  "color": "$color",
+  "name": "nixos_generation",
+  "separator": false,
+  "separator_block_width": 15
+}
+EOF
+}
+
 # CPU usage calculation
 get_cpu_usage() {
     # Read /proc/stat for CPU usage
@@ -130,6 +199,8 @@ get_load_average() {
 # Build status line
 build_status_line() {
     local cpu_usage mem_usage disk_usage net_traffic cpu_temp load_avg current_time
+    local blocks=()
+    local block
 
     # Gather metrics
     mem_usage=$(get_memory_usage)
@@ -139,65 +210,97 @@ build_status_line() {
     load_avg=$(get_load_average)
     current_time=$("$DATE_BIN" '+%a %b %d  %H:%M:%S')
 
-    # Build JSON array of blocks
-    cat <<EOF
-[
-  {
-    "full_text": "  LOAD ${load_avg}",
-    "color": "$COLOR_BLUE",
-    "name": "load",
-    "separator": false,
-    "separator_block_width": 15
-  },
-  {
-    "full_text": "  ${mem_usage}",
-    "color": "$COLOR_SAPPHIRE",
-    "name": "memory",
-    "separator": false,
-    "separator_block_width": 15
-  },
-  {
-    "full_text": "  ${disk_usage}",
-    "color": "$COLOR_SKY",
-    "name": "disk",
-    "separator": false,
-    "separator_block_width": 15
-  },
-  {
-    "full_text": "  ${net_traffic}",
-    "color": "$COLOR_TEAL",
-    "name": "network",
-    "separator": false,
-    "separator_block_width": 15
-  }
-EOF
-
-    # Add CPU temperature if available
-    if [ -n "$cpu_temp" ]; then
-        cat <<EOF
-  ,
-  {
-    "full_text": "  ${cpu_temp}",
-    "color": "$COLOR_PEACH",
-    "name": "temperature",
-    "separator": false,
-    "separator_block_width": 15
-  }
-EOF
+    if block=$(get_generation_block); then
+        if [ -n "$block" ]; then
+            blocks+=("$block")
+        fi
     fi
 
-    # Add date/time
-    cat <<EOF
-  ,
-  {
-    "full_text": "  ${current_time}",
-    "color": "$COLOR_TEXT",
-    "name": "datetime",
-    "separator": false,
-    "separator_block_width": 10
-  }
-]
+    block=$(cat <<EOF
+{
+  "full_text": "  LOAD ${load_avg}",
+  "color": "$COLOR_BLUE",
+  "name": "load",
+  "separator": false,
+  "separator_block_width": 15
+}
 EOF
+)
+    blocks+=("$block")
+
+    block=$(cat <<EOF
+{
+  "full_text": "  ${mem_usage}",
+  "color": "$COLOR_SAPPHIRE",
+  "name": "memory",
+  "separator": false,
+  "separator_block_width": 15
+}
+EOF
+)
+    blocks+=("$block")
+
+    block=$(cat <<EOF
+{
+  "full_text": "  ${disk_usage}",
+  "color": "$COLOR_SKY",
+  "name": "disk",
+  "separator": false,
+  "separator_block_width": 15
+}
+EOF
+)
+    blocks+=("$block")
+
+    block=$(cat <<EOF
+{
+  "full_text": "  ${net_traffic}",
+  "color": "$COLOR_TEAL",
+  "name": "network",
+  "separator": false,
+  "separator_block_width": 15
+}
+EOF
+)
+    blocks+=("$block")
+
+    if [ -n "$cpu_temp" ]; then
+        block=$(cat <<EOF
+{
+  "full_text": "  ${cpu_temp}",
+  "color": "$COLOR_PEACH",
+  "name": "temperature",
+  "separator": false,
+  "separator_block_width": 15
+}
+EOF
+)
+        blocks+=("$block")
+    fi
+
+    block=$(cat <<EOF
+{
+  "full_text": "  ${current_time}",
+  "color": "$COLOR_TEXT",
+  "name": "datetime",
+  "separator": false,
+  "separator_block_width": 10
+}
+EOF
+)
+    blocks+=("$block")
+
+    printf '[\n'
+    local idx=0
+    local total=${#blocks[@]}
+    for block in "${blocks[@]}"; do
+        if [ $idx -ne 0 ]; then
+            printf ',\n'
+        fi
+        printf '%s' "$block"
+        idx=$((idx + 1))
+    done
+    printf '\n]\n'
 }
 
 # Main loop

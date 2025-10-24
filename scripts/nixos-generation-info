@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# Report NixOS generation metadata in several formats.
+# Report NixOS and Home Manager generation metadata in several formats.
 
 set -euo pipefail
 
+shopt -s nullglob
+
 usage() {
   cat <<'EOF'
-Usage: nixos-generation-info [--short] [--json] [--export] [--status] [--help]
+Usage: nixos-generation-info [--short] [--json] [--export] [--status] [--warning] [--help]
 
 Options:
-  --short    Emit a compact prompt-friendly string (e.g. g123@abc1234⚠*)
-  --json     Emit machine-readable JSON describing the current generation
+  --short    Emit a compact prompt-friendly string (e.g. g123@abc1234 hm42⚠)
+  --json     Emit machine-readable JSON describing the current state
   --export   Emit shell assignments suitable for eval to populate env vars
-  --status   Print only the sync status: "in-sync" or "out-of-sync"
+  --status   Print overall sync status (system + Home Manager)
+  --warning  Print a warning string (prefixed with ⚠) when out-of-sync
   --help     Show this help message
 
-The command inspects /run/current-system and /nix/var/nix/profiles/system
-links and, when available, sources /run/current-system/etc/nixos-metadata to
-embed build metadata written at switch time.
+The command inspects the active NixOS system profile and the Home Manager
+profile for the current user (or $NIXOS_GENERATION_INFO_HOME_MANAGER_USER if
+provided). When available, it also sources /run/current-system/etc/nixos-metadata
+to expose build details such as git commit hashes and flake inputs.
 EOF
 }
 
@@ -35,6 +39,9 @@ while (( $# )); do
       ;;
     --status)
       format="status"
+      ;;
+    --warning)
+      format="warning"
       ;;
     --help|-h)
       usage
@@ -55,26 +62,23 @@ done
 
 json_escape() {
   local value="$1"
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$value" | jq -Rr @json
-  else
-    # Fallback JSON escaping: replace backslash and double quote; control chars omitted
-    printf '"'
-    local i c
-    for (( i = 0; i < ${#value}; i++ )); do
-      c=${value:i:1}
-      case "$c" in
-        "\\") printf '\\\\' ;;
-        '"') printf '\\"' ;;
-        $'\n') printf '\\n' ;;
-        $'\r') printf '\\r' ;;
-        $'\t') printf '\\t' ;;
-        *) printf '%s' "$c" ;;
-      esac
-    done
-    printf '"'
-  fi
+  printf '"'
+  local i c
+  for (( i = 0; i < ${#value}; i++ )); do
+    c=${value:i:1}
+    case "$c" in
+      "\\") printf '\\\\' ;;
+      '"') printf '\\"' ;;
+      $'\n') printf '\\n' ;;
+      $'\r') printf '\\r' ;;
+      $'\t') printf '\\t' ;;
+      *) printf '%s' "$c" ;;
+    esac
+  done
+  printf '"'
 }
+
+# --- System generation information ---------------------------------------------------------
 
 current_system_target=$(readlink -f /run/current-system 2>/dev/null || printf '')
 latest_profile_link=$(readlink /nix/var/nix/profiles/system 2>/dev/null || printf '')
@@ -123,11 +127,9 @@ if [[ -f "$metadata_file" ]]; then
   source_url=${GIT_SOURCE_URL:-}
   nixpkgs_rev=${NIXPKGS_REV:-unknown}
   home_manager_rev=${HOME_MANAGER_REV:-unknown}
-else
-  if [[ -f /run/current-system/configuration-revision ]]; then
-    commit=$(< /run/current-system/configuration-revision)
-    short_commit=${commit:0:7}
-  fi
+elif [[ -f /run/current-system/configuration-revision ]]; then
+  commit=$(< /run/current-system/configuration-revision)
+  short_commit=${commit:0:7}
 fi
 
 if [[ -z "$short_commit" || "$short_commit" == "unknown" ]] && [[ "$commit" != "unknown" ]]; then
@@ -152,11 +154,123 @@ elif [[ "$current_generation" != "unknown" && "$latest_generation" != "unknown" 
   out_of_sync=1
 fi
 
+# --- Home Manager generation information ---------------------------------------------------
+
+hm_user_default=${SUDO_USER:-${USER:-}}
+hm_user=${NIXOS_GENERATION_INFO_HOME_MANAGER_USER:-$hm_user_default}
+hm_profile_dir=""
+hm_current_link=""
+hm_current_target=""
+hm_current_generation="unknown"
+hm_latest_generation="unknown"
+hm_latest_target=""
+hm_out_of_sync=0
+hm_status="unavailable"
+
+if [[ -n "$hm_user" ]]; then
+  hm_profile_roots=()
+  if [[ -d "/nix/var/nix/profiles/per-user/$hm_user" ]]; then
+    hm_profile_roots+=("/nix/var/nix/profiles/per-user/$hm_user")
+  fi
+  user_home=""
+  if user_home=$(getent passwd "$hm_user" 2>/dev/null | cut -d: -f6); then
+    if [[ -d "$user_home/.local/state/nix/profiles" ]]; then
+      hm_profile_roots+=("$user_home/.local/state/nix/profiles")
+    fi
+  fi
+
+  for candidate in "${hm_profile_roots[@]}"; do
+    if [[ -e "$candidate/home-manager" ]]; then
+      hm_profile_dir="$candidate"
+      break
+    fi
+    # Fallback: accept directory even if current link missing (will check latest)
+    if [[ -z "$hm_profile_dir" && -d "$candidate" ]]; then
+      hm_profile_dir="$candidate"
+    fi
+  done
+
+  if [[ -n "$hm_profile_dir" ]]; then
+    hm_current_link="$hm_profile_dir/home-manager"
+    if [[ -e "$hm_current_link" ]]; then
+      hm_current_target=$(readlink -f "$hm_current_link" 2>/dev/null || printf '')
+    fi
+
+    hm_latest_generation_num=-1
+    for link in "$hm_profile_dir"/home-manager-*-link; do
+      [[ -e "$link" ]] || continue
+      base=${link##*/}
+      gen=${base#home-manager-}
+      gen=${gen%-link}
+      if [[ "$gen" =~ ^[0-9]+$ ]]; then
+        link_target=$(readlink -f "$link" 2>/dev/null || printf '')
+        if [[ "$hm_current_generation" = "unknown" && -n "$hm_current_target" && "$link_target" = "$hm_current_target" ]]; then
+          hm_current_generation="$gen"
+        fi
+        if (( gen > hm_latest_generation_num )); then
+          hm_latest_generation="$gen"
+          hm_latest_generation_num=$gen
+          hm_latest_target="$link_target"
+        fi
+      fi
+    done
+
+    if [[ "$hm_current_generation" = "unknown" && -e "$hm_current_link" ]]; then
+      current_base=$(readlink "$hm_current_link" 2>/dev/null || printf '')
+      if [[ "$current_base" =~ home-manager-([0-9]+)-link$ ]]; then
+        hm_current_generation="${BASH_REMATCH[1]}"
+      fi
+    fi
+
+    if [[ -n "$hm_current_target" && -n "$hm_latest_target" && "$hm_current_target" != "$hm_latest_target" ]]; then
+      hm_out_of_sync=1
+    elif [[ "$hm_current_generation" != "unknown" && "$hm_latest_generation" != "unknown" && "$hm_current_generation" != "$hm_latest_generation" ]]; then
+      hm_out_of_sync=1
+    fi
+
+    if [[ "$hm_current_generation" != "unknown" || "$hm_latest_generation" != "unknown" ]]; then
+      hm_status="in-sync"
+      [[ $hm_out_of_sync -eq 1 ]] && hm_status="out-of-sync"
+    fi
+  fi
+fi
+
+hm_short="hm${hm_current_generation:-unknown}"
+hm_latest_short="hm${hm_latest_generation:-unknown}"
+
+# --- Aggregate outputs ---------------------------------------------------------------------
+
 status="in-sync"
-[[ $out_of_sync -eq 1 ]] && status="out-of-sync"
+[[ $out_of_sync -eq 1 || $hm_out_of_sync -eq 1 ]] && status="out-of-sync"
 
 short_output="g${current_generation:-unknown}@${short_commit:-unknown}${dirty_symbol}"
-[[ $out_of_sync -eq 1 ]] && short_output+="⚠"
+if [[ "$hm_current_generation" != "unknown" ]]; then
+  short_output+=" ${hm_short}"
+fi
+[[ $out_of_sync -eq 1 || $hm_out_of_sync -eq 1 ]] && short_output+="⚠"
+
+warning_parts=()
+if [[ $out_of_sync -eq 1 ]]; then
+  if [[ "$latest_generation" != "unknown" ]]; then
+    warning_parts+=("g${latest_generation}")
+  else
+    warning_parts+=("system")
+  fi
+fi
+if [[ $hm_out_of_sync -eq 1 ]]; then
+  if [[ "$hm_latest_generation" != "unknown" ]]; then
+    warning_parts+=("${hm_latest_short}")
+  else
+    warning_parts+=("home-manager")
+  fi
+fi
+
+warning_message=""
+if (( ${#warning_parts[@]} > 0 )); then
+  warning_message="${warning_parts[*]}"
+fi
+
+# --- Output formats ------------------------------------------------------------------------
 
 case "$format" in
   default)
@@ -165,6 +279,14 @@ case "$format" in
       echo "Latest generation:  g${latest_generation}"
     fi
     echo "Status:             $status"
+    if [[ -n "$hm_user" && -d "$hm_profile_dir" ]]; then
+      echo "Home Manager user:  $hm_user"
+      echo "HM generation:      ${hm_short}"
+      if [[ "$hm_latest_generation" != "unknown" ]]; then
+        echo "HM latest:          ${hm_latest_short}"
+      fi
+      echo "HM status:          $hm_status"
+    fi
     echo "Commit:             ${commit:-unknown}"
     echo "Short commit:       ${short_commit:-unknown}"
     echo "Metadata available: ${metadata_available}"
@@ -185,6 +307,13 @@ case "$format" in
   status)
     printf '%s\n' "$status"
     ;;
+  warning)
+    if [[ -n "$warning_message" ]]; then
+      printf '⚠ %s\n' "$warning_message"
+    else
+      exit 1
+    fi
+    ;;
   export)
     printf 'NIXOS_GENERATION_INFO_GENERATION=%q\n' "g${current_generation:-unknown}"
     printf 'NIXOS_GENERATION_INFO_GENERATION_RAW=%q\n' "${current_generation:-unknown}"
@@ -193,6 +322,7 @@ case "$format" in
     printf 'NIXOS_GENERATION_INFO_STATUS=%q\n' "$status"
     printf 'NIXOS_GENERATION_INFO_OUT_OF_SYNC=%q\n' "$out_of_sync"
     printf 'NIXOS_GENERATION_INFO_SHORT=%q\n' "$short_output"
+    printf 'NIXOS_GENERATION_INFO_WARNING_PARTS=%q\n' "$warning_message"
     printf 'NIXOS_GENERATION_INFO_COMMIT=%q\n' "$commit"
     printf 'NIXOS_GENERATION_INFO_SHORT_COMMIT=%q\n' "$short_commit"
     printf 'NIXOS_GENERATION_INFO_BUILD_DATE=%q\n' "$build_date"
@@ -201,6 +331,14 @@ case "$format" in
     printf 'NIXOS_GENERATION_INFO_SOURCE_URL=%q\n' "$source_url"
     printf 'NIXOS_GENERATION_INFO_NIXPKGS_REV=%q\n' "$nixpkgs_rev"
     printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_REV=%q\n' "$home_manager_rev"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_USER=%q\n' "$hm_user"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_GENERATION=%q\n' "$hm_short"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_GENERATION_RAW=%q\n' "${hm_current_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_LATEST=%q\n' "$hm_latest_short"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_LATEST_RAW=%q\n' "${hm_latest_generation:-unknown}"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_OUT_OF_SYNC=%q\n' "$hm_out_of_sync"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_STATUS=%q\n' "$hm_status"
+    printf 'NIXOS_GENERATION_INFO_HOME_MANAGER_SHORT=%q\n' "$hm_short"
     ;;
   json)
     printf '{'
@@ -218,7 +356,15 @@ case "$format" in
     printf '\n  "sourceUrl": %s,' "$(json_escape "$source_url")"
     printf '\n  "nixpkgsRev": %s,' "$(json_escape "$nixpkgs_rev")"
     printf '\n  "homeManagerRev": %s,' "$(json_escape "$home_manager_rev")"
-    printf '\n  "short": %s' "$(json_escape "$short_output")"
+    printf '\n  "homeManagerUser": %s,' "$(json_escape "$hm_user")"
+    printf '\n  "homeManagerGeneration": %s,' "$(json_escape "$hm_short")"
+    printf '\n  "homeManagerGenerationRaw": %s,' "$(json_escape "${hm_current_generation:-unknown}")"
+    printf '\n  "homeManagerLatestGeneration": %s,' "$(json_escape "$hm_latest_short")"
+    printf '\n  "homeManagerLatestGenerationRaw": %s,' "$(json_escape "${hm_latest_generation:-unknown}")"
+    printf '\n  "homeManagerOutOfSync": %s,' "$hm_out_of_sync"
+    printf '\n  "homeManagerStatus": %s,' "$(json_escape "$hm_status")"
+    printf '\n  "short": %s,' "$(json_escape "$short_output")"
+    printf '\n  "warning": %s' "$(json_escape "$warning_message")"
     printf '\n}\n'
     ;;
   *)

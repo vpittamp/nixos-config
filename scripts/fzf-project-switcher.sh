@@ -103,8 +103,8 @@ if [ $INDEX -lt ${#PROJECT_KEYS[@]} ]; then
     
     # Handle selection (redirect output to suppress success messages)
     if [ "$SELECTED_NAME" = "__CLEAR__" ]; then
-        $I3PM clear >/dev/null 2>&1
+        $I3PM project clear >/dev/null 2>&1
     else
-        $I3PM switch "$SELECTED_NAME" >/dev/null 2>&1
+        $I3PM project switch "$SELECTED_NAME" >/dev/null 2>&1
     fi
 fi

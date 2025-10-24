@@ -282,31 +282,6 @@
         fi
       }
 
-      __update_nixos_generation_info() {
-        local current_target latest_target new_key export_output
-        current_target=$(readlink -f /run/current-system 2>/dev/null || printf "")
-        latest_target=$(readlink -f /nix/var/nix/profiles/system 2>/dev/null || printf "")
-        new_key="''${current_target}::''${latest_target}"
-
-        if [ "''${NIXOS_GENERATION_INFO_CACHE_KEY:-}" = "$new_key" ]; then
-          return
-        fi
-
-        if export_output=$(nixos-generation-info --export 2>/dev/null); then
-          eval "$export_output"
-          export NIXOS_GENERATION_INFO_CACHE_KEY="$new_key"
-        fi
-      }
-
-      if command -v nixos-generation-info >/dev/null 2>&1; then
-        __update_nixos_generation_info
-        if [ -z "''${PROMPT_COMMAND:-}" ]; then
-          PROMPT_COMMAND="__update_nixos_generation_info"
-        elif [[ "''${PROMPT_COMMAND}" != *"__update_nixos_generation_info"* ]]; then
-          PROMPT_COMMAND="__update_nixos_generation_info;$PROMPT_COMMAND"
-        fi
-      fi
-
       # Terminal configuration moved to TERM settings below
       
       # Native Linux Docker configuration (baseline)

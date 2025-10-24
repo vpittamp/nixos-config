@@ -143,14 +143,14 @@ export class LiveTUI {
         if (!this.state.running) return;
 
         // Check if event type is relevant
-        // Daemon sends "type" field, not "event_type"
+        // Daemon sends "event_type" field with format like "window::focus", "workspace::focus"
         const params = notification.params as { type?: string; event_type?: string };
-        const eventType = params.type || params.event_type;
+        const eventType = params.event_type || params.type;
 
         if (
-          eventType === "window" ||
-          eventType === "workspace" ||
-          eventType === "output"
+          eventType?.startsWith("window") ||
+          eventType?.startsWith("workspace") ||
+          eventType?.startsWith("output")
         ) {
           // Throttle refreshes to avoid excessive redraws (50ms = 20fps max)
           const now = Date.now();

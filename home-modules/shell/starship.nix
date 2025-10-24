@@ -66,7 +66,7 @@ in
         crust = colors.crust;
       };
 
-      format = "$os$username$hostname\${custom.nixos_generation}\${custom.nixos_generation_warning}\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
+      format = "$os$username$hostname\${custom.tmux}$directory$git_branch$git_status$git_state$fill$nix_shell$kubernetes$cmd_duration$line_break$character";
 
       os = {
         disabled = false;
@@ -94,50 +94,6 @@ in
         ssh_only = false;
         style = "fg:${colors.sapphire}";
         format = "@[$hostname]($style) ";
-      };
-
-      custom.nixos_generation = {
-        description = "Display current NixOS generation and commit";
-        when = ''[ -n "''${NIXOS_GENERATION_INFO_SHORT:-}" ] || command -v nixos-generation-info >/dev/null 2>&1'';
-        command = ''
-          if [ -n "''${NIXOS_GENERATION_INFO_SHORT:-}" ]; then
-            printf '%s' "''${NIXOS_GENERATION_INFO_SHORT}"
-          elif command -v nixos-generation-info >/dev/null 2>&1; then
-            nixos-generation-info --short
-          else
-            printf '%s' 'gunknown@unknown'
-          fi
-        '';
-        style = "bold fg:${colors.mauve}";
-        format = "[$output]($style) ";
-      };
-
-      custom.nixos_generation_warning = {
-        description = "Warn when running generation lags behind latest switch";
-        when = ''
-          if [ "''${NIXOS_GENERATION_INFO_OUT_OF_SYNC:-0}" = "1" ]; then
-            exit 0
-          fi
-
-          if command -v nixos-generation-info >/dev/null 2>&1; then
-            status=$(nixos-generation-info --status 2>/dev/null || echo in-sync)
-            [ "$status" = "out-of-sync" ]
-          else
-            exit 1
-          fi
-        '';
-        command = ''
-          if [ -n "''${NIXOS_GENERATION_INFO_LATEST:-}" ]; then
-            printf '%s' "⚠ ''${NIXOS_GENERATION_INFO_LATEST}"
-          elif command -v nixos-generation-info >/dev/null 2>&1; then
-            latest=$(nixos-generation-info --short 2>/dev/null | sed 's/@.*//' || printf 'gunknown')
-            printf '%s' "⚠ ''${latest}"
-          else
-            printf '%s' '⚠ out-of-sync'
-          fi
-        '';
-        style = "bold fg:${colors.red}";
-        format = "[$output]($style) ";
       };
 
       custom.tmux = {
