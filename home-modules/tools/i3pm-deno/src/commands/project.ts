@@ -72,13 +72,24 @@ EXAMPLES:
 /**
  * List all projects
  */
-async function listProjects(options: ProjectCommandOptions): Promise<void> {
+async function listProjects(args: (string | number)[], options: ProjectCommandOptions): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    boolean: ["json"],
+  });
+
   const client = createClient();
 
   try {
     const projects = await client.request<Project[]>("list_projects");
     const validated = projects.map((p) => validateResponse(ProjectSchema, p));
 
+    if (parsed.json) {
+      // JSON output
+      console.log(JSON.stringify(validated, null, 2));
+      return;
+    }
+
+    // Human-readable output
     if (validated.length === 0) {
       console.log("No projects configured.");
       console.log("");
@@ -123,9 +134,19 @@ async function currentProject(options: ProjectCommandOptions): Promise<void> {
     const result = await client.request<{ project: string | null }>("get_current_project");
 
     if (result.project === null) {
-      console.log(dim("Global") + " " + gray("(no active project)"));
+      // Output plain text when piped, colored when interactive
+      if (Deno.stdout.isTerminal()) {
+        console.log(dim("Global") + " " + gray("(no active project)"));
+      } else {
+        console.log("");  // Empty string for "no project" when piped
+      }
     } else {
-      console.log(cyan(result.project));
+      // Output plain text when piped, colored when interactive
+      if (Deno.stdout.isTerminal()) {
+        console.log(cyan(result.project));
+      } else {
+        console.log(result.project);  // Plain text for scripting
+      }
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
@@ -442,7 +463,7 @@ export async function projectCommand(
   options: ProjectCommandOptions,
 ): Promise<void> {
   const parsed = parseArgs(args.map(String), {
-    boolean: ["help"],
+    boolean: ["help", "json"],
     alias: { h: "help" },
     stopEarly: true,
   });
@@ -456,11 +477,11 @@ export async function projectCommand(
   }
 
   const subcommand = String(parsed._[0]);
-  const subcommandArgs = parsed._.slice(1).map(String);
+  const subcommandArgs = args.slice(1);  // Pass all remaining args to preserve flags
 
   switch (subcommand) {
     case "list":
-      await listProjects(options);
+      await listProjects(subcommandArgs, options);
       break;
 
     case "current":
