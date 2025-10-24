@@ -217,7 +217,8 @@ main() {
     echo "$initial_status,"
 
     # Subscribe to daemon events and rebuild status on each event
-    "$I3PM_BIN" daemon events --follow --type=project,window 2>/dev/null | while read -r event; do
+    # Subscribe to all event types since project switches are 'ipc' events
+    "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
         # Build and output new status line
         status_line=$(build_status_line)
         echo "$status_line,"
