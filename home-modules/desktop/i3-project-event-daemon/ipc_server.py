@@ -2274,7 +2274,7 @@ class IPCServer:
             dry_run = params.get("dry_run", False)
 
             # Get i3 connection
-            if not self.i3_connection or not self.i3_connection.connected:
+            if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
 
             i3 = self.i3_connection.conn  # Get the underlying i3ipc connection
