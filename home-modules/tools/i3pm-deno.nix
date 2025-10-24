@@ -44,6 +44,9 @@ EOF
         - Daemon status and event monitoring
         - Window classification rules management
         - Interactive multi-pane monitoring dashboard
+        - Declarative workspace-to-monitor mapping (Feature 033)
+        - Automatic workspace redistribution on monitor changes
+        - Hot-reloadable configuration management
 
         Replaces the Python CLI with a compiled Deno executable.
       '';

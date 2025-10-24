@@ -15,7 +15,7 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Python dependencies for the daemon (Updated: 2025-10-23 for Feature 030)
+  # Python dependencies for the daemon (Updated: 2025-10-23 for Features 030, 033)
   # Note: PatternRule is now copied locally to avoid i3pm dependency
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     # Core daemon dependencies
@@ -24,7 +24,8 @@ let
     watchdog     # File system monitoring (Feature 021: T022)
 
     # Feature 030: Production readiness dependencies (T001)
-    pydantic     # Data validation for layout models
+    # Feature 033: Declarative workspace-to-monitor mapping (T001, T006-T008)
+    pydantic     # Data validation for layout models and monitor config
     pytest       # Testing framework
     pytest-asyncio  # Async test support
     pytest-cov   # Coverage reporting
@@ -35,13 +36,13 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.0.15-fix-set-active-project";  # Feature 030: Fix method name (set_active_project not switch_project)
+    version = "1.1.0";  # Feature 033: Declarative workspace-to-monitor mapping
     src = daemonSrc;
 
     installPhase = ''
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
-      # Feature 030: Direct JSON loading, fix IPC response
+      # Feature 033: Includes MonitorConfigManager and workspace distribution logic
     '';
   };
 
