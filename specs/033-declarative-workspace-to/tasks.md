@@ -24,11 +24,11 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 [P] Create Python daemon directory structure at `home-modules/tools/i3pm-daemon/` with `models.py`, `monitor_config_manager.py`, `config_schema.json`
-- [ ] T002 [P] Create Deno CLI directory structure at `home-modules/tools/i3pm-cli/` with subdirectories `src/commands/`, `src/ui/`, and `deno.json`
-- [ ] T003 [P] Add Pydantic dependency to Python daemon requirements (update `home-modules/tools/i3pm-daemon/requirements.txt` or inline in NixOS config)
-- [ ] T004 [P] Configure Deno dependencies in `home-modules/tools/i3pm-cli/deno.json` (import maps for @std/cli, @std/fs, @std/json, zod)
-- [ ] T005 Generate default configuration file template at `home-modules/tools/i3pm-daemon/default-config.json` matching spec defaults
+- [X] T001 [P] Create Python daemon directory structure at `home-modules/tools/i3pm-daemon/` with `models.py`, `monitor_config_manager.py`, `config_schema.json`
+- [X] T002 [P] Create Deno CLI directory structure at `home-modules/tools/i3pm-cli/` with subdirectories `src/commands/`, `src/ui/`, and `deno.json`
+- [X] T003 [P] Add Pydantic dependency to Python daemon requirements (update `home-modules/tools/i3pm-daemon/requirements.txt` or inline in NixOS config)
+- [X] T004 [P] Configure Deno dependencies in `home-modules/tools/i3pm-cli/deno.json` (import maps for @std/cli, @std/fs, @std/json, zod)
+- [X] T005 Generate default configuration file template at `home-modules/tools/i3pm-daemon/default-config.json` matching spec defaults
 
 ---
 
@@ -38,15 +38,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 [P] Implement Pydantic configuration models in `home-modules/tools/i3pm-daemon/models.py`: `MonitorRole`, `MonitorDistribution`, `DistributionRules`, `WorkspaceMonitorConfig`
-- [ ] T007 [P] Implement i3 state models in `home-modules/tools/i3pm-daemon/models.py`: `OutputRect`, `MonitorConfig`, `WorkspaceAssignment`, `MonitorSystemState`
-- [ ] T008 [P] Implement validation models in `home-modules/tools/i3pm-daemon/models.py`: `ValidationIssue`, `ConfigValidationResult`
-- [ ] T009 Create JSON schema file at `home-modules/tools/i3pm-daemon/config_schema.json` for configuration validation
-- [ ] T010 [P] Implement TypeScript/Zod models in `home-modules/tools/i3pm-cli/src/models.ts`: All schemas from data-model.md
-- [ ] T011 Implement `MonitorConfigManager` class in `home-modules/tools/i3pm-daemon/monitor_config_manager.py` with methods: `load_config()`, `validate_config_file()`, `_validate_distribution_logic()`, `_validate_workspace_preferences()`
-- [ ] T012 Add NixOS home-manager configuration in `home-modules/tools/i3pm-daemon/default.nix` to generate default config file at `~/.config/i3/workspace-monitor-mapping.json` using `xdg.configFile`
-- [ ] T013 [P] Implement JSON-RPC daemon client in `home-modules/tools/i3pm-cli/src/daemon_client.ts`: `DaemonClient` class with `request()`, `connect()`, `close()` methods
-- [ ] T014 [P] Implement JSON-RPC error handling in `home-modules/tools/i3pm-cli/src/daemon_client.ts`: `parseDaemonConnectionError()`, `validateResponse()` functions
+- [X] T006 [P] Implement Pydantic configuration models in `home-modules/tools/i3pm-daemon/models.py`: `MonitorRole`, `MonitorDistribution`, `DistributionRules`, `WorkspaceMonitorConfig`
+- [X] T007 [P] Implement i3 state models in `home-modules/tools/i3pm-daemon/models.py`: `OutputRect`, `MonitorConfig`, `WorkspaceAssignment`, `MonitorSystemState`
+- [X] T008 [P] Implement validation models in `home-modules/tools/i3pm-daemon/models.py`: `ValidationIssue`, `ConfigValidationResult`
+- [X] T009 Create JSON schema file at `home-modules/tools/i3pm-daemon/config_schema.json` for configuration validation
+- [X] T010 [P] Implement TypeScript/Zod models in `home-modules/tools/i3pm-cli/src/models.ts`: All schemas from data-model.md
+- [X] T011 Implement `MonitorConfigManager` class in `home-modules/tools/i3pm-daemon/monitor_config_manager.py` with methods: `load_config()`, `validate_config_file()`, `_validate_distribution_logic()`, `_validate_workspace_preferences()`
+- [X] T012 Add NixOS home-manager configuration in `home-modules/tools/i3pm-daemon/default.nix` to generate default config file at `~/.config/i3/workspace-monitor-mapping.json` using `xdg.configFile`
+- [X] T013 [P] Implement JSON-RPC daemon client in `home-modules/tools/i3pm-cli/src/daemon_client.ts`: `DaemonClient` class with `request()`, `connect()`, `close()` methods
+- [X] T014 [P] Implement JSON-RPC error handling in `home-modules/tools/i3pm-cli/src/daemon_client.ts`: `parseDaemonConnectionError()`, `validateResponse()` functions
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -60,23 +60,23 @@
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Refactor `workspace_manager.py` to replace hardcoded distribution logic (lines 186-221) with call to `MonitorConfigManager.load_config()`
-- [ ] T016 [US1] Implement `get_workspace_distribution()` method in `monitor_config_manager.py` that returns distribution rules based on active monitor count (1/2/3 monitors)
-- [ ] T017 [US1] Implement `resolve_workspace_target_role()` method in `monitor_config_manager.py` that resolves workspace number to role (primary/secondary/tertiary) considering workspace_preferences overrides
-- [ ] T018 [US1] Implement `assign_monitor_roles()` method in `monitor_config_manager.py` that assigns roles to active monitors based on primary flag and output_preferences
-- [ ] T019 [US1] Update `assign_workspaces_to_monitors()` function in `workspace_manager.py` to use config-driven logic instead of hardcoded rules
-- [ ] T020 [US1] Implement `reassign_workspaces` JSON-RPC method in daemon IPC server (`home-modules/desktop/i3-project-event-daemon/ipc_server.py`) calling workspace manager
-- [ ] T021 [US1] Implement `get_config` JSON-RPC method in daemon IPC server to return current loaded configuration
-- [ ] T022 [US1] Implement `validate_config` JSON-RPC method in daemon IPC server calling `MonitorConfigManager.validate_config_file()`
-- [ ] T023 [US1] Implement `reload_config` JSON-RPC method in daemon IPC server that reloads config and returns change summary
-- [ ] T024 [US1] Implement CLI command `i3pm monitors config show` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (show subcommand)
-- [ ] T025 [US1] Implement CLI command `i3pm monitors config edit` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (edit subcommand with $EDITOR)
-- [ ] T026 [US1] Implement CLI command `i3pm monitors config init` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (init subcommand to generate default)
-- [ ] T027 [US1] Implement CLI command `i3pm monitors config validate` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (validate subcommand)
-- [ ] T028 [US1] Implement CLI command `i3pm monitors config reload` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (reload subcommand)
-- [ ] T029 [US1] Implement CLI command `i3pm monitors reassign` in `home-modules/tools/i3pm-cli/src/commands/monitors_reassign.ts` with `--dry-run` flag support
-- [ ] T030 [US1] Delete `home-modules/desktop/i3/scripts/detect-monitors.sh` bash script (forward-only development)
-- [ ] T031 [US1] Remove i3 config startup exec line for `detect-monitors.sh` from i3 configuration file
+- [X] T015 [US1] Refactor `workspace_manager.py` to replace hardcoded distribution logic (lines 186-221) with call to `MonitorConfigManager.load_config()`
+- [X] T016 [US1] Implement `get_workspace_distribution()` method in `monitor_config_manager.py` that returns distribution rules based on active monitor count (1/2/3 monitors)
+- [X] T017 [US1] Implement `resolve_workspace_target_role()` method in `monitor_config_manager.py` that resolves workspace number to role (primary/secondary/tertiary) considering workspace_preferences overrides
+- [X] T018 [US1] Implement `assign_monitor_roles()` method in `monitor_config_manager.py` that assigns roles to active monitors based on primary flag and output_preferences
+- [X] T019 [US1] Update `assign_workspaces_to_monitors()` function in `workspace_manager.py` to use config-driven logic instead of hardcoded rules
+- [X] T020 [US1] Implement `reassign_workspaces` JSON-RPC method in daemon IPC server (`home-modules/desktop/i3-project-event-daemon/ipc_server.py`) calling workspace manager
+- [X] T021 [US1] Implement `get_config` JSON-RPC method in daemon IPC server to return current loaded configuration
+- [X] T022 [US1] Implement `validate_config` JSON-RPC method in daemon IPC server calling `MonitorConfigManager.validate_config_file()`
+- [X] T023 [US1] Implement `reload_config` JSON-RPC method in daemon IPC server that reloads config and returns change summary
+- [X] T024 [US1] Implement CLI command `i3pm monitors config show` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (show subcommand)
+- [X] T025 [US1] Implement CLI command `i3pm monitors config edit` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (edit subcommand with $EDITOR)
+- [X] T026 [US1] Implement CLI command `i3pm monitors config init` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (init subcommand to generate default)
+- [X] T027 [US1] Implement CLI command `i3pm monitors config validate` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (validate subcommand)
+- [X] T028 [US1] Implement CLI command `i3pm monitors config reload` in `home-modules/tools/i3pm-cli/src/commands/monitors_config.ts` (reload subcommand)
+- [X] T029 [US1] Implement CLI command `i3pm monitors reassign` in `home-modules/tools/i3pm-cli/src/commands/monitors_reassign.ts` with `--dry-run` flag support
+- [X] T030 [US1] Delete `home-modules/desktop/i3/scripts/detect-monitors.sh` bash script (forward-only development)
+- [X] T031 [US1] Remove i3 config startup exec line for `detect-monitors.sh` from i3 configuration file
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - users can create config files, validate them, and apply workspace distribution via CLI
 
@@ -90,17 +90,17 @@
 
 ### Implementation for User Story 2
 
-- [ ] T032 [US2] Implement `get_monitors` JSON-RPC method in daemon IPC server to query i3 IPC GET_OUTPUTS and return `List[MonitorConfig]`
-- [ ] T033 [US2] Implement `get_workspaces` JSON-RPC method in daemon IPC server to query i3 IPC GET_WORKSPACES and return `List[WorkspaceAssignment]` with target roles
-- [ ] T034 [US2] Implement `get_system_state` JSON-RPC method in daemon IPC server combining monitors + workspaces into `MonitorSystemState`
-- [ ] T035 [US2] Add i3 IPC OUTPUT event subscription to daemon's event loop (in `home-modules/desktop/i3-project-event-daemon/main.py` or equivalent)
-- [ ] T036 [US2] Implement `on_output_change` event handler in daemon that debounces for `debounce_ms` milliseconds before triggering reassignment
-- [ ] T037 [US2] Implement automatic workspace reassignment in `on_output_change` handler (only if `enable_auto_reassign` is true)
-- [ ] T038 [US2] Add monitor change event logging to daemon event history (for `get_monitor_history` method later)
-- [ ] T039 [US2] Implement CLI command `i3pm monitors status` in `home-modules/tools/i3pm-cli/src/commands/monitors_status.ts` showing monitor table with role, resolution, workspaces
-- [ ] T040 [US2] Implement CLI command `i3pm monitors workspaces` in `home-modules/tools/i3pm-cli/src/commands/monitors_workspaces.ts` showing workspace-to-output mapping table
-- [ ] T041 [US2] Implement table formatter utility in `home-modules/tools/i3pm-cli/src/ui/table_formatter.ts` using Cliffy Table component
-- [ ] T042 [US2] Update daemon to handle monitor count changes: detect when monitors go from 2→1, 1→2, 2→3, 3→2 and apply correct distribution rules
+- [X] T032 [US2] Implement `get_monitors` JSON-RPC method in daemon IPC server to query i3 IPC GET_OUTPUTS and return `List[MonitorConfig]`
+- [X] T033 [US2] Implement `get_workspaces` JSON-RPC method in daemon IPC server to query i3 IPC GET_WORKSPACES and return `List[WorkspaceAssignment]` with target roles
+- [X] T034 [US2] Implement `get_system_state` JSON-RPC method in daemon IPC server combining monitors + workspaces into `MonitorSystemState`
+- [X] T035 [US2] Add i3 IPC OUTPUT event subscription to daemon's event loop (in `home-modules/desktop/i3-project-event-daemon/main.py` or equivalent)
+- [X] T036 [US2] Implement `on_output_change` event handler in daemon that debounces for `debounce_ms` milliseconds before triggering reassignment
+- [X] T037 [US2] Implement automatic workspace reassignment in `on_output_change` handler (only if `enable_auto_reassign` is true)
+- [X] T038 [US2] Add monitor change event logging to daemon event history (for `get_monitor_history` method later)
+- [X] T039 [US2] Implement CLI command `i3pm monitors status` in `home-modules/tools/i3pm-cli/src/commands/monitors_status.ts` showing monitor table with role, resolution, workspaces
+- [X] T040 [US2] Implement CLI command `i3pm monitors workspaces` in `home-modules/tools/i3pm-cli/src/commands/monitors_workspaces.ts` showing workspace-to-output mapping table
+- [X] T041 [US2] Implement table formatter utility in `home-modules/tools/i3pm-cli/src/ui/table_formatter.ts` using Cliffy Table component
+- [X] T042 [US2] Update daemon to handle monitor count changes: detect when monitors go from 2→1, 1→2, 2→3, 3→2 and apply correct distribution rules
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work - config-driven distribution + automatic adaptation to monitor changes
 
