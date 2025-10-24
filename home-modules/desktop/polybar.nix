@@ -107,8 +107,8 @@ in
 
           # Function to display current project
           display_project() {
-            # Query daemon for current project
-            CURRENT=$(${i3pmWrapper} project current 2>/dev/null)
+            # Query daemon for current project (strip ANSI color codes)
+            CURRENT=$(${i3pmWrapper} project current 2>/dev/null | ${pkgs.gnused}/bin/sed 's/\x1b\[[0-9;]*m//g')
 
             if [ -z "$CURRENT" ] || [ "$CURRENT" = "null" ]; then
               # No active project - global mode
