@@ -43,23 +43,26 @@ export type WorkspaceMonitorConfig = z.infer<typeof WorkspaceMonitorConfigSchema
  * Create a default configuration object
  */
 export function createDefaultConfig(): WorkspaceMonitorConfig {
+  // Helper to generate range
+  const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
+
   return {
     version: "1.0",
     distribution: {
       one_monitor: {
-        primary: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        primary: range(1, 70),
         secondary: [],
         tertiary: [],
       },
       two_monitors: {
         primary: [1, 2],
-        secondary: [3, 4, 5, 6, 7, 8, 9, 10],
+        secondary: range(3, 70),
         tertiary: [],
       },
       three_monitors: {
         primary: [1, 2],
         secondary: [3, 4, 5],
-        tertiary: [6, 7, 8, 9, 10],
+        tertiary: range(6, 70),
       },
     },
     workspace_preferences: {},
