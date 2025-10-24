@@ -1,5 +1,5 @@
 # i3bar Configuration with Event-Driven Status Updates
-# Replaces Polybar with native i3bar for instant project context updates
+# Dual bars: Top bar for system monitoring, bottom bar for project context
 { config, lib, pkgs, ... }:
 
 let
@@ -9,12 +9,20 @@ let
     exec ${config.home.profileDirectory}/bin/i3pm "$@"
   '';
 
-  # Create event-driven status script with substituted paths
-  statusScript = pkgs.writeShellScript "i3bar-status-event-driven" (
+  # Bottom bar: Event-driven project status script
+  projectStatusScript = pkgs.writeShellScript "i3bar-status-event-driven" (
     builtins.replaceStrings
       [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" ]
       [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" ]
       (builtins.readFile ./i3bar/status-event-driven.sh)
+  );
+
+  # Top bar: System monitoring script (polling every 2 seconds)
+  systemMonitorScript = pkgs.writeShellScript "i3bar-status-system-monitor" (
+    builtins.replaceStrings
+      [ "@date@" "@grep@" "@awk@" "@sed@" ]
+      [ "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.gnused}/bin/sed" ]
+      (builtins.readFile ./i3bar/status-system-monitor.sh)
   );
 in
 {
@@ -23,21 +31,50 @@ in
     i3  # Includes i3bar
   ];
 
-  # Add i3bar configuration to i3 config
-  home.file.".config/i3/i3bar.conf".text = ''
-    # i3bar configuration (Catppuccin Mocha theme)
-    # Event-driven status updates via i3pm daemon subscriptions
+  # Top bar: System monitoring
+  home.file.".config/i3/i3bar-top.conf".text = ''
+    # Top bar: System monitoring (Catppuccin Mocha theme)
+    # Updates every 2 seconds with system metrics
     bar {
-      position bottom
-      status_command ${statusScript}
+      position top
+      status_command ${systemMonitorScript}
 
       # Font
       font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
 
-      # Tray
+      # No system tray on top bar
+      tray_output none
+
+      # No workspace buttons on top bar
+      workspace_buttons no
+
+      # Separator
+      separator_symbol " | "
+
+      # Colors (Catppuccin Mocha theme)
+      colors {
+        background #1e1e2e
+        statusline #cdd6f4
+        separator  #6c7086
+      }
+    }
+  '';
+
+  # Bottom bar: Project context and workspaces
+  home.file.".config/i3/i3bar-bottom.conf".text = ''
+    # Bottom bar: Project context (Catppuccin Mocha theme)
+    # Event-driven status updates via i3pm daemon subscriptions
+    bar {
+      position bottom
+      status_command ${projectStatusScript}
+
+      # Font
+      font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
+
+      # System tray on bottom bar only
       tray_output primary
 
-      # Workspace buttons
+      # Workspace buttons on bottom bar
       workspace_buttons yes
       strip_workspace_numbers no
 

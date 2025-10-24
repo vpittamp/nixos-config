@@ -186,9 +186,9 @@
     bindsym $mod+Shift+r restart
     bindsym $mod+Shift+e exec "i3-msg exit"
 
-    # Polybar configuration (Re-enabled for center module support)
-    # i3bar is configured via i3bar.nix module
-    # Event-driven status updates via i3pm daemon subscriptions
+    # i3bar configuration (dual bars: top + bottom)
+    # Top bar: System monitoring (CPU, memory, disk, network, temperature)
+    # Bottom bar: Project context and workspaces (event-driven via i3pm daemon)
 
     # Autostart - import environment variables for systemd services
     exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
@@ -196,8 +196,9 @@
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
 
-    # i3bar configuration
-    include ~/.config/i3/i3bar.conf
+    # i3bar configurations (top and bottom)
+    include ~/.config/i3/i3bar-top.conf
+    include ~/.config/i3/i3bar-bottom.conf
   '';
 
   # Also configure via xsession for compatibility

@@ -189,7 +189,7 @@ async def assign_workspaces_to_monitors(
             output_name = role_map[role.value]
             for ws_num in workspace_nums:
                 logger.debug(f"Assigning workspace {ws_num} to {output_name} ({role.value})")
-                await i3.command(f"workspace {ws_num} output {output_name}")
+                await i3.command(f"workspace number {ws_num} output {output_name}")
 
     # Apply workspace preferences from config file
     config = config_manager.load_config()
@@ -197,7 +197,7 @@ async def assign_workspaces_to_monitors(
         if role.value in role_map:
             output_name = role_map[role.value]
             logger.debug(f"Applying config preference: workspace {ws_num} → {output_name} ({role})")
-            await i3.command(f"workspace {ws_num} output {output_name}")
+            await i3.command(f"workspace number {ws_num} output {output_name}")
 
     # Apply runtime workspace preferences (highest priority, overrides config)
     if workspace_preferences:
@@ -205,7 +205,7 @@ async def assign_workspaces_to_monitors(
             if preferred_role in role_map:
                 output_name = role_map[preferred_role]
                 logger.debug(f"Applying runtime preference: workspace {ws_num} → {output_name} ({preferred_role})")
-                await i3.command(f"workspace {ws_num} output {output_name}")
+                await i3.command(f"workspace number {ws_num} output {output_name}")
 
 
 async def validate_target_workspace(
