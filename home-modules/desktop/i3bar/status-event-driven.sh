@@ -37,7 +37,11 @@ build_project_block() {
                 full_text: $text,
                 color: "'"$COLOR_SUBTEXT"'",
                 name: "project",
-                instance: "global"
+                instance: "global",
+                separator: false,
+                separator_block_width: 20,
+                min_width: 150,
+                align: "center"
             }'
     else
         # Get project info from daemon
@@ -49,7 +53,11 @@ build_project_block() {
                 full_text: $text,
                 color: "'"$COLOR_LAVENDER"'",
                 name: "project",
-                instance: $instance
+                instance: $instance,
+                separator: false,
+                separator_block_width: 20,
+                min_width: 150,
+                align: "center"
             }'
     fi
 }
@@ -139,24 +147,63 @@ build_date_block() {
         }'
 }
 
+# Build monitor block
+build_monitor_block() {
+    local monitor_name
+
+    # Get current monitor name from i3 (the output this bar is on)
+    # Use I3SOCK environment variable if available, otherwise get first active output
+    monitor_name=$(i3-msg -t get_outputs 2>/dev/null | \
+        "$JQ_BIN" -r '.[] | select(.active == true) | .name' | head -1 || echo "unknown")
+
+    "$JQ_BIN" -n --arg monitor "$monitor_name" \
+        '{
+            full_text: ("󰍹 " + $monitor),
+            color: "'"$COLOR_LAVENDER"'",
+            name: "monitor",
+            instance: $monitor,
+            separator: false,
+            separator_block_width: 20
+        }'
+}
+
+# Build spacer block (for centering project)
+build_spacer_block() {
+    "$JQ_BIN" -n \
+        '{
+            full_text: "",
+            separator: false,
+            separator_block_width: 0,
+            min_width: 200,
+            align: "center"
+        }'
+}
+
 # Build complete status line
 build_status_line() {
-    local project cpu memory network date
+    local monitor spacer1 project spacer2 cpu memory network date
 
+    monitor=$(build_monitor_block)
+    spacer1=$(build_spacer_block)
     project=$(build_project_block)
+    spacer2=$(build_spacer_block)
     cpu=$(build_cpu_block)
     memory=$(build_memory_block)
     network=$(build_network_block)
     date=$(build_date_block)
 
-    # Combine all blocks into status line array
+    # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
+    # The spacers push project toward the center
     "$JQ_BIN" -n \
+        --argjson monitor "$monitor" \
+        --argjson spacer1 "$spacer1" \
         --argjson project "$project" \
+        --argjson spacer2 "$spacer2" \
         --argjson cpu "$cpu" \
         --argjson memory "$memory" \
         --argjson network "$network" \
         --argjson date "$date" \
-        '[$project, $cpu, $memory, $network, $date]'
+        '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
 # Main: Output i3bar protocol
