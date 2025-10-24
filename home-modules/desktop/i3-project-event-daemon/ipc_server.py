@@ -259,6 +259,12 @@ class IPCServer:
                 result = await self._reload_monitor_config()
             elif method == "reassign_workspaces":
                 result = await self._reassign_workspaces(params)
+            elif method == "get_monitors":
+                result = await self._get_monitors()
+            elif method == "get_workspaces":
+                result = await self._get_workspaces()
+            elif method == "get_system_state":
+                result = await self._get_system_state()
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -2320,6 +2326,177 @@ class IPCServer:
             await self._log_ipc_event(
                 event_type="workspace::reassign",
                 params=params,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _get_monitors(self) -> list[Dict[str, Any]]:
+        """Get current monitor/output configurations with roles.
+
+        Feature 033: T032 (User Story 2)
+
+        Returns:
+            List of MonitorConfig dicts with name, active, primary, role, rect, current_workspace
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .monitor_config_manager import MonitorConfigManager
+            from .workspace_manager import get_monitor_configs
+
+            # Get i3 connection
+            if not self.i3_connection or not self.i3_connection.conn:
+                raise RuntimeError("i3 connection not available")
+
+            i3 = self.i3_connection.conn
+
+            # Get monitor configurations with assigned roles
+            config_manager = MonitorConfigManager()
+            monitors = await get_monitor_configs(i3, config_manager)
+
+            # Convert MonitorConfig Pydantic models to dicts
+            return [monitor.model_dump() for monitor in monitors]
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting monitors: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::monitors",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _get_workspaces(self) -> list[Dict[str, Any]]:
+        """Get current workspace assignments with target roles.
+
+        Feature 033: T033 (User Story 2)
+
+        Returns:
+            List of WorkspaceAssignment dicts with workspace_num, output_name, target_role, target_output, source, visible
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .monitor_config_manager import MonitorConfigManager
+            from .workspace_manager import get_monitor_configs
+            from .models import WorkspaceAssignment, MonitorRole
+
+            # Get i3 connection
+            if not self.i3_connection or not self.i3_connection.conn:
+                raise RuntimeError("i3 connection not available")
+
+            i3 = self.i3_connection.conn
+
+            # Get monitor configurations with assigned roles
+            config_manager = MonitorConfigManager()
+            monitors = await get_monitor_configs(i3, config_manager)
+
+            # Build role_map: role -> output_name
+            role_map = {monitor.role: monitor.name for monitor in monitors if monitor.role}
+
+            # Get workspace distribution for current monitor count
+            distribution = config_manager.get_workspace_distribution(len(monitors))
+
+            # Query i3 for actual workspace assignments
+            i3_workspaces = await i3.get_workspaces()
+
+            # Build workspace assignments
+            assignments = []
+            for ws in i3_workspaces:
+                # Determine target role for this workspace
+                target_role = None
+                target_output = None
+                source = "runtime"
+
+                # Check workspace preferences first
+                config = config_manager.load_config()
+                if ws.num in config.workspace_preferences:
+                    target_role = config.workspace_preferences[ws.num]
+                    target_output = role_map.get(target_role)
+                    source = "explicit"
+                else:
+                    # Check distribution rules
+                    for role, ws_nums in distribution.items():
+                        if ws.num in ws_nums:
+                            target_role = role
+                            target_output = role_map.get(role)
+                            source = "default"
+                            break
+
+                assignment = WorkspaceAssignment(
+                    workspace_num=ws.num,
+                    output_name=ws.output,
+                    target_role=target_role,
+                    target_output=target_output,
+                    source=source,
+                    visible=ws.visible,
+                    window_count=0,  # TODO: Query window count from i3 tree
+                )
+                assignments.append(assignment)
+
+            # Convert to dicts
+            return [assignment.model_dump() for assignment in assignments]
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting workspaces: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::workspaces",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _get_system_state(self) -> Dict[str, Any]:
+        """Get complete monitor system state.
+
+        Feature 033: T034 (User Story 2)
+
+        Combines monitors and workspaces into unified system state.
+
+        Returns:
+            MonitorSystemState dict with monitors, workspaces, active_monitor_count, primary_output, last_updated
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            from .models import MonitorSystemState
+
+            # Get monitors and workspaces
+            monitors = await self._get_monitors()
+            workspaces = await self._get_workspaces()
+
+            # Calculate derived fields
+            active_monitor_count = len([m for m in monitors if m["active"]])
+            primary_output = next((m["name"] for m in monitors if m["primary"]), None)
+
+            # Build system state
+            state = MonitorSystemState(
+                monitors=[m for m in monitors],  # Already dicts
+                workspaces=[ws for ws in workspaces],  # Already dicts
+                active_monitor_count=active_monitor_count,
+                primary_output=primary_output,
+                last_updated=time.time(),
+            )
+
+            return state.model_dump()
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting system state: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::system_state",
                 duration_ms=duration_ms,
                 error=error_msg,
             )
