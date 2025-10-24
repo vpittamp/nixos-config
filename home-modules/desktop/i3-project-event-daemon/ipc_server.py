@@ -2274,9 +2274,10 @@ class IPCServer:
             dry_run = params.get("dry_run", False)
 
             # Get i3 connection
-            i3 = self.state_manager.i3
-            if not i3:
+            if not self.i3_connection or not self.i3_connection.connected:
                 raise RuntimeError("i3 connection not available")
+
+            i3 = self.i3_connection.conn  # Get the underlying i3ipc connection
 
             # Get monitor configurations with roles
             config_manager = MonitorConfigManager()
