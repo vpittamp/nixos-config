@@ -22,9 +22,9 @@ export const MonitorDistributionSchema = z.object({
 export type MonitorDistribution = z.infer<typeof MonitorDistributionSchema>;
 
 export const DistributionRulesSchema = z.object({
-  "1_monitor": MonitorDistributionSchema,
-  "2_monitors": MonitorDistributionSchema,
-  "3_monitors": MonitorDistributionSchema,
+  one_monitor: MonitorDistributionSchema,
+  two_monitors: MonitorDistributionSchema,
+  three_monitors: MonitorDistributionSchema,
 });
 export type DistributionRules = z.infer<typeof DistributionRulesSchema>;
 
@@ -46,17 +46,17 @@ export function createDefaultConfig(): WorkspaceMonitorConfig {
   return {
     version: "1.0",
     distribution: {
-      "1_monitor": {
+      one_monitor: {
         primary: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         secondary: [],
         tertiary: [],
       },
-      "2_monitors": {
+      two_monitors: {
         primary: [1, 2],
         secondary: [3, 4, 5, 6, 7, 8, 9, 10],
         tertiary: [],
       },
-      "3_monitors": {
+      three_monitors: {
         primary: [1, 2],
         secondary: [3, 4, 5],
         tertiary: [6, 7, 8, 9, 10],

@@ -199,14 +199,14 @@ async function configShowCommand(
 
       console.log("Distribution Rules:");
       console.log("  1 monitor:");
-      console.log(`    Primary:   ${config.distribution["1_monitor"].primary.join(", ")}`);
+      console.log(`    Primary:   ${config.distribution.one_monitor.primary.join(", ")}`);
       console.log("  2 monitors:");
-      console.log(`    Primary:   ${config.distribution["2_monitors"].primary.join(", ")}`);
-      console.log(`    Secondary: ${config.distribution["2_monitors"].secondary.join(", ")}`);
+      console.log(`    Primary:   ${config.distribution.two_monitors.primary.join(", ")}`);
+      console.log(`    Secondary: ${config.distribution.two_monitors.secondary.join(", ")}`);
       console.log("  3 monitors:");
-      console.log(`    Primary:   ${config.distribution["3_monitors"].primary.join(", ")}`);
-      console.log(`    Secondary: ${config.distribution["3_monitors"].secondary.join(", ")}`);
-      console.log(`    Tertiary:  ${config.distribution["3_monitors"].tertiary.join(", ")}`);
+      console.log(`    Primary:   ${config.distribution.three_monitors.primary.join(", ")}`);
+      console.log(`    Secondary: ${config.distribution.three_monitors.secondary.join(", ")}`);
+      console.log(`    Tertiary:  ${config.distribution.three_monitors.tertiary.join(", ")}`);
 
       if (Object.keys(config.workspace_preferences).length > 0) {
         console.log("\nWorkspace Preferences:");
