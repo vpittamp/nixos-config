@@ -95,10 +95,11 @@ class ResilientI3Connection:
                 Event.TICK,
                 Event.WINDOW,      # Dispatches to window::new, window::title, window::focus, etc.
                 Event.WORKSPACE,   # Dispatches to workspace::init, workspace::empty, etc.
+                Event.OUTPUT,      # Dispatches to output::(added|removed|changed) - Feature 033
                 Event.SHUTDOWN,
             ])
 
-            logger.info("Subscribed to i3 IPC event stream (tick, window, workspace, shutdown)")
+            logger.info("Subscribed to i3 IPC event stream (tick, window, workspace, output, shutdown)")
 
         except Exception as e:
             logger.error(f"Failed to subscribe to events: {e}")

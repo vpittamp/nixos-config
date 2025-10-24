@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Feature 033: Debouncing state for output change handler
+_output_change_task: Optional[asyncio.Task] = None
+_last_output_event_time: float = 0.0
+
 
 # ============================================================================
 # USER STORY 1 (P1): Real-time Project State Updates
@@ -735,6 +739,101 @@ async def on_workspace_move(
 # ============================================================================
 
 
+async def _perform_workspace_reassignment(
+    conn: aio.Connection,
+    active_outputs: list,
+) -> None:
+    """Perform workspace reassignment after debounce delay.
+
+    Feature 033: T036-T038
+    Called after debounce_ms delay to reassign workspaces based on config.
+
+    Args:
+        conn: i3 async connection
+        active_outputs: List of active outputs from i3
+    """
+    try:
+        from .monitor_config_manager import MonitorConfigManager
+        from .workspace_manager import get_monitor_configs, assign_workspaces_to_monitors
+
+        # Load configuration
+        config_manager = MonitorConfigManager()
+        config = config_manager.load_config()
+
+        # Check if auto-reassign is enabled
+        if not config.enable_auto_reassign:
+            logger.info("Auto-reassign disabled in config - skipping workspace redistribution")
+            return
+
+        # Get monitor configurations with assigned roles
+        monitors = await get_monitor_configs(conn, config_manager)
+
+        if not monitors:
+            logger.warning("No active monitors found - skipping workspace reassignment")
+            return
+
+        monitor_count = len(monitors)
+        logger.info(f"Reassigning workspaces for {monitor_count} monitor(s)")
+
+        # Assign workspaces to monitors based on configuration
+        await assign_workspaces_to_monitors(conn, monitors, config_manager=config_manager)
+
+        # Get workspace distribution for logging
+        distribution = config_manager.get_workspace_distribution(monitor_count)
+        total_workspaces = sum(len(ws_list) for ws_list in distribution.values())
+
+        logger.info(
+            f"Workspace reassignment complete: {total_workspaces} workspaces "
+            f"distributed across {monitor_count} monitor(s)"
+        )
+
+    except Exception as e:
+        logger.error(f"Error during workspace reassignment: {e}")
+
+
+async def _schedule_workspace_reassignment(
+    conn: aio.Connection,
+    active_outputs: list,
+) -> None:
+    """Schedule workspace reassignment with debouncing.
+
+    Feature 033: T036 (debouncing)
+    Ensures that rapid monitor changes don't trigger multiple reassignments.
+
+    Args:
+        conn: i3 async connection
+        active_outputs: List of active outputs from i3
+    """
+    global _output_change_task, _last_output_event_time
+
+    try:
+        from .monitor_config_manager import MonitorConfigManager
+
+        # Load configuration for debounce settings
+        config_manager = MonitorConfigManager()
+        config = config_manager.load_config()
+        debounce_ms = config.debounce_ms
+
+        # Update last event time
+        _last_output_event_time = time.time()
+
+        # Cancel existing task if one is pending
+        if _output_change_task and not _output_change_task.done():
+            _output_change_task.cancel()
+            logger.debug(f"Cancelled pending workspace reassignment task")
+
+        # Schedule new task after debounce delay
+        async def _debounced_reassignment():
+            await asyncio.sleep(debounce_ms / 1000.0)
+            await _perform_workspace_reassignment(conn, active_outputs)
+
+        _output_change_task = asyncio.create_task(_debounced_reassignment())
+        logger.debug(f"Scheduled workspace reassignment after {debounce_ms}ms")
+
+    except Exception as e:
+        logger.error(f"Error scheduling workspace reassignment: {e}")
+
+
 async def on_output(
     conn: aio.Connection,
     event: OutputEvent,
@@ -774,9 +873,8 @@ async def on_output(
             else:
                 logger.debug(f"  Inactive output: {output.name}")
 
-        # TODO: Re-run workspace distribution if needed
-        # This would call workspace_manager.assign_workspaces_to_monitors()
-        # but we need to be careful not to disrupt active workspaces
+        # Feature 033: Automatic workspace reassignment on monitor changes (T036-T038)
+        await _schedule_workspace_reassignment(conn, active_outputs)
 
     except Exception as e:
         error_msg = str(e)
