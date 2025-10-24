@@ -334,6 +334,48 @@ The following shell aliases are available for project management:
 | `i3pm project create` | - | Create a new project |
 | `i3pm daemon status` | - | Show daemon status and diagnostics |
 | `i3pm daemon events` | - | Show recent daemon events for debugging |
+| `i3pm monitors config show` | - | Display workspace-monitor configuration |
+| `i3pm monitors config edit` | - | Edit configuration in $EDITOR |
+| `i3pm monitors config validate` | - | Validate configuration syntax |
+| `i3pm monitors config reload` | - | Hot-reload config without restart |
+| `i3pm monitors reassign` | - | Apply workspace distribution now |
+| `i3pm monitors status` | - | Show monitor table with roles |
+| `i3pm monitors workspaces` | - | Show workspace assignments |
+
+### Workspace-to-Monitor Configuration
+
+Feature 033 provides declarative workspace distribution across monitors:
+
+```bash
+# View current configuration
+i3pm monitors config show
+
+# Edit configuration
+i3pm monitors config edit
+
+# Validate configuration
+i3pm monitors config validate
+
+# Reload configuration (no restart needed)
+i3pm monitors config reload
+
+# Apply workspace redistribution
+i3pm monitors reassign
+i3pm monitors reassign --dry-run  # Preview changes
+
+# View system state
+i3pm monitors status              # Monitor table
+i3pm monitors workspaces          # Workspace assignments
+```
+
+**Configuration File**: `~/.config/i3/workspace-monitor-mapping.json`
+
+**Default Distribution**:
+- 1 monitor: All workspaces on primary
+- 2 monitors: WS 1-2 primary, WS 3-70 secondary
+- 3 monitors: WS 1-2 primary, WS 3-5 secondary, WS 6-70 tertiary
+
+**Automatic Adaptation**: Workspaces automatically redistribute when monitors are connected/disconnected (configurable via `enable_auto_reassign` and `debounce_ms` settings).
 
 ### Daemon Management
 
