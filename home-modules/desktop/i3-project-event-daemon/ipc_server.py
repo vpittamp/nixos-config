@@ -2344,6 +2344,7 @@ class IPCServer:
         try:
             from .monitor_config_manager import MonitorConfigManager
             from .workspace_manager import get_monitor_configs
+            from .models import MonitorConfig as PydanticMonitorConfig, OutputRect, MonitorRole
 
             # Get i3 connection
             if not self.i3_connection or not self.i3_connection.conn:
@@ -2353,10 +2354,23 @@ class IPCServer:
 
             # Get monitor configurations with assigned roles
             config_manager = MonitorConfigManager()
-            monitors = await get_monitor_configs(i3, config_manager)
+            monitors_dataclass = await get_monitor_configs(i3, config_manager)
 
-            # Convert MonitorConfig Pydantic models to dicts
-            return [monitor.model_dump() for monitor in monitors]
+            # Convert dataclass instances to Pydantic models for JSON-RPC
+            monitors_pydantic = []
+            for monitor in monitors_dataclass:
+                pydantic_monitor = PydanticMonitorConfig(
+                    name=monitor.name,
+                    active=monitor.active,
+                    primary=monitor.primary,
+                    role=MonitorRole(monitor.role) if monitor.role else None,
+                    rect=OutputRect(**monitor.rect),
+                    current_workspace=None,  # TODO: Query from i3
+                )
+                monitors_pydantic.append(pydantic_monitor)
+
+            # Convert Pydantic models to dicts for JSON serialization
+            return [monitor.model_dump() for monitor in monitors_pydantic]
 
         except Exception as e:
             error_msg = str(e)
