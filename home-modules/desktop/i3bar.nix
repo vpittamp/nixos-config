@@ -1,0 +1,118 @@
+# i3bar Configuration with Event-Driven Status Updates
+# Replaces Polybar with native i3bar for instant project context updates
+{ config, lib, pkgs, ... }:
+
+let
+  # Create wrapper script to call i3pm from PATH
+  # (i3pm is installed via home.packages in i3pm-deno.nix)
+  i3pmWrapper = pkgs.writeShellScript "i3pm-caller" ''
+    exec ${config.home.profileDirectory}/bin/i3pm "$@"
+  '';
+
+  # Create event-driven status script with substituted paths
+  statusScript = pkgs.writeShellScript "i3bar-status-event-driven" (
+    builtins.replaceStrings
+      [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" ]
+      [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" ]
+      (builtins.readFile ./i3bar/status-event-driven.sh)
+  );
+in
+{
+  # Install i3bar package (part of i3)
+  home.packages = with pkgs; [
+    i3  # Includes i3bar
+  ];
+
+  # Add i3bar configuration to i3 config
+  home.file.".config/i3/i3bar.conf".text = ''
+    # i3bar configuration (Catppuccin Mocha theme)
+    # Event-driven status updates via i3pm daemon subscriptions
+    bar {
+      position bottom
+      status_command ${statusScript}
+
+      # Font
+      font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
+
+      # Tray
+      tray_output primary
+
+      # Workspace buttons
+      workspace_buttons yes
+      strip_workspace_numbers no
+
+      # Separator
+      separator_symbol " | "
+
+      # Colors (Catppuccin Mocha theme)
+      colors {
+        background #1e1e2e
+        statusline #cdd6f4
+        separator  #6c7086
+
+        # Workspace button colors: border background text
+        focused_workspace  #b4befe #45475a #cdd6f4
+        active_workspace   #313244 #313244 #cdd6f4
+        inactive_workspace #1e1e2e #1e1e2e #bac2de
+        urgent_workspace   #f38ba8 #f38ba8 #1e1e2e
+        binding_mode       #f38ba8 #f38ba8 #1e1e2e
+      }
+    }
+  '';
+
+  # Create click handler script for future use
+  home.file.".config/i3bar/click-handler.sh" = {
+    text = ''
+      #!/${pkgs.bash}/bin/bash
+      # i3bar click event handler
+      # Reads click events from stdin (JSON format)
+
+      while read -r line; do
+        # Parse click event
+        name=$(echo "$line" | ${pkgs.jq}/bin/jq -r '.name')
+        button=$(echo "$line" | ${pkgs.jq}/bin/jq -r '.button')
+
+        case "$name" in
+          project)
+            if [ "$button" = "1" ]; then
+              # Left click: Open project switcher
+              PROJECT_LIST=$(${i3pmWrapper} project list --json 2>/dev/null)
+
+              if [ -z "$PROJECT_LIST" ] || [ "$PROJECT_LIST" = "[]" ]; then
+                ${pkgs.libnotify}/bin/notify-send "i3pm" "No projects configured"
+                exit 0
+              fi
+
+              # Format for rofi: "icon display_name"
+              FORMATTED=$(echo "$PROJECT_LIST" | ${pkgs.jq}/bin/jq -r '.[] | "\(.icon // "📁") \(.display_name // .name)\t\(.name)"')
+
+              # Show rofi menu
+              SELECTED=$(echo "$FORMATTED" | ${pkgs.coreutils}/bin/cut -f1 | \
+                ${pkgs.rofi}/bin/rofi -dmenu -i -p "Switch Project" -theme-str 'window {width: 400px;}')
+
+              if [ -n "$SELECTED" ]; then
+                # Get the project name corresponding to the selection
+                PROJECT_NAME=$(echo "$FORMATTED" | ${pkgs.gnugrep}/bin/grep -F "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+
+                if [ -n "$PROJECT_NAME" ]; then
+                  ${i3pmWrapper} project switch "$PROJECT_NAME"
+                fi
+              fi
+            elif [ "$button" = "3" ]; then
+              # Right click: Clear project
+              ${i3pmWrapper} project clear
+            fi
+            ;;
+
+          date)
+            if [ "$button" = "1" ]; then
+              # Left click: Show calendar (if available)
+              ${pkgs.libnotify}/bin/notify-send "Calendar" "$(${pkgs.coreutils}/bin/date '+%A, %B %d, %Y')"
+            fi
+            ;;
+        esac
+      done
+    '';
+    executable = true;
+  };
+}

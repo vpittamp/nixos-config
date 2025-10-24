@@ -12,8 +12,9 @@
     ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
     # ./home-modules/tools/i3-project-manager.nix  # REMOVED: Replaced by i3pm Deno (Feature 027)
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
-    ./home-modules/desktop/polybar.nix  # Re-enabled: Better centering support than i3bar
-    # ./home-modules/desktop/i3blocks  # REMOVED: Switched back to polybar for center modules
+    ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
+    # ./home-modules/desktop/polybar.nix  # REMOVED: Replaced by event-driven i3bar
+    # ./home-modules/desktop/i3blocks  # REMOVED: Switched to i3bar with event subscriptions
   ];
 
   home.username = "vpittamp";

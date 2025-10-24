@@ -187,17 +187,17 @@
     bindsym $mod+Shift+e exec "i3-msg exit"
 
     # Polybar configuration (Re-enabled for center module support)
-    # Polybar is started via exec_always below
-    # No i3bar configuration - polybar handles the status bar
+    # i3bar is configured via i3bar.nix module
+    # Event-driven status updates via i3pm daemon subscriptions
 
     # Autostart - import environment variables for systemd services
     exec --no-startup-id systemctl --user import-environment DISPLAY XAUTHORITY
 
-    # Launch polybar on all monitors (re-enabled for center module support)
-    exec_always --no-startup-id ~/.config/polybar/launch.sh
-
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
+
+    # i3bar configuration
+    include ~/.config/i3/i3bar.conf
   '';
 
   # Also configure via xsession for compatibility
