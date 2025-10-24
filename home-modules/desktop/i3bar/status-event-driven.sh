@@ -12,6 +12,7 @@ SED_BIN="@sed@"
 DATE_BIN="@date@"
 GREP_BIN="@grep@"
 AWK_BIN="@awk@"
+XTERM_BIN="@xterm@"
 
 # Colors (Catppuccin Mocha)
 COLOR_LAVENDER="#b4befe"
@@ -206,6 +207,28 @@ build_status_line() {
         '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
+# Handle click events from i3bar
+handle_click_event() {
+    local click_data="$1"
+    local name button
+
+    # Parse click event JSON
+    name=$(echo "$click_data" | "$JQ_BIN" -r '.name // ""')
+    button=$(echo "$click_data" | "$JQ_BIN" -r '.button // 0')
+
+    case "$name" in
+        project)
+            if [ "$button" = "1" ]; then
+                # Left click: Launch project switcher in xterm
+                "$XTERM_BIN" -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh &
+            elif [ "$button" = "3" ]; then
+                # Right click: Clear project (global mode)
+                "$I3PM_BIN" project clear >/dev/null 2>&1 &
+            fi
+            ;;
+    esac
+}
+
 # Main: Output i3bar protocol
 main() {
     # Output header
@@ -216,6 +239,15 @@ main() {
     initial_status=$(build_status_line)
     echo "$initial_status,"
 
+    # Fork process to handle click events from stdin
+    while read -r click_event; do
+        # Check if it's a click event (starts with '{')
+        if [[ "$click_event" =~ ^\{ ]]; then
+            handle_click_event "$click_event" &
+        fi
+    done &
+    CLICK_HANDLER_PID=$!
+
     # Subscribe to daemon events and rebuild status on each event
     # Subscribe to all event types since project switches are 'ipc' events
     "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
@@ -223,6 +255,9 @@ main() {
         status_line=$(build_status_line)
         echo "$status_line,"
     done
+
+    # Clean up click handler on exit
+    kill $CLICK_HANDLER_PID 2>/dev/null || true
 }
 
 # Run main

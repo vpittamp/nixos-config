@@ -9,11 +9,11 @@ let
     exec ${config.home.profileDirectory}/bin/i3pm "$@"
   '';
 
-  # Bottom bar: Event-driven project status script
+  # Bottom bar: Event-driven project status script with click handler
   projectStatusScript = pkgs.writeShellScript "i3bar-status-event-driven" (
     builtins.replaceStrings
-      [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" ]
-      [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" ]
+      [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" "@xterm@" ]
+      [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.xterm}/bin/xterm" ]
       (builtins.readFile ./i3bar/status-event-driven.sh)
   );
 
