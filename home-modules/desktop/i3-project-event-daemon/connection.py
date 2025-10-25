@@ -178,7 +178,9 @@ class ResilientI3Connection:
 
                     # Mark the window in i3 using window ID (more reliable than con_id which can become stale)
                     mark = f"project:{project_name}"
-                    result = await self.conn.command(f'[id={container.window}] mark --add "{mark}"')
+                    command_str = f'[id={container.window}] mark --add "{mark}"'
+                    logger.debug(f"Executing mark command: {command_str}")
+                    result = await self.conn.command(command_str)
                     # Log command result details
                     if result and len(result) > 0:
                         reply = result[0]
