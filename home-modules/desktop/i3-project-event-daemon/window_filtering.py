@@ -352,8 +352,9 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_
 
     try:
         # Use sudo cat to read environ (required for cross-namespace access)
+        # Note: Use /run/wrappers/bin/sudo (setuid wrapper), not /run/current-system/sw/bin/sudo
         proc = await asyncio.create_subprocess_exec(
-            "sudo", "cat", environ_path,
+            "/run/wrappers/bin/sudo", "cat", environ_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

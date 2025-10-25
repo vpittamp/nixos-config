@@ -79,9 +79,8 @@
     extraRules = [{
       users = [ "vpittamp" ];
       commands = [{
-        command = "${pkgs.coreutils}/bin/cat";
+        command = "/run/current-system/sw/bin/cat /proc/*/environ";
         options = [ "NOPASSWD" ];
-        args = [ "/proc/*/environ" ];
       }];
     }];
   };
