@@ -27,10 +27,11 @@
   # Feature 019: Enable i3pm CLI/TUI tool (unified project management) - DISABLED for Feature 027
   # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
-  # Feature 015: Enable i3 project event listener daemon
+  # Feature 015: i3 project event listener daemon
+  # NOTE: Disabled in favor of system service (Feature 037 - cross-namespace /proc access)
+  # System service configured in configurations/hetzner.nix: services.i3ProjectDaemon.enable
   services.i3ProjectEventListener = {
-    enable = true;  # Enabled for testing (Feature 015)
-    logLevel = "DEBUG";  # Debug logging for initial testing
+    enable = false;  # Disabled - using system service instead
   };
 
   # Auto-clean home-manager backup conflicts before activation
