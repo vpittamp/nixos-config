@@ -50,7 +50,8 @@ let
       name = "neovim";
       display_name = "Neovim";
       command = "ghostty";
-      parameters = "-e nvim $PROJECT_DIR";
+      # parameters = "-e nvim $PROJECT_DIR";
+      parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
       scope = "scoped";
       expected_class = "ghostty";
       preferred_workspace = 1;
@@ -297,6 +298,68 @@ let
       fallback_behavior = "skip";
       description = "Voice and text chat platform";
     })
+
+    # PWA Applications (Workspace 7)
+
+    (mkApp {
+      name = "youtube-pwa";
+      display_name = "YouTube";
+      command = "firefoxpwa";
+      parameters = "site launch 01K666N2V6BQMDSBMX3AY74TY7";
+      scope = "global";
+      expected_class = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";
+      preferred_workspace = 7;
+      icon = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";
+      nix_package = "pkgs.firefoxpwa";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "YouTube video platform";
+    })
+
+    (mkApp {
+      name = "google-ai-pwa";
+      display_name = "Google AI";
+      command = "firefoxpwa";
+      parameters = "site launch 01K665SPD8EPMP3JTW02JM1M0Z";
+      scope = "global";
+      expected_class = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";
+      preferred_workspace = 7;
+      icon = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";
+      nix_package = "pkgs.firefoxpwa";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Google AI assistant";
+    })
+
+    (mkApp {
+      name = "chatgpt-pwa";
+      display_name = "ChatGPT";
+      command = "firefoxpwa";
+      parameters = "site launch 01K772ZBM45JD68HXYNM193CVW";
+      scope = "global";
+      expected_class = "FFPWA-01K772ZBM45JD68HXYNM193CVW";
+      preferred_workspace = 7;
+      icon = "FFPWA-01K772ZBM45JD68HXYNM193CVW";
+      nix_package = "pkgs.firefoxpwa";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "ChatGPT AI assistant";
+    })
+
+    (mkApp {
+      name = "github-codespaces-pwa";
+      display_name = "GitHub Codespaces";
+      command = "firefoxpwa";
+      parameters = "site launch 01K772Z7AY5J36Q3NXHH9RYGC0";
+      scope = "global";
+      expected_class = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";
+      preferred_workspace = 1;
+      icon = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";
+      nix_package = "pkgs.firefoxpwa";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "GitHub cloud development environment";
+    })
   ];
 
   # Additional validation: check for duplicate names
@@ -355,9 +418,10 @@ let
     '';
 
   # Generate home.file entries for each .desktop file
-  # Use custom directory so Walker only shows our apps (not system-wide apps)
+  # Use completely separate directory outside standard XDG paths
+  # so Walker/Elephant only shows our apps (Feature 034)
   desktopFileEntries = builtins.listToAttrs (map (app: {
-    name = ".local/share/applications/i3pm/${app.name}.desktop";
+    name = ".local/share/i3pm-applications/applications/${app.name}.desktop";
     value.text = mkDesktopFile app;
   }) validated);
 

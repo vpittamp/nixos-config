@@ -14,7 +14,8 @@ let
   managePWAsScript = pkgs.writeShellScript "manage-pwas" ''
     export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:${pkgs.imagemagick}/bin:${pkgs.gawk}/bin:$PATH"
     FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
-    DESKTOP_DIR="$HOME/.local/share/applications"
+    # Feature 034: Use separate directory for PWAs so Walker/Elephant only shows app-registry apps
+    DESKTOP_DIR="$HOME/.local/share/firefox-pwas"
     STATE_FILE="$HOME/.config/firefoxpwa/installed-pwas.json"
 
     # Ensure directories exist

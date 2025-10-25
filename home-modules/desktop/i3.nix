@@ -324,42 +324,43 @@
 
   # Create desktop files for terminal-based apps with unique window classes
   # This allows i3 to assign them to specific workspaces instead of the terminal workspace
+  # Feature 034: DISABLED - Now using app-registry.nix for all Walker applications
 
-  home.file.".local/share/applications/yazi-custom.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Yazi File Manager
-    Comment=Blazing fast terminal file manager
-    Exec=${pkgs.ghostty}/bin/ghostty -e ${pkgs.yazi}/bin/yazi
-    Icon=folder
-    Terminal=false
-    Categories=System;FileManager;
-    StartupWMClass=ghostty
-  '';
+  # home.file.".local/share/applications/yazi-custom.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=Yazi File Manager
+  #   Comment=Blazing fast terminal file manager
+  #   Exec=${pkgs.ghostty}/bin/ghostty -e ${pkgs.yazi}/bin/yazi
+  #   Icon=folder
+  #   Terminal=false
+  #   Categories=System;FileManager;
+  #   StartupWMClass=ghostty
+  # '';
 
-  home.file.".local/share/applications/k9s-custom.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=K9s Kubernetes Manager
-    Comment=Terminal UI for Kubernetes
-    Exec=${pkgs.ghostty}/bin/ghostty -e /home/vpittamp/.local/bin/k9s-workspace
-    Icon=kubernetes
-    Terminal=false
-    Categories=System;Development;
-    StartupWMClass=ghostty
-  '';
+  # home.file.".local/share/applications/k9s-custom.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=K9s Kubernetes Manager
+  #   Comment=Terminal UI for Kubernetes
+  #   Exec=${pkgs.ghostty}/bin/ghostty -e /home/vpittamp/.local/bin/k9s-workspace
+  #   Icon=kubernetes
+  #   Terminal=false
+  #   Categories=System;Development;
+  #   StartupWMClass=ghostty
+  # '';
 
-  home.file.".local/share/applications/lazygit-custom.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Lazygit
-    Comment=Terminal UI for git
-    Exec=${pkgs.ghostty}/bin/ghostty -e /home/vpittamp/.local/bin/lazygit-workspace
-    Icon=git
-    Terminal=false
-    Categories=Development;RevisionControl;
-    StartupWMClass=ghostty
-  '';
+  # home.file.".local/share/applications/lazygit-custom.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=Lazygit
+  #   Comment=Terminal UI for git
+  #   Exec=${pkgs.ghostty}/bin/ghostty -e /home/vpittamp/.local/bin/lazygit-workspace
+  #   Icon=git
+  #   Terminal=false
+  #   Categories=Development;RevisionControl;
+  #   StartupWMClass=ghostty
+  # '';
 
   # Install workspace reassignment script (for manual trigger and project-based reassignment)
   home.file.".config/i3/scripts/reassign-workspaces.sh" = {

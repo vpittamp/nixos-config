@@ -21,17 +21,18 @@
   #   Keywords=git;vcs;version control;
   # '';
 
-  xdg.dataFile."applications/lazydocker.desktop".text = ''
-    [Desktop Entry]
-    Type=Application
-    Name=Lazydocker
-    Comment=Simple terminal UI for docker and docker-compose
-    Exec=ghostty -e lazydocker
-    Icon=docker
-    Terminal=false
-    Categories=Development;System;
-    Keywords=docker;container;compose;
-  '';
+  # Feature 034: DISABLED - Now using app-registry.nix for all Walker applications
+  # xdg.dataFile."applications/lazydocker.desktop".text = ''
+  #   [Desktop Entry]
+  #   Type=Application
+  #   Name=Lazydocker
+  #   Comment=Simple terminal UI for docker and docker-compose
+  #   Exec=ghostty -e lazydocker
+  #   Icon=docker
+  #   Terminal=false
+  #   Categories=Development;System;
+  #   Keywords=docker;container;compose;
+  # '';
 
   # Optional: Configure lazygit if config file exists
   # programs.lazygit = {

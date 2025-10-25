@@ -55,17 +55,18 @@ in
     #   Keywords=file;manager;explorer;terminal;
     # '';
 
-    xdg.dataFile."applications/yazi-fzf.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=Yazi (Select Directory)
-      Comment=Launch Yazi with fzf directory picker
-      Exec=ghostty --class=floating_fzf -e yazi-fzf
-      Icon=folder-open
-      Terminal=false
-      Categories=System;FileTools;FileManager;
-      Keywords=file;manager;explorer;terminal;fzf;search;
-    '';
+    # Feature 034: DISABLED - Now using app-registry.nix for all Walker applications
+    # xdg.dataFile."applications/yazi-fzf.desktop".text = ''
+    #   [Desktop Entry]
+    #   Type=Application
+    #   Name=Yazi (Select Directory)
+    #   Comment=Launch Yazi with fzf directory picker
+    #   Exec=ghostty --class=floating_fzf -e yazi-fzf
+    #   Icon=folder-open
+    #   Terminal=false
+    #   Categories=System;FileTools;FileManager;
+    #   Keywords=file;manager;explorer;terminal;fzf;search;
+    # '';
 
     # Yazi file manager configuration
     programs.yazi = {
