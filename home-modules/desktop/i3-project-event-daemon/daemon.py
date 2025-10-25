@@ -223,7 +223,7 @@ class I3ProjectDaemon:
             # Feature 037: Run garbage collection on workspace tracker
             if self.workspace_tracker:
                 cleanup_count = await self.workspace_tracker.cleanup_stale_entries(
-                    self.connection.i3, max_age_days=30
+                    self.connection.conn, max_age_days=30
                 )
                 logger.info(f"Workspace tracker cleanup: {cleanup_count} stale entries removed")
 

@@ -2594,14 +2594,14 @@ class IPCServer:
             if not project_name:
                 raise ValueError("project_name parameter is required")
 
-            if not self.i3_connection:
+            if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
 
             if not self.workspace_tracker:
                 raise RuntimeError("workspace tracker not available")
 
             # Get i3 tree and find all visible windows for project
-            tree = await self.i3_connection.get_tree()
+            tree = await self.i3_connection.conn.get_tree()
             window_ids_to_hide = []
 
             async def collect_project_windows(con):
@@ -2624,7 +2624,7 @@ class IPCServer:
 
             # Hide windows in batch
             hidden_count, errors = await window_filtering.hide_windows_batch(
-                self.i3_connection,
+                self.i3_connection.conn,
                 window_ids_to_hide,
                 self.workspace_tracker,
             )
@@ -2681,7 +2681,7 @@ class IPCServer:
             if not project_name:
                 raise ValueError("project_name parameter is required")
 
-            if not self.i3_connection:
+            if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
 
             if not self.workspace_tracker:
@@ -2689,7 +2689,7 @@ class IPCServer:
 
             # Get all scratchpad windows
             scratchpad_windows = await window_filtering.get_scratchpad_windows(
-                self.i3_connection
+                self.i3_connection.conn
             )
 
             # Find windows matching project
@@ -2703,7 +2703,7 @@ class IPCServer:
 
             # Restore windows in batch
             restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(
-                self.i3_connection,
+                self.i3_connection.conn,
                 window_ids_to_restore,
                 self.workspace_tracker,
                 fallback_workspace,
@@ -2765,7 +2765,7 @@ class IPCServer:
             if not new_project:
                 raise ValueError("new_project parameter is required")
 
-            if not self.i3_connection:
+            if not self.i3_connection or not self.i3_connection.conn:
                 raise RuntimeError("i3 connection not available")
 
             if not self.workspace_tracker:
