@@ -27,6 +27,104 @@ logger = logging.getLogger(__name__)
 _output_change_task: Optional[asyncio.Task] = None
 _last_output_event_time: float = 0.0
 
+# Feature 037 T016: Request queue for sequential project switch processing
+_project_switch_queue: Optional[asyncio.Queue] = None
+_project_switch_worker_task: Optional[asyncio.Task] = None
+
+
+async def _project_switch_worker(
+    conn: aio.Connection,
+    state_manager: StateManager,
+    config_dir: Path,
+    workspace_tracker,
+) -> None:
+    """Background worker that processes project switch requests sequentially.
+
+    This ensures rapid project switches are handled one at a time, preventing
+    race conditions and overlapping window filtering operations.
+
+    Args:
+        conn: i3 async connection
+        state_manager: State manager instance
+        config_dir: Config directory
+        workspace_tracker: WorkspaceTracker for window filtering
+    """
+    global _project_switch_queue
+
+    logger.info("Project switch worker started")
+
+    while True:
+        try:
+            # Wait for next switch request
+            project_name = await _project_switch_queue.get()
+
+            logger.debug(f"Processing queued switch request: {project_name}")
+
+            # Process the switch
+            await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
+
+            # Mark task as done
+            _project_switch_queue.task_done()
+
+        except asyncio.CancelledError:
+            logger.info("Project switch worker cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in project switch worker: {e}", exc_info=True)
+            # Continue processing even if one switch fails
+
+
+def initialize_project_switch_queue(
+    conn: aio.Connection,
+    state_manager: StateManager,
+    config_dir: Path,
+    workspace_tracker,
+) -> None:
+    """Initialize the project switch request queue and worker task.
+
+    Args:
+        conn: i3 async connection
+        state_manager: State manager instance
+        config_dir: Config directory
+        workspace_tracker: WorkspaceTracker for window filtering
+    """
+    global _project_switch_queue, _project_switch_worker_task
+
+    if _project_switch_queue is None:
+        _project_switch_queue = asyncio.Queue(maxsize=10)  # Limit to 10 pending switches
+        logger.info("Project switch queue initialized (max size: 10)")
+
+    if _project_switch_worker_task is None or _project_switch_worker_task.done():
+        _project_switch_worker_task = asyncio.create_task(
+            _project_switch_worker(conn, state_manager, config_dir, workspace_tracker)
+        )
+        logger.info("Project switch worker task created")
+
+
+async def shutdown_project_switch_queue() -> None:
+    """Shutdown the project switch queue and worker task gracefully."""
+    global _project_switch_worker_task, _project_switch_queue
+
+    if _project_switch_worker_task and not _project_switch_worker_task.done():
+        # Cancel worker task
+        _project_switch_worker_task.cancel()
+
+        try:
+            await _project_switch_worker_task
+        except asyncio.CancelledError:
+            pass
+
+        logger.info("Project switch worker task stopped")
+
+    # Clear queue
+    if _project_switch_queue:
+        while not _project_switch_queue.empty():
+            try:
+                _project_switch_queue.get_nowait()
+                _project_switch_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
 
 # ============================================================================
 # USER STORY 1 (P1): Real-time Project State Updates
@@ -66,7 +164,18 @@ async def on_tick(
             if len(parts) == 3 and parts[1] == "switch":
                 # Format: project:switch:<name>
                 project_name = parts[2]
-                await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
+                # Feature 037 T016: Queue switch request for sequential processing
+                if _project_switch_queue is not None:
+                    try:
+                        # Try to add to queue without blocking
+                        _project_switch_queue.put_nowait(project_name)
+                        logger.debug(f"Queued project switch request: {project_name} (queue size: {_project_switch_queue.qsize()})")
+                    except asyncio.QueueFull:
+                        logger.warning(f"Project switch queue is full, dropping request for {project_name}")
+                else:
+                    # Fallback to direct call if queue not initialized
+                    logger.debug("Project switch queue not initialized, processing directly")
+                    await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
             elif len(parts) == 2:
                 # Format: project:clear or project:none or project:reload
                 action = parts[1]
@@ -741,6 +850,96 @@ async def on_window_focus(
             entry = EventEntry(
                 event_id=event_buffer.event_counter,
                 event_type="window::focus",
+                timestamp=datetime.now(),
+                source="i3",
+                window_id=window_id,
+                window_class=window_class,
+                workspace_name=container.workspace().name if container.workspace() else None,
+                project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
+            # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
+
+
+async def on_window_move(
+    conn: aio.Connection,
+    event: WindowEvent,
+    state_manager: StateManager,
+    workspace_tracker,  # Feature 037 T020: Workspace tracking
+    event_buffer: Optional["EventBuffer"] = None,
+    ipc_server: Optional["IPCServer"] = None,
+) -> None:
+    """Handle window::move events - track workspace changes for restoration.
+
+    Feature 037 T020: When users manually move windows between workspaces,
+    update the workspace tracker so windows return to their new locations
+    when project is restored.
+
+    Args:
+        conn: i3 async connection
+        event: Window event
+        state_manager: State manager
+        workspace_tracker: WorkspaceTracker for window filtering (Feature 037)
+        event_buffer: Event buffer for recording events (Feature 017)
+        ipc_server: IPC server for broadcasting events (Feature 025)
+    """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    container = event.container
+    window_id = container.id
+    window_class = container.window_class or "unknown"
+
+    try:
+        # Get workspace information
+        workspace = container.workspace()
+        if not workspace:
+            logger.debug(f"Window {window_id} has no workspace, skipping tracking")
+            return
+
+        workspace_num = workspace.num
+        is_floating = container.floating == "user_on" or container.floating == "auto_on"
+
+        # Feature 037 T020: Update workspace tracker with new location
+        if workspace_tracker:
+            from . import window_filtering
+
+            # Read I3PM environment variables to get project info
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, container.pid)
+            project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
+            app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
+
+            # Track the new workspace assignment
+            await workspace_tracker.track_window(
+                window_id=window_id,
+                workspace_number=workspace_num,
+                floating=is_floating,
+                project_name=project_name,
+                app_name=app_name,
+                window_class=window_class,
+            )
+
+            # Save updated tracking immediately (T024 will add atomic writes)
+            await workspace_tracker.save()
+
+            logger.debug(
+                f"Tracked window move: {window_id} ({window_class}) → workspace {workspace_num}, "
+                f"floating={is_floating}, project={project_name}"
+            )
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error handling window::move event: {e}")
+        await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer (Feature 017)
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="window::move",
                 timestamp=datetime.now(),
                 source="i3",
                 window_id=window_id,

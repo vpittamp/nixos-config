@@ -75,9 +75,10 @@
 - [X] T013 [US1] Implement `project.switchWithFiltering` JSON-RPC method in daemon that combines hide + restore operations with single i3 tree query for performance
 - [X] T014 [US1] Modify daemon's `handle_tick()` event handler to detect project switch tick events and automatically call `project.switchWithFiltering`
 - [X] T015 [US1] Add error handling for partial failures (continue processing remaining windows when individual window operations fail)
-- [ ] T016 [US1] Implement request queue in daemon to handle rapid project switches sequentially using asyncio.Queue
-- [ ] T017 [US1] Extend daemon client in `home-modules/tools/i3pm/daemon_client.py` with new JSON-RPC methods: hideWindows, restoreWindows, switchWithFiltering
+- [X] T016 [US1] Implement request queue in daemon to handle rapid project switches sequentially using asyncio.Queue
+- [X] T017 [US1] Extend daemon client in `home-modules/tools/i3pm/daemon_client.py` with new JSON-RPC methods: hideWindows, restoreWindows, switchWithFiltering
 - [ ] T018 [US1] Modify `i3pm project switch` command in `home-modules/tools/i3pm/__main__.py` to display filtering results (hidden count, restored count, duration) after switch completes
+  **Note**: Filtering is automatic and logged. CLI display enhancement deferred in favor of Phase 4 (higher priority)
 - [X] T019 [US1] Add logging for all window filtering operations with debug details (window IDs, projects, workspaces)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - project switches automatically hide/restore windows
@@ -92,12 +93,17 @@
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Implement daemon event handler for `window::move` events in `home-modules/desktop/i3-project-daemon.py` that updates window-workspace-map.json when user manually moves windows
-- [ ] T021 [US2] Extend workspace tracking to capture floating state in window-workspace-map.json (floating: true/false)
-- [ ] T022 [US2] Modify `project.restoreWindows` to restore floating state using i3 command: `[con_id="X"] move to workspace N, floating enable|disable`
-- [ ] T023 [US2] Add validation in restoration logic to preserve custom workspace assignments over registry defaults (user overrides take precedence)
-- [ ] T024 [US2] Implement atomic write pattern for window-workspace-map.json (write to temp file + rename) to prevent corruption
-- [ ] T025 [US2] Add last_seen timestamp to tracking entries for debugging and potential cleanup
+- [X] T020 [US2] Implement daemon event handler for `window::move` events in `home-modules/desktop/i3-project-daemon.py` that updates window-workspace-map.json when user manually moves windows
+- [X] T021 [US2] Extend workspace tracking to capture floating state in window-workspace-map.json (floating: true/false)
+  **Note**: Already implemented in Phase 2 (T005-T010)
+- [X] T022 [US2] Modify `project.restoreWindows` to restore floating state using i3 command: `[con_id="X"] move to workspace N, floating enable|disable`
+  **Note**: Already implemented in Phase 2 (T005-T010)
+- [X] T023 [US2] Add validation in restoration logic to preserve custom workspace assignments over registry defaults (user overrides take precedence)
+  **Note**: Already implemented in Phase 2 (T005-T010)
+- [X] T024 [US2] Implement atomic write pattern for window-workspace-map.json (write to temp file + rename) to prevent corruption
+  **Note**: Already implemented in Phase 2 (T005-T010)
+- [X] T025 [US2] Add last_seen timestamp to tracking entries for debugging and potential cleanup
+  **Note**: Already implemented in Phase 2 (T005-T010)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work - windows persist their positions across switches
 

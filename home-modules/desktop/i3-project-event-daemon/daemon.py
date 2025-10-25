@@ -39,6 +39,7 @@ from .handlers import (
     on_window_mark,
     on_window_close,
     on_window_focus,
+    on_window_move,  # Feature 037 T020: Window move tracking
     on_window_title,
     on_workspace_init,
     on_workspace_empty,
@@ -367,6 +368,12 @@ class I3ProjectDaemon:
             partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
         )
 
+        # Feature 037 T020: Window move tracking for workspace persistence
+        self.connection.subscribe(
+            "window::move",
+            partial(on_window_move, state_manager=self.state_manager, workspace_tracker=self.workspace_tracker, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
+        )
+
         # USER STORY 2: Title change re-classification (T033)
         self.connection.subscribe("window::title", get_window_rules_wrapper_title)
 
@@ -402,6 +409,16 @@ class I3ProjectDaemon:
         # we're subscribed before the event loop starts processing events.
         await self.connection.subscribe_events()
         logger.info("Explicit subscription completed")
+
+        # Feature 037 T016: Initialize project switch request queue for sequential processing
+        from .handlers import initialize_project_switch_queue
+        initialize_project_switch_queue(
+            self.connection.conn,
+            self.state_manager,
+            self.config_dir,
+            self.workspace_tracker
+        )
+        logger.info("Project switch request queue initialized")
 
     async def run(self) -> None:
         """Main event loop."""
@@ -490,6 +507,10 @@ class I3ProjectDaemon:
         # Signal systemd we're stopping
         if self.health_monitor:
             self.health_monitor.notify_stopping()
+
+        # Feature 037 T016: Shutdown project switch queue
+        from .handlers import shutdown_project_switch_queue
+        await shutdown_project_switch_queue()
 
         # Stop window rules watcher (Feature 021: T022)
         if self.rules_watcher:

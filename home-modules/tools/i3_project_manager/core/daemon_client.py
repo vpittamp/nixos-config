@@ -341,6 +341,76 @@ class DaemonClient:
                 raise
             raise DaemonError(f"Subscription error: {e}")
 
+    async def hide_windows(self, project_name: str) -> Dict[str, Any]:
+        """Hide windows for a project (move to scratchpad).
+
+        Feature 037 T017: Client method for project.hideWindows
+
+        Args:
+            project_name: Name of project to hide windows for
+
+        Returns:
+            Dict with keys:
+                - windows_hidden: int - Number of windows hidden
+                - errors: List[str] - Error messages if any
+                - duration_ms: float - Operation duration
+        """
+        return await self.call("project.hideWindows", {"project_name": project_name})
+
+    async def restore_windows(self, project_name: str, fallback_workspace: int = 1) -> Dict[str, Any]:
+        """Restore hidden windows for a project.
+
+        Feature 037 T017: Client method for project.restoreWindows
+
+        Args:
+            project_name: Name of project to restore windows for
+            fallback_workspace: Workspace to use if tracked workspace is invalid (default: 1)
+
+        Returns:
+            Dict with keys:
+                - restorations: List[Dict] - List of restored windows with details
+                - errors: List[str] - Error messages if any
+                - fallback_warnings: List[str] - Warnings about fallback usage
+                - duration_ms: float - Operation duration
+        """
+        return await self.call(
+            "project.restoreWindows",
+            {"project_name": project_name, "fallback_workspace": fallback_workspace}
+        )
+
+    async def switch_with_filtering(
+        self,
+        old_project: Optional[str],
+        new_project: str,
+        fallback_workspace: int = 1
+    ) -> Dict[str, Any]:
+        """Switch projects with automatic window filtering.
+
+        Feature 037 T017: Client method for project.switchWithFiltering
+
+        Args:
+            old_project: Name of project to hide windows from (None if first switch)
+            new_project: Name of project to restore windows for
+            fallback_workspace: Workspace to use for restoration fallback (default: 1)
+
+        Returns:
+            Dict with keys:
+                - windows_hidden: int - Number of windows hidden from old project
+                - windows_restored: int - Number of windows restored for new project
+                - hide_errors: List[str] - Errors during hiding
+                - restore_errors: List[str] - Errors during restoration
+                - fallback_warnings: List[str] - Warnings about fallback usage
+                - duration_ms: float - Total operation duration
+        """
+        return await self.call(
+            "project.switchWithFiltering",
+            {
+                "old_project": old_project,
+                "new_project": new_project,
+                "fallback_workspace": fallback_workspace
+            }
+        )
+
     async def ping(self) -> bool:
         """Ping daemon to check if it's alive.
 
