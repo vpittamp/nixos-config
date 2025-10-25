@@ -58,18 +58,25 @@ async def on_tick(
         logger.debug(f"Received tick event: {payload}")
 
         if payload.startswith("project:"):
-            project_name = payload.split(":", 1)[1]
+            # Parse payload: "project:switch:nixos" or "project:clear" or "project:none"
+            parts = payload.split(":", 2)
 
-            if project_name == "none":
-                # Clear active project (global mode)
-                await _clear_project(state_manager, conn, config_dir)
-            elif project_name == "reload":
-                # Reload project configs
-                logger.info("Reloading project configurations...")
-                # TODO: Implement config reload
-            else:
-                # Switch to specified project
+            if len(parts) == 3 and parts[1] == "switch":
+                # Format: project:switch:<name>
+                project_name = parts[2]
                 await _switch_project(project_name, state_manager, conn, config_dir)
+            elif len(parts) == 2:
+                # Format: project:clear or project:none or project:reload
+                action = parts[1]
+                if action in ("clear", "none"):
+                    await _clear_project(state_manager, conn, config_dir)
+                elif action == "reload":
+                    logger.info("Reloading project configurations...")
+                    # TODO: Implement config reload
+                else:
+                    logger.warning(f"Unknown project action: {action}")
+            else:
+                logger.warning(f"Invalid project tick payload format: {payload}")
 
         elif payload == "i3pm:reload-config":
             # Reload app classification config (T030 - Pattern-based classification)
