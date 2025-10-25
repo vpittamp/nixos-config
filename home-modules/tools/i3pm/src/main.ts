@@ -15,14 +15,15 @@ const VERSION = "2.1.0";
  */
 async function main(): Promise<number> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "json", "verbose"],
-    string: [],
+    boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow"],
+    string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output"],
     alias: {
       h: "help",
       v: "version",
       V: "verbose",
+      d: "directory",
+      n: "display-name",
     },
-    stopEarly: true,  // Stop parsing after command name
   });
 
   // Global flags

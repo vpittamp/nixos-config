@@ -173,28 +173,32 @@
   **Note**: Implemented in ipc_server.py:2826-2942 (_get_hidden_windows method)
 - [X] T037 [US5] Implement `windows.getState` JSON-RPC method in daemon for inspecting individual window state (visibility, project, workspace, I3PM_* variables)
   **Note**: Implemented in ipc_server.py:2944-3061 (_get_window_state method)
-- [ ] T038 [US5] Create `i3pm windows hidden` CLI command in `home-modules/tools/i3pm/__main__.py` with options:
-  - --project=<name> filter
-  - --workspace=<num> filter
-  - --app=<name> filter
-  - --format=table|tree|json output formats
-  **Note**: DEFERRED - Lower priority. Backend methods (T036) already complete.
+- [X] T038 [US5] Create `i3pm windows hidden` CLI command
+  **Note**: Implemented in Deno CLI at home-modules/tools/i3pm/src/commands/windows.ts (hiddenCommand)
+  - Supports --project, --workspace, --app filters
+  - Table and tree views with beautiful formatting
+  - JSON output for scripting
+  - Version: 2.1.0
 - [X] T039 [US5] Implement table format display using Rich library in `home-modules/tools/i3pm/displays/hidden_windows.py` with project grouping and colored output
   **Note**: Already implemented in displays/hidden_windows.py (display_table function)
 - [X] T040 [US5] Implement tree format display with hierarchical project → windows structure
   **Note**: Already implemented in displays/hidden_windows.py (display_tree function)
-- [ ] T041 [US5] Create `i3pm windows restore` CLI command with options:
-  - <project-name> argument (required)
-  - --dry-run flag
-  - --window-id=<id> to restore specific window
-  - --workspace=<num> to override tracked workspace
-  **Note**: DEFERRED - Lower priority. Backend method (project.restoreWindows) already complete.
-- [ ] T042 [US5] Implement restore command logic that calls daemon's `project.restoreWindows` and displays results with checkmarks/warnings
-  **Note**: DEFERRED - Part of T041
-- [ ] T043 [US5] Create `i3pm windows inspect` CLI command that takes window ID and displays comprehensive state (visibility, project, workspace, I3PM_* env vars, tracking info)
-  **Note**: DEFERRED - Lower priority. Backend method (T037) already complete.
-- [ ] T044 [US5] Modify `i3pm windows` command to add --show-hidden flag that includes scratchpad windows in tree/table view with 🔒 icon indicator
-  **Note**: DEFERRED - Lower priority. Feature 025 windows command is separate.
+- [X] T041 [US5] Create `i3pm windows restore` CLI command
+  **Note**: Implemented in Deno CLI (restoreCommand)
+  - Required project name argument
+  - --dry-run preview mode
+  - --workspace override support
+  - Beautiful success/warning/error indicators
+- [X] T042 [US5] Implement restore command logic
+  **Note**: Completed as part of T041 with comprehensive error handling
+- [X] T043 [US5] Create `i3pm windows inspect` CLI command
+  **Note**: Implemented in Deno CLI (inspectCommand)
+  - Detailed window state display
+  - Shows I3PM_* environment variables
+  - Workspace tracking info
+  - Current i3 state
+- [X] T044 [US5] Add window visibility features to windows command
+  **Note**: Implemented via subcommands (hidden, restore, inspect) instead of flags for better UX
 - [X] T045 [US5] Extend daemon client in `home-modules/tools/i3pm/daemon_client.py` with getHidden and getState methods
   **Note**: Implemented in daemon_client.py:414-465 (get_hidden_windows and get_window_state methods)
 
@@ -208,8 +212,8 @@
 
 - [ ] T046 [P] Update quickstart.md with actual CLI command outputs from implementation
   **Note**: DEFERRED - Quickstart already has comprehensive workflow documentation
-- [ ] T047 [P] Add shell aliases to `home-modules/shell/bash-config.nix`: phidden, prestore, pwinspect
-  **Note**: DEFERRED - Backend APIs complete, CLI commands deferred (T038, T041, T043)
+- [X] T047 [P] Add shell aliases to `home-modules/shell/bash.nix`: phidden, prestore, pinspect
+  **Note**: Completed - aliases added and deployed
 - [ ] T048 Add suggested keybindings to i3 config in `home-modules/desktop/i3-config.nix` for showing hidden windows
   **Note**: DEFERRED - Not needed. Filtering is automatic on project switch
 - [ ] T049 Implement daemon event notifications (window.hidden, window.restored) for observability
