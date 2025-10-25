@@ -73,9 +73,10 @@ PY
 
   walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
 
-  # Feature 035: XDG isolation REMOVED
-  # No longer needed - environment-based filtering via I3PM_* variables handles visibility
-  # Walker/Elephant now show all applications, filtered dynamically by the daemon
+  # Feature 034/035: Custom application directory for i3pm-managed apps
+  # Desktop files are at ~/.local/share/i3pm-applications/applications/
+  # Add to XDG_DATA_DIRS so Walker can find them
+  i3pmAppsDir = "${config.home.homeDirectory}/.local/share/i3pm-applications";
 in
 
 # Walker Application Launcher
@@ -323,6 +324,12 @@ in
     default = "Google"
   '';
 
+  # Feature 034/035: Add i3pm applications directory to XDG_DATA_DIRS
+  # This makes Walker/Elephant show only our curated app registry
+  home.sessionVariables = {
+    XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
+  };
+
   # Feature 035: Elephant service without XDG isolation
   # Uses standard Elephant binary instead of isolated wrapper
   systemd.user.services.elephant = lib.mkForce {
@@ -339,8 +346,10 @@ in
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)
+      # Feature 034/035: Include i3pm apps directory in XDG_DATA_DIRS
       Environment = [
         "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
+        "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         "XDG_RUNTIME_DIR=%t"
       ];
     };
