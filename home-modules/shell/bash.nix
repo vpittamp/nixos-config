@@ -248,6 +248,11 @@
       iwintable = "i3pm windows --table";
       dstatus = "i3pm daemon status";
       devents = "i3pm daemon events";
+
+      # Feature 037: Window visibility aliases (T047)
+      phidden = "i3pm hidden";
+      prestore = "i3pm restore";
+      pinspect = "i3pm inspect";
     };
     
     initExtra = ''

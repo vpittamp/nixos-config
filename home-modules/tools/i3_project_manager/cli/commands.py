@@ -2013,6 +2013,286 @@ async def cmd_windows(args: argparse.Namespace) -> int:
         return 1
 
 
+# ============================================================================
+# Feature 037: Window Visibility Commands (US5: T038, T041, T043)
+# ============================================================================
+
+async def cmd_hidden(args: argparse.Namespace) -> int:
+    """Show hidden windows grouped by project (Feature 037 T038).
+
+    Args:
+        args: Parsed arguments with filters and format options
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        # Get filters from args
+        project_filter = getattr(args, 'project', None)
+        workspace_filter = getattr(args, 'workspace', None)
+        app_filter = getattr(args, 'app', None)
+        output_format = getattr(args, 'format', 'table')
+
+        # Connect to daemon
+        daemon = DaemonClient()
+        await daemon.connect()
+
+        # Query hidden windows
+        result = await daemon.get_hidden_windows(
+            project_name=project_filter,
+            workspace=workspace_filter,
+            app_name=app_filter
+        )
+
+        await daemon.close()
+
+        # Handle JSON output
+        if output_format == "json":
+            import json
+            print(json.dumps(result, indent=2))
+            return 0
+
+        # Check if any windows found
+        if result['total_hidden'] == 0:
+            print_info("No hidden windows found")
+            if project_filter:
+                print(f"  Project filter: {project_filter}")
+            if workspace_filter:
+                print(f"  Workspace filter: {workspace_filter}")
+            if app_filter:
+                print(f"  App filter: {app_filter}")
+            return 0
+
+        # Display using Rich formatter
+        from ..displays.hidden_windows import display_hidden_windows
+        from ..core.models import ProjectWindows, WindowState
+
+        # Convert API result to display models
+        projects_windows = []
+        for project_name, windows_data in result['projects'].items():
+            windows = [
+                WindowState(
+                    window_id=w['window_id'],
+                    app_name=w['app_name'],
+                    window_class=w['window_class'],
+                    workspace_number=w['tracked_workspace'],
+                    floating=w['floating'],
+                    last_seen=w['last_seen']
+                )
+                for w in windows_data
+            ]
+            projects_windows.append(
+                ProjectWindows(
+                    project_name=project_name,
+                    visible=[],
+                    hidden=windows
+                )
+            )
+
+        # Display with chosen format
+        display_hidden_windows(projects_windows, format=output_format)
+
+        # Summary
+        print(f"\n{Colors.BOLD}Total hidden windows:{Colors.RESET} {result['total_hidden']}")
+        print(f"{Colors.GRAY}Duration: {result['duration_ms']:.1f}ms{Colors.RESET}")
+
+        return 0
+
+    except DaemonError as e:
+        print_error(f"Daemon error: {e}")
+        print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+async def cmd_restore(args: argparse.Namespace) -> int:
+    """Restore hidden windows for a project (Feature 037 T041).
+
+    Args:
+        args: Parsed arguments with project name and options
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        project_name = args.project
+        dry_run = getattr(args, 'dry_run', False)
+        workspace_override = getattr(args, 'workspace', None)
+        json_output = getattr(args, 'json', False)
+
+        # Connect to daemon
+        daemon = DaemonClient()
+        await daemon.connect()
+
+        if dry_run:
+            # Get hidden windows to show what would be restored
+            result = await daemon.get_hidden_windows(project_name=project_name)
+            await daemon.close()
+
+            if json_output:
+                import json
+                print(json.dumps(result, indent=2))
+                return 0
+
+            if result['total_hidden'] == 0:
+                print_info(f"No hidden windows found for project '{project_name}'")
+                return 0
+
+            print(f"{Colors.YELLOW}[DRY RUN]{Colors.RESET} Would restore {result['total_hidden']} windows:")
+            for window in result['projects'].get(project_name, []):
+                ws = workspace_override if workspace_override else window['tracked_workspace']
+                print(f"  • {window['app_name']} ({window['window_class']}) → WS {ws}")
+
+            return 0
+
+        # Perform actual restore
+        fallback_workspace = workspace_override if workspace_override else 1
+        result = await daemon.restore_windows(project_name, fallback_workspace)
+        await daemon.close()
+
+        if json_output:
+            import json
+            print(json.dumps(result, indent=2))
+            return 0
+
+        # Display results
+        if result['windows_restored'] == 0:
+            print_info(f"No hidden windows found for project '{project_name}'")
+            return 0
+
+        print_success(f"Restored {result['windows_restored']} windows for project '{project_name}'")
+
+        # Show fallback warnings if any
+        if result.get('fallback_warnings'):
+            print_warning(f"{len(result['fallback_warnings'])} windows used fallback workspace:")
+            for warning in result['fallback_warnings'][:5]:  # Show first 5
+                print(f"  ⚠ {warning}")
+            if len(result['fallback_warnings']) > 5:
+                print(f"  ... and {len(result['fallback_warnings']) - 5} more")
+
+        # Show errors if any
+        if result.get('errors'):
+            print_error(f"{len(result['errors'])} errors occurred:")
+            for error in result['errors'][:3]:  # Show first 3
+                print(f"  ✗ {error}")
+            if len(result['errors']) > 3:
+                print(f"  ... and {len(result['errors']) - 3} more")
+
+        print(f"{Colors.GRAY}Duration: {result['duration_ms']:.1f}ms{Colors.RESET}")
+
+        return 0
+
+    except DaemonError as e:
+        print_error(f"Daemon error: {e}")
+        print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+async def cmd_inspect(args: argparse.Namespace) -> int:
+    """Inspect detailed window state (Feature 037 T043).
+
+    Args:
+        args: Parsed arguments with window_id
+
+    Returns:
+        0 on success, 1 on error
+    """
+    try:
+        window_id = args.window_id
+        json_output = getattr(args, 'json', False)
+
+        # Connect to daemon
+        daemon = DaemonClient()
+        await daemon.connect()
+
+        # Query window state
+        result = await daemon.get_window_state(window_id)
+        await daemon.close()
+
+        if json_output:
+            import json
+            print(json.dumps(result, indent=2))
+            return 0
+
+        # Display formatted output
+        print(f"\n{Colors.BOLD}Window Inspection: {window_id}{Colors.RESET}")
+        print(f"{Colors.GRAY}{'=' * 60}{Colors.RESET}\n")
+
+        # Basic info
+        print(f"{Colors.BOLD}Class:{Colors.RESET}   {result['window_class']}")
+        print(f"{Colors.BOLD}Title:{Colors.RESET}   {result['window_title']}")
+        print(f"{Colors.BOLD}PID:{Colors.RESET}     {result['pid']}")
+        print(f"{Colors.BOLD}Visible:{Colors.RESET} {Colors.GREEN if result['visible'] else Colors.RED}{'Yes' if result['visible'] else 'No (in scratchpad)'}{Colors.RESET}")
+
+        # I3PM environment variables
+        print(f"\n{Colors.BOLD}I3PM Environment Variables:{Colors.RESET}")
+        i3pm_env = result.get('i3pm_env', {})
+        if i3pm_env:
+            for key, value in sorted(i3pm_env.items()):
+                print(f"  {key}: {value}")
+        else:
+            print(f"  {Colors.GRAY}(none found - window may not be launched via i3pm){Colors.RESET}")
+
+        # Tracking info
+        print(f"\n{Colors.BOLD}Workspace Tracking:{Colors.RESET}")
+        tracking = result.get('tracking', {})
+        if tracking:
+            print(f"  Workspace: {tracking.get('workspace_number', 'N/A')}")
+            print(f"  Floating:  {tracking.get('floating', False)}")
+            print(f"  Project:   {tracking.get('project_name', 'N/A')}")
+            print(f"  App:       {tracking.get('app_name', 'N/A')}")
+            if 'last_seen' in tracking:
+                import time
+                last_seen = tracking['last_seen']
+                time_diff = time.time() - last_seen
+                if time_diff < 60:
+                    last_seen_str = f"{int(time_diff)}s ago"
+                elif time_diff < 3600:
+                    last_seen_str = f"{int(time_diff / 60)}m ago"
+                else:
+                    last_seen_str = f"{int(time_diff / 3600)}h ago"
+                print(f"  Last seen: {last_seen_str}")
+        else:
+            print(f"  {Colors.GRAY}(no tracking info - window not moved yet){Colors.RESET}")
+
+        # Current i3 state
+        print(f"\n{Colors.BOLD}Current i3 State:{Colors.RESET}")
+        i3_state = result.get('i3_state', {})
+        if i3_state:
+            print(f"  Workspace: {i3_state.get('workspace', 'N/A')}")
+            print(f"  Output:    {i3_state.get('output', 'N/A')}")
+            print(f"  Floating:  {i3_state.get('floating', 'N/A')}")
+            print(f"  Focused:   {i3_state.get('focused', False)}")
+        else:
+            print(f"  {Colors.GRAY}(unable to query i3 state){Colors.RESET}")
+
+        print(f"\n{Colors.GRAY}Duration: {result['duration_ms']:.1f}ms{Colors.RESET}\n")
+
+        return 0
+
+    except DaemonError as e:
+        print_error(f"Daemon error: {e}")
+        print_info("Is the daemon running? Check with: systemctl --user status i3-project-event-listener")
+        return 1
+    except ValueError as e:
+        print_error(str(e))
+        print_info("Window not found. Use 'i3pm windows --tree' to see all windows and their IDs")
+        return 1
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
 
 async def cmd_monitor(args: argparse.Namespace) -> int:
     """Launch TUI monitor dashboard.
@@ -2926,6 +3206,75 @@ def cli_main() -> int:
         help="Output in JSON format"
     )
 
+    # Feature 037 US5: i3pm hidden
+    parser_hidden = subparsers.add_parser(
+        "hidden",
+        help="Show hidden windows (in scratchpad)",
+        description="Display windows hidden during project switches (Feature 037 T038)"
+    )
+    parser_hidden.add_argument(
+        "--project",
+        help="Filter by specific project name"
+    )
+    parser_hidden.add_argument(
+        "--workspace",
+        type=int,
+        help="Filter by tracked workspace number"
+    )
+    parser_hidden.add_argument(
+        "--app",
+        help="Filter by application name"
+    )
+    parser_hidden.add_argument(
+        "--format",
+        choices=["table", "tree", "json"],
+        default="table",
+        help="Output format (default: table)"
+    )
+
+    # Feature 037 US5: i3pm restore
+    parser_restore = subparsers.add_parser(
+        "restore",
+        help="Restore hidden windows for a project",
+        description="Restore windows from scratchpad for a specific project (Feature 037 T041)"
+    )
+    parser_restore.add_argument(
+        "project",
+        help="Project name whose windows to restore"
+    )
+    parser_restore.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be restored without restoring"
+    )
+    parser_restore.add_argument(
+        "--workspace",
+        type=int,
+        help="Override tracked workspace (restore all to this workspace)"
+    )
+    parser_restore.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
+    # Feature 037 US5: i3pm inspect
+    parser_inspect = subparsers.add_parser(
+        "inspect",
+        help="Inspect detailed window state",
+        description="Display comprehensive state for a specific window ID (Feature 037 T043)"
+    )
+    parser_inspect.add_argument(
+        "window_id",
+        type=int,
+        help="Window ID to inspect"
+    )
+    parser_inspect.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in JSON format"
+    )
+
     # i3pm monitor
     parser_monitor = subparsers.add_parser(
         "monitor",
@@ -3074,6 +3423,10 @@ def cli_main() -> int:
         # Feature 024: Window rules validation & testing
         "validate-rules": cmd_validate_rules,
         "test-rule": cmd_test_rule,
+        # Feature 037: Window visibility commands (US5)
+        "hidden": cmd_hidden,
+        "restore": cmd_restore,
+        "inspect": cmd_inspect,
     }
 
     handler = command_handlers.get(args.command)
