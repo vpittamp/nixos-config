@@ -509,7 +509,7 @@ Feature 035 introduces a **registry-centric** approach that replaces the old tag
 **I3PM Environment Variables**:
 ```bash
 I3PM_APP_ID             # Unique instance ID: ${app}-${project}-${pid}-${timestamp}
-I3PM_APP_NAME           # Registry application name (e.g., "code", "terminal")
+I3PM_APP_NAME           # Registry application name (e.g., "vscode", "terminal")
 I3PM_PROJECT_NAME       # Active project name (e.g., "nixos", "stacks", or empty)
 I3PM_PROJECT_DIR        # Project directory path
 I3PM_PROJECT_DISPLAY_NAME  # Human-readable project name
@@ -536,7 +536,7 @@ i3pm apps list --scope=scoped   # Filter by scope
 i3pm apps list --workspace=3    # Filter by workspace
 
 # Show application details
-i3pm apps show code
+i3pm apps show vscode
 i3pm apps show terminal --json  # JSON output for scripting
 ```
 
@@ -609,7 +609,7 @@ Located at: `home-modules/desktop/app-registry.nix`
 
 ```nix
 {
-  name = "code";                    # Unique identifier
+  name = "vscode";                  # Unique identifier (used in CLI commands)
   display_name = "VS Code";         # Human-readable name
   command = "code";                 # Command to execute
   scope = "scoped";                 # "scoped" or "global"
@@ -621,9 +621,9 @@ Located at: `home-modules/desktop/app-registry.nix`
   multi_instance = true;            # Allow multiple instances
   expected_title_contains = "Code"; # Title matching fallback
 
-  # Variable substitution in command:
+  # Variable substitution in parameters:
   # $PROJECT_DIR → replaced with project directory
-  # Example: "code $PROJECT_DIR"
+  # Example: parameters = "$PROJECT_DIR";
 }
 ```
 
@@ -703,14 +703,14 @@ cat /proc/<pid>/environ | tr '\0' '\n' | grep I3PM_
 
 **Monitor application launches**:
 ```bash
-tail -f ~/.local/share/app-launcher/launcher.log
+tail -f ~/.local/state/app-launcher.log
 ```
 
 **Test window filtering**:
 ```bash
 # Launch app in project
 pswitch nixos
-app-launcher code
+~/.local/bin/app-launcher-wrapper.sh vscode
 
 # Verify environment
 # (Find PID, check /proc/<pid>/environ for I3PM_PROJECT_NAME=nixos)
@@ -726,7 +726,7 @@ i3pm windows | grep Code  # Should not appear
 ```bash
 # Check registry loaded correctly
 i3pm apps list
-i3pm apps show code --json | jq .
+i3pm apps show vscode --json | jq .
 
 # Verify daemon can read registry
 i3pm daemon status | grep -i registry

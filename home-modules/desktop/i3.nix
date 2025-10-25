@@ -34,54 +34,12 @@
     # NOTE: These assignments are intentionally permissive (multiple outputs per workspace)
     # to ensure workspaces show on i3bar even before dynamic assignment runs
 
-    # Application to workspace assignments
-    # NOTE: Project-scoped applications (Ghostty, Code) should NOT have static assign rules
-    # as they need dynamic workspace placement for layout restore to work correctly.
-    # The daemon handles project-aware window placement via marks.
+    # Feature 035: All window-to-workspace assignments now handled by:
+    # - Auto-generated rules in window-rules-generated.conf (for GLOBAL apps)
+    # - Daemon-based workspace placement via I3PM_APP_ID matching (for SCOPED apps)
+    # No static assign rules needed - dynamic placement enables layout restore
 
-    # Terminal applications (Ghostty, Konsole, etc.) - DISABLED for layout restore
-    # assign [class="ghostty"] $ws1
-    # assign [class="Ghostty"] $ws1
-    # assign [class="konsole"] $ws1
-    # assign [class="Konsole"] $ws1
-    # assign [class="Alacritty"] $ws1
-    # assign [class="alacritty"] $ws1
-
-    # VS Code and Code editors - DISABLED for layout restore
-    # assign [class="Code"] $ws2
-    # assign [class="code"] $ws2
-    # assign [class="VSCodium"] $ws2
-
-    # Firefox browser - GLOBAL (always WS3) - TEMPORARILY DISABLED
-    # assign [class="firefox"] $ws3
-    # assign [class="Firefox"] $ws3
-    # assign [class="Navigator"] $ws3
-
-    # YouTube PWA - GLOBAL (always WS4) - TEMPORARILY DISABLED
-    # PWAs use the pattern FFPWA-<profileid>, we match by title/name
-    # assign [class="^FFPWA-.*" title="YouTube"] $ws4
-    # for_window [class="^FFPWA-.*" title=".*YouTube.*"] move to workspace $ws4
-
-    # Google AI (Gemini) PWA - GLOBAL (always WS8) - TEMPORARILY DISABLED
-    # for_window [class="^FFPWA-.*" title=".*Gemini.*"] move to workspace $ws8
-    # for_window [class="^FFPWA-.*" title=".*Google AI.*"] move to workspace $ws8
-
-    # NOTE: The following scoped app rules are DISABLED to allow layout restore
-    # to place windows on any workspace. The daemon handles these via window-rules.json.
-
-    # Yazi file manager - SCOPED (disabled for layout restore)
-    # for_window [class="ghostty" title="^Yazi:.*"] move to workspace $ws5
-
-    # K9s Kubernetes manager - SCOPED (disabled for layout restore)
-    # for_window [class="ghostty" title="^K9s-Workspace$"] move to workspace $ws6
-
-    # Lazygit - SCOPED (disabled for layout restore)
-    # for_window [class="ghostty" title="^Lazygit-Workspace$"] move to workspace $ws7
-
-    # Terminal (Shift+Return for floating) - DISABLED for Feature 034
-    # NOTE: $mod+Return is now handled by project-aware launcher (see line ~166)
-    # NOTE: $mod+Shift+Return is now handled by app-launcher-wrapper terminal selector (see line ~192)
-    # bindsym $mod+Shift+Return exec ${pkgs.ghostty}/bin/ghostty --class=floating_terminal
+    # Floating terminal window class
     for_window [class="floating_terminal"] floating enable
 
     # Floating fzf launcher window - remove borders, center on monitor, mark to exclude from daemon rules
@@ -95,8 +53,6 @@
     # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)
     # Use GDK_BACKEND=x11 to force X11 backend and avoid Wayland layer shell issues
     bindsym $mod+d exec env GDK_BACKEND=x11 ${config.programs.walker.package}/bin/walker
-    # Alternative: rofi (legacy, commented out)
-    # bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -show-icons
     # FZF fallbacks for specific use cases
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-send-to-window.sh
@@ -119,8 +75,6 @@
     bindsym $mod+Shift+s exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
 
     # Quick launch (non-project-aware)
-    # NOTE: $mod+c, $mod+g, $mod+y, $mod+b are now handled by project-aware launchers (see line ~185-190)
-    # bindsym $mod+b exec firefox  # DISABLED: Conflicts with $mod+b for btop (line ~190)
     bindsym $mod+Shift+b exec ${pkgs.ghostty}/bin/ghostty -e bash -c fh
     bindsym $mod+Shift+f exec ${pkgs.xfce.thunar}/bin/thunar
     bindsym $mod+k exec ${pkgs.ghostty}/bin/ghostty -e ~/.local/bin/k9s-workspace
@@ -141,52 +95,16 @@
     # Toggle floating
     bindsym $mod+Shift+space floating toggle
     bindsym $mod+space focus mode_toggle
-
-    # Scratchpad
-    bindsym $mod+Shift+minus move scratchpad
-    bindsym $mod+minus scratchpad show
-
-    # Focus
-    bindsym $mod+Left focus left
-    bindsym $mod+Down focus down
-    bindsym $mod+Up focus up
-    bindsym $mod+Right focus right
-
-    # Move
-    bindsym $mod+Shift+Left move left
-    bindsym $mod+Shift+Down move down
-    bindsym $mod+Shift+Up move up
-    bindsym $mod+Shift+Right move right
-
-    # Workspace switching (Mod+1-9)
-    bindsym $mod+1 workspace $ws1
-    bindsym $mod+2 workspace $ws2
-    bindsym $mod+3 workspace $ws3
-    bindsym $mod+4 workspace $ws4
-    bindsym $mod+5 workspace $ws5
-    bindsym $mod+6 workspace $ws6
-    bindsym $mod+7 workspace $ws7
-    bindsym $mod+8 workspace $ws8
-    bindsym $mod+9 workspace $ws9
-
-    # Move container to workspace
-    bindsym $mod+Shift+1 move container to workspace $ws1
-    bindsym $mod+Shift+2 move container to workspace $ws2
-    bindsym $mod+Shift+3 move container to workspace $ws3
-    bindsym $mod+Shift+4 move container to workspace $ws4
-    bindsym $mod+Shift+5 move container to workspace $ws5
-    bindsym $mod+Shift+6 move container to workspace $ws6
-    bindsym $mod+Shift+7 move container to workspace $ws7
-    bindsym $mod+Shift+8 move container to workspace $ws8
     bindsym $mod+Shift+9 move container to workspace $ws9
 
     # Project management keybindings (fzf-based switcher)
     bindsym $mod+p exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh
     bindsym $mod+Shift+p exec i3pm project clear
 
-    # Project-aware application launchers (Feature 034: Unified Application Launcher)
+    # Project-aware application launchers (Feature 035: Registry-based with environment injection)
+    # All app names must match the "name" field in app-registry-data.nix
     bindsym $mod+c exec ~/.local/bin/app-launcher-wrapper.sh vscode
-    bindsym $mod+Return exec ~/.local/bin/app-launcher-wrapper.sh ghostty
+    bindsym $mod+Return exec ~/.local/bin/app-launcher-wrapper.sh terminal
     bindsym $mod+g exec ~/.local/bin/app-launcher-wrapper.sh lazygit
     bindsym $mod+y exec ~/.local/bin/app-launcher-wrapper.sh yazi
     bindsym $mod+b exec ~/.local/bin/app-launcher-wrapper.sh btop
@@ -219,92 +137,6 @@
     include ~/.config/i3/i3bar-bottom.conf
   '';
 
-  # Also configure via xsession for compatibility
-  # Disabled for XRDP - we use home.file instead
-  # xsession.windowManager.i3 = {
-  #   enable = false;
-  #   package = pkgs.i3;
-
-  #   config = rec {
-  #     modifier = "Mod4";
-  #
-  #     fonts = {
-  #       names = [ "monospace" ];
-  #       size = 10.0;
-  #     };
-  #
-  #     floating.modifier = "Mod4";
-  #
-  #     keybindings = lib.mkOptionDefault {
-  #       # Terminal
-  #       "Mod4+Return" = "exec ${pkgs.alacritty}/bin/alacritty";
-  #       "Mod4+Shift+Return" = "exec ${pkgs.alacritty}/bin/alacritty --class floating_terminal";
-  #
-  #       # Window management
-  #       "Mod4+Shift+q" = "kill";
-  #
-  #       # Application launcher
-  #       "Mod4+d" = "exec ${pkgs.rofi}/bin/rofi -show drun -display-drun Applications";
-  #
-  #       # Clipboard
-  #       "Mod4+v" = "exec ${pkgs.clipcat}/bin/clipcat-menu";
-  #       "Mod4+Shift+v" = "exec ${pkgs.clipcat}/bin/clipctl clear";
-  #
-  #       # Quick launch
-  #       "Mod4+c" = "exec code";
-  #       "Mod4+b" = "exec firefox";
-  #
-  #       # Split orientation
-  #       "Mod4+h" = "split h";
-  #       "Mod4+Shift+bar" = "split v";
-  #
-  #       # Scratchpad
-  #       "Mod4+Shift+minus" = "move scratchpad";
-  #       "Mod4+minus" = "scratchpad show";
-  #
-  #       # Workspace switching (Ctrl+1-9)
-  #       "Control+1" = "workspace number 1";
-  #       "Control+2" = "workspace number 2";
-  #       "Control+3" = "workspace number 3";
-  #       "Control+4" = "workspace number 4";
-  #       "Control+5" = "workspace number 5";
-  #       "Control+6" = "workspace number 6";
-  #       "Control+7" = "workspace number 7";
-  #       "Control+8" = "workspace number 8";
-  #       "Control+9" = "workspace number 9";
-  #
-  #       # Move to workspace
-  #       "Mod4+Shift+1" = "move container to workspace number 1";
-  #       "Mod4+Shift+2" = "move container to workspace number 2";
-  #       "Mod4+Shift+3" = "move container to workspace number 3";
-  #       "Mod4+Shift+4" = "move container to workspace number 4";
-  #       "Mod4+Shift+5" = "move container to workspace number 5";
-  #       "Mod4+Shift+6" = "move container to workspace number 6";
-  #       "Mod4+Shift+7" = "move container to workspace number 7";
-  #       "Mod4+Shift+8" = "move container to workspace number 8";
-  #       "Mod4+Shift+9" = "move container to workspace number 9";
-  #     };
-  #
-  #     window.commands = [
-  #       {
-  #         criteria = { class = "floating_terminal"; };
-  #         command = "floating enable";
-  #       }
-  #     ];
-  #
-  #     bars = [{
-  #       id = "bar-0";
-  #       statusCommand = "${pkgs.i3status}/bin/i3status";
-  #       position = "bottom";
-  #     }];
-  #   };
-  #
-  #   # Include web apps configuration
-  #   extraConfig = ''
-  #     # Web Applications Configuration
-  #     include ~/.config/i3/web-apps.conf
-  #   '';
-  # };
 
   # Wrapper scripts to set window titles for terminal apps
   # These scripts set the title before launching the app, allowing i3 to match on it
