@@ -64,9 +64,9 @@ in
   config = mkIf cfg.enable {
     # Create runtime and data directories via systemd tmpfiles
     systemd.tmpfiles.rules = [
-      "d /run/i3-project-daemon 0700 ${cfg.user} ${cfg.user} -"
-      "d /home/${cfg.user}/.local/share/i3pm 0755 ${cfg.user} ${cfg.user} -"
-      "d /home/${cfg.user}/.local/share/i3pm/layouts 0755 ${cfg.user} ${cfg.user} -"
+      "d /run/i3-project-daemon 0700 ${cfg.user} users -"
+      "d /home/${cfg.user}/.local/share/i3pm 0755 ${cfg.user} users -"
+      "d /home/${cfg.user}/.local/share/i3pm/layouts 0755 ${cfg.user} users -"
     ];
 
     # Socket unit for socket activation
@@ -79,7 +79,7 @@ in
         ListenStream = "/run/i3-project-daemon/ipc.sock";
         SocketMode = "0600";
         SocketUser = cfg.user;
-        SocketGroup = cfg.user;
+        SocketGroup = "users";
         Accept = false;
       };
     };
@@ -96,7 +96,7 @@ in
       serviceConfig = {
         Type = "notify";
         User = cfg.user;
-        Group = cfg.user;
+        Group = "users";
 
         # Watchdog configuration
         WatchdogSec = 30;
