@@ -123,6 +123,9 @@ class ResilientI3Connection:
             # Rebuild window_map from marks
             await self.state_manager.rebuild_from_marks(tree)
 
+            # Scan and mark windows that don't have marks but have I3PM env vars
+            await self.scan_and_mark_unmarked_windows(tree)
+
             # Rebuild workspace_map
             await self._rebuild_workspaces()
 
@@ -131,6 +134,82 @@ class ResilientI3Connection:
         except Exception as e:
             logger.error(f"Failed to rebuild state: {e}")
             raise
+
+    async def scan_and_mark_unmarked_windows(self, tree: aio.Con) -> None:
+        """Scan all windows and mark unmarked ones based on I3PM environment variables.
+
+        This is called during startup to mark windows that were created before the daemon started.
+
+        Args:
+            tree: Root container from i3 GET_TREE
+        """
+        from . import window_filtering
+        from .models import WindowInfo
+        from datetime import datetime
+
+        marked_count = 0
+        scanned_count = 0
+
+        async def scan_container(container: aio.Con) -> None:
+            nonlocal marked_count, scanned_count
+
+            # Check if this is a window (has window_id)
+            if container.window:
+                scanned_count += 1
+
+                # Skip windows that already have project marks
+                project_marks = [mark for mark in container.marks if mark.startswith("project:")]
+                if project_marks:
+                    return
+
+                # Get window PID (with xprop fallback)
+                pid = container.ipc_data.get('pid')
+                window_xid = container.window
+
+                # Read I3PM environment variables
+                i3pm_env = await window_filtering.get_window_i3pm_env(
+                    container.id, pid, window_xid
+                )
+
+                # If window has I3PM_PROJECT_NAME, mark it
+                project_name = i3pm_env.get('I3PM_PROJECT_NAME')
+                if project_name:
+                    logger.info(f"Marking pre-existing window {container.window} ({container.window_class}) with project:{project_name}")
+
+                    # Mark the window in i3
+                    mark = f"project:{project_name}"
+                    await container.command(f'mark --add "{mark}"')
+
+                    # Add to state tracking
+                    window_info = WindowInfo(
+                        window_id=container.window,
+                        con_id=container.id,
+                        window_class=container.window_class or "unknown",
+                        window_title=container.name or "",
+                        window_instance=container.window_instance or "",
+                        app_identifier=container.window_class or "unknown",
+                        project=project_name,
+                        marks=[mark] + list(container.marks),
+                        workspace=container.workspace().name if container.workspace() else "",
+                        output=(
+                            container.workspace().ipc_data.get("output", "")
+                            if container.workspace()
+                            else ""
+                        ),
+                        is_floating=container.floating == "user_on",
+                        created=datetime.now(),
+                    )
+
+                    await self.state_manager.add_window(window_info)
+                    marked_count += 1
+
+            # Recursively scan children
+            for child in container.nodes + container.floating_nodes:
+                await scan_container(child)
+
+        logger.info("Scanning for unmarked windows with I3PM environment variables...")
+        await scan_container(tree)
+        logger.info(f"Startup scan complete: marked {marked_count} windows out of {scanned_count} scanned")
 
     async def _rebuild_workspaces(self) -> None:
         """Rebuild workspace_map from i3 workspace list."""
