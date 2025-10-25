@@ -1,54 +1,58 @@
 { config, lib, pkgs, ... }:
 
 let
-  # Read version from VERSION file (single source of truth)
-  version = lib.strings.fileContents ./i3pm-deno/VERSION;
+  # Feature 035: Updated for new i3pm TypeScript CLI structure
+  version = "2.0.0";
 
-  # i3pm Deno CLI - Wrapper script that runs TypeScript with Deno runtime
+  # i3pm Deno CLI - Compiled binary (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
     pname = "i3pm";
     inherit version;
 
-    src = ./i3pm-deno;
+    src = ./i3pm;
 
-    dontBuild = true;
+    nativeBuildInputs = [ pkgs.deno ];
+
+    # Allow network access for Deno to fetch dependencies
+    __noChroot = true;
+
+    buildPhase = ''
+      # Compile TypeScript to standalone binary
+      mkdir -p dist
+      ${pkgs.deno}/bin/deno compile \
+        --allow-all \
+        --output dist/i3pm \
+        src/main.ts
+    '';
 
     installPhase = ''
-      mkdir -p $out/share/i3pm
-      cp -r * $out/share/i3pm/
-
-      # Copy cli-ux library into the package
-      mkdir -p $out/share/cli-ux
-      cp -r ${./cli-ux}/* $out/share/cli-ux/
-
       mkdir -p $out/bin
-      cat > $out/bin/i3pm <<EOF
-#!/usr/bin/env bash
-exec ${pkgs.deno}/bin/deno run \\
-  --no-lock \\
-  -A \\
-  $out/share/i3pm/main.ts "\$@"
-EOF
+      cp dist/i3pm $out/bin/i3pm
       chmod +x $out/bin/i3pm
     '';
 
     meta = with lib; {
-      description = "i3 project management CLI tool";
+      description = "i3pm - Registry-Centric Project & Workspace Management";
       longDescription = ''
-        Type-safe, compiled CLI for i3 project context switching and window management.
-        Communicates with i3-project-event-daemon via JSON-RPC 2.0 over Unix socket.
+        Feature 035: Complete rewrite using environment-based window filtering.
+        Type-safe, compiled CLI for i3 project management with registry-centric architecture.
 
-        Features:
-        - Project context switching with window visibility management
-        - Real-time window state visualization (tree, table, JSON, live TUI)
-        - Daemon status and event monitoring
-        - Window classification rules management
-        - Interactive multi-pane monitoring dashboard
-        - Declarative workspace-to-monitor mapping (Feature 033)
-        - Automatic workspace redistribution on monitor changes
-        - Hot-reloadable configuration management
+        Key Features:
+        - Environment variable injection (I3PM_*) for project context
+        - Process environment reading via /proc/<pid>/environ
+        - Deterministic window matching with unique instance IDs
+        - Auto-generated window rules from app-registry.nix
+        - Layout capture and restore with exact window identification
+        - JSON-RPC 2.0 communication with daemon
 
-        Replaces the Python CLI with a compiled Deno executable.
+        Commands:
+        - i3pm apps list/show - Query application registry
+        - i3pm project create/switch/list/current - Project management
+        - i3pm layout save/restore/delete - Window layout persistence
+        - i3pm daemon status/events - Monitoring and debugging
+        - i3pm windows - Real-time window state visualization
+
+        Replaces tag-based system with simpler environment-based filtering.
       '';
       homepage = "https://github.com/user/nixos-config";
       license = licenses.mit;

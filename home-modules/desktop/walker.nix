@@ -73,26 +73,9 @@ PY
 
   walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
 
-  # Elephant launcher with isolated XDG environment (Feature 034)
-  # Only show apps from app-registry.nix, not system apps or PWAs
-  #
-  # HOW IT WORKS:
-  # 1. app-registry.nix generates desktop files in ~/.local/share/i3pm-applications/applications/
-  # 2. This wrapper sets XDG_DATA_HOME and XDG_DATA_DIRS to the isolated directory
-  # 3. Elephant scans $XDG_DATA_HOME/applications and $XDG_DATA_DIRS/applications
-  # 4. Result: Walker/Elephant only show the 17 curated apps from app-registry.nix
-  #
-  # Note: PWA files are generated in ~/.local/share/firefox-pwas/ by firefox-pwas-declarative.nix
-  # to keep them separate from Walker's view while still accessible to KDE for panel pinning.
-  elephantIsolated = pkgs.writeShellScriptBin "elephant-isolated" ''
-    #!/usr/bin/env bash
-    # Unset inherited XDG variables and set custom ones
-    unset XDG_DATA_HOME
-    unset XDG_DATA_DIRS
-    export XDG_DATA_HOME="${config.home.homeDirectory}/.local/share/i3pm-applications"
-    export XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications"
-    exec ${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant
-  '';
+  # Feature 035: XDG isolation REMOVED
+  # No longer needed - environment-based filtering via I3PM_* variables handles visibility
+  # Walker/Elephant now show all applications, filtered dynamically by the daemon
 in
 
 # Walker Application Launcher
@@ -215,7 +198,6 @@ in
 
   home.packages = [
     walkerOpenInNvim
-    elephantIsolated
   ];
 
   # Override the walker config file to add X11 settings not supported by the module
@@ -341,9 +323,8 @@ in
     default = "Google"
   '';
 
-  # Service mode disabled - using direct invocation instead
-  # Elephant service still needed for Walker to function
-  # Use mkForce to override any conflicting definitions from walker module
+  # Feature 035: Elephant service without XDG isolation
+  # Uses standard Elephant binary instead of isolated wrapper
   systemd.user.services.elephant = lib.mkForce {
     Unit = {
       Description = "Elephant launcher backend (X11)";
@@ -353,8 +334,8 @@ in
       ConditionEnvironment = "DISPLAY";
     };
     Service = {
-      # Use wrapper script that sets isolated XDG environment (Feature 034)
-      ExecStart = "${elephantIsolated}/bin/elephant-isolated";
+      # Feature 035: Direct Elephant invocation (no XDG isolation)
+      ExecStart = "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant";
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)

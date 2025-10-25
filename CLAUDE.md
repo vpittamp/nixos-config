@@ -482,8 +482,261 @@ systemctl --user restart i3-project-event-listener
 
 For more details, see the quickstart guides:
 ```bash
-cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (current)
-cat /etc/nixos/docs/I3_PROJECT_EVENTS.md              # Troubleshooting guide (coming soon)
+cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (Feature 015)
+cat /etc/nixos/specs/035-now-that-we/quickstart.md   # Registry-centric system (Feature 035)
+```
+
+## 📦 Registry-Centric Architecture (Feature 035)
+
+### Overview
+
+Feature 035 introduces a **registry-centric** approach that replaces the old tag-based system with **environment variable-based filtering**. This provides a simpler, more powerful architecture for project-scoped window management.
+
+### Key Concepts
+
+**Application Registry** (`app-registry.nix`):
+- Single source of truth for all applications
+- Defines application metadata: name, command, scope, workspace
+- Auto-generates desktop files for launchers
+- Auto-generates i3 window rules for global apps
+
+**Environment Variable Injection**:
+- All applications launched via `app-launcher` receive `I3PM_*` environment variables
+- Variables persist in `/proc/<pid>/environ` and are read by the daemon
+- Enables deterministic window-to-project association
+- No configuration needed - automatic based on active project
+
+**I3PM Environment Variables**:
+```bash
+I3PM_APP_ID             # Unique instance ID: ${app}-${project}-${pid}-${timestamp}
+I3PM_APP_NAME           # Registry application name (e.g., "code", "terminal")
+I3PM_PROJECT_NAME       # Active project name (e.g., "nixos", "stacks", or empty)
+I3PM_PROJECT_DIR        # Project directory path
+I3PM_PROJECT_DISPLAY_NAME  # Human-readable project name
+I3PM_PROJECT_ICON       # Project icon emoji
+I3PM_SCOPE              # Application scope: "scoped" or "global"
+I3PM_ACTIVE             # "true" if project active, "false" otherwise
+I3PM_LAUNCH_TIME        # Unix timestamp of launch
+I3PM_LAUNCHER_PID       # Wrapper script PID
+```
+
+**Window Filtering**:
+- Daemon reads `/proc/<pid>/environ` for each window
+- Extracts `I3PM_PROJECT_NAME` to determine window ownership
+- Automatically shows/hides windows when switching projects
+- No manual configuration or tagging required
+
+### CLI Commands
+
+**Application Management**:
+```bash
+# List all registered applications
+i3pm apps list
+i3pm apps list --scope=scoped   # Filter by scope
+i3pm apps list --workspace=3    # Filter by workspace
+
+# Show application details
+i3pm apps show code
+i3pm apps show terminal --json  # JSON output for scripting
+```
+
+**Project Management**:
+```bash
+# Create new project
+i3pm project create mynewproject \
+  --directory ~/projects/mynewproject \
+  --display-name "My New Project" \
+  --icon "🚀"
+
+# List projects
+i3pm project list
+i3pm project list --json
+
+# Show project details
+i3pm project show nixos
+i3pm project current    # Show active project
+
+# Switch projects
+i3pm project switch nixos
+pswitch nixos  # Shell alias
+
+# Update project
+i3pm project update nixos --icon "💻"
+
+# Delete project (with confirmation)
+i3pm project delete oldproject
+```
+
+**Layout Management** (NEW in Feature 035):
+```bash
+# Save current window layout for a project
+i3pm layout save nixos
+i3pm layout save nixos custom-layout  # Named layout
+i3pm layout save nixos --overwrite    # Overwrite existing
+
+# Restore saved layout
+i3pm layout restore nixos              # Uses project's saved layout
+i3pm layout restore nixos custom-layout  # Restore specific layout
+i3pm layout restore nixos --dry-run    # Preview without launching
+
+# Delete layout
+i3pm layout delete nixos
+i3pm layout delete nixos custom-layout
+
+# List all saved layouts
+i3pm layout list
+i3pm layout list --json
+```
+
+**Daemon Monitoring**:
+```bash
+# Check daemon status
+i3pm daemon status
+i3pm daemon status --json
+
+# View daemon events
+i3pm daemon events --limit=50
+i3pm daemon events --type=window  # Filter by event type
+i3pm daemon events --follow       # Real-time stream
+
+# Quick ping
+i3pm daemon ping
+```
+
+### Application Registry Structure
+
+Located at: `home-modules/desktop/app-registry.nix`
+
+```nix
+{
+  name = "code";                    # Unique identifier
+  display_name = "VS Code";         # Human-readable name
+  command = "code";                 # Command to execute
+  scope = "scoped";                 # "scoped" or "global"
+  preferred_workspace = 2;          # Workspace assignment
+  expected_class = "Code";          # Window class for matching
+
+  # Optional fields:
+  fallback_behavior = "skip";       # "skip", "use_home", or "error"
+  multi_instance = true;            # Allow multiple instances
+  expected_title_contains = "Code"; # Title matching fallback
+
+  # Variable substitution in command:
+  # $PROJECT_DIR → replaced with project directory
+  # Example: "code $PROJECT_DIR"
+}
+```
+
+### How It Works
+
+1. **Application Launch**:
+   - User launches app via Walker, keybinding, or CLI
+   - `app-launcher-wrapper.sh` intercepts the launch
+   - Wrapper queries daemon for active project
+   - Injects `I3PM_*` environment variables
+   - Launches application (variables persist in /proc)
+
+2. **Window Creation**:
+   - Daemon receives i3 window::new event
+   - Gets window PID using xprop
+   - Reads `/proc/<pid>/environ` for `I3PM_*` variables
+   - Extracts `I3PM_PROJECT_NAME` and `I3PM_APP_ID`
+   - Applies project mark and workspace assignment
+
+3. **Project Switch**:
+   - User switches project via CLI or keybinding
+   - Daemon receives tick event
+   - Scans all windows, reading `/proc/<pid>/environ` for each
+   - Compares `I3PM_PROJECT_NAME` to new active project
+   - Moves non-matching scoped windows to scratchpad (hidden)
+   - Keeps matching and global windows visible
+
+4. **Layout Save/Restore**:
+   - **Save**: Captures i3 tree, reads `/proc` for each window, records `I3PM_APP_ID` and geometry
+   - **Restore**: Closes existing project windows, launches apps with `I3PM_APP_ID_OVERRIDE`, positions windows
+
+### Benefits Over Tag-Based System
+
+**Simplicity**:
+- ✅ No manual tag configuration needed
+- ✅ No XDG isolation required
+- ✅ No application-to-tag mappings
+- ✅ Environment variables provide context automatically
+
+**Reliability**:
+- ✅ Deterministic window matching via unique instance IDs
+- ✅ Process environment persists for window lifetime
+- ✅ No race conditions or timing issues
+- ✅ Handles multiple instances of same app correctly
+
+**Visibility**:
+- ✅ Check environment: `cat /proc/<pid>/environ | tr '\0' '\n' | grep I3PM_`
+- ✅ Monitor launches: `tail -f ~/.local/share/app-launcher/launcher.log`
+- ✅ Daemon events: `i3pm daemon events --follow`
+
+### Configuration Files
+
+```
+~/.config/i3/
+├── application-registry.json   # Runtime registry (generated from app-registry.nix)
+├── projects/                   # Project definitions
+│   ├── nixos.json
+│   ├── stacks.json
+│   └── personal.json
+├── layouts/                    # Saved layouts (Feature 035)
+│   ├── nixos.json              # Default layout for nixos project
+│   └── nixos-custom.json       # Named layout
+├── active-project.json         # Current active project
+└── window-rules-generated.conf # Auto-generated i3 rules (Feature 035)
+```
+
+### Debugging
+
+**Check application environment**:
+```bash
+# Find PID of window
+xprop _NET_WM_PID | awk '{print $3}'
+
+# View environment variables
+cat /proc/<pid>/environ | tr '\0' '\n' | grep I3PM_
+```
+
+**Monitor application launches**:
+```bash
+tail -f ~/.local/share/app-launcher/launcher.log
+```
+
+**Test window filtering**:
+```bash
+# Launch app in project
+pswitch nixos
+app-launcher code
+
+# Verify environment
+# (Find PID, check /proc/<pid>/environ for I3PM_PROJECT_NAME=nixos)
+
+# Switch to different project
+pswitch stacks
+
+# Verify window hidden
+i3pm windows | grep Code  # Should not appear
+```
+
+**Validate registry**:
+```bash
+# Check registry loaded correctly
+i3pm apps list
+i3pm apps show code --json | jq .
+
+# Verify daemon can read registry
+i3pm daemon status | grep -i registry
+```
+
+For complete documentation, see:
+```bash
+cat /etc/nixos/specs/035-now-that-we/quickstart.md
+cat /etc/nixos/specs/035-now-that-we/data-model.md
+cat /etc/nixos/specs/035-now-that-we/contracts/cli-commands.md
 ```
 
 ## 🪟 Window State Visualization (Feature 025)

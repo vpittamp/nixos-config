@@ -211,6 +211,9 @@
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
 
+    # Feature 035: Auto-generated window rules for global apps
+    include ~/.config/i3/window-rules-generated.conf
+
     # i3bar configurations (top and bottom)
     include ~/.config/i3/i3bar-top.conf
     include ~/.config/i3/i3bar-bottom.conf

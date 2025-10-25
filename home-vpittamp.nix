@@ -17,6 +17,7 @@
     # ./home-modules/desktop/i3blocks  # REMOVED: Switched to i3bar with event subscriptions
     ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
     ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
+    ./home-modules/desktop/i3-window-rules.nix  # Feature 035: Auto-generated window rules for global apps
     ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];
 

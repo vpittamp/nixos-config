@@ -74,5 +74,6 @@ report.json
 # Deno
 deno.lock
 .deno/
-i3pm
+/i3pm
+dist/
 *.js.map

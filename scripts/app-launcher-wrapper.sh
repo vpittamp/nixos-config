@@ -26,6 +26,17 @@ REGISTRY="${HOME}/.config/i3/application-registry.json"
 LOG_FILE="${HOME}/.local/state/app-launcher.log"
 LOG_MAX_LINES=1000
 
+# Feature 035: Environment-based window filtering
+# Generate unique application instance ID for deterministic window matching
+# Format: ${app_name}-${project_name}-${pid}-${timestamp}
+generate_app_instance_id() {
+    local app_name="$1"
+    local project_name="${2:-global}"
+    local timestamp
+    timestamp=$(date +%s)
+    echo "${app_name}-${project_name}-$$-${timestamp}"
+}
+
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -92,6 +103,10 @@ FALLBACK_BEHAVIOR=$(jq -r --arg name "$APP_NAME" \
     "$REGISTRY")
 PREFERRED_WORKSPACE=$(jq -r --arg name "$APP_NAME" \
     '.applications[] | select(.name == $name) | .preferred_workspace // ""' \
+    "$REGISTRY")
+# Feature 035: Load scope from registry
+SCOPE=$(jq -r --arg name "$APP_NAME" \
+    '.applications[] | select(.name == $name) | .scope // "global"' \
     "$REGISTRY")
 
 # Override fallback if environment variable set
@@ -235,6 +250,36 @@ if ! command -v "$COMMAND" &>/dev/null; then
   Install package or add command to PATH."
 fi
 
+# Feature 035: Inject I3PM_* environment variables for window-to-project association
+# These variables are read by the daemon via /proc/<pid>/environ for deterministic matching
+
+# Feature 035: Support I3PM_APP_ID_OVERRIDE for layout restore
+# When restoring a layout, the layout engine sets this variable to the expected instance ID
+# This ensures windows can be matched exactly even with multiple instances
+if [[ -n "${I3PM_APP_ID_OVERRIDE:-}" ]]; then
+    APP_INSTANCE_ID="$I3PM_APP_ID_OVERRIDE"
+    log "INFO" "Using overridden APP_ID for layout restore: $APP_INSTANCE_ID"
+else
+    APP_INSTANCE_ID=$(generate_app_instance_id "$APP_NAME" "$PROJECT_NAME")
+fi
+
+export I3PM_APP_ID="$APP_INSTANCE_ID"
+export I3PM_APP_NAME="$APP_NAME"
+export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
+export I3PM_PROJECT_DIR="${PROJECT_DIR:-}"
+export I3PM_PROJECT_DISPLAY_NAME="${PROJECT_DISPLAY_NAME:-}"
+export I3PM_PROJECT_ICON="${PROJECT_ICON:-}"
+export I3PM_SCOPE="$SCOPE"
+export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
+export I3PM_LAUNCH_TIME="$(date +%s)"
+export I3PM_LAUNCHER_PID="$$"
+
+log "DEBUG" "I3PM_APP_ID=$I3PM_APP_ID"
+log "DEBUG" "I3PM_APP_NAME=$I3PM_APP_NAME"
+log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
+log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
+log "DEBUG" "I3PM_ACTIVE=$I3PM_ACTIVE"
+
 # Execute application (replaces this process with the application)
 log "INFO" "Executing: ${ARGS[*]}"
 
@@ -248,5 +293,5 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Execute with exec to replace this process
+# Execute with exec to replace this process (inherits I3PM_* environment)
 exec "${ARGS[@]}"

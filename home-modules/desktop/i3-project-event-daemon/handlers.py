@@ -301,21 +301,42 @@ async def on_window_new(
             + (f", workspace={classification.workspace}" if classification.workspace else "")
         )
 
-        # If scoped and we have an active project, apply project mark
-        if classification.scope == "scoped" and active_project:
-            mark = f"project:{active_project}"
+        # Feature 035: Read I3PM_* environment variables from /proc/<pid>/environ
+        # This enables deterministic window-to-project association
+        from .services.window_filter import get_window_environment
+        window_env = await get_window_environment(window_id)
+
+        # If window has I3PM environment, use it for project association
+        # This replaces tag-based filtering with environment-based approach
+        actual_project = None
+        if window_env and window_env.project_name:
+            actual_project = window_env.project_name
+            logger.info(
+                f"Window {window_id} has I3PM environment: "
+                f"app={window_env.app_name}, project={actual_project}, "
+                f"scope={window_env.scope}, instance_id={window_env.app_id}"
+            )
+        else:
+            # No I3PM environment → assume global scope
+            actual_project = None
+            logger.debug(f"Window {window_id} has no I3PM environment, assuming global scope")
+
+        # If scoped and we have an actual project from environment, apply project mark
+        if classification.scope == "scoped" and actual_project:
+            mark = f"project:{actual_project}"
             await conn.command(f'[id={window_id}] mark --add "{mark}"')
-            logger.info(f"Marked window {window_id} with {mark}")
+            logger.info(f"Marked window {window_id} with {mark} (from I3PM environment)")
 
             # Add to state (mark event will update this)
+            # Feature 035: Use actual_project from I3PM environment
             window_info = WindowInfo(
                 window_id=window_id,
                 con_id=container.id,
                 window_class=window_class,
                 window_title=window_title,
                 window_instance=container.window_instance or "",
-                app_identifier=window_class,
-                project=active_project,
+                app_identifier=window_env.app_name if window_env else window_class,
+                project=actual_project,  # Use environment-determined project
                 marks=[mark],
                 workspace=container.workspace().name if container.workspace() else "",
                 created=datetime.now(),
