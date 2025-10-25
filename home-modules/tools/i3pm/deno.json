@@ -1,6 +1,6 @@
 {
   "name": "@i3pm/cli",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "i3 Project Manager - Registry-centric workspace management",
   "exports": "./src/main.ts",
   "tasks": {
@@ -15,7 +15,10 @@
     "@std/cli": "jsr:@std/cli@^1.0.0",
     "@std/path": "jsr:@std/path@^1.0.0",
     "@std/fs": "jsr:@std/fs@^1.0.0",
-    "@std/jsonc": "jsr:@std/jsonc@^1.0.0"
+    "@std/jsonc": "jsr:@std/jsonc@^1.0.0",
+    "zod": "npm:zod@^3.22.0",
+    "@cli-ux": "../cli-ux/mod.ts",
+    "@cliffy/table": "jsr:@cliffy/table@^1.0.0-rc.3"
   },
   "lint": {
     "rules": {

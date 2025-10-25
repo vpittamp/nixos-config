@@ -8,7 +8,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 
 /**
  * Main CLI router
@@ -22,6 +22,7 @@ async function main(): Promise<number> {
       v: "version",
       V: "verbose",
     },
+    stopEarly: true,  // Stop parsing after command name
   });
 
   // Global flags

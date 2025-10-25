@@ -250,9 +250,9 @@
       devents = "i3pm daemon events";
 
       # Feature 037: Window visibility aliases (T047)
-      phidden = "i3pm hidden";
-      prestore = "i3pm restore";
-      pinspect = "i3pm inspect";
+      phidden = "i3pm windows hidden";
+      prestore = "i3pm windows restore";
+      pinspect = "i3pm windows inspect";
     };
     
     initExtra = ''

@@ -1,8 +1,8 @@
 { config, lib, pkgs, ... }:
 
 let
-  # Feature 035: Updated for new i3pm TypeScript CLI structure
-  version = "2.0.0";
+  # Feature 035 + Feature 037: Window visibility commands
+  version = "2.1.0";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
