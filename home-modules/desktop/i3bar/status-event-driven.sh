@@ -28,8 +28,10 @@ COLOR_SURFACE0="#313244"
 build_project_block() {
     local current project_info icon display_name
 
-    # Get current project (strip ANSI codes)
-    current=$("$I3PM_BIN" project current 2>/dev/null | "$SED_BIN" 's/\x1b\[[0-9;]*m//g' || echo "")
+    # Get current project name (extract from "Name: <project>" line)
+    current=$("$I3PM_BIN" project current 2>/dev/null | \
+        "$GREP_BIN" "^  Name:" | \
+        "$AWK_BIN" '{print $2}' || echo "")
 
     if [ -z "$current" ]; then
         # No active project - global mode
@@ -45,7 +47,7 @@ build_project_block() {
                 align: "center"
             }'
     else
-        # Get project info from daemon
+        # Get project info (icon + display name) from project list
         project_info=$("$I3PM_BIN" project list --json 2>/dev/null | \
             "$JQ_BIN" -r ".[] | select(.name == \"$current\") | \"\(.icon // \"📁\") \(.display_name // .name)\"" || echo "📁 $current")
 
