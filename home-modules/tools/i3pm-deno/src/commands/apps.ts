@@ -12,7 +12,7 @@ import { createClient } from "../client.ts";
 import type { Project } from "../models.ts";
 import { ProjectSchema, validateResponse } from "../validation.ts";
 import { bold, cyan, dim, gray, green, red, yellow } from "../ui/ansi.ts";
-import { Table } from "@cli-ux";
+import { Table } from "@cliffy/table";
 
 interface AppsCommandOptions {
   verbose?: boolean;
@@ -55,6 +55,8 @@ SUBCOMMANDS:
   info <name>       Show detailed information about an application
   edit              Open registry file in $EDITOR
   validate          Validate registry file
+  add               Add a new application to the registry
+  remove <name>     Remove an application from the registry
 
 OPTIONS:
   -h, --help        Show this help message
@@ -70,6 +72,10 @@ EXAMPLES:
   i3pm apps info vscode                    Show VS Code details
   i3pm apps edit                           Edit registry in $EDITOR
   i3pm apps validate                       Check registry for errors
+  i3pm apps add                            Add application interactively
+  i3pm apps add --non-interactive ...      Add application non-interactively
+  i3pm apps remove firefox                 Remove application with confirmation
+  i3pm apps remove firefox --force         Remove without confirmation
 `);
   Deno.exit(0);
 }
@@ -131,23 +137,22 @@ async function listApps(args: (string | number)[], options: AppsCommandOptions):
   // Table format
   console.log(bold(`\nApplication Registry (${apps.length} applications)\n`));
 
-  const table = new Table({
-    head: ["Name", "Display Name", "Scope", "Workspace", "Command"],
-    colWidths: [20, 25, 10, 10, 35],
-  });
+  const table = new Table()
+    .header(["Name", "Display Name", "Scope", "Workspace", "Command"])
+    .body(
+      apps.map((app) => {
+        const scopeColor = app.scope === "scoped" ? cyan : gray;
+        return [
+          yellow(app.name),
+          app.display_name,
+          scopeColor(app.scope || "global"),
+          app.preferred_workspace?.toString() || "-",
+          dim(app.command),
+        ];
+      })
+    );
 
-  for (const app of apps) {
-    const scopeColor = app.scope === "scoped" ? cyan : gray;
-    table.push([
-      yellow(app.name),
-      app.display_name,
-      scopeColor(app.scope || "global"),
-      app.preferred_workspace?.toString() || "-",
-      dim(app.command),
-    ]);
-  }
-
-  table.print();
+  table.render();
   console.log();
 }
 
@@ -375,6 +380,264 @@ async function editRegistry(args: (string | number)[], options: AppsCommandOptio
 }
 
 /**
+ * Ensure registry file is writable (copy from Nix store if needed)
+ */
+async function ensureWritableRegistry(registryPath: string): Promise<void> {
+  try {
+    // Check if file is a symlink (from Nix store)
+    const fileInfo = await Deno.lstat(registryPath);
+    if (fileInfo.isSymlink) {
+      // Read the symlink content
+      const content = await Deno.readTextFile(registryPath);
+
+      // Remove symlink
+      await Deno.remove(registryPath);
+
+      // Write as regular file
+      await Deno.writeTextFile(registryPath, content);
+
+      console.log(yellow("⚠ Copied registry from Nix store to make it writable"));
+      console.log(dim("  Changes will be overwritten on next 'nixos-rebuild'"));
+      console.log(dim("  To persist changes, edit: home-modules/desktop/app-registry.nix\n"));
+    }
+  } catch (error) {
+    // File might not exist yet, that's okay
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Add application to registry
+ */
+async function addApp(args: (string | number)[], options: AppsCommandOptions): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    boolean: ["help", "non-interactive"],
+    string: ["name", "display-name", "command", "parameters", "scope", "workspace", "icon", "nix-package", "description"],
+    alias: { h: "help" },
+  });
+
+  if (parsed.help) {
+    console.log(`
+Usage: i3pm apps add [OPTIONS]
+
+Add a new application to the registry.
+
+OPTIONS:
+  --non-interactive           Use only CLI flags (no prompts)
+  --name=<name>              Application identifier (lowercase, no spaces)
+  --display-name=<name>      Human-readable display name
+  --command=<cmd>            Command to execute
+  --parameters=<params>      Command parameters (supports variables)
+  --scope=<scoped|global>    Application scope (default: global)
+  --workspace=<1-9>          Preferred workspace number
+  --icon=<icon>              Icon name or path
+  --nix-package=<pkg>        Nix package name
+  --description=<desc>       Application description
+  -h, --help                 Show this help message
+
+EXAMPLES:
+  i3pm apps add --non-interactive --name=firefox --display-name="Firefox" --command=firefox
+  i3pm apps add  # Interactive mode with prompts
+
+NOTE:
+  This command modifies the local registry file. Changes will be overwritten on
+  the next NixOS rebuild. To persist changes, edit: home-modules/desktop/app-registry.nix
+`);
+    Deno.exit(0);
+  }
+
+  const homeDir = Deno.env.get("HOME");
+  if (!homeDir) {
+    throw new Error("HOME environment variable not set");
+  }
+
+  const registryPath = `${homeDir}/.config/i3/application-registry.json`;
+
+  // Ensure registry is writable
+  await ensureWritableRegistry(registryPath);
+
+  const registry = await loadRegistry();
+
+  let newApp: Partial<ApplicationEntry> = {};
+
+  if (parsed["non-interactive"]) {
+    // Non-interactive mode: Use CLI flags only
+    if (!parsed.name || !parsed["display-name"] || !parsed.command) {
+      console.error(red("Error: --name, --display-name, and --command are required in non-interactive mode"));
+      Deno.exit(1);
+    }
+
+    newApp = {
+      name: parsed.name,
+      display_name: parsed["display-name"],
+      command: parsed.command,
+      parameters: parsed.parameters,
+      scope: (parsed.scope as "scoped" | "global") || "global",
+      preferred_workspace: parsed.workspace ? parseInt(parsed.workspace, 10) : undefined,
+      icon: parsed.icon,
+      nix_package: parsed["nix-package"],
+      description: parsed.description,
+    };
+  } else {
+    // Interactive mode: Prompt for values
+    console.log(bold("\nAdd New Application\n"));
+
+    // Prompt helper using Deno's built-in prompt()
+    const promptUser = (message: string, defaultValue?: string): string => {
+      const defaultText = defaultValue ? dim(` [${defaultValue}]`) : "";
+      const input = prompt(`${message}${defaultText}: `);
+      return input?.trim() || defaultValue || "";
+    };
+
+    const name = promptUser("Application name (identifier)", parsed.name);
+    if (!name) {
+      console.error(red("Error: Application name is required"));
+      Deno.exit(1);
+    }
+
+    // Check for duplicate
+    if (registry.applications.some((app) => app.name === name)) {
+      console.error(red(`Error: Application '${name}' already exists in registry`));
+      console.error(dim("Use 'i3pm apps edit' to modify existing applications"));
+      Deno.exit(1);
+    }
+
+    const displayName = promptUser("Display name", parsed["display-name"] || name);
+    const command = promptUser("Command", parsed.command);
+    if (!command) {
+      console.error(red("Error: Command is required"));
+      Deno.exit(1);
+    }
+
+    const parameters = promptUser("Parameters (supports $PROJECT_DIR, $SESSION_NAME, etc.)", parsed.parameters);
+    const scope = promptUser("Scope (scoped/global)", parsed.scope || "global");
+    const workspace = promptUser("Preferred workspace (1-9, leave empty for none)", parsed.workspace);
+    const icon = promptUser("Icon name", parsed.icon);
+    const nixPackage = promptUser("Nix package name", parsed["nix-package"]);
+    const description = promptUser("Description", parsed.description);
+
+    newApp = {
+      name,
+      display_name: displayName || name,
+      command,
+      parameters: parameters || undefined,
+      scope: (scope === "scoped" ? "scoped" : "global"),
+      preferred_workspace: workspace ? parseInt(workspace, 10) : undefined,
+      icon: icon || undefined,
+      nix_package: nixPackage || undefined,
+      description: description || undefined,
+    };
+  }
+
+  // Validate new application
+  if (registry.applications.some((app) => app.name === newApp.name)) {
+    console.error(red(`Error: Application '${newApp.name}' already exists in registry`));
+    Deno.exit(1);
+  }
+
+  if (newApp.preferred_workspace && (newApp.preferred_workspace < 1 || newApp.preferred_workspace > 9)) {
+    console.error(red(`Error: Workspace must be between 1 and 9, got ${newApp.preferred_workspace}`));
+    Deno.exit(1);
+  }
+
+  // Add to registry
+  registry.applications.push(newApp as ApplicationEntry);
+
+  // Sort by name
+  registry.applications.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Write back to file
+  const content = JSON.stringify(registry, null, 2);
+  await Deno.writeTextFile(registryPath, content);
+
+  console.log(green(`\n✓ Added application '${newApp.name}' to registry`));
+  console.log(dim(`\nRegistry location: ${registryPath}`));
+  console.log(dim("Note: Changes only affect manual edits. To update system config, edit home-modules/desktop/app-registry.nix"));
+}
+
+/**
+ * Remove application from registry
+ */
+async function removeApp(args: (string | number)[], options: AppsCommandOptions): Promise<void> {
+  const parsed = parseArgs(args.map(String), {
+    boolean: ["help", "force"],
+    alias: { h: "help", f: "force" },
+  });
+
+  if (parsed.help || parsed._.length === 0) {
+    console.log(`
+Usage: i3pm apps remove <name> [OPTIONS]
+
+Remove an application from the registry.
+
+OPTIONS:
+  --force, -f    Skip confirmation prompt
+  -h, --help     Show this help message
+
+EXAMPLES:
+  i3pm apps remove firefox
+  i3pm apps remove firefox --force
+
+NOTE:
+  This command modifies the local registry file. Changes will be overwritten on
+  the next NixOS rebuild. To persist changes, edit: home-modules/desktop/app-registry.nix
+`);
+    Deno.exit(0);
+  }
+
+  const appName = String(parsed._[0]);
+  const homeDir = Deno.env.get("HOME");
+  if (!homeDir) {
+    throw new Error("HOME environment variable not set");
+  }
+
+  const registryPath = `${homeDir}/.config/i3/application-registry.json`;
+
+  // Ensure registry is writable
+  await ensureWritableRegistry(registryPath);
+
+  const registry = await loadRegistry();
+
+  // Find application
+  const appIndex = registry.applications.findIndex((app) => app.name === appName);
+  if (appIndex === -1) {
+    console.error(red(`Error: Application '${appName}' not found in registry`));
+    console.error(dim("\nAvailable applications:"));
+    for (const a of registry.applications) {
+      console.error(dim(`  - ${a.name}`));
+    }
+    Deno.exit(1);
+  }
+
+  const app = registry.applications[appIndex];
+
+  // Confirmation prompt
+  if (!parsed.force) {
+    console.log(yellow(`\nAre you sure you want to remove '${app.display_name}' (${app.name})?`));
+    console.log(dim(`Command: ${app.command}`));
+    const confirm = prompt("Type 'yes' to confirm: ");
+
+    if (confirm?.toLowerCase() !== "yes") {
+      console.log(dim("\nCancelled - no changes made"));
+      Deno.exit(0);
+    }
+  }
+
+  // Remove from registry
+  registry.applications.splice(appIndex, 1);
+
+  // Write back to file
+  const content = JSON.stringify(registry, null, 2);
+  await Deno.writeTextFile(registryPath, content);
+
+  console.log(green(`\n✓ Removed application '${appName}' from registry`));
+  console.log(dim(`\nRegistry location: ${registryPath}`));
+  console.log(dim("Note: Changes only affect manual edits. To update system config, edit home-modules/desktop/app-registry.nix"));
+}
+
+/**
  * Validate registry file
  */
 async function validateRegistry(args: (string | number)[], options: AppsCommandOptions): Promise<void> {
@@ -498,6 +761,14 @@ export async function appsCommand(
 
     case "validate":
       await validateRegistry(subcommandArgs, options);
+      break;
+
+    case "add":
+      await addApp(subcommandArgs, options);
+      break;
+
+    case "remove":
+      await removeApp(subcommandArgs, options);
       break;
 
     default:
