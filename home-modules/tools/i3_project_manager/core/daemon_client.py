@@ -411,6 +411,59 @@ class DaemonClient:
             }
         )
 
+    async def get_hidden_windows(
+        self,
+        project_name: Optional[str] = None,
+        workspace: Optional[int] = None,
+        app_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get all hidden windows (in scratchpad) grouped by project.
+
+        Feature 037 US5 T045: Client method for windows.getHidden
+
+        Args:
+            project_name: Filter by specific project (optional)
+            workspace: Filter by tracked workspace (optional)
+            app_name: Filter by app name (optional)
+
+        Returns:
+            Dict with keys:
+                - projects: Dict[str, List[Dict]] - Windows grouped by project
+                - total_hidden: int - Total number of hidden windows
+                - duration_ms: float - Operation duration
+        """
+        params = {}
+        if project_name:
+            params["project_name"] = project_name
+        if workspace is not None:
+            params["workspace"] = workspace
+        if app_name:
+            params["app_name"] = app_name
+
+        return await self.call("windows.getHidden", params)
+
+    async def get_window_state(self, window_id: int) -> Dict[str, Any]:
+        """Get comprehensive state for a specific window.
+
+        Feature 037 US5 T045: Client method for windows.getState
+
+        Args:
+            window_id: Window ID to inspect
+
+        Returns:
+            Dict with keys:
+                - window_id: int
+                - visible: bool - True if window is visible (not in scratchpad)
+                - window_class: str
+                - window_title: str
+                - pid: int
+                - i3pm_env: Dict[str, str] - All I3PM_* environment variables
+                - tracking: Dict - Workspace tracking info
+                - i3_state: Dict - Current i3 window state
+                - duration_ms: float
+        """
+        return await self.call("windows.getState", {"window_id": window_id})
+
     async def ping(self) -> bool:
         """Ping daemon to check if it's alive.
 

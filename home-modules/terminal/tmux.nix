@@ -1,5 +1,8 @@
 { config, pkgs, lib, ... }:
 
+let
+  i3pmProjectBadgeScript = "/etc/nixos/scripts/i3pm-project-badge.sh";
+in
 {
   # Tmux configuration - force rebuild 2025-09-19
   programs.tmux = {
@@ -126,7 +129,7 @@
       set -g status-left "#{?client_prefix,#[fg=colour235 bg=colour203 bold] PREFIX ,#[fg=colour235 bg=colour40 bold] TMUX }#[fg=colour248 bg=colour237] #S #[default] "
 
       # Status right showing basic info
-      set -g status-right "#[fg=colour248 bg=colour237] #H | %H:%M #[default]"
+      set -g status-right "#[fg=colour248 bg=colour237] #( ${i3pmProjectBadgeScript} --tmux ) #H | %H:%M #[default]"
 
       # Window status - clean and simple
       set -g window-status-format "#[fg=colour248] #I:#W "

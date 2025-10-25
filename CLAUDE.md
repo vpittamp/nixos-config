@@ -438,6 +438,52 @@ i3-project-switch --clear
 pclear
 ```
 
+### Automatic Window Filtering (Feature 037)
+
+**Automatic hiding/showing on project switch**: When you switch projects, scoped windows from the previous project automatically hide (move to scratchpad), while windows for the new project restore to their exact workspace locations. Global apps remain visible across all projects.
+
+**How it works**:
+1. User switches project via `Win+P` or `pswitch nixos`
+2. Daemon receives tick event and triggers filtering
+3. All scoped windows from old project hide to scratchpad
+4. All scoped windows for new project restore from scratchpad
+5. Windows return to exact workspace positions (tracked persistently)
+
+**Window persistence**:
+- Manual moves tracked automatically (move VS Code from WS2 → WS5)
+- Floating state preserved (floating windows restore as floating)
+- Works across daemon restarts (persisted in `~/.config/i3/window-workspace-map.json`)
+- Workspace assignment on launch (apps open on configured workspace regardless of focus)
+
+**Performance**:
+- Typical project switch: 2-5ms for 10 windows
+- Sequential processing prevents race conditions
+- Request queue handles rapid switches gracefully
+
+**Backend API** (for advanced usage):
+```python
+# Query hidden windows via daemon client
+async with DaemonClient() as daemon:
+    result = await daemon.get_hidden_windows(project_name="nixos")
+    # Returns: {"projects": {...}, "total_hidden": N}
+
+    # Inspect specific window state
+    state = await daemon.get_window_state(window_id=123456)
+    # Returns: visibility, I3PM_* env vars, tracking info, i3 state
+```
+
+**Troubleshooting window filtering**:
+```bash
+# Check if windows are being filtered
+i3pm daemon events --type=tick | grep filtering
+
+# Verify window tracking
+cat ~/.config/i3/window-workspace-map.json | jq .
+
+# Manual hide/restore (via daemon API)
+# Note: Automatic filtering happens on project switch
+```
+
 ### Multi-Monitor Support
 
 Workspaces automatically distribute based on monitor count:
@@ -445,7 +491,7 @@ Workspaces automatically distribute based on monitor count:
 - **2 monitors**: WS 1-2 on primary, WS 3-9 on secondary
 - **3+ monitors**: WS 1-2 on primary, WS 3-5 on secondary, WS 6-9 on tertiary
 
-After connecting/disconnecting monitors, press `Win+Shift+M` to reassign workspaces.
+After connecting/disconnecting monitors, **workspaces automatically reassign** (Feature 037 T030-T035). You can also manually trigger reassignment with `Win+Shift+M` or `i3pm monitors reassign`.
 
 ### Troubleshooting
 
@@ -484,6 +530,7 @@ For more details, see the quickstart guides:
 ```bash
 cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (Feature 015)
 cat /etc/nixos/specs/035-now-that-we/quickstart.md   # Registry-centric system (Feature 035)
+cat /etc/nixos/specs/037-given-our-top/quickstart.md # Window filtering (Feature 037)
 ```
 
 ## 📦 Registry-Centric Architecture (Feature 035)

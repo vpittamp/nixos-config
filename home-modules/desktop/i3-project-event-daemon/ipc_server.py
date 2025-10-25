@@ -280,6 +280,12 @@ class IPCServer:
             elif method == "project.switchWithFiltering":
                 result = await self._switch_with_filtering(params)
 
+            # Feature 037 US5: Window visibility methods (T036, T037)
+            elif method == "windows.getHidden":
+                result = await self._get_hidden_windows(params)
+            elif method == "windows.getState":
+                result = await self._get_window_state(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -2813,6 +2819,243 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="project::switch_with_filtering",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _get_hidden_windows(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get all hidden windows (in scratchpad) grouped by project.
+
+        Feature 037 US5 T036: Provides visibility into hidden windows for debugging
+        and manual management. Queries scratchpad windows, reads I3PM_* variables,
+        and groups by project name.
+
+        Args:
+            params: {
+                "project_name": str (optional) # Filter by specific project
+                "workspace": int (optional)    # Filter by tracked workspace
+                "app_name": str (optional)     # Filter by app name
+            }
+
+        Returns:
+            {
+                "projects": {
+                    "<project_name>": [
+                        {
+                            "window_id": int,
+                            "app_name": str,
+                            "window_class": str,
+                            "window_title": str,
+                            "tracked_workspace": int,
+                            "floating": bool,
+                            "last_seen": float
+                        },
+                        ...
+                    ]
+                },
+                "total_hidden": int,
+                "duration_ms": float
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            if not self.i3_connection or not self.i3_connection.conn:
+                raise RuntimeError("i3 connection not available")
+
+            if not self.workspace_tracker:
+                raise RuntimeError("workspace tracker not available")
+
+            # Get filters
+            filter_project = params.get("project_name")
+            filter_workspace = params.get("workspace")
+            filter_app = params.get("app_name")
+
+            # Get all scratchpad windows
+            scratchpad_windows = await window_filtering.get_scratchpad_windows(
+                self.i3_connection.conn
+            )
+
+            # Group windows by project
+            projects_map = {}
+            total_hidden = 0
+
+            for window in scratchpad_windows:
+                # Read I3PM_* environment variables
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                project_name = i3pm_env.get("I3PM_PROJECT_NAME", "(unknown)")
+                app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
+
+                # Apply filters
+                if filter_project and project_name != filter_project:
+                    continue
+                if filter_app and app_name != filter_app:
+                    continue
+
+                # Get tracking info
+                tracking_info = self.workspace_tracker.windows.get(window.id, {})
+                tracked_workspace = tracking_info.get("workspace_number", 0)
+
+                if filter_workspace and tracked_workspace != filter_workspace:
+                    continue
+
+                # Build window info
+                window_info = {
+                    "window_id": window.id,
+                    "app_name": app_name,
+                    "window_class": window.window_class or "unknown",
+                    "window_title": window.name or "(no title)",
+                    "tracked_workspace": tracked_workspace,
+                    "floating": tracking_info.get("floating", False),
+                    "last_seen": tracking_info.get("last_seen", 0.0),
+                }
+
+                # Add to project group
+                if project_name not in projects_map:
+                    projects_map[project_name] = []
+                projects_map[project_name].append(window_info)
+                total_hidden += 1
+
+            logger.debug(
+                f"Found {total_hidden} hidden windows across {len(projects_map)} projects"
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            return {
+                "projects": projects_map,
+                "total_hidden": total_hidden,
+                "duration_ms": duration_ms,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting hidden windows: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="windows::get_hidden",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _get_window_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get comprehensive state for a specific window.
+
+        Feature 037 US5 T037: Provides detailed window inspection for debugging.
+        Shows all I3PM_* variables, tracking state, and i3 window properties.
+
+        Args:
+            params: {
+                "window_id": int  # Window to inspect
+            }
+
+        Returns:
+            {
+                "window_id": int,
+                "visible": bool,  # true if not in scratchpad
+                "window_class": str,
+                "window_title": str,
+                "pid": int,
+                "i3pm_env": {
+                    "I3PM_PROJECT_NAME": str,
+                    "I3PM_APP_NAME": str,
+                    "I3PM_SCOPE": str,
+                    ... # all I3PM_* variables
+                },
+                "tracking": {
+                    "workspace_number": int,
+                    "floating": bool,
+                    "last_seen": float,
+                    "project_name": str,
+                    "app_name": str
+                },
+                "i3_state": {
+                    "workspace": int,
+                    "output": str,
+                    "floating": str,
+                    "focused": bool
+                }
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            window_id = params.get("window_id")
+            if window_id is None:
+                raise ValueError("window_id parameter is required")
+
+            if not self.i3_connection or not self.i3_connection.conn:
+                raise RuntimeError("i3 connection not available")
+
+            # Find window in i3 tree
+            tree = await self.i3_connection.conn.get_tree()
+
+            def find_window(con):
+                if con.id == window_id:
+                    return con
+                for child in con.nodes:
+                    result = find_window(child)
+                    if result:
+                        return result
+                for child in con.floating_nodes:
+                    result = find_window(child)
+                    if result:
+                        return result
+                return None
+
+            window = find_window(tree)
+            if not window:
+                raise ValueError(f"Window {window_id} not found")
+
+            # Check if in scratchpad
+            scratchpad_windows = await window_filtering.get_scratchpad_windows(
+                self.i3_connection.conn
+            )
+            is_visible = window_id not in [w.id for w in scratchpad_windows]
+
+            # Read I3PM_* environment variables
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, window.pid)
+
+            # Get tracking info
+            tracking_info = self.workspace_tracker.windows.get(window_id, {}) if self.workspace_tracker else {}
+
+            # Get i3 state
+            workspace = window.workspace()
+            i3_state = {
+                "workspace": workspace.num if workspace else None,
+                "output": workspace.ipc_data.get("output") if workspace else None,
+                "floating": window.floating,
+                "focused": window.focused,
+            }
+
+            logger.debug(f"Inspected window {window_id}: visible={is_visible}")
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            return {
+                "window_id": window_id,
+                "visible": is_visible,
+                "window_class": window.window_class or "unknown",
+                "window_title": window.name or "(no title)",
+                "pid": window.pid,
+                "i3pm_env": i3pm_env,
+                "tracking": tracking_info,
+                "i3_state": i3_state,
+                "duration_ms": duration_ms,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting window state: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="windows::get_state",
                 duration_ms=duration_ms,
                 error=error_msg,
             )

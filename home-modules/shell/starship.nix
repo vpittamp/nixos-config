@@ -34,7 +34,7 @@ in
     settings = {
       add_newline = true;
       palette = "catppuccin_mocha";
-      right_format = "$time";
+      right_format = "$custom.i3pm_project $time";
       continuation_prompt = "⋯ ";
 
       palettes.catppuccin_mocha = {
@@ -101,6 +101,13 @@ in
         command = "echo \"$TMUX_PANE\"";
         style = "bold fg:${colors.sky}";
         format = "[$output]($style) ";
+      };
+
+      custom.i3pm_project = {
+        when = "[ -x /etc/nixos/scripts/i3pm-project-badge.sh ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
+        command = "/etc/nixos/scripts/i3pm-project-badge.sh --plain";
+        style = "fg:${colors.peach} bold";
+        format = "[$output]($style)";
       };
 
       directory = {
