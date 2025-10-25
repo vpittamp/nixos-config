@@ -151,13 +151,13 @@ in
         # Security hardening (T028)
         # Note: ProtectSystem, ProtectHome, and PrivateTmp disabled to allow reading
         # /proc/{pid}/environ for cross-service process inspection (Feature 037 window filtering)
-        # These settings create mount/user namespaces that prevent cross-service /proc access
+        # CAP_SYS_PTRACE required to read /proc/{pid}/environ across user namespaces
+        AmbientCapabilities = "CAP_SYS_PTRACE";
         ReadWritePaths = [
           "%t/i3-project-daemon"
           "%h/.config/i3"
           "%h/.local/share/i3pm"  # Feature 030: Layout snapshot storage
         ];
-        NoNewPrivileges = true;
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
 
