@@ -37,12 +37,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Implement workspace tracking state file manager in `home-modules/desktop/i3-project-daemon.py` with load/save functions for `~/.config/i3/window-workspace-map.json`
-- [ ] T006 [P] Add /proc environment variable reading utility function to daemon: `get_window_i3pm_env(window_id) -> Dict[str, str]`
-- [ ] T007 [P] Add i3 IPC scratchpad query utility function to daemon: `get_scratchpad_windows() -> List[Window]`
-- [ ] T008 Implement workspace validation function using GET_WORKSPACES IPC: `validate_workspace_exists(workspace_num) -> bool`
-- [ ] T009 [P] Add batch i3 command builder utility: `build_batch_move_command(commands: List[str]) -> str`
-- [ ] T010 Implement garbage collection on daemon start to clean stale entries from window-workspace-map.json
+- [X] T005 Implement workspace tracking state file manager in `home-modules/desktop/i3-project-daemon.py` with load/save functions for `~/.config/i3/window-workspace-map.json`
+- [X] T006 [P] Add /proc environment variable reading utility function to daemon: `get_window_i3pm_env(window_id) -> Dict[str, str]`
+- [X] T007 [P] Add i3 IPC scratchpad query utility function to daemon: `get_scratchpad_windows() -> List[Window]`
+- [X] T008 Implement workspace validation function using GET_WORKSPACES IPC: `validate_workspace_exists(workspace_num) -> bool`
+- [X] T009 [P] Add batch i3 command builder utility: `build_batch_move_command(commands: List[str]) -> str`
+- [X] T010 Implement garbage collection on daemon start to clean stale entries from window-workspace-map.json
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
