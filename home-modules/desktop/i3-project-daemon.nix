@@ -177,7 +177,8 @@ in
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
-          "PATH=${pkgs.xorg.xprop}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
+          # Feature 037: Put /run/wrappers/bin first for setuid sudo access
+          "PATH=/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
         ];
 
         # Logging
