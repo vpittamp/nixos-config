@@ -116,7 +116,7 @@ let
       icon = "terminal";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
-      fallback_behavior = "error";
+      fallback_behavior = "use_home";
       description = "Terminal with automatic sesh session for project directory";
     })
 
@@ -163,7 +163,7 @@ let
       icon = "git";
       nix_package = "pkgs.lazygit";
       multi_instance = true;
-      fallback_behavior = "error";
+      fallback_behavior = "use_home";
       description = "Terminal UI for git commands";
     })
 
@@ -178,7 +178,7 @@ let
       icon = "git";
       nix_package = "pkgs.gitui";
       multi_instance = true;
-      fallback_behavior = "error";
+      fallback_behavior = "use_home";
       description = "Blazing fast terminal UI for git";
     })
 
