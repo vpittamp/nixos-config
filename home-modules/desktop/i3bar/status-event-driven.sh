@@ -244,12 +244,13 @@ main() {
     # Start status generation in background
     # This process subscribes to daemon events and outputs status lines
     (
+        # Use stdbuf to disable buffering for immediate output
         "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
             # Build and output new status line on each daemon event
             status_line=$(build_status_line)
-            echo "$status_line,"
+            printf '%s,\n' "$status_line"
         done
-    ) &
+    ) | stdbuf -o0 cat &
     STATUS_PID=$!
 
     # Main process: Listen for click events on stdin (blocking)
