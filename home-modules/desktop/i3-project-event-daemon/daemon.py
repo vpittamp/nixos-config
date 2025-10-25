@@ -46,6 +46,7 @@ from .handlers import (
     on_output,  # Feature 024: R013
 )
 from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
+from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from datetime import datetime
 import time
 
@@ -164,12 +165,19 @@ class I3ProjectDaemon:
         # Create state manager
         self.state_manager = StateManager()
 
+        # Feature 037: Initialize workspace tracker for window filtering
+        self.workspace_tracker = WorkspaceTracker()
+        await self.workspace_tracker.load()
+        logger.info("Workspace tracker initialized")
+
         # Create IPC server first (needed for event buffer callback)
         # Pass window_rules_getter for Feature 021: T025, T026
+        # Pass workspace_tracker for Feature 037: Window filtering
         self.ipc_server = await IPCServer.from_systemd_socket(
             self.state_manager,
             event_buffer=None,
-            window_rules_getter=lambda: self.window_rules
+            window_rules_getter=lambda: self.window_rules,
+            workspace_tracker=self.workspace_tracker
         )
 
         # Create event buffer with broadcast callback (Feature 017: T019)
@@ -211,6 +219,13 @@ class I3ProjectDaemon:
             connect_start = time.perf_counter()
             await self.connection.connect_with_retry(max_attempts=10)
             self.state_manager.state.is_connected = True
+
+            # Feature 037: Run garbage collection on workspace tracker
+            if self.workspace_tracker:
+                cleanup_count = await self.workspace_tracker.cleanup_stale_entries(
+                    self.connection.i3, max_age_days=30
+                )
+                logger.info(f"Workspace tracker cleanup: {cleanup_count} stale entries removed")
 
             # Log daemon::connect event (unified event system)
             connect_duration_ms = (time.perf_counter() - connect_start) * 1000

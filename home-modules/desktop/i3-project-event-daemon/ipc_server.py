@@ -22,6 +22,7 @@ from .pattern_resolver import classify_window
 from .models import EventEntry, EventCorrelation
 from . import systemd_query  # Feature 029: systemd journal integration
 from .event_correlator import EventCorrelator  # Feature 029: event correlation
+from . import window_filtering  # Feature 037: Window filtering utilities
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ class IPCServer:
         state_manager: StateManager,
         event_buffer: Optional[Any] = None,
         i3_connection: Optional[Any] = None,
-        window_rules_getter: Optional[callable] = None
+        window_rules_getter: Optional[callable] = None,
+        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -43,11 +45,13 @@ class IPCServer:
             event_buffer: EventBuffer instance for event history (Feature 017)
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
             window_rules_getter: Callable that returns current window rules list (Feature 021)
+            workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
         self.i3_connection = i3_connection
         self.window_rules_getter = window_rules_getter
+        self.workspace_tracker = workspace_tracker
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -59,7 +63,8 @@ class IPCServer:
         state_manager: StateManager,
         event_buffer: Optional[Any] = None,
         i3_connection: Optional[Any] = None,
-        window_rules_getter: Optional[callable] = None
+        window_rules_getter: Optional[callable] = None,
+        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -68,11 +73,12 @@ class IPCServer:
             event_buffer: EventBuffer instance for event history (Feature 017)
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
             window_rules_getter: Callable that returns current window rules list (Feature 021)
+            workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -265,6 +271,14 @@ class IPCServer:
                 result = await self._get_workspaces()
             elif method == "get_system_state":
                 result = await self._get_system_state()
+
+            # Feature 037: Window filtering methods
+            elif method == "project.hideWindows":
+                result = await self._hide_windows(params)
+            elif method == "project.restoreWindows":
+                result = await self._restore_windows(params)
+            elif method == "project.switchWithFiltering":
+                result = await self._switch_with_filtering(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -2551,6 +2565,254 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="query::system_state",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    # Feature 037: Window filtering methods
+
+    async def _hide_windows(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Hide windows for a project (move to scratchpad).
+
+        Args:
+            params: {
+                "project_name": str  # Project whose windows to hide
+            }
+
+        Returns:
+            {
+                "windows_hidden": int,
+                "errors": List[str],
+                "duration_ms": float
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project_name = params.get("project_name")
+            if not project_name:
+                raise ValueError("project_name parameter is required")
+
+            if not self.i3_connection:
+                raise RuntimeError("i3 connection not available")
+
+            if not self.workspace_tracker:
+                raise RuntimeError("workspace tracker not available")
+
+            # Get i3 tree and find all visible windows for project
+            tree = await self.i3_connection.get_tree()
+            window_ids_to_hide = []
+
+            async def collect_project_windows(con):
+                if con.window and hasattr(con, 'window_id'):
+                    # Read I3PM_PROJECT_NAME from /proc
+                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
+                    window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
+                    scope = i3pm_env.get("I3PM_SCOPE", "global")
+
+                    # Only hide if matches project and is scoped
+                    if window_project == project_name and scope == "scoped":
+                        window_ids_to_hide.append(con.id)
+
+                for child in con.nodes:
+                    await collect_project_windows(child)
+                for child in con.floating_nodes:
+                    await collect_project_windows(child)
+
+            await collect_project_windows(tree)
+
+            # Hide windows in batch
+            hidden_count, errors = await window_filtering.hide_windows_batch(
+                self.i3_connection,
+                window_ids_to_hide,
+                self.workspace_tracker,
+            )
+
+            logger.info(
+                f"Hidden {hidden_count} windows for project '{project_name}' "
+                f"({len(errors)} errors)"
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            return {
+                "windows_hidden": hidden_count,
+                "errors": errors,
+                "duration_ms": duration_ms,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error hiding windows: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::hide_windows",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _restore_windows(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Restore windows for a project (from scratchpad).
+
+        Args:
+            params: {
+                "project_name": str,  # Project whose windows to restore
+                "fallback_workspace": int = 1  # Workspace for invalid positions
+            }
+
+        Returns:
+            {
+                "windows_restored": int,
+                "errors": List[str],
+                "fallback_warnings": List[str],
+                "duration_ms": float
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project_name = params.get("project_name")
+            fallback_workspace = params.get("fallback_workspace", 1)
+
+            if not project_name:
+                raise ValueError("project_name parameter is required")
+
+            if not self.i3_connection:
+                raise RuntimeError("i3 connection not available")
+
+            if not self.workspace_tracker:
+                raise RuntimeError("workspace tracker not available")
+
+            # Get all scratchpad windows
+            scratchpad_windows = await window_filtering.get_scratchpad_windows(
+                self.i3_connection
+            )
+
+            # Find windows matching project
+            window_ids_to_restore = []
+            for window in scratchpad_windows:
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
+
+                if window_project == project_name:
+                    window_ids_to_restore.append(window.id)
+
+            # Restore windows in batch
+            restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(
+                self.i3_connection,
+                window_ids_to_restore,
+                self.workspace_tracker,
+                fallback_workspace,
+            )
+
+            logger.info(
+                f"Restored {restored_count} windows for project '{project_name}' "
+                f"({len(errors)} errors, {len(fallback_warnings)} fallbacks)"
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            return {
+                "windows_restored": restored_count,
+                "errors": errors,
+                "fallback_warnings": fallback_warnings,
+                "duration_ms": duration_ms,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error restoring windows: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::restore_windows",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _switch_with_filtering(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Switch projects with automatic window filtering.
+
+        Args:
+            params: {
+                "old_project": str,  # Previous project (windows to hide)
+                "new_project": str,  # New project (windows to restore)
+                "fallback_workspace": int = 1
+            }
+
+        Returns:
+            {
+                "windows_hidden": int,
+                "windows_restored": int,
+                "errors": List[str],
+                "fallback_warnings": List[str],
+                "duration_ms": float
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            old_project = params.get("old_project", "")
+            new_project = params.get("new_project")
+            fallback_workspace = params.get("fallback_workspace", 1)
+
+            if not new_project:
+                raise ValueError("new_project parameter is required")
+
+            if not self.i3_connection:
+                raise RuntimeError("i3 connection not available")
+
+            if not self.workspace_tracker:
+                raise RuntimeError("workspace tracker not available")
+
+            all_errors = []
+            fallback_warnings = []
+
+            # Phase 1: Hide windows from old project (if any)
+            windows_hidden = 0
+            if old_project:
+                hide_result = await self._hide_windows({"project_name": old_project})
+                windows_hidden = hide_result["windows_hidden"]
+                all_errors.extend(hide_result.get("errors", []))
+
+            # Phase 2: Restore windows for new project
+            restore_result = await self._restore_windows({
+                "project_name": new_project,
+                "fallback_workspace": fallback_workspace,
+            })
+            windows_restored = restore_result["windows_restored"]
+            all_errors.extend(restore_result.get("errors", []))
+            fallback_warnings = restore_result.get("fallback_warnings", [])
+
+            logger.info(
+                f"Project switch filtering: {old_project or '(none)'} → {new_project} "
+                f"(hidden {windows_hidden}, restored {windows_restored})"
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            return {
+                "windows_hidden": windows_hidden,
+                "windows_restored": windows_restored,
+                "errors": all_errors,
+                "fallback_warnings": fallback_warnings,
+                "duration_ms": duration_ms,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error in switch with filtering: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::switch_with_filtering",
                 duration_ms=duration_ms,
                 error=error_msg,
             )

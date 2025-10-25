@@ -56,14 +56,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement `project.hideWindows` JSON-RPC method in daemon at `home-modules/desktop/i3-project-daemon.py` that:
+- [X] T011 [US1] Implement `project.hideWindows` JSON-RPC method in daemon at `home-modules/desktop/i3-project-daemon.py` that:
   - Queries i3 tree for all visible windows
   - Reads I3PM_PROJECT_NAME from /proc for each window
   - Filters windows matching target project with I3PM_SCOPE=scoped
   - Saves current workspace positions to window-workspace-map.json
   - Executes batch scratchpad move command
   - Returns WindowFilterResult with hidden count and errors
-- [ ] T012 [US1] Implement `project.restoreWindows` JSON-RPC method in daemon that:
+- [X] T012 [US1] Implement `project.restoreWindows` JSON-RPC method in daemon that:
   - Queries i3 tree for scratchpad windows
   - Reads I3PM_PROJECT_NAME from /proc for each scratchpad window
   - Filters windows matching target project
@@ -72,13 +72,13 @@
   - Executes batch workspace restore command
   - Updates window-workspace-map.json with restored positions
   - Returns list of restorations with fallback indicators
-- [ ] T013 [US1] Implement `project.switchWithFiltering` JSON-RPC method in daemon that combines hide + restore operations with single i3 tree query for performance
+- [X] T013 [US1] Implement `project.switchWithFiltering` JSON-RPC method in daemon that combines hide + restore operations with single i3 tree query for performance
 - [ ] T014 [US1] Modify daemon's `handle_tick()` event handler to detect project switch tick events and automatically call `project.switchWithFiltering`
-- [ ] T015 [US1] Add error handling for partial failures (continue processing remaining windows when individual window operations fail)
+- [X] T015 [US1] Add error handling for partial failures (continue processing remaining windows when individual window operations fail)
 - [ ] T016 [US1] Implement request queue in daemon to handle rapid project switches sequentially using asyncio.Queue
 - [ ] T017 [US1] Extend daemon client in `home-modules/tools/i3pm/daemon_client.py` with new JSON-RPC methods: hideWindows, restoreWindows, switchWithFiltering
 - [ ] T018 [US1] Modify `i3pm project switch` command in `home-modules/tools/i3pm/__main__.py` to display filtering results (hidden count, restored count, duration) after switch completes
-- [ ] T019 [US1] Add logging for all window filtering operations with debug details (window IDs, projects, workspaces)
+- [X] T019 [US1] Add logging for all window filtering operations with debug details (window IDs, projects, workspaces)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - project switches automatically hide/restore windows
 
