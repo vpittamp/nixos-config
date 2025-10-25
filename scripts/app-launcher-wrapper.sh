@@ -96,7 +96,7 @@ fi
 
 # Load application properties
 PARAMETERS=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | .parameters // ""' \
+    '.applications[] | select(.name == $name) | if .parameters then (.parameters | join(" ")) else "" end' \
     "$REGISTRY")
 FALLBACK_BEHAVIOR=$(jq -r --arg name "$APP_NAME" \
     '.applications[] | select(.name == $name) | .fallback_behavior // "skip"' \
