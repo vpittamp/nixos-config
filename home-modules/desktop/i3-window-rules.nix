@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
 # Feature 035: Auto-generate i3 window rules from app-registry.nix
 #
@@ -15,7 +15,7 @@
 
 let
   # Load registry
-  registry = import ./app-registry.nix { inherit config lib; };
+  registry = import ./app-registry.nix { inherit config lib pkgs; };
 
   # Filter for global apps with preferred_workspace
   globalAppsWithWorkspace = lib.filter
