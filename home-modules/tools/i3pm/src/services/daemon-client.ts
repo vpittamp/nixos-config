@@ -208,6 +208,64 @@ export class DaemonClient {
   }
 
   /**
+   * Subscribe to daemon event stream (async iterator)
+   * Yields events as they are broadcast by the daemon
+   */
+  async *subscribeToEvents(): AsyncIterableIterator<{ type: string; data: unknown; timestamp: string }> {
+    if (!this.conn) {
+      throw new DaemonError("Not connected to daemon");
+    }
+
+    // Subscribe to events
+    await this.request("subscribe_events", { subscribe: true });
+
+    // Create text decoder for reading lines
+    const decoder = new TextDecoder();
+    const buffer: Uint8Array[] = [];
+    let partialLine = "";
+
+    try {
+      // Read incoming messages (event broadcasts)
+      for await (const chunk of this.conn.readable) {
+        // Decode chunk and split by newlines
+        const text = partialLine + decoder.decode(chunk);
+        const lines = text.split("\n");
+
+        // Keep the last incomplete line
+        partialLine = lines.pop() || "";
+
+        // Process complete lines
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          try {
+            const message = JSON.parse(line);
+
+            // Broadcast events have 'event' field, not 'result' or 'error'
+            if (message.event) {
+              yield {
+                type: message.event.type || "unknown",
+                data: message.event.data || {},
+                timestamp: message.event.timestamp || new Date().toISOString(),
+              };
+            }
+          } catch (error) {
+            // Ignore parse errors for now (might be fragmented JSON)
+            continue;
+          }
+        }
+      }
+    } finally {
+      // Unsubscribe when done
+      try {
+        await this.request("subscribe_events", { subscribe: false });
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+  }
+
+  /**
    * Ping daemon (health check)
    */
   async ping(): Promise<boolean> {

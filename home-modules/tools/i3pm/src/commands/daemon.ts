@@ -54,6 +54,29 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
   const client = new DaemonClient();
   await client.connect();
 
+  // Follow mode: Subscribe to event stream
+  if (flags.follow) {
+    try {
+      console.error("Subscribing to daemon events... (press Ctrl+C to stop)");
+
+      for await (const event of client.subscribeToEvents()) {
+        if (flags.json) {
+          console.log(JSON.stringify(event));
+        } else {
+          console.log(`${event.timestamp} [${event.type}] ${JSON.stringify(event.data)}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Subscription error: ${error instanceof Error ? error.message : String(error)}`);
+      client.disconnect();
+      return 1;
+    }
+
+    client.disconnect();
+    return 0;
+  }
+
+  // Default mode: Get recent events
   const limit = flags.limit ? Number(flags.limit) : 20;
   const eventType = flags.type ? String(flags.type) : undefined;
 
