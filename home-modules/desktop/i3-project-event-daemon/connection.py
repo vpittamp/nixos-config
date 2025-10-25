@@ -178,7 +178,8 @@ class ResilientI3Connection:
 
                     # Mark the window in i3 using con_id selector (more reliable than stale container reference)
                     mark = f"project:{project_name}"
-                    await self.conn.command(f'[con_id="{container.id}"] mark --add "{mark}"')
+                    result = await self.conn.command(f'[con_id="{container.id}"] mark --add "{mark}"')
+                    logger.debug(f"Mark command result for window {container.window}: {result}")
 
                     # Add to state tracking
                     window_info = WindowInfo(
