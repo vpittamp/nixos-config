@@ -221,7 +221,6 @@ export class DaemonClient {
 
     // Create text decoder for reading lines
     const decoder = new TextDecoder();
-    const buffer: Uint8Array[] = [];
     let partialLine = "";
 
     try {

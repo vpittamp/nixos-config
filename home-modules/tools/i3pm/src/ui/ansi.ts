@@ -6,7 +6,6 @@
  */
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 // ============================================================================
 // ANSI Escape Sequences
