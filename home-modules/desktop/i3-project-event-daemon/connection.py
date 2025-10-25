@@ -176,9 +176,9 @@ class ResilientI3Connection:
                 if project_name:
                     logger.info(f"Marking pre-existing window {container.window} ({container.window_class}) with project:{project_name}")
 
-                    # Mark the window in i3
+                    # Mark the window in i3 using con_id selector (more reliable than stale container reference)
                     mark = f"project:{project_name}"
-                    await container.command(f'mark --add "{mark}"')
+                    await self.conn.command(f'[con_id="{container.id}"] mark --add "{mark}"')
 
                     # Add to state tracking
                     window_info = WindowInfo(
