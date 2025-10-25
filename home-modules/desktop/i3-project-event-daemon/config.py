@@ -184,9 +184,14 @@ def load_active_project(config_file: Path) -> Optional[ActiveProjectState]:
         with open(config_file, "r") as f:
             data = json.load(f)
 
+        # Handle null activated_at (Feature 035: can be null when no project active)
+        activated_at = None
+        if data.get("activated_at") is not None:
+            activated_at = datetime.fromisoformat(data["activated_at"])
+
         state = ActiveProjectState(
             project_name=data.get("project_name"),
-            activated_at=datetime.fromisoformat(data["activated_at"]),
+            activated_at=activated_at,
             previous_project=data.get("previous_project"),
         )
 

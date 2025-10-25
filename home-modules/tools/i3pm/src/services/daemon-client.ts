@@ -65,7 +65,7 @@ export class DaemonClient {
 
   constructor(socketPath?: string) {
     const runDir = Deno.env.get("XDG_RUNTIME_DIR") || `/run/user/${Deno.uid()}`;
-    this.socketPath = socketPath || path.join(runDir, "i3-project-event-daemon.sock");
+    this.socketPath = socketPath || path.join(runDir, "i3-project-daemon", "ipc.sock");
   }
 
   /**

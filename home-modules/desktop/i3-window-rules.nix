@@ -14,13 +14,13 @@
 # - Removes need for hardcoded window rules in i3 config
 
 let
-  # Load registry
-  registry = import ./app-registry.nix { inherit config lib pkgs; };
+  # Load validated application definitions (shared data file)
+  applications = import ./app-registry-data.nix { inherit lib; };
 
   # Filter for global apps with preferred_workspace
   globalAppsWithWorkspace = lib.filter
     (app: app.scope == "global" && app ? preferred_workspace)
-    registry.applications;
+    applications;
 
   # Generate for_window rule for each app
   generateWindowRule = app:
@@ -39,11 +39,10 @@ in
   home.file.".config/i3/window-rules-generated.conf" = {
     text = ''
       # Auto-generated from app-registry.nix (Feature 035)
-      # Generated: ${builtins.toString builtins.currentTime}
       # Rules: ${toString ruleCount} global applications with preferred workspaces
       #
       # DO NOT EDIT - Changes will be overwritten on next rebuild
-      # To modify: Edit app-registry.nix and rebuild
+      # To modify: Edit app-registry-data.nix and rebuild
 
       ${windowRules}
     '';
