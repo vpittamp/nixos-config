@@ -324,12 +324,11 @@ in
     default = "Google"
   '';
 
-  # Feature 034/035: Add i3pm applications directory to XDG_DATA_DIRS
-  # This makes Walker/Elephant show only our curated app registry
-  # Use systemd.user.sessionVariables to affect graphical session (not just shells)
-  systemd.user.sessionVariables = {
-    XDG_DATA_DIRS = "${i3pmAppsDir}:\${XDG_DATA_DIRS}";
-  };
+  # Feature 034/035: Isolate Walker/Elephant to show ONLY i3pm registry apps
+  # By setting XDG_DATA_DIRS to ONLY the i3pm-applications directory,
+  # Walker/Elephant won't see any system applications
+  # NOTE: This only affects Walker/Elephant service, not the entire session
+  # (Elephant service has its own isolated XDG_DATA_DIRS below)
 
   # Feature 035: Elephant service without XDG isolation
   # Uses standard Elephant binary instead of isolated wrapper
@@ -342,15 +341,18 @@ in
       ConditionEnvironment = "DISPLAY";
     };
     Service = {
-      # Feature 035: Direct Elephant invocation (no XDG isolation)
+      # Feature 034/035: Elephant with isolated XDG environment
+      # Set XDG_DATA_DIRS to ONLY i3pm-applications directory
+      # This ensures Elephant/Walker only see our curated 21 apps
       ExecStart = "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant";
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)
-      # Feature 034/035: Include i3pm apps directory in XDG_DATA_DIRS
+      # Feature 034/035: Isolate XDG_DATA_DIRS to ONLY i3pm apps (no system apps)
       Environment = [
         "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
-        "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.profileDirectory}/share:/run/current-system/sw/share"
+        "XDG_DATA_HOME=${i3pmAppsDir}"
+        "XDG_DATA_DIRS=${i3pmAppsDir}"
         "XDG_RUNTIME_DIR=%t"
       ];
     };
