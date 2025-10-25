@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.1.0";  # Feature 033: Declarative workspace-to-monitor mapping
+    version = "1.2.0";  # Feature 037: Unified project-scoped window management
     src = daemonSrc;
 
     installPhase = ''
