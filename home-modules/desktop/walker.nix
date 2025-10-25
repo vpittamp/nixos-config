@@ -1,5 +1,79 @@
 { config, lib, pkgs, inputs, ... }:
 
+let
+  walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
+    #!/usr/bin/env bash
+    # Launch a Ghostty terminal window with Neovim for a Walker-selected file path
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      echo "walker-open-in-nvim: missing file argument" >&2
+      exit 1
+    fi
+
+    RAW_PATH="$1"
+
+    decode_output="$(${pkgs.python3}/bin/python3 - <<'PY' "$RAW_PATH"
+import sys
+from urllib.parse import urlsplit, unquote
+
+value = sys.argv[1]
+
+if value.startswith("file://"):
+    parsed = urlsplit(value)
+    netloc = parsed.netloc
+    path = parsed.path or ""
+    if netloc and netloc not in ("", "localhost"):
+        fs_path = f"/{netloc}{path}"
+    else:
+        fs_path = path
+    fragment = parsed.fragment or ""
+else:
+    fs_path = value
+    fragment = ""
+
+print(unquote(fs_path))
+print(fragment)
+PY
+    )"
+
+    IFS=$'\n' read -r TARGET_PATH TARGET_FRAGMENT <<< "$decode_output"
+
+    if [ -z "$TARGET_PATH" ]; then
+      echo "walker-open-in-nvim: unable to parse path from '$RAW_PATH'" >&2
+      exit 1
+    fi
+
+    case "$TARGET_PATH" in
+      "~")
+        TARGET_PATH="$HOME"
+        ;;
+      "~/"*)
+        TARGET_PATH="$HOME/''${TARGET_PATH:2}"
+        ;;
+    esac
+
+    if [[ "$TARGET_PATH" != /* ]]; then
+      TARGET_PATH="$PWD/$TARGET_PATH"
+    fi
+
+    LINE_ARG=""
+    if [ -n "$TARGET_FRAGMENT" ]; then
+      if [[ "$TARGET_FRAGMENT" =~ ^L?([0-9]+)$ ]]; then
+        LINE_ARG="+''${BASH_REMATCH[1]}"
+      fi
+    fi
+
+    if [ -n "$LINE_ARG" ]; then
+      exec ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim-unwrapped}/bin/nvim "$LINE_ARG" "$TARGET_PATH"
+    else
+      exec ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim-unwrapped}/bin/nvim "$TARGET_PATH"
+    fi
+  '';
+
+  walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
+in
+
 # Walker Application Launcher
 #
 # Walker is a modern GTK4-based application launcher with:
@@ -118,6 +192,10 @@
     */
   };
 
+  home.packages = [
+    walkerOpenInNvim
+  ];
+
   # Override the walker config file to add X11 settings not supported by the module
   xdg.configFile."walker/config.toml" = lib.mkForce {
     text = ''
@@ -137,6 +215,18 @@
         runner = true
         symbols = true
         websearch = true
+
+        # Applications module configuration
+        # Only show apps from our custom registry (Feature 034)
+        [applications]
+        # Only scan our custom i3pm directory, not system-wide applications
+        paths = ["${config.home.homeDirectory}/.local/share/applications/i3pm"]
+        # Exclude system directories
+        exclude = [
+          "/usr/share/applications",
+          "/var/lib/flatpak/exports/share/applications",
+          "${config.home.homeDirectory}/.local/share/applications/*.desktop"
+        ]
 
         [[plugins]]
         cmd = "sesh connect --switch %RESULT%"
@@ -197,13 +287,13 @@
         bind = "shift Return"
         label = "run in terminal"
 
-        # File provider actions - open files in nvim
+        # File provider actions - open files in Ghostty + Neovim
         [[providers.actions.files]]
-        action = "runterminal nvim %RESULT%"
+        action = "run ${walkerOpenInNvimCmd} %RESULT%"
         after = "Close"
         bind = "Return"
         default = true
-        label = "open in nvim"
+        label = "open in ghostty (nvim)"
 
         [[providers.actions.files]]
         action = "open"

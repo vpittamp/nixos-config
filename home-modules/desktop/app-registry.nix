@@ -355,8 +355,9 @@ let
     '';
 
   # Generate home.file entries for each .desktop file
+  # Use custom directory so Walker only shows our apps (not system-wide apps)
   desktopFileEntries = builtins.listToAttrs (map (app: {
-    name = ".local/share/applications/${app.name}.desktop";
+    name = ".local/share/applications/i3pm/${app.name}.desktop";
     value.text = mkDesktopFile app;
   }) validated);
 
