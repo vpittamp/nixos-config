@@ -24,7 +24,7 @@ export async function layoutCommand(args: string[], flags: Record<string, unknow
         return 1;
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
 }
@@ -41,7 +41,7 @@ async function saveLayout(args: string[], flags: Record<string, unknown>): Promi
 
   // Verify project exists
   const projectManager = new ProjectManager();
-  const project = await projectManager.load(projectName);
+  await projectManager.load(projectName); // Just verify it exists
 
   const engine = new LayoutEngine();
   console.log(`\nCapturing layout for project '${projectName}'...\n`);

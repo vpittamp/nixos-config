@@ -20,7 +20,7 @@ import * as path from "@std/path";
 import { exists } from "@std/fs";
 
 export class ProjectError extends Error {
-  constructor(message: string, public cause?: Error) {
+  constructor(message: string, public override cause?: Error) {
     super(message);
     this.name = "ProjectError";
   }

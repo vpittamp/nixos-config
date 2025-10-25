@@ -12,7 +12,7 @@ import { DaemonClient } from "./daemon-client.ts";
 import * as path from "@std/path";
 
 export class LayoutError extends Error {
-  constructor(message: string, public cause?: Error) {
+  constructor(message: string, public override cause?: Error) {
     super(message);
     this.name = "LayoutError";
   }
@@ -301,7 +301,10 @@ export class LayoutEngine {
       if (error instanceof Deno.errors.NotFound) {
         throw new LayoutError(`Layout '${layoutName || projectName}' not found`);
       }
-      throw new LayoutError(`Failed to load layout: ${error.message}`, error);
+      throw new LayoutError(
+        `Failed to load layout: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
@@ -433,7 +436,7 @@ export class LayoutEngine {
         // Cleanup process
         await process.status;
       } catch (error) {
-        failed.push(`Failed to launch ${window.registry_app_id}: ${error.message}`);
+        failed.push(`Failed to launch ${window.registry_app_id}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 

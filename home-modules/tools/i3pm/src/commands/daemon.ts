@@ -21,7 +21,7 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
         return 1;
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
 }

@@ -8,7 +8,7 @@
 import * as path from "@std/path";
 
 export class DaemonError extends Error {
-  constructor(message: string, public code?: number, public cause?: Error) {
+  constructor(message: string, public code?: number, public override cause?: Error) {
     super(message);
     this.name = "DaemonError";
   }
@@ -82,7 +82,7 @@ export class DaemonClient {
       throw new DaemonError(
         `Failed to connect to daemon at ${this.socketPath}. Is the daemon running?`,
         -1,
-        error,
+        error instanceof Error ? error : undefined,
       );
     }
   }

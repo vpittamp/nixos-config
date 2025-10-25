@@ -38,28 +38,29 @@ async function main(): Promise<number> {
   // Extract command and subcommand
   const [command, ...rest] = args._;
   const commandStr = String(command);
+  const restArgs = rest.map(String); // Convert to string[] from (string | number)[]
 
   try {
     switch (commandStr) {
       case "apps":
         const { appsCommand } = await import("./commands/apps.ts");
-        return await appsCommand(rest, args);
+        return await appsCommand(restArgs, args);
 
       case "project":
         const { projectCommand } = await import("./commands/project.ts");
-        return await projectCommand(rest, args);
+        return await projectCommand(restArgs, args);
 
       case "layout":
         const { layoutCommand } = await import("./commands/layout.ts");
-        return await layoutCommand(rest, args);
+        return await layoutCommand(restArgs, args);
 
       case "windows":
         const { windowsCommand } = await import("./commands/windows.ts");
-        return await windowsCommand(rest, args);
+        return await windowsCommand(restArgs, args);
 
       case "daemon":
         const { daemonCommand } = await import("./commands/daemon.ts");
-        return await daemonCommand(rest, args);
+        return await daemonCommand(restArgs, args);
 
       default:
         console.error(`Unknown command: ${commandStr}`);
@@ -70,7 +71,7 @@ async function main(): Promise<number> {
     if (args.verbose) {
       console.error("Error:", error);
     } else {
-      console.error(`Error: ${error.message}`);
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     }
     return 1;
   }

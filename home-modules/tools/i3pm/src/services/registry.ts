@@ -9,7 +9,7 @@ import { ApplicationRegistry, isApplicationRegistry, RegistryApplication } from 
 import * as path from "@std/path";
 
 export class RegistryError extends Error {
-  constructor(message: string, public cause?: Error) {
+  constructor(message: string, public override cause?: Error) {
     super(message);
     this.name = "RegistryError";
   }

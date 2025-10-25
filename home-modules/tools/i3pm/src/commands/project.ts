@@ -4,7 +4,6 @@
  */
 
 import { ProjectManager } from "../services/project-manager.ts";
-import { DaemonClient } from "../services/daemon-client.ts";
 
 export async function projectCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
@@ -32,7 +31,7 @@ export async function projectCommand(args: string[], flags: Record<string, unkno
         return 1;
     }
   } catch (error) {
-    console.error(`Error: ${error.message}`);
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
 }

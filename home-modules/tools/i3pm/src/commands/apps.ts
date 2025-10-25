@@ -4,7 +4,6 @@
  */
 
 import { RegistryService } from "../services/registry.ts";
-import { RegistryApplication } from "../models/registry.ts";
 
 export async function appsCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
