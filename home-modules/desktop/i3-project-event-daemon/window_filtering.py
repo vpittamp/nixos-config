@@ -264,12 +264,60 @@ class WorkspaceTracker:
             ]
 
 
-async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None) -> Dict[str, str]:
+async def _get_window_pid_via_xprop(window_xid: int) -> Optional[int]:
+    """Get process ID for window using xprop as fallback.
+
+    Args:
+        window_xid: X11 window ID
+
+    Returns:
+        Process ID or None if not available
+
+    Note:
+        Uses subprocess.run to execute xprop command.
+        Performance: ~10-20ms per call (cached by OS).
+    """
+    try:
+        # Run xprop in subprocess (i3 process ensures xprop is available)
+        proc = await asyncio.create_subprocess_exec(
+            "xprop", "-id", str(window_xid), "_NET_WM_PID",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+
+        if proc.returncode != 0:
+            logger.debug(f"xprop failed for window {window_xid}: {stderr.decode()}")
+            return None
+
+        # Parse output: "_NET_WM_PID(CARDINAL) = 12345"
+        output = stdout.decode().strip()
+        if " = " in output:
+            pid_str = output.split(" = ")[1]
+            return int(pid_str)
+
+        logger.debug(f"Could not parse xprop output for window {window_xid}: {output}")
+        return None
+
+    except asyncio.TimeoutError:
+        logger.warning(f"xprop timeout for window {window_xid}")
+        return None
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Failed to parse PID from xprop output: {e}")
+        return None
+    except FileNotFoundError:
+        logger.error("xprop command not found. Install x11-utils or xorg-xprop package.")
+        return None
+
+
+async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_xid: Optional[int] = None) -> Dict[str, str]:
     """Read I3PM_* environment variables from window's process.
 
     Args:
         window_id: i3 container ID (for logging)
-        pid: Process ID (required)
+        pid: Process ID (optional, will use xprop fallback if None)
+        window_xid: X11 window ID (required if pid is None for xprop fallback)
 
     Returns:
         Dict of I3PM_* environment variables (empty dict if process not found)
@@ -280,10 +328,25 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None) -> Dict
         I3PM_PROJECT_NAME: Project name (empty string = global)
         I3PM_SCOPE: "scoped" or "global"
         ... (see Feature 035 data-model.md)
+
+    Note:
+        i3ipc library's node.pid is unreliable (often returns None).
+        When pid is None, uses xprop to query _NET_WM_PID property via X11 window ID.
     """
+    # If no PID from i3, try xprop fallback
     if not pid:
-        logger.warning(f"Window {window_id} has no PID, treating as global")
-        return {}
+        logger.debug(f"Window {window_id} missing i3 PID, window_xid={window_xid}")
+        if window_xid:
+            logger.info(f"Window {window_id} has no i3 PID, trying xprop fallback for X11 window {window_xid}")
+            pid = await _get_window_pid_via_xprop(window_xid)
+            if pid:
+                logger.info(f"✓ Got PID {pid} via xprop for window {window_id}")
+            else:
+                logger.warning(f"Window {window_id} (X11 {window_xid}) has no PID via xprop, treating as global")
+                return {}
+        else:
+            logger.warning(f"Window {window_id} has no PID and no X11 window ID (i3_id={window_id}, xid={window_xid}), treating as global")
+            return {}
 
     environ_path = Path(f"/proc/{pid}/environ")
 
@@ -453,8 +516,8 @@ async def hide_windows_batch(
 
                 find_window(tree)
 
-                if window_con and window_con.pid:
-                    i3pm_env = await get_window_i3pm_env(window_id, window_con.pid)
+                if window_con:
+                    i3pm_env = await get_window_i3pm_env(window_id, window_con.pid, window_con.window)
                     project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
                     app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
                 else:

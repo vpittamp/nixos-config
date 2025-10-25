@@ -263,7 +263,7 @@ async def _switch_project(
 
             async def collect_old_project_windows(con):
                 if con.window and hasattr(con, 'id'):
-                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
+                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid, con.window)
                     window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
                     scope = i3pm_env.get("I3PM_SCOPE", "global")
 
@@ -290,7 +290,7 @@ async def _switch_project(
         window_ids_to_restore = []
 
         for window in scratchpad_windows:
-            i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+            i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
             window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
 
             if window_project == project_name:
@@ -973,7 +973,7 @@ async def on_window_move(
             from . import window_filtering
 
             # Read I3PM environment variables to get project info
-            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, container.pid)
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, container.pid, container.window)
             project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
             app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
 

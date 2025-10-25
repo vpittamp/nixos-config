@@ -2613,7 +2613,7 @@ class IPCServer:
             async def collect_project_windows(con):
                 if con.window and hasattr(con, 'window_id'):
                     # Read I3PM_PROJECT_NAME from /proc
-                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
+                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid, con.window)
                     window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
                     scope = i3pm_env.get("I3PM_SCOPE", "global")
 
@@ -2701,7 +2701,7 @@ class IPCServer:
             # Find windows matching project
             window_ids_to_restore = []
             for window in scratchpad_windows:
-                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
                 window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
 
                 if window_project == project_name:
@@ -2883,7 +2883,7 @@ class IPCServer:
 
             for window in scratchpad_windows:
                 # Read I3PM_* environment variables
-                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
                 project_name = i3pm_env.get("I3PM_PROJECT_NAME", "(unknown)")
                 app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
 
@@ -3018,7 +3018,7 @@ class IPCServer:
             is_visible = window_id not in [w.id for w in scratchpad_windows]
 
             # Read I3PM_* environment variables
-            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, window.pid)
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, window.pid, window.window)
 
             # Get tracking info
             tracking_info = self.workspace_tracker.windows.get(window_id, {}) if self.workspace_tracker else {}
