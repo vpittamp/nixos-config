@@ -348,15 +348,27 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_
             logger.warning(f"Window {window_id} has no PID and no X11 window ID (i3_id={window_id}, xid={window_xid}), treating as global")
             return {}
 
-    environ_path = Path(f"/proc/{pid}/environ")
+    environ_path = f"/proc/{pid}/environ"
 
     try:
-        # Read null-separated environment variables
-        with environ_path.open("rb") as f:
-            environ_bytes = f.read()
+        # Use sudo cat to read environ (required for cross-namespace access)
+        proc = await asyncio.create_subprocess_exec(
+            "sudo", "cat", environ_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+
+        if proc.returncode != 0:
+            if b"No such file or directory" in stderr:
+                logger.debug(f"Process {pid} for window {window_id} not found, treating as global")
+            else:
+                logger.warning(f"Failed to read {environ_path} for window {window_id}: {stderr.decode()}")
+            return {}
 
         # Parse environment (null-separated key=value pairs)
-        environ_str = environ_bytes.decode("utf-8", errors="ignore")
+        environ_str = stdout.decode("utf-8", errors="ignore")
         env_pairs = [item.split("=", 1) for item in environ_str.split("\0") if "=" in item]
         env_vars = dict(env_pairs)
 
@@ -368,9 +380,8 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_
 
         return i3pm_vars
 
-    except FileNotFoundError:
-        # Process terminated
-        logger.debug(f"Process {pid} for window {window_id} not found, treating as global")
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout reading environ for PID {pid}")
         return {}
 
     except Exception as e:

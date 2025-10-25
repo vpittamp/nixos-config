@@ -72,7 +72,19 @@
   };
 
   # Allow sudo without password for wheel group
-  security.sudo.wheelNeedsPassword = false;
+  security.sudo = {
+    wheelNeedsPassword = false;
+
+    # Feature 037: Allow i3pm daemon to read /proc/{pid}/environ for window filtering
+    extraRules = [{
+      users = [ "vpittamp" ];
+      commands = [{
+        command = "${pkgs.coreutils}/bin/cat";
+        options = [ "NOPASSWD" ];
+        args = [ "/proc/*/environ" ];
+      }];
+    }];
+  };
 
   # Core Nix configuration
   nix = {
