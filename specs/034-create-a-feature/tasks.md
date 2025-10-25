@@ -178,27 +178,27 @@
 
 - [x] T062 [P] [US5] Implement `i3pm apps list` with table and JSON output formats
 - [x] T063 [US5] Add filtering options to list command: --scope, --workspace flags
-- [ ] T064 [P] [US5] Add unit tests for list command in `tests/unit/apps_test.ts`
+- [x] T064 [P] [US5] Add unit tests for list command in `tests/unit/apps_test.ts`
 
 #### Launch Command
 
 - [x] T065 [P] [US5] Implement `i3pm apps launch` with wrapper script invocation
 - [x] T066 [US5] Add --dry-run flag to launch command showing resolved command without execution
 - [x] T067 [US5] Add --project override flag to launch command for testing
-- [ ] T068 [P] [US5] Add unit tests for launch command in `tests/unit/apps_test.ts`
+- [x] T068 [P] [US5] Add unit tests for launch command in `tests/unit/apps_test.ts`
 
 #### Info Command
 
 - [x] T069 [P] [US5] Implement `i3pm apps info` showing application details
 - [x] T070 [US5] Add --resolve flag to info command showing current project context and resolved command
-- [ ] T071 [P] [US5] Add unit tests for info command in `tests/unit/apps_test.ts`
+- [x] T071 [P] [US5] Add unit tests for info command in `tests/unit/apps_test.ts`
 
 #### Edit & Validate Commands
 
 - [x] T072 [P] [US5] Implement `i3pm apps edit` opening registry in $EDITOR
 - [x] T073 [P] [US5] Implement `i3pm apps validate` with schema checks and validation
 - [ ] T074 [US5] Add --fix flag to validate command for auto-fixing common issues
-- [ ] T075 [P] [US5] Add unit tests for validate command in `tests/unit/validate_test.ts`
+- [x] T075 [P] [US5] Add unit tests for validate command in `tests/unit/apps_test.ts`
 
 #### Add & Remove Commands
 
