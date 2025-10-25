@@ -4,30 +4,27 @@ let
   # Feature 035: Updated for new i3pm TypeScript CLI structure
   version = "2.0.0";
 
-  # i3pm Deno CLI - Compiled binary (Feature 035 registry-centric rewrite)
+  # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
     pname = "i3pm";
     inherit version;
 
     src = ./i3pm;
 
-    nativeBuildInputs = [ pkgs.deno ];
-
-    # Allow network access for Deno to fetch dependencies
-    __noChroot = true;
-
-    buildPhase = ''
-      # Compile TypeScript to standalone binary
-      mkdir -p dist
-      ${pkgs.deno}/bin/deno compile \
-        --allow-all \
-        --output dist/i3pm \
-        src/main.ts
-    '';
+    dontBuild = true;
 
     installPhase = ''
+      mkdir -p $out/share/i3pm
+      cp -r * $out/share/i3pm/
+
       mkdir -p $out/bin
-      cp dist/i3pm $out/bin/i3pm
+      cat > $out/bin/i3pm <<EOF
+#!/usr/bin/env bash
+exec ${pkgs.deno}/bin/deno run \\
+  --no-lock \\
+  -A \\
+  $out/share/i3pm/src/main.ts "\$@"
+EOF
       chmod +x $out/bin/i3pm
     '';
 
