@@ -22,9 +22,9 @@
   programs.walker = {
     enable = true;
 
-    # Enable runAsService - The module creates elephant and walker services
-    # We'll override them below to work in X11 instead of Wayland
-    runAsService = true;
+    # Disable runAsService - Walker has issues with GApplication DBus in X11/XRDP
+    # Instead, invoke Walker directly which works fine
+    runAsService = false;
 
     # NOTE: config generation disabled - we override with xdg.configFile below to add X11 settings
     # Walker configuration with sesh plugin integration (Feature 034)
@@ -199,10 +199,9 @@
     '';
   };
 
-  # Override Elephant service for X11 (XRDP) environment
-  # Default service requires WAYLAND_DISPLAY, we need DISPLAY instead
-  # Fix for GitHub issue #69: Add PATH so Elephant can launch programs
-  systemd.user.services.elephant = lib.mkForce {
+  # Service mode disabled - using direct invocation instead
+  # Elephant service still needed for Walker to function
+  systemd.user.services.elephant = {
     Unit = {
       Description = "Elephant launcher backend (X11)";
       PartOf = [ "graphical-session.target" ];
@@ -226,28 +225,6 @@
     };
   };
 
-  # Override Walker service for X11 (XRDP) environment
-  # Default service requires WAYLAND_DISPLAY, we need DISPLAY instead
-  systemd.user.services.walker = lib.mkForce {
-    Unit = {
-      Description = "Walker application launcher (X11)";
-      PartOf = [ "graphical-session.target" ];
-      After = [ "graphical-session.target" "elephant.service" ];
-      Requires = [ "elephant.service" ];
-      # Use DISPLAY instead of WAYLAND_DISPLAY
-      ConditionEnvironment = "DISPLAY";
-    };
-    Service = {
-      ExecStart = "${config.programs.walker.package}/bin/walker --gapplication-service";
-      Restart = "on-failure";
-      RestartSec = 1;
-      # Ensure XDG_RUNTIME_DIR is set so Walker can find Elephant socket
-      Environment = [
-        "XDG_RUNTIME_DIR=%t"
-      ];
-    };
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
+  # Walker service disabled - using direct invocation
+  # No service override needed since runAsService = false
 }

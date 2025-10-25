@@ -93,14 +93,15 @@
 
     # Application launcher (Feature 034: Unified launcher with Walker)
     # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)
-    bindsym $mod+d exec ${config.programs.walker.package}/bin/walker
+    # Use GDK_BACKEND=x11 to force X11 backend and avoid Wayland layer shell issues
+    bindsym $mod+d exec env GDK_BACKEND=x11 ${config.programs.walker.package}/bin/walker
     # Alternative: rofi (legacy, commented out)
     # bindsym $mod+d exec ${pkgs.rofi}/bin/rofi -show drun -show-icons
     # FZF fallbacks for specific use cases
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-send-to-window.sh
     # Walker alternative keybinding (Alt+Space for muscle memory)
-    bindsym Mod1+space exec ${config.programs.walker.package}/bin/walker
+    bindsym Mod1+space exec env GDK_BACKEND=x11 ${config.programs.walker.package}/bin/walker
 
     # Keybinding cheatsheet (F1 for help)
     bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
