@@ -419,6 +419,10 @@ class I3ProjectDaemon:
         await self.connection.subscribe_events()
         logger.info("Explicit subscription completed")
 
+        # Feature 037 T038: Perform startup scan to mark pre-existing windows
+        # This must happen AFTER event subscription to ensure mark commands work properly
+        await self.connection.perform_startup_scan()
+
         # Feature 037 T016: Initialize project switch request queue for sequential processing
         from .handlers import initialize_project_switch_queue
         initialize_project_switch_queue(

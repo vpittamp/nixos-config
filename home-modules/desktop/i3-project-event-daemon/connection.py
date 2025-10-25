@@ -123,8 +123,8 @@ class ResilientI3Connection:
             # Rebuild window_map from marks
             await self.state_manager.rebuild_from_marks(tree)
 
-            # Scan and mark windows that don't have marks but have I3PM env vars
-            await self.scan_and_mark_unmarked_windows(tree)
+            # NOTE: scan_and_mark_unmarked_windows() is now called AFTER event subscription
+            # in daemon.py to ensure i3ipc is fully initialized and mark commands work properly
 
             # Rebuild workspace_map
             await self._rebuild_workspaces()
@@ -134,6 +134,24 @@ class ResilientI3Connection:
         except Exception as e:
             logger.error(f"Failed to rebuild state: {e}")
             raise
+
+    async def perform_startup_scan(self) -> None:
+        """Perform startup scan to mark pre-existing windows.
+
+        This should be called AFTER event subscription is established to ensure
+        mark commands work properly.
+        """
+        if not self.conn:
+            logger.error("Cannot perform startup scan: not connected")
+            return
+
+        try:
+            logger.info("Performing startup scan for pre-existing windows...")
+            tree = await self.conn.get_tree()
+            await self.scan_and_mark_unmarked_windows(tree)
+            logger.info("Startup scan complete")
+        except Exception as e:
+            logger.error(f"Failed to perform startup scan: {e}")
 
     async def scan_and_mark_unmarked_windows(self, tree: aio.Con) -> None:
         """Scan all windows and mark unmarked ones based on I3PM environment variables.
