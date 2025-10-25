@@ -177,6 +177,7 @@ in
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
+          "PATH=${pkgs.xorg.xprop}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
         ];
 
         # Logging
