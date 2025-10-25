@@ -206,6 +206,10 @@ class ResilientI3Connection:
                     else:
                         logger.warning(f"Mark command for window {container.window} returned empty result")
 
+                    # Small delay to allow i3 to process the mark and fire window::mark event
+                    # before we mark the next window (prevents race conditions during startup scan)
+                    await asyncio.sleep(0.05)  # 50ms
+
                     # Add to state tracking
                     window_info = WindowInfo(
                         window_id=container.window,
