@@ -202,8 +202,8 @@
 
 #### Add & Remove Commands
 
-- [ ] T076 [P] [US5] Implement `i3pm apps add` in `src/commands/add.ts` with interactive prompts and --non-interactive mode
-- [ ] T077 [P] [US5] Implement `i3pm apps remove` in `src/commands/remove.ts` with confirmation prompt and --force flag
+- [x] T076 [P] [US5] Implement `i3pm apps add` in `src/commands/apps.ts` with interactive prompts and --non-interactive mode
+- [x] T077 [P] [US5] Implement `i3pm apps remove` in `src/commands/apps.ts` with confirmation prompt and --force flag
 
 #### Integration & Testing
 
