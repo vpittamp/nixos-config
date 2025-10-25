@@ -241,12 +241,14 @@ export class DaemonClient {
           try {
             const message = JSON.parse(line);
 
-            // Broadcast events have 'event' field, not 'result' or 'error'
-            if (message.event) {
+            // Daemon broadcasts events as JSON-RPC notifications:
+            // { jsonrpc: "2.0", method: "event_notification", params: {...} }
+            if (message.method === "event_notification" && message.params) {
+              const eventData = message.params;
               yield {
-                type: message.event.type || "unknown",
-                data: message.event.data || {},
-                timestamp: message.event.timestamp || new Date().toISOString(),
+                type: eventData.event_type || "unknown",
+                data: eventData,
+                timestamp: eventData.timestamp || new Date().toISOString(),
               };
             }
           } catch (error) {
