@@ -7,6 +7,8 @@ This module defines all entities and their relationships:
 - WorkspaceLayout: Layout for a single workspace
 - LayoutWindow: Window configuration in a layout
 - AppClassification: Global app scoping configuration
+- WindowState: Window workspace tracking for hiding/restoration (Feature 037)
+- ProjectWindows: Project window collection for visibility management (Feature 037)
 - TUIState: Runtime TUI state (not persisted)
 """
 
@@ -576,6 +578,120 @@ class AppClassification:
                 return scope == "scoped"
 
         return False  # Default to global
+
+
+@dataclass
+class WindowState:
+    """Persistent state for window workspace tracking and restoration.
+
+    This model supports Feature 037 (Unified Project-Scoped Window Management)
+    by tracking window workspace locations for restoration after hiding.
+    """
+
+    window_id: int  # i3 container ID
+    workspace_number: int  # Workspace where window was/should be (1-70)
+    floating: bool  # True if floating, False if tiled
+    project_name: str  # Project this window belongs to
+    app_name: str  # Application name from registry (e.g., "vscode")
+    window_class: str  # X11 window class (e.g., "Code")
+    last_seen: float  # Unix timestamp of last state update
+
+    def __post_init__(self):
+        """Validate window state."""
+        if not (1 <= self.workspace_number <= 70):
+            raise ValueError(f"Workspace number must be 1-70, got {self.workspace_number}")
+        if self.last_seen < 0:
+            raise ValueError("last_seen must be a positive Unix timestamp")
+
+    def to_json(self) -> dict:
+        """Serialize to JSON."""
+        return {
+            "workspace_number": self.workspace_number,
+            "floating": self.floating,
+            "project_name": self.project_name,
+            "app_name": self.app_name,
+            "window_class": self.window_class,
+            "last_seen": self.last_seen,
+        }
+
+    @classmethod
+    def from_json(cls, window_id: int, data: dict) -> "WindowState":
+        """Deserialize from JSON.
+
+        Args:
+            window_id: i3 container ID (stored as dict key, not in JSON value)
+            data: JSON data for window state
+
+        Returns:
+            WindowState instance
+        """
+        return cls(
+            window_id=window_id,
+            workspace_number=data["workspace_number"],
+            floating=data["floating"],
+            project_name=data["project_name"],
+            app_name=data["app_name"],
+            window_class=data["window_class"],
+            last_seen=data["last_seen"],
+        )
+
+
+@dataclass
+class ProjectWindows:
+    """Collection of windows grouped by visibility state for a specific project.
+
+    This model supports Feature 037 by providing a structured view of
+    visible and hidden windows for status display and bulk operations.
+    """
+
+    project_name: str  # Project identifier
+    visible: List[WindowState] = field(default_factory=list)  # Windows on workspaces
+    hidden: List[WindowState] = field(default_factory=list)  # Windows in scratchpad
+
+    @property
+    def total_count(self) -> int:
+        """Total number of windows (visible + hidden)."""
+        return len(self.visible) + len(self.hidden)
+
+    def filter_by_scope(self, scope: str) -> List[WindowState]:
+        """Filter windows by scope (scoped or global).
+
+        Args:
+            scope: "scoped" or "global"
+
+        Returns:
+            List of windows matching the scope filter
+
+        Note: This requires reading I3PM_SCOPE from window environment.
+              Implementation should be done in daemon or CLI code.
+        """
+        # This is a placeholder - actual implementation needs I3PM_SCOPE
+        # from /proc/<pid>/environ which should be done at query time
+        return self.visible + self.hidden
+
+    def to_json(self) -> dict:
+        """Serialize to JSON."""
+        return {
+            "project_name": self.project_name,
+            "visible": [w.to_json() for w in self.visible],
+            "hidden": [w.to_json() for w in self.hidden],
+            "total_count": self.total_count,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -> "ProjectWindows":
+        """Deserialize from JSON."""
+        return cls(
+            project_name=data["project_name"],
+            visible=[
+                WindowState.from_json(i, w)
+                for i, w in enumerate(data.get("visible", []))
+            ],
+            hidden=[
+                WindowState.from_json(i, w)
+                for i, w in enumerate(data.get("hidden", []))
+            ],
+        )
 
 
 @dataclass
