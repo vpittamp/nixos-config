@@ -326,8 +326,9 @@ in
 
   # Feature 034/035: Add i3pm applications directory to XDG_DATA_DIRS
   # This makes Walker/Elephant show only our curated app registry
-  home.sessionVariables = {
-    XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
+  # Use systemd.user.sessionVariables to affect graphical session (not just shells)
+  systemd.user.sessionVariables = {
+    XDG_DATA_DIRS = "${i3pmAppsDir}:\${XDG_DATA_DIRS}";
   };
 
   # Feature 035: Elephant service without XDG isolation
