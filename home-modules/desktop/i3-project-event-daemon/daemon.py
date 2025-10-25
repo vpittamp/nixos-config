@@ -322,9 +322,10 @@ class I3ProjectDaemon:
         # i3ipc.aio will call these with (conn, event) and they'll forward to our handlers
 
         # USER STORY 1: Project switching via tick events
+        # Feature 037: Pass workspace_tracker for window filtering
         self.connection.subscribe(
             "tick",
-            partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir, event_buffer=self.event_buffer)
+            partial(on_tick, state_manager=self.state_manager, config_dir=self.config_dir, event_buffer=self.event_buffer, workspace_tracker=self.workspace_tracker)
         )
 
         # USER STORY 2: Automatic window tracking (Feature 021: T023 - pass window_rules getter)

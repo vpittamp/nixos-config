@@ -73,7 +73,7 @@
   - Updates window-workspace-map.json with restored positions
   - Returns list of restorations with fallback indicators
 - [X] T013 [US1] Implement `project.switchWithFiltering` JSON-RPC method in daemon that combines hide + restore operations with single i3 tree query for performance
-- [ ] T014 [US1] Modify daemon's `handle_tick()` event handler to detect project switch tick events and automatically call `project.switchWithFiltering`
+- [X] T014 [US1] Modify daemon's `handle_tick()` event handler to detect project switch tick events and automatically call `project.switchWithFiltering`
 - [X] T015 [US1] Add error handling for partial failures (continue processing remaining windows when individual window operations fail)
 - [ ] T016 [US1] Implement request queue in daemon to handle rapid project switches sequentially using asyncio.Queue
 - [ ] T017 [US1] Extend daemon client in `home-modules/tools/i3pm/daemon_client.py` with new JSON-RPC methods: hideWindows, restoreWindows, switchWithFiltering

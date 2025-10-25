@@ -39,6 +39,7 @@ async def on_tick(
     state_manager: StateManager,
     config_dir: Path,
     event_buffer: Optional["EventBuffer"] = None,
+    workspace_tracker=None,  # Feature 037: Window filtering
 ) -> None:
     """Handle tick events for project switch notifications (T007).
 
@@ -48,6 +49,7 @@ async def on_tick(
         state_manager: State manager instance
         config_dir: Configuration directory path
         event_buffer: Event buffer for recording events (Feature 017)
+        workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -64,7 +66,7 @@ async def on_tick(
             if len(parts) == 3 and parts[1] == "switch":
                 # Format: project:switch:<name>
                 project_name = parts[2]
-                await _switch_project(project_name, state_manager, conn, config_dir)
+                await _switch_project(project_name, state_manager, conn, config_dir, workspace_tracker)
             elif len(parts) == 2:
                 # Format: project:clear or project:none or project:reload
                 action = parts[1]
@@ -114,7 +116,11 @@ async def on_tick(
 
 
 async def _switch_project(
-    project_name: str, state_manager: StateManager, conn: aio.Connection, config_dir: Path
+    project_name: str,
+    state_manager: StateManager,
+    conn: aio.Connection,
+    config_dir: Path,
+    workspace_tracker=None,  # Feature 037: Window filtering
 ) -> None:
     """Switch to a new project (hide old, show new).
 
@@ -123,6 +129,7 @@ async def _switch_project(
         state_manager: State manager instance
         conn: i3 async connection
         config_dir: Config directory
+        workspace_tracker: WorkspaceTracker for window filtering (Feature 037)
     """
     # Get current active project
     old_project = await state_manager.get_active_project()
@@ -133,14 +140,81 @@ async def _switch_project(
 
     logger.info(f"Switching project: {old_project} → {project_name}")
 
-    # Hide windows from old project
-    if old_project:
-        old_windows = await state_manager.get_windows_by_project(old_project)
-        await hide_project_windows(conn, old_windows)
+    # Feature 037: Use new window filtering if workspace_tracker is available
+    if workspace_tracker:
+        from . import window_filtering
+        start_time = time.perf_counter()
 
-    # Show windows from new project
-    new_windows = await state_manager.get_windows_by_project(project_name)
-    await show_project_windows(conn, new_windows)
+        # Hide windows from old project (if any)
+        windows_hidden = 0
+        if old_project:
+            # Get all visible windows for old project
+            tree = await conn.get_tree()
+            window_ids_to_hide = []
+
+            async def collect_old_project_windows(con):
+                if con.window and hasattr(con, 'id'):
+                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
+                    window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
+                    scope = i3pm_env.get("I3PM_SCOPE", "global")
+
+                    if window_project == old_project and scope == "scoped":
+                        window_ids_to_hide.append(con.id)
+
+                for child in con.nodes:
+                    await collect_old_project_windows(child)
+                for child in con.floating_nodes:
+                    await collect_old_project_windows(child)
+
+            await collect_old_project_windows(tree)
+
+            # Hide windows in batch
+            hidden_count, hide_errors = await window_filtering.hide_windows_batch(
+                conn, window_ids_to_hide, workspace_tracker
+            )
+            windows_hidden = hidden_count
+            if hide_errors:
+                logger.warning(f"Errors hiding windows: {hide_errors}")
+
+        # Restore windows for new project
+        scratchpad_windows = await window_filtering.get_scratchpad_windows(conn)
+        window_ids_to_restore = []
+
+        for window in scratchpad_windows:
+            i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+            window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
+
+            if window_project == project_name:
+                window_ids_to_restore.append(window.id)
+
+        # Restore windows in batch
+        restored_count, restore_errors, fallback_warnings = await window_filtering.restore_windows_batch(
+            conn, window_ids_to_restore, workspace_tracker, fallback_workspace=1
+        )
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            f"Window filtering complete: hidden {windows_hidden}, restored {restored_count} "
+            f"({duration_ms:.1f}ms)"
+        )
+
+        if restore_errors:
+            logger.warning(f"Errors restoring windows: {restore_errors}")
+        if fallback_warnings:
+            logger.info(f"Workspace fallbacks: {fallback_warnings}")
+
+    else:
+        # Legacy path (Feature 035 and earlier): Use old hide/show methods
+        logger.info("Using legacy window management (workspace_tracker not available)")
+
+        # Hide windows from old project
+        if old_project:
+            old_windows = await state_manager.get_windows_by_project(old_project)
+            await hide_project_windows(conn, old_windows)
+
+        # Show windows from new project
+        new_windows = await state_manager.get_windows_by_project(project_name)
+        await show_project_windows(conn, new_windows)
 
     # Update active project
     await state_manager.set_active_project(project_name)
