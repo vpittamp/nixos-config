@@ -84,10 +84,10 @@
 - [x] T024 [US1] Implement wrapper script argument array building to prevent shell injection
 - [x] T025 [US1] Implement wrapper script command execution using `exec` to replace process
 - [x] T026 [US1] Add fallback behavior handling in wrapper script (skip/use_home/error) when no project active
-- [ ] T027 [US1] Test manual wrapper invocation: `app-launcher-wrapper.sh vscode` with nixos project active
-- [ ] T028 [US1] Test wrapper with no active project to verify fallback behavior works
+- [x] T027 [US1] Test manual wrapper invocation: `app-launcher-wrapper.sh vscode` with nixos project active
+- [x] T028 [US1] Test wrapper with no active project to verify fallback behavior works
 - [ ] T029 [US1] Test wrapper with project containing spaces in directory path
-- [ ] T030 [US1] Verify all acceptance scenarios from spec.md work with wrapper script
+- [x] T030 [US1] Verify all acceptance scenarios from spec.md work with wrapper script
 
 **Checkpoint**: Manual wrapper script launching works with project context - ready for desktop file integration
 
@@ -106,10 +106,10 @@
 - [x] T033 [US2] Add Nix build-time validation for registry schema in `home-modules/desktop/app-registry.nix` (check required fields, unique names, valid workspace range)
 - [x] T034 [US2] Add Nix validation to block shell metacharacters in parameters field (`;`, `|`, `&`, `` ` ``, `$()`)
 - [x] T035 [US2] Generate JSON registry file via `xdg.configFile."i3/application-registry.json"` from Nix definitions
-- [ ] T036 [US2] Test adding new application to registry, rebuilding, and verifying it works without code changes
-- [ ] T037 [US2] Test all variable substitutions with different project contexts
+- [x] T036 [US2] Test adding new application to registry, rebuilding, and verifying it works without code changes
+- [x] T037 [US2] Test all variable substitutions with different project contexts
 - [ ] T038 [US2] Test parameter safety: verify blocked metacharacters cause build failure
-- [ ] T039 [US2] Verify all acceptance scenarios from spec.md work
+- [x] T039 [US2] Verify all acceptance scenarios from spec.md work
 
 **Checkpoint**: Declarative registry with full variable support is functional - ready for desktop file generation
 
@@ -130,10 +130,10 @@
 - [x] T044 [US3] Set desktop file StartupWMClass from registry expected_class
 - [x] T045 [US3] Add custom X-Project-Scope and X-Preferred-Workspace fields to desktop files
 - [x] T046 [US3] Generate Categories field based on scope (Development;Scoped vs Application;Global)
-- [ ] T047 [US3] Verify desktop files are created in `~/.local/share/applications/` after rebuild
+- [x] T047 [US3] Verify desktop files are created in `~/.local/share/applications/` after rebuild
 - [ ] T048 [US3] Test orphaned desktop file removal when application removed from registry
-- [ ] T049 [US3] Verify desktop files appear in rofi `-show drun` with correct icons
-- [ ] T050 [US3] Verify all acceptance scenarios from spec.md work
+- [x] T049 [US3] Verify desktop files appear in rofi `-show drun` with correct icons
+- [x] T050 [US3] Verify all acceptance scenarios from spec.md work
 
 **Checkpoint**: Desktop files auto-generate from registry and appear in rofi - ready for launcher interface
 
@@ -151,11 +151,11 @@
 - [x] T052 [US4] Configure rofi drun mode with icons enabled: `-show drun -show-icons`
 - [x] T053 [US4] Apply Catppuccin theme to rofi for consistent visual design
 - [x] T054 [US4] Add rofi keybinding to i3 config (Win+D or custom)
-- [ ] T055 [US4] Test rofi launcher displays all registered applications with icons
-- [ ] T056 [US4] Test fuzzy search in rofi matches display_name and name fields
-- [ ] T057 [US4] Test launcher closes automatically after application selection
-- [ ] T058 [US4] Test visual distinction between scoped and global apps via Categories
-- [ ] T059 [US4] Verify all acceptance scenarios from spec.md work
+- [x] T055 [US4] Test rofi launcher displays all registered applications with icons
+- [x] T056 [US4] Test fuzzy search in rofi matches display_name and name fields
+- [x] T057 [US4] Test launcher closes automatically after application selection
+- [x] T058 [US4] Test visual distinction between scoped and global apps via Categories
+- [x] T059 [US4] Verify all acceptance scenarios from spec.md work
 
 **Checkpoint**: rofi launcher provides unified application launching interface - ready for CLI integration
 
