@@ -199,6 +199,34 @@
     '';
   };
 
+  # Elephant websearch provider configuration
+  xdg.configFile."elephant/websearch.toml".text = ''
+    # Elephant Web Search Configuration
+
+    [[engines]]
+    name = "Google"
+    url = "https://www.google.com/search?q=%s"
+
+    [[engines]]
+    name = "DuckDuckGo"
+    url = "https://duckduckgo.com/?q=%s"
+
+    [[engines]]
+    name = "GitHub"
+    url = "https://github.com/search?q=%s"
+
+    [[engines]]
+    name = "YouTube"
+    url = "https://www.youtube.com/results?search_query=%s"
+
+    [[engines]]
+    name = "Wikipedia"
+    url = "https://en.wikipedia.org/wiki/Special:Search?search=%s"
+
+    # Default search engine
+    default = "Google"
+  '';
+
   # Service mode disabled - using direct invocation instead
   # Elephant service still needed for Walker to function
   systemd.user.services.elephant = {
