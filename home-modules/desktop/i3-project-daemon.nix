@@ -149,9 +149,9 @@ in
         RestartSec = 5;            # Wait 5s before restart
 
         # Security hardening (T028)
+        # Note: ProtectSystem and ProtectHome disabled to allow reading /proc/{pid}/environ
+        # for cross-service process inspection (Feature 037 window filtering)
         PrivateTmp = true;
-        ProtectSystem = "strict";
-        ProtectHome = "read-only";
         ReadWritePaths = [
           "%t/i3-project-daemon"
           "%h/.config/i3"
