@@ -6,7 +6,7 @@ let
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
-    pname = "i3pm";
+    pname = "i3pm-feature035";
     inherit version;
 
     src = ./i3pm;
