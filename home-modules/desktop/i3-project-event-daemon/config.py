@@ -121,6 +121,52 @@ def load_app_classification(config_file: Path) -> ApplicationClassification:
         raise
 
 
+def load_application_registry(config_file: Path) -> Dict[str, Dict]:
+    """Load application registry from JSON file.
+
+    Feature 037 T027: Load registry for workspace assignment on launch.
+
+    Args:
+        config_file: Path to application-registry.json
+
+    Returns:
+        Dictionary mapping app names to app definitions with preferred_workspace
+
+    Example:
+        {
+            "vscode": {
+                "name": "vscode",
+                "display_name": "VS Code",
+                "preferred_workspace": 2,
+                "scope": "scoped",
+                ...
+            }
+        }
+    """
+    try:
+        if not config_file.exists():
+            logger.warning(f"Application registry file does not exist: {config_file}")
+            return {}
+
+        with open(config_file) as f:
+            data = json.load(f)
+
+        applications = data.get("applications", [])
+
+        # Convert list to dict keyed by app name
+        registry = {app["name"]: app for app in applications}
+
+        logger.info(f"Loaded application registry: {len(registry)} applications")
+        return registry
+
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Failed to load application registry from {config_file}: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"Unexpected error loading application registry: {e}")
+        return {}
+
+
 def save_active_project(state: ActiveProjectState, config_file: Path) -> None:
     """Save active project state to JSON file (atomic write).
 

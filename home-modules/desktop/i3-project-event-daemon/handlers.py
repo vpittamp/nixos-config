@@ -7,7 +7,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING, List
+from typing import Optional, TYPE_CHECKING, List, Dict
 from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent, OutputEvent
 
 from .state import StateManager
@@ -437,14 +437,18 @@ async def on_window_new(
     event_buffer: Optional["EventBuffer"] = None,
     window_rules: Optional[List[WindowRule]] = None,
     ipc_server: Optional["IPCServer"] = None,
+    application_registry: Optional[Dict[str, Dict]] = None,  # Feature 037 T026
+    workspace_tracker=None,  # Feature 037 T026
 ) -> None:
-    """Handle window::new events - auto-mark and classify new windows (T014, T023).
+    """Handle window::new events - auto-mark and classify new windows (T014, T023, T026).
 
     Uses the 4-level precedence classification system:
     1. Project scoped_classes (priority 1000)
     2. Window rules (priority 200-500)
     3. App classification patterns (priority 100)
     4. App classification lists (priority 50)
+
+    Feature 037 T026-T029: Assigns windows to preferred workspace on launch.
 
     Args:
         conn: i3 async connection
@@ -454,6 +458,8 @@ async def on_window_new(
         event_buffer: Event buffer for recording events (Feature 017)
         window_rules: Window rules from window-rules.json (Feature 021)
         ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
+        application_registry: Application registry for workspace assignment (Feature 037 T027)
+        workspace_tracker: WorkspaceTracker for tracking initial assignment (Feature 037 T026)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -532,6 +538,67 @@ async def on_window_new(
                 created=datetime.now(),
             )
             await state_manager.add_window(window_info)
+
+        # Feature 037 T026-T029: Guaranteed workspace assignment on launch
+        # If window has I3PM_APP_NAME, look up preferred workspace in registry
+        if window_env and window_env.app_name and application_registry:
+            app_name = window_env.app_name
+            app_def = application_registry.get(app_name)
+
+            if app_def and "preferred_workspace" in app_def:
+                preferred_ws = app_def["preferred_workspace"]
+                current_workspace = container.workspace()
+
+                # T028: Check if window is already on preferred workspace
+                if current_workspace and current_workspace.num != preferred_ws:
+                    # Move window to preferred workspace
+                    try:
+                        await conn.command(
+                            f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
+                        )
+
+                        # T026: Track initial workspace assignment
+                        if workspace_tracker:
+                            from . import window_filtering
+                            is_floating = container.floating == "user_on" or container.floating == "auto_on"
+
+                            await workspace_tracker.track_window(
+                                window_id=container.id,
+                                workspace_number=preferred_ws,
+                                floating=is_floating,
+                                project_name=actual_project if actual_project else "",
+                                app_name=app_name,
+                                window_class=window_class,
+                            )
+                            await workspace_tracker.save()
+
+                        # T029: Log workspace assignment
+                        logger.info(
+                            f"Moved window {window_id} ({window_class}/{app_name}) from workspace "
+                            f"{current_workspace.num} to preferred workspace {preferred_ws}"
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
+                else:
+                    # Already on correct workspace, but still track it
+                    if workspace_tracker and current_workspace:
+                        from . import window_filtering
+                        is_floating = container.floating == "user_on" or container.floating == "auto_on"
+
+                        await workspace_tracker.track_window(
+                            window_id=container.id,
+                            workspace_number=current_workspace.num,
+                            floating=is_floating,
+                            project_name=actual_project if actual_project else "",
+                            app_name=app_name,
+                            window_class=window_class,
+                        )
+                        await workspace_tracker.save()
+
+                        logger.debug(
+                            f"Window {window_id} ({app_name}) already on preferred workspace {preferred_ws}"
+                        )
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:

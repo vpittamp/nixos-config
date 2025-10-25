@@ -11,7 +11,7 @@ import os
 import signal
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 try:
     from systemd import journal, daemon as sd_daemon
@@ -23,6 +23,7 @@ except ImportError:
 from .config import (
     load_project_configs,
     load_app_classification,
+    load_application_registry,  # Feature 037 T027
     load_active_project,
     reload_window_rules,
     WindowRulesWatcher
@@ -157,6 +158,7 @@ class I3ProjectDaemon:
         self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
         self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
+        self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -205,6 +207,11 @@ class I3ProjectDaemon:
             # Use defaults
             self.state_manager.state.scoped_classes = {"Code", "ghostty", "Alacritty", "Yazi"}
             self.state_manager.state.global_classes = {"firefox", "chromium-browser", "k9s"}
+
+        # Feature 037 T027: Load application registry for workspace assignment
+        app_registry_file = self.config_dir / "application-registry.json"
+        self.application_registry = load_application_registry(app_registry_file)
+        logger.info(f"Application registry loaded: {len(self.application_registry)} applications")
 
         # Load active project state
         active_project_file = self.config_dir / "active-project.json"
@@ -340,7 +347,9 @@ class I3ProjectDaemon:
                 app_classification=app_classification,
                 event_buffer=self.event_buffer,
                 window_rules=self.window_rules,  # Gets current value from daemon
-                ipc_server=self.ipc_server  # Feature 025: broadcast events to subscribed clients
+                ipc_server=self.ipc_server,  # Feature 025: broadcast events to subscribed clients
+                application_registry=self.application_registry,  # Feature 037 T026: Workspace assignment
+                workspace_tracker=self.workspace_tracker  # Feature 037 T026: Track initial assignment
             )
 
         async def get_window_rules_wrapper_title(conn, event):

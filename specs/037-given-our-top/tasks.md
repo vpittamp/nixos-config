@@ -117,14 +117,15 @@
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Modify daemon's `handle_window_new()` event handler in `home-modules/desktop/i3-project-daemon.py` to:
+- [X] T026 [US3] Modify daemon's `handle_window_new()` event handler in `home-modules/desktop/i3-project-daemon.py` to:
   - Extract window PID and read I3PM_* environment variables
   - Look up preferred_workspace from application registry
   - Move window to preferred_workspace if current workspace differs
   - Update window-workspace-map.json with initial assignment
-- [ ] T027 [US3] Add registry query helper function to daemon: `get_app_preferred_workspace(app_name: str) -> int`
-- [ ] T028 [US3] Implement workspace assignment with i3 IPC COMMAND: `[con_id="X"] move to workspace number N`
-- [ ] T029 [US3] Add logging when windows are moved to preferred workspace on launch
+- [X] T027 [US3] Add registry query helper function to daemon: `get_app_preferred_workspace(app_name: str) -> int`
+  **Note**: Implemented as load_application_registry() in config.py
+- [X] T028 [US3] Implement workspace assignment with i3 IPC COMMAND: `[con_id="X"] move to workspace number N`
+- [X] T029 [US3] Add logging when windows are moved to preferred workspace on launch
 
 **Checkpoint**: Applications now open on correct workspaces automatically
 
