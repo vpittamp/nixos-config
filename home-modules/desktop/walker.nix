@@ -196,6 +196,20 @@
         after = "Close"
         bind = "shift Return"
         label = "run in terminal"
+
+        # File provider actions - open files in nvim
+        [[providers.actions.files]]
+        action = "runterminal nvim %RESULT%"
+        after = "Close"
+        bind = "Return"
+        default = true
+        label = "open in nvim"
+
+        [[providers.actions.files]]
+        action = "open"
+        after = "Close"
+        bind = "ctrl Return"
+        label = "open with default app"
     '';
   };
 
@@ -229,7 +243,8 @@
 
   # Service mode disabled - using direct invocation instead
   # Elephant service still needed for Walker to function
-  systemd.user.services.elephant = {
+  # Use mkForce to override any conflicting definitions from walker module
+  systemd.user.services.elephant = lib.mkForce {
     Unit = {
       Description = "Elephant launcher backend (X11)";
       PartOf = [ "graphical-session.target" ];
