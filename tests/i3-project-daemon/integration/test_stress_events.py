@@ -28,7 +28,7 @@ class TestStressEvents:
     @pytest.fixture
     async def mock_daemon(self):
         """Mock daemon with event tracking."""
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()
@@ -429,7 +429,7 @@ class TestEventOrdering:
 
     @pytest.fixture
     async def mock_daemon(self):
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
         daemon = MockDaemon()
         await daemon.initialize()
         daemon.event_order = []

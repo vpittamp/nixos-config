@@ -44,7 +44,7 @@ let
       name = "vscode";
       display_name = "VS Code";
       command = "code";
-      parameters = "$PROJECT_DIR";
+      parameters = "--new-window $PROJECT_DIR";
       scope = "scoped";
       expected_class = "Code";
       preferred_workspace = 1;
@@ -62,7 +62,7 @@ let
       # parameters = "-e nvim $PROJECT_DIR";
       parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
       scope = "scoped";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       icon = "nvim";
       nix_package = "pkgs.neovim";
@@ -111,7 +111,7 @@ let
       command = "ghostty";
       parameters = "-e sesh connect $PROJECT_DIR";
       scope = "scoped";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 3;
       icon = "terminal";
       nix_package = "pkgs.ghostty";
@@ -126,7 +126,7 @@ let
       command = "ghostty";
       parameters = "-e sesh";
       scope = "global";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 3;
       icon = "terminal";
       nix_package = "pkgs.ghostty";
@@ -158,7 +158,7 @@ let
       command = "ghostty";
       parameters = "-e lazygit --work-tree=$PROJECT_DIR";
       scope = "scoped";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 3;
       icon = "git";
       nix_package = "pkgs.lazygit";
@@ -173,7 +173,7 @@ let
       command = "ghostty";
       parameters = "-e gitui --workdir $PROJECT_DIR";
       scope = "scoped";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 3;
       icon = "git";
       nix_package = "pkgs.gitui";
@@ -237,7 +237,7 @@ let
       command = "ghostty";
       parameters = "-e htop";
       scope = "global";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.htop";
@@ -252,7 +252,7 @@ let
       command = "ghostty";
       parameters = "-e btop";
       scope = "global";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.btop";
@@ -267,7 +267,7 @@ let
       command = "ghostty";
       parameters = "-e k9s";
       scope = "global";
-      expected_class = "ghostty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       icon = "kubernetes";
       nix_package = "pkgs.k9s";

@@ -7,7 +7,7 @@ Tests PWA and title pattern matching functionality:
 """
 
 import pytest
-from home_modules.desktop.i3_project_event_daemon.pattern import PatternRule
+from i3_project_event_daemon.pattern import PatternRule
 
 
 class TestPWAPatternMatching:

@@ -102,7 +102,7 @@ class TestDaemonRecovery:
     @pytest.fixture
     async def mock_daemon_with_state(self):
         """Mock daemon with existing state (before restart)."""
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()
@@ -376,7 +376,7 @@ class TestHighAvailability:
 
     async def test_graceful_shutdown(self):
         """Test daemon shuts down gracefully without losing state."""
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()
@@ -400,7 +400,7 @@ class TestHighAvailability:
 
         State should be recoverable from i3 tree even if daemon crashes.
         """
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         # Daemon before crash
         daemon1 = MockDaemon()
@@ -437,7 +437,7 @@ class TestHighAvailability:
 
         Required for verifying 99.9% uptime (SC-010).
         """
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
         import time
 
         daemon = MockDaemon()
@@ -464,7 +464,7 @@ class TestStateConsistency:
 
         Ensures rebuilt state matches actual i3 state.
         """
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()
@@ -498,7 +498,7 @@ class TestStateConsistency:
 
         If windows moved while daemon was down, drift should be detected.
         """
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()

@@ -12,12 +12,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 
-# Add the daemon module to the path
-daemon_path = Path(__file__).parent.parent.parent.parent / "home-modules" / "desktop" / "i3-project-event-daemon"
-sys.path.insert(0, str(daemon_path))
-
-from event_correlator import EventCorrelator, CorrelationFactors, WEIGHTS, CONFIDENCE_THRESHOLD
-from models import EventEntry
+# Import from the daemon package (path already configured in conftest.py)
+from i3_project_event_daemon.event_correlator import EventCorrelator, CorrelationFactors, WEIGHTS, CONFIDENCE_THRESHOLD
+from i3_project_event_daemon.models import EventEntry
 
 
 class TestConfidenceScoring:

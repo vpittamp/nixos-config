@@ -58,5 +58,4 @@ def sample_window():
     }
 
 
-# Feature 030: Production readiness test configuration
-pytest_plugins = []
+# pytest_plugins moved to top-level conftest.py to avoid deprecation warning

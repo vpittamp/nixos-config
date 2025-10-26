@@ -31,7 +31,7 @@ class TestWorkspaceAssignment:
     async def mock_daemon(self):
         """Mock daemon with application registry."""
         # Import mock daemon from fixtures
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
 
         daemon = MockDaemon()
         await daemon.initialize()
@@ -461,7 +461,7 @@ class TestWorkspaceAssignmentEdgeCases:
 
     @pytest.fixture
     async def mock_daemon(self):
-        from ..fixtures.mock_daemon import MockDaemon
+        from tests.i3_project_daemon.fixtures.mock_daemon import MockDaemon
         daemon = MockDaemon()
         await daemon.initialize()
         yield daemon

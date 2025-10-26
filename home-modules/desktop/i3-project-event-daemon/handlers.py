@@ -522,6 +522,7 @@ async def on_window_new(
         # Feature 037 T026-T029 + Feature 039 T060-T063: Workspace assignment with priority
         # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
         # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
+        # Priority 3: Class-based registry matching (fallback when PID unavailable)
         preferred_ws = None
         assignment_source = None
 
@@ -540,14 +541,45 @@ async def on_window_new(
                 if app_def and "preferred_workspace" in app_def:
                     preferred_ws = app_def["preferred_workspace"]
                     assignment_source = f"registry[{app_name}]"
+        else:
+            # Priority 3: Class-based registry matching (fallback for apps without PID)
+            # BUGFIX 039: When PID is unavailable (e.g., VS Code, Ghostty), use window class
+            # to match against application registry and get preferred workspace
+            if application_registry:
+                from .services.window_identifier import match_with_registry
+
+                app_match = match_with_registry(
+                    actual_class=window_class,
+                    actual_instance=container.window_instance or "",
+                    application_registry=application_registry
+                )
+
+                if app_match and "preferred_workspace" in app_match:
+                    preferred_ws = app_match["preferred_workspace"]
+                    app_name = app_match.get("_matched_app_name", "unknown")
+                    match_type = app_match.get("_match_type", "unknown")
+                    assignment_source = f"registry[{app_name}] via class-match ({match_type})"
+                    logger.info(
+                        f"Window {window_id} ({window_class}) matched to app {app_name} "
+                        f"via {match_type}, assigning workspace {preferred_ws}"
+                    )
 
         if preferred_ws:
-                current_workspace = container.workspace()
+                # BUGFIX 039 T066: Re-fetch container from tree to get current workspace
+                # container.workspace() returns None during window::new event (timing issue)
+                # Solution: Query fresh container from tree
+                #
+                # NOTE: Feature 039 architectural change - ALL workspace assignment now in daemon
+                # Previously GLOBAL apps used i3 for_window rules, SCOPED apps used daemon
+                # Now ALL apps use daemon for unified, dynamic, rebuildless workspace management
+                try:
+                    tree = await conn.get_tree()
+                    fresh_container = tree.find_by_id(container.id)
+                    current_workspace = fresh_container.workspace() if fresh_container else None
 
-                # T028: Check if window is already on preferred workspace
-                if current_workspace and current_workspace.num != preferred_ws:
-                    # Move window to preferred workspace
-                    try:
+                    # T028: Check if window is already on preferred workspace
+                    if not current_workspace or current_workspace.num != preferred_ws:
+                        # Move window to preferred workspace
                         await conn.command(
                             f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
                         )
@@ -568,33 +600,20 @@ async def on_window_new(
                             await workspace_tracker.save()
 
                         # T029 + T064: Log workspace assignment with source (Feature 039)
+                        current_ws_num = current_workspace.num if current_workspace else "unknown"
                         logger.info(
                             f"Moved window {window_id} ({window_class}) from workspace "
-                            f"{current_workspace.num} to preferred workspace {preferred_ws} "
+                            f"{current_ws_num} to preferred workspace {preferred_ws} "
                             f"(source: {assignment_source})"
                         )
-
-                    except Exception as e:
-                        logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
-                else:
-                    # Already on correct workspace, but still track it
-                    if workspace_tracker and current_workspace:
-                        from . import window_filtering
-                        is_floating = container.floating == "user_on" or container.floating == "auto_on"
-
-                        await workspace_tracker.track_window(
-                            window_id=container.id,
-                            workspace_number=current_workspace.num,
-                            floating=is_floating,
-                            project_name=actual_project if actual_project else "",
-                            app_name=app_name,
-                            window_class=window_class,
-                        )
-                        await workspace_tracker.save()
-
+                    else:
+                        # Already on correct workspace
                         logger.debug(
-                            f"Window {window_id} ({app_name}) already on preferred workspace {preferred_ws}"
+                            f"Window {window_id} ({window_class}) already on preferred workspace {preferred_ws}"
                         )
+
+                except Exception as e:
+                    logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:

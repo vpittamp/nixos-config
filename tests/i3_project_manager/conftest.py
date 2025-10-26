@@ -11,8 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-# Configure pytest-asyncio
-pytest_plugins = ("pytest_asyncio",)
+# pytest_plugins moved to top-level conftest.py to avoid deprecation warning
 
 
 @pytest.fixture

@@ -15,8 +15,8 @@
     font pango:monospace, Font Awesome 6 Free 10
     floating_modifier $mod
 
-    # Default workspace layout - tabbed for all workspaces
-    workspace_layout tabbed
+    # Default workspace layout - default (tiling) for better window visibility
+    workspace_layout default
 
     # Workspace variables with Font Awesome icons
     set $ws1 "1: terminal "
@@ -34,10 +34,11 @@
     # NOTE: These assignments are intentionally permissive (multiple outputs per workspace)
     # to ensure workspaces show on i3bar even before dynamic assignment runs
 
-    # Feature 035: All window-to-workspace assignments now handled by:
-    # - Auto-generated rules in window-rules-generated.conf (for GLOBAL apps)
-    # - Daemon-based workspace placement via I3PM_APP_ID matching (for SCOPED apps)
-    # No static assign rules needed - dynamic placement enables layout restore
+    # Feature 039: ALL window-to-workspace assignments now handled by Python daemon
+    # - Unified workspace assignment for ALL apps (GLOBAL and SCOPED)
+    # - Dynamic, rebuildless updates via application-registry.json
+    # - No i3 native assign/for_window rules needed
+    # Benefits: Unified logging, dynamic changes, better observability
 
     # Floating terminal window class
     for_window [class="floating_terminal"] floating enable
@@ -74,10 +75,10 @@
     # Rectangular region to clipboard
     bindsym $mod+Shift+s exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
 
-    # Quick launch (non-project-aware)
+    # Quick launch (Feature 039: Now uses app-launcher for workspace assignment)
     bindsym $mod+Shift+b exec ${pkgs.ghostty}/bin/ghostty -e bash -c fh
     bindsym $mod+Shift+f exec ${pkgs.xfce.thunar}/bin/thunar
-    bindsym $mod+k exec ${pkgs.ghostty}/bin/ghostty -e ~/.local/bin/k9s-workspace
+    bindsym $mod+k exec ~/.local/bin/app-launcher-wrapper.sh k9s
     bindsym $mod+a exec ${pkgs.glib}/bin/gio launch ~/.local/share/applications/FFPWA-01K665SPD8EPMP3JTW02JM1M0Z.desktop
 
     # Split orientation
@@ -129,8 +130,8 @@
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
 
-    # Feature 035: Auto-generated window rules for global apps
-    include ~/.config/i3/window-rules-generated.conf
+    # Feature 035 REMOVED: Window rules now handled entirely by Python daemon (Feature 039)
+    # include ~/.config/i3/window-rules-generated.conf
 
     # i3bar configurations (top and bottom)
     include ~/.config/i3/i3bar-top.conf
@@ -138,24 +139,8 @@
   '';
 
 
-  # Wrapper scripts to set window titles for terminal apps
-  # These scripts set the title before launching the app, allowing i3 to match on it
-
-  home.file.".local/bin/k9s-workspace".text = ''
-    #!/usr/bin/env bash
-    # Set window title for i3 workspace assignment
-    printf '\033]2;K9s-Workspace\007'
-    exec ${pkgs.k9s}/bin/k9s "$@"
-  '';
-  home.file.".local/bin/k9s-workspace".executable = true;
-
-  home.file.".local/bin/lazygit-workspace".text = ''
-    #!/usr/bin/env bash
-    # Set window title for i3 workspace assignment
-    printf '\033]2;Lazygit-Workspace\007'
-    exec ${pkgs.lazygit}/bin/lazygit "$@"
-  '';
-  home.file.".local/bin/lazygit-workspace".executable = true;
+  # Feature 039: Legacy wrapper scripts removed - daemon now handles all workspace assignment
+  # Previously used window titles for workspace matching, now use registry-based matching
 
   # Create desktop files for terminal-based apps with unique window classes
   # This allows i3 to assign them to specific workspaces instead of the terminal workspace

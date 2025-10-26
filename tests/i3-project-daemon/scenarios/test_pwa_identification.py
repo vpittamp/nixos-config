@@ -9,7 +9,7 @@ Feature 039 - Tasks T076, T077, T078
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from home_modules.desktop.i3_project_event_daemon.services.window_identifier import (
+from i3_project_event_daemon.services.window_identifier import (
     get_window_identity,
     match_window_class,
     match_with_registry,
