@@ -54,15 +54,15 @@ def display_window_identity(window_data: Dict[str, Any], console: Console = None
     location_table.add_row("Output", window_data.get("output_name", "N/A"))
 
     is_floating = window_data.get("is_floating", False)
-    floating_text = Text("Yes", style="yellow") if is_floating else Text("No", style="green")
+    floating_text = "[yellow]Yes[/yellow]" if is_floating else "[green]No[/green]"
     location_table.add_row("Floating", floating_text)
 
     is_focused = window_data.get("is_focused", False)
-    focused_text = Text("Yes", style="green") if is_focused else Text("No", style="dim")
+    focused_text = "[green]Yes[/green]" if is_focused else "[dim]No[/dim]"
     location_table.add_row("Focused", focused_text)
 
     is_hidden = window_data.get("is_hidden", False)
-    hidden_text = Text("Yes (in scratchpad)", style="red") if is_hidden else Text("No", style="green")
+    hidden_text = "[red]Yes (in scratchpad)[/red]" if is_hidden else "[green]No[/green]"
     location_table.add_row("Hidden", hidden_text)
 
     console.print(location_table)
@@ -80,13 +80,13 @@ def display_window_identity(window_data: Dict[str, Any], console: Console = None
 
         project_name = i3pm_env.get("project_name")
         if project_name:
-            env_table.add_row("Project Name", Text(project_name, style="bold cyan"))
+            env_table.add_row("Project Name", f"[bold cyan]{project_name}[/bold cyan]")
         else:
-            env_table.add_row("Project Name", Text("(none - global)", style="dim"))
+            env_table.add_row("Project Name", "[dim](none - global)[/dim]")
 
         scope = i3pm_env.get("scope", "unknown")
         scope_style = "green" if scope == "scoped" else "yellow"
-        env_table.add_row("Scope", Text(scope, style=scope_style))
+        env_table.add_row("Scope", f"[{scope_style}]{scope}[/{scope_style}]")
 
         console.print(env_table)
         console.print()
@@ -102,7 +102,7 @@ def display_window_identity(window_data: Dict[str, Any], console: Console = None
     # I3 Marks
     i3pm_marks = window_data.get("i3pm_marks", [])
     if i3pm_marks:
-        marks_text = ", ".join([Text(mark, style="cyan") for mark in i3pm_marks])
+        marks_text = ", ".join([f"[cyan]{mark}[/cyan]" for mark in i3pm_marks])
         console.print(Panel(marks_text, title="I3PM Marks"))
         console.print()
 
@@ -115,13 +115,13 @@ def display_window_identity(window_data: Dict[str, Any], console: Console = None
     match_table.add_column("Value")
 
     if matched_app:
-        match_table.add_row("Matched App", Text(matched_app, style="green"))
+        match_table.add_row("Matched App", f"[green]{matched_app}[/green]")
 
         match_type_style = "green" if match_type in ["exact", "instance"] else "yellow"
-        match_table.add_row("Match Type", Text(match_type, style=match_type_style))
+        match_table.add_row("Match Type", f"[{match_type_style}]{match_type}[/{match_type_style}]")
     else:
-        match_table.add_row("Matched App", Text("(no match)", style="red"))
-        match_table.add_row("Match Type", Text("none", style="red"))
+        match_table.add_row("Matched App", "[red](no match)[/red]")
+        match_table.add_row("Match Type", "[red]none[/red]")
 
     console.print(match_table)
 

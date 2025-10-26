@@ -3220,7 +3220,7 @@ class IPCServer:
             window_class = window.window_class or "unknown"
             window_instance = window.window_instance or ""
             window_title = window.name or "(no title)"
-            window_pid = window.window_properties.get('pid') if window.window_properties else None
+            window_pid = window.pid if hasattr(window, 'pid') else None
             
             # Get workspace info
             workspace = window.workspace()
