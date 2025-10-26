@@ -97,10 +97,14 @@
 
         # Clear screen (compatible with bash)
         { key = "L"; mods = "Control"; chars = "\\f"; }
+
+        # Disable Alacritty's default Quit binding to allow i3 to handle window closing
+        # This ensures Super+Shift+Q passes through to i3 for proper window management
+        { key = "Q"; mods = "Super|Shift"; action = "None"; }
       ];
     };
   };
 
-  # Note: TERMINAL variable now set by ghostty.nix as default
-  # Alacritty is still available but Ghostty is the new default terminal
+  # Note: Alacritty is now the default terminal application
+  # Configured in app-registry-data.nix for project-scoped terminal sessions
 }

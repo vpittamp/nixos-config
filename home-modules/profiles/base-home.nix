@@ -37,7 +37,8 @@ in
     # Terminal configurations
     ../terminal/tmux.nix
     ../terminal/sesh.nix
-    ../terminal/ghostty.nix    # Modern terminal with native tabs/splits (default)
+    ../terminal/alacritty.nix  # Alacritty terminal with sesh integration (default)
+    ../terminal/ghostty.nix    # Ghostty terminal (backup option at WS12)
     ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
 
     # Desktop configurations
