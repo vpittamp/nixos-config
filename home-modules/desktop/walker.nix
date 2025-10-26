@@ -349,9 +349,9 @@ in
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)
       # Feature 034/035: Isolate XDG_DATA_DIRS to ONLY i3pm apps (no system apps)
+      # NOTE: XDG_DATA_HOME must NOT be overridden - apps like Firefox PWA need default location
       Environment = [
         "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
-        "XDG_DATA_HOME=${i3pmAppsDir}"
         "XDG_DATA_DIRS=${i3pmAppsDir}"
         "XDG_RUNTIME_DIR=%t"
       ];
