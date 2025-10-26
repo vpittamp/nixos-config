@@ -43,7 +43,11 @@ let
       name = "ghostty";
       display_name = "Ghostty Terminal";
       command = "ghostty";
-      parameters = "-e sesh connect $PROJECT_DIR";
+      # Use tmux new-session instead of sesh connect for better reliability
+      # -A: attach if session exists, create if it doesn't
+      # -s: session name (uses project name)
+      # -c: working directory (uses project directory)
+      parameters = "-e tmux new-session -A -s $PROJECT_NAME -c $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
@@ -51,7 +55,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Terminal with automatic sesh session for project directory";
+      description = "Terminal with automatic tmux session for project directory";
     })
 
     # WS2: Editors (Primary: vscode)

@@ -311,6 +311,10 @@ fi
 # Use systemd-run for desktop file execution environments (Walker/Elephant)
 # This ensures proper process isolation from the launcher
 if command -v systemd-run &>/dev/null; then
+    # Build the command string for bash -c execution
+    # We need bash -c to properly handle complex commands with arguments
+    CMD_STRING="${ARGS[*]}"
+
     systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
         --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
@@ -322,7 +326,10 @@ if command -v systemd-run &>/dev/null; then
         --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
         --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
         --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
-        "${ARGS[@]}"
+        --setenv=DISPLAY="${DISPLAY:-:0}" \
+        --setenv=HOME="$HOME" \
+        --setenv=PATH="$PATH" \
+        bash -c "$CMD_STRING"
 else
     # Fallback to exec if systemd-run not available
     exec "${ARGS[@]}"

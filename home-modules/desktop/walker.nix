@@ -222,7 +222,10 @@ in
         websearch = true
 
         [[plugins]]
-        cmd = "sesh connect --switch %RESULT%"
+        # Modified to launch Ghostty with the selected tmux session
+        # Original sesh docs use "sesh connect --switch %RESULT%" but that only works inside tmux
+        # We launch Ghostty to attach to the selected session instead
+        cmd = "ghostty -e tmux attach-session -t %RESULT%"
         keep_sort = false
         name = "sesh"
         prefix = ";s "
