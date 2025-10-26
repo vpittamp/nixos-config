@@ -432,23 +432,37 @@ async def filter_windows_by_project(
                 if workspace_tracker and workspace:
                     # Get current window state
                     workspace_num = workspace.num if workspace.num is not None else 1
-                    is_floating = window.floating in ["user_on", "auto_on"]
                     is_original_scratchpad = workspace.name == "__i3_scratch"
 
-                    # Feature 038 US2: Capture geometry for floating windows
-                    geometry = None
-                    if is_floating and window.rect:
-                        geometry = {
-                            "x": window.rect.x,
-                            "y": window.rect.y,
-                            "width": window.rect.width,
-                            "height": window.rect.height,
-                        }
+                    # Feature 038 FIX: Check if we already have saved state for this window
+                    # If so, preserve the ORIGINAL floating state (don't re-capture after scratchpad moves)
+                    saved_state = await workspace_tracker.get_window_workspace(window_id)
+                    if saved_state and not is_original_scratchpad:
+                        # Preserve original floating state from first capture
+                        is_floating = saved_state.get("floating", False)
+                        geometry = saved_state.get("geometry", None)
                         logger.debug(
-                            f"Captured geometry for floating window {window_id}: "
-                            f"x={geometry['x']}, y={geometry['y']}, "
-                            f"width={geometry['width']}, height={geometry['height']}"
+                            f"Window {window_id} already tracked, preserving original state: "
+                            f"floating={is_floating}, has_geometry={geometry is not None}"
                         )
+                    else:
+                        # First capture OR window is from scratchpad - capture current state
+                        is_floating = window.floating in ["user_on", "auto_on"]
+
+                        # Feature 038 US2: Capture geometry for floating windows
+                        geometry = None
+                        if is_floating and window.rect:
+                            geometry = {
+                                "x": window.rect.x,
+                                "y": window.rect.y,
+                                "width": window.rect.width,
+                                "height": window.rect.height,
+                            }
+                            logger.debug(
+                                f"Captured geometry for floating window {window_id}: "
+                                f"x={geometry['x']}, y={geometry['y']}, "
+                                f"width={geometry['width']}, height={geometry['height']}"
+                            )
 
                     # Get window class and project name for tracking
                     window_class = window.window_class or "unknown"
@@ -457,7 +471,8 @@ async def filter_windows_by_project(
                     logger.info(
                         f"Capturing state for window {window_id}: workspace={workspace_num}, "
                         f"floating={is_floating}, original_scratchpad={is_original_scratchpad}, "
-                        f"has_geometry={geometry is not None}"
+                        f"has_geometry={geometry is not None}, "
+                        f"preserved_state={saved_state is not None}"
                     )
 
                     # Save state with geometry for floating windows
