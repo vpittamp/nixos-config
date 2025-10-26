@@ -272,24 +272,23 @@
       export FZF_ALT_C_OPTS="--walker dir,follow,hidden --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache --tmux=center,90%,80% --scheme=path --preview '${pkgs.eza}/bin/eza --tree --color=always {}' --preview-window=right:60%:wrap"
       export FZF_CTRL_R_OPTS="--tmux=center,90%,80% --scheme=history --highlight-line"
 
-      # COMMENTED OUT: Using native bash reverse-i-search (Ctrl+R) instead of fzf
       # Override FZF's CTRL-R to use bash history file directly
       # This includes commands from Claude Code via the PostToolUse hook
       # Default FZF uses 'fc -lnr' which only reads in-memory history
       # Our override reads from ~/.bash_history file directly
-      # __fzf_history__() {
-      #   local output opts
-      #   opts="--scheme=history --bind=ctrl-r:toggle-sort --highlight-line ''\${FZF_CTRL_R_OPTS-} +m"
-      #
-      #   # Read bash history file, reverse it (newest first), remove duplicates
-      #   output=$(cat ~/.bash_history | tac | awk '!seen[$0]++' | FZF_DEFAULT_OPTS="''$opts" fzf --query "''$READLINE_LINE") || return
-      #   READLINE_LINE="''$output"
-      #   if [[ -z "''$READLINE_POINT" ]]; then
-      #     echo "''$READLINE_LINE"
-      #   else
-      #     READLINE_POINT=0x7fffffff
-      #   fi
-      # }
+      __fzf_history__() {
+        local output opts
+        opts="--scheme=history --bind=ctrl-r:toggle-sort --highlight-line ''\${FZF_CTRL_R_OPTS-} +m"
+
+        # Read bash history file, reverse it (newest first), remove duplicates
+        output=$(cat ~/.bash_history | tac | awk '!seen[$0]++' | FZF_DEFAULT_OPTS="''$opts" fzf --query "''$READLINE_LINE") || return
+        READLINE_LINE="''$output"
+        if [[ -z "''$READLINE_POINT" ]]; then
+          echo "''$READLINE_LINE"
+        else
+          READLINE_POINT=0x7fffffff
+        fi
+      }
 
       # Terminal configuration moved to TERM settings below
       
@@ -373,10 +372,6 @@
       if command -v fzf &> /dev/null && type -t fzf-file-widget &>/dev/null; then
         bind -x '"\C-p": fzf-file-widget'  # Ctrl+P for file search
         bind '"\C-t": transpose-chars'      # Restore Ctrl+T to default bash behavior
-
-        # Unbind fzf's Ctrl+R to restore native bash reverse-i-search
-        # Native reverse-i-search uses ~/.bash_history which includes Claude Code commands
-        bind -r '\C-r'  # Remove fzf-history-widget binding
       fi
 
       # Enable direnv (only if available)
