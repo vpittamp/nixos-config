@@ -12,8 +12,8 @@ let
   # Bottom bar: Event-driven project status script with click handler
   projectStatusScript = pkgs.writeShellScript "i3bar-status-event-driven" (
     builtins.replaceStrings
-      [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" "@xterm@" ]
-      [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.xterm}/bin/xterm" ]
+      [ "@i3pm@" "@jq@" "@sed@" "@date@" "@grep@" "@awk@" "@xterm@" "@walker@" "@walker_project_list@" "@walker_project_switch@" ]
+      [ "${i3pmWrapper}" "${pkgs.jq}/bin/jq" "${pkgs.gnused}/bin/sed" "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.xterm}/bin/xterm" "${config.programs.walker.package}/bin/walker" "${config.home.profileDirectory}/bin/walker-project-list" "${config.home.profileDirectory}/bin/walker-project-switch" ]
       (builtins.readFile ./i3bar/status-event-driven.sh)
   );
 

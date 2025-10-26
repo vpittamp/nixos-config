@@ -43,6 +43,10 @@
     # Floating terminal window class
     for_window [class="floating_terminal"] floating enable
 
+    # Walker application launcher - floating, centered, with UI mark to exclude from daemon
+    # The _global_ui mark prevents the daemon from tracking/moving this window
+    for_window [class="walker"] floating enable, border pixel 1, move position center, mark _global_ui
+
     # Floating fzf launcher window - remove borders, center on monitor, mark to exclude from daemon rules
     # The mark prevents the daemon from moving this window (daemon checks for _global_ui mark)
     for_window [instance="fzf-launcher"] floating enable, border pixel 0, move position center, mark _global_ui
@@ -77,8 +81,8 @@
     bindsym Print exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcf
     # Active window to clipboard
     bindsym $mod+Print exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bca
-    # Rectangular region to clipboard
-    bindsym $mod+Shift+s exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
+    # Rectangular region to clipboard (changed from $mod+Shift+s to avoid conflict, using x for reXtangle)
+    bindsym $mod+Shift+x exec ${pkgs.kdePackages.spectacle}/bin/spectacle -bcr
 
     # Quick launch (Feature 039: Now uses app-launcher for workspace assignment)
     bindsym $mod+Shift+b exec ${pkgs.ghostty}/bin/ghostty -e bash -c fh

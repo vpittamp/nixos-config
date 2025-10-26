@@ -13,6 +13,9 @@ DATE_BIN="@date@"
 GREP_BIN="@grep@"
 AWK_BIN="@awk@"
 XTERM_BIN="@xterm@"
+WALKER_BIN="@walker@"
+WALKER_PROJECT_LIST_BIN="@walker_project_list@"
+WALKER_PROJECT_SWITCH_BIN="@walker_project_switch@"
 
 # Colors (Catppuccin Mocha)
 COLOR_LAVENDER="#b4befe"
@@ -221,8 +224,14 @@ handle_click_event() {
     case "$name" in
         project)
             if [ "$button" = "1" ]; then
-                # Left click: Launch project switcher in xterm
-                "$XTERM_BIN" -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh &
+                # Left click: Launch Walker in dmenu mode with project list
+                # Use walker-project-list to populate the menu and walker-project-switch to handle selection
+                (
+                    SELECTED=$("$WALKER_PROJECT_LIST_BIN" | GDK_BACKEND=x11 "$WALKER_BIN" --dmenu -p "Switch Project" 2>/dev/null)
+                    if [ -n "$SELECTED" ]; then
+                        "$WALKER_PROJECT_SWITCH_BIN" "$SELECTED"
+                    fi
+                ) &
             elif [ "$button" = "3" ]; then
                 # Right click: Clear project (global mode)
                 "$I3PM_BIN" project clear >/dev/null 2>&1 &

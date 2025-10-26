@@ -73,6 +73,66 @@ PY
 
   walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
 
+  # Walker project list script - outputs formatted project list for Walker menu
+  walkerProjectList = pkgs.writeShellScriptBin "walker-project-list" ''
+    #!/usr/bin/env bash
+    # List projects for Walker menu
+    set -euo pipefail
+
+    I3PM="${config.home.profileDirectory}/bin/i3pm"
+
+    # Get projects JSON
+    PROJECTS_JSON=$($I3PM project list --json 2>/dev/null || echo '{"projects":[]}')
+
+    # Check if we have projects
+    PROJECT_COUNT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq '.projects | length')
+    if [ "$PROJECT_COUNT" = "0" ]; then
+      exit 0
+    fi
+
+    # Get current active project name
+    ACTIVE_PROJECT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.active.name // ""')
+
+    # Add "Clear Project" option if a project is active
+    if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
+      echo "∅ Clear Project (Global Mode)	__CLEAR__"
+    fi
+
+    # Output each project in format: "icon display_name [directory]	project_name"
+    echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] |
+      ((.icon // "📁") + " " + (.display_name // .name) +
+       (if .directory then " [" + (.directory | gsub("'$HOME'"; "~")) + "]" else "" end) +
+       (if .name == "'"$ACTIVE_PROJECT"'" then " ✓" else "" end) +
+       "\t" + .name)'
+  '';
+
+  # Walker project switch script - parses selection and switches project
+  walkerProjectSwitch = pkgs.writeShellScriptBin "walker-project-switch" ''
+    #!/usr/bin/env bash
+    # Switch to selected project from Walker
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    I3PM="${config.home.profileDirectory}/bin/i3pm"
+    SELECTED="$1"
+
+    # Extract project name (everything after the tab character)
+    PROJECT_NAME=$(echo "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+
+    # Handle special cases
+    if [ "$PROJECT_NAME" = "__CLEAR__" ]; then
+      $I3PM project clear >/dev/null 2>&1
+    else
+      $I3PM project switch "$PROJECT_NAME" >/dev/null 2>&1
+    fi
+  '';
+
+  walkerProjectListCmd = lib.getExe walkerProjectList;
+  walkerProjectSwitchCmd = lib.getExe walkerProjectSwitch;
+
   # Feature 034/035: Custom application directory for i3pm-managed apps
   # Desktop files are at ~/.local/share/i3pm-applications/applications/
   # Add to XDG_DATA_DIRS so Walker can find them
@@ -200,6 +260,8 @@ in
 
   home.packages = [
     walkerOpenInNvim
+    walkerProjectList
+    walkerProjectSwitch
   ];
 
   # Override the walker config file to add X11 settings not supported by the module
@@ -233,6 +295,19 @@ in
         recalculate_score = true
         show_icon_when_single = true
         src_once = "sesh list -d -c -t -T"
+        switcher_only = true
+
+        [[plugins]]
+        # Project switcher - integrated with i3pm
+        # Lists all projects with icons, display names, and directories
+        # Supports clearing active project to return to global mode
+        cmd = "${walkerProjectSwitchCmd} %RESULT%"
+        keep_sort = false
+        name = "projects"
+        prefix = ";p "
+        recalculate_score = true
+        show_icon_when_single = true
+        src_once = "${walkerProjectListCmd}"
         switcher_only = true
 
         [[providers.prefixes]]
