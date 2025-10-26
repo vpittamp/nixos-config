@@ -814,6 +814,48 @@ async def on_window_title(
             title=window_title,
         )
 
+        # Feature 039 FIX: VS Code project mark update on title change
+        # VS Code windows inherit I3PM environment from first launch, so title-based
+        # project detection is needed when the window title updates
+        if window_class == "Code" and window_title:
+            # Parse project from VS Code title: "PROJECT - hostname - Visual Studio Code"
+            import re
+            match = re.match(r"(?:Code - )?([^-]+) -", window_title)
+            if match:
+                title_project = match.group(1).strip().lower()
+
+                # Check if this matches a known project
+                if title_project in state_manager.state.projects:
+                    # Get current project mark
+                    current_marks = container.marks or []
+                    current_project_marks = [m for m in current_marks if m.startswith("project:")]
+
+                    if current_project_marks:
+                        # Extract current project from mark: "project:nixos:12345" -> "nixos"
+                        current_project = current_project_marks[0].split(":")[1]
+
+                        # Update mark if project changed
+                        if current_project != title_project:
+                            # Remove old mark
+                            old_mark = current_project_marks[0]
+                            await conn.command(f'[id={window_id}] unmark "{old_mark}"')
+
+                            # Add new mark
+                            new_mark = f"project:{title_project}:{window_id}"
+                            await conn.command(f'[id={window_id}] mark --add "{new_mark}"')
+
+                            logger.info(
+                                f"VSCode window {window_id}: Updated project mark from "
+                                f"{current_project} to {title_project} (title-based detection)"
+                            )
+
+                            # Update state
+                            await state_manager.update_window(
+                                window_id,
+                                project=title_project,
+                                marks=[new_mark] + [m for m in current_marks if not m.startswith("project:")]
+                            )
+
         # If workspace changed, move window
         if classification.workspace is not None:
             current_workspace = container.workspace().name if container.workspace() else None
