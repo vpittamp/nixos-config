@@ -293,22 +293,37 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Execute with fork and nohup to properly detach from parent
-# This ensures Walker (or other launchers) don't kill the process
-# when they think the "launcher" is done.
+# Execute with systemd-run for proper process isolation
+# This ensures the application runs independently of the launcher's lifecycle
 #
-# Why not exec?
-# - exec replaces the wrapper process with the application
-# - If Walker is supervising the wrapper PID, it may kill the app
-# - Firefox PWAs are multi-process and need time to fully start
+# Why systemd-run?
+# - Creates a transient systemd scope/service
+# - Completely isolated from parent process tree
+# - Walker/Elephant can't kill it when they exit
+# - Environment variables are preserved
+# - Works reliably with desktop file execution
 #
-# Why fork + background?
-# - Creates independent process that continues after wrapper exits
-# - nohup prevents SIGHUP signal from killing process
-# - Firefox output goes to nohup.out (can be logged if needed)
+# Why --user --scope?
+# - --user: Run in user session (not system)
+# - --scope: Lightweight process group (not full service)
+# - Process continues until application exits
 
-# Fork and background the application
-nohup "${ARGS[@]}" >/dev/null 2>&1 &
-
-# Exit immediately, letting the backgrounded process continue
-exit 0
+# Use systemd-run for desktop file execution environments (Walker/Elephant)
+# This ensures proper process isolation from the launcher
+if command -v systemd-run &>/dev/null; then
+    systemd-run --user --scope \
+        --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
+        --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
+        --setenv=I3PM_PROJECT_NAME="$I3PM_PROJECT_NAME" \
+        --setenv=I3PM_PROJECT_DIR="$I3PM_PROJECT_DIR" \
+        --setenv=I3PM_PROJECT_DISPLAY_NAME="$I3PM_PROJECT_DISPLAY_NAME" \
+        --setenv=I3PM_PROJECT_ICON="$I3PM_PROJECT_ICON" \
+        --setenv=I3PM_SCOPE="$I3PM_SCOPE" \
+        --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
+        --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
+        --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
+        "${ARGS[@]}"
+else
+    # Fallback to exec if systemd-run not available
+    exec "${ARGS[@]}"
+fi
