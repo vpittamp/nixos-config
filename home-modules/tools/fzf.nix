@@ -4,6 +4,8 @@
   # FZF with embedded Catppuccin Mocha colors
   programs.fzf = {
     enable = true;
+    # Keep bash integration for Ctrl+P (file widget) and Alt+C (cd widget)
+    # But we'll unbind Ctrl+R in bash.nix to use native reverse-i-search
     enableBashIntegration = true;
 
     # Use fzf's built-in --walker for file searching
