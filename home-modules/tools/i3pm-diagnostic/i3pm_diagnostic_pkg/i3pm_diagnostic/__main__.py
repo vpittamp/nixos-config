@@ -32,10 +32,10 @@ class DaemonClient:
         Initialize daemon client.
 
         Args:
-            socket_path: Path to daemon socket (default: ~/.local/share/i3-project-daemon/daemon.sock)
+            socket_path: Path to daemon socket (default: /run/i3-project-daemon/ipc.sock for system service)
         """
         if socket_path is None:
-            socket_path = Path.home() / ".local" / "share" / "i3-project-daemon" / "daemon.sock"
+            socket_path = Path("/run/i3-project-daemon/ipc.sock")
         self.socket_path = socket_path
         self.request_id = 0
 

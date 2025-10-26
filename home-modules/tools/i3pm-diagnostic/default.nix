@@ -9,8 +9,8 @@ pkgs.python3Packages.buildPythonApplication rec {
   pname = "i3pm-diagnostic";
   version = "1.0.0";
 
-  # Source is this directory
-  src = ./.;
+  # Source is the package subdirectory
+  src = ./i3pm_diagnostic_pkg;
 
   # Python dependencies
   propagatedBuildInputs = with pkgs.python3Packages; [
@@ -19,31 +19,8 @@ pkgs.python3Packages.buildPythonApplication rec {
     pydantic       # Data validation (for models.py)
   ];
 
-  # Format: setuptools (using pyproject.toml or setup.py)
-  format = "other";
-
-  # Install phase - copy Python modules and create executable
-  installPhase = ''
-    mkdir -p $out/bin
-    mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3pm_diagnostic
-
-    # Copy Python modules
-    cp -r __init__.py __main__.py models.py displays/ $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3pm_diagnostic/
-
-    # Create executable wrapper script
-    cat > $out/bin/i3pm-diagnose << 'EOF'
-#!/usr/bin/env bash
-# i3pm-diagnostic CLI entry point
-exec ${pkgs.python3}/bin/python3 -m i3pm_diagnostic "$@"
-EOF
-
-    chmod +x $out/bin/i3pm-diagnose
-
-    echo "Installed i3pm-diagnostic to $out/bin/i3pm-diagnose"
-  '';
-
-  # Skip build phase (no compilation needed for Python)
-  dontBuild = true;
+  # Format: setuptools (using setup.py)
+  format = "setuptools";
 
   # No tests yet (pytest not available in build environment)
   doCheck = false;
