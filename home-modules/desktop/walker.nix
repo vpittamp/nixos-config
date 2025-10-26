@@ -363,4 +363,10 @@ in
 
   # Walker service disabled - using direct invocation
   # No service override needed since runAsService = false
+
+  # Feature 034/035: Add i3pm apps directory to session XDG_DATA_DIRS
+  # This ensures Walker (when invoked directly, not as service) can find our apps
+  home.sessionVariables = {
+    XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
+  };
 }

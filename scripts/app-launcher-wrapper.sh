@@ -293,5 +293,22 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Execute with exec to replace this process (inherits I3PM_* environment)
-exec "${ARGS[@]}"
+# Execute with fork and nohup to properly detach from parent
+# This ensures Walker (or other launchers) don't kill the process
+# when they think the "launcher" is done.
+#
+# Why not exec?
+# - exec replaces the wrapper process with the application
+# - If Walker is supervising the wrapper PID, it may kill the app
+# - Firefox PWAs are multi-process and need time to fully start
+#
+# Why fork + background?
+# - Creates independent process that continues after wrapper exits
+# - nohup prevents SIGHUP signal from killing process
+# - Firefox output goes to nohup.out (can be logged if needed)
+
+# Fork and background the application
+nohup "${ARGS[@]}" >/dev/null 2>&1 &
+
+# Exit immediately, letting the backgrounded process continue
+exit 0

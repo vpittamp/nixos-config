@@ -53,12 +53,13 @@
     # Application launcher (Feature 034: Unified launcher with Walker)
     # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)
     # Use GDK_BACKEND=x11 to force X11 backend and avoid Wayland layer shell issues
-    bindsym $mod+d exec env GDK_BACKEND=x11 ${config.programs.walker.package}/bin/walker
+    # Feature 034/035: Set XDG_DATA_DIRS to include i3pm-applications directory
+    bindsym $mod+d exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
     # FZF fallbacks for specific use cases
     bindsym $mod+Shift+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-launcher.sh
     bindsym $mod+Ctrl+d exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -fa 'Monospace' -fs 12 -e /etc/nixos/scripts/fzf-send-to-window.sh
     # Walker alternative keybinding (Alt+Space for muscle memory)
-    bindsym Mod1+space exec env GDK_BACKEND=x11 ${config.programs.walker.package}/bin/walker
+    bindsym Mod1+space exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
 
     # Keybinding cheatsheet (F1 for help)
     bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
