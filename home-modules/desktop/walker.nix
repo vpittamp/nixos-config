@@ -103,6 +103,7 @@ in
 
     # Disable runAsService - Walker has issues with GApplication DBus in X11/XRDP
     # Instead, invoke Walker directly which works fine
+    # Plugins still work in direct mode
     runAsService = false;
 
     # NOTE: config generation disabled - we override with xdg.configFile below to add X11 settings
