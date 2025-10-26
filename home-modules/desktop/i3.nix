@@ -61,6 +61,10 @@
     # Walker alternative keybinding (Alt+Space for muscle memory)
     bindsym Mod1+space exec env GDK_BACKEND=x11 XDG_DATA_DIRS="${config.home.homeDirectory}/.local/share/i3pm-applications:$XDG_DATA_DIRS" ${config.programs.walker.package}/bin/walker
 
+    # Sesh tmux session switcher (Meta+Shift+s)
+    # Opens Walker in dmenu mode to select and launch tmux sessions
+    bindsym $mod+Shift+s exec /etc/nixos/scripts/sesh-switcher.sh
+
     # Keybinding cheatsheet (F1 for help)
     bindsym F1 exec /etc/nixos/scripts/keybindings-cheatsheet.sh
 

@@ -313,7 +313,12 @@ fi
 if command -v systemd-run &>/dev/null; then
     # Build the command string for bash -c execution
     # We need bash -c to properly handle complex commands with arguments
-    CMD_STRING="${ARGS[*]}"
+    # If project directory is set, cd to it first
+    if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+        CMD_STRING="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
+    else
+        CMD_STRING="${ARGS[*]}"
+    fi
 
     systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
