@@ -366,7 +366,7 @@ class I3ProjectDaemon:
         self.connection.subscribe("window::new", get_window_rules_wrapper_new)
         self.connection.subscribe(
             "window::mark",
-            partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
+            partial(on_window_mark, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server, resilient_connection=self.connection)
         )
         self.connection.subscribe(
             "window::close",

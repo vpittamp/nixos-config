@@ -583,19 +583,26 @@ class IPCServer:
             config_file = config_dir / "active-project.json"
             save_active_project(active_state, config_file)
 
-            # Update window visibility based on new project
-            if self.i3_connection and self.i3_connection.conn:
-                # Hide scoped windows from other projects
-                for window in all_windows:
-                    if window.window_class not in self.state_manager.state.scoped_classes:
-                        continue  # Skip global windows
+            logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
-                    if window.project == project_name:
-                        # Show windows from new project
-                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
-                    elif window.project is not None and window.project != project_name:
-                        # Hide windows from other projects
-                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad')
+            # Update window visibility based on new project using mark-based filtering
+            logger.debug(f"IPC: Checking i3 connection: i3_connection={self.i3_connection}, conn={self.i3_connection.conn if self.i3_connection else None}")
+            if self.i3_connection and self.i3_connection.conn:
+                logger.info(f"IPC: Applying mark-based window filtering for project '{project_name}'")
+                from .services.window_filter import filter_windows_by_project
+                filter_result = await filter_windows_by_project(
+                    self.i3_connection.conn,
+                    project_name,
+                    self.workspace_tracker  # Feature 038: Pass workspace_tracker for state persistence
+                )
+                windows_to_hide = filter_result.get("hidden", 0)
+                windows_to_show = filter_result.get("visible", 0)
+                logger.info(
+                    f"IPC: Window filtering applied: {windows_to_show} visible, {windows_to_hide} hidden "
+                    f"(via mark-based filtering)"
+                )
+            else:
+                logger.warning(f"IPC: Cannot apply filtering - i3 connection not available")
 
             return {
                 "previous_project": previous_project,
@@ -1595,11 +1602,12 @@ class IPCServer:
         def extract(node, depth=0):
             # Check if this is an actual window (has window ID)
             if node.window and node.window > 0:
-                # Get project from marks
+                # Get project from marks (format: project:PROJECT_NAME:WINDOW_ID)
                 project = None
                 for mark in node.marks:
                     if mark.startswith("project:"):
-                        project = mark.split(":", 1)[1]
+                        mark_parts = mark.split(":")
+                        project = mark_parts[1] if len(mark_parts) >= 2 else None
                         break
 
                 # Determine classification from daemon state
@@ -2968,6 +2976,8 @@ class IPCServer:
                 "tracking": {
                     "workspace_number": int,
                     "floating": bool,
+                    "geometry": dict,  # Feature 038: x, y, width, height for floating windows
+                    "original_scratchpad": bool,  # Feature 038: True if window was in scratchpad before filtering
                     "last_seen": float,
                     "project_name": str,
                     "app_name": str

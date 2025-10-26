@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 class WorkspaceTracker:
     """Manages persistent window workspace tracking for restoration.
 
-    State file schema:
+    State file schema (Feature 038 - v1.1):
     {
-        "version": "1.0",
+        "version": "1.1",
         "last_updated": 1730000000.123,
         "windows": {
             "123456": {
@@ -42,7 +42,9 @@ class WorkspaceTracker:
                 "project_name": "nixos",
                 "app_name": "vscode",
                 "window_class": "Code",
-                "last_seen": 1730000000.123
+                "last_seen": 1730000000.123,
+                "geometry": null,
+                "original_scratchpad": false
             }
         }
     }
@@ -56,7 +58,7 @@ class WorkspaceTracker:
         """
         self.state_file = state_file
         self.windows: Dict[int, Dict] = {}
-        self.version = "1.0"
+        self.version = "1.1"  # Feature 038: Updated to v1.1 for geometry and original_scratchpad fields
         self.last_updated = time.time()
         self._lock = asyncio.Lock()
 
@@ -76,18 +78,20 @@ class WorkspaceTracker:
                 with self.state_file.open("r") as f:
                     data = json.load(f)
 
-                # Validate version
+                # Validate version (support both 1.0 and 1.1 for backward compatibility)
                 version = data.get("version", "1.0")
-                if version != "1.0":
+                if version not in ["1.0", "1.1"]:
                     logger.warning(f"Unsupported window-workspace-map version: {version}, reinitializing")
                     await self._save_unlocked()
                     return
 
                 # Load windows (keys are strings in JSON, convert to int)
+                # Feature 038: v1.0 files will be automatically upgraded to v1.1 on next save
+                # Missing geometry/original_scratchpad fields get default values in get_window_workspace()
                 self.windows = {int(k): v for k, v in data.get("windows", {}).items()}
                 self.last_updated = data.get("last_updated", time.time())
 
-                logger.info(f"Loaded {len(self.windows)} window tracking entries")
+                logger.info(f"Loaded {len(self.windows)} window tracking entries (schema v{version})")
 
             except (json.JSONDecodeError, ValueError, KeyError) as e:
                 logger.error(f"Failed to load window-workspace-map.json: {e}")
@@ -144,16 +148,20 @@ class WorkspaceTracker:
         project_name: str,
         app_name: str,
         window_class: str,
+        geometry: Optional[Dict] = None,
+        original_scratchpad: bool = False,
     ) -> None:
         """Track window workspace assignment.
 
         Args:
             window_id: i3 container ID
-            workspace_number: Workspace number (1-70)
+            workspace_number: Workspace number (1-70, or -1 for scratchpad)
             floating: True if floating window
             project_name: Project name from I3PM_PROJECT_NAME
             app_name: App name from I3PM_APP_NAME
             window_class: X11 window class
+            geometry: Window geometry dict with x, y, width, height (for floating windows), or None
+            original_scratchpad: True if window was in scratchpad before project filtering
         """
         async with self._lock:
             self.windows[window_id] = {
@@ -163,24 +171,41 @@ class WorkspaceTracker:
                 "app_name": app_name,
                 "window_class": window_class,
                 "last_seen": time.time(),
+                "geometry": geometry,  # Feature 038: Window geometry for floating windows
+                "original_scratchpad": original_scratchpad,  # Feature 038: Scratchpad origin flag
             }
 
         # Save asynchronously (don't block)
         asyncio.create_task(self.save())
 
-    async def get_window_workspace(self, window_id: int) -> Optional[Tuple[int, bool]]:
-        """Get tracked workspace for window.
+    async def get_window_workspace(self, window_id: int) -> Optional[Dict]:
+        """Get tracked workspace and state for window.
 
         Args:
             window_id: i3 container ID
 
         Returns:
-            (workspace_number, floating) tuple, or None if not tracked
+            Window state dict with workspace_number, floating, geometry, original_scratchpad, etc.
+            Returns None if not tracked.
+
+            For backward compatibility with old JSON files:
+            - geometry defaults to None if missing
+            - original_scratchpad defaults to False if missing
         """
         async with self._lock:
             if window_id in self.windows:
                 entry = self.windows[window_id]
-                return (entry["workspace_number"], entry["floating"])
+                # Feature 038: Return full state dict with backward-compatible defaults
+                return {
+                    "workspace_number": entry.get("workspace_number", 1),
+                    "floating": entry.get("floating", False),
+                    "project_name": entry.get("project_name", ""),
+                    "app_name": entry.get("app_name", ""),
+                    "window_class": entry.get("window_class", ""),
+                    "last_seen": entry.get("last_seen", time.time()),
+                    "geometry": entry.get("geometry", None),  # Backward compatible default
+                    "original_scratchpad": entry.get("original_scratchpad", False),  # Backward compatible default
+                }
             return None
 
     async def remove_window(self, window_id: int) -> None:

@@ -34,7 +34,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.2.0";
+    version = "1.3.0";  # Feature 038: Window state preservation (tiling/floating, workspace, geometry)
     src = daemonSrc;
 
     installPhase = ''

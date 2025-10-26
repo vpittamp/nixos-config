@@ -27,6 +27,7 @@ class ResilientI3Connection:
         self.conn: Optional[aio.Connection] = None
         self.is_shutting_down = False
         self.reconnect_delay = 0.1  # Initial delay: 100ms
+        self.is_performing_startup_scan = False  # Flag to suppress event handlers during startup scan
 
     async def connect_with_retry(self, max_attempts: int = 10) -> aio.Connection:
         """Connect to i3 with exponential backoff retry.
@@ -146,17 +147,22 @@ class ResilientI3Connection:
             return
 
         try:
+            self.is_performing_startup_scan = True
             logger.info("Performing startup scan for pre-existing windows...")
             tree = await self.conn.get_tree()
             await self.scan_and_mark_unmarked_windows(tree)
             logger.info("Startup scan complete")
         except Exception as e:
             logger.error(f"Failed to perform startup scan: {e}")
+        finally:
+            self.is_performing_startup_scan = False
 
     async def scan_and_mark_unmarked_windows(self, tree: aio.Con) -> None:
         """Scan all windows and mark unmarked ones based on I3PM environment variables.
 
         This is called during startup to mark windows that were created before the daemon started.
+        Windows are marked in a specific order to avoid race conditions: VSCode windows are marked
+        LAST because marking other windows after VSCode causes VSCode's marks to be cleared.
 
         Args:
             tree: Root container from i3 GET_TREE
@@ -167,9 +173,10 @@ class ResilientI3Connection:
 
         marked_count = 0
         scanned_count = 0
+        windows_to_mark = []  # Collect windows before marking
 
-        async def scan_container(container: aio.Con) -> None:
-            nonlocal marked_count, scanned_count
+        async def collect_windows(container: aio.Con) -> None:
+            nonlocal scanned_count
 
             # Check if this is a window (has window_id)
             if container.window:
@@ -189,56 +196,89 @@ class ResilientI3Connection:
                     container.id, pid, window_xid
                 )
 
-                # If window has I3PM_PROJECT_NAME, mark it
+                # If window has I3PM_PROJECT_NAME, collect it for marking
                 project_name = i3pm_env.get('I3PM_PROJECT_NAME')
                 if project_name:
-                    logger.info(f"Marking pre-existing window {container.window} ({container.window_class}) with project:{project_name}")
+                    # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
+                    # VSCode windows share a single process, so I3PM environment doesn't distinguish
+                    # between multiple workspaces. Parse title to get the actual project directory.
+                    if container.window_class == "Code" and container.name:
+                        import re
+                        logger.debug(f"VSCode window {container.window} title: '{container.name}'")
+                        # Match either "Code - PROJECT -" or just "PROJECT - hostname -" format
+                        match = re.match(r"(?:Code - )?([^-]+) -", container.name)
+                        if match:
+                            title_project = match.group(1).strip().lower()
+                            logger.debug(f"VSCode title match: '{title_project}', known projects: {list(self.state_manager.state.projects.keys())}")
+                            # Check if this matches a known project name
+                            if title_project in self.state_manager.state.projects:
+                                if project_name != title_project:
+                                    logger.info(
+                                        f"VSCode window {container.window}: Overriding project from I3PM "
+                                        f"({project_name}) to title-based ({title_project})"
+                                    )
+                                    project_name = title_project
+                        else:
+                            logger.debug(f"VSCode title '{container.name}' didn't match regex pattern")
 
-                    # Mark the window in i3 using window ID (more reliable than con_id which can become stale)
-                    mark = f"project:{project_name}"
-                    command_str = f'[id={container.window}] mark --add "{mark}"'
-                    logger.debug(f"Executing mark command: {command_str}")
-                    result = await self.conn.command(command_str)
-                    # Log command result details
-                    if result and len(result) > 0:
-                        reply = result[0]
-                        logger.debug(f"Mark command for window {container.window}: success={reply.success}, error={getattr(reply, 'error', None)}")
-                    else:
-                        logger.warning(f"Mark command for window {container.window} returned empty result")
-
-                    # Small delay to allow i3 to process the mark and fire window::mark event
-                    # before we mark the next window (prevents race conditions during startup scan)
-                    await asyncio.sleep(0.05)  # 50ms
-
-                    # Add to state tracking
-                    window_info = WindowInfo(
-                        window_id=container.window,
-                        con_id=container.id,
-                        window_class=container.window_class or "unknown",
-                        window_title=container.name or "",
-                        window_instance=container.window_instance or "",
-                        app_identifier=container.window_class or "unknown",
-                        project=project_name,
-                        marks=[mark] + list(container.marks),
-                        workspace=container.workspace().name if container.workspace() else "",
-                        output=(
-                            container.workspace().ipc_data.get("output", "")
-                            if container.workspace()
-                            else ""
-                        ),
-                        is_floating=container.floating == "user_on",
-                        created=datetime.now(),
-                    )
-
-                    await self.state_manager.add_window(window_info)
-                    marked_count += 1
+                    windows_to_mark.append((container, project_name))
 
             # Recursively scan children
             for child in container.nodes + container.floating_nodes:
-                await scan_container(child)
+                await collect_windows(child)
 
         logger.info("Scanning for unmarked windows with I3PM environment variables...")
-        await scan_container(tree)
+        await collect_windows(tree)
+
+        # Sort windows: VSCode (class="Code") windows last to avoid mark clearing race condition
+        # (marking other windows after VSCode causes VSCode's marks to disappear)
+        windows_to_mark.sort(key=lambda x: 1 if x[0].window_class == "Code" else 0)
+
+        # Mark windows in the sorted order
+        for container, project_name in windows_to_mark:
+            logger.info(f"Marking pre-existing window {container.window} ({container.window_class}) with project:{project_name}")
+
+            # Mark the window in i3 using window ID (more reliable than con_id which can become stale)
+            # Note: i3 marks must be UNIQUE - cannot use same mark for multiple windows
+            # So we use format: project:PROJECT_NAME:WINDOW_ID
+            mark = f"project:{project_name}:{container.window}"
+            command_str = f'[id={container.window}] mark --add "{mark}"'
+            logger.debug(f"Executing mark command: {command_str}")
+            result = await self.conn.command(command_str)
+            # Log command result details
+            if result and len(result) > 0:
+                reply = result[0]
+                logger.debug(f"Mark command for window {container.window}: success={reply.success}, error={getattr(reply, 'error', None)}")
+            else:
+                logger.warning(f"Mark command for window {container.window} returned empty result")
+
+            # Small delay to allow i3 to process the mark and fire window::mark event
+            # before we mark the next window (prevents race conditions during startup scan)
+            await asyncio.sleep(0.05)  # 50ms
+
+            # Add to state tracking
+            window_info = WindowInfo(
+                window_id=container.window,
+                con_id=container.id,
+                window_class=container.window_class or "unknown",
+                window_title=container.name or "",
+                window_instance=container.window_instance or "",
+                app_identifier=container.window_class or "unknown",
+                project=project_name,
+                marks=[mark] + list(container.marks),
+                workspace=container.workspace().name if container.workspace() else "",
+                output=(
+                    container.workspace().ipc_data.get("output", "")
+                    if container.workspace()
+                    else ""
+                ),
+                is_floating=container.floating == "user_on",
+                created=datetime.now(),
+            )
+
+            await self.state_manager.add_window(window_info)
+            marked_count += 1
+
         logger.info(f"Startup scan complete: marked {marked_count} windows out of {scanned_count} scanned")
 
     async def _rebuild_workspaces(self) -> None:

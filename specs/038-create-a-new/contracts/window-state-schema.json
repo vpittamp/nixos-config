@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/vpittamp/nixos-config/schemas/window-state-map.json",
+  "title": "Window State Map",
+  "description": "Persistent window state mapping for i3pm project management",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0", "1.1"]
+    },
+    "last_updated": {
+      "type": "number",
+      "description": "Unix timestamp of last map update",
+      "minimum": 0
+    },
+    "windows": {
+      "type": "object",
+      "description": "Map of window ID to window state",
+      "patternProperties": {
+        "^[0-9]+$": {
+          "$ref": "#/definitions/WindowState"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["version", "last_updated", "windows"],
+  "additionalProperties": false,
+  "definitions": {
+    "WindowState": {
+      "type": "object",
+      "description": "Complete state information for a single window",
+      "properties": {
+        "workspace_number": {
+          "type": "integer",
+          "description": "Workspace number or -1 for scratchpad",
+          "minimum": -1,
+          "maximum": 70
+        },
+        "floating": {
+          "type": "boolean",
+          "description": "True if window is floating, false if tiled"
+        },
+        "project_name": {
+          "type": "string",
+          "description": "Project name from I3PM_PROJECT_NAME environment variable"
+        },
+        "app_name": {
+          "type": "string",
+          "description": "Application name from registry or window class"
+        },
+        "window_class": {
+          "type": "string",
+          "description": "Window class from i3 WM_CLASS property"
+        },
+        "last_seen": {
+          "type": "number",
+          "description": "Unix timestamp when this window state was last updated",
+          "minimum": 0
+        },
+        "geometry": {
+          "description": "Window geometry for floating windows, null for tiled windows",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/Geometry"
+            }
+          ]
+        },
+        "original_scratchpad": {
+          "type": "boolean",
+          "description": "True if window was in scratchpad before project filtering (don't restore)",
+          "default": false
+        }
+      },
+      "required": [
+        "workspace_number",
+        "floating",
+        "project_name",
+        "app_name",
+        "window_class",
+        "last_seen",
+        "geometry",
+        "original_scratchpad"
+      ],
+      "additionalProperties": false
+    },
+    "Geometry": {
+      "type": "object",
+      "description": "Window geometry (position and size) in pixels",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "description": "X position in pixels from left edge of screen",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "description": "Y position in pixels from top edge of screen",
+          "minimum": 0
+        },
+        "width": {
+          "type": "integer",
+          "description": "Window width in pixels",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "description": "Window height in pixels",
+          "minimum": 1
+        }
+      },
+      "required": ["x", "y", "width", "height"],
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "version": "1.1",
+      "last_updated": 1761432988.7641783,
+      "windows": {
+        "94481823794032": {
+          "workspace_number": 2,
+          "floating": false,
+          "project_name": "nixos",
+          "app_name": "vscode",
+          "window_class": "Code",
+          "last_seen": 1761432863.7027514,
+          "geometry": null,
+          "original_scratchpad": false
+        },
+        "94481823123456": {
+          "workspace_number": 3,
+          "floating": true,
+          "project_name": "nixos",
+          "app_name": "calculator",
+          "window_class": "Gnome-calculator",
+          "last_seen": 1761432900.1234567,
+          "geometry": {
+            "x": 100,
+            "y": 200,
+            "width": 400,
+            "height": 300
+          },
+          "original_scratchpad": false
+        }
+      }
+    }
+  ]
+}

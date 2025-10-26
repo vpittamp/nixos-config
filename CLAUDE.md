@@ -438,22 +438,30 @@ i3-project-switch --clear
 pclear
 ```
 
-### Automatic Window Filtering (Feature 037)
+### Automatic Window Filtering (Feature 037) with State Preservation (Feature 038)
 
 **Automatic hiding/showing on project switch**: When you switch projects, scoped windows from the previous project automatically hide (move to scratchpad), while windows for the new project restore to their exact workspace locations. Global apps remain visible across all projects.
 
 **How it works**:
 1. User switches project via `Win+P` or `pswitch nixos`
 2. Daemon receives tick event and triggers filtering
-3. All scoped windows from old project hide to scratchpad
-4. All scoped windows for new project restore from scratchpad
+3. All scoped windows from old project hide to scratchpad **with full state capture**
+4. All scoped windows for new project restore from scratchpad **with exact state restoration**
 5. Windows return to exact workspace positions (tracked persistently)
 
+**Window State Preservation (Feature 038 - v1.3.0)**:
+- ✅ **Tiling state preserved**: Tiled windows remain tiled, floating windows remain floating
+- ✅ **Exact workspace restoration**: Windows return to their original workspace numbers (not current workspace)
+- ✅ **Floating geometry preserved**: Position (x, y) and size (width, height) maintained for floating windows
+- ✅ **Scratchpad origin tracking**: Windows manually placed in scratchpad stay there (not auto-restored)
+- ✅ **Manual moves tracked**: Move VS Code from WS2 → WS5, position persists across project switches
+- ✅ **Backward compatible**: Works with existing v1.0 window-workspace-map.json files
+
 **Window persistence**:
-- Manual moves tracked automatically (move VS Code from WS2 → WS5)
-- Floating state preserved (floating windows restore as floating)
-- Works across daemon restarts (persisted in `~/.config/i3/window-workspace-map.json`)
+- State persisted in `~/.config/i3/window-workspace-map.json` (schema v1.1)
+- Works across daemon restarts (persistent storage)
 - Workspace assignment on launch (apps open on configured workspace regardless of focus)
+- Geometry tolerance: <10px drift acceptable for floating windows
 
 **Performance**:
 - Typical project switch: 2-5ms for 10 windows
@@ -472,13 +480,29 @@ async with DaemonClient() as daemon:
     # Returns: visibility, I3PM_* env vars, tracking info, i3 state
 ```
 
-**Troubleshooting window filtering**:
+**Troubleshooting window filtering and state preservation**:
 ```bash
 # Check if windows are being filtered
 i3pm daemon events --type=tick | grep filtering
 
-# Verify window tracking
+# Verify window tracking with full state
 cat ~/.config/i3/window-workspace-map.json | jq .
+
+# Inspect specific window state (Feature 038)
+i3pm windows --json | jq '.outputs[].workspaces[].windows[] | select(.id == WINDOW_ID)'
+
+# Check window state schema version
+cat ~/.config/i3/window-workspace-map.json | jq '.version'  # Should be "1.1"
+
+# View daemon logs for state capture/restoration (Feature 038)
+journalctl --user -u i3-project-event-listener -n 100 | grep -E "Capturing state|Restoring window|geometry"
+
+# Check performance metrics (target <50ms per window)
+journalctl --user -u i3-project-event-listener -n 50 | grep "Window filtering complete"
+
+# Verify floating state preservation
+# Open floating calculator, switch projects, verify it's still floating with same position
+xwininfo -int  # Click window to get window ID, then check state
 
 # Manual hide/restore (via daemon API)
 # Note: Automatic filtering happens on project switch
@@ -517,6 +541,25 @@ After connecting/disconnecting monitors, **workspaces automatically reassign** (
 3. Check daemon processed switch: `i3pm daemon events | grep tick`
 4. Try switching again: `i3pm project switch <project-name>`
 
+**Tiled windows becoming floating after project switch (Feature 038):**
+1. Check daemon version: `systemctl --user status i3-project-event-listener | grep version`
+   - Should be v1.3.0 or higher
+2. Verify state capture logging: `journalctl --user -u i3-project-event-listener | grep "Capturing state"`
+3. Check window state file: `cat ~/.config/i3/window-workspace-map.json | jq '.version'`
+   - Should be "1.1" for full state preservation
+4. If version is old, rebuild and restart daemon: `sudo nixos-rebuild switch --flake .#hetzner`
+
+**Floating windows losing position/size (Feature 038):**
+1. Verify geometry is being captured: `journalctl --user -u i3-project-event-listener | grep "Captured geometry"`
+2. Check state file has geometry: `cat ~/.config/i3/window-workspace-map.json | jq '.windows[].geometry'`
+3. Verify restoration sequence: `journalctl --user -u i3-project-event-listener | grep "Restoring geometry"`
+4. If geometry is null for floating windows, there may be a capture timing issue - report bug
+
+**Windows not returning to original workspace:**
+1. Check state file workspace numbers: `cat ~/.config/i3/window-workspace-map.json | jq '.windows[].workspace_number'`
+2. Verify restoration uses exact workspace: `journalctl --user -u i3-project-event-listener | grep "move workspace number"`
+3. Check for workspace fallback: `journalctl --user -u i3-project-event-listener | grep "No saved state"`
+
 **Edit project configuration:**
 ```bash
 # Manually edit
@@ -531,6 +574,7 @@ For more details, see the quickstart guides:
 cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (Feature 015)
 cat /etc/nixos/specs/035-now-that-we/quickstart.md   # Registry-centric system (Feature 035)
 cat /etc/nixos/specs/037-given-our-top/quickstart.md # Window filtering (Feature 037)
+cat /etc/nixos/specs/038-create-a-new/quickstart.md  # Window state preservation (Feature 038)
 ```
 
 ## 📦 Registry-Centric Architecture (Feature 035)
