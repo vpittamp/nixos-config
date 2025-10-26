@@ -55,7 +55,10 @@
     for_window [instance="fzf-launcher"] floating enable, border pixel 0, move position center, mark _global_ui
 
     # Window management
+    # Primary kill binding (standard i3)
     bindsym $mod+Shift+q kill
+    # Alternative kill binding (in case RDP captures Super+Shift+Q)
+    bindsym $mod+Escape kill
 
     # Application launcher (Feature 034: Unified launcher with Walker)
     # Primary launcher: Walker (modern GTK4 launcher with fuzzy search, calculator, file browser)

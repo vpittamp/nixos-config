@@ -52,7 +52,7 @@ build_project_block() {
     else
         # Get project info (icon + display name) from project list
         project_info=$("$I3PM_BIN" project list --json 2>/dev/null | \
-            "$JQ_BIN" -r ".[] | select(.name == \"$current\") | \"\(.icon // \"📁\") \(.display_name // .name)\"" || echo "📁 $current")
+            "$JQ_BIN" -r ".projects[] | select(.name == \"$current\") | \"\(.icon // \"📁\") \(.display_name // .name)\"" || echo "📁 $current")
 
         "$JQ_BIN" -n --arg text "$project_info" --arg instance "$current" \
             '{
