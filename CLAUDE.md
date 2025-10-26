@@ -453,8 +453,11 @@ pclear
 4. All scoped windows for new project restore from scratchpad **with exact state restoration**
 5. Windows return to exact workspace positions (tracked persistently)
 
-**Window State Preservation (Feature 038 - v1.3.0)**:
-- ✅ **Tiling state preserved**: Tiled windows remain tiled, floating windows remain floating
+**Window State Preservation (Feature 038 - v1.4.0)**:
+- ✅ **Tiling state preserved** (FIXED in v1.4.0): Tiled windows remain tiled, floating windows remain floating
+  - **v1.4.0 Fix**: State is now captured BEFORE scratchpad move on first hide, then preserved on subsequent hides
+  - **Root Cause**: i3's `move scratchpad` always makes windows floating, so capturing state after move was incorrect
+  - **Solution**: Check for existing saved state and preserve original floating value (lines 437-448 in `window_filter.py`)
 - ✅ **Exact workspace restoration**: Windows return to their original workspace numbers (not current workspace)
 - ✅ **Floating geometry preserved**: Position (x, y) and size (width, height) maintained for floating windows
 - ✅ **Scratchpad origin tracking**: Windows manually placed in scratchpad stay there (not auto-restored)
@@ -547,8 +550,9 @@ After connecting/disconnecting monitors, **workspaces automatically reassign** (
 
 **Tiled windows becoming floating after project switch (Feature 038):**
 1. Check daemon version: `systemctl --user status i3-project-event-listener | grep version`
-   - Should be v1.3.0 or higher
+   - Should be v1.4.0 or higher (v1.4.0 includes the scratchpad floating state fix)
 2. Verify state capture logging: `journalctl --user -u i3-project-event-listener | grep "Capturing state"`
+   - Look for "preserved_state=True" on subsequent hides
 3. Check window state file: `cat ~/.config/i3/window-workspace-map.json | jq '.version'`
    - Should be "1.1" for full state preservation
 4. If version is old, rebuild and restart daemon: `sudo nixos-rebuild switch --flake .#hetzner`

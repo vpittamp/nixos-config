@@ -1,14 +1,66 @@
 # Feature 038: Window State Preservation - Quickstart Guide
 
 **Feature Branch**: `038-create-a-new`
-**Status**: Specification Complete - Ready for Implementation
+**Status**: ✅ IMPLEMENTED (v1.4.0)
 **Created**: 2025-10-25
+**Completed**: 2025-10-26
+
+## 🎉 Implementation Complete
+
+Feature 038 is now fully implemented and working! Windows correctly preserve their tiling/floating state and workspace assignments across project switches.
+
+**Latest Version**: v1.4.0 (includes floating state preservation fix)
+**Commit**: `287a94b` - Fix scratchpad floating state preservation
 
 ## Problem Summary
 
 When switching between projects, windows are moved to the scratchpad to hide them. However, when switching back to the original project, windows are being restored as **floating** even if they were originally **tiled**. This breaks the user's workspace layout and causes confusion.
 
-**Root Cause**: The current implementation uses `move workspace current` which doesn't preserve the window's tiling/floating state, and doesn't restore windows to their exact workspace number.
+**Root Cause (v1.0-v1.3)**: State was captured AFTER windows moved to scratchpad, so windows were incorrectly recorded as floating.
+
+**Fix (v1.4.0)**: State preservation now checks for existing saved state and preserves original floating value on subsequent hides.
+
+## Implementation Notes (v1.4.0)
+
+### The Scratchpad Floating Bug
+
+**Problem Discovered**: Windows became floating after being hidden/restored during project switches, even when originally tiled.
+
+**Root Cause Analysis**:
+1. i3's `move scratchpad` command ALWAYS makes windows floating
+2. State capture happened AFTER window moved to scratchpad (already floating)
+3. On subsequent hides, code captured floating state from scratchpad (floating=True)
+4. This overwrote the original tiled state (floating=False)
+
+**Solution** (lines 437-448 in `window_filter.py`):
+```python
+# Check if we already have saved state for this window
+saved_state = await workspace_tracker.get_window_workspace(window_id)
+if saved_state and not is_original_scratchpad:
+    # Preserve original floating state from first capture
+    is_floating = saved_state.get("floating", False)
+    geometry = saved_state.get("geometry", None)
+else:
+    # First capture OR window from scratchpad - capture current state
+    is_floating = window.floating in ["user_on", "auto_on"]
+    # ... capture geometry for floating windows ...
+```
+
+**Behavior**:
+- **First hide**: Capture current window state (floating=True/False)
+- **Subsequent hides**: Preserve original floating state from first capture
+- **From scratchpad**: Re-capture current state (special case for manual scratchpad use)
+
+**Inspired by i3run**: Pattern matches the `budlabs-i3run` tool which stores floating state BEFORE scratchpad move and uses `floating enable/disable` on restore.
+
+### Testing Results
+
+✅ **Verified working**:
+1. Launch ghostty on nixos (tiled window)
+2. Switch to stacks → ghostty hidden with `floating=False` captured
+3. Switch back to nixos → ghostty restored as TILED (`floating=user_off`)
+4. Daemon logs confirm: `Capturing state floating=False` → `Restoring floating=False`
+5. i3 tree shows: `floating=user_off` (tiled ✅)
 
 ## Solution Overview
 
@@ -305,18 +357,40 @@ After implementation, the following should be true:
 
 ## Troubleshooting
 
-**Issue**: Windows still becoming floating after implementation
+**Issue**: Windows still becoming floating after implementation (FIXED in v1.4.0)
 
-**Debug**:
+**Solution**: Update to v1.4.0 or later which includes the scratchpad floating state preservation fix.
+
+**Debug** (if still experiencing issues):
 ```bash
-# Check window state in persistence file
-cat ~/.config/i3/window-workspace-map.json | jq .
+# Check window state in persistence file (verify floating=false for tiled windows)
+cat ~/.config/i3/window-workspace-map.json | jq '.windows[] | {id: .window_class, floating, workspace_number}'
 
-# Check daemon logs during project switch
-journalctl --user -u i3-project-event-listener -f
+# Check daemon logs during project switch (should see "preserved_state=True")
+sudo journalctl -u i3-project-daemon.service --since "1 minute ago" | grep -E "Capturing state|preserved_state"
 
-# Verify i3 commands being sent
-i3pm daemon events --follow | grep -i "floating\|workspace"
+# Verify state capture shows preserved_state=True on subsequent hides
+# Expected output: "Capturing state for window X: ... preserved_state=True"
+
+# Verify restoration uses correct floating state
+# Expected output: "Restoring window X to workspace Y, floating=False"
+```
+
+**Verify Fix**:
+```bash
+# 1. Launch tiled window and check state
+i3-msg -t get_tree | jq -r '.. | objects | select(.window_properties?.class == "com.mitchellh.ghostty") | "\(.id): floating=\(.floating)"'
+# Should show: floating=user_off (tiled)
+
+# 2. Switch projects twice
+i3pm project switch stacks
+sleep 2
+i3pm project switch nixos
+sleep 2
+
+# 3. Verify window is still tiled
+i3-msg -t get_tree | jq -r '.. | objects | select(.window_properties?.class == "com.mitchellh.ghostty") | "\(.id): floating=\(.floating)"'
+# Should STILL show: floating=user_off (tiled ✅)
 ```
 
 **Issue**: Windows not restoring to correct workspace
@@ -345,5 +419,6 @@ i3-msg -t get_workspaces | jq '.[] | .num'
 
 ---
 
-**Status**: ✅ Ready for Implementation
-**Next Step**: Review specification, then begin P1 implementation (tiled window preservation)
+**Status**: ✅ IMPLEMENTED (v1.4.0)
+**Completion Date**: 2025-10-26
+**Next Step**: Feature complete! Monitor for edge cases and refinements.
