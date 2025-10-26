@@ -25,7 +25,7 @@ let
 
   # Helper to determine if app requires terminal mode
   isTerminalApp = command:
-    builtins.elem command ["ghostty" "alacritty" "kitty" "wezterm"];
+    builtins.elem command ["alacritty" "ghostty" "kitty" "wezterm"];
 
   # Helper to create validated application entry
   mkApp = attrs:
@@ -38,18 +38,18 @@ let
     };
 
   applications = [
-    # WS1: Terminals (Primary: ghostty)
+    # WS1: Terminals (Primary: alacritty)
     (mkApp {
-      name = "ghostty";
-      display_name = "Ghostty Terminal";
-      command = "ghostty";
+      name = "terminal";
+      display_name = "Alacritty Terminal";
+      command = "alacritty";
       # Opens in project directory (wrapper handles cd to PROJECT_DIR)
       parameters = "";
       scope = "scoped";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 1;
       icon = "terminal";
-      nix_package = "pkgs.ghostty";
+      nix_package = "pkgs.alacritty";
       multi_instance = true;
       fallback_behavior = "use_home";
       description = "Terminal opens in project directory";
@@ -74,11 +74,11 @@ let
     (mkApp {
       name = "neovim";
       display_name = "Neovim";
-      command = "ghostty";
+      command = "alacritty";
       # parameters = "-e nvim $PROJECT_DIR";
       parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
       scope = "scoped";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 2;
       icon = "nvim";
       nix_package = "pkgs.neovim";
@@ -185,10 +185,10 @@ let
     (mkApp {
       name = "lazygit";
       display_name = "Lazygit";
-      command = "ghostty";
+      command = "alacritty";
       parameters = "-e lazygit --work-tree=$PROJECT_DIR";
       scope = "scoped";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 5;
       icon = "git";
       nix_package = "pkgs.lazygit";
@@ -217,10 +217,10 @@ let
     (mkApp {
       name = "btop";
       display_name = "btop";
-      command = "ghostty";
+      command = "alacritty";
       parameters = "-e btop";
       scope = "global";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.btop";
@@ -232,10 +232,10 @@ let
     (mkApp {
       name = "htop";
       display_name = "htop";
-      command = "ghostty";
+      command = "alacritty";
       parameters = "-e htop";
       scope = "global";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.htop";
@@ -248,10 +248,10 @@ let
     (mkApp {
       name = "yazi";
       display_name = "Yazi File Manager";
-      command = "ghostty";
+      command = "alacritty";
       parameters = "-e yazi $PROJECT_DIR";
       scope = "scoped";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 8;
       icon = "folder";
       nix_package = "pkgs.yazi";
@@ -264,16 +264,32 @@ let
     (mkApp {
       name = "k9s";
       display_name = "K9s";
-      command = "ghostty";
+      command = "alacritty";
       parameters = "-e k9s";
       scope = "global";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = "Alacritty";
       preferred_workspace = 9;
       icon = "kubernetes";
       nix_package = "pkgs.k9s";
       multi_instance = false;
       fallback_behavior = "skip";
       description = "Kubernetes cluster management";
+    })
+
+    # WS12: Ghostty Terminal (backup terminal, less frequently used)
+    (mkApp {
+      name = "ghostty";
+      display_name = "Ghostty Terminal";
+      command = "ghostty";
+      parameters = "";
+      scope = "scoped";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 12;
+      icon = "terminal";
+      nix_package = "pkgs.ghostty";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      description = "Ghostty terminal (backup option)";
     })
   ];
 
