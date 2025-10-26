@@ -1,0 +1,286 @@
+{
+  "$defs": {
+    "I3PMEnvironment": {
+      "description": "I3PM environment variables from /proc/{pid}/environ (Feature 039: T006).",
+      "example": {
+        "active": true,
+        "app_id": "terminal-stacks-823199-1730000000",
+        "app_name": "terminal",
+        "launch_time": 1730000000,
+        "launcher_pid": 823150,
+        "project_dir": "/home/vpittamp/projects/stacks",
+        "project_display_name": "Stacks",
+        "project_icon": "\ud83d\udcda",
+        "project_name": "stacks",
+        "scope": "scoped"
+      },
+      "properties": {
+        "app_id": {
+          "description": "Unique instance ID: {app}-{project}-{pid}-{timestamp}",
+          "title": "App Id",
+          "type": "string"
+        },
+        "app_name": {
+          "description": "Registry application name (e.g., 'vscode', 'terminal')",
+          "title": "App Name",
+          "type": "string"
+        },
+        "target_workspace": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Direct workspace assignment from launcher (1-10)",
+          "title": "Target Workspace"
+        },
+        "project_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Active project name (e.g., 'nixos', 'stacks')",
+          "title": "Project Name"
+        },
+        "project_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Project directory path",
+          "title": "Project Dir"
+        },
+        "project_display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable project name",
+          "title": "Project Display Name"
+        },
+        "project_icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Project icon emoji",
+          "title": "Project Icon"
+        },
+        "scope": {
+          "description": "Application scope: 'scoped' or 'global'",
+          "title": "Scope",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "description": "True if project was active at launch",
+          "title": "Active",
+          "type": "boolean"
+        },
+        "launch_time": {
+          "description": "Unix timestamp of launch",
+          "title": "Launch Time",
+          "type": "integer"
+        },
+        "launcher_pid": {
+          "description": "Wrapper script PID",
+          "title": "Launcher Pid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "app_id",
+        "app_name",
+        "scope",
+        "launch_time",
+        "launcher_pid"
+      ],
+      "title": "I3PMEnvironment",
+      "type": "object"
+    }
+  },
+  "description": "Complete window identification and context (Feature 039: T005).",
+  "example": {
+    "is_floating": false,
+    "is_focused": true,
+    "is_hidden": false,
+    "match_type": "instance",
+    "matched_app": "terminal",
+    "output_name": "HDMI-1",
+    "window_class": "com.mitchellh.ghostty",
+    "window_class_normalized": "ghostty",
+    "window_id": 14680068,
+    "window_instance": "ghostty",
+    "window_pid": 823199,
+    "window_title": "vpittamp@hetzner: ~",
+    "workspace_name": "2:code",
+    "workspace_number": 2
+  },
+  "properties": {
+    "window_id": {
+      "description": "i3 window container ID",
+      "title": "Window Id",
+      "type": "integer"
+    },
+    "window_class": {
+      "description": "WM_CLASS class field (full)",
+      "title": "Window Class",
+      "type": "string"
+    },
+    "window_class_normalized": {
+      "description": "Normalized class for matching",
+      "title": "Window Class Normalized",
+      "type": "string"
+    },
+    "window_instance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "WM_CLASS instance field",
+      "title": "Window Instance"
+    },
+    "window_title": {
+      "description": "Window title/name",
+      "title": "Window Title",
+      "type": "string"
+    },
+    "window_pid": {
+      "description": "Process ID of window",
+      "title": "Window Pid",
+      "type": "integer"
+    },
+    "workspace_number": {
+      "description": "Current workspace number",
+      "title": "Workspace Number",
+      "type": "integer"
+    },
+    "workspace_name": {
+      "description": "Current workspace name",
+      "title": "Workspace Name",
+      "type": "string"
+    },
+    "output_name": {
+      "description": "Monitor/output name (e.g., 'HDMI-1')",
+      "title": "Output Name",
+      "type": "string"
+    },
+    "is_floating": {
+      "default": false,
+      "description": "Floating vs tiled",
+      "title": "Is Floating",
+      "type": "boolean"
+    },
+    "is_focused": {
+      "default": false,
+      "description": "Currently focused",
+      "title": "Is Focused",
+      "type": "boolean"
+    },
+    "is_hidden": {
+      "default": false,
+      "description": "In scratchpad",
+      "title": "Is Hidden",
+      "type": "boolean"
+    },
+    "i3pm_env": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/I3PMEnvironment"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "I3PM environment variables"
+    },
+    "i3pm_marks": {
+      "description": "i3 marks on window",
+      "items": {
+        "type": "string"
+      },
+      "title": "I3Pm Marks",
+      "type": "array"
+    },
+    "matched_app": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Matched app name from registry",
+      "title": "Matched App"
+    },
+    "match_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Match type: exact, instance, normalized, none",
+      "title": "Match Type"
+    },
+    "created_at": {
+      "description": "Window creation time",
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "last_seen_at": {
+      "description": "Last state update time",
+      "format": "date-time",
+      "title": "Last Seen At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "window_id",
+    "window_class",
+    "window_class_normalized",
+    "window_title",
+    "window_pid",
+    "workspace_number",
+    "workspace_name",
+    "output_name"
+  ],
+  "title": "WindowIdentity",
+  "type": "object"
+}

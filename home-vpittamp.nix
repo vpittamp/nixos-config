@@ -12,12 +12,13 @@
     ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
     # ./home-modules/tools/i3-project-manager.nix  # REMOVED: Replaced by i3pm Deno (Feature 027)
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
+    ./home-modules/tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
     ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
     # ./home-modules/desktop/polybar.nix  # REMOVED: Replaced by event-driven i3bar
     # ./home-modules/desktop/i3blocks  # REMOVED: Switched to i3bar with event subscriptions
     ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
     ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
-    ./home-modules/desktop/i3-window-rules.nix  # Feature 035: Auto-generated window rules for global apps
+    # ./home-modules/desktop/i3-window-rules.nix  # REMOVED: Feature 039 - All workspace assignment now in Python daemon
     ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];
 
@@ -27,10 +28,11 @@
   # Feature 019: Enable i3pm CLI/TUI tool (unified project management) - DISABLED for Feature 027
   # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
-  # Feature 015: Enable i3 project event listener daemon
+  # Feature 015: i3 project event listener daemon
+  # NOTE: Disabled in favor of system service (Feature 037 - cross-namespace /proc access)
+  # System service configured in configurations/hetzner.nix: services.i3ProjectDaemon.enable
   services.i3ProjectEventListener = {
-    enable = true;  # Enabled for testing (Feature 015)
-    logLevel = "DEBUG";  # Debug logging for initial testing
+    enable = false;  # Disabled - using system service instead
   };
 
   # Auto-clean home-manager backup conflicts before activation

@@ -103,6 +103,24 @@ class EventBuffer:
         # Return most recent N events (reverse chronological order)
         return list(filtered)[-limit:][::-1]
 
+    def get_recent(
+        self,
+        limit: int = 100,
+        event_type: Optional[str] = None
+    ) -> List[EventEntry]:
+        """Retrieve recent events (alias for get_events for backward compatibility).
+
+        Feature 039: FR-007 - Event buffer query for diagnostic event trace
+
+        Args:
+            limit: Maximum number of events to return (default: 100)
+            event_type: Filter by event type prefix (e.g., "window", "workspace")
+
+        Returns:
+            List of EventEntry objects (most recent first)
+        """
+        return self.get_events(limit=limit, event_type=event_type)
+
     def get_stats(self) -> dict:
         """Get buffer statistics.
 

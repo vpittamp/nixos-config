@@ -64,8 +64,8 @@ export class DaemonClient {
   private conn: Deno.UnixConn | null = null;
 
   constructor(socketPath?: string) {
-    const runDir = Deno.env.get("XDG_RUNTIME_DIR") || `/run/user/${Deno.uid()}`;
-    this.socketPath = socketPath || path.join(runDir, "i3-project-daemon", "ipc.sock");
+    // Feature 037: System service socket location (not user runtime dir)
+    this.socketPath = socketPath || "/run/i3-project-daemon/ipc.sock";
   }
 
   /**

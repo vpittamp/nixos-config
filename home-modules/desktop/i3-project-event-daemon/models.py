@@ -554,3 +554,339 @@ class ConfigValidationResult(BaseModel):
     def warnings(self) -> List[ValidationIssue]:
         """Get only warning-level issues."""
         return [issue for issue in self.issues if issue.severity == "warning"]
+
+
+# ============================================================================
+# Feature 039: Diagnostic & Optimization Models
+# ============================================================================
+# Pydantic models for diagnostic tooling, window identity, and state validation.
+# These models provide complete introspection of the window management system.
+
+
+class WindowIdentity(BaseModel):
+    """Complete window identification and context (Feature 039: T005)."""
+
+    # X11/i3 Properties
+    window_id: int = Field(..., description="i3 window container ID")
+    window_class: str = Field(..., description="WM_CLASS class field (full)")
+    window_class_normalized: str = Field(..., description="Normalized class for matching")
+    window_instance: Optional[str] = Field(None, description="WM_CLASS instance field")
+    window_title: str = Field(..., description="Window title/name")
+    window_pid: int = Field(..., description="Process ID of window")
+
+    # Workspace Context
+    workspace_number: int = Field(..., description="Current workspace number")
+    workspace_name: str = Field(..., description="Current workspace name")
+    output_name: str = Field(..., description="Monitor/output name (e.g., 'HDMI-1')")
+
+    # Window State
+    is_floating: bool = Field(False, description="Floating vs tiled")
+    is_focused: bool = Field(False, description="Currently focused")
+    is_hidden: bool = Field(False, description="In scratchpad")
+
+    # I3PM Context
+    i3pm_env: Optional["I3PMEnvironment"] = Field(None, description="I3PM environment variables")
+    i3pm_marks: List[str] = Field(default_factory=list, description="i3 marks on window")
+
+    # Matching Info (diagnostic)
+    matched_app: Optional[str] = Field(None, description="Matched app name from registry")
+    match_type: Optional[str] = Field(None, description="Match type: exact, instance, normalized, none")
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.now, description="Window creation time")
+    last_seen_at: datetime = Field(default_factory=datetime.now, description="Last state update time")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "window_id": 14680068,
+                "window_class": "com.mitchellh.ghostty",
+                "window_class_normalized": "ghostty",
+                "window_instance": "ghostty",
+                "window_title": "vpittamp@hetzner: ~",
+                "window_pid": 823199,
+                "workspace_number": 2,
+                "workspace_name": "2:code",
+                "output_name": "HDMI-1",
+                "is_floating": False,
+                "is_focused": True,
+                "is_hidden": False,
+                "matched_app": "terminal",
+                "match_type": "instance"
+            }
+        }
+    }
+
+
+class I3PMEnvironment(BaseModel):
+    """I3PM environment variables from /proc/{pid}/environ (Feature 039: T006)."""
+
+    # Application Identity
+    app_id: str = Field(..., description="Unique instance ID: {app}-{project}-{pid}-{timestamp}")
+    app_name: str = Field(..., description="Registry application name (e.g., 'vscode', 'terminal')")
+
+    # Workspace Assignment (Feature 039)
+    target_workspace: Optional[int] = Field(None, description="Direct workspace assignment from launcher (1-10)")
+
+    # Project Context
+    project_name: Optional[str] = Field(None, description="Active project name (e.g., 'nixos', 'stacks')")
+    project_dir: Optional[str] = Field(None, description="Project directory path")
+    project_display_name: Optional[str] = Field(None, description="Human-readable project name")
+    project_icon: Optional[str] = Field(None, description="Project icon emoji")
+
+    # Scope
+    scope: str = Field(..., description="Application scope: 'scoped' or 'global'")
+    active: bool = Field(True, description="True if project was active at launch")
+
+    # Launch Context
+    launch_time: int = Field(..., description="Unix timestamp of launch")
+    launcher_pid: int = Field(..., description="Wrapper script PID")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "app_id": "terminal-stacks-823199-1730000000",
+                "app_name": "terminal",
+                "project_name": "stacks",
+                "project_dir": "/home/vpittamp/projects/stacks",
+                "project_display_name": "Stacks",
+                "project_icon": "📚",
+                "scope": "scoped",
+                "active": True,
+                "launch_time": 1730000000,
+                "launcher_pid": 823150
+            }
+        }
+    }
+
+
+class WorkspaceRule(BaseModel):
+    """Workspace assignment rule for an application (Feature 039: T007)."""
+
+    # Application Matching
+    app_identifier: str = Field(..., description="App name or window class pattern")
+    matching_strategy: str = Field("normalized", description="Match strategy: exact, instance, normalized, regex")
+    aliases: List[str] = Field(default_factory=list, description="Alternative class names that match")
+
+    # Assignment
+    target_workspace: int = Field(..., description="Workspace number to assign (1-10)")
+    fallback_behavior: str = Field("current", description="Fallback if workspace unavailable: current, create, error")
+
+    # Metadata
+    app_name: str = Field(..., description="Application name from registry")
+    description: Optional[str] = Field(None, description="Human-readable description")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "app_identifier": "ghostty",
+                "matching_strategy": "normalized",
+                "aliases": ["com.mitchellh.ghostty", "Ghostty"],
+                "target_workspace": 3,
+                "fallback_behavior": "current",
+                "app_name": "lazygit",
+                "description": "Git TUI in terminal on workspace 3"
+            }
+        }
+    }
+
+
+class EventSubscription(BaseModel):
+    """i3 IPC event subscription status (Feature 039: T008)."""
+
+    subscription_type: str = Field(..., description="Event type: window, workspace, output, tick, binding")
+    is_active: bool = Field(..., description="True if subscription is currently active")
+    event_count: int = Field(0, description="Total events received since daemon start")
+    last_event_time: Optional[datetime] = Field(None, description="Timestamp of most recent event")
+    last_event_change: Optional[str] = Field(None, description="Last event change type (e.g., 'new', 'focus')")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "subscription_type": "window",
+                "is_active": True,
+                "event_count": 1234,
+                "last_event_time": "2025-10-26T12:34:56",
+                "last_event_change": "new"
+            }
+        }
+    }
+
+
+class WindowEvent(BaseModel):
+    """Captured i3 window event for diagnostics (Feature 039: T009)."""
+
+    # Event Metadata
+    event_type: str = Field(..., description="Event type: window, workspace, output, tick")
+    event_change: str = Field(..., description="Change type: new, close, focus, move, etc.")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Event capture time")
+
+    # Window Context
+    window_id: Optional[int] = Field(None, description="Window container ID (if window event)")
+    window_class: Optional[str] = Field(None, description="Window class at event time")
+    window_title: Optional[str] = Field(None, description="Window title at event time")
+
+    # Processing Info
+    handler_duration_ms: Optional[float] = Field(None, description="Handler execution time in milliseconds")
+    workspace_assigned: Optional[int] = Field(None, description="Workspace assigned (if applicable)")
+    marks_applied: List[str] = Field(default_factory=list, description="Marks applied to window")
+
+    # Error Tracking
+    error: Optional[str] = Field(None, description="Error message if processing failed")
+    stack_trace: Optional[str] = Field(None, description="Stack trace for debugging")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "event_type": "window",
+                "event_change": "new",
+                "timestamp": "2025-10-26T12:34:56.789",
+                "window_id": 14680068,
+                "window_class": "com.mitchellh.ghostty",
+                "window_title": "vpittamp@hetzner: ~",
+                "handler_duration_ms": 45.2,
+                "workspace_assigned": 3,
+                "marks_applied": ["project:stacks", "app:terminal"],
+                "error": None
+            }
+        }
+    }
+
+
+class StateMismatch(BaseModel):
+    """Specific state inconsistency between daemon and i3 (Feature 039: T010)."""
+
+    window_id: int = Field(..., description="Window with mismatch")
+    property_name: str = Field(..., description="Property that doesn't match (e.g., 'workspace', 'marks')")
+    daemon_value: str = Field(..., description="Value in daemon state")
+    i3_value: str = Field(..., description="Value in i3 IPC state (authoritative)")
+    severity: str = Field(..., description="Severity: critical, warning, info")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "window_id": 14680068,
+                "property_name": "workspace",
+                "daemon_value": "3",
+                "i3_value": "5",
+                "severity": "warning"
+            }
+        }
+    }
+
+
+class StateValidation(BaseModel):
+    """State consistency validation results (Feature 039: T010)."""
+
+    # Validation Metadata
+    validated_at: datetime = Field(default_factory=datetime.now, description="Validation timestamp")
+    total_windows_checked: int = Field(0, description="Total windows validated")
+
+    # Consistency Metrics
+    windows_consistent: int = Field(0, description="Windows matching i3 state")
+    windows_inconsistent: int = Field(0, description="Windows with state drift")
+    mismatches: List[StateMismatch] = Field(default_factory=list, description="Detailed mismatches")
+
+    # Overall Status
+    is_consistent: bool = Field(True, description="True if all state matches")
+    consistency_percentage: float = Field(100.0, description="Percentage of windows consistent")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "validated_at": "2025-10-26T12:34:56",
+                "total_windows_checked": 23,
+                "windows_consistent": 21,
+                "windows_inconsistent": 2,
+                "is_consistent": False,
+                "consistency_percentage": 91.3
+            }
+        }
+    }
+
+
+class OutputInfo(BaseModel):
+    """Monitor/output information from i3 IPC (Feature 039: T011)."""
+    name: str = Field(..., description="Output name (e.g., 'HDMI-1')")
+    active: bool = Field(..., description="Output is active")
+    current_workspace: Optional[str] = Field(None, description="Workspace currently on this output")
+
+
+class WorkspaceInfo(BaseModel):
+    """Workspace information from i3 IPC (Feature 039: T011)."""
+    num: int = Field(..., description="Workspace number")
+    name: str = Field(..., description="Workspace name with icon")
+    visible: bool = Field(..., description="Currently visible on an output")
+    focused: bool = Field(..., description="Currently focused")
+    output: str = Field(..., description="Output name this workspace is on")
+
+
+class I3IPCState(BaseModel):
+    """i3 IPC authoritative state snapshot (Feature 039: T011)."""
+
+    # Outputs/Monitors
+    outputs: List[OutputInfo] = Field(default_factory=list, description="Connected outputs")
+    active_output_count: int = Field(0, description="Number of active monitors")
+
+    # Workspaces
+    workspaces: List[WorkspaceInfo] = Field(default_factory=list, description="All workspaces")
+    visible_workspace_count: int = Field(0, description="Number of visible workspaces")
+    focused_workspace: Optional[str] = Field(None, description="Currently focused workspace name")
+
+    # Windows
+    total_windows: int = Field(0, description="Total window count from tree")
+    marks: List[str] = Field(default_factory=list, description="All marks in current session")
+
+    # Capture Time
+    captured_at: datetime = Field(default_factory=datetime.now, description="State capture timestamp")
+
+
+class DiagnosticReport(BaseModel):
+    """Comprehensive system diagnostic report (Feature 039: T012)."""
+
+    # Report Metadata
+    generated_at: datetime = Field(default_factory=datetime.now, description="Report generation time")
+    daemon_version: str = Field(..., description="Daemon version string")
+    uptime_seconds: float = Field(..., description="Daemon uptime in seconds")
+
+    # Connection Status
+    i3_ipc_connected: bool = Field(..., description="i3 IPC connection active")
+    json_rpc_server_running: bool = Field(..., description="JSON-RPC IPC server active")
+
+    # Event Subscriptions
+    event_subscriptions: List[EventSubscription] = Field(default_factory=list, description="All event subscriptions")
+    total_events_processed: int = Field(0, description="Sum of all event counts")
+
+    # Window Tracking
+    tracked_windows: List[WindowIdentity] = Field(default_factory=list, description="All tracked windows")
+    total_windows: int = Field(0, description="Total window count")
+
+    # Recent Events
+    recent_events: List[WindowEvent] = Field(default_factory=list, description="Last N events (circular buffer)")
+    event_buffer_size: int = Field(500, description="Max events in buffer")
+
+    # State Validation
+    state_validation: Optional[StateValidation] = Field(None, description="Consistency check results")
+
+    # i3 IPC State
+    i3_ipc_state: Optional[I3IPCState] = Field(None, description="i3 authoritative state snapshot")
+
+    # Health Status
+    overall_status: str = Field("unknown", description="Overall health: healthy, warning, critical, unknown")
+    health_issues: List[str] = Field(default_factory=list, description="List of detected issues")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "generated_at": "2025-10-26T12:34:56",
+                "daemon_version": "1.4.0",
+                "uptime_seconds": 3600.5,
+                "i3_ipc_connected": True,
+                "json_rpc_server_running": True,
+                "total_events_processed": 1350,
+                "total_windows": 23,
+                "overall_status": "warning",
+                "health_issues": ["State drift detected for 2 windows"]
+            }
+        }
+    }

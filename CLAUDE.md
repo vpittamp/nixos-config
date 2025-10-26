@@ -334,6 +334,10 @@ The following shell aliases are available for project management:
 | `i3pm project create` | - | Create a new project |
 | `i3pm daemon status` | - | Show daemon status and diagnostics |
 | `i3pm daemon events` | - | Show recent daemon events for debugging |
+| `i3pm diagnose health` | - | Comprehensive daemon health check (Feature 039) |
+| `i3pm diagnose window <id>` | - | Inspect window properties and identity (Feature 039) |
+| `i3pm diagnose events` | - | View event history and live stream (Feature 039) |
+| `i3pm diagnose validate` | - | Validate daemon state consistency (Feature 039) |
 | `i3pm monitors config show` | - | Display workspace-monitor configuration |
 | `i3pm monitors config edit` | - | Edit configuration in $EDITOR |
 | `i3pm monitors config validate` | - | Validate configuration syntax |
@@ -438,22 +442,30 @@ i3-project-switch --clear
 pclear
 ```
 
-### Automatic Window Filtering (Feature 037)
+### Automatic Window Filtering (Feature 037) with State Preservation (Feature 038)
 
 **Automatic hiding/showing on project switch**: When you switch projects, scoped windows from the previous project automatically hide (move to scratchpad), while windows for the new project restore to their exact workspace locations. Global apps remain visible across all projects.
 
 **How it works**:
 1. User switches project via `Win+P` or `pswitch nixos`
 2. Daemon receives tick event and triggers filtering
-3. All scoped windows from old project hide to scratchpad
-4. All scoped windows for new project restore from scratchpad
+3. All scoped windows from old project hide to scratchpad **with full state capture**
+4. All scoped windows for new project restore from scratchpad **with exact state restoration**
 5. Windows return to exact workspace positions (tracked persistently)
 
+**Window State Preservation (Feature 038 - v1.3.0)**:
+- ✅ **Tiling state preserved**: Tiled windows remain tiled, floating windows remain floating
+- ✅ **Exact workspace restoration**: Windows return to their original workspace numbers (not current workspace)
+- ✅ **Floating geometry preserved**: Position (x, y) and size (width, height) maintained for floating windows
+- ✅ **Scratchpad origin tracking**: Windows manually placed in scratchpad stay there (not auto-restored)
+- ✅ **Manual moves tracked**: Move VS Code from WS2 → WS5, position persists across project switches
+- ✅ **Backward compatible**: Works with existing v1.0 window-workspace-map.json files
+
 **Window persistence**:
-- Manual moves tracked automatically (move VS Code from WS2 → WS5)
-- Floating state preserved (floating windows restore as floating)
-- Works across daemon restarts (persisted in `~/.config/i3/window-workspace-map.json`)
+- State persisted in `~/.config/i3/window-workspace-map.json` (schema v1.1)
+- Works across daemon restarts (persistent storage)
 - Workspace assignment on launch (apps open on configured workspace regardless of focus)
+- Geometry tolerance: <10px drift acceptable for floating windows
 
 **Performance**:
 - Typical project switch: 2-5ms for 10 windows
@@ -472,13 +484,29 @@ async with DaemonClient() as daemon:
     # Returns: visibility, I3PM_* env vars, tracking info, i3 state
 ```
 
-**Troubleshooting window filtering**:
+**Troubleshooting window filtering and state preservation**:
 ```bash
 # Check if windows are being filtered
 i3pm daemon events --type=tick | grep filtering
 
-# Verify window tracking
+# Verify window tracking with full state
 cat ~/.config/i3/window-workspace-map.json | jq .
+
+# Inspect specific window state (Feature 038)
+i3pm windows --json | jq '.outputs[].workspaces[].windows[] | select(.id == WINDOW_ID)'
+
+# Check window state schema version
+cat ~/.config/i3/window-workspace-map.json | jq '.version'  # Should be "1.1"
+
+# View daemon logs for state capture/restoration (Feature 038)
+journalctl --user -u i3-project-event-listener -n 100 | grep -E "Capturing state|Restoring window|geometry"
+
+# Check performance metrics (target <50ms per window)
+journalctl --user -u i3-project-event-listener -n 50 | grep "Window filtering complete"
+
+# Verify floating state preservation
+# Open floating calculator, switch projects, verify it's still floating with same position
+xwininfo -int  # Click window to get window ID, then check state
 
 # Manual hide/restore (via daemon API)
 # Note: Automatic filtering happens on project switch
@@ -517,6 +545,25 @@ After connecting/disconnecting monitors, **workspaces automatically reassign** (
 3. Check daemon processed switch: `i3pm daemon events | grep tick`
 4. Try switching again: `i3pm project switch <project-name>`
 
+**Tiled windows becoming floating after project switch (Feature 038):**
+1. Check daemon version: `systemctl --user status i3-project-event-listener | grep version`
+   - Should be v1.3.0 or higher
+2. Verify state capture logging: `journalctl --user -u i3-project-event-listener | grep "Capturing state"`
+3. Check window state file: `cat ~/.config/i3/window-workspace-map.json | jq '.version'`
+   - Should be "1.1" for full state preservation
+4. If version is old, rebuild and restart daemon: `sudo nixos-rebuild switch --flake .#hetzner`
+
+**Floating windows losing position/size (Feature 038):**
+1. Verify geometry is being captured: `journalctl --user -u i3-project-event-listener | grep "Captured geometry"`
+2. Check state file has geometry: `cat ~/.config/i3/window-workspace-map.json | jq '.windows[].geometry'`
+3. Verify restoration sequence: `journalctl --user -u i3-project-event-listener | grep "Restoring geometry"`
+4. If geometry is null for floating windows, there may be a capture timing issue - report bug
+
+**Windows not returning to original workspace:**
+1. Check state file workspace numbers: `cat ~/.config/i3/window-workspace-map.json | jq '.windows[].workspace_number'`
+2. Verify restoration uses exact workspace: `journalctl --user -u i3-project-event-listener | grep "move workspace number"`
+3. Check for workspace fallback: `journalctl --user -u i3-project-event-listener | grep "No saved state"`
+
 **Edit project configuration:**
 ```bash
 # Manually edit
@@ -531,7 +578,150 @@ For more details, see the quickstart guides:
 cat /etc/nixos/specs/015-create-a-new/quickstart.md  # Event-based system (Feature 015)
 cat /etc/nixos/specs/035-now-that-we/quickstart.md   # Registry-centric system (Feature 035)
 cat /etc/nixos/specs/037-given-our-top/quickstart.md # Window filtering (Feature 037)
+cat /etc/nixos/specs/038-create-a-new/quickstart.md  # Window state preservation (Feature 038)
+cat /etc/nixos/specs/039-create-a-new/quickstart.md  # Diagnostic tooling (Feature 039)
 ```
+
+### Diagnostic Tooling (Feature 039)
+
+The `i3pm diagnose` command provides comprehensive diagnostic capabilities for troubleshooting window management issues without reading daemon source code.
+
+**Quick Diagnostic Commands**:
+```bash
+# Check daemon health and event subscriptions
+i3pm diagnose health
+i3pm diagnose health --json  # Machine-readable output
+
+# Inspect specific window properties
+i3pm diagnose window <window_id>
+i3pm diagnose window 94532735639728 --json
+
+# View recent event history
+i3pm diagnose events
+i3pm diagnose events --limit=50 --type=window
+i3pm diagnose events --follow  # Live event stream (Ctrl+C to stop)
+
+# Validate daemon state consistency
+i3pm diagnose validate
+i3pm diagnose validate --json
+```
+
+**Health Check** (`i3pm diagnose health`):
+- Daemon version and uptime
+- i3 IPC connection status
+- JSON-RPC server status
+- Event subscription details (window, workspace, output, tick)
+- Window tracking statistics
+- Overall health assessment with exit codes:
+  - `0` = Healthy
+  - `1` = Warning (state drift, subscription issues)
+  - `2` = Critical (daemon not running, i3 IPC disconnected)
+
+**Window Identity** (`i3pm diagnose window <id>`):
+- Window class, instance, and title
+- Workspace and output location
+- I3PM environment variables (`I3PM_PROJECT_NAME`, `I3PM_APP_NAME`, etc.)
+- Registry matching details (matched app, match type)
+- Project association
+- PWA detection (Firefox FFPWA-*, Chrome PWAs)
+- Class mismatch detection with fix suggestions
+
+**Event Trace** (`i3pm diagnose events`):
+- Recent events from circular buffer (500 events)
+- Event timestamps, types, and changes
+- Window information for each event
+- Processing duration with color coding:
+  - Green: <50ms (good)
+  - Yellow: 50-100ms (acceptable)
+  - Red: >100ms (slow)
+- Error detection and reporting
+- Live streaming mode with `--follow` flag
+- Filter by type: `--type=window|workspace|output|tick`
+
+**State Validation** (`i3pm diagnose validate`):
+- Compare daemon tracked state vs actual i3 window tree
+- Detect workspace mismatches
+- Identify mark inconsistencies
+- Report state drift with severity levels
+- Consistency percentage and detailed mismatch table
+- Exit codes:
+  - `0` = State is consistent
+  - `1` = State inconsistencies detected
+
+**Example Troubleshooting Workflow**:
+```bash
+# 1. Check if daemon is healthy
+i3pm diagnose health
+# Output: Daemon version, uptime, event subscriptions, health status
+
+# 2. Find window ID (if investigating specific window)
+i3-msg -t get_tree | jq '.. | select(.window?) | {id: .id, class: .window_properties.class, title: .name}'
+
+# 3. Inspect window identity
+i3pm diagnose window 94532735639728
+# Output: Window properties, I3PM env, registry matching, project association
+
+# 4. Check recent events for anomalies
+i3pm diagnose events --limit=20 --type=window
+# Output: Recent window events with timing and error info
+
+# 5. Validate state consistency
+i3pm diagnose validate
+# Output: State comparison, mismatch detection, consistency metrics
+
+# 6. Monitor live events during testing
+i3pm diagnose events --follow
+# Press Ctrl+C to stop
+```
+
+**Common Diagnostic Scenarios**:
+
+*Window opens on wrong workspace:*
+```bash
+# Check if workspace rule exists
+i3pm diagnose window <window_id>
+# Look at "Registry Matching" section for matched app and workspace assignment
+```
+
+*Window class mismatch:*
+```bash
+# Diagnostic shows class mismatch with suggestions
+i3pm diagnose window <window_id>
+# Output includes:
+#   - Expected class from configuration
+#   - Actual class from window
+#   - Normalized class
+#   - Fix suggestions (update config, use alias, etc.)
+```
+
+*Events not processing:*
+```bash
+# Check event subscriptions are active
+i3pm diagnose health
+# Look for "Event Subscriptions" section
+
+# Check recent events
+i3pm diagnose events --limit=50
+# Verify events are being recorded
+```
+
+*State drift after daemon restart:*
+```bash
+# Validate state consistency
+i3pm diagnose validate
+# Output shows windows with workspace mismatches
+```
+
+**Output Formats**:
+- Default: Rich-formatted tables with color coding
+- `--json` flag: Machine-readable JSON for scripting/automation
+- Exit codes match severity for shell scripting integration
+
+**Error Handling**:
+- Clear error messages with actionable suggestions
+- Connection errors: "Start daemon with: systemctl --user start i3-project-event-listener"
+- Timeout errors: "Check daemon status: systemctl --user status i3-project-event-listener"
+- Window not found: "Tip: Get window ID with: i3-msg -t get_tree | jq '..'"
 
 ## 📦 Registry-Centric Architecture (Feature 035)
 

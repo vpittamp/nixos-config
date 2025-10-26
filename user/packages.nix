@@ -62,6 +62,22 @@ let
     fish
   ];
 
+  # Python testing environment (Feature 039)
+  pythonTestEnv = pkgs.python3.withPackages (ps: with ps; [
+    # Testing frameworks
+    pytest
+    pytest-asyncio
+    pytest-cov
+
+    # Test dependencies
+    click         # For CLI testing
+    rich          # For display testing
+    pydantic      # For model testing
+    i3ipc         # For i3 integration testing
+    psutil        # Process utilities for system tests
+    # Note: textual not in nixpkgs - i3pm TUI tests can be skipped or run separately
+  ]);
+
   # Language servers and development tools (from nixpkgs)
   languageServers = with pkgs; [
     # TypeScript/JavaScript
@@ -73,6 +89,7 @@ let
     pyright
     black
     ruff
+    pythonTestEnv  # Feature 039: Testing framework with async support
 
     # Nix
     nil

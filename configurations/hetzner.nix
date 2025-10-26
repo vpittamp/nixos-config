@@ -20,6 +20,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/i3-project-daemon.nix  # Feature 037: System service for cross-namespace /proc access
     
     # Phase 2: Desktop Environment - Migrated to i3wm (Feature 009)
     # KDE Plasma modules archived to archived/plasma-specific/desktop/
@@ -71,6 +72,13 @@
 
   # i3 Project Workspace Management (Feature 010)
   services.i3ProjectWorkspace.enable = true;
+
+  # i3 Project Daemon (Feature 037) - System service for cross-namespace access
+  services.i3ProjectDaemon = {
+    enable = true;
+    user = "vpittamp";
+    logLevel = "DEBUG";  # Temporary for testing
+  };
 
   # RustDesk service configuration
   services.rustdesk = {

@@ -1,0 +1,122 @@
+{
+  "description": "I3PM environment variables from /proc/{pid}/environ (Feature 039: T006).",
+  "example": {
+    "active": true,
+    "app_id": "terminal-stacks-823199-1730000000",
+    "app_name": "terminal",
+    "launch_time": 1730000000,
+    "launcher_pid": 823150,
+    "project_dir": "/home/vpittamp/projects/stacks",
+    "project_display_name": "Stacks",
+    "project_icon": "\ud83d\udcda",
+    "project_name": "stacks",
+    "scope": "scoped"
+  },
+  "properties": {
+    "app_id": {
+      "description": "Unique instance ID: {app}-{project}-{pid}-{timestamp}",
+      "title": "App Id",
+      "type": "string"
+    },
+    "app_name": {
+      "description": "Registry application name (e.g., 'vscode', 'terminal')",
+      "title": "App Name",
+      "type": "string"
+    },
+    "target_workspace": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Direct workspace assignment from launcher (1-10)",
+      "title": "Target Workspace"
+    },
+    "project_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Active project name (e.g., 'nixos', 'stacks')",
+      "title": "Project Name"
+    },
+    "project_dir": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Project directory path",
+      "title": "Project Dir"
+    },
+    "project_display_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Human-readable project name",
+      "title": "Project Display Name"
+    },
+    "project_icon": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Project icon emoji",
+      "title": "Project Icon"
+    },
+    "scope": {
+      "description": "Application scope: 'scoped' or 'global'",
+      "title": "Scope",
+      "type": "string"
+    },
+    "active": {
+      "default": true,
+      "description": "True if project was active at launch",
+      "title": "Active",
+      "type": "boolean"
+    },
+    "launch_time": {
+      "description": "Unix timestamp of launch",
+      "title": "Launch Time",
+      "type": "integer"
+    },
+    "launcher_pid": {
+      "description": "Wrapper script PID",
+      "title": "Launcher Pid",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "app_id",
+    "app_name",
+    "scope",
+    "launch_time",
+    "launcher_pid"
+  ],
+  "title": "I3PMEnvironment",
+  "type": "object"
+}

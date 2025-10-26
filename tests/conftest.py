@@ -8,9 +8,26 @@ package_root = Path(__file__).parent.parent / "home-modules" / "tools"
 if str(package_root) not in sys.path:
     sys.path.insert(0, str(package_root))
 
+# Add daemon source to Python path
+daemon_root = Path(__file__).parent.parent / "home-modules" / "desktop"
+if str(daemon_root) not in sys.path:
+    sys.path.insert(0, str(daemon_root))
+
+# Add tests directory to Python path for test utilities
+tests_root = Path(__file__).parent
+if str(tests_root) not in sys.path:
+    sys.path.insert(0, str(tests_root))
+
+# Configure pytest plugins (moved from subdirectory conftest files)
+pytest_plugins = ("pytest_asyncio",)
+
 
 def pytest_configure(config):
     """Configure pytest before test collection."""
-    # Ensure path is set even earlier
+    # Ensure paths are set even earlier
     if str(package_root) not in sys.path:
         sys.path.insert(0, str(package_root))
+    if str(daemon_root) not in sys.path:
+        sys.path.insert(0, str(daemon_root))
+    if str(tests_root) not in sys.path:
+        sys.path.insert(0, str(tests_root))

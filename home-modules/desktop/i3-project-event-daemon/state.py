@@ -162,14 +162,15 @@ class StateManager:
 
                 # Check if this is a window (has window_id)
                 if container.window:
-                    # Look for project marks (format: project:PROJECT_NAME)
+                    # Look for project marks (format: project:PROJECT_NAME:WINDOW_ID)
                     project_marks = [
                         mark for mark in container.marks if mark.startswith("project:")
                     ]
 
                     if project_marks:
-                        # Extract project name from mark
-                        project_name = project_marks[0].split(":", 1)[1]
+                        # Extract project name from mark (second field)
+                        mark_parts = project_marks[0].split(":")
+                        project_name = mark_parts[1] if len(mark_parts) >= 2 else None
 
                         # Create WindowInfo
                         from datetime import datetime

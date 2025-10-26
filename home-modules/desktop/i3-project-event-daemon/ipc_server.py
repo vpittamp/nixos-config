@@ -119,7 +119,14 @@ class IPCServer:
             self.server = await asyncio.start_unix_server(
                 self._handle_client, path=str(socket_path)
             )
-            logger.info(f"IPC server listening on {socket_path}")
+
+            # Feature 039 - T110: Security - Set explicit socket permissions
+            # Ensure socket is user-only accessible (0600)
+            socket_path.chmod(0o600)
+            # Ensure parent directory is user-only accessible (0700)
+            socket_path.parent.chmod(0o700)
+
+            logger.info(f"IPC server listening on {socket_path} (permissions: 0600)")
 
     async def stop(self) -> None:
         """Stop IPC server and close all connections."""
@@ -285,6 +292,20 @@ class IPCServer:
                 result = await self._get_hidden_windows(params)
             elif method == "windows.getState":
                 result = await self._get_window_state(params)
+
+            # Feature 039: Diagnostic API methods (T087-T092)
+            elif method == "health_check":
+                result = await self._health_check()
+            elif method == "get_window_identity":
+                result = await self._get_window_identity_diagnostic(params)
+            elif method == "get_workspace_rule":
+                result = await self._get_workspace_rule_diagnostic(params)
+            elif method == "validate_state":
+                result = await self._validate_state_diagnostic()
+            elif method == "get_recent_events":
+                result = await self._get_recent_events_diagnostic(params)
+            elif method == "get_diagnostic_report":
+                result = await self._get_diagnostic_report_full(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -583,19 +604,26 @@ class IPCServer:
             config_file = config_dir / "active-project.json"
             save_active_project(active_state, config_file)
 
-            # Update window visibility based on new project
-            if self.i3_connection and self.i3_connection.conn:
-                # Hide scoped windows from other projects
-                for window in all_windows:
-                    if window.window_class not in self.state_manager.state.scoped_classes:
-                        continue  # Skip global windows
+            logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
-                    if window.project == project_name:
-                        # Show windows from new project
-                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
-                    elif window.project is not None and window.project != project_name:
-                        # Hide windows from other projects
-                        await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad')
+            # Update window visibility based on new project using mark-based filtering
+            logger.debug(f"IPC: Checking i3 connection: i3_connection={self.i3_connection}, conn={self.i3_connection.conn if self.i3_connection else None}")
+            if self.i3_connection and self.i3_connection.conn:
+                logger.info(f"IPC: Applying mark-based window filtering for project '{project_name}'")
+                from .services.window_filter import filter_windows_by_project
+                filter_result = await filter_windows_by_project(
+                    self.i3_connection.conn,
+                    project_name,
+                    self.workspace_tracker  # Feature 038: Pass workspace_tracker for state persistence
+                )
+                windows_to_hide = filter_result.get("hidden", 0)
+                windows_to_show = filter_result.get("visible", 0)
+                logger.info(
+                    f"IPC: Window filtering applied: {windows_to_show} visible, {windows_to_hide} hidden "
+                    f"(via mark-based filtering)"
+                )
+            else:
+                logger.warning(f"IPC: Cannot apply filtering - i3 connection not available")
 
             return {
                 "previous_project": previous_project,
@@ -1595,11 +1623,12 @@ class IPCServer:
         def extract(node, depth=0):
             # Check if this is an actual window (has window ID)
             if node.window and node.window > 0:
-                # Get project from marks
+                # Get project from marks (format: project:PROJECT_NAME:WINDOW_ID)
                 project = None
                 for mark in node.marks:
                     if mark.startswith("project:"):
-                        project = mark.split(":", 1)[1]
+                        mark_parts = mark.split(":")
+                        project = mark_parts[1] if len(mark_parts) >= 2 else None
                         break
 
                 # Determine classification from daemon state
@@ -2613,7 +2642,7 @@ class IPCServer:
             async def collect_project_windows(con):
                 if con.window and hasattr(con, 'window_id'):
                     # Read I3PM_PROJECT_NAME from /proc
-                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
+                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid, con.window)
                     window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
                     scope = i3pm_env.get("I3PM_SCOPE", "global")
 
@@ -2701,7 +2730,7 @@ class IPCServer:
             # Find windows matching project
             window_ids_to_restore = []
             for window in scratchpad_windows:
-                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
                 window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
 
                 if window_project == project_name:
@@ -2883,7 +2912,7 @@ class IPCServer:
 
             for window in scratchpad_windows:
                 # Read I3PM_* environment variables
-                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
+                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
                 project_name = i3pm_env.get("I3PM_PROJECT_NAME", "(unknown)")
                 app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
 
@@ -2968,6 +2997,8 @@ class IPCServer:
                 "tracking": {
                     "workspace_number": int,
                     "floating": bool,
+                    "geometry": dict,  # Feature 038: x, y, width, height for floating windows
+                    "original_scratchpad": bool,  # Feature 038: True if window was in scratchpad before filtering
                     "last_seen": float,
                     "project_name": str,
                     "app_name": str
@@ -3018,7 +3049,7 @@ class IPCServer:
             is_visible = window_id not in [w.id for w in scratchpad_windows]
 
             # Read I3PM_* environment variables
-            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, window.pid)
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, window.pid, window.window)
 
             # Get tracking info
             tracking_info = self.workspace_tracker.windows.get(window_id, {}) if self.workspace_tracker else {}
@@ -3059,3 +3090,532 @@ class IPCServer:
                 duration_ms=duration_ms,
                 error=error_msg,
             )
+
+    # ========================================================================
+    # Feature 039: Diagnostic API Methods (T087-T092)
+    # ========================================================================
+
+    async def _health_check(self) -> Dict[str, Any]:
+        """
+        Health check method for diagnostic CLI.
+        
+        Feature 039 - T087
+        
+        Returns comprehensive daemon health status including:
+        - Daemon version and uptime
+        - i3 IPC connection status
+        - JSON-RPC server status
+        - Event subscription details
+        - Window tracking stats
+        - Overall health assessment
+        
+        Returns:
+            DiagnosticReport with health information
+        """
+        start_time = time.perf_counter()
+        
+        # Get daemon start time (uptime)
+        daemon_start = getattr(self.state_manager, 'daemon_start_time', time.time())
+        uptime_seconds = time.time() - daemon_start
+        
+        # Check i3 IPC connection
+        i3_connected = False
+        if self.i3_connection:
+            i3_connected = self.i3_connection.is_connected
+        
+        # Check event subscriptions (from existing _daemon_status method)
+        event_subscriptions = []
+        if self.event_buffer:
+            # Get subscription stats from event buffer
+            buffer_stats = getattr(self.event_buffer, 'get_stats', lambda: {})()
+            for sub_type in ['window', 'workspace', 'output', 'tick']:
+                events = [e for e in self.event_buffer.get_recent(limit=500) if e.event_type.startswith(sub_type)]
+                last_event = events[0] if events else None
+
+                event_subscriptions.append({
+                    "subscription_type": sub_type,
+                    "is_active": i3_connected,
+                    "event_count": len(events),
+                    "last_event_time": last_event.timestamp.isoformat() if last_event else None,
+                    "last_event_type": last_event.event_type if last_event else None
+                })
+        
+        # Get total events processed
+        total_events = len(self.event_buffer.get_recent(limit=9999)) if self.event_buffer else 0
+        
+        # Get total windows tracked
+        total_windows = len(self.state_manager.state.window_map)
+        
+        # Assess overall health
+        health_issues = []
+        if not i3_connected:
+            health_issues.append("i3 IPC connection lost")
+        if not event_subscriptions:
+            health_issues.append("No event subscriptions active")
+        if total_events == 0 and uptime_seconds > 60:
+            health_issues.append("No events processed (daemon may not be receiving events)")
+        
+        overall_status = "healthy"
+        if len(health_issues) > 0:
+            if "i3 IPC connection lost" in health_issues or "No event subscriptions" in health_issues:
+                overall_status = "critical"
+            else:
+                overall_status = "warning"
+        
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        
+        result = {
+            "daemon_version": "1.4.0",  # TODO: Get from module __version__
+            "uptime_seconds": round(uptime_seconds, 1),
+            "i3_ipc_connected": i3_connected,
+            "json_rpc_server_running": True,  # If we're responding, server is running
+            "event_subscriptions": event_subscriptions,
+            "total_events_processed": total_events,
+            "total_windows": total_windows,
+            "overall_status": overall_status,
+            "health_issues": health_issues
+        }
+        
+        await self._log_ipc_event(
+            event_type="health_check",
+            duration_ms=duration_ms
+        )
+        
+        return result
+
+    async def _get_window_identity_diagnostic(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get comprehensive window identity for diagnostic purposes.
+        
+        Feature 039 - T088
+        
+        Args:
+            params: {"window_id": int}
+        
+        Returns:
+            WindowIdentity with all window properties
+        
+        Raises:
+            Error -32001: Window not found
+            Error -32002: Window not tracked by daemon
+        """
+        start_time = time.perf_counter()
+        window_id = params.get("window_id")
+        
+        if not window_id:
+            raise ValueError("window_id parameter required")
+        
+        # Get window from i3
+        if not self.i3_connection or not self.i3_connection.is_connected:
+            raise RuntimeError("i3 IPC connection not available")
+        
+        try:
+            tree = await self.i3_connection.conn.get_tree()
+            window = tree.find_by_id(window_id)
+            
+            if not window:
+                raise ValueError(f"Window {window_id} not found")
+            
+            # Get window properties
+            window_class = window.window_class or "unknown"
+            window_instance = window.window_instance or ""
+            window_title = window.name or "(no title)"
+            window_pid = window.pid if hasattr(window, 'pid') else None
+            
+            # Get workspace info
+            workspace = window.workspace()
+            workspace_number = workspace.num if workspace else None
+            workspace_name = workspace.name if workspace else None
+            output_name = workspace.ipc_data.get('output') if workspace else None
+            
+            # Get window state
+            is_floating = window.floating != 'auto_off' if hasattr(window, 'floating') else False
+            is_focused = window.focused
+            
+            # Check if window is hidden (in scratchpad)
+            is_hidden = False
+            parent = window.parent
+            while parent:
+                if parent.scratchpad_state and parent.scratchpad_state != 'none':
+                    is_hidden = True
+                    break
+                parent = parent.parent
+            
+            # Get I3PM environment from /proc
+            i3pm_env = None
+            if window_pid:
+                from .services.window_filter import read_process_environ
+                env = read_process_environ(window_pid)
+                if env:
+                    i3pm_env = {
+                        "app_id": env.get("I3PM_APP_ID"),
+                        "app_name": env.get("I3PM_APP_NAME"),
+                        "project_name": env.get("I3PM_PROJECT_NAME"),
+                        "scope": env.get("I3PM_SCOPE")
+                    }
+            
+            # Get i3 marks
+            i3pm_marks = [m for m in (window.marks or []) if m.startswith("project:") or m.startswith("app:")]
+            
+            # Get normalized class
+            from .services.window_identifier import normalize_class, get_window_identity
+            window_class_normalized = normalize_class(window_class)
+            
+            # Check if tracked by daemon
+            tracked_window = self.state_manager.state.window_map.get(window_id)
+            matched_app = None
+            match_type = "none"
+            
+            if tracked_window:
+                matched_app = getattr(tracked_window, 'app_name', None)
+                match_type = getattr(tracked_window, 'match_type', 'tracked')
+            
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                "window_id": window_id,
+                "window_class": window_class,
+                "window_class_normalized": window_class_normalized,
+                "window_instance": window_instance,
+                "window_title": window_title,
+                "window_pid": window_pid,
+                "workspace_number": workspace_number,
+                "workspace_name": workspace_name,
+                "output_name": output_name,
+                "is_floating": is_floating,
+                "is_focused": is_focused,
+                "is_hidden": is_hidden,
+                "i3pm_env": i3pm_env,
+                "i3pm_marks": i3pm_marks,
+                "matched_app": matched_app,
+                "match_type": match_type
+            }
+            
+            await self._log_ipc_event(
+                event_type="get_window_identity",
+                duration_ms=duration_ms,
+                params={"window_id": window_id}
+            )
+            
+            return result
+            
+        except ValueError as e:
+            if "not found" in str(e):
+                # Return JSON-RPC error -32001
+                raise RuntimeError(json.dumps({
+                    "code": -32001,
+                    "message": "Window not found",
+                    "data": {"window_id": window_id}
+                }))
+            raise
+        except Exception as e:
+            logger.error(f"Error getting window identity: {e}")
+            raise
+
+    async def _get_workspace_rule_diagnostic(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Get workspace assignment rule for an application.
+        
+        Feature 039 - T089
+        
+        Args:
+            params: {"app_name": str}
+        
+        Returns:
+            WorkspaceRule or None
+        
+        Raises:
+            Error -32003: Application not found in registry
+        """
+        start_time = time.perf_counter()
+        app_name = params.get("app_name")
+        
+        if not app_name:
+            raise ValueError("app_name parameter required")
+        
+        # Get application registry
+        registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
+        
+        if not registry_path.exists():
+            raise RuntimeError(json.dumps({
+                "code": -32003,
+                "message": "Application not found in registry",
+                "data": {"app_name": app_name, "reason": "registry_file_not_found"}
+            }))
+        
+        try:
+            with open(registry_path) as f:
+                registry = json.load(f)
+            
+            app_def = registry.get(app_name)
+            
+            if not app_def:
+                raise RuntimeError(json.dumps({
+                    "code": -32003,
+                    "message": "Application not found in registry",
+                    "data": {"app_name": app_name}
+                }))
+            
+            # Build workspace rule response
+            result = {
+                "app_identifier": app_def.get("expected_class", app_name),
+                "matching_strategy": "normalized",  # Default strategy
+                "aliases": app_def.get("aliases", []),
+                "target_workspace": app_def.get("preferred_workspace"),
+                "fallback_behavior": app_def.get("fallback_behavior", "current"),
+                "app_name": app_name,
+                "description": app_def.get("display_name", app_name)
+            }
+            
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            
+            await self._log_ipc_event(
+                event_type="get_workspace_rule",
+                duration_ms=duration_ms,
+                params={"app_name": app_name}
+            )
+            
+            return result
+            
+        except RuntimeError as e:
+            # Re-raise JSON-RPC errors
+            if str(e).startswith("{"):
+                raise
+            raise
+        except Exception as e:
+            logger.error(f"Error getting workspace rule: {e}")
+            raise
+
+    async def _validate_state_diagnostic(self) -> Dict[str, Any]:
+        """
+        Validate daemon state consistency against i3 IPC.
+        
+        Feature 039 - T090
+        
+        Compares daemon's tracked windows with actual i3 window tree
+        to detect state drift.
+        
+        Returns:
+            StateValidation with consistency report
+        
+        Raises:
+            Error -32010: i3 IPC connection failed
+        """
+        start_time = time.perf_counter()
+        
+        if not self.i3_connection or not self.i3_connection.is_connected:
+            raise RuntimeError(json.dumps({
+                "code": -32010,
+                "message": "i3 IPC connection failed",
+                "data": {"reason": "not_connected"}
+            }))
+
+        try:
+            # Get i3 window tree
+            tree = await self.i3_connection.conn.get_tree()
+            i3_windows = tree.leaves()
+            
+            # Get daemon tracked windows
+            daemon_windows = self.state_manager.state.window_map
+            
+            # Compare states
+            total_windows_checked = len(i3_windows)
+            windows_consistent = 0
+            windows_inconsistent = 0
+            mismatches = []
+            
+            for i3_window in i3_windows:
+                window_id = i3_window.id
+                daemon_window = daemon_windows.get(window_id)
+                
+                # Check workspace consistency
+                i3_workspace = i3_window.workspace()
+                i3_workspace_num = i3_workspace.num if i3_workspace else None
+                
+                if daemon_window:
+                    daemon_workspace_num = getattr(daemon_window, 'workspace_number', None)
+                    
+                    if daemon_workspace_num and daemon_workspace_num != i3_workspace_num:
+                        mismatches.append({
+                            "window_id": window_id,
+                            "property_name": "workspace",
+                            "daemon_value": str(daemon_workspace_num),
+                            "i3_value": str(i3_workspace_num),
+                            "severity": "warning"
+                        })
+                        windows_inconsistent += 1
+                    else:
+                        windows_consistent += 1
+                else:
+                    # Window exists in i3 but not tracked by daemon
+                    # This is normal for pre-existing windows, so just count as consistent
+                    windows_consistent += 1
+            
+            is_consistent = windows_inconsistent == 0
+            consistency_percentage = round((windows_consistent / total_windows_checked * 100), 1) if total_windows_checked > 0 else 100.0
+            
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            
+            result = {
+                "validated_at": datetime.now().isoformat(),
+                "total_windows_checked": total_windows_checked,
+                "windows_consistent": windows_consistent,
+                "windows_inconsistent": windows_inconsistent,
+                "mismatches": mismatches,
+                "is_consistent": is_consistent,
+                "consistency_percentage": consistency_percentage
+            }
+            
+            await self._log_ipc_event(
+                event_type="validate_state",
+                duration_ms=duration_ms
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error validating state: {e}")
+            raise
+
+    async def _get_recent_events_diagnostic(self, params: Dict[str, Any]) -> list:
+        """
+        Get recent events from circular buffer.
+        
+        Feature 039 - T091
+        
+        Args:
+            params: {
+                "limit": int (optional, default=50, max=500),
+                "event_type": str (optional, filter by type)
+            }
+        
+        Returns:
+            List of WindowEvent objects
+        
+        Raises:
+            Error -32004: Invalid limit
+        """
+        start_time = time.perf_counter()
+        
+        limit = params.get("limit", 50)
+        event_type = params.get("event_type")
+        
+        # Validate limit
+        if limit < 1 or limit > 500:
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": "Invalid limit (must be 1-500)",
+                "data": {"limit": limit}
+            }))
+        
+        if not self.event_buffer:
+            return []
+        
+        # Get events from buffer
+        events = self.event_buffer.get_recent(limit=limit, event_type=event_type)
+
+        # Format events for diagnostic output
+        formatted_events = []
+        for event in events:
+            formatted_event = {
+                "event_id": event.event_id,
+                "event_type": event.event_type,
+                "timestamp": event.timestamp.isoformat() if event.timestamp else '',
+                "source": event.source,
+                "window_id": event.window_id,
+                "window_class": event.window_class,
+                "window_title": event.window_title,
+                "workspace_name": event.workspace_name,
+                "project_name": event.project_name,
+                "processing_duration_ms": event.processing_duration_ms,
+                "error": event.error
+            }
+            formatted_events.append(formatted_event)
+        
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        
+        await self._log_ipc_event(
+            event_type="get_recent_events",
+            duration_ms=duration_ms,
+            params={"limit": limit, "event_type": event_type}
+        )
+        
+        return formatted_events
+
+    async def _get_diagnostic_report_full(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get complete diagnostic report with all state information.
+        
+        Feature 039 - T092
+        
+        Args:
+            params: {
+                "include_windows": bool (optional, default=False),
+                "include_events": bool (optional, default=False),
+                "include_validation": bool (optional, default=False)
+            }
+        
+        Returns:
+            DiagnosticReport with comprehensive state information
+        """
+        start_time = time.perf_counter()
+        
+        include_windows = params.get("include_windows", False)
+        include_events = params.get("include_events", False)
+        include_validation = params.get("include_validation", False)
+        
+        # Get base health check
+        health_data = await self._health_check()
+        
+        # Start building report
+        report = {
+            "generated_at": datetime.now().isoformat(),
+            **health_data  # Include all health check data
+        }
+        
+        # Add i3 IPC state
+        if self.i3_connection and self.i3_connection.is_connected():
+            try:
+                tree = await self.i3_connection.get_tree()
+                workspaces = await self.i3_connection.get_workspaces()
+                outputs = await self.i3_connection.get_outputs()
+                
+                report["i3_ipc_state"] = {
+                    "total_windows": len(tree.leaves()),
+                    "total_workspaces": len(workspaces),
+                    "total_outputs": len([o for o in outputs if o.active])
+                }
+            except Exception as e:
+                logger.error(f"Error getting i3 state: {e}")
+                report["i3_ipc_state"] = {"error": str(e)}
+        
+        # Include windows if requested
+        if include_windows:
+            windows = []
+            for window_id, window_data in self.state_manager.state.windows.items():
+                windows.append({
+                    "window_id": window_id,
+                    "window_class": getattr(window_data, 'window_class', 'unknown'),
+                    "workspace": getattr(window_data, 'workspace_number', None)
+                })
+            report["tracked_windows"] = windows
+        
+        # Include events if requested
+        if include_events:
+            events = await self._get_recent_events_diagnostic({"limit": 100})
+            report["recent_events"] = events
+        
+        # Include validation if requested
+        if include_validation:
+            validation = await self._validate_state_diagnostic()
+            report["state_validation"] = validation
+        
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        
+        await self._log_ipc_event(
+            event_type="get_diagnostic_report",
+            duration_ms=duration_ms,
+            params=params
+        )
+        
+        return report

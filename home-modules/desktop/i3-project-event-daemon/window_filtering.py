@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 class WorkspaceTracker:
     """Manages persistent window workspace tracking for restoration.
 
-    State file schema:
+    State file schema (Feature 038 - v1.1):
     {
-        "version": "1.0",
+        "version": "1.1",
         "last_updated": 1730000000.123,
         "windows": {
             "123456": {
@@ -42,7 +42,9 @@ class WorkspaceTracker:
                 "project_name": "nixos",
                 "app_name": "vscode",
                 "window_class": "Code",
-                "last_seen": 1730000000.123
+                "last_seen": 1730000000.123,
+                "geometry": null,
+                "original_scratchpad": false
             }
         }
     }
@@ -56,7 +58,7 @@ class WorkspaceTracker:
         """
         self.state_file = state_file
         self.windows: Dict[int, Dict] = {}
-        self.version = "1.0"
+        self.version = "1.1"  # Feature 038: Updated to v1.1 for geometry and original_scratchpad fields
         self.last_updated = time.time()
         self._lock = asyncio.Lock()
 
@@ -76,18 +78,20 @@ class WorkspaceTracker:
                 with self.state_file.open("r") as f:
                     data = json.load(f)
 
-                # Validate version
+                # Validate version (support both 1.0 and 1.1 for backward compatibility)
                 version = data.get("version", "1.0")
-                if version != "1.0":
+                if version not in ["1.0", "1.1"]:
                     logger.warning(f"Unsupported window-workspace-map version: {version}, reinitializing")
                     await self._save_unlocked()
                     return
 
                 # Load windows (keys are strings in JSON, convert to int)
+                # Feature 038: v1.0 files will be automatically upgraded to v1.1 on next save
+                # Missing geometry/original_scratchpad fields get default values in get_window_workspace()
                 self.windows = {int(k): v for k, v in data.get("windows", {}).items()}
                 self.last_updated = data.get("last_updated", time.time())
 
-                logger.info(f"Loaded {len(self.windows)} window tracking entries")
+                logger.info(f"Loaded {len(self.windows)} window tracking entries (schema v{version})")
 
             except (json.JSONDecodeError, ValueError, KeyError) as e:
                 logger.error(f"Failed to load window-workspace-map.json: {e}")
@@ -144,16 +148,20 @@ class WorkspaceTracker:
         project_name: str,
         app_name: str,
         window_class: str,
+        geometry: Optional[Dict] = None,
+        original_scratchpad: bool = False,
     ) -> None:
         """Track window workspace assignment.
 
         Args:
             window_id: i3 container ID
-            workspace_number: Workspace number (1-70)
+            workspace_number: Workspace number (1-70, or -1 for scratchpad)
             floating: True if floating window
             project_name: Project name from I3PM_PROJECT_NAME
             app_name: App name from I3PM_APP_NAME
             window_class: X11 window class
+            geometry: Window geometry dict with x, y, width, height (for floating windows), or None
+            original_scratchpad: True if window was in scratchpad before project filtering
         """
         async with self._lock:
             self.windows[window_id] = {
@@ -163,24 +171,41 @@ class WorkspaceTracker:
                 "app_name": app_name,
                 "window_class": window_class,
                 "last_seen": time.time(),
+                "geometry": geometry,  # Feature 038: Window geometry for floating windows
+                "original_scratchpad": original_scratchpad,  # Feature 038: Scratchpad origin flag
             }
 
         # Save asynchronously (don't block)
         asyncio.create_task(self.save())
 
-    async def get_window_workspace(self, window_id: int) -> Optional[Tuple[int, bool]]:
-        """Get tracked workspace for window.
+    async def get_window_workspace(self, window_id: int) -> Optional[Dict]:
+        """Get tracked workspace and state for window.
 
         Args:
             window_id: i3 container ID
 
         Returns:
-            (workspace_number, floating) tuple, or None if not tracked
+            Window state dict with workspace_number, floating, geometry, original_scratchpad, etc.
+            Returns None if not tracked.
+
+            For backward compatibility with old JSON files:
+            - geometry defaults to None if missing
+            - original_scratchpad defaults to False if missing
         """
         async with self._lock:
             if window_id in self.windows:
                 entry = self.windows[window_id]
-                return (entry["workspace_number"], entry["floating"])
+                # Feature 038: Return full state dict with backward-compatible defaults
+                return {
+                    "workspace_number": entry.get("workspace_number", 1),
+                    "floating": entry.get("floating", False),
+                    "project_name": entry.get("project_name", ""),
+                    "app_name": entry.get("app_name", ""),
+                    "window_class": entry.get("window_class", ""),
+                    "last_seen": entry.get("last_seen", time.time()),
+                    "geometry": entry.get("geometry", None),  # Backward compatible default
+                    "original_scratchpad": entry.get("original_scratchpad", False),  # Backward compatible default
+                }
             return None
 
     async def remove_window(self, window_id: int) -> None:
@@ -264,12 +289,60 @@ class WorkspaceTracker:
             ]
 
 
-async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None) -> Dict[str, str]:
+async def _get_window_pid_via_xprop(window_xid: int) -> Optional[int]:
+    """Get process ID for window using xprop as fallback.
+
+    Args:
+        window_xid: X11 window ID
+
+    Returns:
+        Process ID or None if not available
+
+    Note:
+        Uses subprocess.run to execute xprop command.
+        Performance: ~10-20ms per call (cached by OS).
+    """
+    try:
+        # Run xprop in subprocess (i3 process ensures xprop is available)
+        proc = await asyncio.create_subprocess_exec(
+            "xprop", "-id", str(window_xid), "_NET_WM_PID",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=1.0)
+
+        if proc.returncode != 0:
+            logger.debug(f"xprop failed for window {window_xid}: {stderr.decode()}")
+            return None
+
+        # Parse output: "_NET_WM_PID(CARDINAL) = 12345"
+        output = stdout.decode().strip()
+        if " = " in output:
+            pid_str = output.split(" = ")[1]
+            return int(pid_str)
+
+        logger.debug(f"Could not parse xprop output for window {window_xid}: {output}")
+        return None
+
+    except asyncio.TimeoutError:
+        logger.warning(f"xprop timeout for window {window_xid}")
+        return None
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Failed to parse PID from xprop output: {e}")
+        return None
+    except FileNotFoundError:
+        logger.error("xprop command not found. Install x11-utils or xorg-xprop package.")
+        return None
+
+
+async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_xid: Optional[int] = None) -> Dict[str, str]:
     """Read I3PM_* environment variables from window's process.
 
     Args:
         window_id: i3 container ID (for logging)
-        pid: Process ID (required)
+        pid: Process ID (optional, will use xprop fallback if None)
+        window_xid: X11 window ID (required if pid is None for xprop fallback)
 
     Returns:
         Dict of I3PM_* environment variables (empty dict if process not found)
@@ -280,15 +353,31 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None) -> Dict
         I3PM_PROJECT_NAME: Project name (empty string = global)
         I3PM_SCOPE: "scoped" or "global"
         ... (see Feature 035 data-model.md)
+
+    Note:
+        i3ipc library's node.pid is unreliable (often returns None).
+        When pid is None, uses xprop to query _NET_WM_PID property via X11 window ID.
     """
+    # If no PID from i3, try xprop fallback
     if not pid:
-        logger.warning(f"Window {window_id} has no PID, treating as global")
-        return {}
+        logger.debug(f"Window {window_id} missing i3 PID, window_xid={window_xid}")
+        if window_xid:
+            logger.info(f"Window {window_id} has no i3 PID, trying xprop fallback for X11 window {window_xid}")
+            pid = await _get_window_pid_via_xprop(window_xid)
+            if pid:
+                logger.info(f"✓ Got PID {pid} via xprop for window {window_id}")
+            else:
+                logger.warning(f"Window {window_id} (X11 {window_xid}) has no PID via xprop, treating as global")
+                return {}
+        else:
+            logger.warning(f"Window {window_id} has no PID and no X11 window ID (i3_id={window_id}, xid={window_xid}), treating as global")
+            return {}
 
     environ_path = Path(f"/proc/{pid}/environ")
 
     try:
-        # Read null-separated environment variables
+        # Try direct read first (works for same namespace)
+        # If permission denied, treat as global (different namespace/process)
         with environ_path.open("rb") as f:
             environ_bytes = f.read()
 
@@ -305,9 +394,8 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None) -> Dict
 
         return i3pm_vars
 
-    except FileNotFoundError:
-        # Process terminated
-        logger.debug(f"Process {pid} for window {window_id} not found, treating as global")
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout reading environ for PID {pid}")
         return {}
 
     except Exception as e:
@@ -453,8 +541,8 @@ async def hide_windows_batch(
 
                 find_window(tree)
 
-                if window_con and window_con.pid:
-                    i3pm_env = await get_window_i3pm_env(window_id, window_con.pid)
+                if window_con:
+                    i3pm_env = await get_window_i3pm_env(window_id, window_con.pid, window_con.window)
                     project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
                     app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
                 else:

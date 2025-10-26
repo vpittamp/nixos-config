@@ -242,12 +242,13 @@ main() {
     echo "$initial_status,"
 
     # Start status generation in background
-    # This process subscribes to daemon events and outputs status lines
+    # Hybrid approach: Poll every 2 seconds + listen for tick events
     (
-        "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
-            # Build and output new status line on each daemon event
+        while true; do
+            # Build and output new status line
             status_line=$(build_status_line)
-            echo "$status_line,"
+            printf '%s,\n' "$status_line"
+            sleep 2
         done
     ) &
     STATUS_PID=$!

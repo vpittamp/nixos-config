@@ -15,7 +15,7 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Python dependencies for the daemon (Updated: 2025-10-23 for Features 030, 033)
+  # Python dependencies for the daemon (Updated: 2025-10-26 for Feature 039)
   # Note: PatternRule is now copied locally to avoid i3pm dependency
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     # Core daemon dependencies
@@ -29,6 +29,9 @@ let
     pytest       # Testing framework
     pytest-asyncio  # Async test support
     pytest-cov   # Coverage reporting
+
+    # Feature 039: Diagnostic tooling (T003)
+    rich         # Terminal UI for diagnostic commands
   ]);
 
   # Daemon package (T033)
@@ -36,7 +39,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.2.0";  # Feature 037: Unified project-scoped window management
+    version = "1.3.0";  # Feature 038: Window state preservation (tiling/floating, workspace, geometry)
     src = daemonSrc;
 
     installPhase = ''
@@ -149,15 +152,15 @@ in
         RestartSec = 5;            # Wait 5s before restart
 
         # Security hardening (T028)
-        PrivateTmp = true;
-        ProtectSystem = "strict";
-        ProtectHome = "read-only";
+        # Note: ProtectSystem, ProtectHome, and PrivateTmp disabled to allow reading
+        # /proc/{pid}/environ for cross-service process inspection (Feature 037 window filtering)
+        # CAP_SYS_PTRACE required to read /proc/{pid}/environ across user namespaces
+        AmbientCapabilities = "CAP_SYS_PTRACE";
         ReadWritePaths = [
           "%t/i3-project-daemon"
           "%h/.config/i3"
           "%h/.local/share/i3pm"  # Feature 030: Layout snapshot storage
         ];
-        NoNewPrivileges = true;
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
 
@@ -177,6 +180,8 @@ in
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
+          # Feature 037: Put /run/wrappers/bin first for setuid sudo access
+          "PATH=/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
         ];
 
         # Logging

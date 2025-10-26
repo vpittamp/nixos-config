@@ -247,83 +247,24 @@ async def _switch_project(
         logger.info(f"Already on project {project_name}")
         return
 
-    logger.info(f"Switching project: {old_project} → {project_name}")
+    logger.info(f"TICK: Switching project: {old_project} → {project_name}")
 
-    # Feature 037: Use new window filtering if workspace_tracker is available
-    if workspace_tracker:
-        from . import window_filtering
-        start_time = time.perf_counter()
+    # Feature 037: Use mark-based window filtering (rebuild trigger: 2025-10-25-18:55)
+    logger.info(f"TICK: Importing and calling mark-based filter_windows_by_project")
+    from .services.window_filter import filter_windows_by_project
+    start_time = time.perf_counter()
 
-        # Hide windows from old project (if any)
-        windows_hidden = 0
-        if old_project:
-            # Get all visible windows for old project
-            tree = await conn.get_tree()
-            window_ids_to_hide = []
+    logger.info(f"TICK: Calling filter_windows_by_project for '{project_name}'")
+    filter_result = await filter_windows_by_project(conn, project_name, workspace_tracker)
 
-            async def collect_old_project_windows(con):
-                if con.window and hasattr(con, 'id'):
-                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid)
-                    window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
-                    scope = i3pm_env.get("I3PM_SCOPE", "global")
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    logger.info(
+        f"TICK: Window filtering complete: {filter_result['visible']} visible, {filter_result['hidden']} hidden "
+        f"({duration_ms:.1f}ms)"
+    )
 
-                    if window_project == old_project and scope == "scoped":
-                        window_ids_to_hide.append(con.id)
-
-                for child in con.nodes:
-                    await collect_old_project_windows(child)
-                for child in con.floating_nodes:
-                    await collect_old_project_windows(child)
-
-            await collect_old_project_windows(tree)
-
-            # Hide windows in batch
-            hidden_count, hide_errors = await window_filtering.hide_windows_batch(
-                conn, window_ids_to_hide, workspace_tracker
-            )
-            windows_hidden = hidden_count
-            if hide_errors:
-                logger.warning(f"Errors hiding windows: {hide_errors}")
-
-        # Restore windows for new project
-        scratchpad_windows = await window_filtering.get_scratchpad_windows(conn)
-        window_ids_to_restore = []
-
-        for window in scratchpad_windows:
-            i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid)
-            window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
-
-            if window_project == project_name:
-                window_ids_to_restore.append(window.id)
-
-        # Restore windows in batch
-        restored_count, restore_errors, fallback_warnings = await window_filtering.restore_windows_batch(
-            conn, window_ids_to_restore, workspace_tracker, fallback_workspace=1
-        )
-
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        logger.info(
-            f"Window filtering complete: hidden {windows_hidden}, restored {restored_count} "
-            f"({duration_ms:.1f}ms)"
-        )
-
-        if restore_errors:
-            logger.warning(f"Errors restoring windows: {restore_errors}")
-        if fallback_warnings:
-            logger.info(f"Workspace fallbacks: {fallback_warnings}")
-
-    else:
-        # Legacy path (Feature 035 and earlier): Use old hide/show methods
-        logger.info("Using legacy window management (workspace_tracker not available)")
-
-        # Hide windows from old project
-        if old_project:
-            old_windows = await state_manager.get_windows_by_project(old_project)
-            await hide_project_windows(conn, old_windows)
-
-        # Show windows from new project
-        new_windows = await state_manager.get_windows_by_project(project_name)
-        await show_project_windows(conn, new_windows)
+    if filter_result.get('errors', 0) > 0:
+        logger.warning(f"TICK: Errors during filtering: {filter_result['errors']}")
 
     # Update active project
     await state_manager.set_active_project(project_name)
@@ -502,6 +443,22 @@ async def on_window_new(
         from .services.window_filter import get_window_environment
         window_env = await get_window_environment(window_id)
 
+        # Feature 039 T053: Extract comprehensive window identity information
+        # This provides normalized class names and PWA detection for diagnostics
+        from .services.window_identifier import get_window_identity
+        window_identity = get_window_identity(
+            actual_class=window_class,
+            actual_instance=container.window_instance or "",
+            window_title=window_title,
+        )
+        logger.debug(
+            f"Window {window_id} identity: "
+            f"class={window_identity['original_class']}, "
+            f"instance={window_identity['original_instance']}, "
+            f"normalized={window_identity['normalized_class']}, "
+            f"is_pwa={window_identity['is_pwa']}"
+        )
+
         # If window has I3PM environment, use it for project association
         # This replaces tag-based filtering with environment-based approach
         actual_project = None
@@ -517,9 +474,32 @@ async def on_window_new(
             actual_project = None
             logger.debug(f"Window {window_id} has no I3PM environment, assuming global scope")
 
+        # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
+        # VSCode windows share a single process, so I3PM environment doesn't distinguish
+        # between multiple workspaces. Parse title to get the actual project directory.
+        if window_class == "Code" and window_title:
+            # VSCode title format: "PROJECT_NAME - HOSTNAME - Visual Studio Code"
+            # Example: "nixos - nixos - Visual Studio Code"
+            import re
+            # Match either "Code - PROJECT -" or just "PROJECT - hostname -" format
+            match = re.match(r"(?:Code - )?([^-]+) -", window_title)
+            if match:
+                title_project = match.group(1).strip().lower()
+                # Check if this matches a known project name
+                if title_project in state_manager.state.projects:
+                    if actual_project != title_project:
+                        logger.info(
+                            f"VSCode window {window_id}: Overriding project from I3PM "
+                            f"({actual_project}) to title-based ({title_project})"
+                        )
+                        actual_project = title_project
+
         # If scoped and we have an actual project from environment, apply project mark
-        if classification.scope == "scoped" and actual_project:
-            mark = f"project:{actual_project}"
+        # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
+        # Feature 038 BUGFIX: Use window_env.scope (from I3PM env) instead of classification.scope
+        # because classification happens before reading I3PM environment
+        if window_env and window_env.scope == "scoped" and actual_project:
+            mark = f"project:{actual_project}:{window_id}"
             await conn.command(f'[id={window_id}] mark --add "{mark}"')
             logger.info(f"Marked window {window_id} with {mark} (from I3PM environment)")
 
@@ -539,20 +519,67 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # Feature 037 T026-T029: Guaranteed workspace assignment on launch
-        # If window has I3PM_APP_NAME, look up preferred workspace in registry
-        if window_env and window_env.app_name and application_registry:
-            app_name = window_env.app_name
-            app_def = application_registry.get(app_name)
+        # Feature 037 T026-T029 + Feature 039 T060-T063: Workspace assignment with priority
+        # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
+        # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
+        # Priority 3: Class-based registry matching (fallback when PID unavailable)
+        preferred_ws = None
+        assignment_source = None
 
-            if app_def and "preferred_workspace" in app_def:
-                preferred_ws = app_def["preferred_workspace"]
-                current_workspace = container.workspace()
+        if window_env:
+            # Priority 1: I3PM_TARGET_WORKSPACE (Feature 039 T060)
+            if hasattr(window_env, 'target_workspace') and window_env.target_workspace:
+                preferred_ws = window_env.target_workspace
+                assignment_source = "I3PM_TARGET_WORKSPACE"
+                logger.info(f"Using I3PM_TARGET_WORKSPACE={preferred_ws} for window {window_id}")
 
-                # T028: Check if window is already on preferred workspace
-                if current_workspace and current_workspace.num != preferred_ws:
-                    # Move window to preferred workspace
-                    try:
+            # Priority 2: I3PM_APP_NAME registry lookup (Feature 037)
+            elif window_env.app_name and application_registry:
+                app_name = window_env.app_name
+                app_def = application_registry.get(app_name)
+
+                if app_def and "preferred_workspace" in app_def:
+                    preferred_ws = app_def["preferred_workspace"]
+                    assignment_source = f"registry[{app_name}]"
+        else:
+            # Priority 3: Class-based registry matching (fallback for apps without PID)
+            # BUGFIX 039: When PID is unavailable (e.g., VS Code, Ghostty), use window class
+            # to match against application registry and get preferred workspace
+            if application_registry:
+                from .services.window_identifier import match_with_registry
+
+                app_match = match_with_registry(
+                    actual_class=window_class,
+                    actual_instance=container.window_instance or "",
+                    application_registry=application_registry
+                )
+
+                if app_match and "preferred_workspace" in app_match:
+                    preferred_ws = app_match["preferred_workspace"]
+                    app_name = app_match.get("_matched_app_name", "unknown")
+                    match_type = app_match.get("_match_type", "unknown")
+                    assignment_source = f"registry[{app_name}] via class-match ({match_type})"
+                    logger.info(
+                        f"Window {window_id} ({window_class}) matched to app {app_name} "
+                        f"via {match_type}, assigning workspace {preferred_ws}"
+                    )
+
+        if preferred_ws:
+                # BUGFIX 039 T066: Re-fetch container from tree to get current workspace
+                # container.workspace() returns None during window::new event (timing issue)
+                # Solution: Query fresh container from tree
+                #
+                # NOTE: Feature 039 architectural change - ALL workspace assignment now in daemon
+                # Previously GLOBAL apps used i3 for_window rules, SCOPED apps used daemon
+                # Now ALL apps use daemon for unified, dynamic, rebuildless workspace management
+                try:
+                    tree = await conn.get_tree()
+                    fresh_container = tree.find_by_id(container.id)
+                    current_workspace = fresh_container.workspace() if fresh_container else None
+
+                    # T028: Check if window is already on preferred workspace
+                    if not current_workspace or current_workspace.num != preferred_ws:
+                        # Move window to preferred workspace
                         await conn.command(
                             f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
                         )
@@ -567,38 +594,26 @@ async def on_window_new(
                                 workspace_number=preferred_ws,
                                 floating=is_floating,
                                 project_name=actual_project if actual_project else "",
-                                app_name=app_name,
+                                app_name=window_env.app_name if window_env else "",
                                 window_class=window_class,
                             )
                             await workspace_tracker.save()
 
-                        # T029: Log workspace assignment
+                        # T029 + T064: Log workspace assignment with source (Feature 039)
+                        current_ws_num = current_workspace.num if current_workspace else "unknown"
                         logger.info(
-                            f"Moved window {window_id} ({window_class}/{app_name}) from workspace "
-                            f"{current_workspace.num} to preferred workspace {preferred_ws}"
+                            f"Moved window {window_id} ({window_class}) from workspace "
+                            f"{current_ws_num} to preferred workspace {preferred_ws} "
+                            f"(source: {assignment_source})"
                         )
-
-                    except Exception as e:
-                        logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
-                else:
-                    # Already on correct workspace, but still track it
-                    if workspace_tracker and current_workspace:
-                        from . import window_filtering
-                        is_floating = container.floating == "user_on" or container.floating == "auto_on"
-
-                        await workspace_tracker.track_window(
-                            window_id=container.id,
-                            workspace_number=current_workspace.num,
-                            floating=is_floating,
-                            project_name=actual_project if actual_project else "",
-                            app_name=app_name,
-                            window_class=window_class,
-                        )
-                        await workspace_tracker.save()
-
+                    else:
+                        # Already on correct workspace
                         logger.debug(
-                            f"Window {window_id} ({app_name}) already on preferred workspace {preferred_ws}"
+                            f"Window {window_id} ({window_class}) already on preferred workspace {preferred_ws}"
                         )
+
+                except Exception as e:
+                    logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:
@@ -670,6 +685,7 @@ async def on_window_mark(
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
     ipc_server: Optional["IPCServer"] = None,
+    resilient_connection: Optional["ResilientI3Connection"] = None,
 ) -> None:
     """Handle window::mark events - track mark changes (T015).
 
@@ -679,6 +695,7 @@ async def on_window_mark(
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
         ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
+        resilient_connection: Connection manager for checking startup scan flag
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -687,11 +704,18 @@ async def on_window_mark(
     window_class = container.window_class or "unknown"
 
     try:
-        # Extract project marks
+        # Skip processing if performing startup scan (prevents race conditions)
+        if resilient_connection and resilient_connection.is_performing_startup_scan:
+            logger.debug(f"Suppressing window::mark handler during startup scan for window {window_id}")
+            return
+
+        # Extract project marks (format: project:PROJECT_NAME:WINDOW_ID)
         project_marks = [mark for mark in container.marks if mark.startswith("project:")]
 
         if project_marks:
-            project_name = project_marks[0].split(":", 1)[1]
+            # Parse mark: "project:nixos:16777219" → extract "nixos"
+            mark_parts = project_marks[0].split(":")
+            project_name = mark_parts[1] if len(mark_parts) >= 2 else None
             await state_manager.update_window(window_id, project=project_name, marks=container.marks)
             logger.debug(f"Updated window {window_id} project to {project_name}")
         else:
@@ -973,7 +997,7 @@ async def on_window_move(
             from . import window_filtering
 
             # Read I3PM environment variables to get project info
-            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, container.pid)
+            i3pm_env = await window_filtering.get_window_i3pm_env(window_id, container.pid, container.window)
             project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
             app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
 

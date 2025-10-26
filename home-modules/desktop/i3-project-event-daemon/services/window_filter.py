@@ -8,6 +8,7 @@ Replaces tag-based filtering with environment variable approach.
 
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict
@@ -27,6 +28,7 @@ class WindowEnvironment:
     active: bool  # I3PM_ACTIVE - true if project was active at launch
     launch_time: str  # I3PM_LAUNCH_TIME - unix timestamp
     launcher_pid: str  # I3PM_LAUNCHER_PID - wrapper script PID
+    target_workspace: Optional[int] = None  # I3PM_TARGET_WORKSPACE - preferred workspace number (Feature 039 T060)
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -71,6 +73,84 @@ def read_process_environ(pid: int) -> Dict[str, str]:
     except FileNotFoundError as e:
         logger.debug(f"Process {pid} not found (may have exited): {e}")
         raise
+
+
+def get_parent_pid(pid: int) -> Optional[int]:
+    """
+    Get parent process ID from /proc/<pid>/stat.
+
+    Feature 039 T071: Parent process traversal for environment inheritance.
+
+    Args:
+        pid: Child process ID
+
+    Returns:
+        Parent process ID or None if not available
+    """
+    try:
+        stat_path = Path(f"/proc/{pid}/stat")
+        stat_data = stat_path.read_text()
+
+        # /proc/<pid>/stat format: pid (comm) state ppid ...
+        # Extract ppid (4th field)
+        parts = stat_data.split()
+        if len(parts) >= 4:
+            ppid = int(parts[3])
+            return ppid if ppid > 1 else None  # Don't traverse to init (PID 1)
+
+        return None
+
+    except (FileNotFoundError, ValueError, IndexError) as e:
+        logger.debug(f"Failed to get parent PID for {pid}: {e}")
+        return None
+
+
+def read_process_environ_with_fallback(pid: int, max_depth: int = 3) -> Dict[str, str]:
+    """
+    Read process environment with parent process fallback.
+
+    Feature 039 T071: If child process has no I3PM_* variables, traverse
+    up to parent process to find them (handles edge cases where child
+    doesn't inherit environment).
+
+    Args:
+        pid: Process ID
+        max_depth: Maximum parent traversal depth (default 3)
+
+    Returns:
+        Environment dictionary (may be empty if no I3PM vars found)
+    """
+    current_pid = pid
+    depth = 0
+
+    while current_pid and depth < max_depth:
+        try:
+            env = read_process_environ(current_pid)
+
+            # Check if environment has I3PM variables
+            if "I3PM_APP_ID" in env or "I3PM_APP_NAME" in env:
+                if current_pid != pid:
+                    logger.debug(
+                        f"Found I3PM environment in parent PID {current_pid} "
+                        f"(traversed {depth} levels from PID {pid})"
+                    )
+                return env
+
+            # Try parent process
+            parent_pid = get_parent_pid(current_pid)
+            if parent_pid == current_pid:
+                break  # Avoid infinite loop
+
+            current_pid = parent_pid
+            depth += 1
+
+        except (FileNotFoundError, PermissionError):
+            # Process exited or permission denied
+            break
+
+    # No I3PM environment found
+    logger.debug(f"No I3PM environment found for PID {pid} (traversed {depth} parents)")
+    return {}
 
 
 def get_window_pid(window_id: int) -> Optional[int]:
@@ -135,6 +215,17 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
         return None
 
     try:
+        # Feature 039 T060: Parse I3PM_TARGET_WORKSPACE as integer
+        target_workspace = None
+        if "I3PM_TARGET_WORKSPACE" in env:
+            try:
+                target_workspace = int(env["I3PM_TARGET_WORKSPACE"])
+            except ValueError:
+                logger.warning(
+                    f"Invalid I3PM_TARGET_WORKSPACE value: {env['I3PM_TARGET_WORKSPACE']}, "
+                    "expected integer"
+                )
+
         return WindowEnvironment(
             app_id=env["I3PM_APP_ID"],
             app_name=env["I3PM_APP_NAME"],
@@ -144,6 +235,7 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             active=env.get("I3PM_ACTIVE", "false").lower() == "true",
             launch_time=env.get("I3PM_LAUNCH_TIME", ""),
             launcher_pid=env.get("I3PM_LAUNCHER_PID", ""),
+            target_workspace=target_workspace,
         )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse I3PM environment variables: {e}")
@@ -191,20 +283,27 @@ async def get_window_environment(window_id: int) -> Optional[WindowEnvironment]:
 async def filter_windows_by_project(
     conn,  # i3ipc.aio.Connection
     active_project: Optional[str],
+    workspace_tracker=None,  # Optional WorkspaceTracker for Feature 038
 ) -> Dict[str, int]:
     """
-    Filter windows based on project association via /proc environment reading
+    Filter windows based on project association via i3 window marks
 
     Shows windows that match the active project, hides windows from other projects.
-    Global scope windows are always visible.
+    Windows without project marks are treated as global (always visible).
+
+    Feature 038: Preserves window state (tiling/floating, workspace, geometry, scratchpad origin)
 
     Args:
         conn: i3ipc async connection
         active_project: Active project name or None for global mode
+        workspace_tracker: WorkspaceTracker instance for state persistence (Feature 038)
 
     Returns:
         Dictionary with "visible", "hidden", "errors" counts
     """
+    # Feature 038 T042: Performance measurement
+    operation_start = time.perf_counter()
+
     tree = await conn.get_tree()
     windows = tree.leaves()
 
@@ -215,59 +314,194 @@ async def filter_windows_by_project(
     logger.info(f"Filtering {len(windows)} windows for project '{active_project or 'none'}'")
 
     for window in windows:
+        # Feature 038 T042: Per-window performance tracking
+        window_start = time.perf_counter()
+
         window_id = window.window  # X11 window ID
 
-        # Get window environment
-        window_env = await get_window_environment(window_id)
+        # Get project from window marks (format: project:PROJECT_NAME:WINDOW_ID)
+        window_project = None
+        for mark in window.marks:
+            if mark.startswith("project:"):
+                mark_parts = mark.split(":")
+                window_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                break
 
         # Determine visibility
         should_show = False
-        if window_env is None:
-            # No I3PM environment → global scope → always visible
+        if window_project is None:
+            # No project mark → global scope → always visible
             should_show = True
-            logger.debug(f"Window {window_id} ({window.window_class}): global (no I3PM)")
-        elif window_env.scope == "global":
-            # Global scope apps always visible
-            should_show = True
-            logger.debug(f"Window {window_id} ({window.window_class}): global scope")
+            logger.debug(f"Window {window_id} ({window.window_class}): global (no project mark)")
         elif active_project is None:
             # No active project → hide scoped windows
             should_show = False
             logger.debug(f"Window {window_id} ({window.window_class}): hide (no active project)")
-        elif window_env.project_name == active_project:
+        elif window_project == active_project:
             # Project match → show
             should_show = True
-            logger.debug(f"Window {window_id} ({window.window_class}): show (project match)")
+            logger.debug(f"Window {window_id} ({window.window_class}): show (project match: {window_project})")
         else:
             # Different project → hide
             should_show = False
             logger.debug(
                 f"Window {window_id} ({window.window_class}): hide "
-                f"(project mismatch: {window_env.project_name} != {active_project})"
+                f"(project mismatch: {window_project} != {active_project})"
             )
 
         # Apply visibility
         try:
             if should_show:
-                # Ensure window is not in scratchpad
-                if "[__i3_scratch]" in [w.name for w in window.workspace()]:
-                    await conn.command(f'[id={window_id}] move workspace current')
+                # Check if window is currently in scratchpad
+                workspace = window.workspace()
+                in_scratchpad = workspace and workspace.name == "__i3_scratch"
+
+                logger.debug(
+                    f"Window {window_id} should show: workspace={workspace.name if workspace else 'None'}, "
+                    f"in_scratchpad={in_scratchpad}"
+                )
+
+                if in_scratchpad:
+                    # Feature 038: Restore window to exact workspace with correct floating state
+                    logger.info(f"Restoring window {window_id} ({window.window_class}) from scratchpad")
+
+                    # Load saved state if workspace_tracker available
+                    saved_state = None
+                    if workspace_tracker:
+                        saved_state = await workspace_tracker.get_window_workspace(window_id)
+
+                    if saved_state:
+                        # Restore to exact workspace number (not current!)
+                        workspace_num = saved_state.get("workspace_number", 1)
+                        is_floating = saved_state.get("floating", False)
+                        original_scratchpad = saved_state.get("original_scratchpad", False)
+
+                        # Feature 038 P3: Don't restore windows originally in scratchpad
+                        if original_scratchpad:
+                            logger.debug(f"Window {window_id} was originally in scratchpad, leaving hidden")
+                            continue  # Skip restoration
+
+                        logger.info(
+                            f"Restoring window {window_id} to workspace {workspace_num}, "
+                            f"floating={is_floating}"
+                        )
+
+                        # Move to exact workspace number (Feature 038 US3)
+                        await conn.command(f'[id={window_id}] move workspace number {workspace_num}')
+
+                        # Restore floating state (Feature 038 US1)
+                        if is_floating:
+                            await conn.command(f'[id={window_id}] floating enable')
+
+                            # Feature 038 US2: Restore geometry for floating windows
+                            geometry = saved_state.get("geometry")
+                            if geometry and all(k in geometry for k in ["x", "y", "width", "height"]):
+                                # Apply geometry restoration (position and size)
+                                logger.debug(
+                                    f"Restoring geometry for window {window_id}: "
+                                    f"position=({geometry['x']}, {geometry['y']}), "
+                                    f"size={geometry['width']}x{geometry['height']}"
+                                )
+
+                                # Note: Must enable floating BEFORE applying geometry (T024)
+                                # Resize and move in single command for atomicity
+                                await conn.command(
+                                    f'[id={window_id}] '
+                                    f'resize set {geometry["width"]} px {geometry["height"]} px, '
+                                    f'move position {geometry["x"]} px {geometry["y"]} px'
+                                )
+                        else:
+                            await conn.command(f'[id={window_id}] floating disable')
+                    else:
+                        # Fallback: restore to workspace 1 if no saved state
+                        logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
+                        await conn.command(f'[id={window_id}] move workspace number 1')
+                else:
+                    logger.debug(f"Window {window_id} already visible")
+
                 visible_count += 1
             else:
-                # Move to scratchpad to hide
+                # Feature 038: Capture window state BEFORE hiding
+                workspace = window.workspace()
+                logger.debug(
+                    f"Hiding window {window_id} ({window.window_class}): "
+                    f"current workspace={workspace.name if workspace else 'None'}"
+                )
+
+                # Capture state for Feature 038 (US1, US2, US3, US4)
+                if workspace_tracker and workspace:
+                    # Get current window state
+                    workspace_num = workspace.num if workspace.num is not None else 1
+                    is_floating = window.floating in ["user_on", "auto_on"]
+                    is_original_scratchpad = workspace.name == "__i3_scratch"
+
+                    # Feature 038 US2: Capture geometry for floating windows
+                    geometry = None
+                    if is_floating and window.rect:
+                        geometry = {
+                            "x": window.rect.x,
+                            "y": window.rect.y,
+                            "width": window.rect.width,
+                            "height": window.rect.height,
+                        }
+                        logger.debug(
+                            f"Captured geometry for floating window {window_id}: "
+                            f"x={geometry['x']}, y={geometry['y']}, "
+                            f"width={geometry['width']}, height={geometry['height']}"
+                        )
+
+                    # Get window class and project name for tracking
+                    window_class = window.window_class or "unknown"
+                    window_project = window_project or "unknown"  # From earlier parsing
+
+                    logger.info(
+                        f"Capturing state for window {window_id}: workspace={workspace_num}, "
+                        f"floating={is_floating}, original_scratchpad={is_original_scratchpad}, "
+                        f"has_geometry={geometry is not None}"
+                    )
+
+                    # Save state with geometry for floating windows
+                    await workspace_tracker.track_window(
+                        window_id=window_id,
+                        workspace_number=workspace_num,
+                        floating=is_floating,
+                        project_name=window_project,
+                        app_name=window_class,  # Use window_class as fallback
+                        window_class=window_class,
+                        geometry=geometry,  # Feature 038 US2: Geometry for floating windows
+                        original_scratchpad=is_original_scratchpad,
+                    )
+
+                # Move to scratchpad
                 await conn.command(f'[id={window_id}] move scratchpad')
                 hidden_count += 1
         except Exception as e:
             logger.error(f"Failed to update window {window_id} visibility: {e}")
             error_count += 1
+        finally:
+            # Feature 038 T042: Log per-window timing (target <50ms per window)
+            window_duration_ms = (time.perf_counter() - window_start) * 1000
+            if window_duration_ms > 50:
+                logger.warning(
+                    f"Window {window_id} filter operation took {window_duration_ms:.1f}ms (target <50ms)"
+                )
+            else:
+                logger.debug(f"Window {window_id} processed in {window_duration_ms:.1f}ms")
+
+    # Feature 038 T042: Overall operation performance
+    operation_duration_ms = (time.perf_counter() - operation_start) * 1000
+    avg_per_window_ms = operation_duration_ms / len(windows) if windows else 0
 
     logger.info(
         f"Window filtering complete: {visible_count} visible, {hidden_count} hidden, "
-        f"{error_count} errors"
+        f"{error_count} errors | Total: {operation_duration_ms:.1f}ms, "
+        f"Avg: {avg_per_window_ms:.1f}ms/window"
     )
 
     return {
         "visible": visible_count,
         "hidden": hidden_count,
         "errors": error_count,
+        "duration_ms": operation_duration_ms,
+        "avg_per_window_ms": avg_per_window_ms,
     }
