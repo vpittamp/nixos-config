@@ -1,0 +1,866 @@
+{
+  "$defs": {
+    "EventSubscription": {
+      "description": "i3 IPC event subscription status (Feature 039: T008).",
+      "example": {
+        "event_count": 1234,
+        "is_active": true,
+        "last_event_change": "new",
+        "last_event_time": "2025-10-26T12:34:56",
+        "subscription_type": "window"
+      },
+      "properties": {
+        "subscription_type": {
+          "description": "Event type: window, workspace, output, tick, binding",
+          "title": "Subscription Type",
+          "type": "string"
+        },
+        "is_active": {
+          "description": "True if subscription is currently active",
+          "title": "Is Active",
+          "type": "boolean"
+        },
+        "event_count": {
+          "default": 0,
+          "description": "Total events received since daemon start",
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "last_event_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Timestamp of most recent event",
+          "title": "Last Event Time"
+        },
+        "last_event_change": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Last event change type (e.g., 'new', 'focus')",
+          "title": "Last Event Change"
+        }
+      },
+      "required": [
+        "subscription_type",
+        "is_active"
+      ],
+      "title": "EventSubscription",
+      "type": "object"
+    },
+    "I3IPCState": {
+      "description": "i3 IPC authoritative state snapshot (Feature 039: T011).",
+      "properties": {
+        "outputs": {
+          "description": "Connected outputs",
+          "items": {
+            "$ref": "#/$defs/OutputInfo"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "active_output_count": {
+          "default": 0,
+          "description": "Number of active monitors",
+          "title": "Active Output Count",
+          "type": "integer"
+        },
+        "workspaces": {
+          "description": "All workspaces",
+          "items": {
+            "$ref": "#/$defs/WorkspaceInfo"
+          },
+          "title": "Workspaces",
+          "type": "array"
+        },
+        "visible_workspace_count": {
+          "default": 0,
+          "description": "Number of visible workspaces",
+          "title": "Visible Workspace Count",
+          "type": "integer"
+        },
+        "focused_workspace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Currently focused workspace name",
+          "title": "Focused Workspace"
+        },
+        "total_windows": {
+          "default": 0,
+          "description": "Total window count from tree",
+          "title": "Total Windows",
+          "type": "integer"
+        },
+        "marks": {
+          "description": "All marks in current session",
+          "items": {
+            "type": "string"
+          },
+          "title": "Marks",
+          "type": "array"
+        },
+        "captured_at": {
+          "description": "State capture timestamp",
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        }
+      },
+      "title": "I3IPCState",
+      "type": "object"
+    },
+    "I3PMEnvironment": {
+      "description": "I3PM environment variables from /proc/{pid}/environ (Feature 039: T006).",
+      "example": {
+        "active": true,
+        "app_id": "terminal-stacks-823199-1730000000",
+        "app_name": "terminal",
+        "launch_time": 1730000000,
+        "launcher_pid": 823150,
+        "project_dir": "/home/vpittamp/projects/stacks",
+        "project_display_name": "Stacks",
+        "project_icon": "\ud83d\udcda",
+        "project_name": "stacks",
+        "scope": "scoped"
+      },
+      "properties": {
+        "app_id": {
+          "description": "Unique instance ID: {app}-{project}-{pid}-{timestamp}",
+          "title": "App Id",
+          "type": "string"
+        },
+        "app_name": {
+          "description": "Registry application name (e.g., 'vscode', 'terminal')",
+          "title": "App Name",
+          "type": "string"
+        },
+        "target_workspace": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Direct workspace assignment from launcher (1-10)",
+          "title": "Target Workspace"
+        },
+        "project_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Active project name (e.g., 'nixos', 'stacks')",
+          "title": "Project Name"
+        },
+        "project_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Project directory path",
+          "title": "Project Dir"
+        },
+        "project_display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Human-readable project name",
+          "title": "Project Display Name"
+        },
+        "project_icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Project icon emoji",
+          "title": "Project Icon"
+        },
+        "scope": {
+          "description": "Application scope: 'scoped' or 'global'",
+          "title": "Scope",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "description": "True if project was active at launch",
+          "title": "Active",
+          "type": "boolean"
+        },
+        "launch_time": {
+          "description": "Unix timestamp of launch",
+          "title": "Launch Time",
+          "type": "integer"
+        },
+        "launcher_pid": {
+          "description": "Wrapper script PID",
+          "title": "Launcher Pid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "app_id",
+        "app_name",
+        "scope",
+        "launch_time",
+        "launcher_pid"
+      ],
+      "title": "I3PMEnvironment",
+      "type": "object"
+    },
+    "OutputInfo": {
+      "description": "Monitor/output information from i3 IPC (Feature 039: T011).",
+      "properties": {
+        "name": {
+          "description": "Output name (e.g., 'HDMI-1')",
+          "title": "Name",
+          "type": "string"
+        },
+        "active": {
+          "description": "Output is active",
+          "title": "Active",
+          "type": "boolean"
+        },
+        "current_workspace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Workspace currently on this output",
+          "title": "Current Workspace"
+        }
+      },
+      "required": [
+        "name",
+        "active"
+      ],
+      "title": "OutputInfo",
+      "type": "object"
+    },
+    "StateMismatch": {
+      "description": "Specific state inconsistency between daemon and i3 (Feature 039: T010).",
+      "example": {
+        "daemon_value": "3",
+        "i3_value": "5",
+        "property_name": "workspace",
+        "severity": "warning",
+        "window_id": 14680068
+      },
+      "properties": {
+        "window_id": {
+          "description": "Window with mismatch",
+          "title": "Window Id",
+          "type": "integer"
+        },
+        "property_name": {
+          "description": "Property that doesn't match (e.g., 'workspace', 'marks')",
+          "title": "Property Name",
+          "type": "string"
+        },
+        "daemon_value": {
+          "description": "Value in daemon state",
+          "title": "Daemon Value",
+          "type": "string"
+        },
+        "i3_value": {
+          "description": "Value in i3 IPC state (authoritative)",
+          "title": "I3 Value",
+          "type": "string"
+        },
+        "severity": {
+          "description": "Severity: critical, warning, info",
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id",
+        "property_name",
+        "daemon_value",
+        "i3_value",
+        "severity"
+      ],
+      "title": "StateMismatch",
+      "type": "object"
+    },
+    "StateValidation": {
+      "description": "State consistency validation results (Feature 039: T010).",
+      "example": {
+        "consistency_percentage": 91.3,
+        "is_consistent": false,
+        "total_windows_checked": 23,
+        "validated_at": "2025-10-26T12:34:56",
+        "windows_consistent": 21,
+        "windows_inconsistent": 2
+      },
+      "properties": {
+        "validated_at": {
+          "description": "Validation timestamp",
+          "format": "date-time",
+          "title": "Validated At",
+          "type": "string"
+        },
+        "total_windows_checked": {
+          "default": 0,
+          "description": "Total windows validated",
+          "title": "Total Windows Checked",
+          "type": "integer"
+        },
+        "windows_consistent": {
+          "default": 0,
+          "description": "Windows matching i3 state",
+          "title": "Windows Consistent",
+          "type": "integer"
+        },
+        "windows_inconsistent": {
+          "default": 0,
+          "description": "Windows with state drift",
+          "title": "Windows Inconsistent",
+          "type": "integer"
+        },
+        "mismatches": {
+          "description": "Detailed mismatches",
+          "items": {
+            "$ref": "#/$defs/StateMismatch"
+          },
+          "title": "Mismatches",
+          "type": "array"
+        },
+        "is_consistent": {
+          "default": true,
+          "description": "True if all state matches",
+          "title": "Is Consistent",
+          "type": "boolean"
+        },
+        "consistency_percentage": {
+          "default": 100.0,
+          "description": "Percentage of windows consistent",
+          "title": "Consistency Percentage",
+          "type": "number"
+        }
+      },
+      "title": "StateValidation",
+      "type": "object"
+    },
+    "WindowEvent": {
+      "description": "Captured i3 window event for diagnostics (Feature 039: T009).",
+      "example": {
+        "error": null,
+        "event_change": "new",
+        "event_type": "window",
+        "handler_duration_ms": 45.2,
+        "marks_applied": [
+          "project:stacks",
+          "app:terminal"
+        ],
+        "timestamp": "2025-10-26T12:34:56.789",
+        "window_class": "com.mitchellh.ghostty",
+        "window_id": 14680068,
+        "window_title": "vpittamp@hetzner: ~",
+        "workspace_assigned": 3
+      },
+      "properties": {
+        "event_type": {
+          "description": "Event type: window, workspace, output, tick",
+          "title": "Event Type",
+          "type": "string"
+        },
+        "event_change": {
+          "description": "Change type: new, close, focus, move, etc.",
+          "title": "Event Change",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "Event capture time",
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "window_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Window container ID (if window event)",
+          "title": "Window Id"
+        },
+        "window_class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Window class at event time",
+          "title": "Window Class"
+        },
+        "window_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Window title at event time",
+          "title": "Window Title"
+        },
+        "handler_duration_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Handler execution time in milliseconds",
+          "title": "Handler Duration Ms"
+        },
+        "workspace_assigned": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Workspace assigned (if applicable)",
+          "title": "Workspace Assigned"
+        },
+        "marks_applied": {
+          "description": "Marks applied to window",
+          "items": {
+            "type": "string"
+          },
+          "title": "Marks Applied",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Error message if processing failed",
+          "title": "Error"
+        },
+        "stack_trace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Stack trace for debugging",
+          "title": "Stack Trace"
+        }
+      },
+      "required": [
+        "event_type",
+        "event_change"
+      ],
+      "title": "WindowEvent",
+      "type": "object"
+    },
+    "WindowIdentity": {
+      "description": "Complete window identification and context (Feature 039: T005).",
+      "example": {
+        "is_floating": false,
+        "is_focused": true,
+        "is_hidden": false,
+        "match_type": "instance",
+        "matched_app": "terminal",
+        "output_name": "HDMI-1",
+        "window_class": "com.mitchellh.ghostty",
+        "window_class_normalized": "ghostty",
+        "window_id": 14680068,
+        "window_instance": "ghostty",
+        "window_pid": 823199,
+        "window_title": "vpittamp@hetzner: ~",
+        "workspace_name": "2:code",
+        "workspace_number": 2
+      },
+      "properties": {
+        "window_id": {
+          "description": "i3 window container ID",
+          "title": "Window Id",
+          "type": "integer"
+        },
+        "window_class": {
+          "description": "WM_CLASS class field (full)",
+          "title": "Window Class",
+          "type": "string"
+        },
+        "window_class_normalized": {
+          "description": "Normalized class for matching",
+          "title": "Window Class Normalized",
+          "type": "string"
+        },
+        "window_instance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "WM_CLASS instance field",
+          "title": "Window Instance"
+        },
+        "window_title": {
+          "description": "Window title/name",
+          "title": "Window Title",
+          "type": "string"
+        },
+        "window_pid": {
+          "description": "Process ID of window",
+          "title": "Window Pid",
+          "type": "integer"
+        },
+        "workspace_number": {
+          "description": "Current workspace number",
+          "title": "Workspace Number",
+          "type": "integer"
+        },
+        "workspace_name": {
+          "description": "Current workspace name",
+          "title": "Workspace Name",
+          "type": "string"
+        },
+        "output_name": {
+          "description": "Monitor/output name (e.g., 'HDMI-1')",
+          "title": "Output Name",
+          "type": "string"
+        },
+        "is_floating": {
+          "default": false,
+          "description": "Floating vs tiled",
+          "title": "Is Floating",
+          "type": "boolean"
+        },
+        "is_focused": {
+          "default": false,
+          "description": "Currently focused",
+          "title": "Is Focused",
+          "type": "boolean"
+        },
+        "is_hidden": {
+          "default": false,
+          "description": "In scratchpad",
+          "title": "Is Hidden",
+          "type": "boolean"
+        },
+        "i3pm_env": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/I3PMEnvironment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "I3PM environment variables"
+        },
+        "i3pm_marks": {
+          "description": "i3 marks on window",
+          "items": {
+            "type": "string"
+          },
+          "title": "I3Pm Marks",
+          "type": "array"
+        },
+        "matched_app": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Matched app name from registry",
+          "title": "Matched App"
+        },
+        "match_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Match type: exact, instance, normalized, none",
+          "title": "Match Type"
+        },
+        "created_at": {
+          "description": "Window creation time",
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "description": "Last state update time",
+          "format": "date-time",
+          "title": "Last Seen At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id",
+        "window_class",
+        "window_class_normalized",
+        "window_title",
+        "window_pid",
+        "workspace_number",
+        "workspace_name",
+        "output_name"
+      ],
+      "title": "WindowIdentity",
+      "type": "object"
+    },
+    "WorkspaceInfo": {
+      "description": "Workspace information from i3 IPC (Feature 039: T011).",
+      "properties": {
+        "num": {
+          "description": "Workspace number",
+          "title": "Num",
+          "type": "integer"
+        },
+        "name": {
+          "description": "Workspace name with icon",
+          "title": "Name",
+          "type": "string"
+        },
+        "visible": {
+          "description": "Currently visible on an output",
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "focused": {
+          "description": "Currently focused",
+          "title": "Focused",
+          "type": "boolean"
+        },
+        "output": {
+          "description": "Output name this workspace is on",
+          "title": "Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "num",
+        "name",
+        "visible",
+        "focused",
+        "output"
+      ],
+      "title": "WorkspaceInfo",
+      "type": "object"
+    }
+  },
+  "description": "Comprehensive system diagnostic report (Feature 039: T012).",
+  "example": {
+    "daemon_version": "1.4.0",
+    "generated_at": "2025-10-26T12:34:56",
+    "health_issues": [
+      "State drift detected for 2 windows"
+    ],
+    "i3_ipc_connected": true,
+    "json_rpc_server_running": true,
+    "overall_status": "warning",
+    "total_events_processed": 1350,
+    "total_windows": 23,
+    "uptime_seconds": 3600.5
+  },
+  "properties": {
+    "generated_at": {
+      "description": "Report generation time",
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "daemon_version": {
+      "description": "Daemon version string",
+      "title": "Daemon Version",
+      "type": "string"
+    },
+    "uptime_seconds": {
+      "description": "Daemon uptime in seconds",
+      "title": "Uptime Seconds",
+      "type": "number"
+    },
+    "i3_ipc_connected": {
+      "description": "i3 IPC connection active",
+      "title": "I3 Ipc Connected",
+      "type": "boolean"
+    },
+    "json_rpc_server_running": {
+      "description": "JSON-RPC IPC server active",
+      "title": "Json Rpc Server Running",
+      "type": "boolean"
+    },
+    "event_subscriptions": {
+      "description": "All event subscriptions",
+      "items": {
+        "$ref": "#/$defs/EventSubscription"
+      },
+      "title": "Event Subscriptions",
+      "type": "array"
+    },
+    "total_events_processed": {
+      "default": 0,
+      "description": "Sum of all event counts",
+      "title": "Total Events Processed",
+      "type": "integer"
+    },
+    "tracked_windows": {
+      "description": "All tracked windows",
+      "items": {
+        "$ref": "#/$defs/WindowIdentity"
+      },
+      "title": "Tracked Windows",
+      "type": "array"
+    },
+    "total_windows": {
+      "default": 0,
+      "description": "Total window count",
+      "title": "Total Windows",
+      "type": "integer"
+    },
+    "recent_events": {
+      "description": "Last N events (circular buffer)",
+      "items": {
+        "$ref": "#/$defs/WindowEvent"
+      },
+      "title": "Recent Events",
+      "type": "array"
+    },
+    "event_buffer_size": {
+      "default": 500,
+      "description": "Max events in buffer",
+      "title": "Event Buffer Size",
+      "type": "integer"
+    },
+    "state_validation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StateValidation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Consistency check results"
+    },
+    "i3_ipc_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/I3IPCState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "i3 authoritative state snapshot"
+    },
+    "overall_status": {
+      "default": "unknown",
+      "description": "Overall health: healthy, warning, critical, unknown",
+      "title": "Overall Status",
+      "type": "string"
+    },
+    "health_issues": {
+      "description": "List of detected issues",
+      "items": {
+        "type": "string"
+      },
+      "title": "Health Issues",
+      "type": "array"
+    }
+  },
+  "required": [
+    "daemon_version",
+    "uptime_seconds",
+    "i3_ipc_connected",
+    "json_rpc_server_running"
+  ],
+  "title": "DiagnosticReport",
+  "type": "object"
+}

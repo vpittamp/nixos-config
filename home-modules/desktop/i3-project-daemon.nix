@@ -15,7 +15,7 @@ with lib;
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Python dependencies for the daemon (Updated: 2025-10-23 for Features 030, 033)
+  # Python dependencies for the daemon (Updated: 2025-10-26 for Feature 039)
   # Note: PatternRule is now copied locally to avoid i3pm dependency
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     # Core daemon dependencies
@@ -29,6 +29,9 @@ let
     pytest       # Testing framework
     pytest-asyncio  # Async test support
     pytest-cov   # Coverage reporting
+
+    # Feature 039: Diagnostic tooling (T003)
+    rich         # Terminal UI for diagnostic commands
   ]);
 
   # Daemon package (T033)

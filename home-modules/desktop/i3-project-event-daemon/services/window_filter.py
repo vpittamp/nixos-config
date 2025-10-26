@@ -28,6 +28,7 @@ class WindowEnvironment:
     active: bool  # I3PM_ACTIVE - true if project was active at launch
     launch_time: str  # I3PM_LAUNCH_TIME - unix timestamp
     launcher_pid: str  # I3PM_LAUNCHER_PID - wrapper script PID
+    target_workspace: Optional[int] = None  # I3PM_TARGET_WORKSPACE - preferred workspace number (Feature 039 T060)
 
 
 def read_process_environ(pid: int) -> Dict[str, str]:
@@ -72,6 +73,84 @@ def read_process_environ(pid: int) -> Dict[str, str]:
     except FileNotFoundError as e:
         logger.debug(f"Process {pid} not found (may have exited): {e}")
         raise
+
+
+def get_parent_pid(pid: int) -> Optional[int]:
+    """
+    Get parent process ID from /proc/<pid>/stat.
+
+    Feature 039 T071: Parent process traversal for environment inheritance.
+
+    Args:
+        pid: Child process ID
+
+    Returns:
+        Parent process ID or None if not available
+    """
+    try:
+        stat_path = Path(f"/proc/{pid}/stat")
+        stat_data = stat_path.read_text()
+
+        # /proc/<pid>/stat format: pid (comm) state ppid ...
+        # Extract ppid (4th field)
+        parts = stat_data.split()
+        if len(parts) >= 4:
+            ppid = int(parts[3])
+            return ppid if ppid > 1 else None  # Don't traverse to init (PID 1)
+
+        return None
+
+    except (FileNotFoundError, ValueError, IndexError) as e:
+        logger.debug(f"Failed to get parent PID for {pid}: {e}")
+        return None
+
+
+def read_process_environ_with_fallback(pid: int, max_depth: int = 3) -> Dict[str, str]:
+    """
+    Read process environment with parent process fallback.
+
+    Feature 039 T071: If child process has no I3PM_* variables, traverse
+    up to parent process to find them (handles edge cases where child
+    doesn't inherit environment).
+
+    Args:
+        pid: Process ID
+        max_depth: Maximum parent traversal depth (default 3)
+
+    Returns:
+        Environment dictionary (may be empty if no I3PM vars found)
+    """
+    current_pid = pid
+    depth = 0
+
+    while current_pid and depth < max_depth:
+        try:
+            env = read_process_environ(current_pid)
+
+            # Check if environment has I3PM variables
+            if "I3PM_APP_ID" in env or "I3PM_APP_NAME" in env:
+                if current_pid != pid:
+                    logger.debug(
+                        f"Found I3PM environment in parent PID {current_pid} "
+                        f"(traversed {depth} levels from PID {pid})"
+                    )
+                return env
+
+            # Try parent process
+            parent_pid = get_parent_pid(current_pid)
+            if parent_pid == current_pid:
+                break  # Avoid infinite loop
+
+            current_pid = parent_pid
+            depth += 1
+
+        except (FileNotFoundError, PermissionError):
+            # Process exited or permission denied
+            break
+
+    # No I3PM environment found
+    logger.debug(f"No I3PM environment found for PID {pid} (traversed {depth} parents)")
+    return {}
 
 
 def get_window_pid(window_id: int) -> Optional[int]:
@@ -136,6 +215,17 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
         return None
 
     try:
+        # Feature 039 T060: Parse I3PM_TARGET_WORKSPACE as integer
+        target_workspace = None
+        if "I3PM_TARGET_WORKSPACE" in env:
+            try:
+                target_workspace = int(env["I3PM_TARGET_WORKSPACE"])
+            except ValueError:
+                logger.warning(
+                    f"Invalid I3PM_TARGET_WORKSPACE value: {env['I3PM_TARGET_WORKSPACE']}, "
+                    "expected integer"
+                )
+
         return WindowEnvironment(
             app_id=env["I3PM_APP_ID"],
             app_name=env["I3PM_APP_NAME"],
@@ -145,6 +235,7 @@ def parse_window_environment(env: Dict[str, str]) -> Optional[WindowEnvironment]
             active=env.get("I3PM_ACTIVE", "false").lower() == "true",
             launch_time=env.get("I3PM_LAUNCH_TIME", ""),
             launcher_pid=env.get("I3PM_LAUNCHER_PID", ""),
+            target_workspace=target_workspace,
         )
     except (KeyError, ValueError) as e:
         logger.warning(f"Failed to parse I3PM environment variables: {e}")

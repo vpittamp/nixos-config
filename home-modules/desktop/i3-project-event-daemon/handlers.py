@@ -443,6 +443,22 @@ async def on_window_new(
         from .services.window_filter import get_window_environment
         window_env = await get_window_environment(window_id)
 
+        # Feature 039 T053: Extract comprehensive window identity information
+        # This provides normalized class names and PWA detection for diagnostics
+        from .services.window_identifier import get_window_identity
+        window_identity = get_window_identity(
+            actual_class=window_class,
+            actual_instance=container.window_instance or "",
+            window_title=window_title,
+        )
+        logger.debug(
+            f"Window {window_id} identity: "
+            f"class={window_identity['original_class']}, "
+            f"instance={window_identity['original_instance']}, "
+            f"normalized={window_identity['normalized_class']}, "
+            f"is_pwa={window_identity['is_pwa']}"
+        )
+
         # If window has I3PM environment, use it for project association
         # This replaces tag-based filtering with environment-based approach
         actual_project = None
@@ -503,14 +519,29 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # Feature 037 T026-T029: Guaranteed workspace assignment on launch
-        # If window has I3PM_APP_NAME, look up preferred workspace in registry
-        if window_env and window_env.app_name and application_registry:
-            app_name = window_env.app_name
-            app_def = application_registry.get(app_name)
+        # Feature 037 T026-T029 + Feature 039 T060-T063: Workspace assignment with priority
+        # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
+        # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
+        preferred_ws = None
+        assignment_source = None
 
-            if app_def and "preferred_workspace" in app_def:
-                preferred_ws = app_def["preferred_workspace"]
+        if window_env:
+            # Priority 1: I3PM_TARGET_WORKSPACE (Feature 039 T060)
+            if hasattr(window_env, 'target_workspace') and window_env.target_workspace:
+                preferred_ws = window_env.target_workspace
+                assignment_source = "I3PM_TARGET_WORKSPACE"
+                logger.info(f"Using I3PM_TARGET_WORKSPACE={preferred_ws} for window {window_id}")
+
+            # Priority 2: I3PM_APP_NAME registry lookup (Feature 037)
+            elif window_env.app_name and application_registry:
+                app_name = window_env.app_name
+                app_def = application_registry.get(app_name)
+
+                if app_def and "preferred_workspace" in app_def:
+                    preferred_ws = app_def["preferred_workspace"]
+                    assignment_source = f"registry[{app_name}]"
+
+        if preferred_ws:
                 current_workspace = container.workspace()
 
                 # T028: Check if window is already on preferred workspace
@@ -531,15 +562,16 @@ async def on_window_new(
                                 workspace_number=preferred_ws,
                                 floating=is_floating,
                                 project_name=actual_project if actual_project else "",
-                                app_name=app_name,
+                                app_name=window_env.app_name if window_env else "",
                                 window_class=window_class,
                             )
                             await workspace_tracker.save()
 
-                        # T029: Log workspace assignment
+                        # T029 + T064: Log workspace assignment with source (Feature 039)
                         logger.info(
-                            f"Moved window {window_id} ({window_class}/{app_name}) from workspace "
-                            f"{current_workspace.num} to preferred workspace {preferred_ws}"
+                            f"Moved window {window_id} ({window_class}) from workspace "
+                            f"{current_workspace.num} to preferred workspace {preferred_ws} "
+                            f"(source: {assignment_source})"
                         )
 
                     except Exception as e:

@@ -16,6 +16,7 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -26,33 +27,30 @@ MANIFEST
 venv/
 ENV/
 env/
-.virtualenv
 
-# Testing
+# pytest
 .pytest_cache/
 .coverage
-.coverage.*
-coverage.xml
+htmlcov/
 *.cover
 .hypothesis/
-htmlcov/
-.tox/
-.nox/
 
-# IDEs
+# NixOS
+result
+result-*
+
+# IDE / Editor
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
-Thumbs.db
 
 # Logs
 *.log
-*.log.*
 
-# Environment files
+# Environment variables
 .env
 .env.*
 !.env.example
@@ -60,20 +58,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
-*.backup
-.~*
+*.orig
 
-# NixOS specific
-result
-result-*
-
-# Test output
-test-results.json
-report.json
-
-# Deno
-deno.lock
-.deno/
-/i3pm
-dist/
-*.js.map
+# Generated schemas (if regenerated frequently)
+# specs/*/contracts/*.schema.json

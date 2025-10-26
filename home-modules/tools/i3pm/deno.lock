@@ -1,0 +1,21 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:zod@^3.22.0": "3.25.76"
+  },
+  "npm": {
+    "zod@3.25.76": {
+      "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@cliffy/table@^1.0.0-rc.3",
+      "jsr:@std/cli@1",
+      "jsr:@std/fs@1",
+      "jsr:@std/jsonc@1",
+      "jsr:@std/path@1",
+      "npm:zod@^3.22.0"
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 """
 Services module for i3 project event daemon
 Feature 035: Registry-Centric Project & Workspace Management
+Feature 039: Workspace Assignment Service (T027)
 """
 
 from .window_filter import (
@@ -10,6 +11,12 @@ from .window_filter import (
     WindowEnvironment,
 )
 from .registry_loader import RegistryLoader, RegistryApp
+from .workspace_assigner import (
+    WorkspaceAssigner,
+    WorkspaceAssignment,
+    WindowIdentifier,
+    get_workspace_assigner,
+)
 
 __all__ = [
     "read_process_environ",
@@ -18,4 +25,8 @@ __all__ = [
     "WindowEnvironment",
     "RegistryLoader",
     "RegistryApp",
+    "WorkspaceAssigner",
+    "WorkspaceAssignment",
+    "WindowIdentifier",
+    "get_workspace_assigner",
 ]

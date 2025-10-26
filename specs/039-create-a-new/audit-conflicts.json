@@ -1,0 +1,341 @@
+{
+  "summary": {
+    "total_api_functions": 163,
+    "conflict_groups": 8,
+    "name_conflicts": 7,
+    "functionality_conflicts": 0,
+    "deprecated_conflicts": 1
+  },
+  "conflicts": [
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "from_i3_output",
+          "module": "models",
+          "file": "i3-project-event-daemon/models.py",
+          "line": 472,
+          "params": [
+            "cls",
+            "output"
+          ],
+          "async": false
+        },
+        {
+          "name": "from_i3_output",
+          "module": "workspace_manager",
+          "file": "i3-project-event-daemon/workspace_manager.py",
+          "line": 60,
+          "params": [
+            "cls",
+            "output",
+            "role"
+          ],
+          "async": false
+        },
+        {
+          "name": "from_i3_output",
+          "module": "layout.models",
+          "file": "i3-project-event-daemon/layout/models.py",
+          "line": 196,
+          "params": [
+            "cls",
+            "output_data"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "matches",
+          "module": "pattern",
+          "file": "i3-project-event-daemon/pattern.py",
+          "line": 107,
+          "params": [
+            "self",
+            "window_class",
+            "window_title"
+          ],
+          "async": false
+        },
+        {
+          "name": "matches",
+          "module": "window_rules",
+          "file": "i3-project-event-daemon/window_rules.py",
+          "line": 79,
+          "params": [
+            "self",
+            "window_class",
+            "window_title"
+          ],
+          "async": false
+        },
+        {
+          "name": "matches",
+          "module": "layout.models",
+          "file": "i3-project-event-daemon/layout/models.py",
+          "line": 287,
+          "params": [
+            "self",
+            "window"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "get_stats",
+          "module": "event_buffer",
+          "file": "i3-project-event-daemon/event_buffer.py",
+          "line": 106,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "get_stats",
+          "module": "recovery.i3_reconnect",
+          "file": "i3-project-event-daemon/recovery/i3_reconnect.py",
+          "line": 253,
+          "params": [
+            "self"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "find_window",
+          "module": "ipc_server",
+          "file": "i3-project-event-daemon/ipc_server.py",
+          "line": 3007,
+          "params": [
+            "con"
+          ],
+          "async": false
+        },
+        {
+          "name": "find_window",
+          "module": "window_filtering",
+          "file": "i3-project-event-daemon/window_filtering.py",
+          "line": 532,
+          "params": [
+            "con"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "to_json",
+          "module": "workspace_manager",
+          "file": "i3-project-event-daemon/workspace_manager.py",
+          "line": 89,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "window_rules",
+          "file": "i3-project-event-daemon/window_rules.py",
+          "line": 109,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "pattern_resolver",
+          "file": "i3-project-event-daemon/pattern_resolver.py",
+          "line": 43,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "monitoring.diagnostics",
+          "file": "i3-project-event-daemon/monitoring/diagnostics.py",
+          "line": 68,
+          "params": [
+            "self",
+            "indent"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "add_error",
+          "module": "validation.state_validator",
+          "file": "i3-project-event-daemon/validation/state_validator.py",
+          "line": 34,
+          "params": [
+            "self",
+            "message",
+            "fix"
+          ],
+          "async": false
+        },
+        {
+          "name": "add_error",
+          "module": "recovery.auto_recovery",
+          "file": "i3-project-event-daemon/recovery/auto_recovery.py",
+          "line": 45,
+          "params": [
+            "self",
+            "message"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "name_overlap",
+      "similarity_score": 0.8,
+      "recommendation": "Review for consolidation - same name in multiple modules",
+      "functions": [
+        {
+          "name": "to_dict",
+          "module": "validation.state_validator",
+          "file": "i3-project-event-daemon/validation/state_validator.py",
+          "line": 47,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_dict",
+          "module": "monitoring.diagnostics",
+          "file": "i3-project-event-daemon/monitoring/diagnostics.py",
+          "line": 64,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_dict",
+          "module": "monitoring.health",
+          "file": "i3-project-event-daemon/monitoring/health.py",
+          "line": 195,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_dict",
+          "module": "monitoring.metrics",
+          "file": "i3-project-event-daemon/monitoring/metrics.py",
+          "line": 78,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_dict",
+          "module": "monitoring.metrics",
+          "file": "i3-project-event-daemon/monitoring/metrics.py",
+          "line": 181,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_dict",
+          "module": "recovery.auto_recovery",
+          "file": "i3-project-event-daemon/recovery/auto_recovery.py",
+          "line": 51,
+          "params": [
+            "self"
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "conflict_type": "deprecated_duplicate",
+      "similarity_score": 0.9,
+      "recommendation": "Remove deprecated function 'to_json' after migration complete",
+      "functions": [
+        {
+          "name": "to_json",
+          "module": "window_rules",
+          "file": "i3-project-event-daemon/window_rules.py",
+          "line": 109,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "workspace_manager",
+          "file": "i3-project-event-daemon/workspace_manager.py",
+          "line": 89,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "pattern_resolver",
+          "file": "i3-project-event-daemon/pattern_resolver.py",
+          "line": 43,
+          "params": [
+            "self"
+          ],
+          "async": false
+        },
+        {
+          "name": "to_json",
+          "module": "monitoring.diagnostics",
+          "file": "i3-project-event-daemon/monitoring/diagnostics.py",
+          "line": 68,
+          "params": [
+            "self",
+            "indent"
+          ],
+          "async": false
+        }
+      ]
+    }
+  ]
+}
