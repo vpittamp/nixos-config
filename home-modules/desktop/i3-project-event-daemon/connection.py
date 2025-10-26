@@ -29,6 +29,17 @@ class ResilientI3Connection:
         self.reconnect_delay = 0.1  # Initial delay: 100ms
         self.is_performing_startup_scan = False  # Flag to suppress event handlers during startup scan
 
+    @property
+    def is_connected(self) -> bool:
+        """Check if i3 IPC connection is active.
+
+        Feature 039: FR-004 - i3 IPC connection status for health check
+
+        Returns:
+            True if connected to i3, False otherwise
+        """
+        return self.conn is not None and not self.is_shutting_down
+
     async def connect_with_retry(self, max_attempts: int = 10) -> aio.Connection:
         """Connect to i3 with exponential backoff retry.
 

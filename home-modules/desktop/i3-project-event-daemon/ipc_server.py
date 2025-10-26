@@ -3121,7 +3121,7 @@ class IPCServer:
         # Check i3 IPC connection
         i3_connected = False
         if self.i3_connection:
-            i3_connected = self.i3_connection.is_connected()
+            i3_connected = self.i3_connection.is_connected
         
         # Check event subscriptions (from existing _daemon_status method)
         event_subscriptions = []
@@ -3129,22 +3129,22 @@ class IPCServer:
             # Get subscription stats from event buffer
             buffer_stats = getattr(self.event_buffer, 'get_stats', lambda: {})()
             for sub_type in ['window', 'workspace', 'output', 'tick']:
-                events = [e for e in self.event_buffer.get_recent(limit=500) if e.get('event_type') == sub_type]
+                events = [e for e in self.event_buffer.get_recent(limit=500) if e.event_type.startswith(sub_type)]
                 last_event = events[0] if events else None
-                
+
                 event_subscriptions.append({
                     "subscription_type": sub_type,
                     "is_active": i3_connected,
                     "event_count": len(events),
-                    "last_event_time": last_event.get('timestamp') if last_event else None,
-                    "last_event_change": last_event.get('change') if last_event else None
+                    "last_event_time": last_event.timestamp.isoformat() if last_event else None,
+                    "last_event_type": last_event.event_type if last_event else None
                 })
         
         # Get total events processed
         total_events = len(self.event_buffer.get_recent(limit=9999)) if self.event_buffer else 0
         
         # Get total windows tracked
-        total_windows = len(self.state_manager.state.windows)
+        total_windows = len(self.state_manager.state.window_map)
         
         # Assess overall health
         health_issues = []
@@ -3206,11 +3206,11 @@ class IPCServer:
             raise ValueError("window_id parameter required")
         
         # Get window from i3
-        if not self.i3_connection or not self.i3_connection.is_connected():
+        if not self.i3_connection or not self.i3_connection.is_connected:
             raise RuntimeError("i3 IPC connection not available")
         
         try:
-            tree = await self.i3_connection.get_tree()
+            tree = await self.i3_connection.conn.get_tree()
             window = tree.find_by_id(window_id)
             
             if not window:
@@ -3262,7 +3262,7 @@ class IPCServer:
             window_class_normalized = normalize_class(window_class)
             
             # Check if tracked by daemon
-            tracked_window = self.state_manager.state.windows.get(window_id)
+            tracked_window = self.state_manager.state.window_map.get(window_id)
             matched_app = None
             match_type = "none"
             
@@ -3403,20 +3403,20 @@ class IPCServer:
         """
         start_time = time.perf_counter()
         
-        if not self.i3_connection or not self.i3_connection.is_connected():
+        if not self.i3_connection or not self.i3_connection.is_connected:
             raise RuntimeError(json.dumps({
                 "code": -32010,
                 "message": "i3 IPC connection failed",
                 "data": {"reason": "not_connected"}
             }))
-        
+
         try:
             # Get i3 window tree
-            tree = await self.i3_connection.get_tree()
+            tree = await self.i3_connection.conn.get_tree()
             i3_windows = tree.leaves()
             
             # Get daemon tracked windows
-            daemon_windows = self.state_manager.state.windows
+            daemon_windows = self.state_manager.state.window_map
             
             # Compare states
             total_windows_checked = len(i3_windows)
@@ -3512,26 +3512,23 @@ class IPCServer:
             return []
         
         # Get events from buffer
-        events = self.event_buffer.get_recent(limit=limit)
-        
-        # Filter by event type if specified
-        if event_type:
-            events = [e for e in events if e.get('event_type') == event_type or e.get('change') == event_type]
-        
+        events = self.event_buffer.get_recent(limit=limit, event_type=event_type)
+
         # Format events for diagnostic output
         formatted_events = []
         for event in events:
             formatted_event = {
-                "event_type": event.get('event_type', 'unknown'),
-                "event_change": event.get('change', ''),
-                "timestamp": event.get('timestamp', ''),
-                "window_id": event.get('container', {}).get('id') if event.get('container') else None,
-                "window_class": event.get('container', {}).get('window_properties', {}).get('class') if event.get('container') else None,
-                "window_title": event.get('container', {}).get('name') if event.get('container') else None,
-                "handler_duration_ms": event.get('duration_ms'),
-                "workspace_assigned": event.get('workspace_assigned'),
-                "marks_applied": event.get('marks_applied', []),
-                "error": event.get('error')
+                "event_id": event.event_id,
+                "event_type": event.event_type,
+                "timestamp": event.timestamp.isoformat() if event.timestamp else '',
+                "source": event.source,
+                "window_id": event.window_id,
+                "window_class": event.window_class,
+                "window_title": event.window_title,
+                "workspace_name": event.workspace_name,
+                "project_name": event.project_name,
+                "processing_duration_ms": event.processing_duration_ms,
+                "error": event.error
             }
             formatted_events.append(formatted_event)
         
