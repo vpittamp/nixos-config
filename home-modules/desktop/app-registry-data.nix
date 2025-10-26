@@ -43,8 +43,9 @@ let
       name = "terminal";
       display_name = "Alacritty Terminal";
       command = "alacritty";
-      # Opens in project directory (wrapper handles cd to PROJECT_DIR)
-      parameters = "";
+      # Use sesh connect to attach/create tmux session in project directory
+      # sesh will use PROJECT_DIR as session directory context
+      parameters = "-e sesh connect $PROJECT_DIR";
       scope = "scoped";
       expected_class = "Alacritty";
       preferred_workspace = 1;
@@ -52,7 +53,7 @@ let
       nix_package = "pkgs.alacritty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Terminal opens in project directory";
+      description = "Terminal with sesh session management for project directory";
     })
 
     # WS2: Editors (Primary: vscode)
