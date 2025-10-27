@@ -313,8 +313,9 @@ notify_launch() {
         }')
 
     # Send to daemon via Unix socket with 1-second timeout
-    # Feature 037: System service socket path (not user service)
-    local socket="/run/i3-project-daemon/ipc.sock"
+    # Feature 037: System service socket path (substituted at build time by Nix)
+    # Placeholder @DAEMON_SOCKET@ is replaced by app-launcher.nix
+    local socket="${I3PM_DAEMON_SOCKET:-@DAEMON_SOCKET@}"
     local response
 
     if [[ ! -S "$socket" ]]; then

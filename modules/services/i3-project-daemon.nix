@@ -76,6 +76,8 @@ in
       partOf = [ "i3-project-daemon.service" ];
 
       socketConfig = {
+        # IMPORTANT: This path is also referenced in home-modules/tools/app-launcher.nix
+        # If you change this, update daemonSocketPath in that module
         ListenStream = "/run/i3-project-daemon/ipc.sock";
         SocketMode = "0600";
         SocketUser = cfg.user;

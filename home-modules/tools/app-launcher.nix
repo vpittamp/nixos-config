@@ -44,7 +44,20 @@ EOF
   };
 
   # Launcher wrapper script (bash)
-  wrapper-script = pkgs.writeScriptBin "app-launcher-wrapper" (builtins.readFile ../../scripts/app-launcher-wrapper.sh);
+  # Feature 037: Socket path for system service daemon
+  # Single source of truth - matches modules/services/i3-project-daemon.nix
+  daemonSocketPath = "/run/i3-project-daemon/ipc.sock";
+
+  wrapper-script = pkgs.writeScriptBin "app-launcher-wrapper" (
+    let
+      scriptContent = builtins.readFile ../../scripts/app-launcher-wrapper.sh;
+    in
+    # Substitute @DAEMON_SOCKET@ placeholder with actual path
+    builtins.replaceStrings
+      [ "@DAEMON_SOCKET@" ]
+      [ daemonSocketPath ]
+      scriptContent
+  );
 
 in
 {
