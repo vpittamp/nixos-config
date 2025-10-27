@@ -279,12 +279,10 @@ in
     text = ''
         # Walker Configuration (X11 Mode)
         # X11 Mode - use window instead of Wayland layer shell
+        # Using default Walker theme
         as_window = true
         force_keyboard_focus = false
         close_when_open = true
-
-        # Custom Catppuccin Mocha theme
-        theme = "catppuccin-mocha"
 
         [modules]
         applications = true
@@ -461,143 +459,4 @@ in
   home.sessionVariables = {
     XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
   };
-
-  # Custom Catppuccin Mocha theme for Walker
-  # Matches the color scheme used in fzf, i3bar, and Alacritty
-  xdg.configFile."walker/themes/catppuccin-mocha/style.css".text = ''
-    /* Catppuccin Mocha Theme for Walker */
-    /* Matches fzf and terminal color scheme */
-
-    /* Color palette */
-    @define-color window_bg #1e1e2e;        /* Catppuccin Mocha base */
-    @define-color accent #b4befe;           /* Catppuccin Mocha lavender */
-    @define-color accent_hover #89b4fa;     /* Catppuccin Mocha blue */
-    @define-color foreground #cdd6f4;       /* Catppuccin Mocha text */
-    @define-color subtext #bac2de;          /* Catppuccin Mocha subtext1 */
-    @define-color overlay #313244;          /* Catppuccin Mocha surface0 */
-    @define-color green #a6e3a1;            /* Catppuccin Mocha green */
-    @define-color red #f38ba8;              /* Catppuccin Mocha red */
-    @define-color yellow #f9e2af;           /* Catppuccin Mocha yellow */
-    @define-color surface #181825;          /* Catppuccin Mocha mantle */
-
-    /* Main window */
-    .box-wrapper {
-      background: @window_bg;
-      color: @foreground;
-      border-radius: 10px;
-      padding: 10px;
-    }
-
-    .box {
-      background: @window_bg;
-      border-radius: 10px;
-    }
-
-    /* Search input */
-    .search-container {
-      background: @overlay;
-      border-radius: 8px;
-      padding: 8px;
-      margin-bottom: 8px;
-    }
-
-    .input {
-      background: transparent;
-      color: @foreground;
-      font-size: 14px;
-      caret-color: @accent;
-    }
-
-    /* Note: GTK4 doesn't support :placeholder pseudo-class
-       Placeholder text will use default styling */
-
-    /* Results list */
-    .scroll {
-      background: transparent;
-    }
-
-    .list {
-      background: transparent;
-      padding: 4px;
-    }
-
-    /* Item entries */
-    .item-box {
-      background: transparent;
-      color: @foreground;
-      border-radius: 8px;
-      padding: 10px;
-      margin: 2px 0;
-      transition: all 200ms ease;
-    }
-
-    /* Hover state */
-    .item-box:hover {
-      background: rgba(137, 180, 250, 0.15);  /* Blue with transparency */
-    }
-
-    /* Selected state */
-    .item-box:selected {
-      background: rgba(180, 190, 254, 0.25);  /* Lavender with transparency */
-      border-left: 3px solid @accent;
-    }
-
-    /* Active project indicator (for items with "🟢 ACTIVE") */
-    .item-box:not(.calc).current {
-      font-style: normal;
-      font-weight: bold;
-      background: rgba(166, 227, 161, 0.15);  /* Green tint for active */
-      border-left: 3px solid @green;
-    }
-
-    /* Item text */
-    .item-text-box {
-      color: @foreground;
-      font-size: 13px;
-    }
-
-    /* Item subtext */
-    .item-subtext {
-      color: @subtext;
-      font-size: 11px;
-      opacity: 0.7;
-    }
-
-    /* Preview panel (if used) */
-    .preview-box {
-      background: @surface;
-      border-radius: 8px;
-      padding: 10px;
-    }
-
-    /* Calculator provider */
-    .calc {
-      color: @yellow;
-      font-size: 24px;
-      font-weight: bold;
-    }
-
-    /* Error messages */
-    .error {
-      color: @red;
-      background: rgba(243, 139, 168, 0.1);
-      border-radius: 6px;
-      padding: 8px;
-    }
-
-    /* Scrollbar styling */
-    scrollbar {
-      background: transparent;
-    }
-
-    scrollbar slider {
-      background: @overlay;
-      border-radius: 10px;
-      min-width: 8px;
-    }
-
-    scrollbar slider:hover {
-      background: @accent;
-    }
-  '';
 }
