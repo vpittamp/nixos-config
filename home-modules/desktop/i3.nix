@@ -126,11 +126,11 @@
     # Project-aware application launchers (Feature 035: Registry-based with environment injection)
     # All app names must match the "name" field in app-registry-data.nix
     bindsym $mod+c exec ~/.local/bin/app-launcher-wrapper.sh vscode
-    bindsym $mod+Return exec ~/.local/bin/app-launcher-wrapper.sh terminal
+    bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
     bindsym $mod+g exec ~/.local/bin/app-launcher-wrapper.sh lazygit
     bindsym $mod+y exec ~/.local/bin/app-launcher-wrapper.sh yazi
     bindsym $mod+b exec ~/.local/bin/app-launcher-wrapper.sh btop
-    # Global terminal selector (no project required)
+    # Alternative terminal launcher with project context (use Walker or this binding)
     bindsym $mod+Shift+Return exec ~/.local/bin/app-launcher-wrapper.sh terminal
 
     # T042: Monitor detection/workspace reassignment keybinding
@@ -150,6 +150,9 @@
     # Ensure DISPLAY is explicitly imported into systemd user environment for services like Elephant
     # Use exec_always so it runs on config reload, not just at i3 startup
     exec_always --no-startup-id ${pkgs.systemd}/bin/systemctl --user import-environment DISPLAY
+    # Restart Elephant after DISPLAY is imported so it picks up the environment variable
+    # This fixes the race condition where Elephant starts before DISPLAY is available
+    exec_always --no-startup-id ${pkgs.systemd}/bin/systemctl --user restart elephant.service
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf
