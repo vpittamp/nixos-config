@@ -74,6 +74,8 @@ PY
   walkerOpenInNvimCmd = lib.getExe walkerOpenInNvim;
 
   # Walker project list script - outputs formatted project list for Walker menu
+  # Reordered to show inactive projects first, active project last with visual indicator
+  # Fixed: Use .active.project_name instead of .active.name to match i3pm JSON structure
   walkerProjectList = pkgs.writeShellScriptBin "walker-project-list" ''
     #!/usr/bin/env bash
     # List projects for Walker menu
@@ -91,19 +93,27 @@ PY
     fi
 
     # Get current active project name
-    ACTIVE_PROJECT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.active.name // ""')
+    ACTIVE_PROJECT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.active.project_name // ""')
 
     # Add "Clear Project" option if a project is active
     if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
       echo "∅ Clear Project (Global Mode)	__CLEAR__"
     fi
 
-    # Output each project in format: "icon display_name [directory]	project_name"
-    echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] |
+    # Output INACTIVE projects first (default selection will be first inactive project)
+    echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] | select(.name != "'"$ACTIVE_PROJECT"'") |
       ((.icon // "📁") + " " + (.display_name // .name) +
        (if .directory then " [" + (.directory | gsub("'$HOME'"; "~")) + "]" else "" end) +
-       (if .name == "'"$ACTIVE_PROJECT"'" then " ✓" else "" end) +
        "\t" + .name)'
+
+    # Output ACTIVE project last with prominent indicator
+    if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
+      echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] | select(.name == "'"$ACTIVE_PROJECT"'") |
+        ((.icon // "📁") + " " + (.display_name // .name) +
+         (if .directory then " [" + (.directory | gsub("'$HOME'"; "~")) + "]" else "" end) +
+         " 🟢 ACTIVE" +
+         "\t" + .name)'
+    fi
   '';
 
   # Walker project switch script - parses selection and switches project

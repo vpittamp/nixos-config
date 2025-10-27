@@ -155,19 +155,31 @@ build_date_block() {
 
 # Build monitor block
 build_monitor_block() {
-    local monitor_name
+    local monitor_list monitor_count
 
-    # Get current monitor name from i3 (the output this bar is on)
-    # Use I3SOCK environment variable if available, otherwise get first active output
-    monitor_name=$(i3-msg -t get_outputs 2>/dev/null | \
-        "$JQ_BIN" -r '.[] | select(.active == true) | .name' | head -1 || echo "unknown")
+    # Get all active monitor names and count
+    # Note: i3bar doesn't tell status scripts which output they're on,
+    # so we show all monitors instead of trying to detect the specific one
+    monitor_list=$(i3-msg -t get_outputs 2>/dev/null | \
+        "$JQ_BIN" -r '.[] | select(.active == true) | .name' | \
+        tr '\n' ' ' | "$SED_BIN" 's/ $//' || echo "unknown")
 
-    "$JQ_BIN" -n --arg monitor "$monitor_name" \
+    monitor_count=$(echo "$monitor_list" | wc -w)
+
+    # Show monitor count with list
+    local display_text
+    if [ "$monitor_count" -eq 1 ]; then
+        display_text="󰍹 $monitor_list"
+    else
+        display_text="󰍹 ${monitor_count}x [$monitor_list]"
+    fi
+
+    "$JQ_BIN" -n --arg text "$display_text" \
         '{
-            full_text: ("󰍹 " + $monitor),
+            full_text: $text,
             color: "'"$COLOR_LAVENDER"'",
             name: "monitor",
-            instance: $monitor,
+            instance: "all",
             separator: false,
             separator_block_width: 20
         }'
@@ -226,8 +238,9 @@ handle_click_event() {
             if [ "$button" = "1" ]; then
                 # Left click: Launch Walker in dmenu mode with project list
                 # Use walker-project-list to populate the menu and walker-project-switch to handle selection
+                # Placeholder text guides the user and improves UX
                 (
-                    SELECTED=$("$WALKER_PROJECT_LIST_BIN" | GDK_BACKEND=x11 "$WALKER_BIN" --dmenu -p "Switch Project" 2>/dev/null)
+                    SELECTED=$("$WALKER_PROJECT_LIST_BIN" | GDK_BACKEND=x11 "$WALKER_BIN" --dmenu -p "Select project or clear to return to global mode..." 2>/dev/null)
                     if [ -n "$SELECTED" ]; then
                         "$WALKER_PROJECT_SWITCH_BIN" "$SELECTED"
                     fi
