@@ -31,6 +31,9 @@ let
     wl-clipboard # Wayland clipboard
     xclip # X11 clipboard
 
+    # Network/IPC utilities
+    socat # Socket communication tool (required by app-launcher-wrapper.sh)
+
     # Nix tools
     nix
     cachix
