@@ -153,8 +153,26 @@ build_date_block() {
         }'
 }
 
-# Monitor block removed - i3bar doesn't tell scripts which output they're on,
-# so all bars would show identical monitor info (redundant and confusing)
+# Build monitor block
+build_monitor_block() {
+    local monitor_count
+
+    # Get count of active monitors
+    # Note: i3bar doesn't tell scripts which output they're on,
+    # so we just show monitor count as a visual indicator
+    monitor_count=$(i3-msg -t get_outputs 2>/dev/null | \
+        "$JQ_BIN" -r '[.[] | select(.active == true)] | length' || echo "1")
+
+    "$JQ_BIN" -n --arg count "$monitor_count" \
+        '{
+            full_text: ("󰍹 " + $count),
+            color: "'"$COLOR_LAVENDER"'",
+            name: "monitor",
+            instance: "count",
+            separator: false,
+            separator_block_width: 20
+        }'
+}
 
 # Build spacer block (for centering project)
 build_spacer_block() {
@@ -170,8 +188,9 @@ build_spacer_block() {
 
 # Build complete status line
 build_status_line() {
-    local spacer1 project spacer2 cpu memory network date
+    local monitor spacer1 project spacer2 cpu memory network date
 
+    monitor=$(build_monitor_block)
     spacer1=$(build_spacer_block)
     project=$(build_project_block)
     spacer2=$(build_spacer_block)
@@ -180,9 +199,10 @@ build_status_line() {
     network=$(build_network_block)
     date=$(build_date_block)
 
-    # Layout: [spacer] [project] [spacer] [cpu] [memory] [network] [date]
+    # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
     # The spacers push project toward the center
     "$JQ_BIN" -n \
+        --argjson monitor "$monitor" \
         --argjson spacer1 "$spacer1" \
         --argjson project "$project" \
         --argjson spacer2 "$spacer2" \
@@ -190,7 +210,7 @@ build_status_line() {
         --argjson memory "$memory" \
         --argjson network "$network" \
         --argjson date "$date" \
-        '[$spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
+        '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
 # Handle click events from i3bar
