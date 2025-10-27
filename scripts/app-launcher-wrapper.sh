@@ -313,7 +313,8 @@ notify_launch() {
         }')
 
     # Send to daemon via Unix socket with 1-second timeout
-    local socket="${HOME}/.local/state/i3pm/daemon.sock"
+    # Feature 037: System service socket path (not user service)
+    local socket="/run/i3-project-daemon/ipc.sock"
     local response
 
     if [[ ! -S "$socket" ]]; then
