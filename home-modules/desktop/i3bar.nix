@@ -35,8 +35,38 @@ in
   home.file.".config/i3/i3bar-top.conf".text = ''
     # Top bar: System monitoring (Catppuccin Mocha theme)
     # Updates every 2 seconds with system metrics
+    # Separate bar for each output to avoid duplication
+
+    # Top bar for rdp0 (primary monitor)
     bar {
       position top
+      output rdp0
+      status_command ${systemMonitorScript}
+
+      # Font
+      font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
+
+      # No system tray on top bar
+      tray_output none
+
+      # No workspace buttons on top bar
+      workspace_buttons no
+
+      # Separator
+      separator_symbol " | "
+
+      # Colors (Catppuccin Mocha theme)
+      colors {
+        background #1e1e2e
+        statusline #cdd6f4
+        separator  #6c7086
+      }
+    }
+
+    # Top bar for rdp1 (secondary monitor)
+    bar {
+      position top
+      output rdp1
       status_command ${systemMonitorScript}
 
       # Font
@@ -64,15 +94,56 @@ in
   home.file.".config/i3/i3bar-bottom.conf".text = ''
     # Bottom bar: Project context (Catppuccin Mocha theme)
     # Event-driven status updates via i3pm daemon subscriptions
+    # Separate bar for each output with output-specific information
+
+    # Bottom bar for rdp0 (primary monitor)
     bar {
       position bottom
-      status_command ${projectStatusScript}
+      output rdp0
+      status_command ${projectStatusScript} rdp0
 
       # Font
       font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
 
       # System tray on bottom bar only
       tray_output primary
+
+      # Workspace buttons on bottom bar
+      workspace_buttons yes
+      strip_workspace_numbers no
+
+      # Separator
+      separator_symbol " | "
+
+      # Enable verbose logging for debugging click events
+      verbose yes
+
+      # Colors (Catppuccin Mocha theme)
+      colors {
+        background #1e1e2e
+        statusline #cdd6f4
+        separator  #6c7086
+
+        # Workspace button colors: border background text
+        focused_workspace  #b4befe #45475a #cdd6f4
+        active_workspace   #313244 #313244 #cdd6f4
+        inactive_workspace #1e1e2e #1e1e2e #bac2de
+        urgent_workspace   #f38ba8 #f38ba8 #1e1e2e
+        binding_mode       #f38ba8 #f38ba8 #1e1e2e
+      }
+    }
+
+    # Bottom bar for rdp1 (secondary monitor)
+    bar {
+      position bottom
+      output rdp1
+      status_command ${projectStatusScript} rdp1
+
+      # Font
+      font pango:FiraCode Nerd Font, Font Awesome 6 Free 10
+
+      # System tray on secondary monitor
+      tray_output rdp1
 
       # Workspace buttons on bottom bar
       workspace_buttons yes

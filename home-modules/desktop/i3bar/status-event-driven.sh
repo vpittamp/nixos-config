@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Output name passed as parameter (e.g., "rdp0" or "rdp1")
+OUTPUT_NAME="${1:-unknown}"
+
 # Configuration paths (will be substituted by Nix)
 I3PM_BIN="@i3pm@"
 JQ_BIN="@jq@"
@@ -153,6 +156,34 @@ build_date_block() {
         }'
 }
 
+# Build monitor block (shows which output this bar is on)
+build_monitor_block() {
+    local display_name
+
+    # Show friendly name for the output
+    case "$OUTPUT_NAME" in
+        rdp0)
+            display_name="Primary"
+            ;;
+        rdp1)
+            display_name="Secondary"
+            ;;
+        *)
+            display_name="$OUTPUT_NAME"
+            ;;
+    esac
+
+    "$JQ_BIN" -n --arg name "$display_name" --arg output "$OUTPUT_NAME" \
+        '{
+            full_text: ("󰍹 " + $name),
+            color: "'"$COLOR_LAVENDER"'",
+            name: "monitor",
+            instance: $output,
+            separator: false,
+            separator_block_width: 20
+        }'
+}
+
 # Build spacer block (for centering project)
 build_spacer_block() {
     "$JQ_BIN" -n \
@@ -167,8 +198,9 @@ build_spacer_block() {
 
 # Build complete status line
 build_status_line() {
-    local spacer1 project spacer2 cpu memory network date
+    local monitor spacer1 project spacer2 cpu memory network date
 
+    monitor=$(build_monitor_block)
     spacer1=$(build_spacer_block)
     project=$(build_project_block)
     spacer2=$(build_spacer_block)
@@ -177,9 +209,10 @@ build_status_line() {
     network=$(build_network_block)
     date=$(build_date_block)
 
-    # Layout: [spacer] [project] [spacer] [cpu] [memory] [network] [date]
+    # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
     # The spacers push project toward the center
     "$JQ_BIN" -n \
+        --argjson monitor "$monitor" \
         --argjson spacer1 "$spacer1" \
         --argjson project "$project" \
         --argjson spacer2 "$spacer2" \
@@ -187,7 +220,7 @@ build_status_line() {
         --argjson memory "$memory" \
         --argjson network "$network" \
         --argjson date "$date" \
-        '[$spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
+        '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
 # Handle click events from i3bar
