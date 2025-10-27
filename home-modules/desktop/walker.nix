@@ -428,8 +428,8 @@ in
       # Use default.target instead of graphical-session.target (i3 doesn't activate graphical-session.target)
       PartOf = [ "default.target" ];
       After = [ "default.target" ];
-      # Use DISPLAY instead of WAYLAND_DISPLAY
-      ConditionEnvironment = "DISPLAY";
+      # Note: Removed ConditionEnvironment=DISPLAY - PassEnvironment provides DISPLAY when service runs
+      # Condition check was too early (before DISPLAY set), causing startup failures
     };
     Service = {
       # Feature 034/035: Elephant with isolated XDG environment
