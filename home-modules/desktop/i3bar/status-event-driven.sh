@@ -153,37 +153,8 @@ build_date_block() {
         }'
 }
 
-# Build monitor block
-build_monitor_block() {
-    local monitor_list monitor_count
-
-    # Get all active monitor names and count
-    # Note: i3bar doesn't tell status scripts which output they're on,
-    # so we show all monitors instead of trying to detect the specific one
-    monitor_list=$(i3-msg -t get_outputs 2>/dev/null | \
-        "$JQ_BIN" -r '.[] | select(.active == true) | .name' | \
-        tr '\n' ' ' | "$SED_BIN" 's/ $//' || echo "unknown")
-
-    monitor_count=$(echo "$monitor_list" | wc -w)
-
-    # Show monitor count with list
-    local display_text
-    if [ "$monitor_count" -eq 1 ]; then
-        display_text="󰍹 $monitor_list"
-    else
-        display_text="󰍹 ${monitor_count}x [$monitor_list]"
-    fi
-
-    "$JQ_BIN" -n --arg text "$display_text" \
-        '{
-            full_text: $text,
-            color: "'"$COLOR_LAVENDER"'",
-            name: "monitor",
-            instance: "all",
-            separator: false,
-            separator_block_width: 20
-        }'
-}
+# Monitor block removed - i3bar doesn't tell scripts which output they're on,
+# so all bars would show identical monitor info (redundant and confusing)
 
 # Build spacer block (for centering project)
 build_spacer_block() {
@@ -199,9 +170,8 @@ build_spacer_block() {
 
 # Build complete status line
 build_status_line() {
-    local monitor spacer1 project spacer2 cpu memory network date
+    local spacer1 project spacer2 cpu memory network date
 
-    monitor=$(build_monitor_block)
     spacer1=$(build_spacer_block)
     project=$(build_project_block)
     spacer2=$(build_spacer_block)
@@ -210,10 +180,9 @@ build_status_line() {
     network=$(build_network_block)
     date=$(build_date_block)
 
-    # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
+    # Layout: [spacer] [project] [spacer] [cpu] [memory] [network] [date]
     # The spacers push project toward the center
     "$JQ_BIN" -n \
-        --argjson monitor "$monitor" \
         --argjson spacer1 "$spacer1" \
         --argjson project "$project" \
         --argjson spacer2 "$spacer2" \
@@ -221,7 +190,7 @@ build_status_line() {
         --argjson memory "$memory" \
         --argjson network "$network" \
         --argjson date "$date" \
-        '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
+        '[$spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
 # Handle click events from i3bar
