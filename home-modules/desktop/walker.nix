@@ -508,10 +508,8 @@ in
       caret-color: @accent;
     }
 
-    .input::placeholder {
-      color: @subtext;
-      opacity: 0.6;
-    }
+    /* Note: GTK4 doesn't support :placeholder pseudo-class
+       Placeholder text will use default styling */
 
     /* Results list */
     .scroll {
