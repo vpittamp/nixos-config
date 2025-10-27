@@ -148,7 +148,8 @@
     # Autostart - import full login environment so user systemd services inherit PATH/etc
     exec --no-startup-id ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all
     # Ensure DISPLAY is explicitly imported into systemd user environment for services like Elephant
-    exec --no-startup-id ${pkgs.systemd}/bin/systemctl --user import-environment DISPLAY
+    # Use exec_always so it runs on config reload, not just at i3 startup
+    exec_always --no-startup-id ${pkgs.systemd}/bin/systemctl --user import-environment DISPLAY
 
     # Web apps configuration
     include ~/.config/i3/web-apps.conf

@@ -141,6 +141,13 @@
     jq
     socat  # Required by app-launcher-wrapper.sh for daemon IPC
 
+    # X11 utilities
+    xorg.xdpyinfo  # X display information utility
+    xorg.xhost     # X server access control
+    xorg.xwininfo  # Window information utility
+    xorg.xeyes     # X11 test application
+    xorg.xclock    # X11 test application
+
     # Nix tools
     nix-prefetch-git
     nixpkgs-fmt
