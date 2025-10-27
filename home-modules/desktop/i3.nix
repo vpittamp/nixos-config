@@ -48,7 +48,8 @@
 
     # Walker application launcher - floating, centered, with UI mark to exclude from daemon
     # The _global_ui mark prevents the daemon from tracking/moving this window
-    for_window [class="walker"] floating enable, border pixel 1, move position center, mark _global_ui
+    # No border for clean appearance
+    for_window [class="walker"] floating enable, border pixel 0, move position center, mark _global_ui
 
     # Floating fzf launcher window - remove borders, center on monitor, mark to exclude from daemon rules
     # The mark prevents the daemon from moving this window (daemon checks for _global_ui mark)
