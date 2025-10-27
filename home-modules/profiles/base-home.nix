@@ -43,6 +43,8 @@ in
 
     # Desktop configurations
     ../desktop/dunst.nix       # Notification daemon for i3
+    ../desktop/i3-window-rules.nix  # Auto-generate i3 window rules from app-registry (Feature 035)
+    ../desktop/i3-project-daemon.nix  # Event-driven daemon for project-scoped window management
     ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
     ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)
 
@@ -118,7 +120,9 @@ in
   home.sessionVariables = sessionConfig;
 
   # Add ~/.local/bin to PATH for user scripts and CLI tools
+  # Include /run/wrappers/bin explicitly to ensure setuid wrappers (sudo, etc.) are found
   home.sessionPath = [
+    "/run/wrappers/bin"  # CRITICAL: Must come first for setuid wrappers (sudo, doas, etc.)
     "$HOME/.local/bin"
   ];
 

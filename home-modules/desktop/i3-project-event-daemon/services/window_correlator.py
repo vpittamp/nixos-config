@@ -10,7 +10,7 @@ Feature 041: IPC Launch Context - T009
 import logging
 from typing import Dict
 
-from models import PendingLaunch, LaunchWindowInfo
+from ..models import PendingLaunch, LaunchWindowInfo
 
 logger = logging.getLogger(__name__)
 

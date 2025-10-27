@@ -425,8 +425,9 @@ in
   systemd.user.services.elephant = lib.mkForce {
     Unit = {
       Description = "Elephant launcher backend (X11)";
-      PartOf = [ "graphical-session.target" ];
-      After = [ "graphical-session.target" ];
+      # Use default.target instead of graphical-session.target (i3 doesn't activate graphical-session.target)
+      PartOf = [ "default.target" ];
+      After = [ "default.target" ];
       # Use DISPLAY instead of WAYLAND_DISPLAY
       ConditionEnvironment = "DISPLAY";
     };
@@ -445,9 +446,13 @@ in
         "XDG_DATA_DIRS=${i3pmAppsDir}"
         "XDG_RUNTIME_DIR=%t"
       ];
+      # CRITICAL: Pass DISPLAY from systemd user environment for X11 support
+      # Using PassEnvironment instead of Environment to avoid escaping issues
+      PassEnvironment = [ "DISPLAY" ];
     };
     Install = {
-      WantedBy = [ "graphical-session.target" ];
+      # Use default.target instead of graphical-session.target (i3 doesn't activate graphical-session.target)
+      WantedBy = [ "default.target" ];
     };
   };
 

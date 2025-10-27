@@ -219,9 +219,9 @@ let
       name = "btop";
       display_name = "btop";
       command = "alacritty";
-      parameters = "-e btop";
+      parameters = "--class btop -e btop";
       scope = "global";
-      expected_class = "Alacritty";
+      expected_class = "btop";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.btop";
@@ -234,9 +234,9 @@ let
       name = "htop";
       display_name = "htop";
       command = "alacritty";
-      parameters = "-e htop";
+      parameters = "--class htop -e htop";
       scope = "global";
-      expected_class = "Alacritty";
+      expected_class = "htop";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.htop";
@@ -266,9 +266,9 @@ let
       name = "k9s";
       display_name = "K9s";
       command = "alacritty";
-      parameters = "-e k9s";
+      parameters = "--class k9s -e k9s";
       scope = "global";
-      expected_class = "Alacritty";
+      expected_class = "k9s";
       preferred_workspace = 9;
       icon = "kubernetes";
       nix_package = "pkgs.k9s";

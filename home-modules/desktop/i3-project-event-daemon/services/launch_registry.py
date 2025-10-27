@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Dict, Optional
 
-from models import (
+from ..models import (
     PendingLaunch,
     LaunchWindowInfo,
     LaunchRegistryStats,
@@ -141,7 +141,7 @@ class LaunchRegistry:
 
         # Find best match (correlation logic will be in window_correlator.py)
         # For now, use simple class matching with first-match-wins
-        from services.window_correlator import calculate_confidence
+        from .window_correlator import calculate_confidence
 
         best_match: Optional[PendingLaunch] = None
         best_confidence = 0.0  # Start at 0.0

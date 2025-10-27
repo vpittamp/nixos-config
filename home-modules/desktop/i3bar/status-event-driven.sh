@@ -163,10 +163,13 @@ build_monitor_block() {
     # Show friendly name for the output
     case "$OUTPUT_NAME" in
         rdp0)
-            display_name="Primary"
+            display_name="Monitor 1"
             ;;
         rdp1)
-            display_name="Secondary"
+            display_name="Monitor 2"
+            ;;
+        rdp2)
+            display_name="Monitor 3"
             ;;
         *)
             display_name="$OUTPUT_NAME"
