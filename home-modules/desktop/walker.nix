@@ -279,6 +279,7 @@ in
     text = ''
         # Walker Configuration (X11 Mode)
         # X11 Mode - use window instead of Wayland layer shell
+        # Default theme (no custom theme specified)
         as_window = true
         force_keyboard_focus = false
         close_when_open = true
