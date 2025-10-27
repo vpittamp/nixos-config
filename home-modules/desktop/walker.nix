@@ -279,10 +279,13 @@ in
     text = ''
         # Walker Configuration (X11 Mode)
         # X11 Mode - use window instead of Wayland layer shell
-        # Default theme (no custom theme specified)
+        # Minimal theme with rounded corners
         as_window = true
         force_keyboard_focus = false
         close_when_open = true
+
+        # Use rounded corners theme (inherits default colors)
+        theme = "rounded"
 
         [modules]
         applications = true
@@ -459,4 +462,34 @@ in
   home.sessionVariables = {
     XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
   };
+
+  # Minimal theme override - just adds rounded corners to default theme
+  xdg.configFile."walker/themes/rounded/style.css".text = ''
+    /* Minimal theme - adds rounded corners to Walker's default appearance */
+
+    /* Main window with rounded corners */
+    .box-wrapper {
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .box {
+      border-radius: 10px;
+    }
+
+    /* Search input with rounded corners */
+    .search-container {
+      border-radius: 8px;
+    }
+
+    /* Item entries with rounded corners */
+    .item-box {
+      border-radius: 8px;
+    }
+
+    /* Preview panel with rounded corners */
+    .preview-box {
+      border-radius: 8px;
+    }
+  '';
 }
