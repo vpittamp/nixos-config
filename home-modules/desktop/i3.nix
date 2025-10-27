@@ -18,6 +18,11 @@
     font pango:monospace, Font Awesome 6 Free 10
     floating_modifier $mod
 
+    # Border settings - no borders for clean appearance
+    default_border pixel 0
+    default_floating_border pixel 0
+    hide_edge_borders none
+
     # Default workspace layout - default (tiling) for better window visibility
     workspace_layout default
 
