@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from i3ipc import aio
 
 from .models import DaemonState, WindowInfo, WorkspaceInfo
+from .services.launch_registry import LaunchRegistry  # Feature 041: IPC Launch Context - T013
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,11 @@ class StateManager:
         """Initialize state manager with empty state."""
         self.state = DaemonState()
         self._lock = asyncio.Lock()
+
+        # Feature 041: IPC Launch Context - T013
+        # Launch registry for correlating windows to launch notifications
+        self.launch_registry = LaunchRegistry(timeout=5.0)
+        logger.info("Initialized LaunchRegistry with 5-second timeout")
 
     async def add_window(self, window_info: WindowInfo) -> None:
         """Add a window to the tracking map.

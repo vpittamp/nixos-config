@@ -32,8 +32,21 @@ async function daemonStatus(flags: Record<string, unknown>): Promise<number> {
 
   const status = await client.getStatus();
 
+  // Feature 041: Get launch registry stats
+  let launchStats;
+  try {
+    launchStats = await client.getLaunchStats();
+  } catch {
+    // Launch stats not available (older daemon version)
+    launchStats = null;
+  }
+
   if (flags.json) {
-    console.log(JSON.stringify(status, null, 2));
+    const output = { ...status };
+    if (launchStats) {
+      output.launch_stats = launchStats;
+    }
+    console.log(JSON.stringify(output, null, 2));
   } else {
     console.log("\nDaemon Status:");
     console.log("─".repeat(60));
@@ -43,6 +56,17 @@ async function daemonStatus(flags: Record<string, unknown>): Promise<number> {
     console.log(`Active Project:  ${status.active_project || "none"}`);
     console.log(`Events Processed: ${status.events_processed}`);
     console.log(`Tracked Windows: ${status.tracked_windows}`);
+
+    if (launchStats) {
+      console.log();
+      console.log("Launch Registry (Feature 041):");
+      console.log("─".repeat(60));
+      console.log(`Pending:         ${launchStats.total_pending} (${launchStats.unmatched_pending} unmatched)`);
+      console.log(`Notifications:   ${launchStats.total_notifications}`);
+      console.log(`Matched:         ${launchStats.total_matched} (${launchStats.match_rate.toFixed(1)}%)`);
+      console.log(`Expired:         ${launchStats.total_expired} (${launchStats.expiration_rate.toFixed(1)}%)`);
+      console.log(`Failed:          ${launchStats.total_failed_correlation}`);
+    }
     console.log();
   }
 

@@ -307,6 +307,14 @@ class IPCServer:
             elif method == "get_diagnostic_report":
                 result = await self._get_diagnostic_report_full(params)
 
+            # Feature 041: IPC Launch Context methods (T010-T012)
+            elif method == "notify_launch":
+                result = await self._notify_launch(params)
+            elif method == "get_launch_stats":
+                result = await self._get_launch_stats()
+            elif method == "get_pending_launches":
+                result = await self._get_pending_launches(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -2974,6 +2982,7 @@ class IPCServer:
         """Get comprehensive state for a specific window.
 
         Feature 037 US5 T037: Provides detailed window inspection for debugging.
+        Feature 041 T022: Includes launch correlation metadata if available.
         Shows all I3PM_* variables, tracking state, and i3 window properties.
 
         Args:
@@ -3008,6 +3017,21 @@ class IPCServer:
                     "output": str,
                     "floating": str,
                     "focused": bool
+                },
+                "correlation": {  # Feature 041 T022, T040: Optional, only present if matched via launch
+                    "matched_via_launch": bool,
+                    "launch_id": str,
+                    "confidence": float,  # 0.0 - 1.0
+                    "confidence_level": str,  # EXACT, HIGH, MEDIUM, LOW
+                    "signals_used": {
+                        "class_match": bool,
+                        "time_delta": float,  # seconds
+                        "time_score": float,  # 0.0 - 0.3 time proximity bonus
+                        "workspace_match": bool,  # T040: Workspace location match
+                        "launch_workspace": int,  # T040: Expected workspace number
+                        "window_workspace": int,  # T040: Actual workspace number
+                        "workspace_bonus": float  # T040: 0.2 if match, 0.0 otherwise
+                    }
                 }
             }
         """
@@ -3054,6 +3078,18 @@ class IPCServer:
             # Get tracking info
             tracking_info = self.workspace_tracker.windows.get(window_id, {}) if self.workspace_tracker else {}
 
+            # Feature 041 T022: Get correlation metadata from WindowInfo if available
+            window_info = await self.state_manager.get_window(window_id)
+            correlation_info = None
+            if window_info and window_info.correlation_matched:
+                correlation_info = {
+                    "matched_via_launch": window_info.correlation_matched,
+                    "launch_id": window_info.correlation_launch_id,
+                    "confidence": window_info.correlation_confidence,
+                    "confidence_level": window_info.correlation_confidence_level,
+                    "signals_used": window_info.correlation_signals,
+                }
+
             # Get i3 state
             workspace = window.workspace()
             i3_state = {
@@ -3067,7 +3103,8 @@ class IPCServer:
 
             duration_ms = (time.perf_counter() - start_time) * 1000
 
-            return {
+            # Feature 041 T022: Include correlation field in response
+            result = {
                 "window_id": window_id,
                 "visible": is_visible,
                 "window_class": window.window_class or "unknown",
@@ -3078,6 +3115,12 @@ class IPCServer:
                 "i3_state": i3_state,
                 "duration_ms": duration_ms,
             }
+
+            # Add correlation field only if window was matched via launch
+            if correlation_info:
+                result["correlation"] = correlation_info
+
+            return result
 
         except Exception as e:
             error_msg = str(e)
@@ -3611,11 +3654,272 @@ class IPCServer:
             report["state_validation"] = validation
         
         duration_ms = (time.perf_counter() - start_time) * 1000
-        
+
         await self._log_ipc_event(
             event_type="get_diagnostic_report",
             duration_ms=duration_ms,
             params=params
         )
-        
+
         return report
+
+    async def _notify_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Register a pending application launch for window correlation.
+
+        Feature 041 - T010
+
+        Args:
+            params: {
+                "app_name": str - Application name from registry,
+                "project_name": str - Project name for this launch,
+                "project_directory": str - Absolute path to project directory,
+                "launcher_pid": int - Process ID of launcher wrapper,
+                "workspace_number": int - Target workspace number (1-70),
+                "timestamp": float - Unix timestamp when launch notification sent
+            }
+
+        Returns:
+            {
+                "status": "success",
+                "launch_id": str - Unique launch identifier,
+                "expected_class": str - Window class expected from registry,
+                "pending_count": int - Number of pending launches
+            }
+
+        Raises:
+            RuntimeError: If app not found in registry, invalid workspace, or future timestamp
+        """
+        start_time = time.perf_counter()
+
+        # Extract parameters
+        app_name = params.get("app_name")
+        project_name = params.get("project_name")
+        project_directory = params.get("project_directory")
+        launcher_pid = params.get("launcher_pid")
+        workspace_number = params.get("workspace_number")
+        timestamp = params.get("timestamp")
+
+        # Feature 041 T023: Log received launch notification
+        logger.info(f"Received notify_launch: {app_name} → {project_name}")
+
+        # Validate required parameters
+        if not app_name:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: app_name",
+                "data": {"param": "app_name"}
+            }))
+
+        if not project_name:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: project_name",
+                "data": {"param": "project_name"}
+            }))
+
+        if not project_directory:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: project_directory",
+                "data": {"param": "project_directory"}
+            }))
+
+        if launcher_pid is None:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: launcher_pid",
+                "data": {"param": "launcher_pid"}
+            }))
+
+        if workspace_number is None:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: workspace_number",
+                "data": {"param": "workspace_number"}
+            }))
+
+        if timestamp is None:
+            raise RuntimeError(json.dumps({
+                "code": -32602,
+                "message": "Missing required parameter: timestamp",
+                "data": {"param": "timestamp"}
+            }))
+
+        # Get application registry to resolve expected_class
+        registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
+        if not registry_path.exists():
+            raise RuntimeError(json.dumps({
+                "code": -32001,
+                "message": "Application registry not found",
+                "data": {"app_name": app_name, "reason": "registry_file_not_found"}
+            }))
+
+        with open(registry_path, "r") as f:
+            registry = json.load(f)
+
+        # Find app in registry
+        app_def = None
+        for app in registry.get("applications", []):
+            if app.get("name") == app_name:
+                app_def = app
+                break
+
+        if not app_def:
+            raise RuntimeError(json.dumps({
+                "code": -32002,
+                "message": f"Application '{app_name}' not found in registry",
+                "data": {"app_name": app_name, "reason": "app_not_found"}
+            }))
+
+        expected_class = app_def.get("expected_class")
+        if not expected_class:
+            raise RuntimeError(json.dumps({
+                "code": -32003,
+                "message": f"Application '{app_name}' has no expected_class in registry",
+                "data": {"app_name": app_name, "reason": "missing_expected_class"}
+            }))
+
+        # Create PendingLaunch using Pydantic model
+        from .models import PendingLaunch
+        try:
+            pending_launch = PendingLaunch(
+                app_name=app_name,
+                project_name=project_name,
+                project_directory=Path(project_directory),
+                launcher_pid=launcher_pid,
+                workspace_number=workspace_number,
+                timestamp=timestamp,
+                expected_class=expected_class,
+                matched=False
+            )
+        except Exception as e:
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": f"Validation error: {str(e)}",
+                "data": {"validation_error": str(e)}
+            }))
+
+        # Add to launch registry
+        if not hasattr(self.state_manager, 'launch_registry'):
+            raise RuntimeError(json.dumps({
+                "code": -32005,
+                "message": "Launch registry not initialized in daemon state",
+                "data": {"reason": "registry_not_initialized"}
+            }))
+
+        launch_id = await self.state_manager.launch_registry.add(pending_launch)
+
+        # Get current pending count for response
+        stats = self.state_manager.launch_registry.get_stats()
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="notify_launch",
+            duration_ms=duration_ms,
+            params={"app_name": app_name, "project_name": project_name}
+        )
+
+        logger.info(
+            f"Registered launch: {launch_id} for project {project_name} "
+            f"(expected_class={expected_class}, workspace={workspace_number})"
+        )
+
+        return {
+            "status": "success",
+            "launch_id": launch_id,
+            "expected_class": expected_class,
+            "pending_count": stats.total_pending
+        }
+
+    async def _get_launch_stats(self) -> Dict[str, Any]:
+        """
+        Get launch registry statistics for diagnostics.
+
+        Feature 041 - T011
+
+        Returns:
+            LaunchRegistryStats with current state and historical counters
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'launch_registry'):
+            raise RuntimeError(json.dumps({
+                "code": -32005,
+                "message": "Launch registry not initialized in daemon state",
+                "data": {"reason": "registry_not_initialized"}
+            }))
+
+        stats = self.state_manager.launch_registry.get_stats()
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="get_launch_stats",
+            duration_ms=duration_ms
+        )
+
+        # Convert Pydantic model to dict
+        return {
+            "total_pending": stats.total_pending,
+            "unmatched_pending": stats.unmatched_pending,
+            "total_notifications": stats.total_notifications,
+            "total_matched": stats.total_matched,
+            "total_expired": stats.total_expired,
+            "total_failed_correlation": stats.total_failed_correlation,
+            "match_rate": stats.match_rate,
+            "expiration_rate": stats.expiration_rate
+        }
+
+    async def _get_pending_launches(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get list of pending launches for debugging.
+
+        Feature 041 - T012
+
+        Args:
+            params: {
+                "include_matched": bool (optional, default=False)
+            }
+
+        Returns:
+            {
+                "launches": [
+                    {
+                        "launch_id": str,
+                        "app_name": str,
+                        "project_name": str,
+                        "expected_class": str,
+                        "workspace_number": int,
+                        "matched": bool,
+                        "age": float,
+                        "timestamp": float
+                    }
+                ]
+            }
+        """
+        start_time = time.perf_counter()
+
+        include_matched = params.get("include_matched", False)
+
+        if not hasattr(self.state_manager, 'launch_registry'):
+            raise RuntimeError(json.dumps({
+                "code": -32005,
+                "message": "Launch registry not initialized in daemon state",
+                "data": {"reason": "registry_not_initialized"}
+            }))
+
+        launches = await self.state_manager.launch_registry.get_pending_launches(
+            include_matched=include_matched
+        )
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="get_pending_launches",
+            duration_ms=duration_ms,
+            params={"include_matched": include_matched}
+        )
+
+        return {"launches": launches}

@@ -279,6 +279,46 @@ export class DaemonClient {
   }
 
   /**
+   * Get launch registry statistics (Feature 041)
+   *
+   * Returns launch notification and correlation metrics from the daemon.
+   */
+  async getLaunchStats(): Promise<{
+    total_pending: number;
+    unmatched_pending: number;
+    total_notifications: number;
+    total_matched: number;
+    total_expired: number;
+    total_failed_correlation: number;
+    match_rate: number;
+    expiration_rate: number;
+  }> {
+    return await this.request("get_launch_stats");
+  }
+
+  /**
+   * Get pending launches (Feature 041)
+   *
+   * Debug endpoint to inspect currently pending launch notifications.
+   *
+   * @param includeMatched - Include already-matched launches (default: false)
+   */
+  async getPendingLaunches(includeMatched = false): Promise<{
+    pending_launches: Array<{
+      launch_id: string;
+      app_name: string;
+      project_name: string;
+      expected_class: string;
+      workspace_number: number;
+      age: number;
+      matched: boolean;
+    }>;
+    count: number;
+  }> {
+    return await this.request("get_pending_launches", { include_matched: includeMatched });
+  }
+
+  /**
    * Get daemon socket path
    */
   getSocketPath(): string {

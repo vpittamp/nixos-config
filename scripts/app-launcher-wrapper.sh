@@ -280,6 +280,89 @@ log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
 log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
 log "DEBUG" "I3PM_ACTIVE=$I3PM_ACTIVE"
 
+# Feature 041 T021: Send launch notification to daemon via IPC
+# This enables the daemon to correlate the upcoming window with this launch context
+notify_launch() {
+    local app_name="$1"
+    local project_name="$2"
+    local project_dir="$3"
+    local workspace="$4"
+    local timestamp="$5"
+
+    # Build JSON-RPC request for notify_launch endpoint
+    local request
+    request=$(jq -n \
+        --arg app "$app_name" \
+        --arg proj "${project_name:-}" \
+        --arg dir "${project_dir:-}" \
+        --arg ws "$workspace" \
+        --arg ts "$timestamp" \
+        --arg pid "$$" \
+        '{
+            jsonrpc: "2.0",
+            method: "notify_launch",
+            params: {
+                app_name: $app,
+                project_name: $proj,
+                project_directory: $dir,
+                launcher_pid: ($pid | tonumber),
+                workspace_number: ($ws | tonumber),
+                timestamp: ($ts | tonumber)
+            },
+            id: 1
+        }')
+
+    # Send to daemon via Unix socket with 1-second timeout
+    local socket="${HOME}/.local/state/i3pm/daemon.sock"
+    local response
+
+    if [[ ! -S "$socket" ]]; then
+        warn "Daemon socket not found: $socket (launch notification skipped)"
+        return 1
+    fi
+
+    # Use timeout and socat to send request
+    response=$(timeout 1s bash -c "echo '$request' | socat - UNIX-CONNECT:$socket" 2>&1 || echo "")
+
+    if [[ -z "$response" ]]; then
+        warn "No response from daemon for launch notification (timeout or connection failure)"
+        return 1
+    fi
+
+    # Check for errors in response
+    local error
+    error=$(echo "$response" | jq -r '.error // empty' 2>/dev/null || echo "")
+
+    if [[ -n "$error" ]]; then
+        warn "Daemon returned error for launch notification: $error"
+        return 1
+    fi
+
+    # Log successful notification
+    local launch_id
+    launch_id=$(echo "$response" | jq -r '.result.launch_id // "unknown"' 2>/dev/null || echo "unknown")
+    log "INFO" "Launch notification sent: launch_id=$launch_id, app=$app_name, project=$project_name"
+
+    return 0
+}
+
+# Send launch notification BEFORE executing app (Feature 041 T021)
+if [[ "${SCOPE}" == "scoped" ]] && [[ -n "${PROJECT_NAME}" ]]; then
+    log "DEBUG" "Sending launch notification for scoped app: $APP_NAME"
+
+    # Get current timestamp (seconds since epoch with decimals)
+    LAUNCH_TIMESTAMP=$(date +%s.%N)
+
+    # Send notification (best-effort, don't fail launch if notification fails)
+    if notify_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" "$PREFERRED_WORKSPACE" "$LAUNCH_TIMESTAMP"; then
+        log "INFO" "Launch notification successful for $APP_NAME → $PROJECT_NAME"
+    else
+        warn "Launch notification failed for $APP_NAME (app will still launch)"
+    fi
+else
+    log "DEBUG" "Skipping launch notification (app=$APP_NAME, scope=$SCOPE, project=${PROJECT_NAME:-none})"
+fi
+
 # Execute application (replaces this process with the application)
 log "INFO" "Executing: ${ARGS[*]}"
 

@@ -47,6 +47,13 @@ class WindowInfo:
     created: datetime = field(default_factory=datetime.now)
     last_focus: Optional[datetime] = None
 
+    # Feature 041 T022: Launch correlation metadata
+    correlation_matched: bool = False  # True if window was matched via launch notification
+    correlation_launch_id: Optional[str] = None  # Launch ID that matched this window
+    correlation_confidence: Optional[float] = None  # Correlation confidence (0.0-1.0)
+    correlation_confidence_level: Optional[str] = None  # Confidence level: EXACT, HIGH, MEDIUM, LOW
+    correlation_signals: Optional[Dict[str, Any]] = None  # Signals used in correlation
+
     def __post_init__(self) -> None:
         """Validate window information."""
         if self.window_id <= 0:
@@ -890,3 +897,337 @@ class DiagnosticReport(BaseModel):
             }
         }
     }
+
+
+# ============================================================================
+# Feature 041: IPC Launch Context Models
+# ============================================================================
+# Pydantic models for launch notification and window-to-launch correlation.
+# These models enable multi-instance app tracking via pre-launch IPC notifications.
+
+import time
+
+
+class PendingLaunch(BaseModel):
+    """
+    Represents an application launch awaiting correlation with a new window.
+
+    A pending launch is created when the launcher wrapper notifies the daemon
+    that an application is about to start. The daemon uses this context to
+    correlate the next matching window to the correct project.
+
+    Feature 041: IPC Launch Context - T004
+    """
+
+    # Core identification
+    app_name: str = Field(
+        ...,
+        description="Application name from registry (e.g., 'vscode', 'terminal')"
+    )
+    project_name: str = Field(
+        ...,
+        description="Project name for this launch (e.g., 'nixos', 'stacks')"
+    )
+    project_directory: Path = Field(
+        ...,
+        description="Absolute path to project directory"
+    )
+
+    # Launch metadata
+    launcher_pid: int = Field(
+        ...,
+        gt=0,
+        description="Process ID of the launcher wrapper script"
+    )
+    workspace_number: int = Field(
+        ...,
+        ge=1,
+        le=70,
+        description="Target workspace number for the application"
+    )
+    timestamp: float = Field(
+        ...,
+        description="Unix timestamp (seconds.microseconds) when launch notification sent"
+    )
+
+    # Correlation context
+    expected_class: str = Field(
+        ...,
+        description="Window class expected for this application (from app registry)"
+    )
+
+    # State tracking
+    matched: bool = Field(
+        default=False,
+        description="True if this launch has been matched to a window"
+    )
+
+    @field_validator('project_directory')
+    @classmethod
+    def validate_directory_exists(cls, v: Path) -> Path:
+        """Validate project directory exists (optional - may be created later)."""
+        # Note: Not enforcing existence to support project creation workflows
+        return v.resolve()  # Normalize to absolute path
+
+    @field_validator('timestamp')
+    @classmethod
+    def validate_timestamp_recent(cls, v: float) -> float:
+        """Validate timestamp is not in the future (allows small clock skew)."""
+        now = time.time()
+        if v > now + 1.0:  # Allow 1 second clock skew
+            raise ValueError(f"Launch timestamp {v} is in the future (now={now})")
+        return v
+
+    def age(self, current_time: float) -> float:
+        """Calculate age of this pending launch in seconds."""
+        return current_time - self.timestamp
+
+    def is_expired(self, current_time: float, timeout: float = 5.0) -> bool:
+        """Check if this launch has exceeded the correlation timeout."""
+        return self.age(current_time) > timeout
+
+    def __str__(self) -> str:
+        return (
+            f"PendingLaunch(app={self.app_name}, project={self.project_name}, "
+            f"workspace={self.workspace_number}, age={self.age(time.time()):.2f}s)"
+        )
+
+    model_config = {
+        # Allow Path objects in JSON serialization
+        "json_encoders": {
+            Path: str
+        }
+    }
+
+
+class LaunchWindowInfo(BaseModel):
+    """
+    Information about a newly created window for correlation.
+
+    Extracted from i3 window::new event container properties. Used to
+    find the best matching pending launch based on application class,
+    timing, and workspace location.
+
+    Feature 041: IPC Launch Context - T005
+
+    Note: Named LaunchWindowInfo to avoid conflict with existing WindowInfo dataclass.
+    """
+
+    # Window identity
+    window_id: int = Field(
+        ...,
+        description="i3 window/container ID (unique)"
+    )
+    window_class: str = Field(
+        ...,
+        description="X11 window class (e.g., 'Code', 'Alacritty')"
+    )
+
+    # Process context
+    window_pid: Optional[int] = Field(
+        None,
+        description="Process ID of window's owning process (may be None for some windows)"
+    )
+
+    # Location context
+    workspace_number: int = Field(
+        ...,
+        ge=1,
+        le=70,
+        description="Workspace number where window appeared"
+    )
+
+    # Timing
+    timestamp: float = Field(
+        ...,
+        description="Unix timestamp when window::new event received"
+    )
+
+    def __str__(self) -> str:
+        return (
+            f"LaunchWindowInfo(id={self.window_id}, class={self.window_class}, "
+            f"workspace={self.workspace_number}, pid={self.window_pid})"
+        )
+
+
+class ConfidenceLevel(str, Enum):
+    """Correlation confidence levels (from FR-015)."""
+    EXACT = "EXACT"      # 1.0
+    HIGH = "HIGH"        # 0.8+
+    MEDIUM = "MEDIUM"    # 0.6+
+    LOW = "LOW"          # 0.3+
+    NONE = "NONE"        # 0.0
+
+
+class CorrelationResult(BaseModel):
+    """
+    Result of correlating a window to a pending launch.
+
+    Indicates whether a match was found and the confidence level. Used
+    to decide if the window should be assigned to the launch's project.
+
+    Feature 041: IPC Launch Context - T006
+    """
+
+    # Match outcome
+    matched: bool = Field(
+        ...,
+        description="True if a pending launch was matched to the window"
+    )
+
+    # Matched launch details (if matched=True)
+    project_name: Optional[str] = Field(
+        None,
+        description="Project name from matched launch (None if no match)"
+    )
+    app_name: Optional[str] = Field(
+        None,
+        description="Application name from matched launch (None if no match)"
+    )
+
+    # Correlation quality
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Correlation confidence score (0.0 to 1.0)"
+    )
+    confidence_level: ConfidenceLevel = Field(
+        ...,
+        description="Categorical confidence level"
+    )
+
+    # Correlation signals used
+    signals_used: dict = Field(
+        default_factory=dict,
+        description="Signals that contributed to correlation (for debugging)"
+    )
+
+    @classmethod
+    def no_match(cls, window_class: str, reason: str) -> "CorrelationResult":
+        """Factory method for failed correlation."""
+        return cls(
+            matched=False,
+            project_name=None,
+            app_name=None,
+            confidence=0.0,
+            confidence_level=ConfidenceLevel.NONE,
+            signals_used={
+                "window_class": window_class,
+                "failure_reason": reason
+            }
+        )
+
+    @classmethod
+    def from_launch(
+        cls,
+        launch: PendingLaunch,
+        confidence: float,
+        signals: dict
+    ) -> "CorrelationResult":
+        """Factory method for successful correlation."""
+        # Determine confidence level
+        if confidence >= 1.0:
+            level = ConfidenceLevel.EXACT
+        elif confidence >= 0.8:
+            level = ConfidenceLevel.HIGH
+        elif confidence >= 0.6:
+            level = ConfidenceLevel.MEDIUM
+        elif confidence >= 0.3:
+            level = ConfidenceLevel.LOW
+        else:
+            level = ConfidenceLevel.NONE
+
+        return cls(
+            matched=True,
+            project_name=launch.project_name,
+            app_name=launch.app_name,
+            confidence=confidence,
+            confidence_level=level,
+            signals_used=signals
+        )
+
+    def should_assign_project(self) -> bool:
+        """
+        Determine if confidence is sufficient for project assignment.
+
+        Threshold: MEDIUM (0.6) or higher (from FR-016).
+        """
+        return self.confidence >= 0.6
+
+    def __str__(self) -> str:
+        if self.matched:
+            return (
+                f"CorrelationResult(matched={self.matched}, "
+                f"project={self.project_name}, confidence={self.confidence:.2f} [{self.confidence_level}])"
+            )
+        else:
+            reason = self.signals_used.get("failure_reason", "unknown")
+            return f"CorrelationResult(matched=False, reason={reason})"
+
+
+class LaunchRegistryStats(BaseModel):
+    """
+    Statistics about the launch registry for diagnostics.
+
+    Provides insight into pending launches, match rates, and expiration
+    for debugging and system monitoring.
+
+    Feature 041: IPC Launch Context - T007
+    """
+
+    # Current state
+    total_pending: int = Field(
+        ...,
+        ge=0,
+        description="Number of pending launches awaiting correlation"
+    )
+    unmatched_pending: int = Field(
+        ...,
+        ge=0,
+        description="Number of pending launches not yet matched"
+    )
+
+    # Historical counters (since daemon start)
+    total_notifications: int = Field(
+        default=0,
+        ge=0,
+        description="Total launch notifications received"
+    )
+    total_matched: int = Field(
+        default=0,
+        ge=0,
+        description="Total successful correlations"
+    )
+    total_expired: int = Field(
+        default=0,
+        ge=0,
+        description="Total launches that expired without matching"
+    )
+    total_failed_correlation: int = Field(
+        default=0,
+        ge=0,
+        description="Total windows that appeared without matching launch"
+    )
+
+    # Computed metrics
+    @property
+    def match_rate(self) -> float:
+        """Percentage of notifications that resulted in successful matches."""
+        if self.total_notifications == 0:
+            return 0.0
+        return (self.total_matched / self.total_notifications) * 100
+
+    @property
+    def expiration_rate(self) -> float:
+        """Percentage of notifications that expired without matching."""
+        if self.total_notifications == 0:
+            return 0.0
+        return (self.total_expired / self.total_notifications) * 100
+
+    def __str__(self) -> str:
+        return (
+            f"LaunchRegistryStats(pending={self.total_pending}, "
+            f"matched={self.total_matched}, expired={self.total_expired}, "
+            f"match_rate={self.match_rate:.1f}%)"
+        )

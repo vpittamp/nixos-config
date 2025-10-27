@@ -459,10 +459,98 @@ async def on_window_new(
             f"is_pwa={window_identity['is_pwa']}"
         )
 
-        # If window has I3PM environment, use it for project association
-        # This replaces tag-based filtering with environment-based approach
+        # Feature 041 T020: IPC Launch Context - Window correlation
+        # Correlate new window to pending launch notification using multi-signal algorithm
+        from .models import LaunchWindowInfo
+        correlated_project = None
+        correlation_confidence = 0.0
+
+        # Extract window PID if available
+        window_pid = None
+        try:
+            # Try to get PID from X11 property
+            import subprocess
+            result = subprocess.run(
+                ["xprop", "-id", str(window_id), "_NET_WM_PID"],
+                capture_output=True,
+                text=True,
+                timeout=0.5
+            )
+            if result.returncode == 0 and "_NET_WM_PID(CARDINAL)" in result.stdout:
+                window_pid = int(result.stdout.split("=")[-1].strip())
+        except Exception:
+            pass  # PID not available (e.g., Wayland, timeout)
+
+        # Get current workspace number
+        current_ws = container.workspace()
+        workspace_number = current_ws.num if current_ws else 1
+
+        # Create LaunchWindowInfo for correlation
+        launch_window_info = LaunchWindowInfo(
+            window_id=window_id,
+            window_class=window_class,
+            window_pid=window_pid,
+            workspace_number=workspace_number,
+            timestamp=time.time(),
+        )
+
+        # Query launch registry for matching pending launch
+        matched_launch = await state_manager.launch_registry.find_match(launch_window_info)
+
+        if matched_launch:
+            # Successful correlation - use project from launch notification
+            # T040: calculate_confidence now returns (confidence, signals) tuple
+            from .services.window_correlator import calculate_confidence
+            correlation_confidence, correlation_signals = calculate_confidence(matched_launch, launch_window_info)
+            correlated_project = matched_launch.project_name
+
+            # Determine confidence level for logging
+            if correlation_confidence >= 1.0:
+                confidence_level = "EXACT"
+            elif correlation_confidence >= 0.8:
+                confidence_level = "HIGH"
+            elif correlation_confidence >= 0.6:
+                confidence_level = "MEDIUM"
+            else:
+                confidence_level = "LOW"
+
+            # T040: Enhanced logging with workspace match information
+            workspace_match_str = ""
+            if "workspace_match" in correlation_signals:
+                workspace_match = correlation_signals["workspace_match"]
+                launch_ws = correlation_signals.get("launch_workspace", "?")
+                window_ws = correlation_signals.get("window_workspace", "?")
+                boost = correlation_signals.get("workspace_bonus", 0.0)
+                workspace_match_str = f", workspace_match={workspace_match} (launch={launch_ws}, window={window_ws}, boost={boost:.1f})"
+
+            logger.info(
+                f"✓ Correlated window {window_id} ({window_class}) to project '{correlated_project}' "
+                f"with confidence {correlation_confidence:.2f} [{confidence_level}] "
+                f"(app={matched_launch.app_name}{workspace_match_str})"
+            )
+        else:
+            # No matching launch found - explicit failure (FR-008, FR-009)
+            logger.warning(
+                f"✗ Window {window_id} ({window_class}) appeared without matching launch notification. "
+                f"No project assignment via launch correlation. "
+                f"(workspace={workspace_number}, pid={window_pid})"
+            )
+
+        # Determine actual project using priority order (Feature 041 T020):
+        # Priority 1: Launch correlation (Feature 041 - highest priority)
+        # Priority 2: I3PM environment (Feature 035)
+        # Priority 3: No assignment (global scope)
         actual_project = None
-        if window_env and window_env.project_name:
+
+        if correlated_project:
+            # Priority 1: Use project from launch correlation
+            actual_project = correlated_project
+            logger.info(
+                f"Window {window_id} assigned to project '{actual_project}' via launch correlation "
+                f"(confidence={correlation_confidence:.2f})"
+            )
+        elif window_env and window_env.project_name:
+            # Priority 2: Use I3PM environment if present
             actual_project = window_env.project_name
             logger.info(
                 f"Window {window_id} has I3PM environment: "
@@ -470,9 +558,9 @@ async def on_window_new(
                 f"scope={window_env.scope}, instance_id={window_env.app_id}"
             )
         else:
-            # No I3PM environment → assume global scope
+            # Priority 3: No project assignment → assume global scope
             actual_project = None
-            logger.debug(f"Window {window_id} has no I3PM environment, assuming global scope")
+            logger.debug(f"Window {window_id} has no project assignment, assuming global scope")
 
         # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
         # VSCode windows share a single process, so I3PM environment doesn't distinguish
@@ -494,28 +582,47 @@ async def on_window_new(
                         )
                         actual_project = title_project
 
-        # If scoped and we have an actual project from environment, apply project mark
+        # Apply project mark if we have a project assignment
         # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
-        # Feature 038 BUGFIX: Use window_env.scope (from I3PM env) instead of classification.scope
-        # because classification happens before reading I3PM environment
-        if window_env and window_env.scope == "scoped" and actual_project:
+        # Feature 041 T020: Mark windows from launch correlation
+        # Feature 035: Mark windows from I3PM environment (scoped only)
+        should_mark = False
+        mark_source = None
+
+        if correlated_project and actual_project:
+            # Project assigned via launch correlation
+            should_mark = True
+            mark_source = "launch correlation"
+        elif window_env and window_env.scope == "scoped" and actual_project:
+            # Project assigned via I3PM environment (scoped apps only)
+            should_mark = True
+            mark_source = "I3PM environment"
+
+        if should_mark and actual_project:
             mark = f"project:{actual_project}:{window_id}"
             await conn.command(f'[id={window_id}] mark --add "{mark}"')
-            logger.info(f"Marked window {window_id} with {mark} (from I3PM environment)")
+            logger.info(f"Marked window {window_id} with {mark} (from {mark_source})")
 
             # Add to state (mark event will update this)
-            # Feature 035: Use actual_project from I3PM environment
+            # Feature 041 T022: Include correlation metadata if window was matched via launch
             window_info = WindowInfo(
                 window_id=window_id,
                 con_id=container.id,
                 window_class=window_class,
                 window_title=window_title,
                 window_instance=container.window_instance or "",
-                app_identifier=window_env.app_name if window_env else window_class,
-                project=actual_project,  # Use environment-determined project
+                app_identifier=window_env.app_name if window_env else (matched_launch.app_name if matched_launch else window_class),
+                project=actual_project,
                 marks=[mark],
                 workspace=container.workspace().name if container.workspace() else "",
                 created=datetime.now(),
+                # Feature 041 T022: Store correlation metadata if matched via launch
+                # T040: Now using full signals from calculate_confidence including workspace details
+                correlation_matched=bool(matched_launch),
+                correlation_launch_id=f"{matched_launch.app_name}-{matched_launch.timestamp}" if matched_launch else None,
+                correlation_confidence=correlation_confidence if matched_launch else None,
+                correlation_confidence_level=confidence_level if matched_launch else None,
+                correlation_signals=correlation_signals if matched_launch else None,
             )
             await state_manager.add_window(window_info)
 
