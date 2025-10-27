@@ -274,6 +274,40 @@ in
     walkerProjectSwitch
   ];
 
+  # Desktop file for walker-open-in-nvim - manual creation
+  xdg.dataFile."applications/walker-open-in-nvim.desktop".text = ''
+    [Desktop Entry]
+    Type=Application
+    Name=Open in Neovim (Ghostty)
+    Exec=${lib.getExe walkerOpenInNvim} %U
+    MimeType=text/plain;text/markdown;text/x-shellscript;text/x-python;text/x-nix;application/x-shellscript;application/json;application/xml;text/x-c;text/x-c++;text/x-java;text/x-rust;text/x-go;text/x-yaml;text/x-toml;application/toml;application/x-yaml;inode/directory;
+    NoDisplay=true
+    Terminal=false
+  '';
+
+  # Set walker-open-in-nvim as default handler for all common file types
+  xdg.mimeApps.defaultApplications = {
+    "text/plain" = "walker-open-in-nvim.desktop";
+    "text/markdown" = "walker-open-in-nvim.desktop";
+    "text/x-shellscript" = "walker-open-in-nvim.desktop";
+    "text/x-python" = "walker-open-in-nvim.desktop";
+    "text/x-nix" = "walker-open-in-nvim.desktop";
+    "text/x-c" = "walker-open-in-nvim.desktop";
+    "text/x-c++" = "walker-open-in-nvim.desktop";
+    "text/x-java" = "walker-open-in-nvim.desktop";
+    "text/x-rust" = "walker-open-in-nvim.desktop";
+    "text/x-go" = "walker-open-in-nvim.desktop";
+    "text/x-yaml" = "walker-open-in-nvim.desktop";
+    "text/x-toml" = "walker-open-in-nvim.desktop";
+    "application/x-shellscript" = "walker-open-in-nvim.desktop";
+    "application/json" = "walker-open-in-nvim.desktop";
+    "application/xml" = "walker-open-in-nvim.desktop";
+    "application/toml" = "walker-open-in-nvim.desktop";
+    "application/x-yaml" = "walker-open-in-nvim.desktop";
+    # Fallback for unknown text files
+    "application/octet-stream" = "walker-open-in-nvim.desktop";
+  };
+
   # Override the walker config file to add X11 settings not supported by the module
   xdg.configFile."walker/config.toml" = lib.mkForce {
     text = ''
@@ -287,7 +321,10 @@ in
         [modules]
         applications = true
         calc = true
-        clipboard = true
+        # Clipboard disabled - Elephant's clipboard provider requires Wayland (wl-clipboard)
+        # X11 clipboard monitoring not supported by Elephant
+        # TODO: Consider adding X11 clipboard manager like clipmenu if clipboard history needed
+        clipboard = false
         # File provider now enabled (Walker ≥v1.5 supports X11 safely when launched as a window)
         files = true
         menus = true
@@ -370,19 +407,21 @@ in
         bind = "shift Return"
         label = "run in terminal"
 
-        # File provider actions - open files in Ghostty + Neovim
-        [[providers.actions.files]]
-        action = "run ${walkerOpenInNvimCmd} %RESULT%"
-        after = "Close"
-        bind = "Return"
-        default = true
-        label = "open in ghostty (nvim)"
-
+        # File provider actions
+        # Return key uses "open" action which respects MIME handlers (opens text files in Neovim)
+        # Ctrl+Return opens parent directory for quick navigation
         [[providers.actions.files]]
         action = "open"
         after = "Close"
+        bind = "Return"
+        default = true
+        label = "open"
+
+        [[providers.actions.files]]
+        action = "opendir"
+        after = "Close"
         bind = "ctrl Return"
-        label = "open with default app"
+        label = "open directory"
     '';
   };
 

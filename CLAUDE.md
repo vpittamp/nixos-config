@@ -149,13 +149,16 @@ Walker is a keyboard-driven application launcher with Elephant backend service p
 
 **Key Features**:
 - Application launching with project context inheritance
-- Clipboard history management
 - File search and navigation
 - Web search integration
 - Calculator and symbol picker
 - Shell command execution
 
 **Configuration**: `/etc/nixos/home-modules/desktop/walker.nix` (fully configured, no changes needed)
+
+**Known Limitations on X11**:
+- Clipboard history is disabled (Elephant's clipboard provider requires Wayland/wl-clipboard)
+- X11 clipboard monitoring not supported by Elephant backend
 
 ### Quick Reference
 
@@ -170,7 +173,6 @@ Alt+Space  # Alternative keybinding
 | Prefix | Provider | Example | Description |
 |--------|----------|---------|-------------|
 | (none) | Applications | `code` | Launch applications from i3pm registry |
-| `:` | Clipboard | `: ` (space after) | Show clipboard history |
 | `/` | Files | `/walker.nix` | Search for files in $HOME or project dir |
 | `@` | Web Search | `@nixos tutorial` | Search web with configured engines |
 | `=` | Calculator | `=2+2` | Evaluate math expressions |
@@ -206,24 +208,6 @@ Alt+Space  # Alternative keybinding
 - `I3PM_APP_NAME` - Application name from registry
 - `I3PM_SCOPE` - "scoped" or "global"
 - `XDG_DATA_DIRS` - Isolated to i3pm-applications directory
-
-#### Clipboard History
-```bash
-# Access clipboard history
-Meta+D → type ":" → select entry → Return
-
-# Copy multiple items, then retrieve previous copies
-echo "First" | xclip -selection clipboard
-echo "Second" | xclip -selection clipboard
-# Press Meta+D, type ":", navigate to "First", press Return
-# Paste with Ctrl+V to get "First" back
-```
-
-**Features**:
-- Reverse chronological order (most recent first)
-- Text and image support
-- Fuzzy search within history
-- Preview shows first 100 characters
 
 #### File Search
 ```bash
@@ -363,19 +347,6 @@ systemctl --user restart elephant
 i3-msg reload
 ```
 
-**Clipboard history shows no results**:
-```bash
-# Test clipboard manually
-echo "test" | xclip -selection clipboard
-xclip -selection clipboard -o
-
-# Restart Elephant
-systemctl --user restart elephant
-
-# Check xclip installed
-which xclip
-```
-
 **File search returns no results**:
 ```bash
 # Check file provider enabled
@@ -414,7 +385,6 @@ i3pm project current  # Check active project directory
 | Operation | Target | Typical |
 |-----------|--------|---------|
 | Walker launch | <100ms | 50-80ms |
-| Clipboard history | <200ms | 100-150ms |
 | File search (10k files) | <500ms | 200-400ms |
 | Application launch overhead | <50ms | 20-30ms |
 | Elephant memory | <30MB baseline | 30-100MB active |
@@ -422,16 +392,15 @@ i3pm project current  # Check active project directory
 ### Validation Status
 
 **✅ Configuration Validated** (Feature 043 - 2025-10-27):
-- All providers enabled and configured
+- All providers enabled and configured (except clipboard - X11 limitation)
 - Elephant service running with correct environment
 - DISPLAY propagation working via i3 integration
 - 16 applications available in i3pm registry
 - 5 search engines configured
-- All provider prefixes configured (8 total)
+- All provider prefixes configured (7 total, clipboard disabled on X11)
 
 **⏳ Interactive Testing Pending**:
 - Performance measurements (timing tests)
-- Clipboard history workflow
 - File search behavior
 - Web search URL encoding
 - Calculator operator testing
