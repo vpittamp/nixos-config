@@ -139,6 +139,7 @@
     rsync
     openssl
     jq
+    socat  # Required by app-launcher-wrapper.sh for daemon IPC
 
     # Nix tools
     nix-prefetch-git

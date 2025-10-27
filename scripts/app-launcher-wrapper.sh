@@ -290,8 +290,9 @@ notify_launch() {
     local timestamp="$5"
 
     # Build JSON-RPC request for notify_launch endpoint
+    # IMPORTANT: Use -c flag for compact output (single line) to avoid issues with echo/socat
     local request
-    request=$(jq -n \
+    request=$(jq -nc \
         --arg app "$app_name" \
         --arg proj "${project_name:-}" \
         --arg dir "${project_dir:-}" \
