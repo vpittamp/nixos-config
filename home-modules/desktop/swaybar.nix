@@ -34,16 +34,39 @@ in
   # Swaybar configuration via home-manager
   # Sway bar protocol is identical to i3bar (FR-023)
   wayland.windowManager.sway.config.bars = if isHeadless then [
-    # Headless mode (Feature 046): Single bar at top for HEADLESS-1
+    # Headless mode (Feature 046): Dual bars matching hetzner i3bar layout
+
+    # Top bar: System monitoring (like hetzner)
     {
       position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";  # No system tray on top bar
+      workspaceButtons = false;  # No workspace buttons on top bar (system monitor only)
+      colors = {
+        background = "#1e1e2e";  # Catppuccin Mocha
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-1
+        separator_symbol " | "
+      '';
+    }
+
+    # Bottom bar: Project context + workspaces (like hetzner)
+    {
+      position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-1";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
       };
       trayOutput = "none";  # No system tray in headless mode
-      workspaceButtons = true;  # Show workspace buttons
+      workspaceButtons = true;  # Workspace buttons on bottom bar
       colors = {
         background = "#1e1e2e";  # Catppuccin Mocha
         statusline = "#cdd6f4";
