@@ -34,9 +34,31 @@ in
   # Swaybar configuration via home-manager
   # Sway bar protocol is identical to i3bar (FR-023)
   wayland.windowManager.sway.config.bars = if isHeadless then [
-    # Headless mode (Feature 046): Bars for 3 monitors
+    # Headless mode (Feature 046): Dual bars for 3 monitors
+    # Top bar: System monitoring, Bottom bar: Project context + workspaces
 
-    # Monitor 1 (HEADLESS-1) - Bottom bar with workspaces 1-2
+    # Monitor 1 (HEADLESS-1) - Top bar: System monitoring
+    {
+      position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = false;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-1
+        separator_symbol " | "
+      '';
+    }
+
+    # Monitor 1 (HEADLESS-1) - Bottom bar: Project context with workspaces 1-2
     {
       position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-1";
@@ -78,7 +100,28 @@ in
       '';
     }
 
-    # Monitor 2 (HEADLESS-2) - Bottom bar with workspaces 3-5
+    # Monitor 2 (HEADLESS-2) - Top bar: System monitoring
+    {
+      position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = false;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-2
+        separator_symbol " | "
+      '';
+    }
+
+    # Monitor 2 (HEADLESS-2) - Bottom bar: Project context with workspaces 3-5
     {
       position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-2";
@@ -120,7 +163,28 @@ in
       '';
     }
 
-    # Monitor 3 (HEADLESS-3) - Bottom bar with workspaces 6-9
+    # Monitor 3 (HEADLESS-3) - Top bar: System monitoring
+    {
+      position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = false;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-3
+        separator_symbol " | "
+      '';
+    }
+
+    # Monitor 3 (HEADLESS-3) - Bottom bar: Project context with workspaces 6-9
     {
       position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-3";
