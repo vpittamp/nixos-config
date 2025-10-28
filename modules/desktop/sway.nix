@@ -88,5 +88,11 @@ in {
       alsa.enable = mkDefault true;
       pulse.enable = mkDefault true;
     };
+
+    # Seat management for Wayland session access to DRM devices
+    services.seatd.enable = true;
+
+    # Add users to video group for DRM access
+    users.groups.video = {};
   };
 }

@@ -28,8 +28,8 @@
     ../modules/services/onepassword.nix
     ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
-    ../modules/services/home-assistant.nix
-    ../modules/services/scrypted.nix # Bridge for Circle View cameras and HomeKit devices
+    # ../modules/services/home-assistant.nix # DISABLED: gtts dependency issue with click 8.2.1
+    # ../modules/services/scrypted.nix # DISABLED: depends on home-assistant
     ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
 
     # Browser integrations with 1Password
@@ -56,6 +56,20 @@
 
   # System identification
   networking.hostName = "nixos-m1";
+
+  # Enable Sway Wayland compositor (Feature 045)
+  services.sway.enable = true;
+
+  # Display manager - greetd for Wayland/Sway login
+  services.greetd = {
+    enable = true;
+    settings = {
+      default_session = {
+        command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd sway";
+        user = "greeter";
+      };
+    };
+  };
 
   # Speech-to-text service - safe version enabled
   services.speech-to-text = {
@@ -133,6 +147,9 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 5; # Keep only 5 generations to prevent EFI space issues
   boot.loader.efi.canTouchEfiVariables = false; # Different on Apple Silicon
+
+  # Increase tmpfs size for kernel builds - default is 50% of RAM, increase to 75%
+  boot.tmp.tmpfsSize = "75%";
 
   # Apple Silicon specific settings
   boot.initrd.availableKernelModules = [
@@ -249,6 +266,9 @@
 
   # Fallback password for initial setup before 1Password is configured
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
+
+  # Add user to required groups for Wayland/Sway (video for DRM access, seat for seatd)
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" ];
 
   # Disable X11-specific services (migrated to Sway/Wayland - Feature 045)
   services.xrdp.enable = lib.mkForce false; # RDP replaced with wayvnc for Wayland
