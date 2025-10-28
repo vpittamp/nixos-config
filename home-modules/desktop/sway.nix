@@ -18,8 +18,8 @@ in
       # Modifier key (Mod4 = Super/Command key on Mac)
       modifier = "Mod4";
 
-      # Terminal (Meta+Return) - using Ghostty (Wayland-native)
-      terminal = "${pkgs.ghostty}/bin/ghostty";
+      # Terminal (Meta+Return) - using app-launcher-wrapper for project context (Feature 046)
+      terminal = "~/.local/bin/app-launcher-wrapper.sh terminal";
 
       # Application menu (Meta+D) - Walker launcher with native Wayland
       menu = "walker";
@@ -102,8 +102,8 @@ in
       keybindings = let
         mod = config.wayland.windowManager.sway.config.modifier;
       in lib.mkOptionDefault {
-        # Terminal
-        "${mod}+Return" = "exec ${pkgs.ghostty}/bin/ghostty";
+        # Terminal (uses config.terminal which calls app-launcher-wrapper)
+        "${mod}+Return" = "exec $terminal";
 
         # Application launcher (Walker with native Wayland)
         "${mod}+d" = "exec walker";
