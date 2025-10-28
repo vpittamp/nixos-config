@@ -43,27 +43,41 @@ let
     '';
   };
 
-  # Wrapper script to import user environment variables (Feature 046)
+  # Wrapper script to find Sway IPC socket (Feature 046)
   # System services don't have access to user session environment (SWAYSOCK, WAYLAND_DISPLAY)
-  # This wrapper queries systemctl --user show-environment and exports needed variables
+  # This wrapper scans /run/user/{uid} for sway-ipc socket and exports SWAYSOCK
   daemonWrapper = pkgs.writeShellScript "i3-project-daemon-wrapper" ''
-    # Query user environment for Sway/Wayland variables
-    # Note: Service runs as user, so --user without --machine works
-    USER_ENV=$(XDG_RUNTIME_DIR=/run/user/$(${pkgs.coreutils}/bin/id -u) ${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null || true)
+    # Get user ID
+    USER_ID=$(${pkgs.coreutils}/bin/id -u)
+    USER_RUNTIME_DIR="/run/user/$USER_ID"
 
-    # Extract SWAYSOCK (Sway IPC socket path)
-    SWAYSOCK=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^SWAYSOCK=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
-    export SWAYSOCK
+    # Find Sway IPC socket (matches pattern: sway-ipc.*.sock)
+    SWAY_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
 
-    # Extract I3SOCK (alternative name for Sway IPC socket)
-    I3SOCK=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^I3SOCK=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
-    export I3SOCK
+    if [ -n "$SWAY_SOCK" ]; then
+      export SWAYSOCK="$SWAY_SOCK"
+      export I3SOCK="$SWAY_SOCK"  # i3ipc library checks both
+      echo "Found Sway IPC socket: $SWAY_SOCK" >&2
+    else
+      # Fallback: Check for i3 IPC socket (i3-ipc.*.sock)
+      I3_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'i3-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+      if [ -n "$I3_SOCK" ]; then
+        export I3SOCK="$I3_SOCK"
+        echo "Found i3 IPC socket: $I3_SOCK" >&2
+      else
+        echo "ERROR: No Sway or i3 IPC socket found in $USER_RUNTIME_DIR" >&2
+      fi
+    fi
 
-    # Extract WAYLAND_DISPLAY
-    WAYLAND_DISPLAY=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^WAYLAND_DISPLAY=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
-    export WAYLAND_DISPLAY
+    # Set WAYLAND_DISPLAY for Wayland compositors
+    WAYLAND_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+    if [ -n "$WAYLAND_SOCK" ]; then
+      WAYLAND_DISPLAY=$(${pkgs.coreutils}/bin/basename "$WAYLAND_SOCK")
+      export WAYLAND_DISPLAY
+      echo "Found Wayland display: $WAYLAND_DISPLAY" >&2
+    fi
 
-    # Log environment for debugging
+    # Log final environment for debugging
     echo "i3pm daemon environment: SWAYSOCK=$SWAYSOCK I3SOCK=$I3SOCK WAYLAND_DISPLAY=$WAYLAND_DISPLAY" >&2
 
     # Run daemon
