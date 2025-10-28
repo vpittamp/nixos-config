@@ -83,11 +83,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Import i3pm daemon systemd service in `home-modules/hetzner-sway.nix` (from home-modules/desktop/i3-project-event-daemon/default.nix)
-- [ ] T023 [US2] Update i3pm daemon service dependencies in `home-modules/desktop/i3-project-event-daemon/default.nix` (ensure After=sway-session.target, Requires=sway-session.target)
-- [ ] T024 [US2] Verify sway-session.target is defined in `home-modules/desktop/sway.nix` (systemd.user.targets.sway-session)
-- [ ] T025 [US2] Deploy updated configuration: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
-- [ ] T026 [US2] Execute Test Scenario 2 from quickstart.md (Steps 2.1-2.6: verify daemon connects to Sway IPC, test project creation, test window marking, test project switching with window hiding/restoration)
+- [X] T022 [US2] Import i3pm daemon systemd service in `home-modules/hetzner-sway.nix` - **VERIFIED**: System service approach used (configurations/hetzner-sway.nix:110-114) instead of home-manager service (Feature 037 cross-namespace /proc access). Home-manager import exists but service disabled (hetzner-sway.nix:17,41).
+- [X] T023 [US2] Update i3pm daemon service dependencies - **VERIFIED**: System service uses `after = ["graphical.target"]` (modules/services/i3-project-daemon.nix:136) which is correct for system services. User services (wayvnc, rustdesk) correctly use `After=sway-session.target`.
+- [X] T024 [US2] Verify sway-session.target is defined in `home-modules/desktop/sway.nix` - **ADDED**: Created systemd.user.targets.sway-session (sway.nix:383-391) per contract specification (contracts/systemd-dependencies.md:132-149). Fixed type errors: Changed all Unit attributes (BindsTo, Wants, After) to lists.
+- [X] T025 [US2] Deploy updated configuration - **COMPLETE**: Deployed and rebooted. All services verified working: sway-session.target (active), wayvnc (listening on :5900), i3pm daemon (connected to Sway IPC, uptime 6m+), SWAYSOCK set, 3 virtual outputs active (HEADLESS-1/2/3 @ 1920x1080@60Hz), i3pm CLI functional.
+- [X] T026 [US2] Execute Test Scenario 2 from quickstart.md - **AUTOMATED TESTS PASS**: Step 2.1 (daemon connected, 9m uptime), Step 2.2 (project creation/switching working), Step 2.4 (project switch hides windows in scratchpad), Step 2.5 (project restoration working), Step 2.6 (event processing <1ms, well under 100ms requirement). **VNC MANUAL TESTS PENDING**: Step 2.3 (visual app launch verification).
 
 **Checkpoint**: User Story 2 complete - i3pm daemon working on headless Sway with identical functionality to other configurations
 

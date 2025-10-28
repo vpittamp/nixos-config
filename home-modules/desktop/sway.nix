@@ -44,22 +44,13 @@ in
       # Output configuration (FR-005, FR-006)
       # Conditional configuration for headless vs physical displays
       output = if isHeadless then {
-        # Headless Wayland - THREE separate outputs for multi-monitor VNC (Feature 046)
-        # Each output maps to one physical monitor on the client
+        # Headless Wayland - SINGLE output for VNC (Feature 046)
+        # VNC can only show one output at a time, so use single HEADLESS-1
         # Resolution: 1920x1080 for better picture quality (sharper text, less VNC scaling blur)
+        # Note: Multi-monitor VNC setup requires running multiple wayvnc instances on different ports
         "HEADLESS-1" = {
           resolution = "1920x1080@60Hz";
           position = "0,0";
-          scale = "1.0";
-        };
-        "HEADLESS-2" = {
-          resolution = "1920x1080@60Hz";
-          position = "1920,0";
-          scale = "1.0";
-        };
-        "HEADLESS-3" = {
-          resolution = "1920x1080@60Hz";
-          position = "3840,0";
           scale = "1.0";
         };
       } else {
@@ -302,24 +293,9 @@ in
   # wayvnc configuration for headless Sway (Feature 046)
   xdg.configFile."wayvnc/config" = lib.mkIf isHeadless {
     text = ''
-      # wayvnc configuration for headless Sway on Hetzner Cloud
-      # VNC server for remote access to Wayland compositor
-
       address=0.0.0.0
       port=5900
       enable_auth=false
-
-      # To enable authentication:
-      # 1. Set enable_auth=true and username=vnc
-      # 2. Rebuild: nixos-rebuild switch --flake .#hetzner-sway
-      # 3. After Sway starts, set password: wayvncctl set-password vnc <your-password>
-
-      # Quality settings for better picture quality
-      # Higher quality encoding, less compression
-      # max_rate=60  # FPS limit (default: 60, can reduce to 30 for lower bandwidth)
-
-      # Output selection (auto-detect HEADLESS-1)
-      # output=HEADLESS-1
     '';
   };
 
@@ -374,6 +350,19 @@ in
 
     Install = {
       WantedBy = [ "sway-session.target" ];
+    };
+  };
+
+  # Sway session target (synchronization point for Sway-dependent services)
+  # Contract: /etc/nixos/specs/046-revise-my-spec/contracts/systemd-dependencies.md lines 132-149
+  # This target represents that Sway compositor is fully initialized with IPC socket available
+  systemd.user.targets.sway-session = {
+    Unit = {
+      Description = "sway compositor session";
+      Documentation = "man:systemd.special(7)";
+      BindsTo = [ "graphical-session.target" ];
+      Wants = [ "graphical-session-pre.target" ];
+      After = [ "graphical-session-pre.target" ];
     };
   };
 }
