@@ -266,6 +266,9 @@ in
         bindswitch lid:off output eDP-1 enable
       ''}
 
+      # Application menu launcher (Feature 046)
+      set $menu ${if isHeadless then "rofi -show drun" else "walker"}
+
       # Gaps (optional - clean appearance)
       gaps inner 5
       gaps outer 0
