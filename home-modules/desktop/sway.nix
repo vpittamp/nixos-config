@@ -44,20 +44,12 @@ in
       # Output configuration (FR-005, FR-006)
       # Conditional configuration for headless vs physical displays
       output = if isHeadless then {
-        # Headless Wayland virtual outputs - 3 monitors side-by-side (Feature 046)
+        # Headless Wayland - ONE wide virtual output for VNC multi-monitor (Feature 046)
+        # Using 5760x1080 (3x 1920x1080 side-by-side) for wayvnc compatibility
+        # This allows VNC clients to see entire desktop as one screen
         "HEADLESS-1" = {
-          resolution = "1920x1080@60Hz";  # Primary monitor
+          resolution = "5760x1080@60Hz";  # Ultra-wide virtual display
           position = "0,0";
-          scale = "1.0";
-        };
-        "HEADLESS-2" = {
-          resolution = "1920x1080@60Hz";  # Secondary monitor (right of primary)
-          position = "1920,0";
-          scale = "1.0";
-        };
-        "HEADLESS-3" = {
-          resolution = "1920x1080@60Hz";  # Tertiary monitor (right of secondary)
-          position = "3840,0";
           scale = "1.0";
         };
       } else {
@@ -97,19 +89,16 @@ in
 
       # Workspace definitions with Font Awesome icons (parallel to i3 config)
       workspaceOutputAssign = if isHeadless then [
-        # Headless mode: workspaces distributed across 3 monitors (Feature 046)
-        # Monitor 1 (HEADLESS-1): Primary workspaces 1-2
+        # Headless mode: All workspaces on single ultra-wide output (Feature 046)
         { workspace = "1"; output = "HEADLESS-1"; }
         { workspace = "2"; output = "HEADLESS-1"; }
-        # Monitor 2 (HEADLESS-2): Secondary workspaces 3-5
-        { workspace = "3"; output = "HEADLESS-2"; }
-        { workspace = "4"; output = "HEADLESS-2"; }
-        { workspace = "5"; output = "HEADLESS-2"; }
-        # Monitor 3 (HEADLESS-3): Additional workspaces 6-9
-        { workspace = "6"; output = "HEADLESS-3"; }
-        { workspace = "7"; output = "HEADLESS-3"; }
-        { workspace = "8"; output = "HEADLESS-3"; }
-        { workspace = "9"; output = "HEADLESS-3"; }
+        { workspace = "3"; output = "HEADLESS-1"; }
+        { workspace = "4"; output = "HEADLESS-1"; }
+        { workspace = "5"; output = "HEADLESS-1"; }
+        { workspace = "6"; output = "HEADLESS-1"; }
+        { workspace = "7"; output = "HEADLESS-1"; }
+        { workspace = "8"; output = "HEADLESS-1"; }
+        { workspace = "9"; output = "HEADLESS-1"; }
       ] else [
         # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
         { workspace = "1"; output = "eDP-1"; }
@@ -246,12 +235,6 @@ in
 
         # i3pm daemon (systemd service)
         { command = "systemctl --user start i3-project-event-listener"; }
-      ] ++ (if isHeadless then [
-        # Headless mode: Create additional virtual outputs for multi-monitor VNC
-        # The headless backend creates only 1 output by default, we need to create 2 more
-        { command = "${pkgs.sway}/bin/swaymsg create_output"; }
-        { command = "${pkgs.sway}/bin/swaymsg create_output"; }
-      ] else []) ++ [
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
