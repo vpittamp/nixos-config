@@ -90,16 +90,17 @@ in
 
       # Workspace definitions with Font Awesome icons (parallel to i3 config)
       workspaceOutputAssign = if isHeadless then [
-        # Headless mode: Workspaces distributed across 3 monitors (Feature 046)
+        # Headless mode: All workspaces on single HEADLESS-1 output (Feature 046)
+        # VNC can only show one output at a time
         { workspace = "1"; output = "HEADLESS-1"; }
         { workspace = "2"; output = "HEADLESS-1"; }
-        { workspace = "3"; output = "HEADLESS-2"; }
-        { workspace = "4"; output = "HEADLESS-2"; }
-        { workspace = "5"; output = "HEADLESS-2"; }
-        { workspace = "6"; output = "HEADLESS-3"; }
-        { workspace = "7"; output = "HEADLESS-3"; }
-        { workspace = "8"; output = "HEADLESS-3"; }
-        { workspace = "9"; output = "HEADLESS-3"; }
+        { workspace = "3"; output = "HEADLESS-1"; }
+        { workspace = "4"; output = "HEADLESS-1"; }
+        { workspace = "5"; output = "HEADLESS-1"; }
+        { workspace = "6"; output = "HEADLESS-1"; }
+        { workspace = "7"; output = "HEADLESS-1"; }
+        { workspace = "8"; output = "HEADLESS-1"; }
+        { workspace = "9"; output = "HEADLESS-1"; }
       ] else [
         # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
         { workspace = "1"; output = "eDP-1"; }
