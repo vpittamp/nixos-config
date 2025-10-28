@@ -34,30 +34,9 @@ in
   # Swaybar configuration via home-manager
   # Sway bar protocol is identical to i3bar (FR-023)
   wayland.windowManager.sway.config.bars = if isHeadless then [
-    # Headless mode (Feature 046): Dual bars matching hetzner i3bar layout
+    # Headless mode (Feature 046): Bars for 3 monitors
 
-    # Top bar: System monitoring (like hetzner)
-    {
-      position = "top";
-      statusCommand = "${systemMonitorScript}";
-      fonts = {
-        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
-      };
-      trayOutput = "none";  # No system tray on top bar
-      workspaceButtons = false;  # No workspace buttons on top bar (system monitor only)
-      colors = {
-        background = "#1e1e2e";  # Catppuccin Mocha
-        statusline = "#cdd6f4";
-        separator = "#6c7086";
-      };
-      extraConfig = ''
-        output HEADLESS-1
-        separator_symbol " | "
-      '';
-    }
-
-    # Bottom bar: Project context + workspaces (ultra-wide display)
+    # Monitor 1 (HEADLESS-1) - Bottom bar with workspaces 1-2
     {
       position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-1";
@@ -65,10 +44,10 @@ in
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
       };
-      trayOutput = "none";  # No system tray in headless mode
-      workspaceButtons = true;  # Workspace buttons on bottom bar
+      trayOutput = "none";
+      workspaceButtons = true;
       colors = {
-        background = "#1e1e2e";  # Catppuccin Mocha
+        background = "#1e1e2e";
         statusline = "#cdd6f4";
         separator = "#6c7086";
         focusedWorkspace = {
@@ -94,6 +73,90 @@ in
       };
       extraConfig = ''
         output HEADLESS-1
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+
+    # Monitor 2 (HEADLESS-2) - Bottom bar with workspaces 3-5
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-2";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-2
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+
+    # Monitor 3 (HEADLESS-3) - Bottom bar with workspaces 6-9
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-3";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-3
         separator_symbol " | "
         strip_workspace_numbers no
       '';
