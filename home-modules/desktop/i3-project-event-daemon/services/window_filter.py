@@ -317,7 +317,8 @@ async def filter_windows_by_project(
         # Feature 038 T042: Per-window performance tracking
         window_start = time.perf_counter()
 
-        window_id = window.window  # X11 window ID
+        # Feature 046: Use node ID (window.id) for Sway/Wayland compatibility
+        window_id = window.id
 
         # Get project from window marks (format: project:PROJECT_NAME:WINDOW_ID)
         window_project = None
