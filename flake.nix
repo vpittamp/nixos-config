@@ -166,6 +166,24 @@
           ];
         };
 
+        # Hetzner Cloud Server with Sway (Feature 046)
+        # Headless Wayland with VNC remote access, parallel to hetzner
+        hetzner-sway = mkSystem {
+          hostname = "nixos-hetzner-sway";
+          system = "x86_64-linux";
+          modules = [
+            disko.nixosModules.disko
+            ./configurations/hetzner-sway.nix
+            home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.users.vpittamp = import ./home-modules/hetzner-sway.nix;
+              home-manager.extraSpecialArgs = { inherit inputs; };
+            }
+          ];
+        };
+
         # ARCHIVED CONFIGURATIONS:
         # The following have been moved to archived/obsolete-configs/
         # - hetzner-i3.nix (testing config, consolidated into hetzner.nix)

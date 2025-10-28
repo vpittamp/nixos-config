@@ -1,8 +1,12 @@
 # Sway Wayland Compositor Home Manager Configuration
 # Parallel to i3.nix - adapted for Wayland on M1 MacBook Pro
 # Works with Sway native Wayland session (no XRDP)
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, ... }:
 
+let
+  # Detect headless Sway configuration (Feature 046)
+  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+in
 {
   # Sway window manager configuration via home-manager
   wayland.windowManager.sway = {
@@ -38,8 +42,16 @@
       };
 
       # Output configuration (FR-005, FR-006)
-      output = {
-        # Built-in Retina display (M1 MacBook Pro 13")
+      # Conditional configuration for headless vs physical displays
+      output = if isHeadless then {
+        # Headless Wayland virtual output (Feature 046)
+        "HEADLESS-1" = {
+          resolution = "1920x1080@60Hz";  # Standard remote desktop resolution
+          position = "0,0";
+          scale = "1.0";
+        };
+      } else {
+        # M1 MacBook Pro physical displays
         "eDP-1" = {
           scale = "2.0";                    # 2x scaling for Retina
           resolution = "2560x1600@60Hz";    # Native resolution
@@ -74,8 +86,13 @@
       };
 
       # Workspace definitions with Font Awesome icons (parallel to i3 config)
-      workspaceOutputAssign = [
-        # Default assignments (overridden by i3pm monitors reassign)
+      workspaceOutputAssign = if isHeadless then [
+        # Headless mode: all workspaces on HEADLESS-1 (Feature 046)
+        { workspace = "1"; output = "HEADLESS-1"; }
+        { workspace = "2"; output = "HEADLESS-1"; }
+        { workspace = "3"; output = "HEADLESS-1"; }
+      ] else [
+        # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
         { workspace = "1"; output = "eDP-1"; }
         { workspace = "2"; output = "eDP-1"; }
         { workspace = "3"; output = "HDMI-A-1"; }
@@ -221,9 +238,12 @@
 
     # Extra Sway config for features not exposed by home-manager
     extraConfig = ''
-      # Disable laptop lid close action (keep running when closed)
-      bindswitch lid:on output eDP-1 disable
-      bindswitch lid:off output eDP-1 enable
+      ${lib.optionalString (!isHeadless) ''
+        # Disable laptop lid close action (keep running when closed)
+        # Only for M1 MacBook Pro, not headless mode
+        bindswitch lid:on output eDP-1 disable
+        bindswitch lid:off output eDP-1 enable
+      ''}
 
       # Gaps (optional - clean appearance)
       gaps inner 5
@@ -250,5 +270,49 @@
     mako             # Notification daemon
     swaylock         # Screen locker
     swayidle         # Idle management
+  ] ++ lib.optionals isHeadless [
+    # wayvnc for headless mode (Feature 046)
+    pkgs.wayvnc
   ];
+
+  # wayvnc configuration for headless Sway (Feature 046)
+  xdg.configFile."wayvnc/config" = lib.mkIf isHeadless {
+    text = ''
+      # wayvnc configuration for headless Sway on Hetzner Cloud
+      # VNC server for remote access to Wayland compositor
+
+      address=0.0.0.0
+      port=5900
+      enable_auth=true
+      username=vnc
+
+      # Performance settings for remote access
+      # max_rate=60  # FPS limit (default: 60, can reduce to 30 for lower bandwidth)
+
+      # Output selection (auto-detect HEADLESS-1)
+      # output=HEADLESS-1
+    '';
+  };
+
+  # wayvnc systemd service for headless mode (Feature 046)
+  systemd.user.services.wayvnc = lib.mkIf isHeadless {
+    Unit = {
+      Description = "wayvnc - VNC server for wlroots compositors";
+      Documentation = "https://github.com/any1/wayvnc";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc";
+      Restart = "on-failure";
+      RestartSec = "1";
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
 }

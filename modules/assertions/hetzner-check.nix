@@ -18,7 +18,8 @@ let
 
   # We check configuration hostname, not runtime hostname
   # (runtime hostname may not be accessible during build)
-  isCorrectHost = config.networking.hostName == "nixos-hetzner";
+  # Support both hetzner (i3) and hetzner-sway configurations (Feature 046)
+  isCorrectHost = builtins.elem config.networking.hostName ["nixos-hetzner" "nixos-hetzner-sway"];
 in
 {
   assertions = [
@@ -41,7 +42,7 @@ in
         ═══════════════════════════════════════════════════════════════
         ERROR: Hostname mismatch!
 
-        Expected hostname: nixos-hetzner
+        Expected hostname: nixos-hetzner or nixos-hetzner-sway
         Current config hostname: ${config.networking.hostName}
 
         This configuration is intended for the Hetzner server.
