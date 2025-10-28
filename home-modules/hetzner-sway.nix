@@ -1,5 +1,5 @@
 # Home-manager configuration for Hetzner Cloud Sway (Feature 046)
-# Headless Wayland with Sway, VNC remote access, i3pm daemon, Walker launcher
+# Headless Wayland with Sway, VNC remote access, i3pm daemon, rofi launcher
 { pkgs, ... }:
 {
   imports = [
@@ -15,8 +15,8 @@
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
 
-    # Application launcher and registry (Wayland-native)
-    ./desktop/walker.nix        # Feature 043: Walker/Elephant launcher (Wayland-compatible)
+    # Application launcher and registry
+    # Walker/Elephant removed - using rofi for headless GPU-less environment (Feature 046)
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];

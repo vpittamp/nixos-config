@@ -212,9 +212,9 @@ in
 
       # Window rules (FR-023 - parallel to i3 config)
       window.commands = [
-        # Walker launcher - floating, centered, no border
+        # Rofi launcher - floating, centered, no border (Feature 046)
         {
-          criteria = { app_id = "walker"; };
+          criteria = { app_id = "rofi"; };
           command = "floating enable, border pixel 0, move position center, mark _global_ui";
         }
 
@@ -236,11 +236,8 @@ in
         # D-Bus activation environment
         { command = "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all"; }
 
-        # Import DISPLAY for systemd services (Elephant needs this)
+        # Import DISPLAY for systemd services
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY"; }
-
-        # Restart Elephant after environment import
-        { command = "systemctl --user restart elephant"; }
 
         # i3pm daemon (systemd service)
         { command = "systemctl --user start i3-project-event-listener"; }
