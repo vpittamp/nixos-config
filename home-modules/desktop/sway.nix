@@ -281,6 +281,8 @@ in
   ] ++ lib.optionals isHeadless [
     # wayvnc for headless mode (Feature 046)
     pkgs.wayvnc
+    # RustDesk 1.4.3 with Wayland multi-monitor support (Feature 046)
+    pkgs.rustdesk
   ];
 
   # wayvnc configuration for headless Sway (Feature 046)
@@ -321,6 +323,38 @@ in
       ExecStart = "${pkgs.wayvnc}/bin/wayvnc";
       Restart = "on-failure";
       RestartSec = "1";
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
+    };
+  };
+
+  # RustDesk systemd service for headless mode (Feature 046)
+  # Alternative to wayvnc with multi-monitor support
+  # After service starts, set password: rustdesk --password <your-password>
+  # Get connection ID: rustdesk --get-id
+  systemd.user.services.rustdesk = lib.mkIf isHeadless {
+    Unit = {
+      Description = "RustDesk - Remote Desktop Client Service";
+      Documentation = "https://rustdesk.com/docs/en/client/linux/";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      # Run RustDesk client in service mode for headless access
+      # It will auto-detect Wayland and use native support (1.4.3+)
+      ExecStart = "${pkgs.rustdesk}/bin/rustdesk";
+      Restart = "on-failure";
+      RestartSec = "3";
+      # Wayland environment variables for 1.4.3 multi-monitor support
+      Environment = [
+        "XDG_SESSION_TYPE=wayland"
+        "WAYLAND_DISPLAY=wayland-1"
+      ];
     };
 
     Install = {
