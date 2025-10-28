@@ -246,6 +246,12 @@ in
 
         # i3pm daemon (systemd service)
         { command = "systemctl --user start i3-project-event-listener"; }
+      ] ++ (if isHeadless then [
+        # Headless mode: Create additional virtual outputs for multi-monitor VNC
+        # The headless backend creates only 1 output by default, we need to create 2 more
+        { command = "${pkgs.sway}/bin/swaymsg create_output"; }
+        { command = "${pkgs.sway}/bin/swaymsg create_output"; }
+      ] else []) ++ [
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
