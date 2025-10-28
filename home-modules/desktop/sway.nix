@@ -238,7 +238,11 @@ in
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
-      ];
+      ] ++ (if isHeadless then [
+        # Force ultra-wide resolution for headless VNC (Feature 046)
+        # Headless backend doesn't always respect initial output config
+        { command = "swaymsg output HEADLESS-1 resolution 5760x1080@60Hz"; }
+      ] else []);
 
       # Bar configuration will be provided by swaybar.nix
       bars = [];
