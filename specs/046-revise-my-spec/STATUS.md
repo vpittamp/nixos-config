@@ -33,6 +33,25 @@
 - ✅ **Firefox**: Running (seen in window tree)
 - ✅ **RustDesk**: Available for remote desktop (alternative to VNC)
 
+## ✅ Fixed Issues
+
+### Walker "GPU Requirement" - RESOLVED (2025-10-28)
+**Previous diagnosis**: Walker requires GPU acceleration and cannot work in headless environment
+**Actual cause**: Missing GSK_RENDERER=cairo environment variable for GTK4 software rendering
+**Solution**:
+1. Added `GSK_RENDERER=cairo` to `configurations/hetzner-sway.nix` environment variables
+2. Restored walker.nix import in hetzner-sway.nix
+3. Updated sway.nix menu to use walker instead of rofi
+
+**Evidence**:
+- MESA/EGL errors are non-fatal warnings (GPU unavailable, fallback to software rendering)
+- Walker successfully connected to Elephant service (verified in logs: "comm connection=new")
+- GTK4 supports cairo (CPU), ngl (OpenGL), and vulkan renderers
+- GSK_RENDERER=cairo forces CPU-based rendering (no GPU required)
+- Tested with manual launch: Walker started with no errors and connected to Elephant
+
+**Status**: Walker keybinding (Meta+D) ready for testing in VNC session after Sway restart
+
 ## ❌ Known Issues
 
 ### VS Code Not Opening
@@ -194,11 +213,13 @@ cat /proc/$(pgrep wayvnc)/environ | tr '\0' '\n' | grep WAYLAND_DISPLAY
 
 ## 💡 Lessons Learned
 
-1. **Walker requires GPU**: Even in Wayland layer-shell mode, Walker needs OpenGL/Mesa/EGL
-2. **Rofi is GPU-free**: Perfect for headless environments using software rendering
-3. **Resolution matters**: 1920x1080 was too large for most VNC clients, 1280x720 is better
-4. **Electron apps need special flags**: VS Code and other Electron apps require `--disable-gpu` in headless environments
-5. **Home-manager symlinks**: Registry files are symlinked; changes require rebuild to take effect
+1. **CORRECTED - Walker works with software rendering**: Walker DOES NOT require GPU acceleration. It works perfectly with GTK4 software rendering via `GSK_RENDERER=cairo`. MESA/EGL errors are non-fatal warnings indicating GPU unavailable and fallback to CPU rendering.
+2. **Don't jump to conclusions from error messages**: MESA/EGL errors looked fatal but were actually just warnings. Always research error messages before changing architecture.
+3. **GTK4 rendering flexibility**: GTK4 supports multiple renderers (cairo=CPU, ngl=OpenGL, vulkan=GPU), making it suitable for both headless and native environments.
+4. **Resolution matters**: 1920x1080 was too large for most VNC clients, 1280x720 is better
+5. **Electron apps need special flags**: VS Code and other Electron apps require `--disable-gpu` in headless environments
+6. **Home-manager symlinks**: Registry files are symlinked; changes require rebuild to take effect
+7. **Question premature diagnoses**: User was right to question the Rofi switch - Walker was working before and should still work with correct configuration
 
 ## 🔗 Related Documentation
 
