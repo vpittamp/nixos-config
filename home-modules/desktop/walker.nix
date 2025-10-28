@@ -224,6 +224,16 @@ in
           show_icon_when_single = true;
           switcher_only = true;
         }
+        {
+          name = "projects";
+          prefix = ";p ";
+          src_once = lib.getExe walkerProjectList;
+          cmd = "${lib.getExe walkerProjectSwitch} %RESULT%";
+          keep_sort = false;
+          recalculate_score = true;
+          show_icon_when_single = true;
+          switcher_only = true;
+        }
       ];
 
       # Provider actions - Custom keybindings and actions for providers
