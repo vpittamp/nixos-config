@@ -1,7 +1,10 @@
-{ config, lib, pkgs, inputs, osConfig ? null, isWaylandMode ? false, ... }:
+{ config, lib, pkgs, inputs, osConfig ? null, ... }:
 
 let
   cfg = config.programs.walker;
+
+  # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
+  isWaylandMode = config.wayland.windowManager.sway.enable or false;
 
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
