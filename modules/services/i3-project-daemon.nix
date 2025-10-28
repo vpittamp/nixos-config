@@ -43,6 +43,32 @@ let
     '';
   };
 
+  # Wrapper script to import user environment variables (Feature 046)
+  # System services don't have access to user session environment (SWAYSOCK, WAYLAND_DISPLAY)
+  # This wrapper queries systemctl --user show-environment and exports needed variables
+  daemonWrapper = pkgs.writeShellScript "i3-project-daemon-wrapper" ''
+    # Query user environment for Sway/Wayland variables
+    USER_ENV=$(${pkgs.systemd}/bin/systemctl --user --machine=${cfg.user}@ show-environment 2>/dev/null || true)
+
+    # Extract SWAYSOCK (Sway IPC socket path)
+    SWAYSOCK=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^SWAYSOCK=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
+    export SWAYSOCK
+
+    # Extract I3SOCK (alternative name for Sway IPC socket)
+    I3SOCK=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^I3SOCK=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
+    export I3SOCK
+
+    # Extract WAYLAND_DISPLAY
+    WAYLAND_DISPLAY=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^WAYLAND_DISPLAY=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
+    export WAYLAND_DISPLAY
+
+    # Log environment for debugging
+    echo "i3pm daemon environment: SWAYSOCK=$SWAYSOCK I3SOCK=$I3SOCK WAYLAND_DISPLAY=$WAYLAND_DISPLAY" >&2
+
+    # Run daemon
+    exec ${pythonEnv}/bin/python3 -m i3_project_daemon
+  '';
+
 in
 {
   options.services.i3ProjectDaemon = {
@@ -116,8 +142,8 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
 
-        # Execution
-        ExecStart = "${pythonEnv}/bin/python3 -m i3_project_daemon";
+        # Execution (using wrapper to import user environment - Feature 046)
+        ExecStart = "${daemonWrapper}";
         WorkingDirectory = "/home/${cfg.user}/.config/i3";
 
         # Environment variables
