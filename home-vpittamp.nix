@@ -5,20 +5,24 @@
     # Plasma-home disabled during i3wm migration (Feature 009)
     # Re-enable if switching back to KDE Plasma
     # ./home-modules/profiles/plasma-home.nix
-    ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
-    ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
-    # ./home-modules/desktop/i3-projects.nix  # REMOVED: Feature 010 (OLD STATIC SYSTEM)
-    # ./home-modules/desktop/i3-project-manager.nix  # REMOVED: Replaced by i3pm (Feature 019)
+
+    # Sway (Wayland) for M1 MacBook Pro (Feature 045)
+    ./home-modules/desktop/sway.nix  # Sway window manager configuration
+    ./home-modules/desktop/swaybar.nix  # Swaybar with event-driven status
+
+    # i3 (X11) - disabled on M1, using Sway instead
+    # ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings
+    # ./home-modules/desktop/i3wsr.nix  # Dynamic workspace naming for i3wm (Feature 009)
+    # ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
+
+    # Project management (works with both i3 and Sway)
     ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
-    # ./home-modules/tools/i3-project-manager.nix  # REMOVED: Replaced by i3pm Deno (Feature 027)
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./home-modules/tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
-    ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
-    # ./home-modules/desktop/polybar.nix  # REMOVED: Replaced by event-driven i3bar
-    # ./home-modules/desktop/i3blocks  # REMOVED: Switched to i3bar with event subscriptions
+
+    # Application launcher and registry (Wayland-compatible)
     ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
     ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
-    # ./home-modules/desktop/i3-window-rules.nix  # REMOVED: Feature 039 - All workspace assignment now in Python daemon
     ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
   ];
 
