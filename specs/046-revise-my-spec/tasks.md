@@ -67,7 +67,7 @@
 - [X] T016 [US1] Create wayvnc config template in `home-modules/desktop/sway.nix` (xdg.configFile."wayvnc/config": address=0.0.0.0, port=5900, enable_auth=true)
 - [X] T017 [US1] Update flake.nix to include home-manager configuration for hetzner-sway (home-manager.users.vpittamp = import ./home-modules/hetzner-sway.nix)
 - [X] T018 [US1] Test home-manager build: `home-manager build --flake .#vpittamp@hetzner-sway`
-- [ ] T019 [US1] Deploy to Hetzner VM: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
+- [X] T019 [US1] Deploy to Hetzner VM: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
 - [ ] T020 [US1] Reboot Hetzner VM to start headless Sway session: `ssh vpittamp@hetzner 'sudo reboot'`
 - [ ] T021 [US1] Execute Test Scenario 1 from quickstart.md (Steps 1.1-1.5: verify headless Sway running, wayvnc listening, VNC connection working, window management functional)
 
