@@ -46,19 +46,20 @@ in
       output = if isHeadless then {
         # Headless Wayland - THREE separate outputs for multi-monitor VNC (Feature 046)
         # Each output maps to one physical monitor on the client
+        # Resolution: 1280x720 for better VNC client compatibility
         "HEADLESS-1" = {
-          resolution = "1920x1080@60Hz";
+          resolution = "1280x720@60Hz";
           position = "0,0";
           scale = "1.0";
         };
         "HEADLESS-2" = {
-          resolution = "1920x1080@60Hz";
-          position = "1920,0";
+          resolution = "1280x720@60Hz";
+          position = "1280,0";
           scale = "1.0";
         };
         "HEADLESS-3" = {
-          resolution = "1920x1080@60Hz";
-          position = "3840,0";
+          resolution = "1280x720@60Hz";
+          position = "2560,0";
           scale = "1.0";
         };
       } else {

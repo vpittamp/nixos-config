@@ -61,7 +61,7 @@ let
       name = "vscode";
       display_name = "VS Code";
       command = "code";
-      parameters = "--new-window $PROJECT_DIR";
+      parameters = "--disable-gpu --disable-software-rasterizer --new-window $PROJECT_DIR";
       scope = "scoped";
       expected_class = "Code";
       preferred_workspace = 2;
