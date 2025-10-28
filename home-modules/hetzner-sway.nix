@@ -6,6 +6,9 @@
     # Base home configuration (shell, editors, tools)
     ./profiles/base-home.nix
 
+    # Declarative cleanup (removes backups and stale files before activation)
+    ./profiles/declarative-cleanup.nix
+
     # Desktop Environment: Sway (Wayland)
     ./desktop/sway.nix         # Sway window manager with headless support
     ./desktop/swaybar.nix      # Swaybar with event-driven status
