@@ -16,11 +16,11 @@
     # Apple Silicon support - CRITICAL for hardware functionality
     inputs.nixos-apple-silicon.nixosModules.default
 
-    # Desktop environment (KDE Plasma - temporarily retained, deferred migration to i3wm)
-    # NOTE: KDE modules archived in Feature 009, M1 migration deferred per user request
-    ../archived/plasma-specific/desktop/kde-plasma.nix
-    ../modules/desktop/remote-access.nix
-    ../modules/desktop/wireless-display.nix
+    # Desktop environment (Sway - Feature 045 migration from KDE Plasma)
+    # Sway Wayland compositor for keyboard-driven productivity with i3pm integration
+    ../modules/desktop/sway.nix
+    # ../modules/desktop/remote-access.nix  # DISABLED: RDP/XRDP replaced with wayvnc
+    # ../modules/desktop/wireless-display.nix  # DISABLED: Miracast/X11-specific
 
     # Services
     ../modules/services/development.nix
@@ -180,27 +180,17 @@
     videoDrivers = lib.mkForce [ "modesetting" "fbdev" ];
   };
 
-  # Wayland and display scaling configuration
+  # Display scaling configuration
+  # Note: Wayland environment variables (MOZ_ENABLE_WAYLAND, NIXOS_OZONE_WL, QT_QPA_PLATFORM)
+  # are now configured in modules/desktop/sway.nix (FR-004)
   environment.sessionVariables = {
-    # Enable Wayland for compatible applications
-    MOZ_ENABLE_WAYLAND = "1"; # Enable Wayland for Firefox
-    NIXOS_OZONE_WL = "1"; # Enable Wayland for Electron apps (VSCode, 1Password)
+    # Cursor size for HiDPI (at 2x scaling for Retina)
+    XCURSOR_SIZE = "48";  # 24 * 2 for Retina display
 
-    # Qt scaling - let KDE Plasma handle it under Wayland
-    QT_AUTO_SCREEN_SCALE_FACTOR = "1"; # Enable Qt auto-scaling
-    PLASMA_USE_QT_SCALING = "1"; # Let Plasma handle Qt scaling
+    # Java applications need explicit scaling for Retina
+    _JAVA_OPTIONS = "-Dsun.java2d.uiScale=2.0";
 
-    # IMPORTANT: Don't set GDK_SCALE globally - KDE already handles 1.75x scaling
-    # Setting it causes double-scaling for Electron apps
-    # Applications should detect scaling from Wayland/KDE directly
-
-    # Cursor size for HiDPI (at 1.75x scaling)
-    XCURSOR_SIZE = "42";
-
-    # Java applications need explicit scaling
-    _JAVA_OPTIONS = "-Dsun.java2d.uiScale=1.75";
-
-    # Force Electron apps to detect scale from display, not GDK
+    # Force Electron apps to detect scale from display
     ELECTRON_FORCE_IS_PACKAGED = "true";
   };
 
@@ -219,8 +209,8 @@
     };
   };
 
-  # Override default session to use Wayland
-  services.displayManager.defaultSession = lib.mkForce "plasma"; # Wayland session for KDE Plasma
+  # Override default session to use Sway (configured in modules/desktop/sway.nix)
+  # services.displayManager.defaultSession is set by Sway module
 
   # Platform configuration
   nixpkgs.hostPlatform = lib.mkDefault "aarch64-linux";
@@ -260,11 +250,9 @@
   # Fallback password for initial setup before 1Password is configured
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
-  # Disable services that don't work well on Apple Silicon
-  services.xrdp.enable = lib.mkForce false; # RDP doesn't work well on M1
-
-  # Enable touchegg only for X11 sessions (Wayland has native gestures)
-  services.touchegg.enable = lib.mkForce false;
+  # Disable X11-specific services (migrated to Sway/Wayland - Feature 045)
+  services.xrdp.enable = lib.mkForce false; # RDP replaced with wayvnc for Wayland
+  services.touchegg.enable = lib.mkForce false; # Sway has native Wayland gestures
 
   # Fix DrKonqi coredump processor timeout issue
   systemd.services."drkonqi-coredump-processor@" = {

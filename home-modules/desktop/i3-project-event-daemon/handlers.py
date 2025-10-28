@@ -23,6 +23,35 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def get_window_class(container) -> str:
+    """Get window class in a Sway/i3-compatible way (Feature 045).
+
+    For Sway/Wayland: Checks app_id first (native Wayland), then window_properties.class (XWayland).
+    For i3/X11: Uses window_class property (always from window_properties).
+
+    Args:
+        container: i3ipc Container object
+
+    Returns:
+        Window class string or "unknown" if not available
+    """
+    # Sway: Check app_id first (native Wayland apps)
+    if hasattr(container, 'app_id') and container.app_id:
+        return container.app_id
+
+    # Fallback: Use window_class property (works on i3, and Sway for XWayland apps)
+    if hasattr(container, 'window_class') and container.window_class:
+        return container.window_class
+
+    # Legacy fallback: Read from window_properties dict
+    if hasattr(container, 'window_properties') and container.window_properties:
+        if isinstance(container.window_properties, dict):
+            return container.window_properties.get('class', 'unknown')
+
+    return "unknown"
+
+
 # Feature 033: Debouncing state for output change handler
 _output_change_task: Optional[asyncio.Task] = None
 _last_output_event_time: float = 0.0
@@ -406,7 +435,7 @@ async def on_window_new(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
 
     # DEBUG: Log all window::new events
@@ -808,7 +837,7 @@ async def on_window_mark(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
         # Skip processing if performing startup scan (prevents race conditions)
@@ -883,7 +912,7 @@ async def on_window_title(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
 
     try:
@@ -1022,7 +1051,7 @@ async def on_window_close(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
         await state_manager.remove_window(window_id)
@@ -1072,7 +1101,7 @@ async def on_window_focus(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.window
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
         await state_manager.update_window(window_id, last_focus=datetime.now())
@@ -1129,7 +1158,7 @@ async def on_window_move(
     error_msg: Optional[str] = None
     container = event.container
     window_id = container.id
-    window_class = container.window_class or "unknown"
+    window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
         # Get workspace information

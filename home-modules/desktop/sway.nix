@@ -1,0 +1,254 @@
+# Sway Wayland Compositor Home Manager Configuration
+# Parallel to i3.nix - adapted for Wayland on M1 MacBook Pro
+# Works with Sway native Wayland session (no XRDP)
+{ config, lib, pkgs, ... }:
+
+{
+  # Sway window manager configuration via home-manager
+  wayland.windowManager.sway = {
+    enable = true;
+    package = pkgs.sway;
+
+    # Sway uses identical config syntax to i3 (FR-023)
+    config = {
+      # Modifier key (Mod4 = Super/Command key on Mac)
+      modifier = "Mod4";
+
+      # Terminal (Meta+Return) - using Ghostty (Wayland-native)
+      terminal = "${pkgs.ghostty}/bin/ghostty";
+
+      # Application menu (Meta+D) - Walker launcher with native Wayland
+      menu = "walker";
+
+      # Font with Font Awesome icons
+      fonts = {
+        names = [ "monospace" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+
+      # Border settings - no borders for clean appearance
+      window = {
+        border = 0;
+        titlebar = false;
+      };
+
+      floating = {
+        border = 0;
+        titlebar = false;
+      };
+
+      # Output configuration (FR-005, FR-006)
+      output = {
+        # Built-in Retina display (M1 MacBook Pro 13")
+        "eDP-1" = {
+          scale = "2.0";                    # 2x scaling for Retina
+          resolution = "2560x1600@60Hz";    # Native resolution
+          position = "0,0";
+        };
+
+        # External monitor (auto-detect, 1:1 scaling)
+        "HDMI-A-1" = {
+          scale = "1.0";
+          mode = "1920x1080@60Hz";
+          position = "1280,0";  # Right of built-in (1280 = 2560/2)
+        };
+      };
+
+      # Input configuration (FR-006)
+      input = {
+        # Touchpad configuration for M1 MacBook Pro
+        "type:touchpad" = {
+          natural_scroll = "enabled";   # Natural scrolling
+          tap = "enabled";               # Tap-to-click
+          tap_button_map = "lrm";        # Two-finger right-click
+          dwt = "enabled";               # Disable while typing
+          middle_emulation = "enabled";  # Three-finger middle-click
+        };
+
+        # Keyboard configuration
+        "type:keyboard" = {
+          xkb_layout = "us";
+          repeat_delay = "300";
+          repeat_rate = "50";
+        };
+      };
+
+      # Workspace definitions with Font Awesome icons (parallel to i3 config)
+      workspaceOutputAssign = [
+        # Default assignments (overridden by i3pm monitors reassign)
+        { workspace = "1"; output = "eDP-1"; }
+        { workspace = "2"; output = "eDP-1"; }
+        { workspace = "3"; output = "HDMI-A-1"; }
+      ];
+
+      # Keybindings (FR-002 - identical to Hetzner i3)
+      keybindings = let
+        mod = config.wayland.windowManager.sway.config.modifier;
+      in lib.mkOptionDefault {
+        # Terminal
+        "${mod}+Return" = "exec ${pkgs.ghostty}/bin/ghostty";
+
+        # Application launcher (Walker with native Wayland)
+        "${mod}+d" = "exec walker";
+        "Mod1+space" = "exec walker";  # Alternative: Alt+Space
+
+        # Window management
+        "${mod}+Shift+q" = "kill";
+        "${mod}+Escape" = "kill";  # Alternative kill binding
+
+        # Focus movement (arrow keys)
+        "${mod}+Left" = "focus left";
+        "${mod}+Down" = "focus down";
+        "${mod}+Up" = "focus up";
+        "${mod}+Right" = "focus right";
+
+        # Move focused window (arrow keys)
+        "${mod}+Shift+Left" = "move left";
+        "${mod}+Shift+Down" = "move down";
+        "${mod}+Shift+Up" = "move up";
+        "${mod}+Shift+Right" = "move right";
+
+        # Split orientation
+        "${mod}+h" = "split h";
+        "${mod}+Shift+bar" = "split v";
+
+        # Fullscreen
+        "${mod}+f" = "fullscreen toggle";
+
+        # Container layout
+        "${mod}+s" = "layout stacking";
+        "${mod}+w" = "layout tabbed";
+        "${mod}+e" = "layout toggle split";
+
+        # Toggle floating
+        "${mod}+Shift+space" = "floating toggle";
+        "${mod}+space" = "focus mode_toggle";
+
+        # Scratchpad
+        "${mod}+Shift+minus" = "move scratchpad";
+        "${mod}+minus" = "scratchpad show";
+
+        # Workspace switching (Ctrl+1-9) - parallel to Hetzner
+        "Control+1" = "workspace number 1";
+        "Control+2" = "workspace number 2";
+        "Control+3" = "workspace number 3";
+        "Control+4" = "workspace number 4";
+        "Control+5" = "workspace number 5";
+        "Control+6" = "workspace number 6";
+        "Control+7" = "workspace number 7";
+        "Control+8" = "workspace number 8";
+        "Control+9" = "workspace number 9";
+
+        # Move container to workspace
+        "${mod}+Shift+1" = "move container to workspace number 1";
+        "${mod}+Shift+2" = "move container to workspace number 2";
+        "${mod}+Shift+3" = "move container to workspace number 3";
+        "${mod}+Shift+4" = "move container to workspace number 4";
+        "${mod}+Shift+5" = "move container to workspace number 5";
+        "${mod}+Shift+6" = "move container to workspace number 6";
+        "${mod}+Shift+7" = "move container to workspace number 7";
+        "${mod}+Shift+8" = "move container to workspace number 8";
+        "${mod}+Shift+9" = "move container to workspace number 9";
+
+        # Project management keybindings (parallel to i3 config)
+        "${mod}+p" = "exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
+        "${mod}+Shift+p" = "exec i3pm project clear";
+
+        # Project-aware application launchers (Feature 035: Registry-based)
+        "${mod}+c" = "exec ~/.local/bin/app-launcher-wrapper.sh vscode";
+        "${mod}+g" = "exec ~/.local/bin/app-launcher-wrapper.sh lazygit";
+        "${mod}+y" = "exec ~/.local/bin/app-launcher-wrapper.sh yazi";
+        "${mod}+b" = "exec ~/.local/bin/app-launcher-wrapper.sh btop";
+        "${mod}+k" = "exec ~/.local/bin/app-launcher-wrapper.sh k9s";
+        "${mod}+Shift+Return" = "exec ~/.local/bin/app-launcher-wrapper.sh terminal";
+
+        # Monitor detection/workspace reassignment
+        "${mod}+Shift+m" = "exec ~/.config/i3/scripts/reassign-workspaces.sh";
+
+        # Reload/restart
+        "${mod}+Shift+c" = "reload";
+        "${mod}+Shift+r" = "restart";
+        "${mod}+Shift+e" = "exec swaymsg exit";
+
+        # Screenshots (grim + slurp for Wayland)
+        "Print" = "exec grim -o $(swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name') - | wl-copy";
+        "${mod}+Print" = "exec grim -g \"$(swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused?) | .rect | \"\\(.x),\\(.y) \\(.width)x\\(.height)\"')\" - | wl-copy";
+        "${mod}+Shift+x" = "exec grim -g \"$(slurp)\" - | wl-copy";
+      };
+
+      # Window rules (FR-023 - parallel to i3 config)
+      window.commands = [
+        # Walker launcher - floating, centered, no border
+        {
+          criteria = { app_id = "walker"; };
+          command = "floating enable, border pixel 0, move position center, mark _global_ui";
+        }
+
+        # Floating terminal
+        {
+          criteria = { app_id = "floating_terminal"; };
+          command = "floating enable";
+        }
+
+        # FZF launcher - floating, centered, no border
+        {
+          criteria = { instance = "fzf-launcher"; };
+          command = "floating enable, border pixel 0, move position center, mark _global_ui";
+        }
+      ];
+
+      # Startup commands (FR-015)
+      startup = [
+        # D-Bus activation environment
+        { command = "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all"; }
+
+        # Import DISPLAY for systemd services (Elephant needs this)
+        { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY"; }
+
+        # Restart Elephant after environment import
+        { command = "systemctl --user restart elephant"; }
+
+        # i3pm daemon (systemd service)
+        { command = "systemctl --user start i3-project-event-listener"; }
+
+        # Monitor workspace distribution (wait for daemon)
+        { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
+      ];
+
+      # Bar configuration will be provided by swaybar.nix
+      bars = [];
+    };
+
+    # Extra Sway config for features not exposed by home-manager
+    extraConfig = ''
+      # Disable laptop lid close action (keep running when closed)
+      bindswitch lid:on output eDP-1 disable
+      bindswitch lid:off output eDP-1 enable
+
+      # Gaps (optional - clean appearance)
+      gaps inner 5
+      gaps outer 0
+
+      # Workspace names with icons
+      set $ws1 "1: terminal "
+      set $ws2 "2: code "
+      set $ws3 "3: firefox "
+      set $ws4 "4: youtube "
+      set $ws5 "5: files "
+      set $ws6 "6: k8s "
+      set $ws7 "7: git "
+      set $ws8 "8: ai "
+      set $ws9 "9 "
+    '';
+  };
+
+  # Install Wayland-specific utilities
+  home.packages = with pkgs; [
+    wl-clipboard     # Clipboard utilities (wl-copy, wl-paste)
+    grim             # Screenshot tool
+    slurp            # Screen area selection
+    mako             # Notification daemon
+    swaylock         # Screen locker
+    swayidle         # Idle management
+  ];
+}

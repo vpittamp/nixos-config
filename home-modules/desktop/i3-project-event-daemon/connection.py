@@ -14,6 +14,34 @@ from .state import StateManager
 logger = logging.getLogger(__name__)
 
 
+def get_window_class(container) -> str:
+    """Get window class in a Sway/i3-compatible way (Feature 045).
+
+    For Sway/Wayland: Checks app_id first (native Wayland), then window_properties.class (XWayland).
+    For i3/X11: Uses window_class property (always from window_properties).
+
+    Args:
+        container: i3ipc Container object
+
+    Returns:
+        Window class string or "unknown" if not available
+    """
+    # Sway: Check app_id first (native Wayland apps)
+    if hasattr(container, 'app_id') and container.app_id:
+        return container.app_id
+
+    # Fallback: Use window_class property (works on i3, and Sway for XWayland apps)
+    if hasattr(container, 'window_class') and container.window_class:
+        return container.window_class
+
+    # Legacy fallback: Read from window_properties dict
+    if hasattr(container, 'window_properties') and container.window_properties:
+        if isinstance(container.window_properties, dict):
+            return container.window_properties.get('class', 'unknown')
+
+    return "unknown"
+
+
 class ResilientI3Connection:
     """Manages i3 IPC connection with automatic reconnection and state recovery."""
 
@@ -268,7 +296,8 @@ class ResilientI3Connection:
                     # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
                     # VSCode windows share a single process, so I3PM environment doesn't distinguish
                     # between multiple workspaces. Parse title to get the actual project directory.
-                    if container.window_class == "Code" and container.name:
+                    window_class = get_window_class(container)  # Feature 045: Sway-compatible
+                    if window_class == "Code" and container.name:
                         import re
                         logger.debug(f"VSCode window {container.window} title: '{container.name}'")
                         # Match either "Code - PROJECT -" or just "PROJECT - hostname -" format
@@ -298,11 +327,12 @@ class ResilientI3Connection:
 
         # Sort windows: VSCode (class="Code") windows last to avoid mark clearing race condition
         # (marking other windows after VSCode causes VSCode's marks to disappear)
-        windows_to_mark.sort(key=lambda x: 1 if x[0].window_class == "Code" else 0)
+        windows_to_mark.sort(key=lambda x: 1 if get_window_class(x[0]) == "Code" else 0)
 
         # Mark windows in the sorted order
         for container, project_name in windows_to_mark:
-            logger.info(f"Marking pre-existing window {container.window} ({container.window_class}) with project:{project_name}")
+            window_class = get_window_class(container)  # Feature 045: Sway-compatible
+            logger.info(f"Marking pre-existing window {container.window} ({window_class}) with project:{project_name}")
 
             # Mark the window in i3 using window ID (more reliable than con_id which can become stale)
             # Note: i3 marks must be UNIQUE - cannot use same mark for multiple windows
@@ -326,10 +356,10 @@ class ResilientI3Connection:
             window_info = WindowInfo(
                 window_id=container.window,
                 con_id=container.id,
-                window_class=container.window_class or "unknown",
+                window_class=window_class,  # Feature 045: Already computed above
                 window_title=container.name or "",
                 window_instance=container.window_instance or "",
-                app_identifier=container.window_class or "unknown",
+                app_identifier=window_class,  # Feature 045: Use computed window_class
                 project=project_name,
                 marks=[mark] + list(container.marks),
                 workspace=container.workspace().name if container.workspace() else "",
