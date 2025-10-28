@@ -21,8 +21,8 @@ in
       # Terminal (Meta+Return) - using app-launcher-wrapper for project context (Feature 046)
       terminal = "~/.local/bin/app-launcher-wrapper.sh terminal";
 
-      # Application menu (Meta+D) - rofi for headless (GPU-less), walker for M1
-      menu = if isHeadless then "rofi -show drun" else "walker";
+      # Application menu (Meta+D) - walker works with software rendering (GSK_RENDERER=cairo)
+      menu = "walker";
 
       # Font with Font Awesome icons
       fonts = {
@@ -213,9 +213,9 @@ in
 
       # Window rules (FR-023 - parallel to i3 config)
       window.commands = [
-        # Rofi launcher - floating, centered, no border (Feature 046)
+        # Walker launcher - floating, centered, no border
         {
-          criteria = { app_id = "rofi"; };
+          criteria = { app_id = "walker"; };
           command = "floating enable, border pixel 0, move position center, mark _global_ui";
         }
 
@@ -264,8 +264,8 @@ in
         bindswitch lid:off output eDP-1 enable
       ''}
 
-      # Application menu launcher (Feature 046)
-      set $menu ${if isHeadless then "rofi -show drun" else "walker"}
+      # Application menu launcher - walker works with software rendering (GSK_RENDERER=cairo)
+      set $menu walker
 
       # Gaps (optional - clean appearance)
       gaps inner 5
@@ -297,8 +297,6 @@ in
     pkgs.wayvnc
     # RustDesk 1.4.3 with Wayland multi-monitor support (Feature 046)
     pkgs.rustdesk
-    # rofi for application launching (Walker requires GPU) (Feature 046)
-    pkgs.rofi
   ];
 
   # wayvnc configuration for headless Sway (Feature 046)

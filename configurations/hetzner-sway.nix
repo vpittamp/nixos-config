@@ -93,6 +93,10 @@
     # Qt and GTK Wayland support
     QT_QPA_PLATFORM = "wayland";
     GDK_BACKEND = "wayland";
+
+    # GTK4 software rendering (CRITICAL for Walker in headless mode)
+    # Forces Cairo CPU rendering instead of GPU-accelerated rendering
+    GSK_RENDERER = "cairo";
   };
 
   # User lingering for persistent session after SSH logout
