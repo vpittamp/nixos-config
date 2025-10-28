@@ -48,7 +48,8 @@ let
   # This wrapper queries systemctl --user show-environment and exports needed variables
   daemonWrapper = pkgs.writeShellScript "i3-project-daemon-wrapper" ''
     # Query user environment for Sway/Wayland variables
-    USER_ENV=$(${pkgs.systemd}/bin/systemctl --user --machine=${cfg.user}@ show-environment 2>/dev/null || true)
+    # Note: Service runs as user, so --user without --machine works
+    USER_ENV=$(XDG_RUNTIME_DIR=/run/user/$(${pkgs.coreutils}/bin/id -u) ${pkgs.systemd}/bin/systemctl --user show-environment 2>/dev/null || true)
 
     # Extract SWAYSOCK (Sway IPC socket path)
     SWAYSOCK=$(echo "$USER_ENV" | ${pkgs.gnugrep}/bin/grep '^SWAYSOCK=' | ${pkgs.coreutils}/bin/cut -d= -f2-)
