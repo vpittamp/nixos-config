@@ -98,6 +98,92 @@ in
         strip_workspace_numbers no
       '';
     }
+
+    # ===== Monitor 2 (HEADLESS-2) bars =====
+    # Bottom bar with workspaces for second monitor
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-2";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-2
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+
+    # ===== Monitor 3 (HEADLESS-3) bars =====
+    # Bottom bar with workspaces for third monitor
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-3";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-3
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
   ] else [
     # M1 MacBook mode: Dual bars on two outputs
     # Top bar: System monitoring (eDP-1 - built-in Retina display)

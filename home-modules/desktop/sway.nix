@@ -44,10 +44,20 @@ in
       # Output configuration (FR-005, FR-006)
       # Conditional configuration for headless vs physical displays
       output = if isHeadless then {
-        # Headless Wayland virtual output (Feature 046)
+        # Headless Wayland virtual outputs - 3 monitors side-by-side (Feature 046)
         "HEADLESS-1" = {
-          resolution = "1920x1080@60Hz";  # Standard remote desktop resolution
+          resolution = "1920x1080@60Hz";  # Primary monitor
           position = "0,0";
+          scale = "1.0";
+        };
+        "HEADLESS-2" = {
+          resolution = "1920x1080@60Hz";  # Secondary monitor (right of primary)
+          position = "1920,0";
+          scale = "1.0";
+        };
+        "HEADLESS-3" = {
+          resolution = "1920x1080@60Hz";  # Tertiary monitor (right of secondary)
+          position = "3840,0";
           scale = "1.0";
         };
       } else {
@@ -87,10 +97,19 @@ in
 
       # Workspace definitions with Font Awesome icons (parallel to i3 config)
       workspaceOutputAssign = if isHeadless then [
-        # Headless mode: all workspaces on HEADLESS-1 (Feature 046)
+        # Headless mode: workspaces distributed across 3 monitors (Feature 046)
+        # Monitor 1 (HEADLESS-1): Primary workspaces 1-2
         { workspace = "1"; output = "HEADLESS-1"; }
         { workspace = "2"; output = "HEADLESS-1"; }
-        { workspace = "3"; output = "HEADLESS-1"; }
+        # Monitor 2 (HEADLESS-2): Secondary workspaces 3-5
+        { workspace = "3"; output = "HEADLESS-2"; }
+        { workspace = "4"; output = "HEADLESS-2"; }
+        { workspace = "5"; output = "HEADLESS-2"; }
+        # Monitor 3 (HEADLESS-3): Additional workspaces 6-9
+        { workspace = "6"; output = "HEADLESS-3"; }
+        { workspace = "7"; output = "HEADLESS-3"; }
+        { workspace = "8"; output = "HEADLESS-3"; }
+        { workspace = "9"; output = "HEADLESS-3"; }
       ] else [
         # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
         { workspace = "1"; output = "eDP-1"; }
