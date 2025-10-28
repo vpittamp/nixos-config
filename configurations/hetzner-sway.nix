@@ -80,6 +80,10 @@
     # Use headless wlroots backend (no physical display required)
     WLR_BACKENDS = "headless";
 
+    # Number of outputs for headless backend (VNC can only show one at a time)
+    # This controls output creation at the wlroots backend level
+    WLR_HEADLESS_OUTPUTS = "1";
+
     # Disable libinput (no physical input devices in headless mode)
     WLR_LIBINPUT_NO_DEVICES = "1";
 
