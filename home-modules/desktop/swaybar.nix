@@ -1,9 +1,11 @@
 # Swaybar Configuration with Event-Driven Status Updates
 # Dual bars: Top bar for system monitoring, bottom bar for project context
 # Parallel to i3bar.nix - adapted for Sway on M1 MacBook Pro
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, ... }:
 
 let
+  # Detect headless Sway configuration (Feature 046)
+  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
   # Create wrapper script to call i3pm from PATH
   # (i3pm is installed via home.packages in i3pm-deno.nix)
   i3pmWrapper = pkgs.writeShellScript "i3pm-caller" ''
@@ -31,7 +33,50 @@ in
 {
   # Swaybar configuration via home-manager
   # Sway bar protocol is identical to i3bar (FR-023)
-  wayland.windowManager.sway.config.bars = [
+  wayland.windowManager.sway.config.bars = if isHeadless then [
+    # Headless mode (Feature 046): Single bar at top for HEADLESS-1
+    {
+      position = "top";
+      statusCommand = "${projectStatusScript} HEADLESS-1";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";  # No system tray in headless mode
+      workspaceButtons = true;  # Show workspace buttons
+      colors = {
+        background = "#1e1e2e";  # Catppuccin Mocha
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-1
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+  ] else [
+    # M1 MacBook mode: Dual bars on two outputs
     # Top bar: System monitoring (eDP-1 - built-in Retina display)
     {
       position = "top";
