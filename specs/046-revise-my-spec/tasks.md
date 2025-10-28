@@ -101,11 +101,11 @@
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Import Walker/Elephant configuration in `home-modules/hetzner-sway.nix` (from home-modules/desktop/walker.nix)
-- [ ] T028 [US3] Verify Elephant systemd service is configured to start with sway-session.target (check walker.nix for service dependencies)
-- [ ] T029 [US3] Verify Walker keybinding (Meta+D) is configured in `home-modules/desktop/sway.nix` (wayland.windowManager.sway.config.keybindings)
-- [ ] T030 [US3] Deploy updated configuration: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
-- [ ] T031 [US3] Execute Test Scenario 3 from quickstart.md (Steps 3.1-3.4: test application launcher, calculator provider, project switcher, clipboard provider with wl-clipboard)
+- [X] T027 [US3] Import Walker/Elephant configuration in `home-modules/hetzner-sway.nix` (from home-modules/desktop/walker.nix)
+- [X] T028 [US3] Verify Elephant systemd service is configured to start with sway-session.target (check walker.nix for service dependencies)
+- [X] T029 [US3] Verify Walker keybinding (Meta+D) is configured in `home-modules/desktop/sway.nix` (wayland.windowManager.sway.config.keybindings)
+- [X] T030 [US3] Deploy updated configuration: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
+- [ ] T031 [US3] Execute Test Scenario 3 from quickstart.md (Steps 3.1-3.4: test application launcher, calculator provider, project switcher, clipboard provider with wl-clipboard) - **REQUIRES VNC TESTING**
 
 **Checkpoint**: User Story 3 complete - Walker fully functional on headless Sway with all providers working via VNC
 
@@ -119,11 +119,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T032 [P] [US4] Review wayvnc config in `home-modules/desktop/sway.nix` and adjust max_rate if needed (default: 60 FPS, consider 30 FPS for lower bandwidth)
-- [ ] T033 [P] [US4] Review Sway renderer config and ensure WLR_RENDERER=pixman is set for software rendering (already in configurations/hetzner-sway.nix from T007)
-- [ ] T034 [US4] Deploy configuration if changes made: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo`
-- [ ] T035 [US4] Execute Test Scenario 4 from quickstart.md (Steps 4.1-4.5: measure window creation latency, workspace switching latency, project switching performance, resource usage, keyboard input latency)
-- [ ] T036 [US4] Document performance findings in quickstart.md or create performance tuning guide if adjustments were needed
+- [X] T032 [P] [US4] Review wayvnc config in `home-modules/desktop/sway.nix` and adjust max_rate if needed (default: 60 FPS, consider 30 FPS for lower bandwidth) - **CONFIGURED: max_rate=60 (commented with tuning instructions)**
+- [X] T033 [P] [US4] Review Sway renderer config and ensure WLR_RENDERER=pixman is set for software rendering (already in configurations/hetzner-sway.nix from T007) - **VERIFIED: WLR_RENDERER=pixman set**
+- [X] T034 [US4] Deploy configuration if changes made: `nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo` - **NO CHANGES NEEDED**
+- [ ] T035 [US4] Execute Test Scenario 4 from quickstart.md (Steps 4.1-4.5: measure window creation latency, workspace switching latency, project switching performance, resource usage, keyboard input latency) - **REQUIRES VNC TESTING**
+- [ ] T036 [US4] Document performance findings in quickstart.md or create performance tuning guide if adjustments were needed - **DEFERRED: User to test and document**
 
 **Checkpoint**: User Story 4 complete - VNC performance optimized and acceptable for remote development workflows
 
@@ -137,11 +137,11 @@
 
 ### Implementation for User Story 5
 
-- [ ] T037 [US5] Verify hetzner.nix has not been modified (git diff configurations/hetzner.nix should show no changes)
-- [ ] T038 [US5] Build hetzner configuration locally: `nixos-rebuild dry-build --flake .#hetzner`
-- [ ] T039 [US5] Compare system closures: `nix build .#nixosConfigurations.hetzner.config.system.build.toplevel -o result-hetzner && nix build .#nixosConfigurations.hetzner-sway.config.system.build.toplevel -o result-hetzner-sway`
-- [ ] T040 [US5] Execute Test Scenario 5 from quickstart.md (Steps 5.1-5.4: verify hetzner config unchanged, test switching between configurations, verify no Wayland packages in hetzner, verify both configs build from same flake)
-- [ ] T041 [US5] Document rollback procedure in quickstart.md (how to switch from hetzner-sway back to hetzner if needed)
+- [X] T037 [US5] Verify hetzner.nix has not been modified (git diff configurations/hetzner.nix should show no changes) - **VERIFIED: No changes to hetzner.nix**
+- [X] T038 [US5] Build hetzner configuration locally: `nixos-rebuild dry-build --flake .#hetzner` - **SUCCESSFUL: Builds without errors**
+- [X] T039 [US5] Compare system closures: `nix build .#nixosConfigurations.hetzner.config.system.build.toplevel -o result-hetzner && nix build .#nixosConfigurations.hetzner-sway.config.system.build.toplevel -o result-hetzner-sway` - **VERIFIED: Both configs build independently**
+- [ ] T040 [US5] Execute Test Scenario 5 from quickstart.md (Steps 5.1-5.4: verify hetzner config unchanged, test switching between configurations, verify no Wayland packages in hetzner, verify both configs build from same flake) - **REQUIRES PHYSICAL TESTING**
+- [X] T041 [US5] Document rollback procedure in quickstart.md (how to switch from hetzner-sway back to hetzner if needed) - **DOCUMENTED: Use nixos-rebuild switch --flake .#hetzner**
 
 **Checkpoint**: User Story 5 complete - configuration isolation validated, both configs coexist safely
 
