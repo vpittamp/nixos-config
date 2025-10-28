@@ -1,8 +1,7 @@
-{ config, lib, pkgs, inputs, osConfig ? null, ... }:
+{ config, lib, pkgs, inputs, osConfig ? null, isWaylandMode ? false, ... }:
 
 let
-  # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  cfg = config.programs.walker;
 
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
@@ -321,23 +320,21 @@ in
     "application/octet-stream" = "walker-open-in-nvim.desktop";
   };
 
-  # Override the walker config file to add X11 settings not supported by the module
+  # Override the walker config file to add mode settings not supported by the module
   xdg.configFile."walker/config.toml" = lib.mkForce {
     text = ''
-        # Walker Configuration (X11 Mode)
-        # X11 Mode - use window instead of Wayland layer shell
+        # Walker Configuration
+        # ${if isWaylandMode then "Wayland Mode (headless Sway)" else "X11 Mode (use window instead of Wayland layer shell)"}
         # Using default Walker theme
-        as_window = true
+        as_window = ${if isWaylandMode then "false" else "true"}
         force_keyboard_focus = false
         close_when_open = true
 
         [modules]
         applications = true
         calc = true
-        # Clipboard disabled - Elephant's clipboard provider requires Wayland (wl-clipboard)
-        # X11 clipboard monitoring not supported by Elephant
-        # TODO: Consider adding X11 clipboard manager like clipmenu if clipboard history needed
-        clipboard = false
+        # Clipboard: ${if isWaylandMode then "Enabled for Wayland mode" else "Disabled - Elephant's clipboard provider requires Wayland (wl-clipboard), X11 clipboard monitoring not supported"}
+        clipboard = ${if isWaylandMode then "true" else "false"}
         # File provider now enabled (Walker ≥v1.5 supports X11 safely when launched as a window)
         files = true
         menus = true
@@ -476,11 +473,11 @@ in
   # Uses standard Elephant binary instead of isolated wrapper
   systemd.user.services.elephant = lib.mkForce {
     Unit = {
-      Description = if isHeadless then "Elephant launcher backend (Wayland)" else "Elephant launcher backend (X11)";
+      Description = if isWaylandMode then "Elephant launcher backend (Wayland)" else "Elephant launcher backend (X11)";
       # Wayland/Sway: Use sway-session.target (Feature 046)
       # X11/i3: Use default.target (i3 doesn't activate graphical-session.target)
-      PartOf = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
-      After = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
+      PartOf = if isWaylandMode then [ "sway-session.target" ] else [ "default.target" ];
+      After = if isWaylandMode then [ "sway-session.target" ] else [ "default.target" ];
       # Note: Removed ConditionEnvironment=DISPLAY/WAYLAND_DISPLAY - PassEnvironment provides it when service runs
       # Condition check was too early (before env set), causing startup failures
     };
@@ -503,12 +500,12 @@ in
       # CRITICAL: Pass compositor environment variables
       # X11/i3: DISPLAY
       # Wayland/Sway: WAYLAND_DISPLAY (Feature 046)
-      PassEnvironment = if isHeadless then [ "WAYLAND_DISPLAY" ] else [ "DISPLAY" ];
+      PassEnvironment = if isWaylandMode then [ "WAYLAND_DISPLAY" ] else [ "DISPLAY" ];
     };
     Install = {
       # Wayland/Sway: sway-session.target (Feature 046)
       # X11/i3: default.target
-      WantedBy = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
+      WantedBy = if isWaylandMode then [ "sway-session.target" ] else [ "default.target" ];
     };
   };
 

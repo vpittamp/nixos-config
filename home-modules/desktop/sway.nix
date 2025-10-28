@@ -296,8 +296,8 @@ in
     pkgs.wayvnc
     # RustDesk 1.4.3 with Wayland multi-monitor support (Feature 046)
     pkgs.rustdesk
-    # rofi-wayland for application launching (Walker requires GPU) (Feature 046)
-    pkgs.rofi-wayland
+    # rofi for application launching (Walker requires GPU) (Feature 046)
+    pkgs.rofi
   ];
 
   # wayvnc configuration for headless Sway (Feature 046)

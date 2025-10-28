@@ -179,7 +179,7 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.users.vpittamp = import ./home-modules/hetzner-sway.nix;
-              home-manager.extraSpecialArgs = { inherit inputs; };
+              home-manager.extraSpecialArgs = { inherit inputs; isWaylandMode = true; };
             }
           ];
         };
