@@ -46,20 +46,20 @@ in
       output = if isHeadless then {
         # Headless Wayland - THREE separate outputs for multi-monitor VNC (Feature 046)
         # Each output maps to one physical monitor on the client
-        # Resolution: 1280x720 for better VNC client compatibility
+        # Resolution: 1920x1080 for better picture quality (sharper text, less VNC scaling blur)
         "HEADLESS-1" = {
-          resolution = "1280x720@60Hz";
+          resolution = "1920x1080@60Hz";
           position = "0,0";
           scale = "1.0";
         };
         "HEADLESS-2" = {
-          resolution = "1280x720@60Hz";
-          position = "1280,0";
+          resolution = "1920x1080@60Hz";
+          position = "1920,0";
           scale = "1.0";
         };
         "HEADLESS-3" = {
-          resolution = "1280x720@60Hz";
-          position = "2560,0";
+          resolution = "1920x1080@60Hz";
+          position = "3840,0";
           scale = "1.0";
         };
       } else {
@@ -314,7 +314,8 @@ in
       # 2. Rebuild: nixos-rebuild switch --flake .#hetzner-sway
       # 3. After Sway starts, set password: wayvncctl set-password vnc <your-password>
 
-      # Performance settings for remote access
+      # Quality settings for better picture quality
+      # Higher quality encoding, less compression
       # max_rate=60  # FPS limit (default: 60, can reduce to 30 for lower bandwidth)
 
       # Output selection (auto-detect HEADLESS-1)
