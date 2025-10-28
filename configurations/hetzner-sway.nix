@@ -62,13 +62,14 @@
   # Enable wayvnc VNC server for remote access
   services.wayvnc.enable = true;
 
-  # Display manager: greetd with tuigreet for headless login
+  # Display manager: greetd with auto-login for headless operation
   services.greetd = {
     enable = true;
     settings = {
       default_session = {
-        command = "${pkgs.greetd.tuigreet}/bin/tuigreet --time --cmd sway";
-        user = "greeter";
+        # Auto-login vpittamp user and start Sway compositor
+        command = "${pkgs.sway}/bin/sway";
+        user = "vpittamp";
       };
     };
   };

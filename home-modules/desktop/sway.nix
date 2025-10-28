@@ -283,8 +283,12 @@ in
 
       address=0.0.0.0
       port=5900
-      enable_auth=true
-      username=vnc
+      enable_auth=false
+
+      # To enable authentication:
+      # 1. Set enable_auth=true and username=vnc
+      # 2. Rebuild: nixos-rebuild switch --flake .#hetzner-sway
+      # 3. After Sway starts, set password: wayvncctl set-password vnc <your-password>
 
       # Performance settings for remote access
       # max_rate=60  # FPS limit (default: 60, can reduce to 30 for lower bandwidth)
