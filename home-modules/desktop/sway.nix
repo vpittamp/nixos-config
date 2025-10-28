@@ -237,11 +237,7 @@ in
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
-      ] ++ (if isHeadless then [
-        # Create additional headless outputs for multi-monitor VNC (Feature 046)
-        { command = "swaymsg create_output"; }
-        { command = "swaymsg create_output"; }
-      ] else []);
+      ];
 
       # Bar configuration will be provided by swaybar.nix
       bars = [];
