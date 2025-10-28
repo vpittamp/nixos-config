@@ -21,8 +21,8 @@ in
       # Terminal (Meta+Return) - using app-launcher-wrapper for project context (Feature 046)
       terminal = "~/.local/bin/app-launcher-wrapper.sh terminal";
 
-      # Application menu (Meta+D) - Walker launcher with native Wayland
-      menu = "walker";
+      # Application menu (Meta+D) - rofi for headless (GPU-less), walker for M1
+      menu = if isHeadless then "rofi -show drun" else "walker";
 
       # Font with Font Awesome icons
       fonts = {
@@ -122,9 +122,9 @@ in
         # Terminal (uses config.terminal which calls app-launcher-wrapper)
         "${mod}+Return" = "exec $terminal";
 
-        # Application launcher (Walker with native Wayland)
-        "${mod}+d" = "exec walker";
-        "Mod1+space" = "exec walker";  # Alternative: Alt+Space
+        # Application launcher (rofi for headless, walker for M1)
+        "${mod}+d" = "exec $menu";
+        "Mod1+space" = "exec $menu";  # Alternative: Alt+Space
 
         # Window management
         "${mod}+Shift+q" = "kill";
@@ -296,6 +296,8 @@ in
     pkgs.wayvnc
     # RustDesk 1.4.3 with Wayland multi-monitor support (Feature 046)
     pkgs.rustdesk
+    # rofi-wayland for application launching (Walker requires GPU) (Feature 046)
+    pkgs.rofi-wayland
   ];
 
   # wayvnc configuration for headless Sway (Feature 046)
