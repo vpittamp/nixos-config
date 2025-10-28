@@ -1,6 +1,9 @@
-{ config, lib, pkgs, inputs, ... }:
+{ config, lib, pkgs, inputs, osConfig ? null, ... }:
 
 let
+  # Detect headless Sway configuration (Feature 046)
+  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
     # Launch a Ghostty terminal window with Neovim for a Walker-selected file path
@@ -459,16 +462,17 @@ in
   # NOTE: This only affects Walker/Elephant service, not the entire session
   # (Elephant service has its own isolated XDG_DATA_DIRS below)
 
-  # Feature 035: Elephant service without XDG isolation
+  # Feature 035/046: Elephant service - conditional for Wayland (Sway) vs X11 (i3)
   # Uses standard Elephant binary instead of isolated wrapper
   systemd.user.services.elephant = lib.mkForce {
     Unit = {
-      Description = "Elephant launcher backend (X11)";
-      # Use default.target instead of graphical-session.target (i3 doesn't activate graphical-session.target)
-      PartOf = [ "default.target" ];
-      After = [ "default.target" ];
-      # Note: Removed ConditionEnvironment=DISPLAY - PassEnvironment provides DISPLAY when service runs
-      # Condition check was too early (before DISPLAY set), causing startup failures
+      Description = if isHeadless then "Elephant launcher backend (Wayland)" else "Elephant launcher backend (X11)";
+      # Wayland/Sway: Use sway-session.target (Feature 046)
+      # X11/i3: Use default.target (i3 doesn't activate graphical-session.target)
+      PartOf = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
+      After = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
+      # Note: Removed ConditionEnvironment=DISPLAY/WAYLAND_DISPLAY - PassEnvironment provides it when service runs
+      # Condition check was too early (before env set), causing startup failures
     };
     Service = {
       # Feature 034/035: Elephant with isolated XDG environment
@@ -486,13 +490,15 @@ in
         "XDG_DATA_DIRS=${i3pmAppsDir}"
         "XDG_RUNTIME_DIR=%t"
       ];
-      # CRITICAL: Pass DISPLAY from systemd user environment for X11 support
-      # Using PassEnvironment instead of Environment to avoid escaping issues
-      PassEnvironment = [ "DISPLAY" ];
+      # CRITICAL: Pass compositor environment variables
+      # X11/i3: DISPLAY
+      # Wayland/Sway: WAYLAND_DISPLAY (Feature 046)
+      PassEnvironment = if isHeadless then [ "WAYLAND_DISPLAY" ] else [ "DISPLAY" ];
     };
     Install = {
-      # Use default.target instead of graphical-session.target (i3 doesn't activate graphical-session.target)
-      WantedBy = [ "default.target" ];
+      # Wayland/Sway: sway-session.target (Feature 046)
+      # X11/i3: default.target
+      WantedBy = if isHeadless then [ "sway-session.target" ] else [ "default.target" ];
     };
   };
 
