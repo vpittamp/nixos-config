@@ -1,6 +1,6 @@
 # Home-manager configuration for Hetzner Cloud Sway (Feature 046)
 # Headless Wayland with Sway, VNC remote access, i3pm daemon, Walker launcher
-{ ... }:
+{ pkgs, ... }:
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -23,6 +23,13 @@
 
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
+
+  # Feature 046: i3-msg → swaymsg compatibility symlink
+  # i3pm CLI uses i3-msg, but Sway uses swaymsg (compatible CLI)
+  home.file.".local/bin/i3-msg" = {
+    source = "${pkgs.sway}/bin/swaymsg";
+    executable = true;
+  };
 
   # Feature 015: i3 project event listener daemon
   # NOTE: Disabled in favor of system service (Feature 037 - cross-namespace /proc access)
