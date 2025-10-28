@@ -134,6 +134,7 @@ in
 
       # Start after graphical session for the user
       after = [ "graphical.target" ];
+      partOf = [ "graphical.target" ];  # Restart when graphical session restarts (Feature 046: Sway socket reconnection)
       requires = [ "i3-project-daemon.socket" ];
 
       serviceConfig = {
