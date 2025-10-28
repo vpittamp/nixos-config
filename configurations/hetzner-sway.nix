@@ -67,8 +67,20 @@
     enable = true;
     settings = {
       default_session = {
-        # Auto-login vpittamp user and start Sway compositor
-        command = "${pkgs.sway}/bin/sway";
+        # Auto-login vpittamp user and start Sway compositor with environment variables
+        # Note: greetd doesn't load environment.sessionVariables, so we export them explicitly
+        command = "${pkgs.writeShellScript "sway-with-env" ''
+          export WLR_BACKENDS=headless
+          export WLR_HEADLESS_OUTPUTS=1
+          export WLR_LIBINPUT_NO_DEVICES=1
+          export WLR_RENDERER=pixman
+          export XDG_SESSION_TYPE=wayland
+          export XDG_CURRENT_DESKTOP=sway
+          export QT_QPA_PLATFORM=wayland
+          export GDK_BACKEND=wayland
+          export GSK_RENDERER=cairo
+          exec ${pkgs.sway}/bin/sway
+        ''}";
         user = "vpittamp";
       };
     };
