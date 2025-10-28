@@ -134,8 +134,14 @@ in
 
       # Start after graphical session for the user
       after = [ "graphical.target" ];
-      partOf = [ "graphical.target" ];  # Restart when graphical session restarts (Feature 046: Sway socket reconnection)
       requires = [ "i3-project-daemon.socket" ];
+
+      # NOTE: partOf/PartOf not working in NixOS system services (Feature 046)
+      # Attempted: partOf = [ "graphical.target" ]; and unitConfig.PartOf
+      # Neither generated PartOf directive in systemd unit file
+      # Workaround: Manual restart after greetd/Sway restart:
+      #   sudo systemctl restart i3-project-daemon
+      # Future: Consider socket reconnection detection in daemon code
 
       serviceConfig = {
         Type = "notify";
