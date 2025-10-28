@@ -351,7 +351,8 @@ async def hide_window(conn: aio.Connection, window_id: int) -> None:
         window_id: Window ID to hide
     """
     try:
-        await conn.command(f"[id={window_id}] move scratchpad")
+        # Feature 046: Use con_id for Sway compatibility
+        await conn.command(f"[con_id={window_id}] move scratchpad")
         logger.debug(f"Hid window {window_id}")
     except Exception as e:
         logger.error(f"Failed to hide window {window_id}: {e}")
@@ -366,7 +367,8 @@ async def show_window(conn: aio.Connection, window_id: int, workspace: str) -> N
         workspace: Workspace to move window to
     """
     try:
-        await conn.command(f"[id={window_id}] move container to workspace {workspace}")
+        # Feature 046: Use con_id for Sway compatibility
+        await conn.command(f"[con_id={window_id}] move container to workspace {workspace}")
         logger.debug(f"Showed window {window_id} on workspace {workspace}")
     except Exception as e:
         logger.error(f"Failed to show window {window_id}: {e}")
@@ -651,7 +653,8 @@ async def on_window_new(
 
         if should_mark and actual_project:
             mark = f"project:{actual_project}:{window_id}"
-            await conn.command(f'[id={window_id}] mark --add "{mark}"')
+            # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
+            await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
             logger.info(f"Marked window {window_id} with {mark} (from {mark_source})")
 
             # Add to state (mark event will update this)
@@ -805,8 +808,9 @@ async def on_window_new(
 
         elif classification.workspace:
             # LEGACY FORMAT: workspace field on classification
+            # Feature 046: Use con_id for Sway compatibility
             await conn.command(
-                f'[id={window_id}] move container to workspace number {classification.workspace}'
+                f'[con_id={window_id}] move container to workspace number {classification.workspace}'
             )
             logger.info(f"Moved window {window_id} to workspace {classification.workspace} (legacy format)")
 
@@ -1000,11 +1004,13 @@ async def on_window_title(
                         if current_project != title_project:
                             # Remove old mark
                             old_mark = current_project_marks[0]
-                            await conn.command(f'[id={window_id}] unmark "{old_mark}"')
+                            # Feature 046: Use con_id for Sway compatibility
+                            await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
 
                             # Add new mark
                             new_mark = f"project:{title_project}:{window_id}"
-                            await conn.command(f'[id={window_id}] mark --add "{new_mark}"')
+                            # Feature 046: Use con_id for Sway compatibility
+                            await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
 
                             logger.info(
                                 f"VSCode window {window_id}: Updated project mark from "

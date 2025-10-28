@@ -115,12 +115,12 @@ async def execute_mark_action(
 ) -> Tuple[bool, Optional[str]]:
     """Execute mark action: add i3 mark to window.
 
-    Corresponds to i3 command:
-        [id=<window_id>] mark --add "<value>"
+    Corresponds to i3/Sway command:
+        [con_id=<window_id>] mark --add "<value>"
 
     Args:
         conn: i3 async IPC connection
-        window_id: X11 window ID
+        window_id: Node ID (container.id for both i3/Sway)
         action: MarkAction with mark value
 
     Returns:
@@ -138,7 +138,8 @@ async def execute_mark_action(
         start_time = time.perf_counter()
 
         # Add mark to window
-        cmd = f'[id={window_id}] mark --add "{action.value}"'
+        # Feature 046: Use con_id for Sway/Wayland compatibility
+        cmd = f'[con_id={window_id}] mark --add "{action.value}"'
         result = await conn.command(cmd)
 
         # Check for errors

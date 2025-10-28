@@ -332,21 +332,24 @@ class ResilientI3Connection:
         # Mark windows in the sorted order
         for container, project_name in windows_to_mark:
             window_class = get_window_class(container)  # Feature 045: Sway-compatible
-            logger.info(f"Marking pre-existing window {container.window} ({window_class}) with project:{project_name}")
+            # Feature 046: Use container.id (node ID) for both i3 and Sway compatibility
+            window_id = container.id
+            logger.info(f"Marking pre-existing window {window_id} ({window_class}) with project:{project_name}")
 
-            # Mark the window in i3 using window ID (more reliable than con_id which can become stale)
+            # Mark the window in i3/Sway using node ID (container.id)
             # Note: i3 marks must be UNIQUE - cannot use same mark for multiple windows
-            # So we use format: project:PROJECT_NAME:WINDOW_ID
-            mark = f"project:{project_name}:{container.window}"
-            command_str = f'[id={container.window}] mark --add "{mark}"'
+            # So we use format: project:PROJECT_NAME:NODE_ID
+            mark = f"project:{project_name}:{window_id}"
+            # Feature 046: Use con_id for Sway/Wayland compatibility
+            command_str = f'[con_id={window_id}] mark --add "{mark}"'
             logger.debug(f"Executing mark command: {command_str}")
             result = await self.conn.command(command_str)
             # Log command result details
             if result and len(result) > 0:
                 reply = result[0]
-                logger.debug(f"Mark command for window {container.window}: success={reply.success}, error={getattr(reply, 'error', None)}")
+                logger.debug(f"Mark command for window {window_id}: success={reply.success}, error={getattr(reply, 'error', None)}")
             else:
-                logger.warning(f"Mark command for window {container.window} returned empty result")
+                logger.warning(f"Mark command for window {window_id} returned empty result")
 
             # Small delay to allow i3 to process the mark and fire window::mark event
             # before we mark the next window (prevents race conditions during startup scan)

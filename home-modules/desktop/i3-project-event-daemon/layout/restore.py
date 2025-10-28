@@ -521,25 +521,25 @@ class LayoutRestore:
         window_id = i3_window.window if hasattr(i3_window, 'window') else i3_window.id
 
         # Move to correct workspace
-        await self._i3_command(f'[id="{window_id}"] move to workspace {workspace}')
+        await self._i3_command(f'[con_id="{window_id}"] move to workspace {workspace}')
 
         # Apply floating state
         if saved_window.floating:
-            await self._i3_command(f'[id="{window_id}"] floating enable')
+            await self._i3_command(f'[con_id="{window_id}"] floating enable')
         else:
-            await self._i3_command(f'[id="{window_id}"] floating disable')
+            await self._i3_command(f'[con_id="{window_id}"] floating disable')
 
         # Apply geometry
         await self._i3_command(
-            f'[id="{window_id}"] move position {saved_window.geometry.x} {saved_window.geometry.y}'
+            f'[con_id="{window_id}"] move position {saved_window.geometry.x} {saved_window.geometry.y}'
         )
         await self._i3_command(
-            f'[id="{window_id}"] resize set {saved_window.geometry.width} {saved_window.geometry.height}'
+            f'[con_id="{window_id}"] resize set {saved_window.geometry.width} {saved_window.geometry.height}'
         )
 
         # Apply marks
         for mark in saved_window.marks:
-            await self._i3_command(f'[id="{window_id}"] mark --add {mark}')
+            await self._i3_command(f'[con_id="{window_id}"] mark --add {mark}')
 
         logger.debug(f"Applied properties to window: {saved_window.window_class}")
 

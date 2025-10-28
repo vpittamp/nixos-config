@@ -387,11 +387,13 @@ async def filter_windows_by_project(
                         )
 
                         # Move to exact workspace number (Feature 038 US3)
-                        await conn.command(f'[id={window_id}] move workspace number {workspace_num}')
+                        # Feature 046: Use con_id for Sway compatibility
+                        await conn.command(f'[con_id={window_id}] move workspace number {workspace_num}')
 
                         # Restore floating state (Feature 038 US1)
                         if is_floating:
-                            await conn.command(f'[id={window_id}] floating enable')
+                            # Feature 046: Use con_id for Sway compatibility
+                            await conn.command(f'[con_id={window_id}] floating enable')
 
                             # Feature 038 US2: Restore geometry for floating windows
                             geometry = saved_state.get("geometry")
@@ -405,17 +407,20 @@ async def filter_windows_by_project(
 
                                 # Note: Must enable floating BEFORE applying geometry (T024)
                                 # Resize and move in single command for atomicity
+                                # Feature 046: Use con_id for Sway compatibility
                                 await conn.command(
-                                    f'[id={window_id}] '
+                                    f'[con_id={window_id}] '
                                     f'resize set {geometry["width"]} px {geometry["height"]} px, '
                                     f'move position {geometry["x"]} px {geometry["y"]} px'
                                 )
                         else:
-                            await conn.command(f'[id={window_id}] floating disable')
+                            # Feature 046: Use con_id for Sway compatibility
+                            await conn.command(f'[con_id={window_id}] floating disable')
                     else:
                         # Fallback: restore to workspace 1 if no saved state
                         logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
-                        await conn.command(f'[id={window_id}] move workspace number 1')
+                        # Feature 046: Use con_id for Sway compatibility
+                        await conn.command(f'[con_id={window_id}] move workspace number 1')
                 else:
                     logger.debug(f"Window {window_id} already visible")
 
@@ -488,7 +493,8 @@ async def filter_windows_by_project(
                     )
 
                 # Move to scratchpad
-                await conn.command(f'[id={window_id}] move scratchpad')
+                # Feature 046: Use con_id for Sway compatibility
+                await conn.command(f'[con_id={window_id}] move scratchpad')
                 hidden_count += 1
         except Exception as e:
             logger.error(f"Failed to update window {window_id} visibility: {e}")
