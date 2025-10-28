@@ -434,7 +434,9 @@ async def on_window_new(
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
-    window_id = container.window
+    # Feature 046: Use node ID (container.id) for Sway/Wayland compatibility
+    # (container.window is None for native Wayland apps, container.id works for both)
+    window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
 
@@ -467,10 +469,46 @@ async def on_window_new(
             + (f", workspace={classification.workspace}" if classification.workspace else "")
         )
 
+        # Feature 046: Extract window PID early (needed for environment reading and correlation)
+        # For Sway/Wayland, container.pid is available directly
+        # For i3/X11, need to use xprop with X11 window ID
+        window_pid = None
+        if hasattr(container, 'pid') and container.pid:
+            # Sway/Wayland: PID available directly from container
+            window_pid = container.pid
+        elif container.window:
+            # i3/X11: Use xprop with X11 window ID
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["xprop", "-id", str(container.window), "_NET_WM_PID"],
+                    capture_output=True,
+                    text=True,
+                    timeout=0.5
+                )
+                if result.returncode == 0 and "_NET_WM_PID(CARDINAL)" in result.stdout:
+                    window_pid = int(result.stdout.split("=")[-1].strip())
+            except Exception:
+                pass  # PID not available (timeout, xprop error)
+
         # Feature 035: Read I3PM_* environment variables from /proc/<pid>/environ
-        # This enables deterministic window-to-project association
-        from .services.window_filter import get_window_environment
-        window_env = await get_window_environment(window_id)
+        # Feature 046: Refactored to use PID directly instead of xprop-based lookup
+        from .services.window_filter import read_process_environ, parse_window_environment
+        window_env = None
+        if window_pid:
+            try:
+                env = read_process_environ(window_pid)
+                window_env = parse_window_environment(env)
+                if window_env:
+                    logger.debug(
+                        f"Window {window_id} has I3PM environment: "
+                        f"app={window_env.app_name}, project={window_env.project_name}, "
+                        f"scope={window_env.scope}"
+                    )
+            except (PermissionError, FileNotFoundError):
+                logger.debug(f"Cannot read environment for PID {window_pid}, assuming global scope")
+        else:
+            logger.debug(f"No PID available for window {window_id}, cannot read environment")
 
         # Feature 039 T053: Extract comprehensive window identity information
         # This provides normalized class names and PWA detection for diagnostics
@@ -493,22 +531,6 @@ async def on_window_new(
         from .models import LaunchWindowInfo
         correlated_project = None
         correlation_confidence = 0.0
-
-        # Extract window PID if available
-        window_pid = None
-        try:
-            # Try to get PID from X11 property
-            import subprocess
-            result = subprocess.run(
-                ["xprop", "-id", str(window_id), "_NET_WM_PID"],
-                capture_output=True,
-                text=True,
-                timeout=0.5
-            )
-            if result.returncode == 0 and "_NET_WM_PID(CARDINAL)" in result.stdout:
-                window_pid = int(result.stdout.split("=")[-1].strip())
-        except Exception:
-            pass  # PID not available (e.g., Wayland, timeout)
 
         # Get current workspace number
         current_ws = container.workspace()
@@ -836,7 +858,9 @@ async def on_window_mark(
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
-    window_id = container.window
+    # Feature 046: Use node ID (container.id) for Sway/Wayland compatibility
+    # (container.window is None for native Wayland apps, container.id works for both)
+    window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
@@ -911,7 +935,9 @@ async def on_window_title(
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
-    window_id = container.window
+    # Feature 046: Use node ID (container.id) for Sway/Wayland compatibility
+    # (container.window is None for native Wayland apps, container.id works for both)
+    window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
 
@@ -1050,7 +1076,9 @@ async def on_window_close(
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
-    window_id = container.window
+    # Feature 046: Use node ID (container.id) for Sway/Wayland compatibility
+    # (container.window is None for native Wayland apps, container.id works for both)
+    window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
@@ -1100,7 +1128,9 @@ async def on_window_focus(
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
     container = event.container
-    window_id = container.window
+    # Feature 046: Use node ID (container.id) for Sway/Wayland compatibility
+    # (container.window is None for native Wayland apps, container.id works for both)
+    window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
     try:
