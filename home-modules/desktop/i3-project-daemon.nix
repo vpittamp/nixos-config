@@ -205,9 +205,9 @@ in
     # Install CLI tools
     # NOTE: All daemon diagnostic tools are now provided by i3pm CLI (Feature 022)
     # Use 'i3pm daemon status' and 'i3pm daemon events' instead
-    home.packages = with pkgs; [
-      pythonEnv  # Python environment for daemon
-    ];
+    # Python environment provided by shared python-environment.nix
+    # (removed from here to avoid buildEnv conflicts)
+    home.packages = with pkgs; [];
 
     # Shell aliases (T034) - Feature 022: Migrated to use i3pm CLI
     # NOTE: These aliases are now redundant since i3pm module provides identical aliases

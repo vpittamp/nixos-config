@@ -9,6 +9,9 @@
     # Declarative cleanup (removes backups and stale files before activation)
     ./profiles/declarative-cleanup.nix
 
+    # Shared Python environment (prevents buildEnv conflicts)
+    ./desktop/python-environment.nix
+
     # Desktop Environment: Sway (Wayland)
     ./desktop/sway.nix         # Sway window manager with headless support
     ./desktop/swaybar.nix      # Swaybar with event-driven status

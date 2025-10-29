@@ -88,10 +88,8 @@ in {
       };
     };
 
-    # Python environment with dependencies
+    # Python environment with dependencies (provided by shared python-environment.nix)
     home.packages = with pkgs; [
-      pythonEnv
-
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
         exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
