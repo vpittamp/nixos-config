@@ -7,16 +7,16 @@
 ```bash
 # Test configuration changes (ALWAYS RUN BEFORE APPLYING)
 sudo nixos-rebuild dry-build --flake .#wsl    # For WSL
-sudo nixos-rebuild dry-build --flake .#hetzner # For Hetzner
+sudo nixos-rebuild dry-build --flake .#hetzner-sway # For Hetzner Cloud (Sway/Wayland)
 sudo nixos-rebuild dry-build --flake .#m1 --impure  # For M1 Mac (--impure for firmware)
 
 # Apply configuration changes
 sudo nixos-rebuild switch --flake .#wsl    # For WSL
-sudo nixos-rebuild switch --flake .#hetzner # For Hetzner
+sudo nixos-rebuild switch --flake .#hetzner-sway # For Hetzner Cloud (Sway/Wayland)
 sudo nixos-rebuild switch --flake .#m1 --impure  # For M1 Mac (--impure for firmware)
 
 # Remote build/deploy from Codespace or another machine (requires SSH access)
-nixos-rebuild switch --flake .#hetzner --target-host vpittamp@hetzner --use-remote-sudo
+nixos-rebuild switch --flake .#hetzner-sway --target-host vpittamp@hetzner --use-remote-sudo
 
 # Build container images
 nix build .#container-minimal      # Minimal container (~100MB)
@@ -92,7 +92,7 @@ nix build .#container-dev          # Development container (~600MB)
 
 ### Key Design Principles
 
-1. **Hetzner as Base**: The Hetzner configuration serves as the reference implementation
+1. **Hetzner Sway as Reference**: The hetzner-sway configuration (`configurations/hetzner-sway.nix`) serves as the reference implementation with Sway/Wayland compositor
 2. **Modular Composition**: Each target combines only the modules it needs
 3. **Override Hierarchy**: Use `lib.mkDefault` for overrideable defaults, `lib.mkForce` for mandatory settings
 4. **Single Source of Truth**: Avoid duplication by extracting common patterns into modules
@@ -108,8 +108,9 @@ nix build .#container-dev          # Development container (~600MB)
 ### Hetzner (Cloud Server)
 
 - **Purpose**: Remote development workstation
-- **Features**: Full KDE desktop, RDP access, Tailscale VPN, 1Password GUI
-- **Build**: `sudo nixos-rebuild switch --flake .#hetzner`
+- **Features**: Sway Wayland compositor, VNC access, dynamic configuration management (Feature 047), Tailscale VPN, 1Password GUI
+- **Build**: `sudo nixos-rebuild switch --flake .#hetzner-sway`
+- **Note**: Uses template-based configuration to avoid home-manager conflicts
 
 ### M1 (Apple Silicon Mac)
 
@@ -143,275 +144,78 @@ Controlled by environment variables or module imports:
 
 ## 🚀 Walker/Elephant Launcher (Feature 043)
 
-### Overview
+Keyboard-driven application launcher with file search, web search, calculator, and symbol picker.
 
-Walker is a keyboard-driven application launcher with Elephant backend service providing advanced functionality. All features are fully configured and operational.
+**Launch**: `Meta+D` or `Alt+Space`
 
-**Key Features**:
-- Application launching with project context inheritance
-- File search and navigation
-- Web search integration
-- Calculator and symbol picker
-- Shell command execution
+**Provider Prefixes**:
+- (none) - Launch applications from registry
+- `/` - Search files in $HOME or project dir
+- `@` - Web search (Google, GitHub, etc.)
+- `=` - Calculator (e.g., `=2+2`)
+- `.` - Unicode symbols (e.g., `.lambda` → λ)
+- `>` - Run shell commands
+- `;s` - Switch tmux sessions
+- `;p` - Switch i3pm projects
 
-**Configuration**: `/etc/nixos/home-modules/desktop/walker.nix` (fully configured, no changes needed)
-
-**Known Limitations on X11**:
-- Clipboard history is disabled (Elephant's clipboard provider requires Wayland/wl-clipboard)
-- X11 clipboard monitoring not supported by Elephant backend
-
-### Quick Reference
-
-#### Launch Walker
+**Common Tasks**:
 ```bash
-Meta+D     # Primary keybinding
-Alt+Space  # Alternative keybinding
-```
+# Launch app with project context
+Meta+D → type "code" → Return
 
-#### Provider Prefixes
+# Search files
+Meta+D → type "/file.nix" → Return
 
-| Prefix | Provider | Example | Description |
-|--------|----------|---------|-------------|
-| (none) | Applications | `code` | Launch applications from i3pm registry |
-| `/` | Files | `/walker.nix` | Search for files in $HOME or project dir |
-| `@` | Web Search | `@nixos tutorial` | Search web with configured engines |
-| `=` | Calculator | `=2+2` | Evaluate math expressions |
-| `.` | Symbols | `.lambda` | Find Unicode symbols/emoji |
-| `>` | Runner | `>echo hello` | Run shell commands |
-| `;s ` | Sesh | `;s nixos` | Switch tmux sessions |
-| `;p ` | Projects | `;p ` (space after) | Switch i3pm projects |
-
-#### Keybindings (within Walker)
-
-| Key | Action |
-|-----|--------|
-| `Return` | Execute default action |
-| `Ctrl+Return` | Execute alternate action (e.g., open file with default app) |
-| `Shift+Return` | Execute tertiary action (e.g., run command in terminal) |
-| `Esc` | Close Walker |
-| `↑/↓` | Navigate results |
-
-### Common Workflows
-
-#### Launch Application with Project Context
-```bash
-# 1. Press Meta+D to open Walker
-# 2. Type application name (e.g., "code")
-# 3. Press Return
-# → Application launches with I3PM_* environment variables from active project
-```
-
-**Environment Variables Inherited**:
-- `DISPLAY` - X11 display for window rendering
-- `I3PM_PROJECT_NAME` - Active project name (e.g., "nixos")
-- `I3PM_PROJECT_DIR` - Project directory path (e.g., "/etc/nixos")
-- `I3PM_APP_NAME` - Application name from registry
-- `I3PM_SCOPE` - "scoped" or "global"
-- `XDG_DATA_DIRS` - Isolated to i3pm-applications directory
-
-#### File Search
-```bash
-# Search for files
-Meta+D → type "/walker.nix" → select file → Return
-# → Opens in Ghostty + Neovim
-
-# Open with default application
-Meta+D → type "/document.pdf" → Ctrl+Return
-# → Opens with xdg-open (default PDF viewer)
-
-# Open file at specific line number
-# (if walker-open-in-nvim script supports it)
-Meta+D → type "/file.txt" → Return
-# → Opens at line 1 by default
-```
-
-**Search Scope**:
-- User home directory (`$HOME`)
-- Active project directory (`$I3PM_PROJECT_DIR` if project active)
-- Excludes: `.git`, `.cache`, `.nix-profile`, `node_modules`, `target`, `result`
-
-#### Web Search
-```bash
-# Search with default engine (Google)
+# Web search
 Meta+D → type "@nixos tutorial" → Return
 
-# Search with specific engine
-Meta+D → type "@" → select "GitHub" → type "nixos" → Return
+# Math
+Meta+D → type "=2+2" → Return  # Copies "4" to clipboard
 ```
 
-**Configured Search Engines**:
-- Google (default)
-- DuckDuckGo
-- GitHub
-- YouTube
-- Wikipedia
-
-**URL Encoding**: Special characters automatically encoded (e.g., "C++" → "C%2B%2B")
-
-#### Calculator
+**Service Management**:
 ```bash
-# Basic math
-Meta+D → type "=2+2" → Return (copies "4" to clipboard)
-
-# Supported operators
-=10+5     → 15 (addition)
-=10-5     → 5 (subtraction)
-=10*5     → 50 (multiplication)
-=100/4    → 25 (division)
-=17%5     → 2 (modulo)
-=2^8      → 256 (exponentiation)
-=(2+3)*4  → 20 (parentheses)
+systemctl --user status elephant  # Check backend service
+journalctl --user -u elephant -f  # View logs
 ```
 
-**Result**: Automatically copied to clipboard for pasting
+**Detailed Documentation**: See `/etc/nixos/specs/043-get-full-functionality/quickstart.md`
 
-#### Symbol Picker
+## 🔄 Sway Dynamic Configuration Management (Feature 047)
+
+Hot-reloadable Sway configuration with validation, version control, and conflict detection. Uses template-based approach to avoid home-manager conflicts.
+
+**Configuration Files** (writable, Git-tracked):
+- `~/.config/sway/keybindings.toml` - Keybinding definitions
+- `~/.config/sway/window-rules.json` - Window rules
+- `~/.config/sway/workspace-assignments.json` - Workspace assignments
+
+**Essential Commands**:
 ```bash
-# Search for symbol
-Meta+D → type ".lambda" → select λ → Return
-# → Symbol inserts at cursor position in focused application
+# Reload configuration (auto-validates, commits to Git)
+swaymsg reload  # or Mod+Shift+C
 
-# Browse mode
-Meta+D → type "." → browse symbols
+# Validate without applying
+swayconfig validate
 
-# Common searches
-.heart    → ❤, 💙, 💚, 💛
-.arrow    → →, ←, ↑, ↓
-.check    → ✓, ✔
+# View version history
+swayconfig versions
+
+# Rollback to previous version
+swayconfig rollback <commit-hash>
+
+# Check daemon status
+systemctl --user status sway-config-daemon
 ```
 
-#### Shell Commands
-```bash
-# Background execution (no terminal)
-Meta+D → type ">notify-send 'Test'" → Return
-# → Desktop notification appears, no terminal
+**Key Features**:
+- <100ms hot-reload latency
+- Automatic syntax/semantic validation
+- Git version control (auto-commit on success)
+- File watcher with 500ms debounce
+- Template initialization from `~/.local/share/sway-config-manager/templates/`
 
-# Terminal execution
-Meta+D → type ">echo 'Hello'" → Shift+Return
-# → Ghostty terminal opens with command output
-
-# Interactive commands
-Meta+D → type ">htop" → Shift+Return
-# → htop runs in Ghostty terminal
-```
-
-**Execution Modes**:
-- `Return`: Background (silent, no terminal)
-- `Shift+Return`: Terminal (Ghostty opens with output)
-
-### Service Management
-
-#### Elephant Backend Service
-```bash
-# Check service status
-systemctl --user status elephant
-
-# View service logs
-journalctl --user -u elephant -f
-
-# Restart service
-systemctl --user restart elephant
-
-# Check service environment
-systemctl --user show-environment | grep -E "DISPLAY|PATH|XDG_"
-```
-
-**Service Health**:
-- Should be `active (running)` at all times
-- Memory usage: ~30-100MB (varies with loaded providers)
-- Auto-restarts on failure (RestartSec=1)
-
-#### Troubleshooting
-
-**Walker doesn't open when pressing Meta+D**:
-```bash
-# Check i3 keybinding
-grep "bindsym.*walker" ~/.config/i3/config
-
-# Try launching manually
-env GDK_BACKEND=x11 walker
-```
-
-**Elephant service not running**:
-```bash
-# Check service status
-systemctl --user status elephant
-
-# Check DISPLAY environment
-systemctl --user show-environment | grep DISPLAY
-
-# Restart service
-systemctl --user restart elephant
-
-# If DISPLAY issue, reload i3 (imports DISPLAY)
-i3-msg reload
-```
-
-**File search returns no results**:
-```bash
-# Check file provider enabled
-grep "files = true" ~/.config/walker/config.toml
-
-# Verify file is in search scope
-echo $HOME  # Should include your home directory
-i3pm project current  # Check active project directory
-```
-
-### Configuration Files
-
-**Walker Config**:
-- Location: `~/.config/walker/config.toml`
-- Generated by: `/etc/nixos/home-modules/desktop/walker.nix`
-- DO NOT edit directly - changes will be overwritten by home-manager
-- To customize: Edit walker.nix and rebuild
-
-**Elephant Websearch Config**:
-- Location: `~/.config/elephant/websearch.toml`
-- Generated by: walker.nix (xdg.configFile)
-- Add search engines by editing walker.nix:
-  ```nix
-  [[engines]]
-  name = "StackOverflow"
-  url = "https://stackoverflow.com/search?q=%s"
-  ```
-
-**Elephant Service**:
-- Service file: `~/.config/systemd/user/elephant.service`
-- Environment: DISPLAY, PATH, XDG_DATA_DIRS, XDG_RUNTIME_DIR
-- Auto-generated by home-manager
-
-### Performance Notes
-
-| Operation | Target | Typical |
-|-----------|--------|---------|
-| Walker launch | <100ms | 50-80ms |
-| File search (10k files) | <500ms | 200-400ms |
-| Application launch overhead | <50ms | 20-30ms |
-| Elephant memory | <30MB baseline | 30-100MB active |
-
-### Validation Status
-
-**✅ Configuration Validated** (Feature 043 - 2025-10-27):
-- All providers enabled and configured (except clipboard - X11 limitation)
-- Elephant service running with correct environment
-- DISPLAY propagation working via i3 integration
-- 16 applications available in i3pm registry
-- 5 search engines configured
-- All provider prefixes configured (7 total, clipboard disabled on X11)
-
-**⏳ Interactive Testing Pending**:
-- Performance measurements (timing tests)
-- File search behavior
-- Web search URL encoding
-- Calculator operator testing
-- Symbol picker fuzzy search
-- Shell command execution modes
-
-**Documentation**:
-- Validation report: `/etc/nixos/specs/043-get-full-functionality/VALIDATION_REPORT.md`
-- Quickstart guide: `/etc/nixos/specs/043-get-full-functionality/quickstart.md`
-- Data model: `/etc/nixos/specs/043-get-full-functionality/data-model.md`
-- User workflows: `/etc/nixos/specs/043-get-full-functionality/contracts/user-workflows.md`
+**Detailed Documentation**: See `/etc/nixos/specs/047-create-a-new/quickstart.md`
 
 ## 🌐 PWA Management
 
@@ -478,6 +282,18 @@ nix flake lock --update-input nixpkgs
 ## ⚠️ Important Notes
 
 ### Recent Updates (2025-10)
+
+- **Sway Dynamic Configuration Management** - Hot-reloadable Sway configuration (Feature 047)
+  - Migrated from i3/X11 to Sway/Wayland as primary window manager on Hetzner Cloud
+  - Dynamic keybinding management with TOML-based configuration
+  - Automatic validation before applying configuration changes
+  - Git-based version control with automatic commits on successful reloads
+  - File watcher for automatic reloads (500ms debounce)
+  - Template-based approach avoids home-manager read-only symlink conflicts
+  - Configuration files: `~/.config/sway/keybindings.toml`, `window-rules.json`, `workspace-assignments.json`
+  - CLI commands: `swayconfig reload`, `swayconfig validate`, `swayconfig rollback`, `swayconfig versions`
+  - <100ms reload latency, conflict detection, rollback support
+  - Documentation: `/etc/nixos/specs/047-create-a-new/quickstart.md`
 
 - **Linux System Log Integration** - Multi-source event monitoring and correlation (Feature 029)
   - Unified event stream from systemd journals, /proc filesystem, and i3 events
@@ -561,11 +377,12 @@ nix flake lock --update-input nixpkgs
 
 ### Overview
 
-The i3 window manager includes a project-scoped application workspace management system that allows you to:
+The i3pm (i3 project management) system provides project-scoped application workspace management for i3 and Sway window managers (both share the same IPC protocol). Features include:
 - Switch between project contexts (NixOS, Stacks, Personal)
 - Automatically show/hide project-specific applications
 - Maintain global applications accessible across all projects
 - Adapt workspace distribution across multiple monitors
+- Works on both i3/X11 and Sway/Wayland configurations
 
 ### Quick Reference Keybindings
 
@@ -593,65 +410,34 @@ The i3 window manager includes a project-scoped application workspace management
 - K9s
 - Google AI PWA
 
-### Shell Commands
-
-The following shell aliases are available for project management:
-
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `i3pm project switch <name>` | `pswitch` | Switch to a project |
-| `i3pm project clear` | `pclear` | Clear active project (global mode) |
-| `i3pm project list` | `plist` | List all available projects |
-| `i3pm project current` | `pcurrent` | Show current active project |
-| `i3pm project create` | - | Create a new project |
-| `i3pm daemon status` | - | Show daemon status and diagnostics |
-| `i3pm daemon events` | - | Show recent daemon events for debugging |
-| `i3pm diagnose health` | - | Comprehensive daemon health check (Feature 039) |
-| `i3pm diagnose window <id>` | - | Inspect window properties and identity (Feature 039) |
-| `i3pm diagnose events` | - | View event history and live stream (Feature 039) |
-| `i3pm diagnose validate` | - | Validate daemon state consistency (Feature 039) |
-| `i3pm monitors config show` | - | Display workspace-monitor configuration |
-| `i3pm monitors config edit` | - | Edit configuration in $EDITOR |
-| `i3pm monitors config validate` | - | Validate configuration syntax |
-| `i3pm monitors config reload` | - | Hot-reload config without restart |
-| `i3pm monitors reassign` | - | Apply workspace distribution now |
-| `i3pm monitors status` | - | Show monitor table with roles |
-| `i3pm monitors workspaces` | - | Show workspace assignments |
-
-### Workspace-to-Monitor Configuration
-
-Feature 033 provides declarative workspace distribution across monitors:
+### Essential Commands
 
 ```bash
-# View current configuration
-i3pm monitors config show
+# Project management (aliases: pswitch, pclear, plist, pcurrent)
+i3pm project switch <name>        # Switch to project
+i3pm project create <name> --directory <dir> --icon "🚀"
+i3pm project list                 # List all projects
+i3pm project current              # Show active project
 
-# Edit configuration
-i3pm monitors config edit
+# Daemon monitoring
+i3pm daemon status                # Status and diagnostics
+i3pm daemon events --follow       # Real-time event stream
 
-# Validate configuration
-i3pm monitors config validate
+# Diagnostics (Feature 039)
+i3pm diagnose health              # Health check
+i3pm diagnose window <id>         # Window properties
+i3pm diagnose validate            # State consistency
 
-# Reload configuration (no restart needed)
-i3pm monitors config reload
-
-# Apply workspace redistribution
-i3pm monitors reassign
-i3pm monitors reassign --dry-run  # Preview changes
-
-# View system state
-i3pm monitors status              # Monitor table
-i3pm monitors workspaces          # Workspace assignments
+# Multi-monitor workspace distribution (Feature 033)
+i3pm monitors config show         # View configuration
+i3pm monitors reassign            # Apply workspace distribution
+i3pm monitors status              # Show monitor table
 ```
 
-**Configuration File**: `~/.config/i3/workspace-monitor-mapping.json`
-
-**Default Distribution**:
+**Workspace Distribution** (auto-adapts on monitor connect/disconnect):
 - 1 monitor: All workspaces on primary
 - 2 monitors: WS 1-2 primary, WS 3-70 secondary
-- 3 monitors: WS 1-2 primary, WS 3-5 secondary, WS 6-70 tertiary
-
-**Automatic Adaptation**: Workspaces automatically redistribute when monitors are connected/disconnected (configurable via `enable_auto_reassign` and `debounce_ms` settings).
+- 3+ monitors: WS 1-2 primary, WS 3-5 secondary, WS 6-70 tertiary
 
 ### Daemon Management
 
@@ -827,7 +613,7 @@ After connecting/disconnecting monitors, **workspaces automatically reassign** (
    - Look for "preserved_state=True" on subsequent hides
 3. Check window state file: `cat ~/.config/i3/window-workspace-map.json | jq '.version'`
    - Should be "1.1" for full state preservation
-4. If version is old, rebuild and restart daemon: `sudo nixos-rebuild switch --flake .#hetzner`
+4. If version is old, rebuild and restart daemon: `sudo nixos-rebuild switch --flake .#hetzner-sway`
 
 **Floating windows losing position/size (Feature 038):**
 1. Verify geometry is being captured: `journalctl --user -u i3-project-event-listener | grep "Captured geometry"`
@@ -999,459 +785,76 @@ i3pm diagnose validate
 - Timeout errors: "Check daemon status: systemctl --user status i3-project-event-listener"
 - Window not found: "Tip: Get window ID with: i3-msg -t get_tree | jq '..'"
 
-## 🚀 IPC Launch Context for Multi-Instance App Tracking (Feature 041)
+## 🚀 IPC Launch Context (Feature 041)
 
-### Overview
+Solves multi-instance application tracking by correlating windows to launches via pre-notification system.
 
-Feature 041 introduces **IPC Launch Context**, a pre-notification system that solves the multi-instance application tracking problem. When you launch VS Code for "nixos" and then launch another VS Code for "stacks", each window is correctly assigned to its respective project with 100% accuracy.
+**Key Concept**: Launcher wrapper notifies daemon BEFORE app starts. When window appears (0.5-2s later), daemon correlates it using class match + timing + workspace signals.
 
-**Key Innovation**: The launcher wrapper sends a notification to the daemon BEFORE the application starts, creating a "pending launch" entry. When the window appears (0.5-2s later), the daemon correlates it to the correct launch using multiple signals (application class, timing, workspace) and assigns the correct project.
+**Accuracy**: 100% for sequential launches (>2s apart), 95% for rapid launches (<0.5s apart)
 
-**Benefits**:
-- ✅ **100% accurate** project assignment for sequential launches (>2s apart)
-- ✅ **95% accurate** for rapid launches (<0.5s apart) using signal-based disambiguation
-- ✅ **No fallback mechanisms** - system fails explicitly rather than guessing
-- ✅ **Zero configuration** - works automatically with app-launcher-wrapper.sh
-- ✅ **Performance** - <10ms correlation, <100ms total latency, <5MB memory overhead
-
-### How It Works
-
-1. **Application Launch**:
-   - User launches app via Walker, keybinding, or CLI
-   - `app-launcher-wrapper.sh` intercepts the launch
-   - Wrapper sends `notify_launch` to daemon via Unix socket (synchronous)
-   - Daemon creates `PendingLaunch` entry with expected window class, project, workspace
-   - Application executes (wrapper waits for window to appear)
-
-2. **Window Creation**:
-   - Application window appears (0.5-2s after launch)
-   - Daemon receives i3 `window::new` event
-   - Gets window PID using xprop, reads window class
-   - Queries launch registry: `find_match(window_info)`
-   - Calculates correlation confidence using signals
-
-3. **Correlation Algorithm**:
-   - **Required**: Application class match (baseline 0.5 confidence)
-   - **Timing**: Time delta since launch (<1s: +0.3, <2s: +0.2, <5s: +0.1)
-   - **Workspace**: Workspace match adds +0.2 boost
-   - **Threshold**: Minimum 0.6 (MEDIUM) confidence required
-   - **First-match-wins**: If multiple pending launches, select highest confidence
-
-4. **Project Assignment**:
-   - If confidence >= 0.6: Assign project to window, mark launch as matched
-   - If confidence < 0.6: Reject match, log error (explicit failure)
-   - Pending launches expire after 5 seconds (±0.5s accuracy)
-
-### CLI Commands
-
-**Query launch registry stats**:
+**Essential Commands**:
 ```bash
-# View launch correlation metrics
-i3pm daemon status
+# View correlation metrics
+i3pm daemon status  # Shows launch registry stats
 
-# Output includes:
-# Launch Registry (Feature 041):
-# Pending:         3 (2 unmatched)
-# Notifications:   127
-# Matched:         120 (94.5%)
-# Expired:         5 (3.9%)
-# Failed:          2
-```
+# Debug window correlation
+i3pm diagnose window <window_id>  # Shows matched_via_launch, confidence, signals_used
 
-**Debug pending launches**:
-```bash
-# List current pending launches
-# Note: This command needs to be added or use daemon events
+# View launch events
 i3pm daemon events --type=launch --limit=10
-
-# View window correlation info
-i3pm diagnose window <window_id>
-# Shows: matched_via_launch, launch_id, confidence, signals_used
 ```
 
-### Troubleshooting
+**Troubleshooting**:
+- Window assigned to wrong project → Check `i3pm diagnose window <id>` for confidence score
+- Launch notification not received → Verify `app-launcher-wrapper.sh` is being used
+- Pending launch expired → Check daemon logs for timing issues
 
-**Window assigned to wrong project**:
-```bash
-# Check correlation details
-i3pm diagnose window <window_id>
-
-# Look for:
-# - matched_via_launch: true/false
-# - confidence: <score>
-# - signals_used: {class_match, time_delta, workspace_match}
-
-# If confidence is low (<0.6), check:
-# 1. Expected window class matches actual class
-# 2. Window appeared within 5 seconds of launch
-# 3. Workspace configuration is correct
-```
-
-**Launch notification not received**:
-```bash
-# Check daemon is running
-i3pm daemon status
-
-# Check app-launcher-wrapper is being used
-which app-launcher-wrapper.sh
-
-# Check daemon events for launch notifications
-i3pm daemon events --limit=20 | grep notify_launch
-
-# If no notifications, check launcher is sending them:
-tail -f ~/.local/state/app-launcher.log
-```
-
-**Rapid launches mismatching** (e.g., VS Code for "nixos" and "stacks" 0.2s apart):
-```bash
-# Expected: 95% accuracy with MEDIUM confidence (0.6+)
-# Check timing and workspace signals are being used
-
-# View correlation for both windows
-i3pm diagnose window <window1_id>
-i3pm diagnose window <window2_id>
-
-# Verify:
-# - Different workspace_numbers provide disambiguation
-# - Time deltas are distinct (e.g., 0.7s vs 0.9s)
-# - Both have HIGH confidence (0.8+) if possible
-```
-
-**Pending launch expired** (window appeared after 5 seconds):
-```bash
-# Check for expired launches
-i3pm daemon status
-# Look at "Expired: <count>" in launch registry stats
-
-# Common causes:
-# - Application slow to start (system under load)
-# - Window class mismatch (wrong expected_class in registry)
-# - Application crashed before creating window
-
-# Check daemon logs
-journalctl --user -u i3-project-event-listener -n 50 | grep expired
-```
-
-**Window appeared without matching launch**:
-```bash
-# Check window was launched via app-launcher-wrapper
-# If launched directly from terminal, no notification sent
-
-# Verify daemon received notification
-i3pm daemon events --limit=50 | grep <app_name>
-
-# If notification sent but no match:
-# - Check window class matches expected_class
-# - Verify window appeared within 5 seconds
-# - Check for correlation errors in daemon logs
-journalctl --user -u i3-project-event-listener -n 100 | grep correlation
-```
-
-### Configuration
-
-**No configuration required** - the system uses:
-- Application registry (`~/.config/i3/application-registry.json`)
-- Expected window class from registry (`expected_class` field)
-- Active project context from daemon
-
-**Customization** (if needed):
-```bash
-# Adjust timeout (default: 5 seconds)
-# Edit launch_registry.py:
-# self.timeout = 5.0  # Increase if apps are slow to start
-
-# Adjust confidence threshold (default: 0.6 MEDIUM)
-# Edit window_correlator.py:
-# CONFIDENCE_THRESHOLD = 0.6  # Raise for stricter matching
-```
-
-### Success Criteria Validation
-
-From Feature 041 specification:
-
-- **SC-001**: Sequential launches (>2s) → 100% accuracy with HIGH confidence (0.8+) ✓
-- **SC-002**: Rapid launches (<0.5s) → 95% accuracy with MEDIUM+ confidence (0.6+) ✓
-- **SC-003**: Correlation latency → <100ms for 95% of launches ✓
-- **SC-005**: Timeout accuracy → 5±0.5s with 100% accuracy ✓
-- **SC-009**: Pure IPC (no fallback) → 100% ✓
-- **SC-010**: Edge case coverage → 100% ✓
-
-### Technical Details
-
-**IPC Endpoints** (JSON-RPC over Unix socket):
-- `notify_launch`: Launcher wrapper → Daemon (before app execution)
-- `get_launch_stats`: CLI → Daemon (query correlation metrics)
-- `get_pending_launches`: CLI → Daemon (debug pending launches)
-- `get_window_state`: Extended with correlation info (if matched via launch)
-
-**Data Models** (Pydantic):
-- `PendingLaunch`: app_name, project_name, expected_class, timestamp, workspace_number
-- `LaunchWindowInfo`: window_id, window_class, window_pid, workspace_number, timestamp
-- `CorrelationResult`: confidence, signals_used, matched_launch
-
-**Performance Characteristics**:
-- notify_launch: 2-3ms (Unix socket + in-memory insertion)
-- find_match: 5-10ms (iterate pending launches, calculate confidence)
-- Total latency: <100ms (notification + window event + correlation + project assignment)
-- Memory: <200 bytes per pending launch, <5MB total overhead
-
-For complete technical documentation, see:
-- Specification: `/etc/nixos/specs/041-ipc-launch-context/spec.md`
-- API contracts: `/etc/nixos/specs/041-ipc-launch-context/contracts/ipc-endpoints.md`
-- Quickstart guide: `/etc/nixos/specs/041-ipc-launch-context/quickstart.md`
+**Detailed Documentation**: See `/etc/nixos/specs/041-ipc-launch-context/quickstart.md`
 
 ## 📦 Registry-Centric Architecture (Feature 035)
 
-### Overview
+Environment variable-based project management replacing tag-based system. Applications launched via registry inherit `I3PM_*` environment variables for deterministic window-to-project association.
 
-Feature 035 introduces a **registry-centric** approach that replaces the old tag-based system with **environment variable-based filtering**. This provides a simpler, more powerful architecture for project-scoped window management.
+**Key Concepts**:
+- **Application Registry** (`app-registry.nix`): Single source of truth for apps, metadata, workspace assignments
+- **Environment Variables**: `I3PM_PROJECT_NAME`, `I3PM_PROJECT_DIR`, `I3PM_APP_NAME`, `I3PM_SCOPE`
+- **Window Filtering**: Daemon reads `/proc/<pid>/environ` to determine window ownership
+- **No Configuration**: Automatic based on active project
 
-### Key Concepts
-
-**Application Registry** (`app-registry.nix`):
-- Single source of truth for all applications
-- Defines application metadata: name, command, scope, workspace
-- Auto-generates desktop files for launchers
-- Auto-generates i3 window rules for global apps
-
-**Environment Variable Injection**:
-- All applications launched via `app-launcher` receive `I3PM_*` environment variables
-- Variables persist in `/proc/<pid>/environ` and are read by the daemon
-- Enables deterministic window-to-project association
-- No configuration needed - automatic based on active project
-
-**I3PM Environment Variables**:
+**Essential Commands**:
 ```bash
-I3PM_APP_ID             # Unique instance ID: ${app}-${project}-${pid}-${timestamp}
-I3PM_APP_NAME           # Registry application name (e.g., "vscode", "terminal")
-I3PM_PROJECT_NAME       # Active project name (e.g., "nixos", "stacks", or empty)
-I3PM_PROJECT_DIR        # Project directory path
-I3PM_PROJECT_DISPLAY_NAME  # Human-readable project name
-I3PM_PROJECT_ICON       # Project icon emoji
-I3PM_SCOPE              # Application scope: "scoped" or "global"
-I3PM_ACTIVE             # "true" if project active, "false" otherwise
-I3PM_LAUNCH_TIME        # Unix timestamp of launch
-I3PM_LAUNCHER_PID       # Wrapper script PID
+# Application management
+i3pm apps list                    # List registered apps
+i3pm apps show vscode             # Show app details
+
+# Project management
+i3pm project create <name> --directory <dir> --icon "🚀"
+i3pm project list                 # List projects
+i3pm project switch nixos         # Switch projects (or use 'pswitch' alias)
+i3pm project current              # Show active project
+
+# Layout management
+i3pm layout save nixos            # Save current layout
+i3pm layout restore nixos         # Restore saved layout
+i3pm layout list                  # List saved layouts
+
+# Daemon monitoring
+i3pm daemon status                # Check daemon
+i3pm daemon events --follow       # Real-time event stream
 ```
 
-**Window Filtering**:
-- Daemon reads `/proc/<pid>/environ` for each window
-- Extracts `I3PM_PROJECT_NAME` to determine window ownership
-- Automatically shows/hides windows when switching projects
-- No manual configuration or tagging required
-
-### CLI Commands
-
-**Application Management**:
+**Debugging**:
 ```bash
-# List all registered applications
-i3pm apps list
-i3pm apps list --scope=scoped   # Filter by scope
-i3pm apps list --workspace=3    # Filter by workspace
-
-# Show application details
-i3pm apps show vscode
-i3pm apps show terminal --json  # JSON output for scripting
-```
-
-**Project Management**:
-```bash
-# Create new project
-i3pm project create mynewproject \
-  --directory ~/projects/mynewproject \
-  --display-name "My New Project" \
-  --icon "🚀"
-
-# List projects
-i3pm project list
-i3pm project list --json
-
-# Show project details
-i3pm project show nixos
-i3pm project current    # Show active project
-
-# Switch projects
-i3pm project switch nixos
-pswitch nixos  # Shell alias
-
-# Update project
-i3pm project update nixos --icon "💻"
-
-# Delete project (with confirmation)
-i3pm project delete oldproject
-```
-
-**Layout Management** (NEW in Feature 035):
-```bash
-# Save current window layout for a project
-i3pm layout save nixos
-i3pm layout save nixos custom-layout  # Named layout
-i3pm layout save nixos --overwrite    # Overwrite existing
-
-# Restore saved layout
-i3pm layout restore nixos              # Uses project's saved layout
-i3pm layout restore nixos custom-layout  # Restore specific layout
-i3pm layout restore nixos --dry-run    # Preview without launching
-
-# Delete layout
-i3pm layout delete nixos
-i3pm layout delete nixos custom-layout
-
-# List all saved layouts
-i3pm layout list
-i3pm layout list --json
-```
-
-**Daemon Monitoring**:
-```bash
-# Check daemon status
-i3pm daemon status
-i3pm daemon status --json
-
-# View daemon events
-i3pm daemon events --limit=50
-i3pm daemon events --type=window  # Filter by event type
-i3pm daemon events --follow       # Real-time stream
-
-# Quick ping
-i3pm daemon ping
-```
-
-### Application Registry Structure
-
-Located at: `home-modules/desktop/app-registry.nix`
-
-```nix
-{
-  name = "vscode";                  # Unique identifier (used in CLI commands)
-  display_name = "VS Code";         # Human-readable name
-  command = "code";                 # Command to execute
-  scope = "scoped";                 # "scoped" or "global"
-  preferred_workspace = 2;          # Workspace assignment
-  expected_class = "Code";          # Window class for matching
-
-  # Optional fields:
-  fallback_behavior = "skip";       # "skip", "use_home", or "error"
-  multi_instance = true;            # Allow multiple instances
-  expected_title_contains = "Code"; # Title matching fallback
-
-  # Variable substitution in parameters:
-  # $PROJECT_DIR → replaced with project directory
-  # Example: parameters = "$PROJECT_DIR";
-}
-```
-
-### How It Works
-
-1. **Application Launch**:
-   - User launches app via Walker, keybinding, or CLI
-   - `app-launcher-wrapper.sh` intercepts the launch
-   - Wrapper queries daemon for active project
-   - Injects `I3PM_*` environment variables
-   - Launches application (variables persist in /proc)
-
-2. **Window Creation**:
-   - Daemon receives i3 window::new event
-   - Gets window PID using xprop
-   - Reads `/proc/<pid>/environ` for `I3PM_*` variables
-   - Extracts `I3PM_PROJECT_NAME` and `I3PM_APP_ID`
-   - Applies project mark and workspace assignment
-
-3. **Project Switch**:
-   - User switches project via CLI or keybinding
-   - Daemon receives tick event
-   - Scans all windows, reading `/proc/<pid>/environ` for each
-   - Compares `I3PM_PROJECT_NAME` to new active project
-   - Moves non-matching scoped windows to scratchpad (hidden)
-   - Keeps matching and global windows visible
-
-4. **Layout Save/Restore**:
-   - **Save**: Captures i3 tree, reads `/proc` for each window, records `I3PM_APP_ID` and geometry
-   - **Restore**: Closes existing project windows, launches apps with `I3PM_APP_ID_OVERRIDE`, positions windows
-
-### Benefits Over Tag-Based System
-
-**Simplicity**:
-- ✅ No manual tag configuration needed
-- ✅ No XDG isolation required
-- ✅ No application-to-tag mappings
-- ✅ Environment variables provide context automatically
-
-**Reliability**:
-- ✅ Deterministic window matching via unique instance IDs
-- ✅ Process environment persists for window lifetime
-- ✅ No race conditions or timing issues
-- ✅ Handles multiple instances of same app correctly
-
-**Visibility**:
-- ✅ Check environment: `cat /proc/<pid>/environ | tr '\0' '\n' | grep I3PM_`
-- ✅ Monitor launches: `tail -f ~/.local/share/app-launcher/launcher.log`
-- ✅ Daemon events: `i3pm daemon events --follow`
-
-### Configuration Files
-
-```
-~/.config/i3/
-├── application-registry.json   # Runtime registry (generated from app-registry.nix)
-├── projects/                   # Project definitions
-│   ├── nixos.json
-│   ├── stacks.json
-│   └── personal.json
-├── layouts/                    # Saved layouts (Feature 035)
-│   ├── nixos.json              # Default layout for nixos project
-│   └── nixos-custom.json       # Named layout
-├── active-project.json         # Current active project
-└── window-rules-generated.conf # Auto-generated i3 rules (Feature 035)
-```
-
-### Debugging
-
-**Check application environment**:
-```bash
-# Find PID of window
-xprop _NET_WM_PID | awk '{print $3}'
-
-# View environment variables
+# Check window environment
+xprop _NET_WM_PID | awk '{print $3}'  # Get PID
 cat /proc/<pid>/environ | tr '\0' '\n' | grep I3PM_
-```
 
-**Monitor application launches**:
-```bash
+# Monitor launches
 tail -f ~/.local/state/app-launcher.log
 ```
 
-**Test window filtering**:
-```bash
-# Launch app in project
-pswitch nixos
-~/.local/bin/app-launcher-wrapper.sh vscode
-
-# Verify environment
-# (Find PID, check /proc/<pid>/environ for I3PM_PROJECT_NAME=nixos)
-
-# Switch to different project
-pswitch stacks
-
-# Verify window hidden
-i3pm windows | grep Code  # Should not appear
-```
-
-**Validate registry**:
-```bash
-# Check registry loaded correctly
-i3pm apps list
-i3pm apps show vscode --json | jq .
-
-# Verify daemon can read registry
-i3pm daemon status | grep -i registry
-```
-
-For complete documentation, see:
-```bash
-cat /etc/nixos/specs/035-now-that-we/quickstart.md
-cat /etc/nixos/specs/035-now-that-we/data-model.md
-cat /etc/nixos/specs/035-now-that-we/contracts/cli-commands.md
-```
+**Detailed Documentation**: See `/etc/nixos/specs/035-now-that-we/quickstart.md`
 
 ## 🪟 Window State Visualization (Feature 025)
 
@@ -1716,5 +1119,8 @@ See `docs/DARWIN_SETUP.md` for detailed setup instructions for your M1 MacBook P
 
 ---
 
-_Last updated: 2025-10-20 with Python testing workflows and i3 IPC patterns_
-- add the need to stage files when rebuilding nixos sytem
+_Last updated: 2025-10-29 with Sway/Wayland migration and Feature 047 (Dynamic Configuration Management)_
+- Migrated primary configuration from i3/X11 to Sway/Wayland (hetzner-sway)
+- Added hot-reloadable Sway configuration with validation and version control
+- Template-based configuration approach avoids home-manager conflicts
+- i3pm system works with both i3 and Sway via shared IPC protocol

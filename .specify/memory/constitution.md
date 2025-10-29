@@ -60,9 +60,9 @@ A reference configuration serves as the canonical example for full-featured NixO
 - Breaking changes MUST be tested on the reference configuration before other platforms
 - Documentation MUST clearly identify the current reference configuration
 
-**Current Reference**: Hetzner configuration (`configurations/hetzner-i3.nix`) - full-featured NixOS with i3 tiling window manager on standard x86_64 hardware, optimized for remote desktop access via xrdp
+**Current Reference**: Hetzner Sway configuration (`configurations/hetzner-sway.nix`) - full-featured NixOS with Sway Wayland compositor on standard x86_64 hardware, optimized for headless Wayland with VNC remote access and dynamic configuration management (Feature 047)
 
-**Rationale**: Originally, Hetzner provided a stable reference for KDE Plasma desktop deployments. The migration to i3wm + xrdp + X11 reflects the evolution toward keyboard-driven productivity workflows with superior multi-session RDP compatibility. This principle allows flexibility while maintaining the discipline of having a canonical reference.
+**Rationale**: Originally, Hetzner provided a stable reference for KDE Plasma desktop deployments. The migration to i3wm + xrdp + X11 reflected keyboard-driven workflows with multi-session RDP. The current Sway/Wayland migration provides modern compositor features, better performance, and native Wayland protocol support. Feature 047 adds hot-reloadable configuration with validation, version control, and template-based management to avoid home-manager conflicts. This principle allows flexibility while maintaining the discipline of having a canonical reference.
 
 ### III. Test-Before-Apply (NON-NEGOTIABLE)
 
