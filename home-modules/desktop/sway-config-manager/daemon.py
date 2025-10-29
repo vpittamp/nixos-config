@@ -4,6 +4,7 @@ Sway Configuration Manager Daemon
 Main daemon for dynamic Sway configuration management.
 Handles configuration loading, validation, and hot-reload.
 """
+# Module can be run with: python -m sway_config_manager
 
 import asyncio
 import logging
@@ -14,12 +15,12 @@ from typing import Optional
 
 from i3ipc.aio import Connection
 
-from .config import ConfigLoader, ConfigValidator, ConfigMerger, RollbackManager
-from .config.reload_manager import ReloadManager
-from .config.file_watcher import FileWatcher
-from .rules import KeybindingManager, WindowRuleEngine, WorkspaceAssignmentHandler
-from .ipc_server import IPCServer
-from .state import ConfigurationState
+from sway_config_manager.config import ConfigLoader, ConfigValidator, ConfigMerger, RollbackManager
+from sway_config_manager.config.reload_manager import ReloadManager
+from sway_config_manager.config.file_watcher import FileWatcher
+from sway_config_manager.rules import KeybindingManager, WindowRuleEngine, WorkspaceAssignmentHandler
+from sway_config_manager.ipc_server import IPCServer
+from sway_config_manager.state import ConfigurationState
 
 # Configure logging
 logging.basicConfig(

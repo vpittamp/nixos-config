@@ -13,6 +13,29 @@ let
     watchdog     # File system monitoring
   ]);
 
+  # Daemon source directory
+  daemonSrc = ./sway-config-manager;
+
+  # Daemon package - installs as Python module
+  daemonPackage = pkgs.stdenv.mkDerivation {
+    name = "sway-config-manager";
+    version = "1.0.1";  # Incremented to force rebuild with __main__.py
+    src = daemonSrc;
+
+    installPhase = ''
+      mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager
+      cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/
+    '';
+  };
+
+  # Wrapper script to run daemon with proper PYTHONPATH
+  daemonWrapper = pkgs.writeShellScript "sway-config-manager-daemon" ''
+    export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:''${PYTHONPATH}"
+    export PYTHONUNBUFFERED=1
+    cd ~
+    exec ${pythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
+  '';
+
   # Default keybindings file (external TOML file for easier maintenance)
   defaultKeybindingsPath = ./sway-default-keybindings.toml;
 
@@ -88,10 +111,11 @@ in {
       };
     };
 
-    # Python environment with dependencies (provided by shared python-environment.nix)
+    # Python environment with dependencies
     home.packages = with pkgs; [
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
+        export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
         exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
     ];
@@ -106,7 +130,7 @@ in {
 
       Service = {
         Type = "simple";
-        ExecStart = "${pythonEnv}/bin/python ${./sway-config-manager/daemon.py}";
+        ExecStart = "${daemonWrapper}";
         Restart = "on-failure";
         RestartSec = "3";
       };
