@@ -76,6 +76,20 @@ async function configShow(flags: Record<string, unknown>): Promise<number> {
       }>;
       active_project?: string | null;
       config_version?: string;
+      project_overrides?: {
+        window_rules?: Array<{
+          base_rule_id?: string | null;
+          override_properties: Record<string, unknown>;
+          enabled: boolean;
+          override_type: "modify" | "new";
+        }>;
+        keybindings?: Record<string, {
+          command?: string | null;
+          description?: string;
+          enabled: boolean;
+          override_type: "modify" | "new" | "disable";
+        }>;
+      };
     }>("config_show", params);
 
     if (flags.json) {
@@ -122,6 +136,20 @@ function printConfigTable(result: {
   }>;
   active_project?: string | null;
   config_version?: string;
+  project_overrides?: {
+    window_rules?: Array<{
+      base_rule_id?: string | null;
+      override_properties: Record<string, unknown>;
+      enabled: boolean;
+      override_type: "modify" | "new";
+    }>;
+    keybindings?: Record<string, {
+      command?: string | null;
+      description?: string;
+      enabled: boolean;
+      override_type: "modify" | "new" | "disable";
+    }>;
+  };
 }, flags: Record<string, unknown>): void {
   const includeSource = flags.sources !== false;
 
@@ -209,6 +237,61 @@ function printConfigTable(result: {
     }
     console.log("─".repeat(80));
     console.log();
+  }
+
+  // Feature 047 US3 T039: Print project overrides section
+  if (result.project_overrides) {
+    const hasWindowRules = result.project_overrides.window_rules && result.project_overrides.window_rules.length > 0;
+    const hasKeybindings = result.project_overrides.keybindings && Object.keys(result.project_overrides.keybindings).length > 0;
+
+    if (hasWindowRules || hasKeybindings) {
+      console.log("═".repeat(80));
+      console.log("                    PROJECT OVERRIDES");
+      console.log(`                    Project: ${result.active_project || "unknown"}`);
+      console.log("═".repeat(80));
+      console.log();
+
+      // Print window rule overrides
+      if (hasWindowRules) {
+        console.log("WINDOW RULE OVERRIDES:");
+        console.log("─".repeat(80));
+        console.log("Type     Base Rule ID    Override Properties           Enabled");
+        console.log("─".repeat(80));
+
+        for (const override of result.project_overrides.window_rules!) {
+          const type = override.override_type.padEnd(8);
+          const baseId = (override.base_rule_id || "new").padEnd(15);
+          const props = truncate(JSON.stringify(override.override_properties), 28).padEnd(29);
+          const enabled = override.enabled ? "✓" : "✗";
+
+          console.log(`${type} ${baseId} ${props} ${enabled}`);
+        }
+        console.log("─".repeat(80));
+        console.log();
+      }
+
+      // Print keybinding overrides
+      if (hasKeybindings) {
+        console.log("KEYBINDING OVERRIDES:");
+        console.log("─".repeat(80));
+        console.log("Type     Key Combo         Command                    Enabled");
+        console.log("─".repeat(80));
+
+        for (const [keyCombo, override] of Object.entries(result.project_overrides.keybindings!)) {
+          const type = override.override_type.padEnd(8);
+          const key = keyCombo.padEnd(16);
+          const command = truncate(override.command || "disabled", 25).padEnd(26);
+          const enabled = override.enabled ? "✓" : "✗";
+
+          console.log(`${type} ${key} ${command} ${enabled}`);
+        }
+        console.log("─".repeat(80));
+        console.log();
+      }
+
+      console.log(`Total Overrides: ${(result.project_overrides.window_rules?.length || 0) + (Object.keys(result.project_overrides.keybindings || {}).length)}`);
+      console.log();
+    }
   }
 
   // Print footer

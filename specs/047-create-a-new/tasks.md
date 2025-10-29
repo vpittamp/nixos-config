@@ -111,11 +111,11 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T032 [US3] Extend project JSON schema in `config/models.py` to include window_rule_overrides array (base_rule_id, override_properties, enabled) and keybinding_overrides dictionary
 - [X] T033 [US3] Implement project-aware window rule resolution in `rules/window_rule_engine.py` to check active project, load project overrides, and apply with precedence (project > global)
 - [X] T034 [US3] Integrate project context into window::new event handler in `daemon.py` to query active project and apply project-specific rules dynamically
-- [ ] T035 [US3] Update project configuration files in `~/.config/sway/projects/<name>.json` to include window_rule_overrides and keybinding_overrides sections
-- [ ] T036 [US3] Implement project override validation in `config/validator.py` to check that base_rule_id references exist and override_properties are valid WindowRule fields
-- [ ] T037 [US3] Add project-scoped keybinding override support in `rules/keybinding_manager.py` to replace/augment global keybindings when project is active
-- [ ] T038 [US3] Update configuration reload logic in `config/reload_manager.py` to reload project overrides when active project changes
-- [ ] T039 [US3] Add diagnostic output to config_show command to display project-specific overrides when --project flag is used
+- [X] T035 [US3] Update project configuration files in `~/.config/sway/projects/<name>.json` to include window_rule_overrides and keybinding_overrides sections
+- [X] T036 [US3] Implement project override validation in `config/validator.py` to check that base_rule_id references exist and override_properties are valid WindowRule fields
+- [X] T037 [US3] Add project-scoped keybinding override support in `rules/keybinding_manager.py` to replace/augment global keybindings when project is active
+- [X] T038 [US3] Update configuration reload logic in `config/reload_manager.py` to reload project overrides when active project changes
+- [X] T039 [US3] Add diagnostic output to config_show command to display project-specific overrides when --project flag is used
 
 **Checkpoint**: Project-specific window rules working - different window behavior based on active project context
 

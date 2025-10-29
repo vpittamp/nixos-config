@@ -105,10 +105,12 @@ class ReloadManager:
         - Structural validation (JSON Schema)
         - Semantic validation (Sway IPC queries)
         - Conflict detection
+        - Feature 047 US3: Project override validation
 
         Phase 2: Apply
         - Merge configurations
         - Apply to rule engines
+        - Feature 047 US3: Reload active project context
         - Reload Sway config
         - Commit to git
 
@@ -143,6 +145,17 @@ class ReloadManager:
                 keybindings, window_rules, workspace_assignments
             )
 
+            # Feature 047 US3: Validate project overrides if active project exists
+            if self.daemon.active_project:
+                project_errors = self.validator.validate_project_overrides(
+                    self.daemon.active_project,
+                    window_rules,
+                    keybindings
+                )
+                errors.extend(project_errors)
+                if project_errors:
+                    logger.warning(f"Project override validation found {len(project_errors)} errors")
+
             if errors:
                 result["errors"] = [e.dict() for e in errors]
                 logger.error(f"Validation failed with {len(errors)} errors")
@@ -169,6 +182,10 @@ class ReloadManager:
             logger.info("Phase 2: Applying configuration")
 
             async with self.transaction():
+                # Feature 047 US3: Reload active project context
+                # This ensures project overrides are fresh before applying rules
+                await self.daemon.load_active_project()
+
                 # Apply to rule engines
                 await self.daemon.window_rule_engine.load_rules(merged_rules)
                 await self.daemon.workspace_handler.load_assignments(merged_assignments)
