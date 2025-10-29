@@ -5,6 +5,14 @@ with lib;
 let
   cfg = config.programs.sway-config-manager;
 
+  # Python environment with all dependencies (defined once, reused everywhere)
+  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    i3ipc
+    pydantic
+    jsonschema
+    watchdog
+  ]);
+
   # Default keybindings file (external TOML file for easier maintenance)
   defaultKeybindingsPath = ./sway-default-keybindings.toml;
 
@@ -82,18 +90,11 @@ in {
 
     # Python environment with dependencies
     home.packages = with pkgs; [
-      (python3.withPackages (ps: with ps; [
-        i3ipc
-        pydantic
-        jsonschema
-        watchdog
-      ]))
+      pythonEnv
 
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
-        exec ${pkgs.python3.withPackages (ps: with ps; [
-          i3ipc pydantic jsonschema watchdog
-        ])}/bin/python ${./sway-config-manager/cli.py} "$@"
+        exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
     ];
 
@@ -107,9 +108,7 @@ in {
 
       Service = {
         Type = "simple";
-        ExecStart = "${pkgs.python3.withPackages (ps: with ps; [
-          i3ipc pydantic jsonschema watchdog
-        ])}/bin/python ${./sway-config-manager/daemon.py}";
+        ExecStart = "${pythonEnv}/bin/python ${./sway-config-manager/daemon.py}";
         Restart = "on-failure";
         RestartSec = "3";
       };
