@@ -404,6 +404,12 @@ in
       # Define modifier key for dynamic keybindings (Feature 047)
       set $mod Mod4
 
+      # Focus settings - auto-focus newly launched windows
+      # Feature: Auto-focus apps launched via Walker across all displays
+      # Benefit: Provides immediate feedback when launching apps from Walker
+      # Behavior: Workspace automatically switches to show newly launched app
+      focus_on_window_activation focus
+
       # Gaps (optional - clean appearance)
       gaps inner 5
       gaps outer 0

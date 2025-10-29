@@ -21,7 +21,9 @@
 
       # CRITICAL: Source home-manager session variables for login shells
       # This ensures KDE terminals that start login shells get the environment
+      # NOTE: Unset guard variable to allow re-sourcing (home-manager's .profile sources an old version first)
       if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
+        unset __HM_SESS_VARS_SOURCED
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
       
@@ -259,7 +261,9 @@
       # CRITICAL: Source home-manager session variables
       # This is required for all home-manager configurations to work properly
       # especially in KDE where the display manager doesn't source these
+      # NOTE: Unset guard variable to allow re-sourcing (ensure current version is used)
       if [ -e "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh" ]; then
+        unset __HM_SESS_VARS_SOURCED
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
 
@@ -315,7 +319,10 @@
       fi
       
       # Add /usr/local/bin to PATH for Docker Desktop
-      export PATH="/usr/local/bin:$PATH"
+      # IMPORTANT: Append (not prepend) to preserve /run/wrappers/bin priority
+      # NixOS sets PATH="/run/wrappers/bin:..." for setuid wrappers (sudo, etc.)
+      # Prepending here would break sudo: "must be owned by uid 0 and have the setuid bit set"
+      export PATH="$PATH:/usr/local/bin"
       
       # Fix DISPLAY for SSH sessions with X11 forwarding
       if [ -n "$SSH_CONNECTION" ] && [ -z "$WAYLAND_DISPLAY" ]; then

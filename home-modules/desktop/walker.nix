@@ -330,7 +330,8 @@ in
         # ${if isWaylandMode then "Wayland Mode (headless Sway)" else "X11 Mode (use window instead of Wayland layer shell)"}
         # Using default Walker theme
         as_window = ${if isWaylandMode then "false" else "true"}
-        force_keyboard_focus = false
+        # Force keyboard focus when Walker opens (ensures immediate typing without clicking)
+        force_keyboard_focus = true
         close_when_open = true
 
         [modules]
