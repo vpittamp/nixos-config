@@ -407,6 +407,105 @@ journalctl --user -u wayvnc@HEADLESS-1 -n 50
 journalctl --user -u 'wayvnc@*' -f
 ```
 
+## Persistence Guarantees
+
+The three-display configuration is **fully persistent** and survives both VM reboots and Sway restarts. All configuration is declarative and managed by NixOS.
+
+### What Persists Across Reboots
+
+✅ **Automatic Startup**:
+- All three WayVNC services start automatically when the system boots
+- Services are enabled via systemd `WantedBy=sway-session.target`
+- Startup occurs within 10 seconds of Sway initialization
+
+✅ **Display Configuration**:
+- Three virtual displays (HEADLESS-1, HEADLESS-2, HEADLESS-3) are created automatically
+- Resolution settings persist (1920x1200@60Hz by default, or custom resolutions if configured)
+- Horizontal positioning (0,0; 1920,0; 3840,0) remains consistent
+
+✅ **Workspace Assignments**:
+- Workspaces 1-2 → HEADLESS-1 (Primary)
+- Workspaces 3-5 → HEADLESS-2 (Secondary)
+- Workspaces 6-9 → HEADLESS-3 (Tertiary)
+
+✅ **VNC Access**:
+- Port assignments remain stable (5900, 5901, 5902)
+- Firewall rules automatically applied on Tailscale interface
+- VNC connections work immediately after reboot
+
+### What Persists Across Sway Restarts
+
+When you reload Sway (`swaymsg reload` or `Ctrl+Shift+C`), the following persist:
+
+✅ **Display Configuration**: All outputs remain active with correct resolutions
+✅ **Workspace Assignments**: Workspace-to-output mappings remain intact
+✅ **VNC Services**: WayVNC instances continue running without interruption
+✅ **Active Connections**: Existing VNC client connections remain connected
+
+**Note**: Window positions and focus state are managed by Sway and will be restored based on your workspace state.
+
+### How It Works
+
+The multi-display setup uses **declarative configuration** in NixOS:
+
+1. **Environment Variables** (`/etc/nixos/configurations/hetzner-sway.nix`):
+   ```nix
+   WLR_HEADLESS_OUTPUTS = "3";  # Creates 3 virtual displays at startup
+   ```
+
+2. **Sway Output Configuration** (`/etc/nixos/home-modules/desktop/sway.nix`):
+   ```nix
+   output = {
+     "HEADLESS-1" = { resolution = "1920x1200@60Hz"; position = "0,0"; };
+     "HEADLESS-2" = { resolution = "1920x1200@60Hz"; position = "1920,0"; };
+     "HEADLESS-3" = { resolution = "1920x1200@60Hz"; position = "3840,0"; };
+   };
+   ```
+
+3. **Systemd Services** (managed by home-manager):
+   ```nix
+   systemd.user.services."wayvnc@HEADLESS-N" = {
+     Install.WantedBy = [ "sway-session.target" ];  # Auto-start
+   };
+   ```
+
+All configuration is stored in `/etc/nixos/` and tracked in Git, ensuring reproducibility across rebuilds.
+
+### Verifying Persistence
+
+After a reboot or Sway restart, verify everything is working:
+
+```bash
+# Check all services are active
+systemctl --user list-units 'wayvnc@*'
+
+# Verify outputs exist
+swaymsg -t get_outputs | jq -r '.[] | "\(.name): \(.current_mode.width)x\(.current_mode.height)"'
+
+# Verify workspace assignments
+swaymsg -t get_workspaces | jq -r '.[] | "WS \(.num): \(.output)"'
+
+# Test VNC connectivity
+nc -zv <tailscale-ip> 5900 5901 5902
+```
+
+### Troubleshooting Persistence Issues
+
+**Services don't start after reboot:**
+1. Check if services are enabled: `systemctl --user list-unit-files 'wayvnc@*'`
+2. View service logs: `journalctl --user -u wayvnc@HEADLESS-1 -b 0`
+3. Verify sway-session.target is active: `systemctl --user status sway-session.target`
+
+**Wrong resolution after reboot:**
+1. Check Sway configuration: `grep -A 5 "output.*HEADLESS" ~/.config/sway/config`
+2. Rebuild configuration: `sudo nixos-rebuild switch --flake .#hetzner-sway`
+3. Restart Sway session or reboot
+
+**Workspace assignments reset:**
+1. Check workspace assignments: `swaymsg -t get_workspaces | jq -r '.[] | "WS \(.num): \(.output)"'`
+2. Manually reassign: `i3pm monitors reassign`
+3. If persistent issue, verify Sway config has `workspace N output HEADLESS-X` directives
+
 ## Integration with i3pm
 
 The multi-monitor setup integrates seamlessly with i3pm project management:
@@ -427,24 +526,36 @@ pswitch nixos
 ### Monitor Status
 
 ```bash
-# Check monitor configuration
-i3pm monitors status
+# Check VNC monitor connections and status
+i3pm-monitors status
 
-# Expected output:
-# Monitor 1: HEADLESS-1 (active)
-# Monitor 2: HEADLESS-2 (active)
-# Monitor 3: HEADLESS-3 (active)
-# Workspace distribution: 1-2, 3-5, 6-9
+# Expected output shows all three displays with VNC connection status:
+# ✅ HEADLESS-1 (Port: 5900, Clients: N, Workspaces: 1)
+# ✅ HEADLESS-2 (Port: 5901, Clients: N, Workspaces: 3)
+# ✅ HEADLESS-3 (Port: 5902, Clients: N, Workspaces: 6)
+
+# View window state across all displays
+i3pm windows --tree
+
+# Check daemon status (confirms integration with Sway)
+i3pm daemon status
 ```
 
-### Workspace Reassignment
+### Workspace Distribution
+
+Workspaces are **statically assigned** to displays in the Sway configuration:
+- **Workspaces 1-2** → HEADLESS-1 (Primary)
+- **Workspaces 3-5** → HEADLESS-2 (Secondary)
+- **Workspaces 6-9** → HEADLESS-3 (Tertiary)
+
+This follows the i3pm 3-monitor distribution pattern and requires no runtime configuration. The assignments are declared in `/etc/nixos/home-modules/desktop/sway.nix` and persist across reboots.
 
 ```bash
-# Manually trigger workspace distribution
-i3pm monitors reassign
+# Verify workspace assignments
+swaymsg -t get_workspaces | jq -r '.[] | "WS \(.num): \(.output)"'
 
-# Or use keyboard shortcut:
-Win+Shift+M
+# Check Sway config workspace assignments
+grep "workspace.*output" ~/.config/sway/config
 ```
 
 ## Performance Tips
@@ -479,6 +590,169 @@ nc -zv <public-ip> 5900
 # From Tailscale network (should connect):
 nc -zv <tailscale-ip> 5900
 ```
+
+## Rollback and Recovery
+
+If you encounter issues with the multi-monitor setup and need to revert to the previous single-display configuration, follow these procedures.
+
+### Quick Rollback (Temporary)
+
+Disable the multi-monitor VNC services temporarily without changing configuration:
+
+```bash
+# Stop all VNC services
+systemctl --user stop wayvnc@HEADLESS-{1,2,3}
+
+# Disable automatic startup
+systemctl --user disable wayvnc@HEADLESS-{1,2,3}
+
+# Restart Sway to use single display (HEADLESS-1)
+swaymsg reload
+```
+
+This keeps the multi-monitor configuration but disables VNC access. You'll still have three virtual displays, but no VNC services.
+
+### Full Rollback (Restore Single Display)
+
+To completely revert to the single-display configuration:
+
+1. **Restore configuration backups** (created during Phase 1):
+   ```bash
+   cd /etc/nixos
+
+   # Restore hetzner-sway.nix
+   cp configurations/hetzner-sway.nix.backup configurations/hetzner-sway.nix
+
+   # Restore sway.nix home-manager configuration
+   cp home-modules/desktop/sway.nix.backup home-modules/desktop/sway.nix
+   ```
+
+2. **Test configuration**:
+   ```bash
+   sudo nixos-rebuild dry-build --flake .#hetzner-sway
+   ```
+
+3. **Apply rollback**:
+   ```bash
+   sudo nixos-rebuild switch --flake .#hetzner-sway
+   ```
+
+4. **Restart Sway session**:
+   ```bash
+   # Log out and log back in, or:
+   systemctl --user restart sway-session.target
+   ```
+
+5. **Verify single display**:
+   ```bash
+   swaymsg -t get_outputs | jq '.[] | {name, active}'
+   # Should show only HEADLESS-1
+
+   systemctl --user list-units 'wayvnc@*'
+   # Should show only wayvnc@HEADLESS-1 (port 5900)
+   ```
+
+### NixOS Generation Rollback
+
+NixOS keeps previous system generations. You can rollback to any previous generation:
+
+```bash
+# List available generations
+sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
+
+# Rollback to previous generation
+sudo nixos-rebuild switch --rollback
+
+# Or switch to specific generation (e.g., generation 42)
+sudo nix-env --profile /nix/var/nix/profiles/system --switch-generation 42
+sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch
+```
+
+**Note**: This rolls back ALL system changes, not just the multi-monitor setup.
+
+### Emergency Recovery (Broken Sway)
+
+If Sway fails to start due to configuration issues:
+
+1. **SSH into the VM**:
+   ```bash
+   ssh vpittamp@<tailscale-ip>
+   ```
+
+2. **Check Sway logs**:
+   ```bash
+   journalctl --user -u sway-session.target -b 0 -n 50
+   ```
+
+3. **Restore from backup or rollback**:
+   ```bash
+   # Option 1: Restore backups (see "Full Rollback" above)
+
+   # Option 2: Rollback to previous generation
+   sudo nixos-rebuild switch --rollback
+   ```
+
+4. **Restart greetd** (login manager):
+   ```bash
+   sudo systemctl restart greetd
+   ```
+
+### Verifying Rollback Success
+
+After rollback, verify the system is working:
+
+```bash
+# Check single display exists
+swaymsg -t get_outputs | jq -r '.[] | .name'
+# Expected: HEADLESS-1
+
+# Check single VNC service
+systemctl --user status wayvnc@HEADLESS-1
+# Expected: active (running)
+
+# Test VNC connectivity
+nc -zv <tailscale-ip> 5900
+# Expected: Connection succeeded
+
+# Verify workspace assignments reset
+swaymsg -t get_workspaces | jq -r '.[] | "WS \(.num): \(.output)"'
+# Expected: All workspaces on HEADLESS-1
+```
+
+### Re-applying Multi-Monitor Setup
+
+To re-enable the multi-monitor setup after rollback:
+
+```bash
+# Restore multi-monitor configuration (if backups were used)
+git checkout configurations/hetzner-sway.nix home-modules/desktop/sway.nix
+
+# Or manually re-apply changes following Phase 2-4 tasks
+
+# Test and apply
+sudo nixos-rebuild dry-build --flake .#hetzner-sway
+sudo nixos-rebuild switch --flake .#hetzner-sway
+```
+
+### Getting Help
+
+If rollback doesn't resolve the issue:
+
+1. **Check system status**:
+   ```bash
+   systemctl --failed --user
+   journalctl --user -b 0 -p err
+   ```
+
+2. **Review configuration errors**:
+   ```bash
+   sudo nixos-rebuild dry-build --flake .#hetzner-sway --show-trace
+   ```
+
+3. **Consult documentation**:
+   - `/etc/nixos/CLAUDE.md` - System overview and troubleshooting
+   - `/etc/nixos/specs/048-multi-monitor-headless/plan.md` - Implementation details
+   - GitHub Issues: https://github.com/your-repo/issues
 
 ## Further Reading
 

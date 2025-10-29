@@ -1017,6 +1017,99 @@ nix flake metadata
 nix eval .#nixosConfigurations.<target>.config.<option>
 ```
 
+## 🖥️ Multi-Monitor VNC Access (Hetzner Cloud)
+
+### Quick Connect
+
+The Hetzner Cloud VM provides **three virtual displays** accessible via VNC over Tailscale for a multi-monitor development workflow.
+
+**Connection URLs** (replace `100.64.1.234` with your Tailscale IP):
+```
+Display 1 (Workspaces 1-2): vnc://100.64.1.234:5900
+Display 2 (Workspaces 3-5): vnc://100.64.1.234:5901
+Display 3 (Workspaces 6-9): vnc://100.64.1.234:5902
+```
+
+**Find your Tailscale IP**:
+```bash
+tailscale status | grep hetzner
+```
+
+### Common VNC Commands
+
+```bash
+# Check VNC services status
+systemctl --user status wayvnc@HEADLESS-{1,2,3}
+
+# Restart all VNC services
+systemctl --user restart wayvnc@HEADLESS-{1,2,3}
+
+# View VNC service logs
+journalctl --user -u wayvnc@HEADLESS-1 -f
+
+# Verify displays exist
+swaymsg -t get_outputs | jq '.[] | {name, active, current_mode}'
+
+# Check workspace assignments
+swaymsg -t get_workspaces | jq '.[] | {num, output, visible}'
+```
+
+### Troubleshooting VNC Connections
+
+**Connection Refused:**
+```bash
+# Verify services are running
+systemctl --user list-units 'wayvnc@*'
+
+# Restart failed service
+systemctl --user restart wayvnc@HEADLESS-1
+
+# Check firewall rules
+sudo iptables -L -n | grep -E '590[0-2]'
+```
+
+**Blank Screen:**
+```bash
+# Verify outputs are active
+swaymsg -t get_outputs | jq '.[] | {name, active}'
+
+# Switch to workspace to activate display
+swaymsg workspace number 1  # For Display 1
+swaymsg workspace number 3  # For Display 2
+swaymsg workspace number 6  # For Display 3
+```
+
+**Workspace on Wrong Display:**
+```bash
+# Check monitor status
+i3pm monitors status
+
+# Verify workspace assignments
+swaymsg -t get_workspaces | jq '.[] | {num, output}'
+
+# Check Sway config workspace assignments
+grep "workspace.*output" ~/.config/sway/config
+```
+
+**Performance Issues:**
+```bash
+# Monitor VNC service resource usage
+systemctl --user status wayvnc@HEADLESS-1 | grep -E "(CPU|Memory)"
+
+# Monitor network traffic
+sudo iftop -i tailscale0
+
+# Check Tailscale connection type (direct vs relay)
+tailscale status
+```
+
+### Complete Documentation
+
+For detailed setup, VNC client recommendations, resolution changes, and advanced usage, see:
+```bash
+cat /etc/nixos/specs/048-multi-monitor-headless/quickstart.md
+```
+
 ## 🤖 Claude Code Integration
 
 ### Bash History Hook
