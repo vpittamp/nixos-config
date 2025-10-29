@@ -2,7 +2,8 @@
 
 let
   # Feature 035 + Feature 037: Window visibility commands
-  version = "2.1.0";
+  # Feature 048: Monitor detection for multi-display VNC setup
+  version = "2.2.2";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
@@ -18,6 +19,8 @@ let
       cp -r * $out/share/i3pm/
 
       mkdir -p $out/bin
+
+      # Main i3pm CLI
       cat > $out/bin/i3pm <<EOF
 #!/usr/bin/env bash
 exec ${pkgs.deno}/bin/deno run \\
@@ -26,6 +29,10 @@ exec ${pkgs.deno}/bin/deno run \\
   $out/share/i3pm/src/main.ts "\$@"
 EOF
       chmod +x $out/bin/i3pm
+
+      # Feature 048: Monitor detection for multi-display VNC setup
+      cp ${./i3pm-deno/i3pm-monitors} $out/bin/i3pm-monitors
+      chmod +x $out/bin/i3pm-monitors
     '';
 
     meta = with lib; {

@@ -72,7 +72,7 @@
         # Note: greetd doesn't load environment.sessionVariables, so we export them explicitly
         command = "${pkgs.writeShellScript "sway-with-env" ''
           export WLR_BACKENDS=headless
-          export WLR_HEADLESS_OUTPUTS=3
+          export WLR_HEADLESS_OUTPUTS=1
           export WLR_LIBINPUT_NO_DEVICES=1
           export WLR_RENDERER=pixman
           export XDG_SESSION_TYPE=wayland
@@ -93,9 +93,9 @@
     # Use headless wlroots backend (no physical display required)
     WLR_BACKENDS = "headless";
 
-    # Number of outputs for headless backend (three displays for multi-monitor workflow)
+    # Number of outputs for headless backend (VNC can only show one at a time)
     # This controls output creation at the wlroots backend level
-    WLR_HEADLESS_OUTPUTS = "3";
+    WLR_HEADLESS_OUTPUTS = "1";
 
     # Disable libinput (no physical input devices in headless mode)
     WLR_LIBINPUT_NO_DEVICES = "1";
@@ -138,9 +138,7 @@
       8080   # Web services
     ];
     interfaces."tailscale0".allowedTCPPorts = [
-      5900   # VNC via Tailscale - HEADLESS-1
-      5901   # VNC via Tailscale - HEADLESS-2
-      5902   # VNC via Tailscale - HEADLESS-3
+      5900   # VNC via Tailscale (more secure)
     ];
     # Tailscale
     checkReversePath = "loose";

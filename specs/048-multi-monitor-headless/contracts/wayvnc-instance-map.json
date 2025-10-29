@@ -1,0 +1,63 @@
+{
+  "description": "WayVNC instance mapping for Feature 048 (Multi-Monitor Headless Sway)",
+  "version": "1.0.0",
+  "instances": [
+    {
+      "outputName": "HEADLESS-1",
+      "serviceName": "wayvnc@HEADLESS-1.service",
+      "port": 5900,
+      "workspaces": [1, 2],
+      "role": "primary",
+      "vncUrl": "vnc://<tailscale-ip>:5900"
+    },
+    {
+      "outputName": "HEADLESS-2",
+      "serviceName": "wayvnc@HEADLESS-2.service",
+      "port": 5901,
+      "workspaces": [3, 4, 5],
+      "role": "secondary",
+      "vncUrl": "vnc://<tailscale-ip>:5901"
+    },
+    {
+      "outputName": "HEADLESS-3",
+      "serviceName": "wayvnc@HEADLESS-3.service",
+      "port": 5902,
+      "workspaces": [6, 7, 8, 9],
+      "role": "tertiary",
+      "vncUrl": "vnc://<tailscale-ip>:5902"
+    }
+  ],
+  "networkConfiguration": {
+    "bindAddress": "0.0.0.0",
+    "allowedInterface": "tailscale0",
+    "firewallRules": {
+      "interface": "tailscale0",
+      "allowedPorts": [5900, 5901, 5902],
+      "protocol": "TCP"
+    }
+  },
+  "displayConfiguration": {
+    "resolution": "1920x1080@60Hz",
+    "layout": "horizontal",
+    "positions": {
+      "HEADLESS-1": {"x": 0, "y": 0},
+      "HEADLESS-2": {"x": 1920, "y": 0},
+      "HEADLESS-3": {"x": 3840, "y": 0}
+    }
+  },
+  "validation": {
+    "commands": {
+      "checkOutputs": "swaymsg -t get_outputs | jq '.[] | {name, active, current_mode}'",
+      "checkWorkspaces": "swaymsg -t get_workspaces | jq '.[] | {num, output, visible}'",
+      "checkServices": "systemctl --user list-units 'wayvnc@*' --no-pager",
+      "checkConnectivity": "nc -zv <tailscale-ip> 5900 && nc -zv <tailscale-ip> 5901 && nc -zv <tailscale-ip> 5902",
+      "viewServiceLogs": "journalctl --user -u wayvnc@HEADLESS-1 -f"
+    },
+    "expectedState": {
+      "outputCount": 3,
+      "serviceCount": 3,
+      "workspaceCount": 9,
+      "openPorts": [5900, 5901, 5902]
+    }
+  }
+}

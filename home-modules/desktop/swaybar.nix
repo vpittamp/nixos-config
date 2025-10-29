@@ -34,9 +34,9 @@ in
   # Swaybar configuration via home-manager
   # Sway bar protocol is identical to i3bar (FR-023)
   wayland.windowManager.sway.config.bars = if isHeadless then [
-    # Headless mode (Feature 046): Dual bars for single VNC output
+    # Headless mode (Feature 048): Dual bars for each of three VNC outputs
+    # Each VNC connection shows one output with its own bars
     # Top bar: System monitoring, Bottom bar: Project context + workspaces
-    # Note: VNC can only show one output at a time, so we use single HEADLESS-1
 
     # Monitor 1 (HEADLESS-1) - Top bar: System monitoring
     {
@@ -59,7 +59,7 @@ in
       '';
     }
 
-    # Monitor 1 (HEADLESS-1) - Bottom bar: Project context with all workspaces
+    # Monitor 1 (HEADLESS-1) - Bottom bar: Project context with workspaces
     {
       position = "bottom";
       statusCommand = "${projectStatusScript} HEADLESS-1";
@@ -96,6 +96,132 @@ in
       };
       extraConfig = ''
         output HEADLESS-1
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+
+    # Monitor 2 (HEADLESS-2) - Top bar: System monitoring
+    {
+      position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = false;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-2
+        separator_symbol " | "
+      '';
+    }
+
+    # Monitor 2 (HEADLESS-2) - Bottom bar: Project context with workspaces
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-2";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-2
+        separator_symbol " | "
+        strip_workspace_numbers no
+      '';
+    }
+
+    # Monitor 3 (HEADLESS-3) - Top bar: System monitoring
+    {
+      position = "top";
+      statusCommand = "${systemMonitorScript}";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = false;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+      };
+      extraConfig = ''
+        output HEADLESS-3
+        separator_symbol " | "
+      '';
+    }
+
+    # Monitor 3 (HEADLESS-3) - Bottom bar: Project context with workspaces
+    {
+      position = "bottom";
+      statusCommand = "${projectStatusScript} HEADLESS-3";
+      fonts = {
+        names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
+        size = 10.0;
+      };
+      trayOutput = "none";
+      workspaceButtons = true;
+      colors = {
+        background = "#1e1e2e";
+        statusline = "#cdd6f4";
+        separator = "#6c7086";
+        focusedWorkspace = {
+          background = "#89b4fa";
+          border = "#89b4fa";
+          text = "#1e1e2e";
+        };
+        activeWorkspace = {
+          background = "#313244";
+          border = "#313244";
+          text = "#cdd6f4";
+        };
+        inactiveWorkspace = {
+          background = "#1e1e2e";
+          border = "#1e1e2e";
+          text = "#cdd6f4";
+        };
+        urgentWorkspace = {
+          background = "#f38ba8";
+          border = "#f38ba8";
+          text = "#1e1e2e";
+        };
+      };
+      extraConfig = ''
+        output HEADLESS-3
         separator_symbol " | "
         strip_workspace_numbers no
       '';

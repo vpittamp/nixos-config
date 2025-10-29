@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# i3pm monitors - Monitor detection for VNC multi-display setup
+# Feature 048: Detects which HEADLESS outputs have active VNC connections
+
+set -euo pipefail
+
+# Get Sway outputs
+get_sway_outputs() {
+    local SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
+    if [ -z "$SWAYSOCK" ]; then
+        echo "Error: Sway not running" >&2
+        return 1
+    fi
+    export SWAYSOCK
+    swaymsg -t get_outputs 2>/dev/null || echo "[]"
+}
+
+# Check VNC connection for a display
+check_vnc_connection() {
+    local display=$1
+    local socket="/run/user/1000/wayvnc-${display,,}.sock"
+
+    if [ ! -S "$socket" ]; then
+        echo "0"
+        return
+    fi
+
+    local count=$(wayvncctl -S "$socket" client-list 2>/dev/null | wc -l)
+    echo "$count"
+}
+
+# Get workspace assignments for an output
+get_workspaces_for_output() {
+    local output=$1
+    local SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
+    export SWAYSOCK
+
+    swaymsg -t get_workspaces 2>/dev/null | jq -r --arg output "$output" \
+        '.[] | select(.output == $output) | .num' | sort -n | tr '\n' ',' | sed 's/,$//'
+}
+
+# Get port for display
+get_port() {
+    case "$1" in
+        HEADLESS-1) echo "5900" ;;
+        HEADLESS-2) echo "5901" ;;
+        HEADLESS-3) echo "5902" ;;
+    esac
+}
+
+# Main command dispatcher
+case "${1:-list}" in
+    list|status)
+        echo "Monitor Connection Status"
+        echo "=========================="
+        echo ""
+
+        for display in HEADLESS-1 HEADLESS-2 HEADLESS-3; do
+            port=$(get_port "$display")
+            clients=$(check_vnc_connection "$display")
+            workspaces=$(get_workspaces_for_output "$display")
+
+            if [ "$clients" -gt 0 ]; then
+                echo "✅ $display"
+                echo "   Port:       $port"
+                echo "   Clients:    $clients"
+                echo "   Workspaces: ${workspaces:-none}"
+            else
+                echo "❌ $display"
+                echo "   Port:       $port"
+                echo "   Clients:    0 (disconnected)"
+                echo "   Workspaces: ${workspaces:-none}"
+            fi
+            echo ""
+        done
+
+        total=$(for d in HEADLESS-1 HEADLESS-2 HEADLESS-3; do check_vnc_connection "$d"; done | \
+                awk '{sum+=$1} END {print sum}')
+        echo "Total active connections: $total"
+        ;;
+
+    count)
+        for d in HEADLESS-1 HEADLESS-2 HEADLESS-3; do
+            check_vnc_connection "$d"
+        done | awk '{sum+=$1} END {print sum}'
+        ;;
+
+    detect|active)
+        for display in HEADLESS-1 HEADLESS-2 HEADLESS-3; do
+            clients=$(check_vnc_connection "$display")
+            if [ "$clients" -gt 0 ]; then
+                echo "$display"
+            fi
+        done
+        ;;
+
+    json)
+        SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
+        if [ -z "$SWAYSOCK" ]; then
+            echo '{"error": "Sway not running"}' >&2
+            exit 1
+        fi
+        export SWAYSOCK
+
+        echo "{"
+        echo '  "monitors": ['
+        first=true
+        for display in HEADLESS-1 HEADLESS-2 HEADLESS-3; do
+            port=$(get_port "$display")
+            clients=$(check_vnc_connection "$display")
+            workspaces=$(get_workspaces_for_output "$display")
+            connected="false"
+            if [ "$clients" -gt 0 ]; then
+                connected="true"
+            fi
+
+            if [ "$first" = false ]; then
+                echo ","
+            fi
+            first=false
+
+            echo "    {"
+            echo "      \"name\": \"$display\","
+            echo "      \"port\": $port,"
+            echo "      \"connected\": $connected,"
+            echo "      \"clients\": $clients,"
+            echo "      \"workspaces\": [${workspaces}]"
+            echo -n "    }"
+        done
+        echo ""
+        echo "  ],"
+
+        total=$(for d in HEADLESS-1 HEADLESS-2 HEADLESS-3; do check_vnc_connection "$d"; done | \
+                awk '{sum+=$1} END {print sum}')
+        echo "  \"total_connections\": $total"
+        echo "}"
+        ;;
+
+    help|--help|-h)
+        cat << 'HELP'
+i3pm monitors - Monitor detection for multi-display VNC setup
+
+USAGE:
+    i3pm monitors [COMMAND]
+
+COMMANDS:
+    list, status    Show detailed monitor status (default)
+    detect, active  List only connected monitors
+    count           Show total number of connections
+    json            Output in JSON format
+    help            Show this help
+
+EXAMPLES:
+    # Show which monitors are connected
+    i3pm monitors
+
+    # Get list of active monitors
+    i3pm monitors detect
+
+    # Get connection count
+    i3pm monitors count
+
+    # JSON output for scripting
+    i3pm monitors json
+HELP
+        ;;
+
+    *)
+        echo "Unknown command: $1" >&2
+        echo "Run 'i3pm monitors help' for usage" >&2
+        exit 1
+        ;;
+esac

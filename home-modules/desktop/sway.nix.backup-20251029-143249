@@ -142,24 +142,13 @@ in
       # Output configuration (FR-005, FR-006)
       # Conditional configuration for headless vs physical displays
       output = if isHeadless then {
-        # Headless Wayland - TRIPLE output for multi-monitor VNC workflow (Feature 048)
-        # Three independent VNC instances stream each output to separate ports
-        # Resolution: 1920x1200 to match TigerVNC's preferred aspect ratio (16:10)
-        # This prevents letterboxing/whitespace when viewing via VNC
-        # Layout: Horizontal arrangement (left to right)
+        # Headless Wayland - SINGLE output for VNC (Feature 046)
+        # VNC can only show one output at a time, so use single HEADLESS-1
+        # Resolution: 1920x1080 for better picture quality (sharper text, less VNC scaling blur)
+        # Note: Multi-monitor VNC setup requires running multiple wayvnc instances on different ports
         "HEADLESS-1" = {
-          resolution = "1920x1200@60Hz";
+          resolution = "1920x1080@60Hz";
           position = "0,0";
-          scale = "1.0";
-        };
-        "HEADLESS-2" = {
-          resolution = "1920x1200@60Hz";
-          position = "1920,0";  # Right of HEADLESS-1
-          scale = "1.0";
-        };
-        "HEADLESS-3" = {
-          resolution = "1920x1200@60Hz";
-          position = "3840,0";  # Right of HEADLESS-2
           scale = "1.0";
         };
       } else {
@@ -199,19 +188,17 @@ in
 
       # Workspace definitions with Font Awesome icons (parallel to i3 config)
       workspaceOutputAssign = if isHeadless then [
-        # Headless mode: Three displays with i3pm-compatible distribution (Feature 048)
-        # Primary display (HEADLESS-1): Workspaces 1-2
+        # Headless mode: All workspaces on single HEADLESS-1 output (Feature 046)
+        # VNC can only show one output at a time
         { workspace = "1"; output = "HEADLESS-1"; }
         { workspace = "2"; output = "HEADLESS-1"; }
-        # Secondary display (HEADLESS-2): Workspaces 3-5
-        { workspace = "3"; output = "HEADLESS-2"; }
-        { workspace = "4"; output = "HEADLESS-2"; }
-        { workspace = "5"; output = "HEADLESS-2"; }
-        # Tertiary display (HEADLESS-3): Workspaces 6-9
-        { workspace = "6"; output = "HEADLESS-3"; }
-        { workspace = "7"; output = "HEADLESS-3"; }
-        { workspace = "8"; output = "HEADLESS-3"; }
-        { workspace = "9"; output = "HEADLESS-3"; }
+        { workspace = "3"; output = "HEADLESS-1"; }
+        { workspace = "4"; output = "HEADLESS-1"; }
+        { workspace = "5"; output = "HEADLESS-1"; }
+        { workspace = "6"; output = "HEADLESS-1"; }
+        { workspace = "7"; output = "HEADLESS-1"; }
+        { workspace = "8"; output = "HEADLESS-1"; }
+        { workspace = "9"; output = "HEADLESS-1"; }
       ] else [
         # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
         { workspace = "1"; output = "eDP-1"; }
@@ -438,23 +425,19 @@ in
     pkgs.wireplumber  # Provides wpctl for default sink adjustments
   ];
 
-  # wayvnc configuration for headless Sway (Feature 048)
-  # Shared configuration for all three WayVNC instances
-  # Port specification removed - handled by individual systemd services
+  # wayvnc configuration for headless Sway (Feature 046)
   xdg.configFile."wayvnc/config" = lib.mkIf isHeadless {
     text = ''
       address=0.0.0.0
+      port=5900
       enable_auth=false
     '';
   };
 
-  # wayvnc systemd services for headless mode (Feature 048)
-  # Three independent VNC instances for three virtual displays
-
-  # HEADLESS-1 (Primary display, workspaces 1-2, port 5900)
-  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf isHeadless {
+  # wayvnc systemd service for headless mode (Feature 046)
+  systemd.user.services.wayvnc = lib.mkIf isHeadless {
     Unit = {
-      Description = "wayvnc VNC server for HEADLESS-1";
+      Description = "wayvnc - VNC server for wlroots compositors";
       Documentation = "https://github.com/any1/wayvnc";
       After = [ "sway-session.target" ];
       Requires = [ "sway-session.target" ];
@@ -463,51 +446,7 @@ in
 
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-1 -S /run/user/1000/wayvnc-headless-1.sock -R -Ldebug 0.0.0.0 5900";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
-
-  # HEADLESS-2 (Secondary display, workspaces 3-5, port 5901)
-  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf isHeadless {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-2";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-2 -S /run/user/1000/wayvnc-headless-2.sock -R -Ldebug 0.0.0.0 5901";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
-
-  # HEADLESS-3 (Tertiary display, workspaces 6-9, port 5902)
-  systemd.user.services."wayvnc@HEADLESS-3" = lib.mkIf isHeadless {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-3";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-3 -S /run/user/1000/wayvnc-headless-3.sock -R -Ldebug 0.0.0.0 5902";
+      ExecStart = "${pkgs.wayvnc}/bin/wayvnc";
       Restart = "on-failure";
       RestartSec = "1";
     };
