@@ -146,20 +146,20 @@ in
         # Three independent VNC instances stream each output to separate ports
         # Resolution: 1920x1200 to match TigerVNC's preferred aspect ratio (16:10)
         # This prevents letterboxing/whitespace when viewing via VNC
-        # Layout: Horizontal arrangement (left to right)
+        # Layout: Horizontal arrangement (left to right) - RESTORED DEFAULT
         "HEADLESS-1" = {
           resolution = "1920x1200@60Hz";
           position = "0,0";
           scale = "1.0";
         };
         "HEADLESS-2" = {
-          resolution = "1920x1200@60Hz";
+          resolution = "1920x1200@60Hz";  # Restored from 2560x1440 test
           position = "1920,0";  # Right of HEADLESS-1
           scale = "1.0";
         };
         "HEADLESS-3" = {
           resolution = "1920x1200@60Hz";
-          position = "3840,0";  # Right of HEADLESS-2
+          position = "3840,0";  # Right of HEADLESS-2 - horizontal layout restored
           scale = "1.0";
         };
       } else {

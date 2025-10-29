@@ -253,23 +253,80 @@ Use keyboard shortcuts to switch workspaces within each display:
 
 ### Changing Display Resolution
 
-To adjust resolution for better clarity or performance:
+Each virtual display can have independent resolution settings. This is useful for:
+- **Higher resolution** (2560x1440, 3840x2160) for clarity with high-bandwidth connections
+- **Lower resolution** (1280x720) for reduced bandwidth on slower networks
+- **Mixed resolutions** for different use cases per display
 
-1. Edit `home-modules/desktop/sway.nix`:
+#### Procedure
+
+1. **Edit** `/etc/nixos/home-modules/desktop/sway.nix` and locate the output configuration:
    ```nix
-   "HEADLESS-1" = {
-     resolution = "2560x1440@60Hz";  # Higher resolution
-     # ... or ...
-     resolution = "1280x720@60Hz";   # Lower bandwidth
+   output = if isHeadless then {
+     "HEADLESS-1" = {
+       resolution = "1920x1200@60Hz";  # Current default
+       position = "0,0";
+       scale = "1.0";
+     };
+     "HEADLESS-2" = {
+       resolution = "2560x1440@60Hz";  # Example: Higher resolution
+       position = "1920,0";
+       scale = "1.0";
+     };
+     "HEADLESS-3" = {
+       resolution = "1920x1200@60Hz";  # Keep default
+       position = "4480,0";  # Adjust position for new width (1920 + 2560)
+       scale = "1.0";
+     };
    };
    ```
 
-2. Rebuild configuration:
+2. **Rebuild configuration**:
    ```bash
    sudo nixos-rebuild switch --flake .#hetzner-sway
    ```
 
-3. Restart Sway session (log out and log back in)
+3. **Restart Sway** (choose one method):
+   ```bash
+   # Method 1: Reload Sway (faster, may not apply all changes)
+   swaymsg reload
+
+   # Method 2: Restart Sway session (recommended for resolution changes)
+   systemctl --user restart sway-session.target
+
+   # Method 3: Log out and back in (most reliable)
+   ```
+
+4. **Reconnect VNC clients** to see new resolution
+
+#### Supported Resolution Formats
+
+**Standard 16:10 (Recommended - matches TigerVNC defaults)**:
+- `1920x1200@60Hz` - Default, good balance
+- `2560x1600@60Hz` - High resolution
+- `1280x800@60Hz` - Low bandwidth
+
+**Standard 16:9 (May show letterboxing in some VNC clients)**:
+- `1920x1080@60Hz` - Full HD
+- `2560x1440@60Hz` - 2K/QHD
+- `3840x2160@60Hz` - 4K/UHD
+- `1280x720@60Hz` - HD
+
+**Standard 4:3 (Legacy)**:
+- `1600x1200@60Hz`
+- `1024x768@60Hz`
+
+**Custom Resolutions**:
+- Format: `WIDTHxHEIGHT@REFRESHHz`
+- Example: `1680x1050@60Hz`, `2048x1536@60Hz`
+- Refresh rate typically 60Hz for VNC use
+
+**Important Notes**:
+- All displays can use different resolutions simultaneously
+- Update `position` values when changing widths to avoid overlaps
+- Higher resolutions increase network bandwidth requirements
+- Some VNC clients auto-scale; others show native resolution
+- Refresh rate (60Hz) is nominal for virtual displays
 
 ### Changing Workspace Distribution
 
