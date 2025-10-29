@@ -9,16 +9,14 @@
     # Declarative cleanup (removes backups and stale files before activation)
     ./profiles/declarative-cleanup.nix
 
-    # Shared Python environment (prevents buildEnv conflicts)
-    ./desktop/python-environment.nix
-
     # Desktop Environment: Sway (Wayland)
     ./desktop/sway.nix         # Sway window manager with headless support
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
-    ./desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon (Sway-compatible)
+    # NOTE: i3-project-daemon runs as system service (configurations/hetzner-sway.nix line 126)
+    # Home-manager module removed to prevent Python environment conflicts
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
 
@@ -39,11 +37,8 @@
   };
 
   # Feature 015: i3 project event listener daemon
-  # NOTE: Disabled in favor of system service (Feature 037 - cross-namespace /proc access)
-  # System service configured in configurations/hetzner-sway.nix: services.i3ProjectDaemon.enable
-  services.i3ProjectEventListener = {
-    enable = false;  # Disabled - using system service instead
-  };
+  # NOTE: Runs as system service (configurations/hetzner-sway.nix: services.i3ProjectDaemon.enable)
+  # Home-manager module removed to prevent Python environment conflicts
 
   # Feature 047: Sway Dynamic Configuration Management
   programs.sway-config-manager = {

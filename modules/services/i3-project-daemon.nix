@@ -27,6 +27,8 @@ let
     pytest       # Testing framework
     pytest-asyncio  # Async test support
     pytest-cov   # Coverage reporting
+    rich         # Terminal UI for diagnostic commands
+    jsonschema   # JSON schema validation (for compatibility with other modules)
   ]);
 
   # Daemon package
