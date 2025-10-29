@@ -177,3 +177,143 @@ class RollbackManager:
         """
         versions = self.list_versions(limit=1)
         return versions[0] if versions else None
+
+    def create_backup(self, backup_name: Optional[str] = None) -> Path:
+        """
+        Create timestamped backup of configuration files.
+
+        Feature 047 Phase 8: T058 - Create backup before reload
+
+        Args:
+            backup_name: Optional backup name (auto-generated if None)
+
+        Returns:
+            Path to the backup directory
+
+        Raises:
+            RuntimeError: If backup creation fails
+        """
+        import shutil
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if backup_name:
+            backup_dir_name = f"backup_{backup_name}_{timestamp}"
+        else:
+            backup_dir_name = f"backup_{timestamp}"
+
+        # Create backups directory if it doesn't exist
+        backups_parent = self.config_dir / ".backups"
+        backups_parent.mkdir(exist_ok=True)
+
+        backup_dir = backups_parent / backup_dir_name
+
+        # Files to backup
+        backup_files = [
+            "keybindings.toml",
+            "window-rules.json",
+            "workspace-assignments.json",
+            "projects/*.json",  # All project files
+            ".config-version"   # Version tracking file
+        ]
+
+        # Create backup directory
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy files
+        for pattern in backup_files:
+            if "*" in pattern:
+                # Handle glob patterns
+                parts = pattern.split("/")
+                if len(parts) == 2:
+                    subdir, file_pattern = parts
+                    source_dir = self.config_dir / subdir
+                    if source_dir.exists():
+                        dest_dir = backup_dir / subdir
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        for file_path in source_dir.glob(file_pattern):
+                            if file_path.is_file():
+                                shutil.copy2(file_path, dest_dir / file_path.name)
+            else:
+                # Handle single files
+                source_path = self.config_dir / pattern
+                if source_path.exists():
+                    dest_path = backup_dir / pattern
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source_path, dest_path)
+
+        # Create backup metadata file
+        metadata = {
+            "timestamp": timestamp,
+            "backup_name": backup_name or "auto",
+            "files_backed_up": len(list(backup_dir.rglob("*"))),
+            "created_at": datetime.now().isoformat()
+        }
+
+        import json
+        with open(backup_dir / ".backup-metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        return backup_dir
+
+    def list_backups(self, limit: Optional[int] = None) -> List[Path]:
+        """
+        List available configuration backups.
+
+        Feature 047 Phase 8: T058 - List backups
+
+        Args:
+            limit: Maximum number of backups to return (None for all)
+
+        Returns:
+            List of backup directory paths sorted by creation time (newest first)
+        """
+        backups_dir = self.config_dir / ".backups"
+        if not backups_dir.exists():
+            return []
+
+        backups = sorted(
+            [d for d in backups_dir.iterdir() if d.is_dir()],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+
+        if limit:
+            backups = backups[:limit]
+
+        return backups
+
+    def restore_backup(self, backup_path: Path) -> bool:
+        """
+        Restore configuration from a backup.
+
+        Feature 047 Phase 8: T058 - Restore from backup
+
+        Args:
+            backup_path: Path to backup directory
+
+        Returns:
+            True if restore successful, False otherwise
+        """
+        import shutil
+
+        if not backup_path.exists() or not backup_path.is_dir():
+            return False
+
+        try:
+            # Restore files from backup
+            for item in backup_path.rglob("*"):
+                if item.is_file() and item.name != ".backup-metadata.json":
+                    # Calculate relative path
+                    rel_path = item.relative_to(backup_path)
+                    dest_path = self.config_dir / rel_path
+
+                    # Create parent directory if needed
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Copy file
+                    shutil.copy2(item, dest_path)
+
+            return True
+        except Exception:
+            return False

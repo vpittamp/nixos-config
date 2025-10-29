@@ -160,12 +160,29 @@ class ReloadManager:
         Returns:
             Result dictionary with success status and details
         """
+        # Feature 047 Phase 8: T057 - Performance metrics tracking
+        import time
+        start_time = time.time()
+        metrics = {
+            "load_start": start_time,
+            "load_end": None,
+            "validation_start": None,
+            "validation_end": None,
+            "apply_start": None,
+            "apply_end": None,
+            "total_duration_ms": None,
+            "load_duration_ms": None,
+            "validation_duration_ms": None,
+            "apply_duration_ms": None
+        }
+
         result = {
             "success": False,
             "phase": None,
             "errors": [],
             "warnings": [],
-            "applied": False
+            "applied": False,
+            "metrics": metrics  # T057: Include metrics in result
         }
 
         try:
@@ -177,6 +194,14 @@ class ReloadManager:
             keybindings = self.loader.load_keybindings_toml()
             window_rules = self.loader.load_window_rules_json()
             workspace_assignments = self.loader.load_workspace_assignments_json()
+
+            # T057: Track load duration
+            metrics["load_end"] = time.time()
+            metrics["load_duration_ms"] = int((metrics["load_end"] - metrics["load_start"]) * 1000)
+            logger.info(f"Configuration loaded in {metrics['load_duration_ms']}ms")
+
+            # T057: Start validation timing
+            metrics["validation_start"] = time.time()
 
             # Validate
             errors = self.validator.validate_semantics(
@@ -210,14 +235,32 @@ class ReloadManager:
                 result["warnings"] = conflicts
                 logger.warning(f"Found {len(conflicts)} configuration conflicts")
 
+            # T057: Track validation duration
+            metrics["validation_end"] = time.time()
+            metrics["validation_duration_ms"] = int((metrics["validation_end"] - metrics["validation_start"]) * 1000)
+            logger.info(f"Validation completed in {metrics['validation_duration_ms']}ms")
+
             if validate_only:
                 result["success"] = True
                 result["phase"] = "validation_only"
+                # T057: Calculate total duration for validation-only mode
+                metrics["total_duration_ms"] = int((time.time() - start_time) * 1000)
                 return result
 
             # Phase 2: Apply
             result["phase"] = "apply"
             logger.info("Phase 2: Applying configuration")
+
+            # T057: Start apply timing
+            metrics["apply_start"] = time.time()
+
+            # T058: Create backup before applying changes
+            try:
+                backup_path = self.rollback.create_backup("pre-reload")
+                logger.info(f"Created backup: {backup_path.name}")
+                result["backup_path"] = str(backup_path)
+            except Exception as e:
+                logger.warning(f"Failed to create backup: {e}")
 
             async with self.transaction():
                 # Feature 047 US3: Reload active project context
@@ -278,11 +321,26 @@ class ReloadManager:
                 self.daemon.state.reload_count += 1
                 self.daemon.state.last_reload_success = True
 
+                # T057: Track apply duration and total duration
+                metrics["apply_end"] = time.time()
+                metrics["apply_duration_ms"] = int((metrics["apply_end"] - metrics["apply_start"]) * 1000)
+                metrics["total_duration_ms"] = int((time.time() - start_time) * 1000)
+
                 result["success"] = True
                 result["applied"] = True
                 result["phase"] = "complete"
 
-                logger.info("Configuration reloaded successfully")
+                logger.info(f"Configuration reloaded successfully in {metrics['total_duration_ms']}ms")
+                logger.info(f"  Load: {metrics['load_duration_ms']}ms, " +
+                          f"Validation: {metrics['validation_duration_ms']}ms, " +
+                          f"Apply: {metrics['apply_duration_ms']}ms")
+
+                # T062: Send desktop notification on success
+                self._send_notification(
+                    "Configuration Reloaded",
+                    f"Successfully reloaded Sway configuration in {metrics['total_duration_ms']}ms",
+                    "normal"
+                )
 
         except Exception as e:
             logger.error(f"Configuration reload failed: {e}")
@@ -290,7 +348,35 @@ class ReloadManager:
             result["errors"].append({"message": str(e)})
             self.daemon.state.last_reload_success = False
 
+            # T062: Send desktop notification on failure
+            self._send_notification(
+                "Configuration Reload Failed",
+                f"Error: {str(e)[:80]}",
+                "critical"
+            )
+
         return result
+
+    def _send_notification(self, title: str, message: str, urgency: str = "normal") -> None:
+        """
+        Send desktop notification via notify-send.
+
+        Feature 047 Phase 8: T062 - Desktop notification system integration
+
+        Args:
+            title: Notification title
+            message: Notification message
+            urgency: Notification urgency level (low, normal, critical)
+        """
+        try:
+            import subprocess
+            subprocess.run(
+                ["notify-send", "-u", urgency, "-a", "Sway Config Manager", title, message],
+                check=False,  # Don't fail if notify-send is unavailable
+                capture_output=True
+            )
+        except Exception as e:
+            logger.debug(f"Failed to send notification: {e}")
 
     async def validate_no_input_disruption(self) -> bool:
         """

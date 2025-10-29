@@ -22,14 +22,17 @@ export async function configCommand(args: string[], flags: Record<string, unknow
         return await configListVersions(flags);
       case "validate":
         return await configValidate(args.slice(1), flags);
+      case "edit":
+        return await configEdit(args.slice(1), flags);
       default:
-        console.error("Usage: i3pm config <show|conflicts|rollback|list-versions|validate>");
+        console.error("Usage: i3pm config <show|conflicts|rollback|list-versions|validate|edit>");
         console.error("\nAvailable subcommands:");
         console.error("  show          Display current configuration with source attribution");
         console.error("  conflicts     Show configuration conflicts across precedence levels");
         console.error("  rollback      Rollback configuration to a previous version (Feature 047 US4)");
         console.error("  list-versions List configuration version history (Feature 047 US4)");
         console.error("  validate      Validate configuration files (Feature 047 US5)");
+        console.error("  edit          Edit configuration files with automatic validation (Feature 047 Phase 8 T056)");
         return 1;
     }
   } catch (error) {
@@ -681,5 +684,95 @@ async function configValidate(args: string[], flags: Record<string, unknown>): P
     return 0;
   } finally {
     await client.disconnect();
+  }
+}
+
+/**
+ * Feature 047 Phase 8: Edit configuration files with automatic validation
+ * T056: Configuration editor integration with auto-validation
+ */
+async function configEdit(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const [configType] = args;
+
+  if (!configType) {
+    console.error("Error: Configuration type is required");
+    console.error("Usage: i3pm config edit <keybindings|window-rules|workspace-assignments>");
+    console.error("\nExamples:");
+    console.error("  i3pm config edit keybindings");
+    console.error("  i3pm config edit window-rules");
+    console.error("  i3pm config edit workspace-assignments");
+    return 1;
+  }
+
+  // Map config type to file path
+  const configHome = Deno.env.get("HOME");
+  let filePath: string;
+
+  switch (configType) {
+    case "keybindings":
+      filePath = `${configHome}/.config/sway/keybindings.toml`;
+      break;
+    case "window-rules":
+      filePath = `${configHome}/.config/sway/window-rules.json`;
+      break;
+    case "workspace-assignments":
+      filePath = `${configHome}/.config/sway/workspace-assignments.json`;
+      break;
+    default:
+      console.error(`Error: Unknown configuration type '${configType}'`);
+      console.error("Available types: keybindings, window-rules, workspace-assignments");
+      return 1;
+  }
+
+  // Check if file exists
+  try {
+    await Deno.stat(filePath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      console.error(`Error: Configuration file not found: ${filePath}`);
+      console.error("Run 'i3pm config reload' to generate default configuration files.");
+      return 1;
+    }
+    throw error;
+  }
+
+  // Get editor from environment (with fallbacks)
+  const editor = Deno.env.get("EDITOR") || Deno.env.get("VISUAL") || "nvim";
+
+  console.log(`Opening ${configType} configuration in ${editor}...`);
+  console.log(`File: ${filePath}\n`);
+
+  // Open editor
+  const editorProcess = new Deno.Command(editor, {
+    args: [filePath],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const editorStatus = await editorProcess.output();
+
+  if (!editorStatus.success) {
+    console.error("\nEditor exited with error");
+    return 1;
+  }
+
+  console.log("\n✓ Editor closed");
+
+  // Auto-validate after editing
+  console.log("Running automatic validation...\n");
+
+  const validateResult = await configValidate([filePath], flags);
+
+  if (validateResult === 0) {
+    console.log("✓ Configuration is valid!");
+    console.log("\nNext steps:");
+    console.log("  - Run 'i3pm config reload' to apply changes");
+    console.log("  - Or wait for automatic reload (if file watcher is enabled)");
+    return 0;
+  } else {
+    console.error("\n⚠️  Validation failed - please fix errors before reloading");
+    console.error("Edit again with: i3pm config edit " + configType);
+    return 1;
   }
 }
