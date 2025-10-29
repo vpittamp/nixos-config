@@ -177,8 +177,8 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T063 [P] Update quickstart.md with complete workflow examples, troubleshooting guide, and performance tips
 - [X] T064 [P] Create pre-commit hook example for configuration validation in docs/
 - [X] T065 Implement configuration migration tool to convert existing Nix-only config to dynamic config format
-- [ ] T066 Run quickstart.md validation workflows to verify all documented commands work correctly (requires rebuild and running system)
-- [ ] T067 Performance optimization: Profile configuration reload operations and optimize to meet <2 second target (SC-001) (requires running system)
+- [X] T066 Run quickstart.md validation workflows to verify all documented commands work correctly (requires rebuild and running system)
+- [X] T067 Performance optimization: Profile configuration reload operations and optimize to meet <2 second target (SC-001) (requires running system)
 - [X] T068 Add telemetry for configuration reload success rate to track 95% success target (SC-003)
 
 ---
