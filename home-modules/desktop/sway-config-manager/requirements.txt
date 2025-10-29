@@ -1,0 +1,20 @@
+# Sway Configuration Manager Dependencies
+
+# Core dependencies
+i3ipc>=2.2.1          # Sway IPC communication (Sway-compatible)
+pydantic>=2.0.0       # Data validation and settings management
+jsonschema>=4.17.0    # JSON Schema validation
+
+# File watching
+watchdog>=3.0.0       # File system event monitoring
+
+# Python 3.11+ built-in modules (no installation needed):
+# - tomllib: TOML parsing (Python 3.11+)
+# - json: JSON parsing
+# - asyncio: Async/await support
+# - pathlib: Path manipulation
+# - logging: Logging framework
+# - subprocess: Git command execution
+# - re: Regular expression support
+# - datetime: Date/time handling
+# - typing: Type hints
