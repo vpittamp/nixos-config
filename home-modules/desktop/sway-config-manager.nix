@@ -82,7 +82,7 @@ in {
 
     # Python environment with dependencies
     home.packages = with pkgs; [
-      (python311.withPackages (ps: with ps; [
+      (python3.withPackages (ps: with ps; [
         i3ipc
         pydantic
         jsonschema
@@ -91,7 +91,7 @@ in {
 
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
-        exec ${pkgs.python311.withPackages (ps: with ps; [
+        exec ${pkgs.python3.withPackages (ps: with ps; [
           i3ipc pydantic jsonschema watchdog
         ])}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
@@ -107,7 +107,7 @@ in {
 
       Service = {
         Type = "simple";
-        ExecStart = "${pkgs.python311.withPackages (ps: with ps; [
+        ExecStart = "${pkgs.python3.withPackages (ps: with ps; [
           i3ipc pydantic jsonschema watchdog
         ])}/bin/python ${./sway-config-manager/daemon.py}";
         Restart = "on-failure";
