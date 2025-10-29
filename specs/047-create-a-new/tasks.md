@@ -47,9 +47,9 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T007 Implement base configuration loader in `config/loader.py` with methods: load_keybindings_toml(), load_window_rules_json(), load_workspace_assignments_json(), load_project_overrides()
 - [X] T008 Implement configuration validator in `config/validator.py` with structural validation (JSON Schema) and semantic validation (Sway IPC queries for workspaces/outputs)
 - [X] T009 Implement configuration merger in `config/merger.py` to merge Nix base config + runtime overrides + project overrides with precedence rules (Nix=1, runtime=2, project=3)
-- [ ] T010 Extend daemon IPC server in `ipc_server.py` to add JSON-RPC endpoints: config_reload, config_validate, config_rollback, config_get_versions, config_show, config_get_conflicts, config_watch_start, config_watch_stop
+- [X] T010 Extend daemon IPC server in `ipc_server.py` to add JSON-RPC endpoints: config_reload, config_validate, config_rollback, config_get_versions, config_show, config_get_conflicts, config_watch_start, config_watch_stop
 - [X] T011 Implement git-based rollback manager in `config/rollback.py` with methods: list_versions(), rollback_to_commit(), commit_config_changes(), get_active_version()
-- [ ] T012 Add configuration state tracking to daemon state in `state.py` (active_config_version, config_load_timestamp, validation_errors)
+- [X] T012 Add configuration state tracking to daemon state in `state.py` (active_config_version, config_load_timestamp, validation_errors)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -87,9 +87,9 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Document configuration precedence architecture in `/etc/nixos/docs/SWAY_CONFIG_ARCHITECTURE.md` with decision tree for "where should this setting go" (keybindings → TOML, system packages → Nix, window rules → JSON, project logic → Python daemon)
-- [ ] T025 [US2] Implement configuration source attribution tracker in `config/source_tracker.py` to record which settings came from Nix vs runtime vs project overrides (setting_path, source_system, precedence_level, last_modified, file_path)
-- [ ] T026 [US2] Add conflict detection to configuration merger in `config/merger.py` to identify duplicate settings across precedence levels and log warnings with resolution (higher precedence wins)
+- [X] T024 [US2] Document configuration precedence architecture in `/etc/nixos/docs/SWAY_CONFIG_ARCHITECTURE.md` with decision tree for "where should this setting go" (keybindings → TOML, system packages → Nix, window rules → JSON, project logic → Python daemon)
+- [X] T025 [US2] Implement configuration source attribution tracker in `config/source_tracker.py` to record which settings came from Nix vs runtime vs project overrides (setting_path, source_system, precedence_level, last_modified, file_path)
+- [X] T026 [US2] Add conflict detection to configuration merger in `config/merger.py` to identify duplicate settings across precedence levels and log warnings with resolution (higher precedence wins)
 - [ ] T027 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_show.ts` to display active configuration with source attribution (--category=keybindings|window-rules|workspaces|all, --sources, --project <name>, --json)
 - [ ] T028 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_conflicts.ts` to show configuration conflicts across precedence levels with resolution explanations
 - [ ] T029 [US2] Update quickstart.md documentation with configuration precedence examples and troubleshooting section for common conflicts
