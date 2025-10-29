@@ -83,12 +83,13 @@
   networking.firewall = {
     allowedTCPPorts = [
       22     # SSH
+      3389   # RDP/VNC - TEMPORARILY PUBLIC for debugging (TODO: move back to Tailscale-only)
       8080   # Web services
       # RustDesk ports managed by rustdesk service
     ];
-    interfaces."tailscale0".allowedTCPPorts = [
-      3389   # RDP via Tailscale only
-    ];
+    # interfaces."tailscale0".allowedTCPPorts = [
+    #   3389   # RDP via Tailscale only - DISABLED: not working after rebuild
+    # ];
     # Tailscale
     checkReversePath = "loose";
   };

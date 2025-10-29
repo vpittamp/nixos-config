@@ -18,6 +18,7 @@ from i3ipc.aio import Connection
 from sway_config_manager.config import ConfigLoader, ConfigValidator, ConfigMerger, RollbackManager
 from sway_config_manager.config.reload_manager import ReloadManager
 from sway_config_manager.config.file_watcher import FileWatcher
+from sway_config_manager.config.version_manager import VersionManager
 from sway_config_manager.rules import KeybindingManager, WindowRuleEngine, WorkspaceAssignmentHandler
 from sway_config_manager.ipc_server import IPCServer
 from sway_config_manager.state import ConfigurationState
@@ -52,6 +53,7 @@ class SwayConfigDaemon:
         self.validator = ConfigValidator(config_dir / "schemas")
         self.merger = ConfigMerger()
         self.rollback = RollbackManager(config_dir)
+        self.version_manager = VersionManager(config_dir)  # Feature 047 T042
         self.state = ConfigurationState()
 
         # Initialize rule engines
