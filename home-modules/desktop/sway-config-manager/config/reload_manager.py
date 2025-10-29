@@ -29,6 +29,7 @@ class ConfigTransaction:
         self.reload_manager = reload_manager
         self.success = False
         self.previous_commit: Optional[str] = None
+        self.rollback_start_time: Optional[float] = None  # Feature 047 US4: T046 rollback logging
 
     async def __aenter__(self):
         """Enter transaction context."""
@@ -45,17 +46,53 @@ class ConfigTransaction:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit transaction context."""
         if exc_type is not None:
-            # Exception occurred - rollback
+            # Exception occurred - rollback (Feature 047 US4: T045, T046)
             logger.error(f"Transaction failed: {exc_val}")
 
             if self.previous_commit:
-                logger.info(f"Rolling back to commit {self.previous_commit[:8]}")
+                # Feature 047 US4: T046 - Enhanced rollback logging
+                import time
+                self.rollback_start_time = time.time()
+
+                # Get current commit to log the change
+                try:
+                    current_version = self.reload_manager.rollback.get_active_version()
+                    current_hash = current_version.commit_hash[:8] if current_version else "unknown"
+                except Exception:
+                    current_hash = "unknown"
+
+                logger.info(f"Rolling back configuration:")
+                logger.info(f"  From: {current_hash}")
+                logger.info(f"  To:   {self.previous_commit[:8]}")
+
+                # Perform rollback
                 success = self.reload_manager.rollback.rollback_to_commit(self.previous_commit)
 
+                # Calculate rollback duration
+                rollback_duration_ms = int((time.time() - self.rollback_start_time) * 1000)
+
                 if success:
-                    logger.info("Rollback successful")
+                    logger.info(f"Rollback successful (duration: {rollback_duration_ms}ms)")
+                    logger.info(f"Configuration restored to previous working state")
+
+                    # Try to get file changes from git diff
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ["git", "diff", "--name-only", self.previous_commit, "HEAD"],
+                            cwd=self.reload_manager.config_dir,
+                            capture_output=True,
+                            text=True,
+                            check=False
+                        )
+                        if result.returncode == 0 and result.stdout:
+                            changed_files = result.stdout.strip().split("\n")
+                            logger.info(f"Files restored: {', '.join(changed_files)}")
+                    except Exception as e:
+                        logger.debug(f"Could not get file diff: {e}")
                 else:
-                    logger.error("Rollback failed - manual intervention required")
+                    logger.error(f"Rollback failed after {rollback_duration_ms}ms - manual intervention required")
+                    logger.error(f"Manual rollback: cd ~/.config/sway && git checkout {self.previous_commit[:8]}")
 
             return False  # Don't suppress exception
 
@@ -77,6 +114,7 @@ class ReloadManager:
         self.validator = daemon.validator
         self.merger = daemon.merger
         self.rollback = daemon.rollback
+        self.version_manager = daemon.version_manager  # Feature 047 US4
         self.config_dir = daemon.config_dir
 
     @asynccontextmanager
@@ -202,15 +240,35 @@ class ReloadManager:
                 reload_success = await self.daemon.keybinding_manager.reload_sway_config()
 
                 if not reload_success:
-                    raise Exception("Sway config reload failed")
+                    # Feature 047 US4: T045 - This exception triggers automatic rollback via transaction context
+                    raise Exception("Sway config reload failed - configuration will be rolled back to previous version")
 
-                # Commit to git
+                # Commit to git (Feature 047 US4: Auto-commit on successful reload)
                 if not skip_commit:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    # Generate descriptive commit message
+                    file_list = files if files else ["all changed files"]
+                    files_desc = ", ".join(file_list[:3])
+                    if len(file_list) > 3:
+                        files_desc += f" (+{len(file_list) - 3} more)"
+
+                    commit_message = f"Configuration reload: {timestamp}\n\nFiles: {files_desc}\nStatus: Success"
+
                     commit_hash = self.rollback.commit_config_changes(
-                        message="Configuration reload",
+                        message=commit_message,
                         files=files
                     )
                     self.daemon.state.active_config_version = commit_hash
+
+                    # Feature 047 US4: Update version tracking
+                    self.version_manager.update_active_version(
+                        commit_hash=commit_hash,
+                        message=commit_message,
+                        author="sway-config-daemon"
+                    )
+
                     logger.info(f"Committed configuration: {commit_hash[:8]}")
 
                 # Update state

@@ -15,11 +15,18 @@ export async function configCommand(args: string[], flags: Record<string, unknow
         return await configShow(flags);
       case "conflicts":
         return await configConflicts(flags);
+      case "rollback":
+        return await configRollback(args.slice(1), flags);
+      case "list-versions":
+      case "versions":
+        return await configListVersions(flags);
       default:
-        console.error("Usage: i3pm config <show|conflicts>");
+        console.error("Usage: i3pm config <show|conflicts|rollback|list-versions>");
         console.error("\nAvailable subcommands:");
-        console.error("  show       Display current configuration with source attribution");
-        console.error("  conflicts  Show configuration conflicts across precedence levels");
+        console.error("  show          Display current configuration with source attribution");
+        console.error("  conflicts     Show configuration conflicts across precedence levels");
+        console.error("  rollback      Rollback configuration to a previous version (Feature 047 US4)");
+        console.error("  list-versions List configuration version history (Feature 047 US4)");
         return 1;
     }
   } catch (error) {
@@ -422,4 +429,137 @@ function formatCriteria(criteria: Record<string, unknown>): string {
 
   const [key, value] = entries[0];
   return `${key}: ${truncate(String(value), 12)}`;
+}
+
+/**
+ * Feature 047 US4: Rollback configuration to a previous version
+ * T043: Deno CLI command for configuration rollback
+ */
+async function configRollback(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const [commitHash] = args;
+
+  if (!commitHash) {
+    console.error("Error: Commit hash is required");
+    console.error("Usage: i3pm config rollback <commit-hash> [--no-reload]");
+    console.error("\nOptions:");
+    console.error("  --no-reload  Don't reload configuration after rollback");
+    console.error("\nExample:");
+    console.error("  i3pm config rollback a1b2c3d4");
+    console.error("  i3pm config list-versions  # Show available versions");
+    return 1;
+  }
+
+  const configSocket = `${Deno.env.get("HOME")}/.cache/sway-config-manager/ipc.sock`;
+  const client = new DaemonClient(configSocket);
+  await client.connect();
+
+  try {
+    const params: Record<string, unknown> = {
+      commit_hash: commitHash,
+      reload_after: !flags["no-reload"],
+    };
+
+    console.log(`Rolling back configuration to ${commitHash}...`);
+
+    const result = await client.request<{
+      success: boolean;
+      message: string;
+      rollback_duration_ms?: number;
+      files_changed?: string[];
+    }>("config_rollback", params);
+
+    if (result.success) {
+      console.log(`✓ ${result.message}`);
+      if (result.rollback_duration_ms) {
+        console.log(`  Duration: ${result.rollback_duration_ms}ms`);
+      }
+      if (result.files_changed && result.files_changed.length > 0) {
+        console.log(`  Files changed: ${result.files_changed.join(", ")}`);
+      }
+      return 0;
+    } else {
+      console.error(`✗ Rollback failed: ${result.message}`);
+      return 1;
+    }
+  } finally {
+    await client.disconnect();
+  }
+}
+
+/**
+ * Feature 047 US4: List configuration version history
+ * T044: Deno CLI command for listing configuration versions
+ */
+async function configListVersions(flags: Record<string, unknown>): Promise<number> {
+  const configSocket = `${Deno.env.get("HOME")}/.cache/sway-config-manager/ipc.sock`;
+  const client = new DaemonClient(configSocket);
+  await client.connect();
+
+  try {
+    const params: Record<string, unknown> = {};
+
+    if (flags.limit) {
+      params.limit = Number(flags.limit);
+    }
+
+    if (flags.since) {
+      params.since = String(flags.since);
+    }
+
+    const result = await client.request<{
+      versions: Array<{
+        commit_hash: string;
+        timestamp: string;
+        message: string;
+        author: string;
+        is_active: boolean;
+        files_changed: string[];
+      }>;
+      total_count: number;
+    }>("config_get_versions", params);
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    // Print version history table
+    console.log("\n┌─ Configuration Version History ─────────────────────────────────────┐");
+    console.log("│");
+
+    if (result.versions.length === 0) {
+      console.log("│  No configuration versions found");
+      console.log("│");
+      console.log("└──────────────────────────────────────────────────────────────────────┘\n");
+      return 0;
+    }
+
+    for (const version of result.versions) {
+      const date = new Date(version.timestamp);
+      const dateStr = date.toISOString().replace("T", " ").substring(0, 19);
+      const hash = version.commit_hash.substring(0, 8);
+      const active = version.is_active ? " ← ACTIVE" : "";
+      const filesCount = version.files_changed.length;
+
+      console.log(`│  ${hash}  ${dateStr}${active}`);
+      console.log(`│  ${version.message}`);
+      console.log(`│  Author: ${version.author}, Files: ${filesCount}`);
+      console.log("│");
+    }
+
+    console.log(`└─ Total: ${result.total_count} versions ────────────────────────────────┘\n`);
+
+    if (result.versions.length > 0) {
+      console.log("To rollback to a version:");
+      console.log(`  i3pm config rollback ${result.versions[0].commit_hash.substring(0, 8)}`);
+      console.log("\nOptions:");
+      console.log("  --limit <n>     Limit number of versions (default: 10)");
+      console.log("  --since <date>  Show versions since date (e.g., '2025-01-01')");
+      console.log("  --json          Output in JSON format");
+    }
+
+    return 0;
+  } finally {
+    await client.disconnect();
+  }
 }

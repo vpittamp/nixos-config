@@ -129,14 +129,14 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 
 ### Implementation for User Story 4
 
-- [ ] T040 [US4] Implement git integration in `config/rollback.py` with methods: get_git_history(), parse_commit_metadata(), checkout_commit(), get_changed_files()
-- [ ] T041 [US4] Create automatic git commit on successful reload in `config/reload_manager.py` with auto-generated commit messages (timestamp, files changed, reload success)
-- [ ] T042 [US4] Implement configuration version tracking in `config/version_manager.py` to maintain `.config-version` file with active commit hash, timestamp, message
-- [ ] T043 [US4] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_rollback.ts` to call daemon IPC config_rollback endpoint with commit hash and --no-reload flag
-- [ ] T044 [US4] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_list_versions.ts` to call daemon IPC config_get_versions endpoint with --limit and --since flags
-- [ ] T045 [US4] Implement automatic rollback on apply failure in `config/reload_manager.py` to revert to previous commit if Sway reload fails
-- [ ] T046 [US4] Add rollback logging to track which settings changed during rollback operation (before/after values, rollback duration, success status)
-- [ ] T047 [US4] Update quickstart.md with rollback workflow examples and version history navigation
+- [X] T040 [US4] Implement git integration in `config/rollback.py` with methods: get_git_history(), parse_commit_metadata(), checkout_commit(), get_changed_files()
+- [X] T041 [US4] Create automatic git commit on successful reload in `config/reload_manager.py` with auto-generated commit messages (timestamp, files changed, reload success)
+- [X] T042 [US4] Implement configuration version tracking in `config/version_manager.py` to maintain `.config-version` file with active commit hash, timestamp, message
+- [X] T043 [US4] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config.ts` (configRollback function) to call daemon IPC config_rollback endpoint with commit hash and --no-reload flag
+- [X] T044 [US4] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config.ts` (configListVersions function) to call daemon IPC config_get_versions endpoint with --limit and --since flags
+- [X] T045 [US4] Implement automatic rollback on apply failure in `config/reload_manager.py` to revert to previous commit if Sway reload fails
+- [X] T046 [US4] Add rollback logging to track which settings changed during rollback operation (before/after values, rollback duration, success status)
+- [X] T047 [US4] Update quickstart.md with rollback workflow examples and version history navigation
 
 **Checkpoint**: Version control and rollback working - users can safely experiment with configuration changes
 

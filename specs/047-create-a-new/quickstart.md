@@ -226,33 +226,140 @@ Config Version: a1b2c3d (2025-10-29 14:30:00)
 
 ---
 
-### 7. Rollback Configuration
+### 7. Rollback Configuration (Feature 047 US4)
 
-If a change breaks something, instantly rollback:
+If a change breaks something, instantly rollback to a previous working version.
+
+#### List Version History
+
+View your configuration history with detailed commit information:
 
 ```bash
-# List recent versions
-i3pm config list-versions --limit 5
+# List recent versions (default: 10)
+i3pm config list-versions
 
-# Rollback to previous version
-i3pm config rollback <commit-hash>
+# Show more versions
+i3pm config list-versions --limit 20
 
-# Example
+# Show versions since a specific date
+i3pm config list-versions --since "2025-10-01"
+
+# JSON output for scripting
+i3pm config list-versions --json
+```
+
+**Example Output**:
+```
+┌─ Configuration Version History ─────────────────────────────────────┐
+│
+│  f9e8d7c  2025-10-29 14:30:12 ← ACTIVE
+│  Configuration reload: 2025-10-29 14:30:12
+│
+│  Files: keybindings.toml
+│  Status: Success
+│  Author: sway-config-daemon, Files: 1
+│
+│  a1b2c3d  2025-10-29 12:15:45
+│  Configuration reload: 2025-10-29 12:15:45
+│
+│  Files: window-rules.json
+│  Status: Success
+│  Author: sway-config-daemon, Files: 1
+│
+│  e4f3b2a  2025-10-28 18:22:33
+│  Initial configuration setup
+│  Author: sway-config-daemon, Files: 3
+│
+└─ Total: 3 versions ────────────────────────────────────────────────┘
+
+To rollback to a version:
+  i3pm config rollback f9e8d7c
+
+Options:
+  --limit <n>     Limit number of versions (default: 10)
+  --since <date>  Show versions since date (e.g., '2025-01-01')
+  --json          Output in JSON format
+```
+
+#### Rollback to Previous Version
+
+Restore configuration to a specific commit:
+
+```bash
+# Rollback to a specific version (by commit hash)
 i3pm config rollback f9e8d7c
+
+# Rollback without reloading configuration (manual reload later)
+i3pm config rollback f9e8d7c --no-reload
 ```
 
-**Output**:
+**Example Output**:
 ```
-🔄 Rolling back configuration...
+Rolling back configuration to f9e8d7c...
+✓ Configuration rolled back successfully
+  Duration: 1847ms
+  Files changed: keybindings.toml
+```
 
-Previous Version: a1b2c3d (Add custom keybindings)
-Restored Version: f9e8d7c (Initial config)
+#### Automatic Rollback on Failure
 
-Files Restored:
-  • keybindings.toml
+If a configuration change fails to apply (e.g., invalid Sway syntax), the system automatically rolls back to the previous working version:
 
-✅ Rollback complete (2.1 seconds)
-✅ Configuration reloaded automatically
+```bash
+# Make a breaking change
+echo "invalid syntax" >> ~/.config/sway/keybindings.toml
+
+# Try to reload (will fail and auto-rollback)
+i3pm config reload
+```
+
+**Example Output**:
+```
+Phase 1: Validating configuration
+✓ Structural validation passed
+✓ Semantic validation passed
+
+Phase 2: Applying configuration
+✗ Sway config reload failed - configuration will be rolled back to previous version
+
+Rolling back configuration:
+  From: a1b2c3d
+  To:   f9e8d7c
+✓ Rollback successful (duration: 1204ms)
+✓ Configuration restored to previous working state
+  Files restored: keybindings.toml
+```
+
+**Key Features**:
+- **Fast rollback**: <3 seconds to restore any previous version
+- **Automatic commits**: Every successful reload creates a version
+- **Detailed logging**: See exactly what changed (files, duration, status)
+- **Safety net**: Automatic rollback on any apply failure
+- **Git-based**: Use standard git commands if needed (`~/.config/sway/`)
+
+#### Version Control Best Practices
+
+1. **Commit meaningful changes**: Each reload auto-commits with timestamp and files changed
+2. **Check history regularly**: Use `list-versions` to see your configuration evolution
+3. **Test changes incrementally**: Make small changes and verify before continuing
+4. **Keep backups**: The version history provides a complete audit trail
+5. **Manual git operations**: You can use git commands directly in `~/.config/sway/` if needed
+
+**Example git workflow**:
+```bash
+cd ~/.config/sway
+
+# View full git history
+git log --oneline
+
+# See changes in a specific commit
+git show f9e8d7c
+
+# Create a branch for experiments
+git checkout -b experiment
+
+# Return to main
+git checkout main
 ```
 
 ---
@@ -262,18 +369,25 @@ Files Restored:
 ### Workflow 1: Experiment with Keybindings
 
 ```bash
-# 1. Edit keybindings
+# 1. Check current version (before changes)
+i3pm config list-versions --limit 1
+
+# 2. Edit keybindings
 i3pm config edit keybindings
 
-# 2. Add experimental binding (e.g., Mod+Shift+t for terminal)
+# 3. Add experimental binding (e.g., Mod+Shift+t for terminal)
+# Save and test immediately (auto-reloads)
 
-# 3. Save and test immediately (auto-reloads)
+# 4. Test the new keybinding
+# Press Mod+Shift+t to verify it works
 
-# 4. If you don't like it, rollback
-i3pm config rollback HEAD~1
+# 5. If you don't like it, rollback to previous version
+i3pm config list-versions --limit 2   # Find previous commit hash
+i3pm config rollback <previous-hash>  # e.g., i3pm config rollback f9e8d7c
 ```
 
-**Time saved**: ~2 minutes (vs NixOS rebuild)
+**Time saved**: ~2 minutes per iteration (vs NixOS rebuild)
+**Safety**: Automatic rollback if configuration is invalid
 
 ---
 
