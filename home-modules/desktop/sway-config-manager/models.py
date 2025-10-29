@@ -144,7 +144,6 @@ class WorkspaceAssignment(BaseModel):
 class ProjectWindowRuleOverride(BaseModel):
     """Project-specific window rule override."""
 
-    project_name: str = Field(..., description="Project identifier")
     base_rule_id: Optional[str] = Field(None, description="Global rule ID to override")
     override_properties: Dict[str, Any] = Field(..., description="Properties to override")
     enabled: bool = Field(True, description="Override active status")
@@ -156,6 +155,74 @@ class ProjectWindowRuleOverride(BaseModel):
         valid_fields = {'criteria', 'actions', 'priority'}
         if not any(k in valid_fields for k in v.keys()):
             raise ValueError(f"Override must contain at least one of: {valid_fields}")
+        return v
+
+
+class ProjectKeybindingOverride(BaseModel):
+    """Project-specific keybinding override."""
+
+    key_combo: str = Field(..., description="Key combination to override")
+    command: Optional[str] = Field(None, description="New command (null to disable)")
+    description: Optional[str] = Field(None, description="Override description")
+    enabled: bool = Field(True, description="Override active status")
+
+    @field_validator('key_combo')
+    @classmethod
+    def validate_key_combo(cls, v: str) -> str:
+        """Validate key combination syntax."""
+        # Pattern for modified keys (requires at least one modifier)
+        modified_pattern = r'^(Mod|Shift|Control|Alt|Ctrl)(\+(Mod|Shift|Control|Alt|Ctrl))*\+[a-zA-Z0-9_\-]+$'
+
+        # Pattern for standalone special keys (Print, F-keys, XF86 media keys)
+        special_pattern = r'^(Print|F[0-9]+|XF86[a-zA-Z0-9]+)$'
+
+        if not (re.match(modified_pattern, v) or re.match(special_pattern, v)):
+            raise ValueError(f"Invalid key combo syntax: {v}")
+        return v
+
+    @field_validator('command')
+    @classmethod
+    def validate_command(cls, v: Optional[str]) -> Optional[str]:
+        """Validate command is not empty if provided."""
+        if v is not None and not v.strip():
+            raise ValueError("Command cannot be empty string (use null to disable)")
+        return v.strip() if v is not None else None
+
+
+class Project(BaseModel):
+    """Project configuration with override capabilities."""
+
+    name: str = Field(..., description="Project unique identifier")
+    display_name: str = Field(..., description="Human-readable project name")
+    directory: str = Field(..., description="Project root directory path")
+    icon: Optional[str] = Field(None, description="Project icon emoji")
+    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
+
+    # Feature 047 User Story 3: Project-specific overrides
+    window_rule_overrides: List[ProjectWindowRuleOverride] = Field(
+        default_factory=list,
+        description="Project-specific window rule overrides"
+    )
+    keybinding_overrides: Dict[str, ProjectKeybindingOverride] = Field(
+        default_factory=dict,
+        description="Project-specific keybinding overrides (key_combo -> override)"
+    )
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate project name is alphanumeric with hyphens/underscores."""
+        if not re.match(r'^[a-z0-9_-]+$', v):
+            raise ValueError("Project name must be lowercase alphanumeric with hyphens/underscores")
+        return v
+
+    @field_validator('directory')
+    @classmethod
+    def validate_directory(cls, v: str) -> str:
+        """Validate directory is absolute path."""
+        if not v.startswith('/'):
+            raise ValueError("Project directory must be an absolute path")
         return v
 
 

@@ -715,6 +715,188 @@ i3pm config show --project nixos
 
 ---
 
+## Project-Specific Configuration Overrides
+
+**Feature 047 User Story 3**: Define project-specific window rules and keybindings that automatically apply when you switch to a project.
+
+### Overview
+
+Projects can override global configuration with project-specific behavior:
+- **Window rule overrides**: Modify or add window rules for specific projects
+- **Keybinding overrides**: Change keybindings per-project (e.g., `Mod+t` opens terminal in project directory)
+
+### Example: Project Configuration with Overrides
+
+Edit your project configuration:
+
+```bash
+# Edit project file
+nvim ~/.config/i3/projects/nixos.json
+```
+
+Add window rule and keybinding overrides:
+
+```json
+{
+  "name": "nixos",
+  "display_name": "NixOS Configuration",
+  "directory": "/etc/nixos",
+  "icon": "❄️",
+  "created_at": "2025-10-29T00:00:00Z",
+  "updated_at": "2025-10-29T12:00:00Z",
+
+  "window_rule_overrides": [
+    {
+      "base_rule_id": "calculator-float",
+      "override_properties": {
+        "actions": ["floating enable", "resize set 400 600", "move position center"],
+        "priority": 50
+      },
+      "enabled": true
+    },
+    {
+      "base_rule_id": null,
+      "override_properties": {
+        "criteria": {
+          "app_id": "org.gnome.Nautilus"
+        },
+        "actions": ["floating enable", "move workspace 8"],
+        "priority": 60
+      },
+      "enabled": true
+    }
+  ],
+
+  "keybinding_overrides": {
+    "Mod+t": {
+      "key_combo": "Mod+t",
+      "command": "exec ghostty --working-directory=/etc/nixos",
+      "description": "Open terminal in NixOS directory",
+      "enabled": true
+    },
+    "Mod+e": {
+      "key_combo": "Mod+e",
+      "command": "exec code /etc/nixos",
+      "description": "Open VS Code in NixOS directory",
+      "enabled": true
+    }
+  }
+}
+```
+
+### Window Rule Override Types
+
+1. **Override existing global rule** (modify behavior):
+   ```json
+   {
+     "base_rule_id": "calculator-float",
+     "override_properties": {
+       "actions": ["floating enable", "resize set 800 600"],
+       "priority": 50
+     },
+     "enabled": true
+   }
+   ```
+
+2. **Create new project-specific rule** (no base_rule_id):
+   ```json
+   {
+     "base_rule_id": null,
+     "override_properties": {
+       "criteria": {"app_id": "myapp"},
+       "actions": ["move workspace 5"],
+       "priority": 60
+     },
+     "enabled": true
+   }
+   ```
+
+### Keybinding Override Format
+
+```json
+{
+  "key_combo": "Mod+t",
+  "command": "exec ghostty --working-directory=$PROJECT_DIR",
+  "description": "Terminal in project directory",
+  "enabled": true
+}
+```
+
+**To disable a keybinding**: Set `"enabled": false` or `"command": null`
+
+### Testing Project Overrides
+
+1. **Switch to project**:
+   ```bash
+   pswitch nixos
+   ```
+
+2. **Launch application** (e.g., calculator):
+   - Window rules from project overrides apply automatically
+
+3. **Use overridden keybinding**:
+   - `Mod+t` opens terminal in `/etc/nixos`
+
+4. **View active configuration**:
+   ```bash
+   i3pm config show --project=nixos
+   ```
+
+### Precedence Rules
+
+Configuration precedence (highest to lowest):
+
+1. **Project overrides** (Level 3) - `~/.config/i3/projects/<name>.json`
+2. **Runtime config** (Level 2) - `~/.config/sway/*.{toml,json}`
+3. **Nix base config** (Level 1) - `home-modules/desktop/sway.nix`
+
+**Example**:
+- Global rule: Calculator floats at 400x400
+- Project override: Calculator floats at 800x600
+- **Result**: When project active, calculator is 800x600
+
+### Validation
+
+Project overrides are validated on reload:
+
+```bash
+# Validate project configuration
+i3pm config validate --files projects
+
+# Show validation errors
+i3pm config show --project=nixos --json | jq '.errors'
+```
+
+**Common validation errors**:
+- `base_rule_id` references non-existent global rule
+- Invalid key combo syntax in keybinding override
+- Missing required fields in override_properties
+
+### Troubleshooting
+
+**Override not applying**:
+```bash
+# 1. Check project is active
+i3pm project current
+
+# 2. Reload configuration
+i3pm config reload
+
+# 3. Check for validation errors
+i3pm config validate
+
+# 4. View active rules for project
+i3pm config show --project=nixos
+```
+
+**Rule conflicts**:
+```bash
+# Check for conflicting rules
+i3pm config conflicts
+```
+
+---
+
 ## Performance Tips
 
 - **File watcher debounce**: Adjust if you're making rapid edits

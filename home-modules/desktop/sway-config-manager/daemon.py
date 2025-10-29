@@ -66,6 +66,10 @@ class SwayConfigDaemon:
         # IPC server
         self.ipc_server: Optional[IPCServer] = None
 
+        # Feature 047 US3: Active project context
+        self.active_project = None
+        self.projects_dir = config_dir.parent / "i3" / "projects"
+
     async def start(self):
         """Start the daemon."""
         logger.info("Starting Sway Configuration Manager Daemon")
@@ -160,6 +164,9 @@ class SwayConfigDaemon:
             await self.window_rule_engine.load_rules(merged_rules)
             await self.workspace_handler.load_assignments(merged_assignments)
 
+            # Feature 047 US3: Load active project and set context
+            await self.load_active_project()
+
             # Generate and apply keybindings (via config file)
             # This will be integrated with reload manager in Phase 3
 
@@ -174,6 +181,64 @@ class SwayConfigDaemon:
             logger.error(f"Failed to load configuration: {e}")
             return False
 
+    async def load_active_project(self):
+        """
+        Load active project from i3pm active-project.json.
+
+        Feature 047 User Story 3: Query active project and apply project-specific rules
+        """
+        try:
+            import json
+            from .models import Project
+
+            # Read active project file from i3pm
+            active_project_file = self.config_dir.parent / "i3" / "active-project.json"
+
+            if not active_project_file.exists():
+                logger.debug("No active project file found")
+                self.active_project = None
+                self.window_rule_engine.set_active_project(None)
+                self.keybinding_manager.set_active_project(None)
+                return
+
+            with open(active_project_file, 'r') as f:
+                active_data = json.load(f)
+
+            project_name = active_data.get("name")
+            if not project_name:
+                logger.debug("Active project file is empty")
+                self.active_project = None
+                self.window_rule_engine.set_active_project(None)
+                self.keybinding_manager.set_active_project(None)
+                return
+
+            # Load project configuration
+            project_file = self.projects_dir / f"{project_name}.json"
+            if not project_file.exists():
+                logger.warning(f"Project file not found: {project_file}")
+                self.active_project = None
+                self.window_rule_engine.set_active_project(None)
+                self.keybinding_manager.set_active_project(None)
+                return
+
+            with open(project_file, 'r') as f:
+                project_data = json.load(f)
+
+            # Parse project with Pydantic
+            self.active_project = Project(**project_data)
+
+            # Set project context in rule engines
+            self.window_rule_engine.set_active_project(self.active_project)
+            self.keybinding_manager.set_active_project(self.active_project)
+
+            logger.info(f"Loaded active project: {self.active_project.name}")
+
+        except Exception as e:
+            logger.error(f"Failed to load active project: {e}")
+            self.active_project = None
+            self.window_rule_engine.set_active_project(None)
+            self.keybinding_manager.set_active_project(None)
+
     async def _subscribe_events(self):
         """Subscribe to Sway events."""
         # Subscribe to window events for dynamic rule application
@@ -183,12 +248,20 @@ class SwayConfigDaemon:
         logger.info("Subscribed to Sway events")
 
     async def _on_window_new(self, sway, event):
-        """Handle window::new event."""
+        """
+        Handle window::new event.
+
+        Feature 047 User Story 3: Applies project-specific rules dynamically
+        """
         try:
             window = event.container
             logger.debug(f"New window: {window.id} ({window.app_id or window.window_class})")
 
-            # Apply window rules
+            # Feature 047 US3: Ensure active project is loaded before applying rules
+            # This handles cases where project switches while daemon is running
+            await self.load_active_project()
+
+            # Apply window rules (project context is set in window_rule_engine)
             await self.window_rule_engine.apply_rules_to_window(window)
 
         except Exception as e:
