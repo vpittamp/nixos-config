@@ -24,9 +24,11 @@ let
   ]);
 in
 {
-  # Export the Python environment for other modules to use
-  config._module.args.sharedPythonEnv = sharedPythonEnv;
+  config = {
+    # Export the Python environment for other modules to use
+    _module.args.sharedPythonEnv = sharedPythonEnv;
 
-  # Add to home.packages so Python and all packages are available
-  home.packages = [ sharedPythonEnv ];
+    # Add to home.packages so Python and all packages are available
+    home.packages = [ sharedPythonEnv ];
+  };
 }
