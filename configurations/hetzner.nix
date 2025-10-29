@@ -39,7 +39,6 @@
     ../modules/services/onepassword-automation.nix
     ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix
-    ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
   ];
 
   # System identification

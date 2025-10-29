@@ -30,7 +30,6 @@
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     # ../modules/services/home-assistant.nix # DISABLED: gtts dependency issue with click 8.2.1
     # ../modules/services/scrypted.nix # DISABLED: depends on home-assistant
-    ../modules/services/rustdesk.nix # RustDesk remote desktop with autostart
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix
