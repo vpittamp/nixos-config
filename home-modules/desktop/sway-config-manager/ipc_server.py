@@ -10,6 +10,16 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .errors import (
+    ConfigError,
+    ErrorCode,
+    error_response,
+    validate_params,
+    ConfigLoadError,
+    GitError,
+    SwayIPCError
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -93,7 +103,9 @@ class IPCServer:
 
     async def _handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Handle JSON-RPC request.
+        Handle JSON-RPC request with comprehensive error handling.
+
+        Feature 047 Phase 8 T060: Structured error codes and recovery suggestions
 
         Args:
             request: JSON-RPC request dict
@@ -108,6 +120,14 @@ class IPCServer:
         logger.debug(f"Received request: {method}")
 
         try:
+            # Validate request structure
+            if not method:
+                raise ConfigError(
+                    code=ErrorCode.INVALID_REQUEST,
+                    message="Missing 'method' field in request",
+                    suggestion="Provide 'method' field in JSON-RPC request"
+                )
+
             # Route to handler
             if method == "config_reload":
                 result = await self._handle_config_reload(params)
@@ -126,13 +146,18 @@ class IPCServer:
             elif method == "config_watch_stop":
                 result = await self._handle_config_watch_stop(params)
             elif method == "ping":
-                result = {"status": "ok"}
+                result = {"status": "ok", "daemon": "sway-config-manager"}
             else:
-                return {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32601, "message": f"Method not found: {method}"},
-                    "id": request_id
-                }
+                raise ConfigError(
+                    code=ErrorCode.METHOD_NOT_FOUND,
+                    message=f"Method not found: {method}",
+                    suggestion="Check API documentation for available methods",
+                    context={"available_methods": [
+                        "config_reload", "config_validate", "config_rollback",
+                        "config_get_versions", "config_show", "config_get_conflicts",
+                        "config_watch_start", "config_watch_stop", "ping"
+                    ]}
+                )
 
             return {
                 "jsonrpc": "2.0",
@@ -140,34 +165,74 @@ class IPCServer:
                 "id": request_id
             }
 
+        except ConfigError as e:
+            logger.error(f"Config error in {method}: {e.message}")
+            return error_response(e, request_id)
+
         except Exception as e:
-            logger.error(f"Error handling {method}: {e}")
-            return {
-                "jsonrpc": "2.0",
-                "error": {"code": -32603, "message": str(e)},
-                "id": request_id
-            }
+            logger.error(f"Unexpected error handling {method}: {e}", exc_info=True)
+            return error_response(e, request_id)
 
     async def _handle_config_reload(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle config_reload request."""
-        files = params.get("files")  # Optional: specific files to reload
+        """
+        Handle config_reload request with comprehensive error handling.
+
+        Feature 047 Phase 8 T060: Parameter validation and structured errors
+        """
+        # Validate parameters
+        validate_params(
+            params,
+            required=[],
+            optional=["files", "validate_only", "skip_commit"]
+        )
+
+        # Check daemon state
+        if not self.daemon.reload_manager:
+            raise ConfigError(
+                code=ErrorCode.RELOAD_MANAGER_NOT_READY,
+                message="Reload manager not initialized",
+                suggestion="Wait for daemon to fully initialize or restart daemon",
+                context={"daemon_state": "reload_manager_missing"}
+            )
+
+        files = params.get("files")
         validate_only = params.get("validate_only", False)
         skip_commit = params.get("skip_commit", False)
 
-        if not self.daemon.reload_manager:
-            return {
-                "success": False,
-                "error": "Reload manager not initialized"
-            }
+        # Validate file list if provided
+        if files is not None and not isinstance(files, list):
+            raise ConfigError(
+                code=ErrorCode.INVALID_PARAMS,
+                message="'files' parameter must be a list",
+                suggestion="Provide file list as array: [\"keybindings.toml\"]"
+            )
 
-        # Use reload manager for two-phase commit
-        result = await self.daemon.reload_manager.reload_configuration(
-            validate_only=validate_only,
-            skip_commit=skip_commit,
-            files=files
-        )
+        try:
+            # Use reload manager for two-phase commit
+            result = await self.daemon.reload_manager.reload_configuration(
+                validate_only=validate_only,
+                skip_commit=skip_commit,
+                files=files
+            )
 
-        return result
+            return result
+
+        except FileNotFoundError as e:
+            raise ConfigLoadError(str(e), "File not found")
+
+        except PermissionError as e:
+            raise ConfigError(
+                code=ErrorCode.PERMISSION_DENIED,
+                message=f"Permission denied: {e}",
+                suggestion="Check file permissions or run with appropriate privileges"
+            )
+
+        except Exception as e:
+            raise ConfigError(
+                code=ErrorCode.CONFIG_APPLY_FAILED,
+                message=f"Configuration reload failed: {str(e)}",
+                suggestion="Check daemon logs for detailed error information"
+            )
 
     async def _handle_config_validate(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle config_validate request."""
@@ -191,24 +256,80 @@ class IPCServer:
         }
 
     async def _handle_config_rollback(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle config_rollback request."""
-        commit_hash = params.get("commit_hash")
-        no_reload = params.get("no_reload", False)
+        """
+        Handle config_rollback request with comprehensive error handling.
 
-        if not commit_hash:
-            return {"success": False, "error": "commit_hash required"}
+        Feature 047 Phase 8 T060: Parameter validation and structured errors
+        """
+        # Validate parameters
+        validate_params(
+            params,
+            required=["commit_hash"],
+            optional=["reload_after"]
+        )
 
-        # Rollback to commit
-        success = self.daemon.rollback.rollback_to_commit(commit_hash)
+        commit_hash = params["commit_hash"]
+        reload_after = params.get("reload_after", True)
 
-        if success and not no_reload:
-            # Reload configuration
-            await self.daemon.load_configuration()
+        # Validate commit hash format (40 char hex or short 7-8 char)
+        if not isinstance(commit_hash, str) or not (7 <= len(commit_hash) <= 40):
+            raise ConfigError(
+                code=ErrorCode.INVALID_PARAMS,
+                message=f"Invalid commit hash: {commit_hash}",
+                suggestion="Provide valid git commit hash (7-40 characters)",
+                context={"commit_hash": commit_hash}
+            )
 
-        return {
-            "success": success,
-            "commit_hash": commit_hash
-        }
+        try:
+            # Rollback to commit
+            import time
+            start_time = time.time()
+
+            success = self.daemon.rollback.rollback_to_commit(commit_hash)
+
+            if not success:
+                raise GitError(
+                    operation="rollback",
+                    reason=f"Failed to checkout commit {commit_hash[:8]}",
+                    suggestion="Check that commit exists with: git log --oneline"
+                )
+
+            rollback_duration_ms = int((time.time() - start_time) * 1000)
+
+            # Reload configuration if requested
+            if reload_after:
+                await self.daemon.load_configuration()
+
+            # Get files changed via git diff
+            files_changed = []
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD@{1}", "HEAD"],
+                    cwd=self.daemon.config_dir,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if result.returncode == 0 and result.stdout:
+                    files_changed = result.stdout.strip().split("\n")
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "message": f"Rolled back to {commit_hash[:8]}",
+                "commit_hash": commit_hash,
+                "rollback_duration_ms": rollback_duration_ms,
+                "files_changed": files_changed
+            }
+
+        except subprocess.CalledProcessError as e:
+            raise GitError(
+                operation="rollback",
+                reason=str(e),
+                suggestion="Check git repository status: git status"
+            )
 
     async def _handle_config_get_versions(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle config_get_versions request."""
