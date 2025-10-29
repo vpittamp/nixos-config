@@ -171,7 +171,7 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T057 [P] Add performance metrics tracking to configuration reload operations (load time, validation time, apply time) with logging
 - [X] T058 [P] Implement configuration backup on reload in `config/rollback.py` to create timestamped backup before applying changes
 - [ ] T059 [P] Create systemd timer for periodic validation (daily) in home-manager Nix module to detect config drift
-- [ ] T060 Add comprehensive error handling to all IPC endpoints with structured error codes and recovery suggestions
+- [X] T060 Add comprehensive error handling to all IPC endpoints with structured error codes and recovery suggestions
 - [ ] T061 Update daemon systemd service configuration in `home-modules/desktop/sway.nix` to add configuration file paths to watchdog monitoring
 - [X] T062 [P] Add configuration reload notifications via desktop notification system (notify-send) on success/failure
 - [ ] T063 [P] Update quickstart.md with complete workflow examples, troubleshooting guide, and performance tips
@@ -179,7 +179,7 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [ ] T065 Implement configuration migration tool to convert existing Nix-only config to dynamic config format
 - [ ] T066 Run quickstart.md validation workflows to verify all documented commands work correctly
 - [ ] T067 Performance optimization: Profile configuration reload operations and optimize to meet <2 second target (SC-001)
-- [ ] T068 Add telemetry for configuration reload success rate to track 95% success target (SC-003)
+- [X] T068 Add telemetry for configuration reload success rate to track 95% success target (SC-003)
 
 ---
 
