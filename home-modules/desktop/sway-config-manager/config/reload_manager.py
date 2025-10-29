@@ -75,6 +75,9 @@ class ConfigTransaction:
                     logger.info(f"Rollback successful (duration: {rollback_duration_ms}ms)")
                     logger.info(f"Configuration restored to previous working state")
 
+                    # T068: Record rollback telemetry
+                    self.reload_manager.daemon.state.record_rollback()
+
                     # Try to get file changes from git diff
                     try:
                         import subprocess
@@ -353,6 +356,28 @@ class ReloadManager:
                 "Configuration Reload Failed",
                 f"Error: {str(e)[:80]}",
                 "critical"
+            )
+
+        finally:
+            # T068: Record telemetry for success rate tracking
+            if "metrics" in result and result["metrics"]["total_duration_ms"]:
+                duration = result["metrics"]["total_duration_ms"]
+            else:
+                duration = int((time.time() - start_time) * 1000)
+
+            phase = result.get("phase", "unknown")
+            self.daemon.state.record_reload_attempt(
+                success=result["success"],
+                duration_ms=duration,
+                phase=phase
+            )
+
+            # Log telemetry summary
+            telemetry = self.daemon.state.telemetry
+            logger.info(
+                f"Reload telemetry: {telemetry['successful_reloads']}/{telemetry['total_reload_attempts']} "
+                f"success ({telemetry['success_rate_percent']}%), "
+                f"avg duration: {telemetry['average_reload_duration_ms']}ms"
             )
 
         return result
