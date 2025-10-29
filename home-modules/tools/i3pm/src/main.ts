@@ -15,8 +15,8 @@ const VERSION = "2.1.0";
  */
 async function main(): Promise<number> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow"],
-    string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output"],
+    boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow", "sources"],
+    string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output", "category", "project"],
     alias: {
       h: "help",
       v: "version",
@@ -64,6 +64,10 @@ async function main(): Promise<number> {
         const { daemonCommand } = await import("./commands/daemon.ts");
         return await daemonCommand(restArgs, args);
 
+      case "config":
+        const { configCommand } = await import("./commands/config.ts");
+        return await configCommand(restArgs, args);
+
       default:
         console.error(`Unknown command: ${commandStr}`);
         console.error("Run 'i3pm --help' for usage information");
@@ -96,6 +100,7 @@ COMMANDS:
     layout      Save and restore window layouts
     windows     View and monitor window state
     daemon      Query daemon status and events
+    config      Manage Sway configuration (show, conflicts)
 
 OPTIONS:
     -h, --help       Print help information
@@ -124,6 +129,12 @@ EXAMPLES:
 
     # Check daemon status
     i3pm daemon status
+
+    # Show current configuration
+    i3pm config show
+
+    # Check for configuration conflicts
+    i3pm config conflicts
 
 For more information on a specific command, run:
     i3pm <COMMAND> --help

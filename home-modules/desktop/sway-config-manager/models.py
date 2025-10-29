@@ -41,9 +41,19 @@ class KeybindingConfig(BaseModel):
     @field_validator('key_combo')
     @classmethod
     def validate_key_combo(cls, v: str) -> str:
-        """Validate key combination syntax."""
-        pattern = r'^(Mod|Shift|Control|Alt|Ctrl)(\+(Mod|Shift|Control|Alt|Ctrl))*\+[a-zA-Z0-9_\-]+$'
-        if not re.match(pattern, v):
+        """Validate key combination syntax.
+
+        Accepts:
+        - Modified keys: Mod+Return, Mod+Shift+x, Control+Alt+Delete
+        - Standalone special keys: Print, F1-F12, XF86AudioRaiseVolume, etc.
+        """
+        # Pattern for modified keys (requires at least one modifier)
+        modified_pattern = r'^(Mod|Shift|Control|Alt|Ctrl)(\+(Mod|Shift|Control|Alt|Ctrl))*\+[a-zA-Z0-9_\-]+$'
+
+        # Pattern for standalone special keys (Print, F-keys, XF86 media keys)
+        special_pattern = r'^(Print|F[0-9]+|XF86[a-zA-Z0-9]+)$'
+
+        if not (re.match(modified_pattern, v) or re.match(special_pattern, v)):
             raise ValueError(f"Invalid key combo syntax: {v}")
         return v
 

@@ -90,11 +90,11 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T024 [US2] Document configuration precedence architecture in `/etc/nixos/docs/SWAY_CONFIG_ARCHITECTURE.md` with decision tree for "where should this setting go" (keybindings → TOML, system packages → Nix, window rules → JSON, project logic → Python daemon)
 - [X] T025 [US2] Implement configuration source attribution tracker in `config/source_tracker.py` to record which settings came from Nix vs runtime vs project overrides (setting_path, source_system, precedence_level, last_modified, file_path)
 - [X] T026 [US2] Add conflict detection to configuration merger in `config/merger.py` to identify duplicate settings across precedence levels and log warnings with resolution (higher precedence wins)
-- [ ] T027 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_show.ts` to display active configuration with source attribution (--category=keybindings|window-rules|workspaces|all, --sources, --project <name>, --json)
-- [ ] T028 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_conflicts.ts` to show configuration conflicts across precedence levels with resolution explanations
-- [ ] T029 [US2] Update quickstart.md documentation with configuration precedence examples and troubleshooting section for common conflicts
-- [ ] T030 [US2] Add Nix module option documentation in `home-modules/desktop/sway.nix` using `lib.mkOption` descriptions to clarify which settings are Nix-managed vs runtime-managed
-- [ ] T031 [US2] Implement diagnostic command integration in daemon to respond to config_show IPC requests with full configuration state and source attribution
+- [X] T027 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_show.ts` to display active configuration with source attribution (--category=keybindings|window-rules|workspaces|all, --sources, --project <name>, --json)
+- [X] T028 [US2] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_conflicts.ts` to show configuration conflicts across precedence levels with resolution explanations
+- [X] T029 [US2] Update quickstart.md documentation with configuration precedence examples and troubleshooting section for common conflicts
+- [X] T030 [US2] Add Nix module option documentation in `home-modules/desktop/sway.nix` using `lib.mkOption` descriptions to clarify which settings are Nix-managed vs runtime-managed
+- [X] T031 [US2] Implement diagnostic command integration in daemon to respond to config_show IPC requests with full configuration state and source attribution
 
 **Checkpoint**: Configuration boundaries documented and enforced - users can easily determine where to make changes
 

@@ -1,6 +1,101 @@
 # Sway Wayland Compositor Home Manager Configuration
 # Parallel to i3.nix - adapted for Wayland on M1 MacBook Pro
 # Works with Sway native Wayland session (no XRDP)
+#
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                  CONFIGURATION MANAGEMENT ARCHITECTURE                       ║
+# ║                    (Feature 047 - User Story 2)                              ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+#
+# This module provides NIX-MANAGED (static) Sway configuration.
+# For runtime-managed (hot-reloadable) settings, use the dynamic config system.
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ CONFIGURATION PRECEDENCE (from lowest to highest priority):                 │
+# │                                                                              │
+# │  1. Nix Config (this file)         → System defaults, stable settings       │
+# │  2. Runtime Config                  → ~/.config/sway/*.{toml,json}          │
+# │  3. Project Overrides               → ~/.config/sway/projects/<name>.json   │
+# │                                                                              │
+# │ Higher precedence levels override lower ones. Runtime changes take effect   │
+# │ via `i3pm config reload` without NixOS rebuild.                             │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ DECISION TREE: Where should I put my configuration?                         │
+# │                                                                              │
+# │ ┌─ Is this setting system-wide and STABLE (rarely changes)?                 │
+# │ │                                                                            │
+# │ ├─ YES → Use this Nix file                                                  │
+# │ │  Examples:                                                                │
+# │ │    • Package installation (pkgs.sway, pkgs.terminal)                      │
+# │ │    • Service configuration (systemd units, startup commands)              │
+# │ │    • Display/output configuration (resolution, scaling)                   │
+# │ │    • Base keybindings that never change (Mod+Return for terminal)         │
+# │ │                                                                            │
+# │ └─ NO → Does it CHANGE FREQUENTLY during development/testing?               │
+# │    │                                                                         │
+# │    ├─ YES → Use runtime config (hot-reloadable)                             │
+# │    │  Location: ~/.config/sway/keybindings.toml or window-rules.json        │
+# │    │  Command: i3pm config reload (no rebuild needed!)                      │
+# │    │  Examples:                                                             │
+# │    │    • Custom keybindings you're experimenting with                      │
+# │    │    • Window rules for floating/sizing/positioning                      │
+# │    │    • Workspace-to-output assignments (if you have multiple monitors)   │
+# │    │                                                                         │
+# │    └─ NO → Does it apply ONLY to specific projects?                         │
+# │       │                                                                      │
+# │       └─ YES → Use project overrides                                        │
+# │          Location: ~/.config/sway/projects/<project-name>.json              │
+# │          Command: pswitch <project> (auto-applies overrides)                │
+# │          Examples:                                                          │
+# │            • Project-specific keybindings (Mod+n → edit project file)       │
+# │            • Project-aware window rules (calculator bigger in data-science) │
+# │            • Workspace layouts for specific workflows                       │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ WHAT'S IN THIS FILE (Nix-managed):                                          │
+# │                                                                              │
+# │  ✓ Package installation (sway, terminal emulator, compositor packages)      │
+# │  ✓ System services (daemon startup, systemd units)                          │
+# │  ✓ Display configuration (resolution, scaling, output setup)                │
+# │  ✓ Input devices (touchpad, keyboard base settings)                         │
+# │  ✓ Base keybindings (stable shortcuts that never change)                    │
+# │  ✓ Essential window rules (for system UI like walker, fzf)                  │
+# │  ✓ Startup commands (service initialization)                                │
+# │  ✓ Bar configuration (swaybar via separate module)                          │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ WHAT'S NOT IN THIS FILE (Runtime-managed via Feature 047):                  │
+# │                                                                              │
+# │  ✗ Custom user keybindings         → ~/.config/sway/keybindings.toml        │
+# │  ✗ User window rules                → ~/.config/sway/window-rules.json      │
+# │  ✗ Workspace assignments            → ~/.config/sway/workspace-assignments. │
+# │  ✗ Project-specific overrides       → ~/.config/sway/projects/*.json        │
+# │  ✗ Color schemes (user preference)  → Runtime config                        │
+# │  ✗ Font size tweaks                 → Runtime config                        │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │ HOW TO MODIFY SETTINGS:                                                      │
+# │                                                                              │
+# │ For Nix-managed settings (this file):                                       │
+# │   1. Edit this file: nvim /etc/nixos/home-modules/desktop/sway.nix          │
+# │   2. Test: sudo nixos-rebuild dry-build --flake .#m1                         │
+# │   3. Apply: sudo nixos-rebuild switch --flake .#m1 --impure                  │
+# │   4. Restart Sway (Mod+Shift+r) to apply changes                             │
+# │                                                                              │
+# │ For runtime-managed settings (Feature 047):                                 │
+# │   1. Edit config: i3pm config edit keybindings  (or manual)                 │
+# │   2. Validate: i3pm config validate                                          │
+# │   3. Apply: i3pm config reload  (changes take effect immediately!)           │
+# │   4. Rollback if needed: i3pm config rollback <commit-hash>                  │
+# │                                                                              │
+# │ See documentation: /etc/nixos/specs/047-create-a-new/quickstart.md          │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
 { config, lib, pkgs, osConfig ? null, ... }:
 
 let
@@ -108,7 +203,20 @@ in
         { workspace = "3"; output = "HDMI-A-1"; }
       ];
 
-      # Keybindings (FR-002 - identical to Hetzner i3)
+      # ═══════════════════════════════════════════════════════════════════════════
+      # KEYBINDINGS (Nix-Managed - Stable System Defaults)
+      # ═══════════════════════════════════════════════════════════════════════════
+      #
+      # NOTE: These keybindings are STABLE system defaults that rarely change.
+      # They are managed by Nix and require a rebuild to modify.
+      #
+      # For CUSTOM or EXPERIMENTAL keybindings, use runtime configuration instead:
+      #   • Edit: ~/.config/sway/keybindings.toml
+      #   • Reload: i3pm config reload
+      #   • No rebuild required!
+      #
+      # lib.mkOptionDefault allows runtime config to override these defaults.
+      # ═══════════════════════════════════════════════════════════════════════════
       keybindings = let
         mod = config.wayland.windowManager.sway.config.modifier;
       in lib.mkOptionDefault {
@@ -203,7 +311,19 @@ in
         "${mod}+Shift+x" = "exec grim -g \"$(slurp)\" - | wl-copy";
       };
 
-      # Window rules (FR-023 - parallel to i3 config)
+      # ═══════════════════════════════════════════════════════════════════════════
+      # WINDOW RULES (Nix-Managed - Essential System UI Only)
+      # ═══════════════════════════════════════════════════════════════════════════
+      #
+      # NOTE: Only SYSTEM UI window rules belong here (launcher, system dialogs).
+      # These are essential for the window manager to function correctly.
+      #
+      # For USER-DEFINED window rules (floating, sizing, positioning), use runtime config:
+      #   • Edit: ~/.config/sway/window-rules.json
+      #   • Reload: i3pm config reload
+      #   • Examples: Calculator floating, Firefox on workspace 3, etc.
+      #
+      # ═══════════════════════════════════════════════════════════════════════════
       window.commands = [
         # Walker launcher - floating, centered, no border
         {

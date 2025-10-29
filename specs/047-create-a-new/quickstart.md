@@ -341,22 +341,222 @@ git commit -m "Update Sway config: new keybindings and window rules"
 
 ## Configuration Precedence
 
-Understanding which configuration takes priority:
+Understanding which configuration takes priority is crucial for managing settings across different contexts.
+
+### Precedence Hierarchy
 
 ```
-Project Overrides  (highest priority)
+Project Overrides  (Level 3 - highest priority)
     ↓
-Runtime Config     (medium priority)
+Runtime Config     (Level 2 - medium priority)
     ↓
-Nix Base Config    (lowest priority, system defaults)
+Nix Base Config    (Level 1 - lowest priority, system defaults)
 ```
 
-**Example**:
-- Nix defines `Control+1 = workspace 1`
-- Runtime config redefines `Control+1 = workspace 1` (same, no conflict)
-- Project "nixos" overrides `Control+1 = exec nvim /etc/nixos/configuration.nix`
-- **Result when nixos active**: `Control+1` opens NixOS config
-- **Result when no project active**: `Control+1` switches to workspace 1
+### How It Works
+
+1. **Nix Base Config (Level 1)**: System-wide defaults managed by NixOS configuration
+   - Location: `home-modules/desktop/sway.nix` and related Nix files
+   - Applied during: NixOS rebuild (`sudo nixos-rebuild switch`)
+   - Purpose: Stable system defaults, package installation, service configuration
+
+2. **Runtime Config (Level 2)**: User-editable configuration files
+   - Location: `~/.config/sway/keybindings.toml`, `window-rules.json`, etc.
+   - Applied during: Hot-reload (`i3pm config reload`)
+   - Purpose: Personal customizations without rebuilding NixOS
+
+3. **Project Overrides (Level 3)**: Project-specific behavior
+   - Location: `~/.config/sway/projects/<name>.json`
+   - Applied during: Project switch (`pswitch <project>`)
+   - Purpose: Context-aware behavior for different workflows
+
+### Precedence Examples
+
+#### Example 1: Keybinding Override Chain
+
+**Nix Config** (Level 1):
+```nix
+# home-modules/desktop/sway.nix
+bindings = {
+  "Mod+Return" = "exec ${terminal}";
+  "Control+1" = "workspace number 1";
+}
+```
+
+**Runtime Config** (Level 2):
+```toml
+# ~/.config/sway/keybindings.toml
+[keybindings]
+"Control+1" = { command = "workspace number 1", description = "Workspace 1" }
+"Mod+t" = { command = "exec btop", description = "System monitor" }
+```
+
+**Project Override** (Level 3):
+```json
+// ~/.config/sway/projects/nixos.json
+{
+  "keybinding_overrides": {
+    "Control+1": { "command": "exec nvim /etc/nixos/configuration.nix", "description": "Edit NixOS config" }
+  }
+}
+```
+
+**Results**:
+- `Mod+Return`: Always opens terminal (from Nix, no override)
+- `Mod+t`: Opens btop (from runtime config)
+- `Control+1`:
+  - When nixos project active → Opens NixOS config editor (project override)
+  - When no project active → Switches to workspace 1 (runtime config)
+
+#### Example 2: Window Rule Precedence
+
+**Nix Config** (Level 1):
+```nix
+# Base floating rule for all calculators
+windowRules = [
+  { criteria = { app_id = "Calculator"; }; actions = [ "floating enable" ]; }
+];
+```
+
+**Runtime Config** (Level 2):
+```json
+// ~/.config/sway/window-rules.json
+{
+  "rules": [
+    {
+      "id": "rule-calculator",
+      "criteria": { "app_id": "^org\\.gnome\\.Calculator$" },
+      "actions": ["floating enable", "resize set 400 300", "move position center"],
+      "scope": "global"
+    }
+  ]
+}
+```
+
+**Project Override** (Level 3):
+```json
+// ~/.config/sway/projects/data-science.json
+{
+  "window_rule_overrides": [
+    {
+      "base_rule_id": "rule-calculator",
+      "override_properties": {
+        "actions": ["floating enable", "resize set 800 600", "move workspace 4"]
+      }
+    }
+  ]
+}
+```
+
+**Results**:
+- When data-science project active:
+  - Calculator: Floating, 800x600, workspace 4 (project override)
+- When no project active:
+  - Calculator: Floating, 400x300, centered (runtime config)
+- Nix rule is overridden by runtime config (more specific)
+
+### Checking Configuration Precedence
+
+Use these commands to understand which configuration is active:
+
+```bash
+# Show all configuration with source attribution
+i3pm config show --sources
+
+# Show conflicts between precedence levels
+i3pm config conflicts
+
+# Show configuration for specific project context
+i3pm config show --project nixos
+```
+
+**Example Output**:
+```
+═══════════════════════════════════════════════════════════════
+                    KEYBINDINGS
+═══════════════════════════════════════════════════════════════
+Key Combo     Command                    Source    File
+───────────────────────────────────────────────────────────────
+Mod+Return    exec terminal              nix       sway.nix:22
+Control+1     workspace number 1         runtime   keybindings.toml:5
+Mod+t         exec btop                  runtime   keybindings.toml:12
+───────────────────────────────────────────────────────────────
+
+Active Project: none
+Config Version: a1b2c3d
+```
+
+### Configuration Conflict Detection
+
+The system automatically detects conflicts when the same setting is defined at multiple precedence levels:
+
+```bash
+i3pm config conflicts
+```
+
+**Example Output**:
+```
+═══════════════════════════════════════════════════════════════
+                 CONFIGURATION CONFLICTS
+═══════════════════════════════════════════════════════════════
+
+⚠️  Keybinding: Control+1
+
+  Source      Value                    File                Active
+  ────────────────────────────────────────────────────────────
+  nix         workspace number 1       sway.nix:45         ✗
+  runtime     workspace number 1       keybindings.toml:5  ✓
+
+  Resolution: Runtime config takes precedence (higher priority)
+  Severity: Warning
+
+───────────────────────────────────────────────────────────────
+
+Total Conflicts: 1
+```
+
+### Decision Tree: Where Should This Setting Go?
+
+Use this flowchart to decide where to place a configuration setting:
+
+```
+Is this setting system-wide and stable?
+  YES → Use Nix Config (Level 1)
+    Examples: Package installation, service startup, display managers
+
+  NO ↓
+
+Does this setting change frequently during development?
+  YES → Use Runtime Config (Level 2)
+    Examples: Keybindings, window rules, color schemes
+
+  NO ↓
+
+Does this setting only apply when working on a specific project?
+  YES → Use Project Override (Level 3)
+    Examples: Project-specific keybindings, workspace layouts
+
+  NO → Use Runtime Config (Level 2) as default
+```
+
+### Best Practices
+
+1. **Nix for System Stability**
+   - Use for packages, services, and system-level settings
+   - Avoid frequently changing settings in Nix (requires rebuild)
+
+2. **Runtime for Personal Customization**
+   - Use for keybindings, window rules, and personal preferences
+   - Changes take effect immediately without rebuild
+
+3. **Projects for Context-Aware Behavior**
+   - Use for project-specific workflows
+   - Automatically apply/remove when switching projects
+
+4. **Avoid Conflicts**
+   - Don't duplicate settings across levels unless intentional
+   - Use `i3pm config conflicts` to detect and resolve conflicts
+   - Document overrides with comments explaining why
 
 ---
 
@@ -441,6 +641,53 @@ journalctl --user -u i3-project-event-listener -n 50
    ```bash
    i3pm config reload --files keybindings
    ```
+
+---
+
+### Configuration Conflict Resolution
+
+When you see conflicts in `i3pm config conflicts`, here's how to resolve them:
+
+**Scenario 1: Same Keybinding, Different Commands**
+```
+⚠️  Keybinding: Mod+n
+
+  Source      Value                    File                Active
+  ────────────────────────────────────────────────────────────
+  nix         exec nautilus            sway.nix:50         ✗
+  runtime     exec nvim                keybindings.toml:8  ✓
+```
+
+**Resolution Options**:
+1. **Keep runtime config** (default): Runtime takes precedence, nvim will execute
+2. **Remove from runtime**: Delete line from `keybindings.toml` to use Nix version
+3. **Remove from Nix**: Update `sway.nix` to remove the binding (requires rebuild)
+
+**Scenario 2: Project Override Not Working**
+```bash
+# Check active project
+i3pm project current
+
+# Verify project override syntax
+cat ~/.config/sway/projects/nixos.json
+
+# Reload configuration
+i3pm config reload
+
+# Test in project context
+i3pm config show --project nixos
+```
+
+**Scenario 3: Conflicting Window Rules**
+```
+⚠️  Window Rule: Calculator (app_id: org.gnome.Calculator)
+
+  Multiple rules match the same window:
+  - rule-calculator-global (priority: 100)
+  - rule-calculator-nixos (priority: 150, project: nixos)
+```
+
+**Resolution**: Higher priority wins. Project-specific rules have higher precedence when that project is active.
 
 ---
 
