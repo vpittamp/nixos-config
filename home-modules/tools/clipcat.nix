@@ -1,28 +1,30 @@
 # Clipcat Clipboard History Manager Configuration
 # Implements FR-028 through FR-034c
+# DEPRECATED: Replaced by Walker/Elephant clipboard management (Feature 043)
+# Disabled to fix systemd ordering cycle with graphical-session.target
 { config, lib, pkgs, ... }:
 
 {
-  # Install clipcat and clipboard tools
+  # Install clipboard tools (keeping xclip/xsel for tmux integration)
   home.packages = with pkgs; [
-    clipcat
+    # clipcat  # DISABLED - replaced by Walker/Elephant
     xclip  # For tmux integration (FR-092, FR-093)
     xsel   # Alternative clipboard tool
   ];
 
   # Ensure clipcat has access to X11 display
-  systemd.user.services.clipcat = {
-    Unit = {
-      After = lib.mkForce [ "graphical-session.target" ];
-    };
-    Service = {
-      # Ensure DISPLAY is available from the graphical session
-      Environment = lib.mkForce [ ];  # Clear any restrictive environment
-    };
-  };
+  # systemd.user.services.clipcat = {
+  #   Unit = {
+  #     After = lib.mkForce [ "graphical-session.target" ];
+  #   };
+  #   Service = {
+  #     # Ensure DISPLAY is available from the graphical session
+  #     Environment = lib.mkForce [ ];  # Clear any restrictive environment
+  #   };
+  # };
 
   services.clipcat = {
-    enable = true;
+    enable = false;  # DISABLED - replaced by Walker/Elephant (Feature 043)
     package = pkgs.clipcat;
 
     # Daemon settings (FR-079 through FR-089)
@@ -90,24 +92,25 @@
   # No additional systemd configuration needed - home-manager handles it
 
   # Timestamp tracker service - logs timestamps for new clipboard entries
-  systemd.user.services.clipcat-timestamp-tracker = {
-    Unit = {
-      Description = "Clipcat Timestamp Tracker";
-      After = [ "clipcat.service" ];
-      Requires = [ "clipcat.service" ];
-    };
+  # DISABLED - clipcat replaced by Walker/Elephant (Feature 043)
+  # systemd.user.services.clipcat-timestamp-tracker = {
+  #   Unit = {
+  #     Description = "Clipcat Timestamp Tracker";
+  #     After = [ "clipcat.service" ];
+  #     Requires = [ "clipcat.service" ];
+  #   };
 
-    Service = {
-      Type = "simple";
-      ExecStart = "/etc/nixos/scripts/clipcat-timestamp-tracker.sh";
-      Restart = "on-failure";
-      RestartSec = "5s";
-      # Set PATH to include necessary commands
-      Environment = "PATH=${pkgs.clipcat}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin";
-    };
+  #   Service = {
+  #     Type = "simple";
+  #     ExecStart = "/etc/nixos/scripts/clipcat-timestamp-tracker.sh";
+  #     Restart = "on-failure";
+  #     RestartSec = "5s";
+  #     # Set PATH to include necessary commands
+  #     Environment = "PATH=${pkgs.clipcat}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin";
+  #   };
 
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
+  #   Install = {
+  #     WantedBy = [ "graphical-session.target" ];
+  #   };
+  # };
 }
