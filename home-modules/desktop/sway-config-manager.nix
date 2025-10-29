@@ -76,6 +76,19 @@ in {
       default = 500;
       description = "Debounce delay in milliseconds for file watcher";
     };
+
+    # Feature 047 Phase 8 T059: Periodic validation timer
+    enablePeriodicValidation = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Enable periodic configuration validation (daily)";
+    };
+
+    validationInterval = mkOption {
+      type = types.str;
+      default = "daily";
+      description = "Interval for periodic validation (systemd.time format)";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -118,6 +131,12 @@ in {
         export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
         exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
+
+      # Configuration migration tool (Feature 047 Phase 8 T065)
+      (pkgs.writeShellScriptBin "swayconfig-migrate" ''
+        export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
+        exec ${pythonEnv}/bin/python ${./sway-config-manager/migrate_config.py} "$@"
+      '')
     ];
 
     # Systemd user service for daemon
@@ -133,10 +152,78 @@ in {
         ExecStart = "${daemonWrapper}";
         Restart = "on-failure";
         RestartSec = "3";
+
+        # Feature 047 Phase 8 T061: Watchdog monitoring of configuration files
+        # Monitor configuration directory for changes
+        # Systemd will restart service if files don't exist
+        ReadWritePaths = [
+          cfg.configDir
+        ];
+
+        # Ensure configuration files exist before starting
+        ExecStartPre = "${pkgs.writeShellScript "check-config-files" ''
+          # Create config directory if it doesn't exist
+          mkdir -p ${cfg.configDir}/projects
+          mkdir -p ${cfg.configDir}/schemas
+
+          # Check for required config files (don't fail, just warn)
+          for file in keybindings.toml window-rules.json workspace-assignments.json; do
+            if [ ! -f "${cfg.configDir}/$file" ]; then
+              echo "Warning: Configuration file $file not found in ${cfg.configDir}"
+              echo "Default files will be created by home-manager"
+            fi
+          done
+        ''}";
+
+        # Environment variables for daemon
+        Environment = [
+          "SWAY_CONFIG_DIR=${cfg.configDir}"
+          "SWAY_CONFIG_ENABLE_FILE_WATCHER=${if cfg.enableFileWatcher then "1" else "0"}"
+          "SWAY_CONFIG_DEBOUNCE_MS=${toString cfg.debounceMs}"
+        ];
       };
 
       Install = {
         WantedBy = [ "graphical-session.target" ];
+      };
+    };
+
+    # Feature 047 Phase 8 T059: Periodic configuration validation timer
+    systemd.user.services.sway-config-validation = mkIf cfg.enablePeriodicValidation {
+      Unit = {
+        Description = "Sway Configuration Validation";
+      };
+
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.writeShellScript "sway-config-validate" ''
+          export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
+          ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} validate
+        ''}";
+        # Send desktop notification on failure
+        ExecStopPost = "${pkgs.writeShellScript "validation-notify" ''
+          if [ "$SERVICE_RESULT" != "success" ]; then
+            ${pkgs.libnotify}/bin/notify-send -u critical \
+              "Sway Configuration Validation Failed" \
+              "Run 'swayconfig validate' to see errors"
+          fi
+        ''}";
+      };
+    };
+
+    systemd.user.timers.sway-config-validation = mkIf cfg.enablePeriodicValidation {
+      Unit = {
+        Description = "Periodic Sway Configuration Validation";
+      };
+
+      Timer = {
+        OnCalendar = cfg.validationInterval;
+        Persistent = true;  # Run missed validations on boot
+        Unit = "sway-config-validation.service";
+      };
+
+      Install = {
+        WantedBy = [ "timers.target" ];
       };
     };
   };

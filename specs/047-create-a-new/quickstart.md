@@ -1011,6 +1011,62 @@ i3pm config conflicts
 
 ---
 
+## Periodic Configuration Validation
+
+**Feature 047 Phase 8 T059**: Automatic daily validation to detect configuration drift.
+
+The system includes a systemd timer that runs configuration validation daily (by default) to catch errors before you manually reload.
+
+### Check Timer Status
+
+```bash
+# Check if timer is active
+systemctl --user status sway-config-validation.timer
+
+# View timer schedule
+systemctl --user list-timers sway-config-validation
+
+# Check last validation result
+systemctl --user status sway-config-validation.service
+```
+
+### Manual Validation
+
+Trigger validation manually anytime:
+
+```bash
+# Run validation service manually
+systemctl --user start sway-config-validation.service
+
+# Check result
+systemctl --user status sway-config-validation.service
+```
+
+### Configuration
+
+Periodic validation is configured in your NixOS configuration:
+
+```nix
+programs.sway-config-manager = {
+  enable = true;
+
+  # Enable periodic validation (default: true)
+  enablePeriodicValidation = true;
+
+  # Validation interval (default: "daily")
+  # Can be any systemd.time calendar format
+  validationInterval = "daily";  # Or: "weekly", "Mon *-*-* 09:00:00", etc.
+};
+```
+
+**Benefits**:
+- Catch syntax errors early (before manual reload)
+- Desktop notification if validation fails
+- Zero performance impact (runs only once per day)
+- Helps maintain configuration health
+
+---
+
 ## Performance Tips
 
 - **File watcher debounce**: Adjust if you're making rapid edits
@@ -1026,6 +1082,17 @@ i3pm config conflicts
 - **Batch changes**: Edit multiple files, then reload once
   ```bash
   i3pm config reload --files keybindings,window-rules
+  ```
+
+- **Monitor reload performance**: Check daemon logs for timing
+  ```bash
+  journalctl --user -u sway-config-manager -n 20 | grep "reload time"
+  ```
+
+- **Reduce validation overhead**: Disable Sway IPC validation if not needed
+  ```bash
+  # Validate structure only (faster)
+  i3pm config validate --skip-sway-ipc
   ```
 
 ---
