@@ -8,31 +8,15 @@
 # - Exposes IPC socket for CLI tool queries
 # - Uses socket activation for reliable startup
 #
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, sharedPythonEnv, ... }:
 
 with lib;
 
 let
   cfg = config.services.i3ProjectEventListener;
 
-  # Python dependencies for the daemon (Updated: 2025-10-26 for Feature 039)
-  # Note: PatternRule is now copied locally to avoid i3pm dependency
-  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-    # Core daemon dependencies
-    i3ipc        # i3 IPC library
-    systemd      # systemd-python for sd_notify/watchdog/journald
-    watchdog     # File system monitoring (Feature 021: T022)
-
-    # Feature 030: Production readiness dependencies (T001)
-    # Feature 033: Declarative workspace-to-monitor mapping (T001, T006-T008)
-    pydantic     # Data validation for layout models and monitor config
-    pytest       # Testing framework
-    pytest-asyncio  # Async test support
-    pytest-cov   # Coverage reporting
-
-    # Feature 039: Diagnostic tooling (T003)
-    rich         # Terminal UI for diagnostic commands
-  ]);
+  # Use shared Python environment from python-environment.nix
+  pythonEnv = sharedPythonEnv;
 
   # Daemon package (T033)
   daemonSrc = ./i3-project-event-daemon;

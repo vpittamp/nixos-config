@@ -1,17 +1,12 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, sharedPythonEnv, ... }:
 
 with lib;
 
 let
   cfg = config.programs.sway-config-manager;
 
-  # Python environment with all dependencies (defined once, reused everywhere)
-  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-    i3ipc
-    pydantic
-    jsonschema
-    watchdog
-  ]);
+  # Use shared Python environment from python-environment.nix
+  pythonEnv = sharedPythonEnv;
 
   # Default keybindings file (external TOML file for easier maintenance)
   defaultKeybindingsPath = ./sway-default-keybindings.toml;
