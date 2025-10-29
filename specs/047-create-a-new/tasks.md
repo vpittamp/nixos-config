@@ -155,7 +155,7 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 - [X] T050 [US5] Add keybinding syntax validation in `config/validator.py` to check key combo patterns match Sway syntax (e.g., `Mod+Return` not `Mod++Return`) - Already implemented
 - [X] T051 [US5] Implement regex validation for window rule criteria in `config/validator.py` to detect invalid patterns and provide fix suggestions - Already implemented
 - [X] T052 [US5] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config.ts` (configValidate function) to call daemon IPC config_validate endpoint with --files and --strict flags
-- [ ] T053 [US5] Add auto-validation option to file watcher in `config/file_watcher.py` to run validation on file save and display results
+- [X] T053 [US5] Add auto-validation option to file watcher in `config/file_watcher.py` to run validation on file save and display results - Added auto_validate and validate_callback parameters
 - [X] T054 [US5] Implement validation result formatting in CLI with color-coded output (✅ success, ❌ errors, ⚠️ warnings) and summary statistics - Implemented in configValidate function
 - [ ] T055 [US5] Create validation error test suite with common error scenarios (syntax errors, missing references, conflicts) to verify 100% syntax error detection target (SC-006)
 
