@@ -157,29 +157,62 @@
       nixosConfigurations = {
         # Primary: Hetzner Cloud Server with i3wm (x86_64)
         # Production configuration with i3wm desktop environment
-        hetzner = mkSystem {
-          hostname = "nixos-hetzner";
-          system = "x86_64-linux";
-          modules = [
-            disko.nixosModules.disko
-            ./configurations/hetzner.nix
-          ];
-        };
+        # DISABLED: Temporarily commented out to use hetzner-sway for Sway testing
+        # hetzner = mkSystem {
+        #   hostname = "nixos-hetzner";
+        #   system = "x86_64-linux";
+        #   modules = [
+        #     disko.nixosModules.disko
+        #     ./configurations/hetzner.nix
+        #   ];
+        # };
 
         # Hetzner Cloud Server with Sway (Feature 046)
         # Headless Wayland with VNC remote access, parallel to hetzner
-        hetzner-sway = mkSystem {
-          hostname = "nixos-hetzner-sway";
+        # Note: Defined manually instead of using mkSystem to avoid double home-manager imports
+        hetzner-sway = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
+          specialArgs = { inherit inputs; };
           modules = [
             disko.nixosModules.disko
             ./configurations/hetzner-sway.nix
+
+            # Track git revision and metadata
+            {
+              system.configurationRevision = self.rev or self.dirtyRev or "unknown";
+              environment.etc."nixos-metadata".text = ''
+                # NixOS Build Metadata
+                GIT_COMMIT=${self.rev or self.dirtyRev or "unknown"}
+                GIT_SHORT_COMMIT=${nixpkgs.lib.substring 0 7 (self.rev or self.dirtyRev or "unknown")}
+                GIT_DIRTY=${if self ? rev then "false" else "true"}
+                GIT_LAST_MODIFIED=${self.lastModifiedDate or "unknown"}
+                HOSTNAME=nixos-hetzner-sway
+                SYSTEM=x86_64-linux
+                BUILD_DATE=${builtins.substring 0 8 self.lastModifiedDate or "unknown"}
+              '';
+            }
+
+            # Home Manager integration with Sway-specific config
             home-manager.nixosModules.home-manager
             {
-              home-manager.useGlobalPkgs = true;
-              home-manager.useUserPackages = true;
-              home-manager.users.vpittamp = import ./home-modules/hetzner-sway.nix;
-              home-manager.extraSpecialArgs = { inherit inputs; isWaylandMode = true; };
+              home-manager = {
+                backupFileExtension = "backup";
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = {
+                  inherit inputs;
+                  pkgs-unstable = import nixpkgs-bleeding {
+                    system = "x86_64-linux";
+                    config.allowUnfree = true;
+                  };
+                };
+                users.vpittamp = {
+                  imports = [
+                    ./home-modules/hetzner-sway.nix
+                  ];
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
             }
           ];
         };
@@ -217,7 +250,7 @@
           };
           osConfigFor = system:
             if system == "aarch64-linux" then self.nixosConfigurations.m1.config
-            else self.nixosConfigurations.hetzner.config;
+            else self.nixosConfigurations.hetzner-sway.config;
           mkHome = modulePath: home-manager.lib.homeManagerConfiguration {
             pkgs = pkgsFor currentSystem;
             extraSpecialArgs = {

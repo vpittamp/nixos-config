@@ -204,112 +204,122 @@ in
       ];
 
       # ═══════════════════════════════════════════════════════════════════════════
-      # KEYBINDINGS (Nix-Managed - Stable System Defaults)
+      # KEYBINDINGS (Feature 047: Fully Dynamic via sway-config-manager)
       # ═══════════════════════════════════════════════════════════════════════════
       #
-      # NOTE: These keybindings are STABLE system defaults that rarely change.
-      # They are managed by Nix and require a rebuild to modify.
+      # Feature 047: ALL keybindings are now managed dynamically through
+      # sway-config-manager to prevent conflicts with home-manager's static generation.
       #
-      # For CUSTOM or EXPERIMENTAL keybindings, use runtime configuration instead:
+      # To edit keybindings:
       #   • Edit: ~/.config/sway/keybindings.toml
-      #   • Reload: i3pm config reload
-      #   • No rebuild required!
+      #   • Validate: i3pm config validate
+      #   • Reload: swayconfig reload (or i3pm config reload)
+      #   • No NixOS rebuild required!
       #
-      # lib.mkOptionDefault allows runtime config to override these defaults.
+      # The dynamically generated keybindings file is included via extraConfig below.
       # ═══════════════════════════════════════════════════════════════════════════
-      keybindings = let
-        mod = config.wayland.windowManager.sway.config.modifier;
-      in lib.mkOptionDefault {
-        # Terminal (uses config.terminal which calls app-launcher-wrapper)
-        "${mod}+Return" = "exec $terminal";
-
-        # Application launcher (rofi for headless, walker for M1)
-        "${mod}+d" = "exec $menu";
-        "Mod1+space" = "exec $menu";  # Alternative: Alt+Space
-
-        # Window management
-        "${mod}+Shift+q" = "kill";
-        "${mod}+Escape" = "kill";  # Alternative kill binding
-
-        # Focus movement (arrow keys)
-        "${mod}+Left" = "focus left";
-        "${mod}+Down" = "focus down";
-        "${mod}+Up" = "focus up";
-        "${mod}+Right" = "focus right";
-
-        # Move focused window (arrow keys)
-        "${mod}+Shift+Left" = "move left";
-        "${mod}+Shift+Down" = "move down";
-        "${mod}+Shift+Up" = "move up";
-        "${mod}+Shift+Right" = "move right";
-
-        # Split orientation
-        "${mod}+h" = "split h";
-        "${mod}+Shift+bar" = "split v";
-
-        # Fullscreen
-        "${mod}+f" = "fullscreen toggle";
-
-        # Container layout
-        "${mod}+s" = "layout stacking";
-        "${mod}+w" = "layout tabbed";
-        "${mod}+e" = "layout toggle split";
-
-        # Toggle floating
-        "${mod}+Shift+space" = "floating toggle";
-        "${mod}+space" = "focus mode_toggle";
-
-        # Scratchpad
-        "${mod}+Shift+minus" = "move scratchpad";
-        "${mod}+minus" = "scratchpad show";
-
-        # Workspace switching (Ctrl+1-9) - parallel to Hetzner
-        "Control+1" = "workspace number 1";
-        "Control+2" = "workspace number 2";
-        "Control+3" = "workspace number 3";
-        "Control+4" = "workspace number 4";
-        "Control+5" = "workspace number 5";
-        "Control+6" = "workspace number 6";
-        "Control+7" = "workspace number 7";
-        "Control+8" = "workspace number 8";
-        "Control+9" = "workspace number 9";
-
-        # Move container to workspace
-        "${mod}+Shift+1" = "move container to workspace number 1";
-        "${mod}+Shift+2" = "move container to workspace number 2";
-        "${mod}+Shift+3" = "move container to workspace number 3";
-        "${mod}+Shift+4" = "move container to workspace number 4";
-        "${mod}+Shift+5" = "move container to workspace number 5";
-        "${mod}+Shift+6" = "move container to workspace number 6";
-        "${mod}+Shift+7" = "move container to workspace number 7";
-        "${mod}+Shift+8" = "move container to workspace number 8";
-        "${mod}+Shift+9" = "move container to workspace number 9";
-
-        # Project management keybindings (parallel to i3 config)
-        "${mod}+p" = "exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
-        "${mod}+Shift+p" = "exec i3pm project clear";
-
-        # Project-aware application launchers (Feature 035: Registry-based)
-        "${mod}+c" = "exec ~/.local/bin/app-launcher-wrapper.sh vscode";
-        "${mod}+g" = "exec ~/.local/bin/app-launcher-wrapper.sh lazygit";
-        "${mod}+y" = "exec ~/.local/bin/app-launcher-wrapper.sh yazi";
-        "${mod}+b" = "exec ~/.local/bin/app-launcher-wrapper.sh btop";
-        "${mod}+k" = "exec ~/.local/bin/app-launcher-wrapper.sh k9s";
-        "${mod}+Shift+Return" = "exec ~/.local/bin/app-launcher-wrapper.sh terminal";
-
-        # Monitor detection/workspace reassignment
-        "${mod}+Shift+m" = "exec ~/.config/i3/scripts/reassign-workspaces.sh";
-
-        # Reload/restart
-        "${mod}+Shift+c" = "reload";
-        "${mod}+Shift+r" = "restart";
-        "${mod}+Shift+e" = "exec swaymsg exit";
-
-        # Screenshots (grim + slurp for Wayland)
-        "Print" = "exec grim -o $(swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name') - | wl-copy";
-        "${mod}+Print" = "exec grim -g \"$(swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused?) | .rect | \"\\(.x),\\(.y) \\(.width)x\\(.height)\"')\" - | wl-copy";
-        "${mod}+Shift+x" = "exec grim -g \"$(slurp)\" - | wl-copy";
+      keybindings = lib.mkForce {
+        # Empty - all keybindings managed by sway-config-manager (Feature 047)
+        # Default keybindings are in: ~/.local/share/sway-config-manager/templates/keybindings.toml
       };
+
+      # ORIGINAL home-manager keybindings (commented out for Feature 047):
+      # All keybindings below have been moved to ~/.local/share/sway-config-manager/templates/keybindings.toml
+      # and are now managed dynamically. To restore static keybindings, remove lib.mkForce above.
+      #
+      # keybindings = let
+      #   mod = config.wayland.windowManager.sway.config.modifier;
+      # in lib.mkOptionDefault {
+      #   # Terminal (uses config.terminal which calls app-launcher-wrapper)
+      #   "${mod}+Return" = "exec $terminal";
+
+      #   # Application launcher (rofi for headless, walker for M1)
+      #   "${mod}+d" = "exec $menu";
+      #   "Mod1+space" = "exec $menu";  # Alternative: Alt+Space
+
+      #         # Window management
+      #         "${mod}+Shift+q" = "kill";
+      #         "${mod}+Escape" = "kill";  # Alternative kill binding
+      # 
+      #         # Focus movement (arrow keys)
+      #         "${mod}+Left" = "focus left";
+      #         "${mod}+Down" = "focus down";
+      #         "${mod}+Up" = "focus up";
+      #         "${mod}+Right" = "focus right";
+      # 
+      #         # Move focused window (arrow keys)
+      #         "${mod}+Shift+Left" = "move left";
+      #         "${mod}+Shift+Down" = "move down";
+      #         "${mod}+Shift+Up" = "move up";
+      #         "${mod}+Shift+Right" = "move right";
+      # 
+      #         # Split orientation
+      #         "${mod}+h" = "split h";
+      #         "${mod}+Shift+bar" = "split v";
+      # 
+      #         # Fullscreen
+      #         "${mod}+f" = "fullscreen toggle";
+      # 
+      #         # Container layout
+      #         "${mod}+s" = "layout stacking";
+      #         "${mod}+w" = "layout tabbed";
+      #         "${mod}+e" = "layout toggle split";
+      # 
+      #         # Toggle floating
+      #         "${mod}+Shift+space" = "floating toggle";
+      #         "${mod}+space" = "focus mode_toggle";
+      # 
+      #         # Scratchpad
+      #         "${mod}+Shift+minus" = "move scratchpad";
+      #         "${mod}+minus" = "scratchpad show";
+      # 
+      #         # Workspace switching (Ctrl+1-9) - parallel to Hetzner
+      #         "Control+1" = "workspace number 1";
+      #         "Control+2" = "workspace number 2";
+      #         "Control+3" = "workspace number 3";
+      #         "Control+4" = "workspace number 4";
+      #         "Control+5" = "workspace number 5";
+      #         "Control+6" = "workspace number 6";
+      #         "Control+7" = "workspace number 7";
+      #         "Control+8" = "workspace number 8";
+      #         "Control+9" = "workspace number 9";
+      # 
+      #         # Move container to workspace
+      #         "${mod}+Shift+1" = "move container to workspace number 1";
+      #         "${mod}+Shift+2" = "move container to workspace number 2";
+      #         "${mod}+Shift+3" = "move container to workspace number 3";
+      #         "${mod}+Shift+4" = "move container to workspace number 4";
+      #         "${mod}+Shift+5" = "move container to workspace number 5";
+      #         "${mod}+Shift+6" = "move container to workspace number 6";
+      #         "${mod}+Shift+7" = "move container to workspace number 7";
+      #         "${mod}+Shift+8" = "move container to workspace number 8";
+      #         "${mod}+Shift+9" = "move container to workspace number 9";
+      # 
+      #         # Project management keybindings (parallel to i3 config)
+      #         "${mod}+p" = "exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
+      #         "${mod}+Shift+p" = "exec i3pm project clear";
+      # 
+      #         # Project-aware application launchers (Feature 035: Registry-based)
+      #         "${mod}+c" = "exec ~/.local/bin/app-launcher-wrapper.sh vscode";
+      #         "${mod}+g" = "exec ~/.local/bin/app-launcher-wrapper.sh lazygit";
+      #         "${mod}+y" = "exec ~/.local/bin/app-launcher-wrapper.sh yazi";
+      #         "${mod}+b" = "exec ~/.local/bin/app-launcher-wrapper.sh btop";
+      #         "${mod}+k" = "exec ~/.local/bin/app-launcher-wrapper.sh k9s";
+      #         "${mod}+Shift+Return" = "exec ~/.local/bin/app-launcher-wrapper.sh terminal";
+      # 
+      #         # Monitor detection/workspace reassignment
+      #         "${mod}+Shift+m" = "exec ~/.config/i3/scripts/reassign-workspaces.sh";
+      # 
+      #         # Reload/restart
+      #         "${mod}+Shift+c" = "reload";
+      #         "${mod}+Shift+r" = "restart";
+      #         "${mod}+Shift+e" = "exec swaymsg exit";
+      # 
+      #         # Screenshots (grim + slurp for Wayland)
+      #         "Print" = "exec grim -o $(swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[] | select(.focused) | .name') - | wl-copy";
+      #         "${mod}+Print" = "exec grim -g \"$(swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused?) | .rect | \"\\(.x),\\(.y) \\(.width)x\\(.height)\"')\" - | wl-copy";
+      #         "${mod}+Shift+x" = "exec grim -g \"$(slurp)\" - | wl-copy";
+      #       };
 
       # ═══════════════════════════════════════════════════════════════════════════
       # WINDOW RULES (Nix-Managed - Essential System UI Only)
@@ -375,6 +385,9 @@ in
       # Application menu launcher - walker works with software rendering (GSK_RENDERER=cairo)
       set $menu walker
 
+      # Define modifier key for dynamic keybindings (Feature 047)
+      set $mod Mod4
+
       # Gaps (optional - clean appearance)
       gaps inner 5
       gaps outer 0
@@ -389,6 +402,9 @@ in
       set $ws7 "7: git "
       set $ws8 "8: ai "
       set $ws9 "9 "
+
+      # Feature 047: Include dynamically generated keybindings from sway-config-manager
+      include ~/.config/sway/keybindings-generated.conf
     '';
   };
 

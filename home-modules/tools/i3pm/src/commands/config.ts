@@ -595,7 +595,7 @@ async function configValidate(args: string[], flags: Record<string, unknown>): P
     console.log("Validating configuration...\n");
 
     const result = await client.request<{
-      success: boolean;
+      valid: boolean;  // Daemon returns "valid" not "success"
       errors: Array<{
         file_path: string;
         line_number?: number | null;
@@ -608,14 +608,14 @@ async function configValidate(args: string[], flags: Record<string, unknown>): P
         message: string;
         suggestion?: string | null;
       }>;
-      validation_duration_ms: number;
-      files_validated: string[];
+      validation_duration_ms?: number;
+      files_validated?: string[];
     }>("config_validate", params);
 
     // Format validation results (Feature 047 US5 T054)
     if (flags.json) {
       console.log(JSON.stringify(result, null, 2));
-      return result.success ? 0 : 1;
+      return result.valid ? 0 : 1;
     }
 
     // Display results with color-coded output
@@ -666,13 +666,13 @@ async function configValidate(args: string[], flags: Record<string, unknown>): P
 
     // Summary statistics
     console.log("│");
-    console.log(`│  Files validated: ${result.files_validated.length}`);
-    console.log(`│  Duration: ${result.validation_duration_ms}ms`);
-    console.log(`│  Status: ${result.success ? "✅ PASS" : "❌ FAIL"}`);
+    console.log(`│  Files validated: ${(result.files_validated || []).length}`);
+    console.log(`│  Duration: ${result.validation_duration_ms || 0}ms`);
+    console.log(`│  Status: ${result.valid ? "✅ PASS" : "❌ FAIL"}`);
     console.log("│");
     console.log("└──────────────────────────────────────────────────────────────────────┘\n");
 
-    if (!result.success) {
+    if (!result.valid) {
       console.log("Fix the errors above before reloading configuration.");
       console.log("Use 'i3pm config reload' after fixing errors.\n");
       return 1;

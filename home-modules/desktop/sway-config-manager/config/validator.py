@@ -240,6 +240,17 @@ class ConfigValidator:
         Returns:
             True if valid, False otherwise
         """
+        # Allow special keys without modifiers (XF86*, Print, etc.)
+        if key_combo.startswith("XF86"):
+            return True
+        if key_combo in ["Print", "Pause", "Break", "Insert", "Delete", "Home", "End", "PageUp", "PageDown"]:
+            return True
+
+        # Allow F-keys (F1-F12) without modifiers
+        if re.match(r'^F([1-9]|1[0-2])$', key_combo):
+            return True
+
+        # Standard modifier+key pattern
         pattern = r'^(Mod|Shift|Control|Alt|Ctrl)(\+(Mod|Shift|Control|Alt|Ctrl))*\+[a-zA-Z0-9_\-]+$'
         return bool(re.match(pattern, key_combo))
 

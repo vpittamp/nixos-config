@@ -232,7 +232,7 @@ class ConfigurationVersion(BaseModel):
     commit_hash: str = Field(..., description="Git commit SHA")
     timestamp: datetime = Field(..., description="Commit timestamp")
     message: str = Field(..., description="Commit message")
-    files_changed: List[str] = Field(..., min_length=1, description="Modified config files")
+    files_changed: List[str] = Field(default_factory=list, description="Modified config files")
     author: Optional[str] = Field(None, description="Commit author")
     is_active: bool = Field(False, description="Currently active version")
 

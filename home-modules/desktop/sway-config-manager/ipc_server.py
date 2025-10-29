@@ -236,23 +236,40 @@ class IPCServer:
 
     async def _handle_config_validate(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle config_validate request."""
+        import time
+        start_time = time.time()
+
         files = params.get("files")
         strict = params.get("strict", False)
 
+        # Track which files we're validating
+        files_validated = []
+        config_dir = self.daemon.loader.config_dir
+
         # Load configurations
         keybindings = self.daemon.loader.load_keybindings_toml()
+        files_validated.append(str(config_dir / "keybindings.toml"))
+
         window_rules = self.daemon.loader.load_window_rules_json()
+        files_validated.append(str(config_dir / "window-rules.json"))
+
         workspace_assignments = self.daemon.loader.load_workspace_assignments_json()
+        files_validated.append(str(config_dir / "workspace-assignments.json"))
 
         # Validate
         errors = self.daemon.validator.validate_semantics(
             keybindings, window_rules, workspace_assignments
         )
 
+        # Calculate duration
+        duration_ms = int((time.time() - start_time) * 1000)
+
         return {
             "valid": len(errors) == 0,
             "errors": [e.dict() for e in errors],
-            "warnings": []
+            "warnings": [],
+            "files_validated": files_validated,
+            "validation_duration_ms": duration_ms
         }
 
     async def _handle_config_rollback(self, params: Dict[str, Any]) -> Dict[str, Any]:

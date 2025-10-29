@@ -50,6 +50,14 @@ class ConfigFileHandler(FileSystemEventHandler):
 
         path = Path(event.src_path)
 
+        # Exclude backup directories to prevent reload loops
+        if ".backups" in path.parts:
+            return
+
+        # Exclude generated files and hidden files (except config files)
+        if path.name.endswith("-generated.conf") or path.name == ".config-version":
+            return
+
         # Only watch specific config files
         if path.suffix not in [".toml", ".json"] or path.name.startswith("."):
             return

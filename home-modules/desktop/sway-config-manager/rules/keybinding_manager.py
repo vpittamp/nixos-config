@@ -191,9 +191,12 @@ class KeybindingManager:
         # Generate default mode keybindings first
         if "default" in mode_keybindings:
             for kb in mode_keybindings["default"]:
+                # Feature 047: Replace "Mod" with "$mod" for Sway compatibility
+                # Sway requires variables like $mod to be defined, can't use bare "Mod"
+                key_combo = kb.key_combo.replace("Mod+", "$mod+")
                 if kb.description:
                     config_lines.append(f"# {kb.description}")
-                config_lines.append(f"bindsym {kb.key_combo} {kb.command}")
+                config_lines.append(f"bindsym {key_combo} {kb.command}")
             config_lines.append("")
 
         # Generate other modes
@@ -203,9 +206,11 @@ class KeybindingManager:
 
             config_lines.append(f"mode \"{mode}\" {{")
             for kb in kbs:
+                # Feature 047: Replace "Mod" with "$mod" for Sway compatibility
+                key_combo = kb.key_combo.replace("Mod+", "$mod+")
                 if kb.description:
                     config_lines.append(f"    # {kb.description}")
-                config_lines.append(f"    bindsym {kb.key_combo} {kb.command}")
+                config_lines.append(f"    bindsym {key_combo} {kb.command}")
             config_lines.append("}")
             config_lines.append("")
 

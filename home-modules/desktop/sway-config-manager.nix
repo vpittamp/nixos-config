@@ -93,26 +93,12 @@ in {
 
   config = mkIf cfg.enable {
     # Create configuration directory structure
+    # Following home-manager best practices for mutable user-editable files:
+    # - Don't manage editable config files with home-manager (creates read-only symlinks)
+    # - Store immutable templates that daemon copies on first run
+    # - Let users edit actual config files without nixos-rebuild
+    # Reference: https://www.foodogsquared.one/posts/2023-03-24-managing-mutable-files-in-nixos/
     home.file = {
-      # Keybindings configuration
-      ".config/sway/keybindings.toml" = {
-        source = defaultKeybindingsPath;
-        # Only create if doesn't exist (don't overwrite user changes)
-        force = false;
-      };
-
-      # Window rules configuration
-      ".config/sway/window-rules.json" = {
-        text = defaultWindowRules;
-        force = false;
-      };
-
-      # Workspace assignments configuration
-      ".config/sway/workspace-assignments.json" = {
-        text = defaultWorkspaceAssignments;
-        force = false;
-      };
-
       # Create projects directory
       ".config/sway/projects/.keep" = {
         text = "";
@@ -121,6 +107,36 @@ in {
       # Create schemas directory for JSON schemas
       ".config/sway/schemas/.keep" = {
         text = "";
+      };
+
+      # Store default templates (immutable, in Nix store)
+      # Daemon will copy these to ~/.config/sway/ on first run if files don't exist
+      ".local/share/sway-config-manager/templates/keybindings.toml" = {
+        source = defaultKeybindingsPath;
+      };
+
+      ".local/share/sway-config-manager/templates/window-rules.json" = {
+        text = defaultWindowRules;
+      };
+
+      ".local/share/sway-config-manager/templates/workspace-assignments.json" = {
+        text = defaultWorkspaceAssignments;
+      };
+
+      ".local/share/sway-config-manager/templates/.gitignore" = {
+        text = ''
+          # Exclude backup directories from git tracking
+          .backups/
+          .config-version
+
+          # Exclude generated Sway configuration files
+          *-generated.conf
+
+          # Exclude temporary files
+          *.tmp
+          *.swp
+          *~
+        '';
       };
     };
 
@@ -161,16 +177,26 @@ in {
         ];
 
         # Ensure configuration files exist before starting
+        # Following home-manager best practices: Copy templates to writable location on first run
         ExecStartPre = "${pkgs.writeShellScript "check-config-files" ''
           # Create config directory if it doesn't exist
           mkdir -p ${cfg.configDir}/projects
           mkdir -p ${cfg.configDir}/schemas
 
-          # Check for required config files (don't fail, just warn)
-          for file in keybindings.toml window-rules.json workspace-assignments.json; do
+          # Template directory (immutable, in Nix store)
+          TEMPLATE_DIR="$HOME/.local/share/sway-config-manager/templates"
+
+          # Copy template files to config directory if they don't exist
+          # This allows users to edit files without nixos-rebuild
+          for file in keybindings.toml window-rules.json workspace-assignments.json .gitignore; do
             if [ ! -f "${cfg.configDir}/$file" ]; then
-              echo "Warning: Configuration file $file not found in ${cfg.configDir}"
-              echo "Default files will be created by home-manager"
+              if [ -f "$TEMPLATE_DIR/$file" ]; then
+                echo "Creating initial config file: ${cfg.configDir}/$file (from template)"
+                cp "$TEMPLATE_DIR/$file" "${cfg.configDir}/$file"
+                chmod 644 "${cfg.configDir}/$file"
+              else
+                echo "Warning: Template file $file not found in $TEMPLATE_DIR"
+              fi
             fi
           done
         ''}";
