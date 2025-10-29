@@ -307,11 +307,20 @@ async def filter_windows_by_project(
     tree = await conn.get_tree()
     windows = tree.leaves()
 
+    # Feature 046: Include scratchpad windows for restoration
+    # tree.leaves() only returns visible windows, but we need to process scratchpad windows
+    # to restore them when switching to their project
+    scratchpad = tree.scratchpad()
+    if scratchpad:
+        scratchpad_windows = scratchpad.floating_nodes
+        logger.debug(f"Found {len(scratchpad_windows)} windows in scratchpad")
+        windows.extend(scratchpad_windows)
+
     visible_count = 0
     hidden_count = 0
     error_count = 0
 
-    logger.info(f"Filtering {len(windows)} windows for project '{active_project or 'none'}'")
+    logger.info(f"Filtering {len(windows)} windows ({len(windows) - len(scratchpad_windows if scratchpad else 0)} visible + {len(scratchpad_windows) if scratchpad else 0} scratchpad) for project '{active_project or 'none'}'")
 
     for window in windows:
         # Feature 038 T042: Per-window performance tracking
