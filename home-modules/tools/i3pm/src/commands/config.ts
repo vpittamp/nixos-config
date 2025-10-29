@@ -20,13 +20,16 @@ export async function configCommand(args: string[], flags: Record<string, unknow
       case "list-versions":
       case "versions":
         return await configListVersions(flags);
+      case "validate":
+        return await configValidate(args.slice(1), flags);
       default:
-        console.error("Usage: i3pm config <show|conflicts|rollback|list-versions>");
+        console.error("Usage: i3pm config <show|conflicts|rollback|list-versions|validate>");
         console.error("\nAvailable subcommands:");
         console.error("  show          Display current configuration with source attribution");
         console.error("  conflicts     Show configuration conflicts across precedence levels");
         console.error("  rollback      Rollback configuration to a previous version (Feature 047 US4)");
         console.error("  list-versions List configuration version history (Feature 047 US4)");
+        console.error("  validate      Validate configuration files (Feature 047 US5)");
         return 1;
     }
   } catch (error) {
@@ -557,6 +560,123 @@ async function configListVersions(flags: Record<string, unknown>): Promise<numbe
       console.log("  --since <date>  Show versions since date (e.g., '2025-01-01')");
       console.log("  --json          Output in JSON format");
     }
+
+    return 0;
+  } finally {
+    await client.disconnect();
+  }
+}
+
+/**
+ * Feature 047 US5: Validate configuration files
+ * T052: Deno CLI command for configuration validation
+ */
+async function configValidate(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const configSocket = `${Deno.env.get("HOME")}/.cache/sway-config-manager/ipc.sock`;
+  const client = new DaemonClient(configSocket);
+  await client.connect();
+
+  try {
+    const params: Record<string, unknown> = {};
+
+    // Parse files to validate
+    if (args.length > 0) {
+      params.files = args;
+    }
+
+    // Parse flags
+    if (flags.strict !== undefined) {
+      params.strict = Boolean(flags.strict);
+    }
+
+    console.log("Validating configuration...\n");
+
+    const result = await client.request<{
+      success: boolean;
+      errors: Array<{
+        file_path: string;
+        line_number?: number | null;
+        error_type: string;
+        message: string;
+        suggestion?: string | null;
+      }>;
+      warnings: Array<{
+        file_path: string;
+        message: string;
+        suggestion?: string | null;
+      }>;
+      validation_duration_ms: number;
+      files_validated: string[];
+    }>("config_validate", params);
+
+    // Format validation results (Feature 047 US5 T054)
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return result.success ? 0 : 1;
+    }
+
+    // Display results with color-coded output
+    console.log("┌─ Validation Results ────────────────────────────────────────────────┐");
+    console.log("│");
+
+    if (result.errors.length === 0 && result.warnings.length === 0) {
+      console.log("│  ✅ Configuration is valid");
+    } else {
+      // Display errors
+      if (result.errors.length > 0) {
+        console.log(`│  ❌ Found ${result.errors.length} error(s):`);
+        console.log("│");
+
+        for (const error of result.errors) {
+          const location = error.line_number
+            ? `${error.file_path}:${error.line_number}`
+            : error.file_path;
+
+          console.log(`│  [${error.error_type.toUpperCase()}] ${location}`);
+          console.log(`│  ${error.message}`);
+
+          if (error.suggestion) {
+            console.log(`│  💡 Suggestion: ${error.suggestion}`);
+          }
+
+          console.log("│");
+        }
+      }
+
+      // Display warnings
+      if (result.warnings.length > 0) {
+        console.log(`│  ⚠️  Found ${result.warnings.length} warning(s):`);
+        console.log("│");
+
+        for (const warning of result.warnings) {
+          console.log(`│  [WARNING] ${warning.file_path}`);
+          console.log(`│  ${warning.message}`);
+
+          if (warning.suggestion) {
+            console.log(`│  💡 Suggestion: ${warning.suggestion}`);
+          }
+
+          console.log("│");
+        }
+      }
+    }
+
+    // Summary statistics
+    console.log("│");
+    console.log(`│  Files validated: ${result.files_validated.length}`);
+    console.log(`│  Duration: ${result.validation_duration_ms}ms`);
+    console.log(`│  Status: ${result.success ? "✅ PASS" : "❌ FAIL"}`);
+    console.log("│");
+    console.log("└──────────────────────────────────────────────────────────────────────┘\n");
+
+    if (!result.success) {
+      console.log("Fix the errors above before reloading configuration.");
+      console.log("Use 'i3pm config reload' after fixing errors.\n");
+      return 1;
+    }
+
+    console.log("Configuration is ready to reload!");
+    console.log("Run 'i3pm config reload' to apply changes.\n");
 
     return 0;
   } finally {

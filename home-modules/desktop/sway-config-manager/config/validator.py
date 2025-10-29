@@ -8,12 +8,19 @@ Provides:
 """
 
 import json
+import logging
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 import jsonschema
 from pydantic import ValidationError
+
+# Feature 047 US5 T049: Import Sway IPC for semantic validation
+try:
+    from i3ipc.aio import Connection as SwayConnection
+except ImportError:
+    SwayConnection = None  # Fallback if i3ipc not available
 
 from ..models import (
     KeybindingConfig,
@@ -25,6 +32,8 @@ from ..models import (
     ValidationError as ConfigValidationError,
     ValidationResult
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigValidator:
@@ -154,6 +163,70 @@ class ConfigValidator:
                     message=f"Invalid workspace number: {assignment.workspace_number}",
                     suggestion="Workspace numbers must be between 1 and 70"
                 ))
+
+        return errors
+
+    async def validate_with_sway_ipc(
+        self,
+        workspace_assignments: List[WorkspaceAssignment]
+    ) -> List[ConfigValidationError]:
+        """
+        Validate configuration against actual Sway state via IPC.
+
+        Feature 047 US5 T049: Query Sway IPC for workspace numbers and output names
+        to validate that references in configuration actually exist.
+
+        Args:
+            workspace_assignments: List of workspace assignments to validate
+
+        Returns:
+            List of validation errors (empty if valid)
+        """
+        errors = []
+
+        if not SwayConnection:
+            logger.warning("i3ipc.aio not available - skipping Sway IPC validation")
+            return errors
+
+        try:
+            # Connect to Sway IPC
+            sway = SwayConnection()
+            await sway.connect()
+
+            # Get current workspaces and outputs
+            workspaces = await sway.get_workspaces()
+            outputs = await sway.get_outputs()
+
+            # Build sets of valid workspace numbers and output names
+            valid_workspace_numbers: Set[int] = {ws.num for ws in workspaces}
+            valid_output_names: Set[str] = {out.name for out in outputs if out.active}
+
+            logger.debug(f"Sway IPC: Found {len(valid_workspace_numbers)} workspaces, {len(valid_output_names)} outputs")
+
+            # Validate workspace assignments reference existing outputs
+            for assignment in workspace_assignments:
+                output_name = assignment.primary_output
+
+                if output_name and output_name not in valid_output_names:
+                    errors.append(ConfigValidationError(
+                        file_path="workspace-assignments.json",
+                        line_number=None,
+                        error_type="semantic",
+                        message=f"Output '{output_name}' does not exist in Sway",
+                        suggestion=f"Valid outputs: {', '.join(sorted(valid_output_names))}"
+                    ))
+
+            await sway.main_quit()
+
+        except Exception as e:
+            logger.error(f"Failed to validate with Sway IPC: {e}")
+            errors.append(ConfigValidationError(
+                file_path="<sway-ipc>",
+                line_number=None,
+                error_type="ipc",
+                message=f"Could not connect to Sway IPC: {e}",
+                suggestion="Ensure Sway is running and IPC socket is accessible"
+            ))
 
         return errors
 

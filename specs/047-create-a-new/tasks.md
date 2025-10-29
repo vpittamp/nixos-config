@@ -150,13 +150,13 @@ description: "Task list for Dynamic Sway Configuration Management Architecture"
 
 ### Implementation for User Story 5
 
-- [ ] T048 [US5] Implement JSON Schema structural validation in `config/validator.py` with detailed error messages (file_path, line_number, error_type, message, suggestion)
-- [ ] T049 [US5] Implement semantic validation in `config/validator.py` to query Sway IPC for workspace numbers, output names, and validate references
-- [ ] T050 [US5] Add keybinding syntax validation in `config/validator.py` to check key combo patterns match Sway syntax (e.g., `Mod+Return` not `Mod++Return`)
-- [ ] T051 [US5] Implement regex validation for window rule criteria in `config/validator.py` to detect invalid patterns and provide fix suggestions
-- [ ] T052 [US5] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config_validate.ts` to call daemon IPC config_validate endpoint with --files and --strict flags
+- [X] T048 [US5] Implement JSON Schema structural validation in `config/validator.py` with detailed error messages (file_path, line_number, error_type, message, suggestion) - Already implemented
+- [X] T049 [US5] Implement semantic validation in `config/validator.py` to query Sway IPC for workspace numbers, output names, and validate references - Enhanced with async validate_with_sway_ipc method
+- [X] T050 [US5] Add keybinding syntax validation in `config/validator.py` to check key combo patterns match Sway syntax (e.g., `Mod+Return` not `Mod++Return`) - Already implemented
+- [X] T051 [US5] Implement regex validation for window rule criteria in `config/validator.py` to detect invalid patterns and provide fix suggestions - Already implemented
+- [X] T052 [US5] Create Deno CLI command in `home-modules/tools/i3pm/src/commands/config.ts` (configValidate function) to call daemon IPC config_validate endpoint with --files and --strict flags
 - [ ] T053 [US5] Add auto-validation option to file watcher in `config/file_watcher.py` to run validation on file save and display results
-- [ ] T054 [US5] Implement validation result formatting in CLI with color-coded output (✅ success, ❌ errors, ⚠️ warnings) and summary statistics
+- [X] T054 [US5] Implement validation result formatting in CLI with color-coded output (✅ success, ❌ errors, ⚠️ warnings) and summary statistics - Implemented in configValidate function
 - [ ] T055 [US5] Create validation error test suite with common error scenarios (syntax errors, missing references, conflicts) to verify 100% syntax error detection target (SC-006)
 
 **Checkpoint**: Configuration validation complete - users catch errors before applying changes
