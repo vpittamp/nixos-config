@@ -5,18 +5,8 @@ with lib;
 let
   cfg = config.programs.sway-config-manager;
 
-  # Default configuration files
-  defaultKeybindings = ''
-    # Sway Keybindings Configuration
-    # Managed by sway-config-manager
-    # Source: runtime
-    # Edit this file and run 'i3pm config reload' to apply changes
-
-    [keybindings]
-    # Example keybindings (these will be merged with Nix base config)
-    # "Mod+Return" = { command = "exec terminal", description = "Open terminal" }
-    # "Control+1" = { command = "workspace number 1", description = "Switch to workspace 1" }
-  '';
+  # Default keybindings file (external TOML file for easier maintenance)
+  defaultKeybindingsPath = ./sway-default-keybindings.toml;
 
   defaultWindowRules = ''
     {
@@ -62,7 +52,7 @@ in {
     home.file = {
       # Keybindings configuration
       ".config/sway/keybindings.toml" = {
-        text = defaultKeybindings;
+        source = defaultKeybindingsPath;
         # Only create if doesn't exist (don't overwrite user changes)
         force = false;
       };

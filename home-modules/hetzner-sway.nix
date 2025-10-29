@@ -12,6 +12,7 @@
     # Desktop Environment: Sway (Wayland)
     ./desktop/sway.nix         # Sway window manager with headless support
     ./desktop/swaybar.nix      # Swaybar with event-driven status
+    ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
     ./desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon (Sway-compatible)
@@ -39,5 +40,12 @@
   # System service configured in configurations/hetzner-sway.nix: services.i3ProjectDaemon.enable
   services.i3ProjectEventListener = {
     enable = false;  # Disabled - using system service instead
+  };
+
+  # Feature 047: Sway Dynamic Configuration Management
+  programs.sway-config-manager = {
+    enable = true;
+    enableFileWatcher = true;  # Auto-reload on file changes
+    debounceMs = 500;  # Wait 500ms after last change before reloading
   };
 }

@@ -1,0 +1,109 @@
+# Sway Default Keybindings Configuration
+# Feature 047: Dynamic Configuration Management
+# This file will be symlinked to ~/.config/sway/keybindings.toml on first run
+# Edit this file and reload with: swayconfig reload
+
+[keybindings]
+# ========== WORKSPACE NAVIGATION ==========
+# Focus workspace by number (1-10)
+"Mod+1" = { command = "workspace number 1", description = "Focus workspace 1" }
+"Mod+2" = { command = "workspace number 2", description = "Focus workspace 2" }
+"Mod+3" = { command = "workspace number 3", description = "Focus workspace 3" }
+"Mod+4" = { command = "workspace number 4", description = "Focus workspace 4" }
+"Mod+5" = { command = "workspace number 5", description = "Focus workspace 5" }
+"Mod+6" = { command = "workspace number 6", description = "Focus workspace 6" }
+"Mod+7" = { command = "workspace number 7", description = "Focus workspace 7" }
+"Mod+8" = { command = "workspace number 8", description = "Focus workspace 8" }
+"Mod+9" = { command = "workspace number 9", description = "Focus workspace 9" }
+"Mod+0" = { command = "workspace number 10", description = "Focus workspace 10" }
+
+# Move window to workspace (1-10)
+"Mod+Shift+1" = { command = "move container to workspace number 1", description = "Move window to workspace 1" }
+"Mod+Shift+2" = { command = "move container to workspace number 2", description = "Move window to workspace 2" }
+"Mod+Shift+3" = { command = "move container to workspace number 3", description = "Move window to workspace 3" }
+"Mod+Shift+4" = { command = "move container to workspace number 4", description = "Move window to workspace 4" }
+"Mod+Shift+5" = { command = "move container to workspace number 5", description = "Move window to workspace 5" }
+"Mod+Shift+6" = { command = "move container to workspace number 6", description = "Move window to workspace 6" }
+"Mod+Shift+7" = { command = "move container to workspace number 7", description = "Move window to workspace 7" }
+"Mod+Shift+8" = { command = "move container to workspace number 8", description = "Move window to workspace 8" }
+"Mod+Shift+9" = { command = "move container to workspace number 9", description = "Move window to workspace 9" }
+"Mod+Shift+0" = { command = "move container to workspace number 10", description = "Move window to workspace 10" }
+
+# ========== APPLICATION LAUNCHERS ==========
+"Mod+Return" = { command = "exec ghostty", description = "Open terminal" }
+"Mod+d" = { command = "exec walker", description = "Application launcher" }
+
+# ========== WINDOW MANAGEMENT ==========
+# Focus windows
+"Mod+h" = { command = "focus left", description = "Focus left" }
+"Mod+j" = { command = "focus down", description = "Focus down" }
+"Mod+k" = { command = "focus up", description = "Focus up" }
+"Mod+l" = { command = "focus right", description = "Focus right" }
+
+# Arrow key focus
+"Mod+Left" = { command = "focus left", description = "Focus left" }
+"Mod+Down" = { command = "focus down", description = "Focus down" }
+"Mod+Up" = { command = "focus up", description = "Focus up" }
+"Mod+Right" = { command = "focus right", description = "Focus right" }
+
+# Move windows
+"Mod+Shift+h" = { command = "move left", description = "Move window left" }
+"Mod+Shift+j" = { command = "move down", description = "Move window down" }
+"Mod+Shift+k" = { command = "move up", description = "Move window up" }
+"Mod+Shift+l" = { command = "move right", description = "Move window right" }
+
+# Arrow key movement
+"Mod+Shift+Left" = { command = "move left", description = "Move window left" }
+"Mod+Shift+Down" = { command = "move down", description = "Move window down" }
+"Mod+Shift+Up" = { command = "move up", description = "Move window up" }
+"Mod+Shift+Right" = { command = "move right", description = "Move window right" }
+
+# Window actions
+"Mod+q" = { command = "kill", description = "Close focused window" }
+"Mod+f" = { command = "fullscreen toggle", description = "Toggle fullscreen" }
+"Mod+Shift+space" = { command = "floating toggle", description = "Toggle floating" }
+"Mod+space" = { command = "focus mode_toggle", description = "Toggle focus floating/tiling" }
+
+# Layout
+"Mod+s" = { command = "layout stacking", description = "Stacking layout" }
+"Mod+w" = { command = "layout tabbed", description = "Tabbed layout" }
+"Mod+e" = { command = "layout toggle split", description = "Toggle split layout" }
+"Mod+v" = { command = "splitv", description = "Split vertical" }
+"Mod+b" = { command = "splith", description = "Split horizontal" }
+
+# ========== SYSTEM ==========
+"Mod+Shift+c" = { command = "reload", description = "Reload Sway configuration" }
+"Mod+Shift+e" = { command = "exec swaymsg exit", description = "Exit Sway" }
+"Mod+Shift+r" = { command = "mode resize", description = "Enter resize mode" }
+
+# ========== SCRATCHPAD ==========
+"Mod+Shift+minus" = { command = "move scratchpad", description = "Move window to scratchpad" }
+"Mod+minus" = { command = "scratchpad show", description = "Show/hide scratchpad" }
+
+# ========== PROJECT MANAGEMENT (i3pm) ==========
+"Mod+p" = { command = "exec i3-project-switch", description = "Switch project" }
+"Mod+Shift+p" = { command = "exec i3-project-clear", description = "Clear active project" }
+
+# ========== ADDITIONAL UTILITIES ==========
+# Screenshots (Wayland with grim + slurp)
+"Print" = { command = "exec grim -o $(swaymsg -t get_outputs | jq -r '.[] | select(.focused) | .name') - | wl-copy", description = "Screenshot output to clipboard" }
+"Shift+Print" = { command = "exec grim -g \"$(slurp)\" - | wl-copy", description = "Screenshot selection to clipboard" }
+"Control+Print" = { command = "exec grim ~/Pictures/screenshot-$(date +%Y%m%d_%H%M%S).png", description = "Screenshot to file" }
+
+# Clipboard history (if installed)
+"Mod+c" = { command = "exec clipman pick -t wofi", description = "Clipboard history" }
+
+# Brightness control (for systems with backlight)
+"XF86MonBrightnessUp" = { command = "exec light -A 5", description = "Increase brightness" }
+"XF86MonBrightnessDown" = { command = "exec light -U 5", description = "Decrease brightness" }
+
+# Volume control
+"XF86AudioRaiseVolume" = { command = "exec pactl set-sink-volume @DEFAULT_SINK@ +5%", description = "Increase volume" }
+"XF86AudioLowerVolume" = { command = "exec pactl set-sink-volume @DEFAULT_SINK@ -5%", description = "Decrease volume" }
+"XF86AudioMute" = { command = "exec pactl set-sink-mute @DEFAULT_SINK@ toggle", description = "Toggle mute" }
+"XF86AudioMicMute" = { command = "exec pactl set-source-mute @DEFAULT_SOURCE@ toggle", description = "Toggle microphone mute" }
+
+# Media playback control
+"XF86AudioPlay" = { command = "exec playerctl play-pause", description = "Play/pause media" }
+"XF86AudioNext" = { command = "exec playerctl next", description = "Next track" }
+"XF86AudioPrev" = { command = "exec playerctl previous", description = "Previous track" }
