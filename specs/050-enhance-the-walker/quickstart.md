@@ -125,6 +125,30 @@ walker-cmd reload
 
 Commands are stored in `~/.config/elephant/commands.toml` and can be modified at any time without rebuilding NixOS. The `walker-cmd` CLI tool automatically reloads the Elephant service after changes.
 
+**Save commands from history** (via runner provider):
+
+Elephant keeps a history of all commands you run via the runner provider (`>` prefix). You can save any command from history to your custom commands:
+
+```
+Meta+D → >git status → (see command in history or type it)
+Press Ctrl+S → (rofi prompts for name) → Enter "git status" → Return
+```
+
+**How it works**:
+1. Use the runner provider to execute commands: `>git status`, `>ls -la`, etc.
+2. Elephant stores these in `~/.cache/elephant/runner_history.gob`
+3. When browsing history, press `Ctrl+S` to save a command
+4. Rofi prompts for a name (suggests first word of command)
+5. Command is added to `~/.config/elephant/commands.toml`
+6. Elephant service automatically reloads
+
+**Available actions on runner history**:
+- `Return` - Execute command
+- `Shift+Return` - Execute in terminal (launches Alacritty)
+- `Ctrl+S` - Save to custom commands
+
+This allows you to build your custom command library organically from your actual usage patterns!
+
 ### Enhanced Web Search (`@` prefix)
 
 **Search multiple engines**:

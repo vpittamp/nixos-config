@@ -216,11 +216,28 @@ systemctl --user restart elephant  # Restart after config changes
 **Dynamic Command Management** (no rebuild required):
 ```bash
 walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/"
+walker-cmd save "git status"    # Interactive prompt for name (via rofi)
 walker-cmd remove "backup nixos"
 walker-cmd list                 # Show all custom commands
 walker-cmd edit                 # Edit commands file directly
 walker-cmd reload               # Reload Elephant service
 ```
+
+**Save commands from history**:
+```bash
+# Run a command via runner provider
+Meta+D → >git status → Return
+
+# Later, when browsing runner history (>)
+Meta+D → > → (shows history) → navigate to "git status"
+Press Ctrl+S → (rofi prompts for name) → Enter name → Return
+# Command now saved to custom commands!
+```
+
+**Runner provider actions**:
+- `Return` - Execute command
+- `Shift+Return` - Execute in terminal
+- `Ctrl+S` - Save to custom commands (prompts for name via rofi)
 
 **Static Configuration** (requires rebuild):
 - **Bookmarks**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/bookmarks.toml"`

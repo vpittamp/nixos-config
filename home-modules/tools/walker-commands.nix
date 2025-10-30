@@ -14,6 +14,7 @@ let
 
     Commands:
       add <name> <command>    Add or update a custom command
+      save <command>          Save command with interactive name prompt
       remove <name>           Remove a custom command
       list                    List all custom commands
       edit                    Edit commands file directly
@@ -21,6 +22,7 @@ let
 
     Examples:
       walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/"
+      walker-cmd save "git status"  # Prompts for name interactively
       walker-cmd remove "backup nixos"
       walker-cmd list
       walker-cmd edit
@@ -87,6 +89,25 @@ let
       systemctl --user restart elephant 2>/dev/null && echo "✓ Elephant reloaded" || echo "⚠ Failed to reload Elephant"
     }
 
+    save_command() {
+      local cmd="$1"
+
+      # Suggest a name based on the command (first word)
+      local suggested_name=$(echo "$cmd" | ${pkgs.gawk}/bin/awk '{print $1}')
+
+      # Prompt for name using rofi
+      local name=$(echo "$suggested_name" | ${pkgs.rofi}/bin/rofi -dmenu -p "Save command as:" -theme-str 'window {width: 400px;}')
+
+      # If user cancelled or provided empty name, exit
+      if [ -z "$name" ]; then
+        echo "Cancelled - no name provided"
+        exit 0
+      fi
+
+      # Add the command using the existing function
+      add_command "$name" "$cmd"
+    }
+
     remove_command() {
       local name="$1"
 
@@ -147,6 +168,16 @@ let
         shift
         cmd="$*"
         add_command "$name" "$cmd"
+        ;;
+      save)
+        if [ $# -lt 2 ]; then
+          echo "Error: 'save' requires command"
+          echo "Usage: walker-cmd save <command>"
+          exit 1
+        fi
+        shift
+        cmd="$*"
+        save_command "$cmd"
         ;;
       remove)
         if [ $# -lt 2 ]; then
