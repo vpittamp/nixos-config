@@ -1,0 +1,48 @@
+# NixOS Configuration - Git Ignore Patterns
+
+# Build artifacts
+result
+result-*
+
+# Nix build artifacts
+.nix-*
+
+# System state
+hardware-configuration.nix.backup
+
+# Editor files
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Python cache (for scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local development
+.envrc
+.direnv/
+
+# Secrets (if any)
+secrets.nix
+*.age
+*.key
+*.pem
