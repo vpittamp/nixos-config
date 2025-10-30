@@ -190,7 +190,9 @@ in
         # Keyboard configuration
         "type:keyboard" = {
           xkb_layout = "us";
-          # xkb_options = "caps:escape";  # Optional: Remap CapsLock to Escape (vim-friendly)
+          # Disable CapsLock toggle behavior - makes it act like a regular key
+          # This prevents the sticky LED when using CapsLock for workspace mode
+          xkb_options = "caps:none";
           repeat_delay = "300";
           repeat_rate = "50";
         };
