@@ -32,6 +32,15 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Compiled binaries and build artifacts
+dist/
+*.egg-info/
+build/
+*.o
+*.so
+*.a
+*.dylib
+
 # Local development/testing
 .dev/
 .test/

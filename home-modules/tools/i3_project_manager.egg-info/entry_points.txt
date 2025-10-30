@@ -1,2 +1,0 @@
-[console_scripts]
-i3pm = i3_project_manager.__main__:main
