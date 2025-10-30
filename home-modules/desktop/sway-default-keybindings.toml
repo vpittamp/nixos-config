@@ -29,9 +29,9 @@
 "Mod+Shift+9" = { command = "move container to workspace number 9", description = "Move window to workspace 9" }
 "Mod+Shift+0" = { command = "move container to workspace number 10", description = "Move window to workspace 10" }
 
-# Workspace mode - Type digits to navigate to any workspace
-"Mod+g" = { command = "mode goto_workspace", description = "Enter workspace goto mode (type digits + enter)" }
-"Mod+Shift+g" = { command = "mode move_workspace", description = "Enter move window mode (type digits + enter)" }
+# Workspace mode - Type digits to navigate to any workspace (using semicolon - easy to reach)
+"Mod+semicolon" = { command = "mode goto_workspace", description = "Enter workspace goto mode (type digits + enter)" }
+"Mod+Shift+semicolon" = { command = "mode move_workspace", description = "Enter move window mode (type digits + enter)" }
 
 # ========== APPLICATION LAUNCHERS ==========
 "Mod+Return" = { command = "exec alacritty", description = "Open terminal" }
