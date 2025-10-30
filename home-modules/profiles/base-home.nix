@@ -78,6 +78,7 @@ in
     ../tools/gitkraken.nix
     ../tools/kubernetes-apps.nix
     ../tools/konsole-profiles.nix
+    ../tools/walker-commands.nix  # Dynamic command management for Walker (Feature 050)
 
     # AI Assistant configurations
     ../ai-assistants/claude-code.nix

@@ -26,6 +26,8 @@ All providers integrate seamlessly with the existing Walker keyboard-driven laun
 | **Custom Commands** | (none) | Type command name | Execute configured system commands |
 | **Web Search** | `@` | `@nix hyprland` | Search multiple engines (Google, GitHub, etc.) |
 | **Clipboard History** | `:` | `:` then search | Access clipboard history (Wayland only) |
+| **Sesh (tmux)** | `;s ` | `;s nixos` | Switch tmux sessions |
+| **Projects (i3pm)** | `;p ` | `;p nixos` | Switch i3pm projects |
 | **Files** | `/` | `/nixos` | Search files in home directory |
 | **Calculator** | `=` | `=2+2` | Quick calculations |
 | **Symbols** | `.` | `.lambda` | Unicode symbol picker |
@@ -103,7 +105,25 @@ Meta+D → rebuild nixos → Return (runs nixos-rebuild switch)
 - "suspend system" → `systemctl suspend`
 - "rebuild nixos" → `cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway`
 
-Commands are declaratively configured in walker.nix via `elephant/commands.toml`. Add your frequently-used operations for quick access.
+**Dynamic command management** (no rebuild required):
+```bash
+# Add a custom command
+walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/"
+
+# List all commands
+walker-cmd list
+
+# Remove a command
+walker-cmd remove "backup nixos"
+
+# Edit commands file directly
+walker-cmd edit
+
+# Reload Elephant service
+walker-cmd reload
+```
+
+Commands are stored in `~/.config/elephant/commands.toml` and can be modified at any time without rebuilding NixOS. The `walker-cmd` CLI tool automatically reloads the Elephant service after changes.
 
 ### Enhanced Web Search (`@` prefix)
 
@@ -147,6 +167,55 @@ Meta+D → :error message → Return (finds clipboard entry containing "error me
 - Edit: Modify clipboard entry
 
 **Note**: Clipboard history requires Wayland/Sway. Not available in X11/i3 mode (Elephant uses wl-clipboard).
+
+### Tmux Session Switcher (`;s ` prefix, via Sesh)
+
+**Switch to a tmux session**:
+```
+Meta+D → ;s  → (shows all tmux sessions, directories, and configs)
+```
+
+**Example usage**:
+```
+Meta+D → ;s nixos → Return (opens Alacritty and attaches to 'nixos' tmux session)
+```
+
+**What it shows**:
+- Active tmux sessions
+- Configured directories from sesh config
+- tmux session configs
+- Session titles
+
+**How it works**:
+- Uses the `sesh` tmux session manager to list available sessions
+- Launches Alacritty terminal and attaches to the selected session
+- Works from outside tmux (no need to be in a terminal)
+
+**Configuration**: The sesh plugin is pre-configured in walker.nix with optimal settings from sesh documentation.
+
+### Project Switcher (`;p ` prefix, via i3pm)
+
+**Switch to a project**:
+```
+Meta+D → ;p  → (shows all i3pm projects)
+```
+
+**Example usage**:
+```
+Meta+D → ;p nixos → Return (switches to NixOS project context)
+```
+
+**What it shows**:
+- All configured i3pm projects with icons
+- Project display names
+- Project directories
+
+**How it works**:
+- Lists projects from `~/.config/i3/projects/`
+- Switches active project context via i3pm
+- Shows/hides project-scoped windows automatically
+
+**Configuration**: The i3pm plugin is pre-configured in walker.nix to integrate with the i3 project management system.
 
 ## Configuration Location
 

@@ -184,6 +184,14 @@ Meta+D → type "nix manual" → Return # Open NixOS docs
 Meta+D → type "reload sway" → Return     # Execute swaymsg reload
 Meta+D → type "rebuild nixos" → Return   # Rebuild NixOS config
 
+# Tmux session switching (sesh plugin)
+Meta+D → type ";s nixos" → Return       # Attach to 'nixos' tmux session
+Meta+D → type ";s " → Return             # Show all sessions
+
+# Project switching (i3pm plugin)
+Meta+D → type ";p nixos" → Return       # Switch to NixOS project
+Meta+D → type ";p " → Return             # Show all projects
+
 # Enhanced web search (Feature 050)
 Meta+D → type "@nix hyprland" → Return   # Search Nix packages
 Meta+D → type "@arch bluetooth" → Return # Search Arch Wiki
@@ -204,10 +212,22 @@ systemctl --user restart elephant  # Restart after config changes
 ```
 
 **Customization** (Feature 050):
+
+**Dynamic Command Management** (no rebuild required):
+```bash
+walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/"
+walker-cmd remove "backup nixos"
+walker-cmd list                 # Show all custom commands
+walker-cmd edit                 # Edit commands file directly
+walker-cmd reload               # Reload Elephant service
+```
+
+**Static Configuration** (requires rebuild):
 - **Bookmarks**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/bookmarks.toml"`
-- **Custom Commands**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/commands.toml"`
 - **Search Engines**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/websearch.toml"`
 - Rebuild: `home-manager switch --flake .#hetzner-sway`
+
+**Note**: Custom commands are now managed dynamically via `walker-cmd` CLI tool and persist across rebuilds.
 
 **Detailed Documentation**:
 - Feature 043 (Base): `/etc/nixos/specs/043-get-full-functionality/quickstart.md`

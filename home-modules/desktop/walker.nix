@@ -549,45 +549,10 @@ in
   '';
 
   # Feature 050: Custom commands provider configuration
-  xdg.configFile."elephant/commands.toml".text = ''
-    # Elephant Custom Commands Configuration
-    # User-defined shortcuts for common operations
-
-    [customcommands]
-    # Sway/Window Manager Commands
-    "reload sway config" = "swaymsg reload"
-    "restart waybar" = "killall waybar && waybar &"
-    "lock screen" = "swaylock -f"
-
-    # System Management Commands
-    "suspend system" = "systemctl suspend"
-    "reboot system" = "systemctl reboot"
-    "shutdown system" = "systemctl poweroff"
-
-    # NixOS Commands
-    "rebuild nixos" = "cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway"
-    "update nixos" = "cd /etc/nixos && nix flake update && sudo nixos-rebuild switch --flake .#hetzner-sway"
-    "rebuild home-manager" = "home-manager switch --flake /etc/nixos#hetzner-sway"
-
-    # Git Commands
-    "git status all" = "cd /etc/nixos && git status"
-    "git pull nixos" = "cd /etc/nixos && git pull"
-    "git push nixos" = "cd /etc/nixos && git push"
-
-    # Project Management Commands
-    "list projects" = "i3pm project list"
-    "show active project" = "i3pm project current"
-
-    # Service Management Commands
-    "restart elephant" = "systemctl --user restart elephant"
-    "restart i3pm daemon" = "systemctl --user restart i3-project-event-listener"
-    "check elephant status" = "systemctl --user status elephant"
-    "check i3pm daemon status" = "systemctl --user status i3-project-event-listener"
-
-    # Development Commands
-    "run nixos tests" = "cd /etc/nixos/tests && pytest"
-    "format nixos config" = "cd /etc/nixos && nixfmt **/*.nix"
-  '';
+  # NOTE: commands.toml is now managed dynamically via walker-cmd CLI tool
+  # This allows adding/removing commands without rebuilding NixOS
+  # Run 'walker-cmd --help' for usage instructions
+  # Initial file will be created with examples on first use
 
   # Feature 034/035: Isolate Walker/Elephant to show ONLY i3pm registry apps
   # By setting XDG_DATA_DIRS to ONLY the i3pm-applications directory,
