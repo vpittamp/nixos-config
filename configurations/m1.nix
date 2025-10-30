@@ -298,11 +298,12 @@
   };
 
   # RustDesk service configuration
-  services.rustdesk = {
-    enable = true;
-    user = "vpittamp";
-    enableDirectIpAccess = true;
-  };
+  # DISABLED: Module doesn't exist yet - RustDesk installed as user package instead
+  # services.rustdesk = {
+  #   enable = true;
+  #   user = "vpittamp";
+  #   enableDirectIpAccess = true;
+  # };
 
   # Additional packages for Apple Silicon
   environment.systemPackages = with pkgs; [

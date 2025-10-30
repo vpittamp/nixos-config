@@ -64,10 +64,10 @@
   - Add service block with enable=true, user="vpittamp", tokenReference from contract
 - [X] T012 [US1] Test M1 configuration builds with new services: `sudo nixos-rebuild dry-build --flake .#m1 --impure`
 - [X] T013 [US1] Verify hetzner-sway still builds after changes (no regressions): `sudo nixos-rebuild dry-build --flake .#hetzner-sway`
-- [ ] T014 [US1] Apply M1 system configuration: `sudo nixos-rebuild switch --flake .#m1 --impure`
-- [ ] T015 [US1] Verify i3pm daemon started successfully: `systemctl --user status i3-project-event-listener`
-- [ ] T016 [US1] Test i3pm daemon health: `i3pm daemon status` should show running with version info
-- [ ] T017 [US1] Test project commands work: `i3pm project list` should execute without errors
+- [X] T014 [US1] Apply M1 system configuration: `sudo nixos-rebuild switch --flake .#m1 --impure`
+- [X] T015 [US1] Verify i3pm daemon started successfully: `systemctl --user status i3-project-event-listener`
+- [X] T016 [US1] Test i3pm daemon health: `i3pm daemon status` should show running with version info
+- [X] T017 [US1] Test project commands work: `i3pm project list` should execute without errors
 
 **Checkpoint**: M1 now has identical system service configuration to hetzner-sway (i3pm, 1Password automation)
 
@@ -85,12 +85,12 @@
   - Add line: `../home-modules/desktop/declarative-cleanup.nix  # Automatic XDG cleanup`
 - [X] T019 [P] [US2] Remove any incorrect system service imports from `/etc/nixos/home-manager/base-home.nix`
   - Remove if present: `../modules/services/i3-project-daemon.nix` (system service, not home-manager)
-- [ ] T020 [US2] Test home-manager configuration builds: `home-manager build --flake .#vpittamp@m1`
-- [ ] T021 [US2] Apply home-manager configuration: `home-manager switch --flake .#vpittamp@m1`
-- [ ] T022 [US2] Verify walker launcher configuration is identical: compare `~/.config/elephant/` files
-- [ ] T023 [US2] Verify sway-config-manager templates deployed: check `~/.config/sway/keybindings.toml`, `appearance.json`
-- [ ] T024 [US2] Test walker launcher works: press `Meta+D` or `Alt+Space` and verify it launches
-- [ ] T025 [US2] Test Sway config hot-reload: modify `keybindings.toml`, run `swaymsg reload`, verify changes applied
+- [X] T020 [US2] Test home-manager configuration builds: `home-manager build --flake .#vpittamp@m1`
+- [X] T021 [US2] Apply home-manager configuration: `home-manager switch --flake .#vpittamp@m1`
+- [X] T022 [US2] Verify walker launcher configuration is identical: compare `~/.config/elephant/` files
+- [X] T023 [US2] Verify sway-config-manager templates deployed: check `~/.config/sway/keybindings.toml`, `appearance.json`
+- [X] T024 [US2] Test walker launcher works: press `Meta+D` or `Alt+Space` and verify it launches
+- [X] T025 [US2] Test Sway config hot-reload: modify `keybindings.toml`, run `swaymsg reload`, verify changes applied
 
 **Checkpoint**: M1 user environment now matches hetzner-sway structure with identical desktop applications
 
