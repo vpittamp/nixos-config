@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Intelligent Automatic Workspace Assignment - File Schemas",
+  "description": "JSON schemas for state persistence files used by Feature 049",
+  "definitions": {
+    "MonitorState": {
+      "$id": "#/definitions/MonitorState",
+      "type": "object",
+      "title": "Monitor State",
+      "description": "Persisted monitor configuration state in ~/.config/sway/monitor-state.json",
+      "required": ["version", "last_updated", "active_monitors", "workspace_assignments"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Schema version for compatibility",
+          "pattern": "^\\d+\\.\\d+$",
+          "examples": ["1.0"]
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last monitor configuration change (ISO 8601)",
+          "examples": ["2025-10-29T12:34:56Z"]
+        },
+        "active_monitors": {
+          "type": "array",
+          "description": "List of currently active monitors with roles",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/MonitorInfo"
+          }
+        },
+        "workspace_assignments": {
+          "type": "object",
+          "description": "Mapping of workspace numbers (as strings) to output names",
+          "patternProperties": {
+            "^[1-9][0-9]*$": {
+              "type": "string",
+              "description": "Output name (e.g., HEADLESS-1)",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "MonitorInfo": {
+      "$id": "#/definitions/MonitorInfo",
+      "type": "object",
+      "title": "Monitor Information",
+      "description": "Individual monitor with role assignment",
+      "required": ["name", "role", "active"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Output name from Sway (e.g., HEADLESS-1, HDMI-1)",
+          "minLength": 1,
+          "examples": ["HEADLESS-1", "HDMI-1", "eDP-1"]
+        },
+        "role": {
+          "type": "string",
+          "description": "Monitor role in workspace distribution",
+          "enum": ["primary", "secondary", "tertiary", "overflow"]
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether monitor is currently connected",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkspaceAssignments": {
+      "$id": "#/definitions/WorkspaceAssignments",
+      "type": "array",
+      "title": "Workspace Assignments",
+      "description": "Sway Config Manager workspace assignments in ~/.config/sway/workspace-assignments.json",
+      "items": {
+        "$ref": "#/definitions/WorkspaceAssignment"
+      }
+    },
+    "WorkspaceAssignment": {
+      "$id": "#/definitions/WorkspaceAssignment",
+      "type": "object",
+      "title": "Workspace Assignment",
+      "description": "Single workspace to output assignment",
+      "required": ["workspace", "output"],
+      "properties": {
+        "workspace": {
+          "type": "integer",
+          "description": "Workspace number",
+          "minimum": 1,
+          "maximum": 70,
+          "examples": [1, 5, 9]
+        },
+        "output": {
+          "type": "string",
+          "description": "Output name",
+          "minLength": 1,
+          "examples": ["HEADLESS-1", "HDMI-1"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReassignmentHistory": {
+      "$id": "#/definitions/ReassignmentHistory",
+      "type": "object",
+      "title": "Reassignment History",
+      "description": "Historical reassignment operations (in-memory, not persisted)",
+      "required": ["reassignments"],
+      "properties": {
+        "reassignments": {
+          "type": "array",
+          "description": "List of reassignment operations (circular buffer, max 100)",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/definitions/ReassignmentRecord"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReassignmentRecord": {
+      "$id": "#/definitions/ReassignmentRecord",
+      "type": "object",
+      "title": "Reassignment Record",
+      "description": "Single reassignment operation record",
+      "required": ["timestamp", "trigger", "success", "workspaces_reassigned", "windows_migrated", "duration_ms"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When reassignment occurred",
+          "examples": ["2025-10-29T12:34:56Z"]
+        },
+        "trigger": {
+          "type": "string",
+          "description": "What triggered the reassignment",
+          "enum": ["output_connected", "output_disconnected", "manual", "startup"],
+          "examples": ["output_disconnected"]
+        },
+        "success": {
+          "type": "boolean",
+          "description": "Whether reassignment completed successfully"
+        },
+        "workspaces_reassigned": {
+          "type": "integer",
+          "description": "Number of workspaces reassigned",
+          "minimum": 0,
+          "examples": [9]
+        },
+        "windows_migrated": {
+          "type": "integer",
+          "description": "Number of windows moved from disconnected monitors",
+          "minimum": 0,
+          "examples": [12]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "description": "Total duration in milliseconds",
+          "minimum": 0,
+          "examples": [850]
+        },
+        "monitor_count_before": {
+          "type": "integer",
+          "description": "Monitor count before reassignment",
+          "minimum": 1,
+          "examples": [3]
+        },
+        "monitor_count_after": {
+          "type": "integer",
+          "description": "Monitor count after reassignment",
+          "minimum": 1,
+          "examples": [2]
+        },
+        "error_message": {
+          "type": ["string", "null"],
+          "description": "Error message if reassignment failed",
+          "examples": [null, "IPC timeout after 5000ms"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "WindowMigrationRecord": {
+      "$id": "#/definitions/WindowMigrationRecord",
+      "type": "object",
+      "title": "Window Migration Record",
+      "description": "Single window migration during reassignment",
+      "required": ["window_id", "window_class", "old_output", "new_output", "workspace_number", "timestamp"],
+      "properties": {
+        "window_id": {
+          "type": "integer",
+          "description": "Sway window ID",
+          "minimum": 1,
+          "examples": [94532735639728]
+        },
+        "window_class": {
+          "type": "string",
+          "description": "Window class for identification",
+          "minLength": 1,
+          "examples": ["Alacritty", "firefox", "Code"]
+        },
+        "old_output": {
+          "type": "string",
+          "description": "Output name before migration",
+          "minLength": 1,
+          "examples": ["HEADLESS-2"]
+        },
+        "new_output": {
+          "type": "string",
+          "description": "Output name after migration",
+          "minLength": 1,
+          "examples": ["HEADLESS-1"]
+        },
+        "workspace_number": {
+          "type": "integer",
+          "description": "Workspace number (preserved during migration)",
+          "minimum": 1,
+          "maximum": 70,
+          "examples": [5]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When migration occurred",
+          "examples": ["2025-10-29T12:35:10Z"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "$comment": "Example: monitor-state.json with 3 active monitors",
+      "$ref": "#/definitions/MonitorState",
+      "version": "1.0",
+      "last_updated": "2025-10-29T12:34:56Z",
+      "active_monitors": [
+        {"name": "HEADLESS-1", "role": "primary", "active": true},
+        {"name": "HEADLESS-2", "role": "secondary", "active": true},
+        {"name": "HEADLESS-3", "role": "tertiary", "active": true}
+      ],
+      "workspace_assignments": {
+        "1": "HEADLESS-1",
+        "2": "HEADLESS-1",
+        "3": "HEADLESS-2",
+        "4": "HEADLESS-2",
+        "5": "HEADLESS-2",
+        "6": "HEADLESS-3",
+        "7": "HEADLESS-3",
+        "8": "HEADLESS-3",
+        "9": "HEADLESS-3"
+      }
+    },
+    {
+      "$comment": "Example: workspace-assignments.json for Sway Config Manager",
+      "$ref": "#/definitions/WorkspaceAssignments",
+      "value": [
+        {"workspace": 1, "output": "HEADLESS-1"},
+        {"workspace": 2, "output": "HEADLESS-1"},
+        {"workspace": 3, "output": "HEADLESS-2"},
+        {"workspace": 4, "output": "HEADLESS-2"},
+        {"workspace": 5, "output": "HEADLESS-2"},
+        {"workspace": 6, "output": "HEADLESS-3"}
+      ]
+    }
+  ]
+}

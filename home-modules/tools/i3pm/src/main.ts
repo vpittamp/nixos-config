@@ -68,6 +68,10 @@ async function main(): Promise<number> {
         const { configCommand } = await import("./commands/config.ts");
         return await configCommand(restArgs, args);
 
+      case "monitors":
+        const { monitorsCommand } = await import("./commands/monitors.ts");
+        return await monitorsCommand(restArgs, args);
+
       default:
         console.error(`Unknown command: ${commandStr}`);
         console.error("Run 'i3pm --help' for usage information");
@@ -101,6 +105,7 @@ COMMANDS:
     windows     View and monitor window state
     daemon      Query daemon status and events
     config      Manage Sway configuration (show, conflicts)
+    monitors    View monitor status and workspace distribution (Feature 049)
 
 OPTIONS:
     -h, --help       Print help information

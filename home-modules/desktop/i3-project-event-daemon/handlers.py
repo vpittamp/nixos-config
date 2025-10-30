@@ -1480,7 +1480,9 @@ async def on_output(
                 logger.debug(f"  Inactive output: {output.name}")
 
         # Feature 033: Automatic workspace reassignment on monitor changes (T036-T038)
-        await _schedule_workspace_reassignment(conn, active_outputs)
+        # DISABLED: Automatic reassignment was causing unintended consequences
+        # await _schedule_workspace_reassignment(conn, active_outputs)
+        logger.debug("Automatic workspace reassignment is disabled")
 
     except Exception as e:
         error_msg = str(e)

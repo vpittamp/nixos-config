@@ -4,14 +4,26 @@
 
 set -euo pipefail
 
+# ----------------------------------------------------------------------------
+# Utility helpers
+# ----------------------------------------------------------------------------
+
+ensure_sway_sock() {
+    if [ -n "${SWAYSOCK:-}" ] && [ -S "$SWAYSOCK" ]; then
+        return
+    fi
+    local sock
+    sock=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
+    if [ -z "$sock" ]; then
+        echo "Error: Sway not running" >&2
+        exit 1
+    fi
+    export SWAYSOCK="$sock"
+}
+
 # Get Sway outputs
 get_sway_outputs() {
-    local SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
-    if [ -z "$SWAYSOCK" ]; then
-        echo "Error: Sway not running" >&2
-        return 1
-    fi
-    export SWAYSOCK
+    ensure_sway_sock
     swaymsg -t get_outputs 2>/dev/null || echo "[]"
 }
 
@@ -32,9 +44,7 @@ check_vnc_connection() {
 # Get workspace assignments for an output
 get_workspaces_for_output() {
     local output=$1
-    local SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
-    export SWAYSOCK
-
+    ensure_sway_sock
     swaymsg -t get_workspaces 2>/dev/null | jq -r --arg output "$output" \
         '.[] | select(.output == $output) | .num' | sort -n | tr '\n' ',' | sed 's/,$//'
 }
@@ -48,8 +58,60 @@ get_port() {
     esac
 }
 
+detect_active_monitors() {
+    local active=()
+    for display in HEADLESS-1 HEADLESS-2 HEADLESS-3; do
+        local clients
+        clients=$(check_vnc_connection "$display")
+        if [ "$clients" -gt 0 ]; then
+            active+=("$display")
+        fi
+    done
+    printf '%s\n' "${active[@]}"
+}
+
+collect_current_workspaces() {
+    ensure_sway_sock
+    swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' | sort -n | uniq
+}
+
+assign_workspaces_to_output() {
+    local output=$1
+    shift
+    [ "$#" -eq 0 ] && return
+    ensure_sway_sock
+    local ws summary
+    summary="$(printf '%s ' "$@" | sed 's/ $//')"
+    for ws in "$@"; do
+        swaymsg "workspace number $ws output $output" > /dev/null 2>&1 || {
+            echo "Warning: failed to assign workspace $ws to $output" >&2
+        }
+    done
+    echo "→ $output: $summary"
+}
+
+# ----------------------------------------------------------------------------
+# Command dispatch
+# ----------------------------------------------------------------------------
+
+if [ $# -eq 0 ]; then
+    cmd="status"
+else
+    cmd="$1"
+    shift
+fi
+
+case "$cmd" in
+    --json|-j)
+        cmd="json"
+        ;;
+    --help|-h)
+        cmd="help"
+        ;;
+esac
+
 # Main command dispatcher
-case "${1:-list}" in
+case "$cmd" in
     list|status)
         echo "Monitor Connection Status"
         echo "=========================="
@@ -95,12 +157,7 @@ case "${1:-list}" in
         ;;
 
     json)
-        SWAYSOCK=$(find /run/user/1000 -maxdepth 1 -name "sway-ipc*.sock" -type s 2>/dev/null | head -1)
-        if [ -z "$SWAYSOCK" ]; then
-            echo '{"error": "Sway not running"}' >&2
-            exit 1
-        fi
-        export SWAYSOCK
+        ensure_sway_sock
 
         echo "{"
         echo '  "monitors": ['
@@ -136,6 +193,91 @@ case "${1:-list}" in
         echo "}"
         ;;
 
+    redistribute)
+        target_count=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --monitors|-m)
+                    if [ $# -lt 2 ]; then
+                        echo "Error: --monitors requires a value" >&2
+                        exit 1
+                    fi
+                    target_count="$2"
+                    shift 2
+                    ;;
+                '' )
+                    shift
+                    ;;
+                *)
+                    if [[ "$1" =~ ^[0-9]+$ ]]; then
+                        target_count="$1"
+                        shift
+                    else
+                        echo "Unknown option for redistribute: $1" >&2
+                        exit 1
+                    fi
+                    ;;
+            esac
+        done
+
+        mapfile -t active_monitors < <(detect_active_monitors)
+        active_count=${#active_monitors[@]}
+
+        if [ -z "$target_count" ]; then
+            target_count=$active_count
+        fi
+
+        if [ -z "$target_count" ] || [ "$target_count" -eq 0 ]; then
+            echo "Error: no active monitors detected for redistribution" >&2
+            exit 1
+        fi
+
+        if [ "$active_count" -lt "$target_count" ]; then
+            echo "Warning: requested $target_count monitor(s) but only $active_count active. Using available active monitors." >&2
+            target_count=$active_count
+        fi
+
+        if [ "$target_count" -eq 0 ]; then
+            echo "Error: insufficient active monitors" >&2
+            exit 1
+        fi
+
+        monitors=()
+        for ((i=0; i<target_count; i++)); do
+            monitors+=("${active_monitors[i]}")
+        done
+
+        mapfile -t workspace_numbers < <(collect_current_workspaces)
+        workspace_total=${#workspace_numbers[@]}
+
+        if [ "$workspace_total" -eq 0 ]; then
+            echo "No workspaces detected; nothing to redistribute" >&2
+            exit 0
+        fi
+
+        chunk_size=$(( (workspace_total + target_count - 1) / target_count ))
+        index=0
+        echo "Redistributing $workspace_total workspace(s) across $target_count monitor(s)..."
+        for monitor in "${monitors[@]}"; do
+            assigned=()
+            for ((j=0; j<chunk_size && index<workspace_total; j++, index++)); do
+                assigned+=("${workspace_numbers[index]}")
+            done
+            assign_workspaces_to_output "$monitor" "${assigned[@]}"
+        done
+
+        if [ "$index" -lt "$workspace_total" ]; then
+            # Assign any remaining workspaces to the last monitor
+            remaining=()
+            for ((r=index; r<workspace_total; r++)); do
+                remaining+=("${workspace_numbers[r]}")
+            done
+            assign_workspaces_to_output "${monitors[-1]}" "${remaining[@]}"
+        fi
+
+        echo "Redistribution complete."
+        ;;
+
     help|--help|-h)
         cat << 'HELP'
 i3pm monitors - Monitor detection for multi-display VNC setup
@@ -147,7 +289,8 @@ COMMANDS:
     list, status    Show detailed monitor status (default)
     detect, active  List only connected monitors
     count           Show total number of connections
-    json            Output in JSON format
+    json, --json    Output in JSON format
+    redistribute    Redistribute workspaces across active monitors
     help            Show this help
 
 EXAMPLES:
@@ -162,6 +305,12 @@ EXAMPLES:
 
     # JSON output for scripting
     i3pm monitors json
+
+    # Redistribute based on detected active monitors
+    i3pm monitors redistribute
+
+    # Redistribute assuming exactly 2 active monitors
+    i3pm monitors redistribute --monitors 2
 HELP
         ;;
 

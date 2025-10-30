@@ -80,7 +80,7 @@ let
       parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
       scope = "scoped";
       expected_class = "Alacritty";
-      preferred_workspace = 2;
+      preferred_workspace = 13;
       icon = "nvim";
       nix_package = "pkgs.neovim";
       multi_instance = true;
