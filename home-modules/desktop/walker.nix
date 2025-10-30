@@ -555,21 +555,9 @@ in
   '';
 
   # Files provider configuration
-  # Search home directory + /etc/nixos, show dotfiles
-  xdg.configFile."elephant/files.toml".text = ''
-    # Show hidden files (dotfiles) and search from home directory
-    # fd searches recursively from $HOME by default
-    fd_flags = "--hidden --type file --type directory --follow"
-
-    # Ignore these directories to speed up search
-    ignored_dirs = [
-      "${config.home.homeDirectory}/.cache",
-      "${config.home.homeDirectory}/.cargo",
-      "${config.home.homeDirectory}/.npm",
-      "${config.home.homeDirectory}/.nix-profile",
-      "${config.home.homeDirectory}/.local/share/Trash",
-    ]
-  '';
+  # Using default configuration (no custom files.toml)
+  # Default fd_flags: "--ignore-vcs --type file --type directory"
+  # Searches from $HOME by default
 
   # Create symlink to /etc/nixos in home directory for easy access
   home.file."nixos-config".source = config.lib.file.mkOutOfStoreSymlink "/etc/nixos";
