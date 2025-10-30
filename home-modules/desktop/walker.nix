@@ -640,12 +640,14 @@ in
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)
-      # Feature 034/035: XDG_DATA_DIRS isolation DISABLED (was causing bookmarks to not show)
+      # Feature 034/035 (Feature 050): XDG_DATA_DIRS now includes BOTH custom and default directories
       # NOTE: XDG_DATA_HOME must NOT be overridden - apps like Firefox PWA need default location
       # IMPORTANT: Include ~/.local/bin in PATH so Elephant can find app-launcher-wrapper.sh
       Environment = [
         "PATH=${config.home.homeDirectory}/.local/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
-        # "XDG_DATA_DIRS=${i3pmAppsDir}"  # COMMENTED OUT - was preventing bookmarks from showing
+        # Feature 050: Prepend i3pm-applications directory to XDG_DATA_DIRS (doesn't suppress defaults)
+        # This allows Walker to find both our custom apps AND system defaults (for bookmarks, etc.)
+        "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         "XDG_RUNTIME_DIR=%t"
       ];
       # CRITICAL: Pass compositor environment variables
@@ -663,10 +665,10 @@ in
   # Walker service disabled - using direct invocation
   # No service override needed since runAsService = false
 
-  # Feature 034/035: Add i3pm apps directory to session XDG_DATA_DIRS
-  # COMMENTED OUT - was causing issues with bookmarks not showing
+  # Feature 034/035 (Feature 050): Add i3pm apps directory to session XDG_DATA_DIRS
   # This ensures Walker (when invoked directly, not as service) can find our apps
-  # home.sessionVariables = {
-  #   XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
-  # };
+  # Prepends custom directory to existing defaults (doesn't suppress bookmarks)
+  home.sessionVariables = {
+    XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
+  };
 }
