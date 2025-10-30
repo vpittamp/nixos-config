@@ -442,8 +442,10 @@ in
       include ~/.config/sway/modes.conf
 
       # CapsLock bindings for workspace mode (directly bound since config manager doesn't support modifier-free keys)
-      bindsym --release Caps_Lock mode goto_workspace
-      bindsym --release Shift+Caps_Lock mode move_workspace
+      # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
+      # This approach is more reliable than binding to VoidSymbol
+      bindcode --release 66 mode goto_workspace
+      bindcode --release Shift+66 mode move_workspace
     '';
   };
 

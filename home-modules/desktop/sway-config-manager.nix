@@ -88,8 +88,9 @@ let
             echo "$NEW" > "$STATE_FILE"
 
             # Update mode name to show current digits
-            # Note: We'll use swaynag for visual feedback since mode names are static
-            notify-send -t 800 -u low "Workspace" "$NEW"
+            # Note: We'll use notify-send for visual feedback since mode names are static
+            # Increased timeout to 2000ms (2 seconds) for better visibility
+            notify-send -t 2000 -u normal "Workspace Mode" "→ $NEW"
             ;;
 
         enter)
