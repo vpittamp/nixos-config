@@ -607,8 +607,9 @@ in
   xdg.configFile."elephant/files.toml".text = ''
     # Feature 050: Files provider configuration
     # Show hidden files (dotfiles) and search from home directory
-    # --follow: Follow symlinks (enables searching inside ~/nixos-config -> /etc/nixos)
-    fd_flags = "--follow --hidden --ignore-vcs --type file --type directory"
+    # NOTE: Removed --follow flag - it traverses ALL symlinks (too slow, indexes too much)
+    # To search /etc/nixos: Type /etc/nixos in Walker file search
+    fd_flags = "--hidden --ignore-vcs --type file --type directory"
 
     # Ignore performance-heavy directories
     ignored_dirs = [
@@ -617,6 +618,7 @@ in
       "${config.home.homeDirectory}/.npm",
       "${config.home.homeDirectory}/.cargo",
       "${config.home.homeDirectory}/node_modules",
+      "${config.home.homeDirectory}/.nix-profile",
     ]
   '';
 
