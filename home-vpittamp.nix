@@ -10,6 +10,7 @@
     ./home-modules/desktop/sway.nix  # Sway window manager configuration
     ./home-modules/desktop/swaybar.nix  # Swaybar with event-driven status
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
+    ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
 
     # i3 (X11) - disabled on M1, using Sway instead
     # ./home-modules/desktop/i3.nix  # i3 window manager configuration with keybindings

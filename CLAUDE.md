@@ -23,6 +23,111 @@ nix build .#container-minimal      # Minimal container (~100MB)
 nix build .#container-dev          # Development container (~600MB)
 ```
 
+### M1 MacBook Pro (Apple Silicon) Specific
+
+**Platform**: M1 MacBook Pro with Sway/Wayland (aligned with hetzner-sway as of Feature 051)
+
+**Key Features**:
+- Single built-in Retina display (eDP-1) with 2x HiDPI scaling
+- i3pm project management daemon (Feature 037)
+- Sway dynamic configuration management (Feature 047)
+- Walker/Elephant launcher with Wayland support
+- Workspace mode handler with dynamic output detection
+
+**M1-Specific Commands**:
+```bash
+# Rebuild system (requires --impure for Asahi firmware)
+sudo nixos-rebuild switch --flake .#m1 --impure
+
+# Check i3pm daemon status
+systemctl --user status i3-project-event-listener
+
+# Test i3pm daemon
+i3pm daemon status
+i3pm project list
+
+# Check Sway outputs (M1 has single eDP-1 display)
+swaymsg -t get_outputs | jq '.[] | {name, scale, current_mode}'
+
+# Test workspace mode switching
+workspace-mode single  # All workspaces on eDP-1
+```
+
+**Platform Differences from hetzner-sway**:
+- **Display**: Single physical eDP-1 (Retina 3024x1890@2x) vs 3 virtual HEADLESS-* displays
+- **Outputs**: Dynamic detection adapts to single monitor (PRIMARY=eDP-1, SECONDARY/TERTIARY=eDP-1)
+- **Input**: Touchpad with natural scrolling and tap-to-click vs headless (no input devices)
+- **Remote Access**: RustDesk (peer-to-peer) vs WayVNC (headless VNC server)
+- **Audio**: Local PipeWire with speakers/headphones vs Tailscale audio streaming
+- **WiFi**: BCM4378 firmware with power management workarounds
+
+**i3pm Daemon Setup**:
+The i3pm daemon is configured as a system service in `/etc/nixos/configurations/m1.nix`:
+```nix
+services.i3ProjectDaemon = {
+  enable = true;
+  user = "vpittamp";
+  logLevel = "INFO";
+};
+```
+
+After applying configuration, verify daemon is running:
+```bash
+# Check daemon status
+systemctl --user status i3-project-event-listener
+
+# View daemon logs
+journalctl --user -u i3-project-event-listener -f
+
+# Test project commands
+i3pm project list
+i3pm daemon status
+```
+
+**Troubleshooting M1-Specific Issues**:
+
+*Daemon not starting*:
+```bash
+# Check service status
+systemctl --user status i3-project-event-listener
+
+# Check daemon logs for errors
+journalctl --user -u i3-project-event-listener -n 50
+
+# Restart daemon
+systemctl --user restart i3-project-event-listener
+
+# Rebuild if module wasn't enabled
+sudo nixos-rebuild switch --flake .#m1 --impure
+```
+
+*Workspace mode handler errors*:
+```bash
+# Check detected outputs
+swaymsg -t get_outputs | jq -r '.[].name'
+# Should show: eDP-1
+
+# Test workspace mode
+workspace-mode single
+# Should succeed with all workspaces on eDP-1
+
+# Check handler script
+cat ~/.config/sway/workspace-mode
+```
+
+*WiFi stability issues (BCM4378)*:
+```bash
+# Check if WiFi recovery service ran
+systemctl status wifi-recovery
+
+# Manually reload WiFi module
+sudo modprobe -r brcmfmac && sleep 2 && sudo modprobe brcmfmac
+
+# Check kernel params
+cat /proc/cmdline | grep brcmfmac
+# Should show: brcmfmac.feature_disable=0x82000
+```
+
 ## 📁 Directory Structure
 
 ```

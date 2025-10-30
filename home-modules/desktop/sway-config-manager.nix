@@ -52,6 +52,24 @@ let
     STATE_FILE="/tmp/sway-workspace-mode-state"
     ACTION="''${1:-}"
 
+    # Dynamically detect available outputs
+    OUTPUTS=($(${pkgs.sway}/bin/swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[].name' | sort))
+    OUTPUT_COUNT=''${#OUTPUTS[@]}
+
+    # Validate we have outputs
+    if [ "$OUTPUT_COUNT" -eq 0 ]; then
+        echo "ERROR: No outputs detected. Cannot configure workspace mode." >&2
+        exit 1
+    fi
+
+    # Assign outputs dynamically based on count
+    # For 1 output: PRIMARY=output1
+    # For 2 outputs: PRIMARY=output1, SECONDARY=output2
+    # For 3+ outputs: PRIMARY=output1, SECONDARY=output2, TERTIARY=output3
+    PRIMARY="''${OUTPUTS[0]}"
+    SECONDARY="''${OUTPUTS[1]:-$PRIMARY}"  # Default to PRIMARY if only 1 output
+    TERTIARY="''${OUTPUTS[2]:-$SECONDARY}"  # Default to SECONDARY if only 2 outputs
+
     # Initialize state file if it doesn't exist
     if [ ! -f "$STATE_FILE" ]; then
         echo "0" > "$STATE_FILE"
@@ -81,17 +99,17 @@ let
                 # Smart output focusing based on workspace number
                 case $WORKSPACE in
                     1|2)
-                        swaymsg "focus output HEADLESS-1; workspace number $WORKSPACE; mode default"
+                        swaymsg "focus output $PRIMARY; workspace number $WORKSPACE; mode default"
                         ;;
                     3|4|5)
-                        swaymsg "focus output HEADLESS-2; workspace number $WORKSPACE; mode default"
+                        swaymsg "focus output $SECONDARY; workspace number $WORKSPACE; mode default"
                         ;;
                     6|7|8|9)
-                        swaymsg "focus output HEADLESS-3; workspace number $WORKSPACE; mode default"
+                        swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                     *)
                         # Workspaces 10+ go to tertiary display
-                        swaymsg "focus output HEADLESS-3; workspace number $WORKSPACE; mode default"
+                        swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                 esac
             else
@@ -114,16 +132,16 @@ let
             if [ "$WORKSPACE" != "0" ] && [ -n "$WORKSPACE" ]; then
                 case $WORKSPACE in
                     1|2)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output HEADLESS-1; workspace number $WORKSPACE; mode default"
+                        swaymsg "move container to workspace number $WORKSPACE; focus output $PRIMARY; workspace number $WORKSPACE; mode default"
                         ;;
                     3|4|5)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output HEADLESS-2; workspace number $WORKSPACE; mode default"
+                        swaymsg "move container to workspace number $WORKSPACE; focus output $SECONDARY; workspace number $WORKSPACE; mode default"
                         ;;
                     6|7|8|9)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output HEADLESS-3; workspace number $WORKSPACE; mode default"
+                        swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                     *)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output HEADLESS-3; workspace number $WORKSPACE; mode default"
+                        swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                 esac
             else

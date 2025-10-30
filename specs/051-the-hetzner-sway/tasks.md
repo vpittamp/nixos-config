@@ -23,11 +23,11 @@
 
 **Purpose**: Pre-alignment verification and backup
 
-- [ ] T001 Verify current working branch is `051-the-hetzner-sway`
-- [ ] T002 [P] Test current M1 configuration builds successfully: `sudo nixos-rebuild dry-build --flake .#m1 --impure`
-- [ ] T003 [P] Test current hetzner-sway configuration still builds: `sudo nixos-rebuild dry-build --flake .#hetzner-sway`
-- [ ] T004 Document current M1 module import list for rollback reference
-- [ ] T005 Create Git checkpoint before any changes: `git commit -am "checkpoint: pre-alignment state"`
+- [X] T001 Verify current working branch is `051-the-hetzner-sway`
+- [X] T002 [P] Test current M1 configuration builds successfully: `sudo nixos-rebuild dry-build --flake .#m1 --impure`
+- [X] T003 [P] Test current hetzner-sway configuration still builds: `sudo nixos-rebuild dry-build --flake .#hetzner-sway`
+- [X] T004 Document current M1 module import list for rollback reference
+- [X] T005 Create Git checkpoint before any changes: `git commit -am "checkpoint: pre-alignment state"`
 
 **Checkpoint**: Baseline established - alignment work can begin
 
@@ -39,8 +39,8 @@
 
 **⚠️ CRITICAL**: No home-manager work can succeed until i3pm daemon is properly configured at system level
 
-- [ ] T006 Verify i3-project-daemon module exists: check `/etc/nixos/modules/services/i3-project-daemon.nix`
-- [ ] T007 Verify onepassword-automation module exists: check `/etc/nixos/modules/services/onepassword-automation.nix`
+- [X] T006 Verify i3-project-daemon module exists: check `/etc/nixos/modules/services/i3-project-daemon.nix`
+- [X] T007 Verify onepassword-automation module exists: check `/etc/nixos/modules/services/onepassword-automation.nix`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -54,16 +54,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Add i3-project-daemon import to `/etc/nixos/configurations/m1.nix` after line 28 (onepassword.nix)
+- [X] T008 [US1] Add i3-project-daemon import to `/etc/nixos/configurations/m1.nix` after line 28 (onepassword.nix)
   - Add line: `../modules/services/i3-project-daemon.nix       # Feature 037: Project management daemon`
-- [ ] T009 [US1] Add onepassword-automation import to `/etc/nixos/configurations/m1.nix` after i3-project-daemon
+- [X] T009 [US1] Add onepassword-automation import to `/etc/nixos/configurations/m1.nix` after i3-project-daemon
   - Add line: `../modules/services/onepassword-automation.nix  # Service account automation`
-- [ ] T010 [US1] Configure i3ProjectDaemon service in `/etc/nixos/configurations/m1.nix` after line 60 (services.sway.enable)
+- [X] T010 [US1] Configure i3ProjectDaemon service in `/etc/nixos/configurations/m1.nix` after line 60 (services.sway.enable)
   - Add service block with enable=true, user="vpittamp", logLevel="INFO"
-- [ ] T011 [US1] Configure onepassword-automation service in `/etc/nixos/configurations/m1.nix` after onepassword-password-management block
+- [X] T011 [US1] Configure onepassword-automation service in `/etc/nixos/configurations/m1.nix` after onepassword-password-management block
   - Add service block with enable=true, user="vpittamp", tokenReference from contract
-- [ ] T012 [US1] Test M1 configuration builds with new services: `sudo nixos-rebuild dry-build --flake .#m1 --impure`
-- [ ] T013 [US1] Verify hetzner-sway still builds after changes (no regressions): `sudo nixos-rebuild dry-build --flake .#hetzner-sway`
+- [X] T012 [US1] Test M1 configuration builds with new services: `sudo nixos-rebuild dry-build --flake .#m1 --impure`
+- [X] T013 [US1] Verify hetzner-sway still builds after changes (no regressions): `sudo nixos-rebuild dry-build --flake .#hetzner-sway`
 - [ ] T014 [US1] Apply M1 system configuration: `sudo nixos-rebuild switch --flake .#m1 --impure`
 - [ ] T015 [US1] Verify i3pm daemon started successfully: `systemctl --user status i3-project-event-listener`
 - [ ] T016 [US1] Test i3pm daemon health: `i3pm daemon status` should show running with version info
@@ -81,9 +81,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T018 [P] [US2] Add declarative-cleanup import to `/etc/nixos/home-manager/base-home.nix` if missing
+- [X] T018 [P] [US2] Add declarative-cleanup import to `/etc/nixos/home-manager/base-home.nix` if missing
   - Add line: `../home-modules/desktop/declarative-cleanup.nix  # Automatic XDG cleanup`
-- [ ] T019 [P] [US2] Remove any incorrect system service imports from `/etc/nixos/home-manager/base-home.nix`
+- [X] T019 [P] [US2] Remove any incorrect system service imports from `/etc/nixos/home-manager/base-home.nix`
   - Remove if present: `../modules/services/i3-project-daemon.nix` (system service, not home-manager)
 - [ ] T020 [US2] Test home-manager configuration builds: `home-manager build --flake .#vpittamp@m1`
 - [ ] T021 [US2] Apply home-manager configuration: `home-manager switch --flake .#vpittamp@m1`
@@ -125,13 +125,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T034 [US4] Fix workspace-mode-handler hardcoded outputs in `/etc/nixos/home-modules/desktop/sway-config-manager.nix` lines 44-147
+- [X] T034 [US4] Fix workspace-mode-handler hardcoded outputs in `/etc/nixos/home-modules/desktop/sway-config-manager.nix` lines 44-147
   - Add dynamic output detection before "Handle mode parameter" (around line 54)
   - Add: OUTPUTS detection with swaymsg -t get_outputs, OUTPUT_COUNT validation, PRIMARY/SECONDARY/TERTIARY assignment
-- [ ] T035 [US4] Replace all HEADLESS-1 references with $PRIMARY in workspace-mode-handler (single mode case)
-- [ ] T036 [US4] Replace all HEADLESS-1/2 references with $PRIMARY/$SECONDARY in workspace-mode-handler (dual mode case)
-- [ ] T037 [US4] Replace all HEADLESS-1/2/3 references with $PRIMARY/$SECONDARY/$TERTIARY in workspace-mode-handler (tri mode case)
-- [ ] T038 [US4] Test home-manager builds with updated workspace-mode-handler: `home-manager build --flake .#vpittamp@m1`
+- [X] T035 [US4] Replace all HEADLESS-1 references with $PRIMARY in workspace-mode-handler (single mode case)
+- [X] T036 [US4] Replace all HEADLESS-1/2 references with $PRIMARY/$SECONDARY in workspace-mode-handler (dual mode case)
+- [X] T037 [US4] Replace all HEADLESS-1/2/3 references with $PRIMARY/$SECONDARY/$TERTIARY in workspace-mode-handler (tri mode case)
+- [X] T038 [US4] Test home-manager builds with updated workspace-mode-handler: `home-manager build --flake .#vpittamp@m1`
 - [ ] T039 [US4] Apply home-manager changes: `home-manager switch --flake .#vpittamp@m1`
 - [ ] T040 [US4] Restart Sway session to load new workspace-mode-handler: `swaymsg reload`
 - [ ] T041 [US4] Test workspace mode detection: check detected outputs with `swaymsg -t get_outputs | jq -r '.[].name'`
@@ -153,13 +153,13 @@
 
 ### Implementation for User Story 5
 
-- [ ] T047 [P] [US5] Add M1-specific quick start section to `/etc/nixos/docs/CLAUDE.md`
+- [X] T047 [P] [US5] Add M1-specific quick start section to `/etc/nixos/docs/CLAUDE.md`
   - Include: i3pm daemon service configuration for M1, workspace mode handler behavior, platform differences
-- [ ] T048 [P] [US5] Document i3pm daemon setup for M1 in CLAUDE.md
+- [X] T048 [P] [US5] Document i3pm daemon setup for M1 in CLAUDE.md
   - Add service configuration example, systemctl commands, troubleshooting steps
-- [ ] T049 [P] [US5] Add troubleshooting section for M1-specific issues in CLAUDE.md
+- [X] T049 [P] [US5] Add troubleshooting section for M1-specific issues in CLAUDE.md
   - Include: daemon not starting, workspace mode failures, output detection issues
-- [ ] T050 [P] [US5] Document workspace mode handler dynamic output detection in CLAUDE.md
+- [X] T050 [P] [US5] Document workspace mode handler dynamic output detection in CLAUDE.md
   - Explain how it works, what outputs are detected, how PRIMARY/SECONDARY/TERTIARY are assigned
 - [ ] T051 [US5] Update CLAUDE.md architectural differences section with alignment changes
   - Document that i3pm daemon now works on both platforms, workspace-mode-handler is platform-agnostic

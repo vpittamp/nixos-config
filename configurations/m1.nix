@@ -26,6 +26,8 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/i3-project-daemon.nix       # Feature 037: Project management daemon
+    ../modules/services/onepassword-automation.nix  # Service account automation
     ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     # ../modules/services/home-assistant.nix # DISABLED: gtts dependency issue with click 8.2.1
@@ -58,6 +60,13 @@
 
   # Enable Sway Wayland compositor (Feature 045)
   services.sway.enable = true;
+
+  # i3 Project Management Daemon (Feature 037)
+  services.i3ProjectDaemon = {
+    enable = true;
+    user = "vpittamp";
+    logLevel = "INFO";
+  };
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
@@ -261,6 +270,13 @@
       passwordReference = "op://CLI/NixOS User Password/password";
     };
     updateInterval = "hourly";  # Check for password changes hourly
+  };
+
+  # 1Password Automation for service account operations
+  services.onepassword-automation = {
+    enable = true;
+    user = "vpittamp";
+    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
   };
 
   # Fallback password for initial setup before 1Password is configured
