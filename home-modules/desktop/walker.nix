@@ -546,7 +546,33 @@ in
     url = "https://nix-community.github.io/home-manager/options.xhtml"
     description = "Home Manager configuration options reference"
     tags = ["nix", "docs", "home-manager"]
+
+    [[bookmarks]]
+    name = "NixOS Config (Local)"
+    url = "file:///etc/nixos"
+    description = "Local NixOS configuration directory"
+    tags = ["local", "nix", "config"]
   '';
+
+  # Files provider configuration
+  # Search home directory + /etc/nixos, show dotfiles
+  xdg.configFile."elephant/files.toml".text = ''
+    # Show hidden files (dotfiles) and search from home directory
+    # fd searches recursively from $HOME by default
+    fd_flags = "--hidden --type file --type directory --follow"
+
+    # Ignore these directories to speed up search
+    ignored_dirs = [
+      "${config.home.homeDirectory}/.cache",
+      "${config.home.homeDirectory}/.cargo",
+      "${config.home.homeDirectory}/.npm",
+      "${config.home.homeDirectory}/.nix-profile",
+      "${config.home.homeDirectory}/.local/share/Trash",
+    ]
+  '';
+
+  # Create symlink to /etc/nixos in home directory for easy access
+  home.file."nixos-config".source = config.lib.file.mkOutOfStoreSymlink "/etc/nixos";
 
   # Feature 050: Custom commands provider configuration
   # NOTE: commands.toml is now managed dynamically via walker-cmd CLI tool
