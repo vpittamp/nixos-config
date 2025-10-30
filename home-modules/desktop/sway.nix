@@ -438,6 +438,10 @@ in
 
       # Workspace modes (Feature 050 extension - visual workspace navigation)
       include ~/.config/sway/modes.conf
+
+      # CapsLock bindings for workspace mode (directly bound since config manager doesn't support modifier-free keys)
+      bindsym --release Caps_Lock mode goto_workspace
+      bindsym --release Shift+Caps_Lock mode move_workspace
     '';
   };
 
