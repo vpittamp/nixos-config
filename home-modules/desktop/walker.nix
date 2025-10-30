@@ -601,11 +601,26 @@ in
   '';
 
   # Files provider configuration
-  # Using default configuration (no custom files.toml)
+  # Feature 050: Configure files provider to show hidden files (dotfiles)
   # Default fd_flags: "--ignore-vcs --type file --type directory"
   # Searches from $HOME by default
+  xdg.configFile."elephant/files.toml".text = ''
+    # Feature 050: Files provider configuration
+    # Show hidden files (dotfiles) and search from home directory
+    fd_flags = "--hidden --ignore-vcs --type file --type directory"
+
+    # Ignore performance-heavy directories
+    ignored_dirs = [
+      "${config.home.homeDirectory}/.cache",
+      "${config.home.homeDirectory}/.local/share/Trash",
+      "${config.home.homeDirectory}/.npm",
+      "${config.home.homeDirectory}/.cargo",
+      "${config.home.homeDirectory}/node_modules",
+    ]
+  '';
 
   # Create symlink to /etc/nixos in home directory for easy access
+  # Access via: /nixos-config/ in file search
   home.file."nixos-config".source = config.lib.file.mkOutOfStoreSymlink "/etc/nixos";
 
   # Feature 050: Custom commands provider configuration
