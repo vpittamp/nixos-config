@@ -69,10 +69,56 @@ PY
       fi
     fi
 
+    # Query i3pm daemon for project context (integrates with project management)
+    PROJECT_JSON=$(i3pm project current --json 2>/dev/null || echo '{}')
+    PROJECT_NAME=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.name // ""')
+    PROJECT_DIR=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.directory // ""')
+    PROJECT_DISPLAY_NAME=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.display_name // ""')
+    PROJECT_ICON=$(echo "$PROJECT_JSON" | ${pkgs.jq}/bin/jq -r '.icon // ""')
+
+    # Generate app instance ID (like app-launcher-wrapper does)
+    TIMESTAMP=$(date +%s)
+    APP_INSTANCE_ID="nvim-''${PROJECT_NAME:-global}-$$-$TIMESTAMP"
+
+    # Export I3PM environment variables for window-to-project association
+    export I3PM_APP_ID="$APP_INSTANCE_ID"
+    export I3PM_APP_NAME="nvim"
+    export I3PM_PROJECT_NAME="''${PROJECT_NAME:-}"
+    export I3PM_PROJECT_DIR="''${PROJECT_DIR:-}"
+    export I3PM_PROJECT_DISPLAY_NAME="''${PROJECT_DISPLAY_NAME:-}"
+    export I3PM_PROJECT_ICON="''${PROJECT_ICON:-}"
+    export I3PM_SCOPE="scoped"
+    export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
+    export I3PM_LAUNCH_TIME="$(date +%s)"
+    export I3PM_LAUNCHER_PID="$$"
+
+    # Build nvim command with line number if present
     if [ -n "$LINE_ARG" ]; then
-      exec ${pkgs.alacritty}/bin/alacritty -e ${pkgs.neovim-unwrapped}/bin/nvim "$LINE_ARG" "$TARGET_PATH"
+      NVIM_CMD="${pkgs.neovim-unwrapped}/bin/nvim $LINE_ARG '$TARGET_PATH'"
     else
-      exec ${pkgs.alacritty}/bin/alacritty -e ${pkgs.neovim-unwrapped}/bin/nvim "$TARGET_PATH"
+      NVIM_CMD="${pkgs.neovim-unwrapped}/bin/nvim '$TARGET_PATH'"
+    fi
+
+    # Use systemd-run for proper process isolation (like app-launcher-wrapper)
+    if command -v systemd-run &>/dev/null; then
+      exec systemd-run --user --scope \
+        --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
+        --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
+        --setenv=I3PM_PROJECT_NAME="$I3PM_PROJECT_NAME" \
+        --setenv=I3PM_PROJECT_DIR="$I3PM_PROJECT_DIR" \
+        --setenv=I3PM_PROJECT_DISPLAY_NAME="$I3PM_PROJECT_DISPLAY_NAME" \
+        --setenv=I3PM_PROJECT_ICON="$I3PM_PROJECT_ICON" \
+        --setenv=I3PM_SCOPE="$I3PM_SCOPE" \
+        --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
+        --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
+        --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
+        --setenv=DISPLAY="''${DISPLAY:-:0}" \
+        --setenv=HOME="$HOME" \
+        --setenv=PATH="$PATH" \
+        ${pkgs.alacritty}/bin/alacritty -e bash -c "$NVIM_CMD"
+    else
+      # Fallback without systemd-run
+      exec ${pkgs.alacritty}/bin/alacritty -e bash -c "$NVIM_CMD"
     fi
   '';
 
