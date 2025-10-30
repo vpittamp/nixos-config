@@ -223,21 +223,20 @@ walker-cmd edit                 # Edit commands file directly
 walker-cmd reload               # Reload Elephant service
 ```
 
-**Save commands from history**:
+**Save commands from history** (manual workflow):
 ```bash
 # Run a command via runner provider
 Meta+D → >git status → Return
 
-# Later, when browsing runner history (>)
-Meta+D → > → (shows history) → navigate to "git status"
-Press Ctrl+S → (rofi prompts for name) → Enter name → Return
+# Save it from terminal
+walker-cmd save "git status"
+# Rofi prompts for name → Enter name → Return
 # Command now saved to custom commands!
 ```
 
 **Runner provider actions**:
 - `Return` - Execute command
 - `Shift+Return` - Execute in terminal
-- `Ctrl+S` - Save to custom commands (prompts for name via rofi)
 
 **Static Configuration** (requires rebuild):
 - **Bookmarks**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/bookmarks.toml"`

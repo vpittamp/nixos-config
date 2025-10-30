@@ -430,12 +430,6 @@ in
         bind = "shift Return"
         label = "run in terminal"
 
-        [[providers.actions.runner]]
-        action = "walker-cmd save %RESULT%"
-        after = "Close"
-        bind = "ctrl s"
-        label = "save to custom commands"
-
         # File provider actions
         # Return key uses "open" action which respects MIME handlers (opens text files in Neovim)
         # Ctrl+Return opens parent directory for quick navigation
