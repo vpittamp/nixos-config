@@ -29,6 +29,10 @@
 "Mod+Shift+9" = { command = "move container to workspace number 9", description = "Move window to workspace 9" }
 "Mod+Shift+0" = { command = "move container to workspace number 10", description = "Move window to workspace 10" }
 
+# Workspace mode - Type digits to navigate to any workspace
+"F9" = { command = "mode goto_workspace", description = "Enter workspace goto mode (type digits + enter)" }
+"Shift+F9" = { command = "mode move_workspace", description = "Enter move window mode (type digits + enter)" }
+
 # ========== APPLICATION LAUNCHERS ==========
 "Mod+Return" = { command = "exec alacritty", description = "Open terminal" }
 "Mod+Shift+Return" = { command = "exec $HOME/.config/sway/scripts/scratchpad-terminal-toggle.sh", description = "Toggle project scratchpad terminal" }
