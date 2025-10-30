@@ -128,14 +128,12 @@ in
         size = 10.0;
       };
 
-      # Border settings - no borders for clean appearance
+      # Border settings - keep titlebars disabled; border width handled by sway-config-manager
       window = {
-        border = 0;
         titlebar = false;
       };
 
       floating = {
-        border = 0;
         titlebar = false;
       };
 
@@ -192,6 +190,7 @@ in
         # Keyboard configuration
         "type:keyboard" = {
           xkb_layout = "us";
+          # xkb_options = "caps:escape";  # Optional: Remap CapsLock to Escape (vim-friendly)
           repeat_delay = "300";
           repeat_rate = "50";
         };
@@ -422,10 +421,6 @@ in
       # container = cursor moves to center of container when switching focus
       mouse_warping none
 
-      # Gaps (optional - clean appearance)
-      gaps inner 5
-      gaps outer 0
-
       # Workspace names with icons
       set $ws1 "1: terminal "
       set $ws2 "2: code "
@@ -437,8 +432,12 @@ in
       set $ws8 "8: ai "
       set $ws9 "9 "
 
-      # Feature 047: Include dynamically generated keybindings from sway-config-manager
+      # Feature 047: Include dynamically generated appearance + keybindings from sway-config-manager
+      include ~/.config/sway/appearance-generated.conf
       include ~/.config/sway/keybindings-generated.conf
+
+      # Workspace modes (Feature 050 extension - visual workspace navigation)
+      include ~/.config/sway/modes.conf
     '';
   };
 

@@ -196,6 +196,55 @@ get_load_average() {
     echo "$load"
 }
 
+# Get current Sway binding mode
+get_mode_indicator() {
+    local mode
+    mode=$(swaymsg -t get_binding_state 2>/dev/null | jq -r '.name' 2>/dev/null)
+
+    # Only show indicator if not in default mode
+    if [ -z "$mode" ] || [ "$mode" = "default" ]; then
+        return
+    fi
+
+    # Convert mode to uppercase for visibility
+    local mode_upper
+    mode_upper=$(echo "$mode" | tr '[:lower:]' '[:upper:]')
+
+    # Special handling for workspace modes - show typed digits only
+    local display_text=" ⚡ ${mode_upper} ⚡ "
+    if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ]; then
+        local typed_digits=""
+        if [ -f "/tmp/sway-workspace-mode-state" ]; then
+            typed_digits=$(cat /tmp/sway-workspace-mode-state 2>/dev/null || echo "")
+            if [ -n "$typed_digits" ] && [ "$typed_digits" != "0" ]; then
+                # Show: ⚡ 42_
+                display_text=" ⚡ ${typed_digits}_ "
+            else
+                # Show: ⚡ _
+                display_text=" ⚡ _ "
+            fi
+        fi
+    fi
+
+    # Return JSON block with bright red background for visibility
+    cat <<EOF
+{
+  "full_text": "$display_text",
+  "color": "#1e1e2e",
+  "background": "$COLOR_RED",
+  "border": "$COLOR_RED",
+  "border_top": 2,
+  "border_bottom": 2,
+  "border_left": 2,
+  "border_right": 2,
+  "name": "sway_mode",
+  "separator": false,
+  "separator_block_width": 20,
+  "markup": "pango"
+}
+EOF
+}
+
 # Build status line
 build_status_line() {
     local cpu_usage mem_usage disk_usage net_traffic cpu_temp load_avg current_time
@@ -209,6 +258,13 @@ build_status_line() {
     cpu_temp=$(get_cpu_temp)
     load_avg=$(get_load_average)
     current_time=$("$DATE_BIN" '+%a %b %d  %H:%M:%S')
+
+    # Mode indicator (first block - leftmost position, only shown when not in default mode)
+    if block=$(get_mode_indicator); then
+        if [ -n "$block" ]; then
+            blocks+=("$block")
+        fi
+    fi
 
     if block=$(get_generation_block); then
         if [ -n "$block" ]; then

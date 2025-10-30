@@ -46,7 +46,12 @@ systemctl --user status sway-config-manager
 | `~/.config/sway/keybindings.toml` | Keybinding definitions | TOML |
 | `~/.config/sway/window-rules.json` | Window behavior rules | JSON |
 | `~/.config/sway/workspace-assignments.json` | Workspace-to-output mapping | JSON |
+| `~/.config/sway/appearance.json` | Gaps, borders, smart border settings | JSON |
 | `~/.config/sway/projects/<name>.json` | Project-specific overrides | JSON |
+
+**Fast Keybindings**
+- `Mod+Shift+Return`: Toggle the per-project scratchpad terminal (launches if missing)
+- `Control+Alt+Return`: Same scratchpad toggle for muscle memory
 
 ---
 
@@ -172,7 +177,36 @@ swayconfig reload
 # 4. Switch to workspace 3 → Appears on HDMI monitor
 ```
 
-### Workflow 4: Experimental Changes with Rollback
+### Workflow 4: Adjust Gaps and Borders
+
+```bash
+# 1. Edit appearance configuration
+vi ~/.config/sway/appearance.json
+
+# 2. Set desired gap and border values (example)
+{
+  "version": "1.0",
+  "gaps": {
+    "inner": 8,
+    "outer": 4,
+    "smart_gaps": true
+  },
+  "borders": {
+    "default": { "style": "pixel", "size": 2 },
+    "floating": { "style": "pixel", "size": 2 },
+    "hide_edge_borders": "smart"
+  },
+  "smart_borders": "on"
+}
+
+# 3. Reload configuration to regenerate appearance-generated.conf and reload Sway
+swayconfig reload
+
+# 4. Verify layout updates
+swaymsg -t get_tree | jq '.. | select(.focused==true) | {border, rect}'
+```
+
+### Workflow 5: Experimental Changes with Rollback
 
 ```bash
 # 1. Check current version

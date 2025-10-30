@@ -256,9 +256,12 @@ class IPCServer:
         workspace_assignments = self.daemon.loader.load_workspace_assignments_json()
         files_validated.append(str(config_dir / "workspace-assignments.json"))
 
+        appearance_config = self.daemon.loader.load_appearance_json()
+        files_validated.append(str(config_dir / "appearance.json"))
+
         # Validate
         errors = self.daemon.validator.validate_semantics(
-            keybindings, window_rules, workspace_assignments
+            keybindings, window_rules, workspace_assignments, appearance_config
         )
 
         # Calculate duration
@@ -368,6 +371,7 @@ class IPCServer:
         keybindings = self.daemon.loader.load_keybindings_toml()
         window_rules = self.daemon.loader.load_window_rules_json()
         workspace_assignments = self.daemon.loader.load_workspace_assignments_json()
+        appearance_config = self.daemon.loader.load_appearance_json()
 
         result = {}
 
@@ -379,6 +383,9 @@ class IPCServer:
 
         if category in ["all", "workspaces"]:
             result["workspace_assignments"] = [wa.dict() for wa in workspace_assignments]
+
+        if category in ["all", "appearance"] and appearance_config is not None:
+            result["appearance"] = appearance_config.model_dump()
 
         if sources:
             result["conflicts"] = self.daemon.merger.get_conflicts()

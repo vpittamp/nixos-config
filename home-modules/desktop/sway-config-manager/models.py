@@ -27,6 +27,86 @@ class RuleScope(str, Enum):
     PROJECT = "project"
 
 
+class BorderStyle(str, Enum):
+    """Supported border styles for Sway windows."""
+    NONE = "none"
+    NORMAL = "normal"
+    PIXEL = "pixel"
+
+
+class HideEdgeBorders(str, Enum):
+    """Hide edge borders modes."""
+    NONE = "none"
+    VERTICAL = "vertical"
+    HORIZONTAL = "horizontal"
+    BOTH = "both"
+    SMART = "smart"
+    SMART_NO_GAPS = "smart_no_gaps"
+
+
+class SmartBordersMode(str, Enum):
+    """Smart borders behavior."""
+    OFF = "off"
+    ON = "on"
+    NO_GAPS = "no_gaps"
+
+
+class GapsConfig(BaseModel):
+    """Gap settings between windows and screen edges."""
+
+    inner: int = Field(0, ge=0, le=200, description="Inner gap size in pixels")
+    outer: int = Field(0, ge=0, le=200, description="Outer gap size in pixels")
+    smart_gaps: bool = Field(False, description="Enable smart gaps (disable gaps when only one window)")
+
+
+class BorderConfig(BaseModel):
+    """Border configuration for default and floating windows."""
+
+    style: BorderStyle = Field(BorderStyle.PIXEL, description="Border style")
+    size: Optional[int] = Field(2, ge=0, le=20, description="Pixel width when style=pixel")
+
+    @model_validator(mode='after')
+    def validate_pixel_style(self):
+        """Ensure pixel style has size and other styles don't use size."""
+        if self.style == BorderStyle.PIXEL:
+            if self.size is None:
+                raise ValueError("Pixel border style requires 'size'")
+        else:
+            # Non-pixel styles ignore size
+            self.size = None
+        return self
+
+
+class BorderSettings(BaseModel):
+    """Combined border settings."""
+
+    default: BorderConfig = Field(
+        default_factory=lambda: BorderConfig(style=BorderStyle.PIXEL, size=2),
+        description="Default window border configuration"
+    )
+    floating: BorderConfig = Field(
+        default_factory=lambda: BorderConfig(style=BorderStyle.PIXEL, size=2),
+        description="Floating window border configuration"
+    )
+    hide_edge_borders: HideEdgeBorders = Field(
+        HideEdgeBorders.NONE,
+        description="hide_edge_borders setting"
+    )
+
+
+class AppearanceConfig(BaseModel):
+    """Window manager appearance configuration (gaps, borders)."""
+
+    version: str = Field("1.0", description="Config version string")
+    source: ConfigSource = Field(ConfigSource.RUNTIME, description="Configuration source attribution")
+    gaps: GapsConfig = Field(default_factory=GapsConfig, description="Gap configuration")
+    borders: BorderSettings = Field(default_factory=BorderSettings, description="Border configuration")
+    smart_borders: Optional[SmartBordersMode] = Field(
+        None,
+        description="smart_borders mode (on/off/no_gaps)"
+    )
+
+
 # Core Entities
 
 class KeybindingConfig(BaseModel):

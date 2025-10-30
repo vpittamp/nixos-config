@@ -147,6 +147,24 @@ class RollbackManager:
                 capture_output=True
             )
 
+        # Bail out gracefully if there is nothing to commit (avoid git error code 1)
+        diff_check = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=self.config_dir
+        )
+        if diff_check.returncode == 0:
+            # No staged changes, return current HEAD if it exists
+            existing_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.config_dir,
+                capture_output=True,
+                text=True
+            )
+            if existing_head.returncode == 0:
+                return existing_head.stdout.strip()
+            # Repository has no commits yet; nothing staged means no changes to persist
+            raise RuntimeError("No configuration changes to commit")
+
         if message is None:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             message = f"Configuration update: {timestamp}"

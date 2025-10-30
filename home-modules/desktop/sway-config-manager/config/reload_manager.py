@@ -197,6 +197,7 @@ class ReloadManager:
             keybindings = self.loader.load_keybindings_toml()
             window_rules = self.loader.load_window_rules_json()
             workspace_assignments = self.loader.load_workspace_assignments_json()
+            appearance_config = self.loader.load_appearance_json()
 
             # T057: Track load duration
             metrics["load_end"] = time.time()
@@ -208,7 +209,7 @@ class ReloadManager:
 
             # Validate
             errors = self.validator.validate_semantics(
-                keybindings, window_rules, workspace_assignments
+                keybindings, window_rules, workspace_assignments, appearance_config
             )
 
             # Feature 047 US3: Validate project overrides if active project exists
@@ -231,6 +232,7 @@ class ReloadManager:
             merged_keybindings = self.merger.merge_keybindings([], keybindings)
             merged_rules = self.merger.merge_window_rules([], window_rules)
             merged_assignments = self.merger.merge_workspace_assignments([], workspace_assignments)
+            self.daemon.appearance_config = appearance_config
 
             # Check for conflicts
             conflicts = self.merger.get_conflicts()
@@ -281,6 +283,12 @@ class ReloadManager:
                 kb_file = self.config_dir / "keybindings-generated.conf"
                 with open(kb_file, "w") as f:
                     f.write(kb_config)
+
+                # Generate appearance config
+                appearance_file = self.config_dir / "appearance-generated.conf"
+                appearance_content = self.daemon.appearance_manager.generate_config(appearance_config)
+                with open(appearance_file, "w") as f:
+                    f.write(appearance_content)
 
                 # Reload Sway config
                 reload_success = await self.daemon.keybinding_manager.reload_sway_config()

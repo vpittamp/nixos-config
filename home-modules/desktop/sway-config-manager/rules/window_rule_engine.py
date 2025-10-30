@@ -4,6 +4,7 @@ Window rule engine for Sway.
 Dynamically applies window rules based on window criteria.
 """
 
+import asyncio
 import re
 import logging
 from typing import List, Optional, Dict, Any
@@ -257,10 +258,14 @@ class WindowRuleEngine:
             rule: Window rule to apply
         """
         for action in rule.actions:
+            action_normalized = action.strip().lower()
             try:
-                # Build Sway command with window criteria
-                command = f"[con_id={window.id}] {action}"
-                await self.sway.command(command)
+                if action_normalized == "move position center":
+                    await self._center_window(window)
+                else:
+                    # Build Sway command with window criteria
+                    command = f"[con_id={window.id}] {action}"
+                    await self.sway.command(command)
                 logger.debug(f"Applied action to window {window.id}: {action}")
             except Exception as e:
                 logger.error(f"Failed to apply action '{action}' to window {window.id}: {e}")
@@ -285,3 +290,42 @@ class WindowRuleEngine:
             if self._window_matches_criteria(window, rule.criteria):
                 matching.append(rule)
         return matching
+
+    async def _center_window(self, window: Con):
+        """
+        Center a floating window on its output.
+
+        Args:
+            window: Sway window container
+        """
+        try:
+            # Allow previous actions (like resize) to take effect before measuring.
+            await asyncio.sleep(0.05)
+
+            tree = await self.sway.get_tree()
+            current = tree.find_by_id(window.id)
+            if current is None:
+                logger.debug(f"Unable to center window {window.id}: not found in tree")
+                return
+
+            workspace = current.workspace()
+            if workspace is None:
+                logger.debug(f"Unable to center window {window.id}: workspace not resolved")
+                return
+
+            window_rect = current.rect
+            output_rect = workspace.rect
+
+            if not window_rect or not output_rect:
+                logger.debug(f"Unable to center window {window.id}: missing rect data")
+                return
+
+            target_x = output_rect.x + max(0, (output_rect.width - window_rect.width) // 2)
+            target_y = output_rect.y + max(0, (output_rect.height - window_rect.height) // 2)
+
+            command = (
+                f"[con_id={window.id}] move position {int(target_x)} px {int(target_y)} px"
+            )
+            await self.sway.command(command)
+        except Exception as e:
+            logger.error(f"Failed to center window {window.id}: {e}")

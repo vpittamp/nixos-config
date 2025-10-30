@@ -26,6 +26,7 @@ from ..models import (
     KeybindingConfig,
     WindowRule,
     WorkspaceAssignment,
+    AppearanceConfig,
     Project,
     ProjectWindowRuleOverride,
     ProjectKeybindingOverride,
@@ -103,7 +104,8 @@ class ConfigValidator:
         return errors
 
     def validate_semantics(self, keybindings: List[KeybindingConfig], window_rules: List[WindowRule],
-                          workspace_assignments: List[WorkspaceAssignment]) -> List[ConfigValidationError]:
+                          workspace_assignments: List[WorkspaceAssignment],
+                          appearance: Optional[AppearanceConfig] = None) -> List[ConfigValidationError]:
         """
         Validate semantic correctness of configuration.
 
@@ -117,6 +119,7 @@ class ConfigValidator:
             keybindings: List of keybinding configurations
             window_rules: List of window rules
             workspace_assignments: List of workspace assignments
+            appearance: Optional appearance configuration (gaps/borders)
 
         Returns:
             List of validation errors (empty if valid)
@@ -162,6 +165,17 @@ class ConfigValidator:
                     error_type="semantic",
                     message=f"Invalid workspace number: {assignment.workspace_number}",
                     suggestion="Workspace numbers must be between 1 and 70"
+                ))
+
+        # Validate appearance configuration (bounds already enforced by models, ensure semantics)
+        if appearance:
+            if appearance.gaps.inner < 0 or appearance.gaps.outer < 0:
+                errors.append(ConfigValidationError(
+                    file_path="appearance.json",
+                    line_number=None,
+                    error_type="semantic",
+                    message="Gap values must be zero or greater",
+                    suggestion="Set 'inner' and 'outer' gaps to non-negative integers"
                 ))
 
         return errors

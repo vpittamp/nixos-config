@@ -1,4 +1,4 @@
-# Quickstart Guide: Dynamic Sway Configuration Management
+gre# Quickstart Guide: Dynamic Sway Configuration Management
 
 **Feature**: 047-create-a-new
 **Audience**: End users and system administrators
@@ -14,8 +14,8 @@ This guide shows you how to use dynamic configuration management to customize yo
 - Rollback to previous versions if something breaks
 
 ## Quick Start
-
-### 1. Check System Status
+`j
+### 1. Check System Statusgre
 
 Verify the daemon is running and file watcher is active:
 

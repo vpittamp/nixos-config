@@ -1,0 +1,202 @@
+SWAY CONFIGURATION UNIFICATION RESEARCH - COMPLETE DELIVERABLES
+================================================================
+
+Research Completed: 2025-10-30
+Scope: Analyze Sway compositor configuration differences between hetzner-sway and M1
+       Identify unified components and recommend improvements
+
+DELIVERABLE 1: Main Research Summary
+File: /etc/nixos/SWAY_RESEARCH_SUMMARY.md
+Content:
+- Key finding: Configuration is already well-unified
+- Overview of both platforms (Hetzner headless, M1 physical)
+- Unified vs scattered components (with evidence)
+- Top 3 issues to fix (with priorities and effort estimates)
+- Configuration comparison (env vars, outputs, input, workspaces, VNC)
+- Files analyzed and documentation generated
+- Architecture quality assessment
+- Next steps recommendations
+
+DELIVERABLE 2: Detailed Analysis Document
+File: /etc/nixos/docs/SWAY_CONFIGURATION_UNIFICATION_ANALYSIS.md
+Content:
+- 675 lines of comprehensive analysis
+- Executive summary with key insight
+- 8 major sections covering each configuration component:
+  1. Environment Variable Configuration (detailed comparison table)
+  2. Output Configuration Differences (with resolution/scale/layout)
+  3. Input Device Configuration (M1-specific vs headless)
+  4. VNC/Headless Services (Feature 048)
+  5. Keybindings Configuration (Feature 047)
+  6. Status Bar Configuration (swaybar)
+  7. Display Manager Configuration (greetd differences)
+  8. Conditional Detection Mechanism (hostname-based, fragile)
+- Recommendations for unification (7 detailed recommendations)
+- Summary table of all components
+- Implementation priority list (1=HIGH, 7=LONG-TERM)
+- Files involved (current + recommended)
+- Detailed conclusion
+
+DELIVERABLE 3: Quick Reference Guide
+File: /etc/nixos/docs/SWAY_UNIFICATION_QUICK_REFERENCE.md
+Content:
+- 271 lines of executive summary
+- Current state diagram
+- Key findings (unified, partially unified, platform-specific)
+- Top 3 issues to fix:
+  - Issue #1: Workspace Mode Handler (hardcoded for Hetzner)
+  - Issue #2: Platform Detection (hostname-based, fragile)
+  - Issue #3: Environment Variables (scattered)
+- Files organization (core config, system-level, dynamic system)
+- Configuration hierarchy (4 levels: runtime, generated, home-manager, system)
+- What needs fixing (with effort estimates)
+- Testing checklist for both platforms
+- Quick wins (no risk) section
+- Long-term improvements (data-driven config, dynamic modes generation)
+
+DELIVERABLE 4: Architecture Diagram Document
+File: /etc/nixos/docs/SWAY_ARCHITECTURE_DIAGRAM.md
+Content:
+- 365 lines of visual architecture documentation
+- Configuration layer stack (4 layers from runtime to system)
+- Configuration decision tree (full flow from Sway startup to ready)
+- Platform-specific initialization flows:
+  - Headless (Hetzner-Sway)
+  - M1 (Physical Display)
+- Template file dependencies (sources and generation flow)
+- Platform detection pattern (hostname-based detection in multiple files)
+- Problem areas (4 issues annotated with location, severity)
+
+RESEARCH METHODOLOGY
+====================
+
+Files Analyzed:
+- home-modules/desktop/sway.nix (580 lines) - Main unified module
+- home-modules/desktop/swaybar.nix (358 lines) - Status bar config
+- home-modules/desktop/sway-config-manager.nix (560 lines) - Dynamic config
+- home-modules/hetzner-sway.nix (50 lines) - Home-manager import
+- configurations/hetzner-sway.nix (242 lines) - Headless system config
+- configurations/m1.nix (337 lines) - M1 system config
+- modules/desktop/sway.nix (99 lines) - System sway module
+- modules/desktop/wayvnc.nix (73 lines) - VNC server module
+- modules/services/keyd.nix (38 lines) - Key remapping (optional)
+- sway-default-keybindings.toml - Default keybindings template
+- sway-default-appearance.json - Default appearance template
+
+Total code analyzed: ~2,700+ lines of Nix and supporting config
+
+DATA COLLECTED
+==============
+
+Environment Variables:
+- Headless-only: WLR_BACKENDS, WLR_HEADLESS_OUTPUTS, WLR_LIBINPUT_NO_DEVICES, 
+                 WLR_RENDERER, GSK_RENDERER
+- Common: QT_QPA_PLATFORM, GDK_BACKEND, XDG_SESSION_TYPE, XDG_CURRENT_DESKTOP
+- M1-specific: XCURSOR_SIZE, _JAVA_OPTIONS, ELECTRON_FORCE_IS_PACKAGED
+
+Output Configuration:
+- Headless: 3x HEADLESS outputs (1920x1200@60Hz, 1.0x scale)
+- M1: eDP-1 (2560x1600@60Hz, 2.0x) + HDMI-A-1 (1920x1080@60Hz, 1.0x)
+
+Input Devices:
+- Headless: None (WLR_LIBINPUT_NO_DEVICES=1)
+- M1: Touchpad + Keyboard configuration (Apple-specific)
+
+Workspace Distribution:
+- Headless (3 outputs): 1-2→H1, 3-5→H2, 6-9→H3
+- M1 (2 outputs): 1-2→eDP, 3+→HDMI
+
+Services:
+- Headless: 3x wayvnc services + tailscale audio service
+- M1: None (physical display only)
+
+IDENTIFIED ISSUES
+=================
+
+HIGH PRIORITY (Breaks functionality):
+1. workspace-mode-handler.sh hardcoded for HEADLESS-1/2/3
+   - File: home-modules/desktop/sway-config-manager.nix:44-147
+   - Impact: M1 workspace modes would fail
+   - Effort: 30 minutes
+   - Status: Confirmed, documented, fix recommended
+
+MEDIUM PRIORITY (Code quality):
+2. Hostname-based platform detection (fragile)
+   - File: home-modules/desktop/sway.nix:101-107
+   - Impact: Breaks on hostname change, duplicated in multiple files
+   - Effort: 1 hour
+   - Status: Confirmed, workaround exists, improvement recommended
+
+LOW PRIORITY (Maintenance):
+3. Environment variables scattered across files
+   - Files: hetzner-sway.nix, modules/desktop/sway.nix, greetd script
+   - Impact: Harder to maintain, possible inconsistencies
+   - Effort: 1.5 hours
+   - Status: Confirmed, consolidation recommended
+
+KEY INSIGHTS
+============
+
+1. ARCHITECTURE IS SOUND
+   The single home-manager module with conditional logic approach is correct
+   and working well. Most configuration differences are expected and necessary
+   for the different platforms.
+
+2. CONDITIONAL LOGIC IS WELL-PLACED
+   The `isHeadless` detection is used effectively to:
+   - Configure outputs (HEADLESS vs physical)
+   - Include/exclude services (VNC, audio streaming)
+   - Adjust workspace distribution
+   - Enable/disable input device configuration
+   
+3. FEATURE 047 (Dynamic Config) ENABLES UNIFICATION
+   sway-config-manager allows keybindings and appearance to be shared
+   without Nix rebuilds, making the system flexible and user-friendly.
+
+4. HEADLESS IMPLEMENTATION IS CLEVER
+   Using WayVNC with 3 virtual outputs is a creative solution that
+   maintains multi-monitor workflow even without physical hardware.
+
+RECOMMENDATIONS SUMMARY
+=======================
+
+Implement in this order:
+
+STEP 1 (HIGH): Fix workspace-mode-handler.sh
+- Make it query actual outputs from Sway
+- Support dynamic output count (1, 2, 3, or more)
+- Both platforms will work correctly after this
+- Estimated time: 30 minutes
+- Test on both M1 and Hetzner
+
+STEP 2 (MEDIUM): Add platform feature flag
+- Create config.sway.platform option
+- Set to "headless" or "physical" in configurations
+- Update home-manager modules to use feature flag instead of hostname
+- Estimated time: 1 hour
+- Benefits: Decouples config from hostname, better testability
+
+STEP 3 (LOW): Centralize environment variables
+- Create modules/desktop/sway-environment.nix
+- Move all env var definitions there
+- Single source of truth
+- Estimated time: 1.5 hours
+- Benefit: Easier to maintain
+
+LONG-TERM IMPROVEMENTS:
+- Consider data-driven output configuration (avoid conditionals)
+- Implement dynamic modes.conf generation in sway-config-manager
+- Auto-generate greetd script from environment variables
+
+CONCLUSION
+==========
+
+The Sway configuration across hetzner-sway and M1 is well-structured and
+effectively unified. The main work is refinement and robustness, not
+architectural changes. The identified issues are manageable and have clear
+solutions.
+
+Grade: A (Architecture) / B (Implementation)
+
+The system works well in production, with room for incremental improvements
+to code quality and maintainability.

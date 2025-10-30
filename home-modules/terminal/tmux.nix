@@ -100,47 +100,53 @@ in
       # Pane settings
       set -g pane-base-index 0
       set -g renumber-windows on
-      set -g pane-border-lines single  # Simple lines for cleaner look
-      set -g pane-border-status off  # Remove pane status labels for cleaner appearance
+      set -g pane-border-lines heavy  # Thicker lines create more spacing
+      set -g pane-border-status top  # Add padding line at top of each pane
+      set -g pane-border-format " "  # Empty padding space (invisible content)
 
-      # Subtle pane borders - almost invisible
-      set -g pane-border-style "fg=colour234"  # Very dark gray, almost invisible
-      set -g pane-active-border-style "fg=colour236"  # Slightly lighter but still subtle
+      # Catppuccin Mocha theme - completely invisible borders with padding
+      # Both active and inactive borders match their respective backgrounds
+      # The border-status line adds padding around panes
+      set -g pane-border-style "fg=#313244,bg=#313244"  # Match inactive pane background with bg for padding
+      set -g pane-active-border-style "fg=#11111b,bg=#11111b"  # Match active pane background with bg for padding
 
       # Visual distinction between active and inactive panes
-      # DISABLED: Custom background colors cause invisible text in some terminals (XRDP/Alacritty)
-      # Use terminal's default colors for maximum compatibility
-      set -g window-active-style "default"
-      set -g window-style "default"
+      # Active pane: DARKEST background with BRIGHTEST text (focus here!)
+      # Inactive panes: LIGHTER greyish background with MUTED text (recedes into background)
+      # The background contrast provides ALL the separation - no borders or arrows needed
+      set -g window-active-style "fg=#cdd6f4,bg=#11111b"  # Bright white text on darkest Crust
+      set -g window-style "fg=#6c7086,bg=#313244"  # Very muted text on lighter Surface0 (greyish)
 
-      # Remove pane indicators for cleaner look
-      set -g pane-border-indicators off
-      set -g display-panes-colour "colour240"  # Subtle pane numbers
-      set -g display-panes-active-colour "colour250"  # Slightly brighter for active
+      # Pane indicators - completely disabled, rely on contrast only
+      set -g pane-border-indicators off  # No arrows or indicators
+      set -g display-panes-colour "#6c7086"  # Muted gray for inactive pane numbers
+      set -g display-panes-active-colour "#89b4fa"  # Bright blue for active pane number
+      set -g display-panes-time 3000  # Show pane numbers for 3 seconds (increased visibility)
 
-      # Status bar styling - simple and functional
+      # Status bar styling - Catppuccin Mocha theme
       set -g status-position top
       set -g status-justify left
-      set -g status-style "bg=colour235 fg=colour248"
+      set -g status-style "bg=#11111b fg=#a6adc8"  # Catppuccin Crust bg, Subtext0 fg
       set -g status-left-length 40
       set -g status-right-length 60
 
-      # Simple status left showing session name and mode
-      set -g status-left "#{?client_prefix,#[fg=colour235 bg=colour203 bold] PREFIX ,#[fg=colour235 bg=colour40 bold] TMUX }#[fg=colour248 bg=colour237] #S #[default] "
+      # Status left with Catppuccin colors - PREFIX in red, ZOOM icon in yellow, normal in green
+      set -g status-left "#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,#[fg=#11111b bg=#a6e3a1 bold] TMUX }#{?window_zoomed_flag,#[fg=#11111b bg=#f9e2af bold] 🔍 ,}#[fg=#cdd6f4 bg=#313244] #S #[default] "
 
-      # Status right showing basic info
-      set -g status-right "#[fg=colour248 bg=colour237] #( ${i3pmProjectBadgeScript} --tmux ) #H | %H:%M #[default]"
+      # Status right - Catppuccin colors
+      set -g status-right "#[fg=#cdd6f4 bg=#313244] #( ${i3pmProjectBadgeScript} --tmux ) #H | %H:%M #[default]"
 
-      # Window status - clean and simple
-      set -g window-status-format "#[fg=colour248] #I:#W "
-      set -g window-status-current-format "#[fg=colour235 bg=colour39 bold] #I:#W #[default]"
+      # Window status - inactive in muted colors, active in blue
+      set -g window-status-format "#[fg=#a6adc8] #I:#W "
+      set -g window-status-current-format "#[fg=#11111b bg=#89b4fa bold] #I:#W #[default]"  # Catppuccin Blue
       set -g window-status-separator ""
 
-      # Message styling
-      set -g message-style "fg=colour235 bg=colour226 bold"
+      # Message styling - Catppuccin Yellow for warnings/messages
+      set -g message-style "fg=#11111b bg=#f9e2af bold"
 
       # Key bindings
-      # Reload config - removed due to Nix pure mode restrictions
+      # Reload config (prefix + r) with native Wayland notification (transient, auto-dismisses)
+      bind r source-file ~/.config/tmux/tmux.conf \; run-shell "notify-send -u low -t 2000 -h string:x-dunst-stack-tag:tmux 'Tmux' 'Configuration reloaded'" \; display-message "Config reloaded!"
 
       # Window and pane management
       bind c new-window -c "#{pane_current_path}"
@@ -149,7 +155,7 @@ in
       bind h split-window -h -c "#{pane_current_path}"
       # Using backslash for horizontal split
       bind BSpace split-window -h -c "#{pane_current_path}"
-      bind f resize-pane -Z
+      # Zoom: use default backtick + z (resize-pane -Z)
       bind x kill-pane
       bind X kill-window
 

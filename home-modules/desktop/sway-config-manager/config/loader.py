@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..models import KeybindingConfig, WindowRule, WorkspaceAssignment
+from ..models import AppearanceConfig, KeybindingConfig, WindowRule, WorkspaceAssignment
 
 
 class ConfigLoader:
@@ -30,6 +30,7 @@ class ConfigLoader:
         self.keybindings_path = config_dir / "keybindings.toml"
         self.window_rules_path = config_dir / "window-rules.json"
         self.workspace_assignments_path = config_dir / "workspace-assignments.json"
+        self.appearance_path = config_dir / "appearance.json"
         self.projects_dir = config_dir / "projects"
 
     def load_keybindings_toml(self) -> List[KeybindingConfig]:
@@ -116,6 +117,24 @@ class ConfigLoader:
             assignments.append(WorkspaceAssignment(**assignment_data))
 
         return assignments
+
+    def load_appearance_json(self) -> AppearanceConfig:
+        """Load appearance configuration (gaps, borders).
+
+        Returns:
+            AppearanceConfig object with defaults if file missing
+
+        Raises:
+            json.JSONDecodeError: If JSON syntax is invalid
+            pydantic.ValidationError: If values fail validation
+        """
+        if not self.appearance_path.exists():
+            return AppearanceConfig()
+
+        with open(self.appearance_path, "r") as f:
+            data = json.load(f)
+
+        return AppearanceConfig(**data)
 
     def load_project_overrides(self, project_name: str) -> Optional[Dict[str, Any]]:
         """

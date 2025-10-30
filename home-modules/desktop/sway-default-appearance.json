@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "gaps": {
+    "inner": 8,
+    "outer": 4,
+    "smart_gaps": true
+  },
+  "borders": {
+    "default": {
+      "style": "pixel",
+      "size": 2
+    },
+    "floating": {
+      "style": "pixel",
+      "size": 2
+    },
+    "hide_edge_borders": "smart"
+  },
+  "smart_borders": "on"
+}

@@ -11,6 +11,7 @@ from typing import Type
 from pydantic import BaseModel
 
 from ..models import (
+    AppearanceConfig,
     KeybindingConfig,
     WindowRule,
     WorkspaceAssignment,
@@ -39,6 +40,7 @@ class SchemaGenerator:
             "window-rules": self._create_window_rules_schema(),
             "workspace-assignments": self._create_workspace_assignments_schema(),
             "project": self._create_project_schema(),
+            "appearance": self._create_appearance_schema(),
         }
 
         for name, schema in models.items():
@@ -137,6 +139,15 @@ class SchemaGenerator:
             },
             "required": ["project_name"]
         }
+
+    def _create_appearance_schema(self) -> dict:
+        """Create schema for appearance.json configuration."""
+        schema = AppearanceConfig.model_json_schema()
+        schema.update({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "Sway Appearance Configuration",
+        })
+        return schema
 
     def _write_schema(self, name: str, schema: dict):
         """

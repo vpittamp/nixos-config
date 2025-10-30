@@ -19,7 +19,12 @@ from sway_config_manager.config import ConfigLoader, ConfigValidator, ConfigMerg
 from sway_config_manager.config.reload_manager import ReloadManager
 from sway_config_manager.config.file_watcher import FileWatcher
 from sway_config_manager.config.version_manager import VersionManager
-from sway_config_manager.rules import KeybindingManager, WindowRuleEngine, WorkspaceAssignmentHandler
+from sway_config_manager.rules import (
+    AppearanceManager,
+    KeybindingManager,
+    WindowRuleEngine,
+    WorkspaceAssignmentHandler,
+)
 from sway_config_manager.ipc_server import IPCServer
 from sway_config_manager.state import ConfigurationState
 
@@ -60,6 +65,8 @@ class SwayConfigDaemon:
         self.keybinding_manager = KeybindingManager()
         self.window_rule_engine = WindowRuleEngine()
         self.workspace_handler = WorkspaceAssignmentHandler()
+        self.appearance_manager = AppearanceManager()
+        self.appearance_config = None
 
         # Reload manager and file watcher
         self.reload_manager: Optional[ReloadManager] = None
@@ -85,6 +92,7 @@ class SwayConfigDaemon:
             self.keybinding_manager.sway = self.sway
             self.window_rule_engine.sway = self.sway
             self.workspace_handler.sway = self.sway
+            self.appearance_manager.sway = self.sway
 
             # Initialize reload manager
             self.reload_manager = ReloadManager(self)
@@ -144,10 +152,11 @@ class SwayConfigDaemon:
             keybindings = self.loader.load_keybindings_toml()
             window_rules = self.loader.load_window_rules_json()
             workspace_assignments = self.loader.load_workspace_assignments_json()
+            appearance_config = self.loader.load_appearance_json()
 
             # Validate
             errors = self.validator.validate_semantics(
-                keybindings, window_rules, workspace_assignments
+                keybindings, window_rules, workspace_assignments, appearance_config
             )
 
             if errors:
@@ -161,6 +170,7 @@ class SwayConfigDaemon:
             merged_keybindings = self.merger.merge_keybindings([], keybindings)
             merged_rules = self.merger.merge_window_rules([], window_rules)
             merged_assignments = self.merger.merge_workspace_assignments([], workspace_assignments)
+            self.appearance_config = appearance_config
 
             # Apply to rule engines
             await self.window_rule_engine.load_rules(merged_rules)

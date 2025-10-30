@@ -197,6 +197,31 @@ class SwayConfigCLI:
                 print(f"  actions: {', '.join(rule['actions'])}")
                 print()
 
+        if "appearance" in result:
+            appearance = result["appearance"]
+            print("\n═══════════════════════════════════════════════════════")
+            print("  APPEARANCE")
+            print("═══════════════════════════════════════════════════════")
+            gaps = appearance.get("gaps", {})
+            print(f"Gaps: inner={gaps.get('inner', 0)} outer={gaps.get('outer', 0)} smart={'on' if gaps.get('smart_gaps') else 'off'}")
+            borders = appearance.get("borders", {})
+            default_border = borders.get("default", {})
+            floating_border = borders.get("floating", {})
+            hide_edges = borders.get("hide_edge_borders", "none")
+            print("Borders:")
+            default_desc = default_border.get("style", "none")
+            if default_border.get("style") == "pixel" and default_border.get("size") is not None:
+                default_desc = f"pixel {default_border['size']}"
+            floating_desc = floating_border.get("style", "none")
+            if floating_border.get("style") == "pixel" and floating_border.get("size") is not None:
+                floating_desc = f"pixel {floating_border['size']}"
+            print(f"  default → {default_desc}")
+            print(f"  floating → {floating_desc}")
+            print(f"  hide_edge_borders → {hide_edges}")
+            smart_borders = appearance.get("smart_borders")
+            if smart_borders:
+                print(f"smart_borders → {smart_borders}")
+
         return 0
 
     async def cmd_conflicts(self, args):
@@ -272,7 +297,7 @@ class SwayConfigCLI:
 
         # Show command
         show_parser = subparsers.add_parser("show", help="Show current configuration")
-        show_parser.add_argument("--category", choices=["all", "keybindings", "window-rules", "workspaces"], default="all")
+        show_parser.add_argument("--category", choices=["all", "keybindings", "window-rules", "workspaces", "appearance"], default="all")
         show_parser.add_argument("--sources", action="store_true", help="Show source attribution")
         show_parser.add_argument("--project", help="Show project-specific configuration")
         show_parser.add_argument("--json", action="store_true", help="Output as JSON")

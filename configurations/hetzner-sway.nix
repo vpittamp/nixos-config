@@ -22,6 +22,7 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/i3-project-daemon.nix  # Feature 037: System service for cross-namespace /proc access
+    ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
 
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
