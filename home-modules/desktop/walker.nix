@@ -8,7 +8,7 @@ let
 
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
-    # Launch a Ghostty terminal window with Neovim for a Walker-selected file path
+    # Launch an Alacritty terminal window with Neovim for a Walker-selected file path
     set -euo pipefail
 
     if [ $# -eq 0 ]; then
@@ -70,9 +70,9 @@ PY
     fi
 
     if [ -n "$LINE_ARG" ]; then
-      exec ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim-unwrapped}/bin/nvim "$LINE_ARG" "$TARGET_PATH"
+      exec ${pkgs.alacritty}/bin/alacritty -e ${pkgs.neovim-unwrapped}/bin/nvim "$LINE_ARG" "$TARGET_PATH"
     else
-      exec ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim-unwrapped}/bin/nvim "$TARGET_PATH"
+      exec ${pkgs.alacritty}/bin/alacritty -e ${pkgs.neovim-unwrapped}/bin/nvim "$TARGET_PATH"
     fi
   '';
 
@@ -293,7 +293,7 @@ in
   xdg.dataFile."applications/walker-open-in-nvim.desktop".text = ''
     [Desktop Entry]
     Type=Application
-    Name=Open in Neovim (Ghostty)
+    Name=Open in Neovim (Alacritty)
     Exec=${lib.getExe walkerOpenInNvim} %U
     MimeType=text/plain;text/markdown;text/x-shellscript;text/x-python;text/x-nix;application/x-shellscript;application/json;application/xml;text/x-c;text/x-c++;text/x-java;text/x-rust;text/x-go;text/x-yaml;text/x-toml;application/toml;application/x-yaml;inode/directory;
     NoDisplay=true
@@ -352,10 +352,10 @@ in
         customcommands = true    # User-defined command shortcuts
 
         [[plugins]]
-        # Modified to launch Ghostty with the selected tmux session
+        # Modified to launch Alacritty with the selected tmux session
         # Original sesh docs use "sesh connect --switch %RESULT%" but that only works inside tmux
-        # We launch Ghostty to attach to the selected session instead
-        cmd = "ghostty -e tmux attach-session -t %RESULT%"
+        # We launch Alacritty to attach to the selected session instead
+        cmd = "alacritty -e tmux attach-session -t %RESULT%"
         keep_sort = false
         name = "sesh"
         prefix = ";s "
