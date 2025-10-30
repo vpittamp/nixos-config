@@ -345,6 +345,11 @@ in
         runner = true
         symbols = true
         websearch = true
+        # Feature 050: Additional providers for enhanced productivity
+        todo = true              # Todo list management (! prefix)
+        windows = true           # Window switcher for fuzzy window navigation
+        bookmarks = true         # Quick URL access via bookmarks
+        customcommands = true    # User-defined command shortcuts
 
         [[plugins]]
         # Modified to launch Ghostty with the selected tmux session
@@ -396,6 +401,10 @@ in
         prefix = "/"
         provider = "files"
 
+        [[providers.prefixes]]
+        prefix = "!"
+        provider = "todo"
+
         [[providers.actions.desktopapplications]]
         action = "open"
         after = "Close"
@@ -440,6 +449,7 @@ in
   };
 
   # Elephant websearch provider configuration
+  # Feature 050: Enhanced with domain-specific search engines
   xdg.configFile."elephant/websearch.toml".text = ''
     # Elephant Web Search Configuration
 
@@ -463,8 +473,120 @@ in
     name = "Wikipedia"
     url = "https://en.wikipedia.org/wiki/Special:Search?search=%s"
 
+    # Feature 050: Domain-specific search engines for development
+    [[engines]]
+    name = "Stack Overflow"
+    url = "https://stackoverflow.com/search?q=%s"
+
+    [[engines]]
+    name = "Arch Wiki"
+    url = "https://wiki.archlinux.org/index.php?search=%s"
+
+    [[engines]]
+    name = "Nix Packages"
+    url = "https://search.nixos.org/packages?query=%s"
+
+    [[engines]]
+    name = "Rust Docs"
+    url = "https://doc.rust-lang.org/std/?search=%s"
+
     # Default search engine
     default = "Google"
+  '';
+
+  # Feature 050: Bookmarks provider configuration
+  xdg.configFile."elephant/bookmarks.toml".text = ''
+    # Elephant Bookmarks Configuration
+    # Quick access to frequently visited URLs
+
+    [[bookmarks]]
+    name = "NixOS Manual"
+    url = "https://nixos.org/manual/nixos/stable/"
+    description = "Official NixOS documentation"
+    tags = ["docs", "nix"]
+
+    [[bookmarks]]
+    name = "GitHub"
+    url = "https://github.com"
+    description = "GitHub code hosting platform"
+    tags = ["dev", "git"]
+
+    [[bookmarks]]
+    name = "Google AI Studio"
+    url = "https://aistudio.google.com"
+    description = "Google AI development platform"
+    tags = ["ai", "dev"]
+
+    [[bookmarks]]
+    name = "Stack Overflow"
+    url = "https://stackoverflow.com"
+    description = "Programming Q&A community"
+    tags = ["dev", "help"]
+
+    [[bookmarks]]
+    name = "Rust Documentation"
+    url = "https://doc.rust-lang.org"
+    description = "Official Rust programming language documentation"
+    tags = ["docs", "rust", "dev"]
+
+    [[bookmarks]]
+    name = "Arch Wiki"
+    url = "https://wiki.archlinux.org"
+    description = "Comprehensive Linux documentation"
+    tags = ["docs", "linux"]
+
+    [[bookmarks]]
+    name = "Nix Packages Search"
+    url = "https://search.nixos.org/packages"
+    description = "Search NixOS package repository"
+    tags = ["nix", "packages"]
+
+    [[bookmarks]]
+    name = "Home Manager Options"
+    url = "https://nix-community.github.io/home-manager/options.xhtml"
+    description = "Home Manager configuration options reference"
+    tags = ["nix", "docs", "home-manager"]
+  '';
+
+  # Feature 050: Custom commands provider configuration
+  xdg.configFile."elephant/commands.toml".text = ''
+    # Elephant Custom Commands Configuration
+    # User-defined shortcuts for common operations
+
+    [customcommands]
+    # Sway/Window Manager Commands
+    "reload sway config" = "swaymsg reload"
+    "restart waybar" = "killall waybar && waybar &"
+    "lock screen" = "swaylock -f"
+
+    # System Management Commands
+    "suspend system" = "systemctl suspend"
+    "reboot system" = "systemctl reboot"
+    "shutdown system" = "systemctl poweroff"
+
+    # NixOS Commands
+    "rebuild nixos" = "cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway"
+    "update nixos" = "cd /etc/nixos && nix flake update && sudo nixos-rebuild switch --flake .#hetzner-sway"
+    "rebuild home-manager" = "home-manager switch --flake /etc/nixos#hetzner-sway"
+
+    # Git Commands
+    "git status all" = "cd /etc/nixos && git status"
+    "git pull nixos" = "cd /etc/nixos && git pull"
+    "git push nixos" = "cd /etc/nixos && git push"
+
+    # Project Management Commands
+    "list projects" = "i3pm project list"
+    "show active project" = "i3pm project current"
+
+    # Service Management Commands
+    "restart elephant" = "systemctl --user restart elephant"
+    "restart i3pm daemon" = "systemctl --user restart i3-project-event-listener"
+    "check elephant status" = "systemctl --user status elephant"
+    "check i3pm daemon status" = "systemctl --user status i3-project-event-listener"
+
+    # Development Commands
+    "run nixos tests" = "cd /etc/nixos/tests && pytest"
+    "format nixos config" = "cd /etc/nixos && nixfmt **/*.nix"
   '';
 
   # Feature 034/035: Isolate Walker/Elephant to show ONLY i3pm registry apps

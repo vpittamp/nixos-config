@@ -1,64 +1,49 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# NixOS Configuration Repository
 
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# pytest
-.pytest_cache/
-.coverage
-htmlcov/
-*.cover
-.hypothesis/
-
-# NixOS
+# Build outputs
 result
 result-*
 
-# IDE / Editor
-.vscode/
-.idea/
+# Editor temporary files
 *.swp
 *.swo
 *~
+.*.swp
+.*.swo
+
+# IDE directories
+.vscode/
+.idea/
+*.code-workspace
+
+# OS-specific files
 .DS_Store
-
-# Logs
-*.log
-
-# Environment variables
-.env
-.env.*
-!.env.example
+Thumbs.db
 
 # Temporary files
 *.tmp
 *.bak
-*.orig
+.#*
 
-# Generated schemas (if regenerated frequently)
-# specs/*/contracts/*.schema.json
+# Python caches (for i3pm daemon)
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+.pytest_cache/
+
+# Local development/testing
+.dev/
+.test/
+*.local
+
+# Secrets and sensitive data
+*.key
+*.pem
+secrets/
+.env
+.env.*
+
+# Nix specific
+.direnv/
+.envrc

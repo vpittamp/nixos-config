@@ -142,18 +142,23 @@ Controlled by environment variables or module imports:
 2. **User-specific** - Edit `user/packages.nix`
 3. **Target-specific** - Add to specific configuration in `configurations/`
 
-## 🚀 Walker/Elephant Launcher (Feature 043)
+## 🚀 Walker/Elephant Launcher (Features 043, 050)
 
-Keyboard-driven application launcher with file search, web search, calculator, and symbol picker.
+Keyboard-driven application launcher with file search, web search, calculator, symbol picker, todo list, window switching, bookmarks, and custom commands.
 
 **Launch**: `Meta+D` or `Alt+Space`
 
 **Provider Prefixes**:
 - (none) - Launch applications from registry
+- (none) - Window switcher (fuzzy window search)
+- (none) - Bookmarks (quick URL access)
+- (none) - Custom commands (user-defined shortcuts)
 - `/` - Search files in $HOME or project dir
-- `@` - Web search (Google, GitHub, etc.)
+- `@` - Web search (Google, GitHub, Nix, Arch Wiki, Stack Overflow, Rust Docs, etc.)
+- `!` - Todo list management (create, view, complete tasks)
 - `=` - Calculator (e.g., `=2+2`)
 - `.` - Unicode symbols (e.g., `.lambda` → λ)
+- `:` - Clipboard history (Wayland only)
 - `>` - Run shell commands
 - `;s` - Switch tmux sessions
 - `;p` - Switch i3pm projects
@@ -163,13 +168,31 @@ Keyboard-driven application launcher with file search, web search, calculator, a
 # Launch app with project context
 Meta+D → type "code" → Return
 
-# Search files
+# Task management (Feature 050)
+Meta+D → type "!buy groceries" → Return  # Create task
+Meta+D → type "!" → Return                # View all tasks
+
+# Window switching (Feature 050)
+Meta+D → type "firefox" → Return  # Focus Firefox window
+Meta+D → type "term" → Return      # Focus terminal
+
+# Quick bookmarks (Feature 050)
+Meta+D → type "github" → Return    # Open GitHub
+Meta+D → type "nix manual" → Return # Open NixOS docs
+
+# Custom commands (Feature 050)
+Meta+D → type "reload sway" → Return     # Execute swaymsg reload
+Meta+D → type "rebuild nixos" → Return   # Rebuild NixOS config
+
+# Enhanced web search (Feature 050)
+Meta+D → type "@nix hyprland" → Return   # Search Nix packages
+Meta+D → type "@arch bluetooth" → Return # Search Arch Wiki
+Meta+D → type "@so rust async" → Return  # Search Stack Overflow
+
+# File search
 Meta+D → type "/file.nix" → Return
 
-# Web search
-Meta+D → type "@nixos tutorial" → Return
-
-# Math
+# Calculator
 Meta+D → type "=2+2" → Return  # Copies "4" to clipboard
 ```
 
@@ -177,9 +200,18 @@ Meta+D → type "=2+2" → Return  # Copies "4" to clipboard
 ```bash
 systemctl --user status elephant  # Check backend service
 journalctl --user -u elephant -f  # View logs
+systemctl --user restart elephant  # Restart after config changes
 ```
 
-**Detailed Documentation**: See `/etc/nixos/specs/043-get-full-functionality/quickstart.md`
+**Customization** (Feature 050):
+- **Bookmarks**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/bookmarks.toml"`
+- **Custom Commands**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/commands.toml"`
+- **Search Engines**: Edit `home-modules/desktop/walker.nix` → `xdg.configFile."elephant/websearch.toml"`
+- Rebuild: `home-manager switch --flake .#hetzner-sway`
+
+**Detailed Documentation**:
+- Feature 043 (Base): `/etc/nixos/specs/043-get-full-functionality/quickstart.md`
+- Feature 050 (Enhanced): `/etc/nixos/specs/050-enhance-the-walker/quickstart.md`
 
 ## 🔄 Sway Dynamic Configuration Management (Feature 047)
 
@@ -282,6 +314,19 @@ nix flake lock --update-input nixpkgs
 ## ⚠️ Important Notes
 
 ### Recent Updates (2025-10)
+
+- **Intelligent Automatic Workspace-to-Monitor Assignment** - Automatic workspace redistribution (Feature 049)
+  - Fully automatic workspace reassignment when monitors connect/disconnect
+  - Zero configuration - works out of the box with hardcoded distribution rules
+  - 500ms debounce prevents flapping during rapid monitor changes
+  - Window preservation - windows never lost during monitor changes
+  - Distribution rules: 1 monitor (all WS), 2 monitors (WS 1-2 primary, 3-70 secondary), 3 monitors (WS 1-2 primary, 3-5 secondary, 6-70 tertiary)
+  - State persistence to `~/.config/sway/monitor-state.json`
+  - CLI command: `i3pm monitors status` - view monitor configuration
+  - Reassignment history tracked in daemon (last 100 operations)
+  - Event-driven with <1 second total latency (output event → completion)
+  - Replaces legacy MonitorConfigManager with simpler DynamicWorkspaceManager
+  - Documentation: `/etc/nixos/specs/049-intelligent-automatic-workspace/quickstart.md`
 
 - **Sway Dynamic Configuration Management** - Hot-reloadable Sway configuration (Feature 047)
   - Migrated from i3/X11 to Sway/Wayland as primary window manager on Hetzner Cloud
