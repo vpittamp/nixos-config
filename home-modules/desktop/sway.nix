@@ -410,6 +410,18 @@ in
       # Behavior: Workspace automatically switches to show newly launched app
       focus_on_window_activation focus
 
+      # Mouse focus behavior - focus on click, not hover
+      # no = focus only changes on mouse click (prevents hover-based focus stealing)
+      # yes = focus changes when mouse hovers over window (default Sway behavior)
+      # always = focus follows mouse even for unfocused outputs
+      focus_follows_mouse no
+
+      # Mouse warping - don't move cursor when switching focus via keyboard
+      # none = cursor stays where it is (natural keyboard navigation)
+      # output = cursor moves to center of output when switching focus
+      # container = cursor moves to center of container when switching focus
+      mouse_warping none
+
       # Gaps (optional - clean appearance)
       gaps inner 5
       gaps outer 0
