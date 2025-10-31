@@ -14,8 +14,8 @@ import json
 import sys
 from pathlib import Path
 
-# Daemon socket path
-DAEMON_SOCKET = Path.home() / ".local" / "state" / "i3-project-daemon.sock"
+# Daemon socket path (system service socket)
+DAEMON_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
 
 # Catppuccin Mocha colors
 COLOR_GREEN = "#a6e3a1"  # Active mode
@@ -75,11 +75,12 @@ async def main():
             if event.get("method") == "event":
                 params = event.get("params", {})
                 if params.get("type") == "workspace_mode":
-                    payload = params.get("payload", {})
+                    # Event payload structure: {type, event_type, state: {active, mode_type, accumulated_digits}, timestamp}
+                    state = params.get("state", {})
 
-                    mode_active = payload.get("mode_active", False)
-                    mode_type = payload.get("mode_type")
-                    accumulated_digits = payload.get("accumulated_digits", "")
+                    mode_active = state.get("active", False)
+                    mode_type = state.get("mode_type")
+                    accumulated_digits = state.get("accumulated_digits", "")
 
                     if mode_active:
                         # Show accumulated digits or placeholder

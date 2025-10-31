@@ -199,82 +199,32 @@ build_spacer_block() {
         }'
 }
 
-# Build workspace mode block (Feature 042)
-build_workspace_mode_block() {
-    local state mode_active mode_type accumulated_digits full_text mode_symbol
-
-    # Query workspace mode state from daemon
-    state=$("$I3PM_BIN" workspace-mode state --json 2>/dev/null || echo "{}")
-
-    mode_active=$(echo "$state" | "$JQ_BIN" -r '.active // false')
-
-    if [ "$mode_active" = "true" ]; then
-        mode_type=$(echo "$state" | "$JQ_BIN" -r '.mode_type // ""')
-        accumulated_digits=$(echo "$state" | "$JQ_BIN" -r '.accumulated_digits // ""')
-
-        # Determine mode symbol
-        case "$mode_type" in
-            goto) mode_symbol="→" ;;
-            move) mode_symbol="⇒" ;;
-            *) mode_symbol="•" ;;
-        esac
-
-        # Display accumulated digits or placeholder
-        if [ -z "$accumulated_digits" ]; then
-            full_text="$mode_symbol WS: _"
-        else
-            full_text="$mode_symbol WS: $accumulated_digits"
-        fi
-
-        "$JQ_BIN" -n --arg text "$full_text" \
-            '{
-                full_text: $text,
-                color: "'"$COLOR_GREEN"'",
-                name: "workspace_mode",
-                instance: "mode_active",
-                separator: true,
-                separator_block_width: 20
-            }'
-    else
-        # Mode inactive - return empty block
-        "$JQ_BIN" -n \
-            '{
-                full_text: "",
-                name: "workspace_mode",
-                instance: "mode_inactive",
-                separator: false,
-                separator_block_width: 0
-            }'
-    fi
-}
-
 # Build complete status line
 build_status_line() {
-    local monitor spacer1 project workspace_mode spacer2 cpu memory network date
+    local monitor spacer1 project spacer2 cpu memory network date
 
     monitor=$(build_monitor_block)
     spacer1=$(build_spacer_block)
     project=$(build_project_block)
-    workspace_mode=$(build_workspace_mode_block)
     spacer2=$(build_spacer_block)
     cpu=$(build_cpu_block)
     memory=$(build_memory_block)
     network=$(build_network_block)
     date=$(build_date_block)
 
-    # Layout: [monitor] [spacer] [project] [workspace_mode] [spacer] [cpu] [memory] [network] [date]
-    # The spacers push project toward the center, workspace_mode appears right after project
+    # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
+    # The spacers push project toward the center
+    # Workspace mode indicator is shown via Sway's native binding_mode_indicator (Feature 042)
     "$JQ_BIN" -n \
         --argjson monitor "$monitor" \
         --argjson spacer1 "$spacer1" \
         --argjson project "$project" \
-        --argjson workspace_mode "$workspace_mode" \
         --argjson spacer2 "$spacer2" \
         --argjson cpu "$cpu" \
         --argjson memory "$memory" \
         --argjson network "$network" \
         --argjson date "$date" \
-        '[$monitor, $spacer1, $project, $workspace_mode, $spacer2, $cpu, $memory, $network, $date]'
+        '[$monitor, $spacer1, $project, $spacer2, $cpu, $memory, $network, $date]'
 }
 
 # Handle click events from i3bar

@@ -21,8 +21,20 @@
           echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.cancel\",\"params\":{},\"id\":1}" | \
             ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK > /dev/null 2>&1
           ;;
+        state)
+          # Query workspace mode state from daemon (for status bar polling)
+          if [ "$2" = "--json" ]; then
+            echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.state\",\"params\":{},\"id\":1}" | \
+              ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK 2>/dev/null | \
+              ${pkgs.jq}/bin/jq -c '.result // {}'
+          else
+            echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.state\",\"params\":{},\"id\":1}" | \
+              ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK 2>/dev/null | \
+              ${pkgs.jq}/bin/jq '.result // {}'
+          fi
+          ;;
         *)
-          echo "Usage: $0 {digit <0-9>|execute|cancel}"
+          echo "Usage: $0 {digit <0-9>|execute|cancel|state [--json]}"
           exit 1
           ;;
       esac

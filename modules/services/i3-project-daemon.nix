@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.4.1";  # Feature 042: Fix broadcast_event signature and EventEntry mode_name error
+    version = "1.4.4";  # Feature 042: Remove explicit output focusing (Sway auto-focuses correct output on workspace switch)
     src = daemonSrc;
 
     installPhase = ''

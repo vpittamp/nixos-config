@@ -60,7 +60,7 @@ class WorkspaceModeManager:
         self._state.active = True
         self._state.mode_type = mode_type
         self._state.accumulated_digits = ""
-        self._state.entered_at = time.time()
+        self._state.entered_at = datetime.now()
 
         # Refresh output cache from i3 IPC
         await self._refresh_output_cache()
@@ -135,16 +135,17 @@ class WorkspaceModeManager:
                 await self._i3.command(f"move container to workspace number {workspace}; workspace number {workspace}")
             ipc_elapsed_ms = (time.time() - ipc_start) * 1000
 
-            # Focus output (Feature 042: US5 - Smart output focusing)
-            focus_start = time.time()
-            await self._i3.command(f"focus output {output}")
-            focus_elapsed_ms = (time.time() - focus_start) * 1000
+            # NOTE: Removed explicit "focus output" command (Feature 042 fix)
+            # Sway's "workspace number X" already focuses the correct output automatically
+            # based on workspace assignments in sway config. Explicit output focusing
+            # was causing the wrong workspace to be focused when daemon's calculated
+            # output didn't match Sway's static workspace assignments.
 
             # Exit mode in Sway (return to default mode)
             await self._i3.command("mode default")
 
             total_elapsed_ms = (time.time() - start_time) * 1000
-            logger.info(f"Workspace switch successful: ws={workspace}, output={output} (switch: {ipc_elapsed_ms:.2f}ms, focus: {focus_elapsed_ms:.2f}ms, total: {total_elapsed_ms:.2f}ms)")
+            logger.info(f"Workspace switch successful: ws={workspace}, output={output} (took {total_elapsed_ms:.2f}ms)")
 
             # Record history (Feature 042: US4)
             await self._record_switch(workspace, output, self._state.mode_type)
@@ -277,9 +278,9 @@ class WorkspaceModeManager:
             mode_type: "goto" or "move"
         """
         switch = WorkspaceSwitch(
-            workspace=workspace,
-            output=output,
-            timestamp=time.time(),
+            workspace_number=workspace,
+            output_name=output,
+            timestamp=datetime.now(),
             mode_type=mode_type
         )
 
