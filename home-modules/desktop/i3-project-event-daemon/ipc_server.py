@@ -315,6 +315,18 @@ class IPCServer:
             elif method == "get_pending_launches":
                 result = await self._get_pending_launches(params)
 
+            # Feature 042: Workspace mode navigation methods
+            elif method == "workspace_mode.digit":
+                result = await self._workspace_mode_digit(params)
+            elif method == "workspace_mode.execute":
+                result = await self._workspace_mode_execute(params)
+            elif method == "workspace_mode.cancel":
+                result = await self._workspace_mode_cancel(params)
+            elif method == "workspace_mode.state":
+                result = await self._workspace_mode_state(params)
+            elif method == "workspace_mode.history":
+                result = await self._workspace_mode_history(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -3923,3 +3935,161 @@ class IPCServer:
         )
 
         return {"launches": launches}
+
+    # =============================================================================
+    # Feature 042: Workspace Mode Navigation IPC Methods
+    # =============================================================================
+
+    async def _workspace_mode_digit(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.digit IPC method.
+
+        Args:
+            params: {"digit": "2"}
+
+        Returns:
+            {"accumulated_digits": "23"}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        digit = params.get("digit")
+        if not digit or digit not in "0123456789":
+            raise ValueError(f"Invalid digit: {digit}. Must be 0-9")
+
+        manager = self.state_manager.workspace_mode_manager
+        accumulated = await manager.add_digit(digit)
+
+        # Broadcast event for status bar update
+        event = manager.create_event("digit")
+        await self.broadcast_event("workspace_mode", event.model_dump())
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::digit",
+            duration_ms=duration_ms,
+            params={"digit": digit, "accumulated": accumulated}
+        )
+
+        return {"accumulated_digits": accumulated}
+
+    async def _workspace_mode_execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.execute IPC method.
+
+        Returns:
+            {"workspace": 23, "output": "HEADLESS-2", "success": true}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+        result = await manager.execute()
+
+        # Broadcast event (mode now inactive)
+        event = manager.create_event("execute")
+        await self.broadcast_event("workspace_mode", event.model_dump())
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        if result:
+            await self._log_ipc_event(
+                event_type="workspace_mode::execute",
+                duration_ms=duration_ms,
+                params={"workspace": result["workspace"], "output": result["output"]}
+            )
+            return result
+        else:
+            # Empty execution (no-op)
+            await self._log_ipc_event(
+                event_type="workspace_mode::execute_noop",
+                duration_ms=duration_ms
+            )
+            return {"success": False, "reason": "no_digits"}
+
+    async def _workspace_mode_cancel(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.cancel IPC method.
+
+        Returns:
+            {"cancelled": true}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+        await manager.cancel()
+
+        # Broadcast event (mode now inactive)
+        event = manager.create_event("cancel")
+        await self.broadcast_event("workspace_mode", event.model_dump())
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::cancel",
+            duration_ms=duration_ms
+        )
+
+        return {"cancelled": True}
+
+    async def _workspace_mode_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.state IPC method.
+
+        Returns:
+            WorkspaceModeState as dict
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+        state = manager.state
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::query_state",
+            duration_ms=duration_ms
+        )
+
+        return state.to_dict()
+
+    async def _workspace_mode_history(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.history IPC method.
+
+        Args:
+            params: {"limit": 10} (optional)
+
+        Returns:
+            {"history": [...], "total": N}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+        limit = params.get("limit")
+
+        history = manager.get_history(limit=limit)
+        total_count = len(manager._history)
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::query_history",
+            duration_ms=duration_ms,
+            params={"limit": limit},
+            result_count=len(history)
+        )
+
+        return {
+            "history": [switch.to_dict() for switch in history],
+            "total": total_count
+        }

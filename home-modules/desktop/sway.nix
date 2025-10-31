@@ -445,14 +445,14 @@ in
       ${if isHeadless then ''
         # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
         # These bindings initialize the workspace mode state and enter the mode
-        bindsym Control+0 exec echo 0 > /tmp/sway-workspace-mode-state; mode goto_workspace
-        bindsym Control+Shift+0 exec echo 0 > /tmp/sway-workspace-mode-state; mode move_workspace
+        bindsym Control+0 exec echo 0 > /tmp/sway-workspace-mode-state; mode "→ WS"
+        bindsym Control+Shift+0 exec echo 0 > /tmp/sway-workspace-mode-state; mode "⇒ WS"
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
-        bindcode --release 66 mode goto_workspace
-        bindcode --release Shift+66 mode move_workspace
+        bindcode --release 66 mode "→ WS"
+        bindcode --release Shift+66 mode "⇒ WS"
       ''}
     '';
   };

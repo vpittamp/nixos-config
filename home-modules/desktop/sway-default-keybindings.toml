@@ -33,8 +33,8 @@
 # Mod+semicolon is the primary binding
 # Note: CapsLock binding must be added separately in main Sway config
 # (config manager doesn't support modifier-free keys like Caps_Lock)
-"Mod+semicolon" = { command = "mode goto_workspace", description = "Enter workspace goto mode (type digits + enter)" }
-"Mod+Shift+semicolon" = { command = "mode move_workspace", description = "Enter move window mode (type digits + enter)" }
+"Mod+semicolon" = { command = "mode \"→ WS\"", description = "Enter workspace goto mode (type digits + enter)" }
+"Mod+Shift+semicolon" = { command = "mode \"⇒ WS\"", description = "Enter move window mode (type digits + enter)" }
 
 # ========== APPLICATION LAUNCHERS ==========
 "Mod+Return" = { command = "exec alacritty", description = "Open terminal" }

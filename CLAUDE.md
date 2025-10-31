@@ -390,6 +390,96 @@ systemctl --user status sway-config-daemon
 
 **Detailed Documentation**: See `/etc/nixos/specs/047-create-a-new/quickstart.md`
 
+## ⌨️ Event-Driven Workspace Mode Navigation (Feature 042)
+
+Fast keyboard-driven workspace navigation with <20ms latency. Navigate to any workspace (1-70) by typing digits in a dedicated mode, replacing slow bash scripts (70ms) with event-driven Python daemon.
+
+**Quick Access Keybindings**:
+
+| Action | M1 MacBook Pro | Hetzner Cloud | Fallback |
+|--------|----------------|---------------|----------|
+| **Navigate to workspace** | `CapsLock` | `Ctrl+0` | `Mod+;` |
+| **Move window to workspace** | `Shift+CapsLock` | `Ctrl+Shift+0` | `Mod+Shift+;` |
+| **Cancel mode** | `Escape` | `Escape` | `Escape` |
+
+**Common Workflows**:
+```bash
+# Navigate to workspace 23
+1. Press CapsLock (M1) or Ctrl+0 (Hetzner)
+2. Type: 2 3
+3. Press Enter
+→ Focus switches to workspace 23 with correct monitor
+
+# Move window to workspace 5
+1. Focus the window
+2. Press Shift+CapsLock (M1) or Ctrl+Shift+0 (Hetzner)
+3. Type: 5
+4. Press Enter
+→ Window moves to workspace 5, you follow it
+
+# Cancel without action
+1. Enter workspace mode (CapsLock)
+2. Type some digits (optional)
+3. Press Escape
+→ Mode exits, no workspace change
+```
+
+**Visual Feedback**:
+- **Native mode indicator** (swaybar binding_mode): `→ WS` (goto), `⇒ WS` (move)
+- **Status bar block** (i3bar): `WS: 23` (shows accumulated digits)
+- **Real-time updates**: <10ms event latency from daemon
+
+**CLI Commands**:
+```bash
+# Query current mode state
+i3pm workspace-mode state
+# Output: Active: true, Mode: goto, Digits: 23, Entered: 2025-10-31 12:34:56
+
+# View navigation history (last 100 switches)
+i3pm workspace-mode history
+i3pm workspace-mode history --limit=10 --json
+
+# Manual control (for scripting)
+i3pm workspace-mode digit 2    # Add digit to accumulator
+i3pm workspace-mode digit 3
+i3pm workspace-mode execute    # Execute switch
+i3pm workspace-mode cancel     # Exit mode without action
+```
+
+**Multi-Monitor Output Focusing**:
+Workspaces automatically focus the correct monitor based on workspace number:
+
+| Workspace | M1 (1 monitor) | Hetzner (3 monitors) |
+|-----------|----------------|----------------------|
+| 1-2 | eDP-1 (built-in) | HEADLESS-1 (PRIMARY) |
+| 3-5 | eDP-1 (built-in) | HEADLESS-2 (SECONDARY) |
+| 6+ | eDP-1 (built-in) | HEADLESS-3 (TERTIARY) |
+
+**Adaptive behavior**: Automatically adjusts for 1-3 monitor setups, no configuration required.
+
+**Performance Metrics**:
+- Digit accumulation: <10ms latency
+- Workspace switch: <20ms execution
+- Total navigation: <100ms (mode entry → digit input → execution → focus change)
+- Status bar update: <5ms event broadcast
+
+**Troubleshooting**:
+```bash
+# Check daemon integration
+i3pm daemon status  # Verify workspace_mode_manager is active
+
+# View workspace mode events
+i3pm daemon events --type=mode --follow
+
+# Check navigation history
+i3pm workspace-mode history --limit=20
+
+# Verify mode state
+i3pm workspace-mode state --json
+```
+
+**Detailed Documentation**: See `/etc/nixos/specs/042-event-driven-workspace-mode/quickstart.md`
+
 ## 🌐 PWA Management
 
 ### Installing PWAs
@@ -1403,3 +1493,10 @@ _Last updated: 2025-10-29 with Sway/Wayland migration and Feature 047 (Dynamic C
 - Added hot-reloadable Sway configuration with validation and version control
 - Template-based configuration approach avoids home-manager conflicts
 - i3pm system works with both i3 and Sway via shared IPC protocol
+
+## Active Technologies
+- Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing) (042-event-driven-workspace-mode)
+- In-memory state only (no persistence) - workspace mode state and history stored in daemon memory, cleared on restart (042-event-driven-workspace-mode)
+
+## Recent Changes
+- 042-event-driven-workspace-mode: Added Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing)

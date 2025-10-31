@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.3.2";  # Feature 049: Fix workspace assignment IPC command (add quotes)
+    version = "1.4.0";  # Feature 042: Event-driven workspace mode navigation (fix model_dump)
     src = daemonSrc;
 
     installPhase = ''

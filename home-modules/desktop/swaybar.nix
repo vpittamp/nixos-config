@@ -52,10 +52,17 @@ in
         background = "#1e1e2e";
         statusline = "#cdd6f4";
         separator = "#6c7086";
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-1
         separator_symbol " | "
+        binding_mode_indicator yes
       '';
     }
 
@@ -93,11 +100,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
@@ -156,11 +170,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-2
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
@@ -219,11 +240,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-3
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
   ] else [
@@ -304,11 +332,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output eDP-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
@@ -346,11 +381,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HDMI-A-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
   ];

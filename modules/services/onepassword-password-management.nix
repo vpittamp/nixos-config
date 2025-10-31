@@ -46,7 +46,7 @@ in
 
   config = mkIf cfg.enable {
     # Ensure 1Password CLI is available
-    environment.systemPackages = [ pkgs._1password ];
+    environment.systemPackages = [ pkgs._1password-cli ];
 
     # Create directory for password files
     systemd.tmpfiles.rules = [
@@ -82,7 +82,7 @@ in
             echo "Syncing password for user: ${username}"
 
             # Fetch password from 1Password
-            PASSWORD=$(${pkgs._1password}/bin/op read '${userCfg.passwordReference}' 2>/dev/null || echo "")
+            PASSWORD=$(${pkgs._1password-cli}/bin/op read '${userCfg.passwordReference}' 2>/dev/null || echo "")
 
             if [ -z "$PASSWORD" ]; then
               echo "Warning: Could not fetch password for ${username} from 1Password"
