@@ -19,6 +19,7 @@
     # Home-manager module removed to prevent Python environment conflicts
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
+    ./tools/i3pm-workspace-mode-wrapper.nix  # Feature 042: Workspace mode IPC wrapper (temp until TS CLI integration)
 
     # Application launcher and registry
     ./desktop/walker.nix        # Feature 043: Walker/Elephant launcher (works with software rendering)

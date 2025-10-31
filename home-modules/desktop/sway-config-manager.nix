@@ -54,46 +54,46 @@ let
     # Feature 042 - T035: Pango markup for native mode indicator
     mode "→ WS" {
         # Digit input (calls daemon via i3pm CLI)
-        bindsym 0 exec i3pm workspace-mode digit 0
-        bindsym 1 exec i3pm workspace-mode digit 1
-        bindsym 2 exec i3pm workspace-mode digit 2
-        bindsym 3 exec i3pm workspace-mode digit 3
-        bindsym 4 exec i3pm workspace-mode digit 4
-        bindsym 5 exec i3pm workspace-mode digit 5
-        bindsym 6 exec i3pm workspace-mode digit 6
-        bindsym 7 exec i3pm workspace-mode digit 7
-        bindsym 8 exec i3pm workspace-mode digit 8
-        bindsym 9 exec i3pm workspace-mode digit 9
+        bindsym 0 exec i3pm-workspace-mode digit 0
+        bindsym 1 exec i3pm-workspace-mode digit 1
+        bindsym 2 exec i3pm-workspace-mode digit 2
+        bindsym 3 exec i3pm-workspace-mode digit 3
+        bindsym 4 exec i3pm-workspace-mode digit 4
+        bindsym 5 exec i3pm-workspace-mode digit 5
+        bindsym 6 exec i3pm-workspace-mode digit 6
+        bindsym 7 exec i3pm-workspace-mode digit 7
+        bindsym 8 exec i3pm-workspace-mode digit 8
+        bindsym 9 exec i3pm-workspace-mode digit 9
 
         # Execute switch (daemon handles workspace switch + output focus + mode exit)
-        bindsym Return exec i3pm workspace-mode execute
-        bindsym KP_Enter exec i3pm workspace-mode execute
+        bindsym Return exec i3pm-workspace-mode execute
+        bindsym KP_Enter exec i3pm-workspace-mode execute
 
         # Cancel/exit mode
-        bindsym Escape exec i3pm workspace-mode cancel
+        bindsym Escape exec i3pm-workspace-mode cancel
     }
 
     # Move window to workspace mode - Type digits to move window
     # Feature 042 - T035: Pango markup for native mode indicator
     mode "⇒ WS" {
         # Digit input (shared accumulation state with goto mode)
-        bindsym 0 exec i3pm workspace-mode digit 0
-        bindsym 1 exec i3pm workspace-mode digit 1
-        bindsym 2 exec i3pm workspace-mode digit 2
-        bindsym 3 exec i3pm workspace-mode digit 3
-        bindsym 4 exec i3pm workspace-mode digit 4
-        bindsym 5 exec i3pm workspace-mode digit 5
-        bindsym 6 exec i3pm workspace-mode digit 6
-        bindsym 7 exec i3pm workspace-mode digit 7
-        bindsym 8 exec i3pm workspace-mode digit 8
-        bindsym 9 exec i3pm workspace-mode digit 9
+        bindsym 0 exec i3pm-workspace-mode digit 0
+        bindsym 1 exec i3pm-workspace-mode digit 1
+        bindsym 2 exec i3pm-workspace-mode digit 2
+        bindsym 3 exec i3pm-workspace-mode digit 3
+        bindsym 4 exec i3pm-workspace-mode digit 4
+        bindsym 5 exec i3pm-workspace-mode digit 5
+        bindsym 6 exec i3pm-workspace-mode digit 6
+        bindsym 7 exec i3pm-workspace-mode digit 7
+        bindsym 8 exec i3pm-workspace-mode digit 8
+        bindsym 9 exec i3pm-workspace-mode digit 9
 
         # Execute move (daemon handles move + follow + output focus + mode exit)
-        bindsym Return exec i3pm workspace-mode execute
-        bindsym KP_Enter exec i3pm workspace-mode execute
+        bindsym Return exec i3pm-workspace-mode execute
+        bindsym KP_Enter exec i3pm-workspace-mode execute
 
         # Cancel/exit mode
-        bindsym Escape exec i3pm workspace-mode cancel
+        bindsym Escape exec i3pm-workspace-mode cancel
     }
   '';
 

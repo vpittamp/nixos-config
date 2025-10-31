@@ -3963,7 +3963,7 @@ class IPCServer:
 
         # Broadcast event for status bar update
         event = manager.create_event("digit")
-        await self.broadcast_event("workspace_mode", event.model_dump())
+        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -3991,7 +3991,7 @@ class IPCServer:
 
         # Broadcast event (mode now inactive)
         event = manager.create_event("execute")
-        await self.broadcast_event("workspace_mode", event.model_dump())
+        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -4026,7 +4026,7 @@ class IPCServer:
 
         # Broadcast event (mode now inactive)
         event = manager.create_event("cancel")
-        await self.broadcast_event("workspace_mode", event.model_dump())
+        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 

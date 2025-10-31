@@ -1543,22 +1543,22 @@ async def on_mode(
             if mode_name in ("goto_workspace", "→ WS"):
                 logger.info("Entering workspace goto mode")
                 await workspace_mode_manager.enter_mode("goto")
-                event_payload = workspace_mode_manager.create_event()
-                await ipc_server.broadcast_event("workspace_mode", event_payload.model_dump())
+                event_payload = workspace_mode_manager.create_event("enter")
+                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
 
             elif mode_name in ("move_workspace", "⇒ WS"):
                 logger.info("Entering workspace move mode")
                 await workspace_mode_manager.enter_mode("move")
-                event_payload = workspace_mode_manager.create_event()
-                await ipc_server.broadcast_event("workspace_mode", event_payload.model_dump())
+                event_payload = workspace_mode_manager.create_event("enter")
+                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
 
             elif mode_name == "default":
                 # User exited workspace mode (Escape or successful execution)
                 if workspace_mode_manager.state.active:
                     logger.info("Exiting workspace mode")
                     await workspace_mode_manager.cancel()
-                    event_payload = workspace_mode_manager.create_event()
-                    await ipc_server.broadcast_event("workspace_mode", event_payload.model_dump())
+                    event_payload = workspace_mode_manager.create_event("exit")
+                    await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
 
     except Exception as e:
         error_msg = str(e)
@@ -1575,7 +1575,6 @@ async def on_mode(
                 event_type="mode",
                 timestamp=datetime.now(),
                 source="i3",
-                mode_name=mode_name,
                 processing_duration_ms=duration_ms,
                 error=error_msg,
             )

@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.4.0";  # Feature 042: Event-driven workspace mode navigation (fix model_dump)
+    version = "1.4.1";  # Feature 042: Fix broadcast_event signature and EventEntry mode_name error
     src = daemonSrc;
 
     installPhase = ''
