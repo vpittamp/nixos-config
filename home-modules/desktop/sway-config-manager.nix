@@ -100,21 +100,21 @@ let
                 # Smart output focusing based on workspace number
                 case $WORKSPACE in
                     1|2)
-                        swaymsg "focus output $PRIMARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "focus output $PRIMARY; workspace number $WORKSPACE; mode default"
                         ;;
                     3|4|5)
-                        swaymsg "focus output $SECONDARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "focus output $SECONDARY; workspace number $WORKSPACE; mode default"
                         ;;
                     6|7|8|9)
-                        swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                     *)
                         # Workspaces 10+ go to tertiary display
-                        swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                 esac
             else
-                swaymsg "mode default"
+                ${pkgs.sway}/bin/swaymsg "mode default"
             fi
 
             # Reset state
@@ -124,7 +124,7 @@ let
         escape|clear)
             # Clear state and exit mode
             echo "0" > "$STATE_FILE"
-            swaymsg "mode default"
+            ${pkgs.sway}/bin/swaymsg "mode default"
             ;;
 
         move-enter)
@@ -133,20 +133,20 @@ let
             if [ "$WORKSPACE" != "0" ] && [ -n "$WORKSPACE" ]; then
                 case $WORKSPACE in
                     1|2)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output $PRIMARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $PRIMARY; workspace number $WORKSPACE; mode default"
                         ;;
                     3|4|5)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output $SECONDARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $SECONDARY; workspace number $WORKSPACE; mode default"
                         ;;
                     6|7|8|9)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                     *)
-                        swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
+                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
                         ;;
                 esac
             else
-                swaymsg "mode default"
+                ${pkgs.sway}/bin/swaymsg "mode default"
             fi
 
             # Reset state
