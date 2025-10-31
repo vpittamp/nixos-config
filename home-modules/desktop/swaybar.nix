@@ -44,7 +44,7 @@ in
       statusCommand = "${systemMonitorScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = false;
@@ -72,7 +72,7 @@ in
       statusCommand = "${projectStatusScript} HEADLESS-1";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = true;
@@ -121,7 +121,7 @@ in
       statusCommand = "${systemMonitorScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = false;
@@ -142,7 +142,7 @@ in
       statusCommand = "${projectStatusScript} HEADLESS-2";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = true;
@@ -191,7 +191,7 @@ in
       statusCommand = "${systemMonitorScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = false;
@@ -212,7 +212,7 @@ in
       statusCommand = "${projectStatusScript} HEADLESS-3";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = true;
@@ -262,7 +262,7 @@ in
       statusCommand = "${systemMonitorScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";  # No system tray on top bar
       workspaceButtons = false;  # No workspace buttons on top bar
@@ -283,7 +283,7 @@ in
       statusCommand = "${systemMonitorScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";
       workspaceButtons = false;
@@ -304,7 +304,7 @@ in
       statusCommand = "${projectStatusScript} eDP-1";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "primary";  # System tray on bottom bar
       workspaceButtons = true;  # Workspace buttons on bottom bar
@@ -353,7 +353,7 @@ in
       statusCommand = "${projectStatusScript} HDMI-A-1";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
-        size = 10.0;
+        size = 9.0;
       };
       trayOutput = "none";  # Tray only on primary
       workspaceButtons = true;

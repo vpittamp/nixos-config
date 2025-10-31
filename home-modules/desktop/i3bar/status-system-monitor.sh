@@ -196,6 +196,130 @@ get_load_average() {
     echo "$load"
 }
 
+# Battery status (M1 MacBook Pro)
+get_battery_status() {
+    local battery_path="/sys/class/power_supply/macsmc-battery"
+
+    if [ ! -d "$battery_path" ]; then
+        return  # No battery available
+    fi
+
+    local capacity status
+    capacity=$(cat "$battery_path/capacity" 2>/dev/null || echo "?")
+    status=$(cat "$battery_path/status" 2>/dev/null || echo "Unknown")
+
+    # Choose icon based on charge level and status
+    local icon color
+    if [ "$status" = "Charging" ]; then
+        icon=""  # Charging icon
+        color="$COLOR_GREEN"
+    elif [ "$capacity" -ge 80 ]; then
+        icon=""  # Full battery
+        color="$COLOR_GREEN"
+    elif [ "$capacity" -ge 60 ]; then
+        icon=""  # 3/4 battery
+        color="$COLOR_BLUE"
+    elif [ "$capacity" -ge 40 ]; then
+        icon=""  # 1/2 battery
+        color="$COLOR_YELLOW"
+    elif [ "$capacity" -ge 20 ]; then
+        icon=""  # 1/4 battery
+        color="$COLOR_PEACH"
+    else
+        icon=""  # Low battery
+        color="$COLOR_RED"
+    fi
+
+    echo "${icon} ${capacity}%|${color}"
+}
+
+# WiFi status
+get_wifi_status() {
+    if ! command -v nmcli >/dev/null 2>&1; then
+        return  # nmcli not available
+    fi
+
+    local wifi_info
+    wifi_info=$(nmcli -t -f ACTIVE,SSID,SIGNAL dev wifi 2>/dev/null | grep '^yes' | head -1)
+
+    if [ -z "$wifi_info" ]; then
+        echo " Disconnected|$COLOR_RED"
+        return
+    fi
+
+    local ssid signal color
+    ssid=$(echo "$wifi_info" | cut -d: -f2)
+    signal=$(echo "$wifi_info" | cut -d: -f3)
+
+    # Truncate SSID if too long
+    if [ ${#ssid} -gt 12 ]; then
+        ssid="${ssid:0:12}…"
+    fi
+
+    # Color based on signal strength
+    if [ "$signal" -ge 70 ]; then
+        color="$COLOR_GREEN"
+    elif [ "$signal" -ge 50 ]; then
+        color="$COLOR_YELLOW"
+    else
+        color="$COLOR_PEACH"
+    fi
+
+    echo " ${ssid} ${signal}%|${color}"
+}
+
+# Volume status
+get_volume_status() {
+    if ! command -v pactl >/dev/null 2>&1; then
+        return  # pactl not available
+    fi
+
+    local volume muted
+    volume=$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -oP '\d+%' | head -1 || echo "?")
+    muted=$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -oP '(yes|no)' || echo "no")
+
+    local icon color
+    if [ "$muted" = "yes" ]; then
+        icon=""  # Muted
+        color="$COLOR_RED"
+        volume="MUTE"
+    else
+        icon=""  # Volume icon
+        color="$COLOR_BLUE"
+    fi
+
+    echo "${icon} ${volume}|${color}"
+}
+
+# Bluetooth status
+get_bluetooth_status() {
+    if ! command -v bluetoothctl >/dev/null 2>&1; then
+        return  # bluetoothctl not available
+    fi
+
+    local powered
+    powered=$(bluetoothctl show 2>/dev/null | grep -oP 'Powered: \K(yes|no)')
+
+    if [ "$powered" != "yes" ]; then
+        return  # Bluetooth off, don't show
+    fi
+
+    # Check if any devices are connected
+    local connected
+    connected=$(bluetoothctl devices Connected 2>/dev/null | wc -l)
+
+    local icon color
+    if [ "$connected" -gt 0 ]; then
+        icon=" ${connected}"  # Connected devices count
+        color="$COLOR_BLUE"
+    else
+        icon=""  # On but not connected
+        color="$COLOR_SUBTEXT0"
+    fi
+
+    echo "${icon}|${color}"
+}
+
 # Get current Sway binding mode
 get_mode_indicator() {
     local mode
@@ -248,6 +372,7 @@ EOF
 # Build status line
 build_status_line() {
     local cpu_usage mem_usage disk_usage net_traffic cpu_temp load_avg current_time
+    local battery_status wifi_status volume_status bluetooth_status
     local blocks=()
     local block
 
@@ -257,7 +382,11 @@ build_status_line() {
     net_traffic=$(get_network_traffic)
     cpu_temp=$(get_cpu_temp)
     load_avg=$(get_load_average)
-    current_time=$("$DATE_BIN" '+%a %b %d  %H:%M:%S')
+    current_time=$("$DATE_BIN" '+%a %b %d  %H:%M')  # Shortened time format (removed seconds)
+    battery_status=$(get_battery_status)
+    wifi_status=$(get_wifi_status)
+    volume_status=$(get_volume_status)
+    bluetooth_status=$(get_bluetooth_status)
 
     # Mode indicator (first block - leftmost position, only shown when not in default mode)
     if block=$(get_mode_indicator); then
@@ -272,62 +401,72 @@ build_status_line() {
         fi
     fi
 
-    block=$(cat <<EOF
-{
-  "full_text": "  LOAD ${load_avg}",
-  "color": "$COLOR_BLUE",
-  "name": "load",
-  "separator": false,
-  "separator_block_width": 15
-}
-EOF
-)
-    blocks+=("$block")
-
-    block=$(cat <<EOF
-{
-  "full_text": "  ${mem_usage}",
-  "color": "$COLOR_SAPPHIRE",
-  "name": "memory",
-  "separator": false,
-  "separator_block_width": 15
-}
-EOF
-)
-    blocks+=("$block")
-
-    block=$(cat <<EOF
-{
-  "full_text": "  ${disk_usage}",
-  "color": "$COLOR_SKY",
-  "name": "disk",
-  "separator": false,
-  "separator_block_width": 15
-}
-EOF
-)
-    blocks+=("$block")
-
-    block=$(cat <<EOF
-{
-  "full_text": "  ${net_traffic}",
-  "color": "$COLOR_TEAL",
-  "name": "network",
-  "separator": false,
-  "separator_block_width": 15
-}
-EOF
-)
-    blocks+=("$block")
-
-    if [ -n "$cpu_temp" ]; then
+    # Battery (if available)
+    if [ -n "$battery_status" ]; then
+        local text color
+        text="${battery_status%|*}"
+        color="${battery_status#*|}"
         block=$(cat <<EOF
 {
-  "full_text": "  ${cpu_temp}",
-  "color": "$COLOR_PEACH",
-  "name": "temperature",
+  "full_text": "${text}",
+  "color": "${color}",
+  "name": "battery",
   "separator": false,
-  "separator_block_width": 15
+  "separator_block_width": 12
+}
+EOF
+)
+        blocks+=("$block")
+    fi
+
+    # WiFi (if available)
+    if [ -n "$wifi_status" ]; then
+        local text color
+        text="${wifi_status%|*}"
+        color="${wifi_status#*|}"
+        block=$(cat <<EOF
+{
+  "full_text": "${text}",
+  "color": "${color}",
+  "name": "wifi",
+  "separator": false,
+  "separator_block_width": 12
+}
+EOF
+)
+        blocks+=("$block")
+    fi
+
+    # Volume (if available)
+    if [ -n "$volume_status" ]; then
+        local text color
+        text="${volume_status%|*}"
+        color="${volume_status#*|}"
+        block=$(cat <<EOF
+{
+  "full_text": "${text}",
+  "color": "${color}",
+  "name": "volume",
+  "separator": false,
+  "separator_block_width": 12
+}
+EOF
+)
+        blocks+=("$block")
+    fi
+
+    # Bluetooth (if available and powered on)
+    if [ -n "$bluetooth_status" ]; then
+        local text color
+        text="${bluetooth_status%|*}"
+        color="${bluetooth_status#*|}"
+        block=$(cat <<EOF
+{
+  "full_text": "${text}",
+  "color": "${color}",
+  "name": "bluetooth",
+  "separator": false,
+  "separator_block_width": 12
 }
 EOF
 )
@@ -336,7 +475,31 @@ EOF
 
     block=$(cat <<EOF
 {
-  "full_text": "  ${current_time}",
+  "full_text": " ${load_avg}",
+  "color": "$COLOR_BLUE",
+  "name": "load",
+  "separator": false,
+  "separator_block_width": 12
+}
+EOF
+)
+    blocks+=("$block")
+
+    block=$(cat <<EOF
+{
+  "full_text": " ${mem_usage}",
+  "color": "$COLOR_SAPPHIRE",
+  "name": "memory",
+  "separator": false,
+  "separator_block_width": 12
+}
+EOF
+)
+    blocks+=("$block")
+
+    block=$(cat <<EOF
+{
+  "full_text": " ${current_time}",
   "color": "$COLOR_TEXT",
   "name": "datetime",
   "separator": false,
