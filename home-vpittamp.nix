@@ -26,6 +26,9 @@
     ./home-modules/desktop/walker.nix        # Walker: Modern GTK4 application launcher
     ./home-modules/desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./home-modules/tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
+
+    # Workspace mode wrapper (Feature 042)
+    ./home-modules/tools/i3pm-workspace-mode-wrapper.nix  # Workspace mode IPC wrapper for daemon
   ];
 
   home.username = "vpittamp";
