@@ -1552,6 +1552,12 @@ async def on_mode(
                 event_payload = workspace_mode_manager.create_event("enter")
                 await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
 
+            elif mode_name == "✖ WS":
+                logger.info("Entering workspace kill mode")
+                await workspace_mode_manager.enter_mode("kill")
+                event_payload = workspace_mode_manager.create_event("enter")
+                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+
             elif mode_name == "default":
                 # User exited workspace mode (Escape or successful execution)
                 if workspace_mode_manager.state.active:

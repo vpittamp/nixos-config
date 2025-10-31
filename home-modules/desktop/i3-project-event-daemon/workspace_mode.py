@@ -44,16 +44,16 @@ class WorkspaceModeManager:
         return self._state.mode_type
 
     async def enter_mode(self, mode_type: str) -> None:
-        """Enter workspace mode (goto or move).
+        """Enter workspace mode (goto, move, or kill).
 
         Args:
-            mode_type: "goto" (navigate to workspace) or "move" (move window + follow)
+            mode_type: "goto" (navigate to workspace), "move" (move window + follow), or "kill" (close all windows)
 
         Raises:
-            ValueError: If mode_type is not "goto" or "move"
+            ValueError: If mode_type is not "goto", "move", or "kill"
         """
-        if mode_type not in ("goto", "move"):
-            raise ValueError(f"Invalid mode_type: {mode_type}. Must be 'goto' or 'move'")
+        if mode_type not in ("goto", "move", "kill"):
+            raise ValueError(f"Invalid mode_type: {mode_type}. Must be 'goto', 'move', or 'kill'")
 
         logger.info(f"Entering workspace mode: {mode_type}")
 
@@ -122,17 +122,20 @@ class WorkspaceModeManager:
         workspace = int(self._state.accumulated_digits)
         output = self._get_output_for_workspace(workspace)
 
-        logger.info(f"Executing workspace switch: ws={workspace}, output={output}, mode={self._state.mode_type}")
+        logger.info(f"Executing workspace action: ws={workspace}, output={output}, mode={self._state.mode_type}")
 
         start_time = time.time()
         try:
-            # Execute workspace switch via i3 IPC
+            # Execute workspace action via i3 IPC
             ipc_start = time.time()
             if self._state.mode_type == "goto":
                 await self._i3.command(f"workspace number {workspace}")
             elif self._state.mode_type == "move":
                 # Move container + follow user
                 await self._i3.command(f"move container to workspace number {workspace}; workspace number {workspace}")
+            elif self._state.mode_type == "kill":
+                # Kill all windows in the workspace
+                await self._kill_workspace_windows(workspace)
             ipc_elapsed_ms = (time.time() - ipc_start) * 1000
 
             # NOTE: Removed explicit "focus output" command (Feature 042 fix)
@@ -145,7 +148,8 @@ class WorkspaceModeManager:
             await self._i3.command("mode default")
 
             total_elapsed_ms = (time.time() - start_time) * 1000
-            logger.info(f"Workspace switch successful: ws={workspace}, output={output} (took {total_elapsed_ms:.2f}ms)")
+            action = "killed" if self._state.mode_type == "kill" else "switched"
+            logger.info(f"Workspace action successful: ws={workspace}, action={action} (took {total_elapsed_ms:.2f}ms)")
 
             # Record history (Feature 042: US4)
             await self._record_switch(workspace, output, self._state.mode_type)
@@ -269,13 +273,58 @@ class WorkspaceModeManager:
         else:
             return self._state.output_cache.get("TERTIARY", "eDP-1")
 
+    async def _kill_workspace_windows(self, workspace: int) -> None:
+        """Kill all windows in the specified workspace.
+
+        Args:
+            workspace: Workspace number to clear
+        """
+        try:
+            # Get the workspace tree
+            tree = await self._i3.get_tree()
+
+            # Find all windows in the target workspace
+            window_ids = []
+            for node in tree:
+                if hasattr(node, 'type') and node.type == 'workspace' and hasattr(node, 'num') and node.num == workspace:
+                    # Recursively find all window nodes
+                    def find_windows(n):
+                        if hasattr(n, 'pid') and n.pid:
+                            window_ids.append(n.id)
+                        if hasattr(n, 'nodes'):
+                            for child in n.nodes:
+                                find_windows(child)
+                        if hasattr(n, 'floating_nodes'):
+                            for child in n.floating_nodes:
+                                find_windows(child)
+                    find_windows(node)
+                    break
+
+            if not window_ids:
+                logger.info(f"No windows found in workspace {workspace}")
+                return
+
+            logger.info(f"Killing {len(window_ids)} window(s) in workspace {workspace}")
+
+            # Kill all windows gracefully
+            for window_id in window_ids:
+                try:
+                    await self._i3.command(f"[con_id={window_id}] kill")
+                    logger.debug(f"Killed window {window_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to kill window {window_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error killing workspace windows: {e}")
+            raise
+
     async def _record_switch(self, workspace: int, output: str, mode_type: str) -> None:
         """Record workspace switch in history.
 
         Args:
             workspace: Workspace number switched to
             output: Output name focused
-            mode_type: "goto" or "move"
+            mode_type: "goto", "move", or "kill"
         """
         switch = WorkspaceSwitch(
             workspace_number=workspace,

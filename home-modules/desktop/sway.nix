@@ -472,18 +472,36 @@ in
           bindsym Escape exec i3pm-workspace-mode cancel
       }
 
+      mode "✖ WS" {
+          bindsym 0 exec i3pm-workspace-mode digit 0
+          bindsym 1 exec i3pm-workspace-mode digit 1
+          bindsym 2 exec i3pm-workspace-mode digit 2
+          bindsym 3 exec i3pm-workspace-mode digit 3
+          bindsym 4 exec i3pm-workspace-mode digit 4
+          bindsym 5 exec i3pm-workspace-mode digit 5
+          bindsym 6 exec i3pm-workspace-mode digit 6
+          bindsym 7 exec i3pm-workspace-mode digit 7
+          bindsym 8 exec i3pm-workspace-mode digit 8
+          bindsym 9 exec i3pm-workspace-mode digit 9
+          bindsym Return exec i3pm-workspace-mode execute
+          bindsym KP_Enter exec i3pm-workspace-mode execute
+          bindsym Escape exec i3pm-workspace-mode cancel
+      }
+
       # Platform-conditional workspace mode keybindings
       ${if isHeadless then ''
         # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
         # Sway will automatically send mode events to daemon when entering these modes
         bindsym Control+0 mode "→ WS"
         bindsym Control+Shift+0 mode "⇒ WS"
+        bindsym Control+Mod1+0 mode "✖ WS"
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
         bindcode --release 66 mode "→ WS"
         bindcode --release Shift+66 mode "⇒ WS"
+        bindcode --release Control+66 mode "✖ WS"
       ''}
     '';
   };
