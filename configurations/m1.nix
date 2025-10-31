@@ -318,8 +318,9 @@
     imagemagick # For converting and manipulating images
     librsvg # For SVG to PNG conversion
 
-    # Remote access (rustdesk-flutter managed by service module)
+    # Remote access
     tailscale         # Zero-config VPN
+    tigervnc          # VNC client for remote desktop access
   ];
 
   # Firefox configuration with PWA support (same as Hetzner)

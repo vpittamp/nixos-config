@@ -292,6 +292,22 @@ let
       fallback_behavior = "use_home";
       description = "Ghostty terminal (backup option)";
     })
+
+    # WS13: TigerVNC Viewer (VNC client for remote desktop)
+    (mkApp {
+      name = "tigervnc";
+      display_name = "TigerVNC Viewer";
+      command = "vncviewer";
+      parameters = "";
+      scope = "global";
+      expected_class = "Vncviewer";
+      preferred_workspace = 13;
+      icon = "preferences-desktop-remote-desktop";
+      nix_package = "pkgs.tigervnc";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "VNC client for remote desktop access";
+    })
   ];
 
   # Additional validation: check for duplicate names
