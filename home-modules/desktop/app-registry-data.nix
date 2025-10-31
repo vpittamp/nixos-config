@@ -293,20 +293,66 @@ let
       description = "Ghostty terminal (backup option)";
     })
 
-    # WS13: TigerVNC Viewer (VNC client for remote desktop)
+    # WS14: TigerVNC Viewer (generic VNC client)
     (mkApp {
       name = "tigervnc";
       display_name = "TigerVNC Viewer";
       command = "vncviewer";
-      parameters = "";
+      parameters = "-Scale=Auto";
       scope = "global";
       expected_class = "Vncviewer";
-      preferred_workspace = 13;
+      preferred_workspace = 14;
       icon = "preferences-desktop-remote-desktop";
       nix_package = "pkgs.tigervnc";
       multi_instance = true;
       fallback_behavior = "skip";
-      description = "VNC client for remote desktop access";
+      description = "VNC client with auto-scaling";
+    })
+
+    # WS15-17: Hetzner Cloud VNC Displays (pre-configured connections)
+    (mkApp {
+      name = "hetzner-display-1";
+      display_name = "Hetzner Display 1";
+      command = "vncviewer";
+      parameters = "-Scale=Auto 100.87.204.44:5900";
+      scope = "global";
+      expected_class = "Vncviewer";
+      preferred_workspace = 15;
+      icon = "preferences-desktop-remote-desktop";
+      nix_package = "pkgs.tigervnc";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "Hetzner VNC Display 1 (Workspaces 1-2)";
+    })
+
+    (mkApp {
+      name = "hetzner-display-2";
+      display_name = "Hetzner Display 2";
+      command = "vncviewer";
+      parameters = "-Scale=Auto 100.87.204.44:5901";
+      scope = "global";
+      expected_class = "Vncviewer";
+      preferred_workspace = 16;
+      icon = "preferences-desktop-remote-desktop";
+      nix_package = "pkgs.tigervnc";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "Hetzner VNC Display 2 (Workspaces 3-5)";
+    })
+
+    (mkApp {
+      name = "hetzner-display-3";
+      display_name = "Hetzner Display 3";
+      command = "vncviewer";
+      parameters = "-Scale=Auto 100.87.204.44:5902";
+      scope = "global";
+      expected_class = "Vncviewer";
+      preferred_workspace = 17;
+      icon = "preferences-desktop-remote-desktop";
+      nix_package = "pkgs.tigervnc";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "Hetzner VNC Display 3 (Workspaces 6-9)";
     })
   ];
 
