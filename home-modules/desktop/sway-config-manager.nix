@@ -1,17 +1,12 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, sharedPythonEnv, ... }:
 
 with lib;
 
 let
   cfg = config.programs.sway-config-manager;
 
-  # Python environment with required packages
-  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-    i3ipc        # i3/Sway IPC library
-    pydantic     # Data validation
-    jsonschema   # JSON schema validation
-    watchdog     # File system monitoring
-  ]);
+  # Note: Python environment is provided by python-environment.nix (shared environment)
+  # sharedPythonEnv = sharedPythonEnv;  # No longer needed - use sharedPythonEnv directly
 
   # Daemon source directory
   daemonSrc = ./sway-config-manager;
@@ -33,7 +28,7 @@ let
     export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:''${PYTHONPATH}"
     export PYTHONUNBUFFERED=1
     cd ~
-    exec ${pythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
+    exec ${sharedPythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
   '';
 
   # Default keybindings file (external TOML file for easier maintenance)
@@ -41,178 +36,59 @@ let
 
   defaultAppearancePath = ./sway-default-appearance.json;
 
-  workspaceModeHandlerScript = ''
-    #!/usr/bin/env bash
-    # Workspace Mode Handler - Accumulates digits and provides visual feedback
-    # Usage: workspace-mode-handler.sh <digit|enter|escape>
-    # State file: /tmp/sway-workspace-mode-state
-
-    set -euo pipefail
-
-    STATE_FILE="/tmp/sway-workspace-mode-state"
-    ACTION="''${1:-}"
-
-    # Dynamically detect available outputs
-    OUTPUTS=($(${pkgs.sway}/bin/swaymsg -t get_outputs | ${pkgs.jq}/bin/jq -r '.[].name' | sort))
-    OUTPUT_COUNT=''${#OUTPUTS[@]}
-
-    # Validate we have outputs
-    if [ "$OUTPUT_COUNT" -eq 0 ]; then
-        echo "ERROR: No outputs detected. Cannot configure workspace mode." >&2
-        exit 1
-    fi
-
-    # Assign outputs dynamically based on count
-    # For 1 output: PRIMARY=output1
-    # For 2 outputs: PRIMARY=output1, SECONDARY=output2
-    # For 3+ outputs: PRIMARY=output1, SECONDARY=output2, TERTIARY=output3
-    PRIMARY="''${OUTPUTS[0]}"
-    SECONDARY="''${OUTPUTS[1]:-$PRIMARY}"  # Default to PRIMARY if only 1 output
-    TERTIARY="''${OUTPUTS[2]:-$SECONDARY}"  # Default to SECONDARY if only 2 outputs
-
-    # Initialize state file if it doesn't exist
-    if [ ! -f "$STATE_FILE" ]; then
-        echo "0" > "$STATE_FILE"
-
-    fi
-
-    case "$ACTION" in
-        [0-9])
-            # Append digit to current number
-            CURRENT=''$(cat "$STATE_FILE")
-            if [ "$CURRENT" = "0" ]; then
-                NEW="$ACTION"
-            else
-                NEW="''${CURRENT}''${ACTION}"
-            fi
-            echo "$NEW" > "$STATE_FILE"
-
-            # Update mode name to show current digits
-            # Note: We'll use notify-send for visual feedback since mode names are static
-            # Increased timeout to 2000ms (2 seconds) for better visibility
-            notify-send -t 2000 -u normal "Workspace Mode" "→ $NEW"
-            ;;
-
-        enter)
-            # Execute workspace switch
-            WORKSPACE=''$(cat "$STATE_FILE")
-            if [ "$WORKSPACE" != "0" ] && [ -n "$WORKSPACE" ]; then
-                # Smart output focusing based on workspace number
-                case $WORKSPACE in
-                    1|2)
-                        ${pkgs.sway}/bin/swaymsg "focus output $PRIMARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    3|4|5)
-                        ${pkgs.sway}/bin/swaymsg "focus output $SECONDARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    6|7|8|9)
-                        ${pkgs.sway}/bin/swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    *)
-                        # Workspaces 10+ go to tertiary display
-                        ${pkgs.sway}/bin/swaymsg "focus output $TERTIARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                esac
-            else
-                ${pkgs.sway}/bin/swaymsg "mode default"
-            fi
-
-            # Reset state
-            echo "0" > "$STATE_FILE"
-            ;;
-
-        escape|clear)
-            # Clear state and exit mode
-            echo "0" > "$STATE_FILE"
-            ${pkgs.sway}/bin/swaymsg "mode default"
-            ;;
-
-        move-enter)
-            # Move window to workspace
-            WORKSPACE=''$(cat "$STATE_FILE")
-            if [ "$WORKSPACE" != "0" ] && [ -n "$WORKSPACE" ]; then
-                case $WORKSPACE in
-                    1|2)
-                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $PRIMARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    3|4|5)
-                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $SECONDARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    6|7|8|9)
-                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                    *)
-                        ${pkgs.sway}/bin/swaymsg "move container to workspace number $WORKSPACE; focus output $TERTIARY; workspace number $WORKSPACE; mode default"
-                        ;;
-                esac
-            else
-                ${pkgs.sway}/bin/swaymsg "mode default"
-            fi
-
-            # Reset state
-            echo "0" > "$STATE_FILE"
-            ;;
-
-        get-state)
-            # For status bar to read current state
-            cat "$STATE_FILE"
-            ;;
-
-        *)
-            echo "Unknown action: $ACTION" >&2
-            exit 1
-            ;;
-    esac
-  '';
+  # Legacy workspace mode handler removed (Feature 042)
+  # Workspace mode now uses daemon IPC via i3pm CLI commands
+  # See modesConfContents below for new implementation
 
   modesConfContents = ''
     # Sway Modes Configuration
-    # Workspace navigation modes with visual feedback
+    # Feature 042: Event-Driven Workspace Mode Navigation
+    # Digit accumulation and workspace switching via daemon IPC
 
     # Goto workspace mode - Type digits to switch workspace
-    mode "goto_workspace" {
-        # Digit input
-        bindsym 0 exec ~/.config/sway/scripts/workspace-mode-handler.sh 0
-        bindsym 1 exec ~/.config/sway/scripts/workspace-mode-handler.sh 1
-        bindsym 2 exec ~/.config/sway/scripts/workspace-mode-handler.sh 2
-        bindsym 3 exec ~/.config/sway/scripts/workspace-mode-handler.sh 3
-        bindsym 4 exec ~/.config/sway/scripts/workspace-mode-handler.sh 4
-        bindsym 5 exec ~/.config/sway/scripts/workspace-mode-handler.sh 5
-        bindsym 6 exec ~/.config/sway/scripts/workspace-mode-handler.sh 6
-        bindsym 7 exec ~/.config/sway/scripts/workspace-mode-handler.sh 7
-        bindsym 8 exec ~/.config/sway/scripts/workspace-mode-handler.sh 8
-        bindsym 9 exec ~/.config/sway/scripts/workspace-mode-handler.sh 9
+    # Feature 042 - T035: Pango markup for native mode indicator
+    mode "→ WS" {
+        # Digit input (calls daemon via i3pm CLI)
+        bindsym 0 exec i3pm-workspace-mode digit 0
+        bindsym 1 exec i3pm-workspace-mode digit 1
+        bindsym 2 exec i3pm-workspace-mode digit 2
+        bindsym 3 exec i3pm-workspace-mode digit 3
+        bindsym 4 exec i3pm-workspace-mode digit 4
+        bindsym 5 exec i3pm-workspace-mode digit 5
+        bindsym 6 exec i3pm-workspace-mode digit 6
+        bindsym 7 exec i3pm-workspace-mode digit 7
+        bindsym 8 exec i3pm-workspace-mode digit 8
+        bindsym 9 exec i3pm-workspace-mode digit 9
 
-        # Execute switch
-        bindsym Return exec ~/.config/sway/scripts/workspace-mode-handler.sh enter
-        bindsym KP_Enter exec ~/.config/sway/scripts/workspace-mode-handler.sh enter
+        # Execute switch (daemon handles workspace switch + output focus + mode exit)
+        bindsym Return exec i3pm-workspace-mode execute
+        bindsym KP_Enter exec i3pm-workspace-mode execute
 
-        # Cancel/clear
-        bindsym Escape exec ~/.config/sway/scripts/workspace-mode-handler.sh escape
-        bindsym BackSpace exec ~/.config/sway/scripts/workspace-mode-handler.sh clear
+        # Cancel/exit mode
+        bindsym Escape exec i3pm-workspace-mode cancel
     }
 
     # Move window to workspace mode - Type digits to move window
-    mode "move_workspace" {
-        # Digit input
-        bindsym 0 exec ~/.config/sway/scripts/workspace-mode-handler.sh 0
-        bindsym 1 exec ~/.config/sway/scripts/workspace-mode-handler.sh 1
-        bindsym 2 exec ~/.config/sway/scripts/workspace-mode-handler.sh 2
-        bindsym 3 exec ~/.config/sway/scripts/workspace-mode-handler.sh 3
-        bindsym 4 exec ~/.config/sway/scripts/workspace-mode-handler.sh 4
-        bindsym 5 exec ~/.config/sway/scripts/workspace-mode-handler.sh 5
-        bindsym 6 exec ~/.config/sway/scripts/workspace-mode-handler.sh 6
-        bindsym 7 exec ~/.config/sway/scripts/workspace-mode-handler.sh 7
-        bindsym 8 exec ~/.config/sway/scripts/workspace-mode-handler.sh 8
-        bindsym 9 exec ~/.config/sway/scripts/workspace-mode-handler.sh 9
+    # Feature 042 - T035: Pango markup for native mode indicator
+    mode "⇒ WS" {
+        # Digit input (shared accumulation state with goto mode)
+        bindsym 0 exec i3pm-workspace-mode digit 0
+        bindsym 1 exec i3pm-workspace-mode digit 1
+        bindsym 2 exec i3pm-workspace-mode digit 2
+        bindsym 3 exec i3pm-workspace-mode digit 3
+        bindsym 4 exec i3pm-workspace-mode digit 4
+        bindsym 5 exec i3pm-workspace-mode digit 5
+        bindsym 6 exec i3pm-workspace-mode digit 6
+        bindsym 7 exec i3pm-workspace-mode digit 7
+        bindsym 8 exec i3pm-workspace-mode digit 8
+        bindsym 9 exec i3pm-workspace-mode digit 9
 
-        # Execute move
-        bindsym Return exec ~/.config/sway/scripts/workspace-mode-handler.sh move-enter
-        bindsym KP_Enter exec ~/.config/sway/scripts/workspace-mode-handler.sh move-enter
+        # Execute move (daemon handles move + follow + output focus + mode exit)
+        bindsym Return exec i3pm-workspace-mode execute
+        bindsym KP_Enter exec i3pm-workspace-mode execute
 
-        # Cancel/clear
-        bindsym Escape exec ~/.config/sway/scripts/workspace-mode-handler.sh escape
-        bindsym BackSpace exec ~/.config/sway/scripts/workspace-mode-handler.sh clear
+        # Cancel/exit mode
+        bindsym Escape exec i3pm-workspace-mode cancel
     }
   '';
 
@@ -423,11 +299,8 @@ in {
         executable = true;
       };
 
-      # Workspace mode handler script
-      ".config/sway/scripts/workspace-mode-handler.sh" = {
-        text = workspaceModeHandlerScript;
-        executable = true;
-      };
+      # Legacy workspace mode handler removed (Feature 042)
+      # Workspace mode now uses daemon IPC via i3pm CLI commands
 
       # Workspace modes configuration
       ".config/sway/modes.conf" = {
@@ -456,13 +329,13 @@ in {
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
         export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-        exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
+        exec ${sharedPythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
 
       # Configuration migration tool (Feature 047 Phase 8 T065)
       (pkgs.writeShellScriptBin "swayconfig-migrate" ''
         export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-        exec ${pythonEnv}/bin/python ${./sway-config-manager/migrate_config.py} "$@"
+        exec ${sharedPythonEnv}/bin/python ${./sway-config-manager/migrate_config.py} "$@"
       '')
     ];
 
@@ -546,7 +419,7 @@ in {
         Type = "oneshot";
         ExecStart = "${pkgs.writeShellScript "sway-config-validate" ''
           export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-          ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} validate
+          ${sharedPythonEnv}/bin/python ${./sway-config-manager/cli.py} validate
         ''}";
         # Send desktop notification on failure
         ExecStopPost = "${pkgs.writeShellScript "validation-notify" ''

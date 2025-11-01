@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.3.2";  # Feature 049: Fix workspace assignment IPC command (add quotes)
+    version = "1.4.4";  # Feature 042: Remove explicit output focusing (Sway auto-focuses correct output on workspace switch)
     src = daemonSrc;
 
     installPhase = ''

@@ -97,6 +97,11 @@ in
       # Basic terminal features
       set -as terminal-features ",*:RGB"
 
+      # Cursor settings - enable blinking cursor for active pane visibility
+      # Ss/Se enables cursor shape changes, blinking cursor makes active pane obvious
+      set -ga terminal-overrides ',*:Ss=\E[%p1%d q:Se=\E[2 q'
+      set -ga terminal-overrides ',*:Cs=\E]12;%p1%s\007:Cr=\E]112\007'
+
       # Pane settings
       set -g pane-base-index 0
       set -g renumber-windows on

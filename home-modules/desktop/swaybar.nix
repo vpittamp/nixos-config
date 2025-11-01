@@ -1,7 +1,7 @@
 # Swaybar Configuration with Event-Driven Status Updates
 # Dual bars: Top bar for system monitoring, bottom bar for project context
 # Parallel to i3bar.nix - adapted for Sway on M1 MacBook Pro
-{ config, lib, pkgs, osConfig ? null, ... }:
+{ config, lib, pkgs, osConfig ? null, sharedPythonEnv, ... }:
 
 let
   # Detect headless Sway configuration (Feature 046)
@@ -21,7 +21,17 @@ let
       (builtins.readFile ./i3bar/status-event-driven.sh)
   );
 
-  # Top bar: System monitoring script (polling every 2 seconds)
+  # Top bar: Enhanced system status (Feature 052)
+  # Uses Python-based status generator with D-Bus integration
+  # Falls back to legacy shell script if swaybar-enhanced is disabled
+  # Note: Uses shared Python environment from python-environment.nix
+  enhancedStatusScript = pkgs.writeShellScript "swaybar-enhanced-status" ''
+    export GI_TYPELIB_PATH="${pkgs.glib.out}/lib/girepository-1.0:${pkgs.gobject-introspection}/lib/girepository-1.0"
+    exec ${sharedPythonEnv}/bin/python \
+      ${config.xdg.configHome}/sway/swaybar/status-generator.py
+  '';
+
+  # Legacy top bar: System monitoring script (polling every 2 seconds)
   # Reuses existing i3bar script (protocol-compatible with Sway)
   systemMonitorScript = pkgs.writeShellScript "swaybar-status-system-monitor" (
     builtins.replaceStrings
@@ -29,6 +39,11 @@ let
       [ "${pkgs.coreutils}/bin/date" "${pkgs.gnugrep}/bin/grep" "${pkgs.gawk}/bin/awk" "${pkgs.gnused}/bin/sed" ]
       (builtins.readFile ./i3bar/status-system-monitor.sh)
   );
+
+  # Select status script based on swaybar-enhanced enablement
+  topBarStatusScript = if (config.programs.swaybar-enhanced.enable or false)
+    then enhancedStatusScript
+    else systemMonitorScript;
 in
 {
   # Swaybar configuration via home-manager
@@ -38,10 +53,10 @@ in
     # Each VNC connection shows one output with its own bars
     # Top bar: System monitoring, Bottom bar: Project context + workspaces
 
-    # Monitor 1 (HEADLESS-1) - Top bar: System monitoring
+    # Monitor 1 (HEADLESS-1) - Top bar: Enhanced system status (Feature 052)
     {
       position = "top";
-      statusCommand = "${systemMonitorScript}";
+      statusCommand = "${topBarStatusScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
@@ -52,10 +67,17 @@ in
         background = "#1e1e2e";
         statusline = "#cdd6f4";
         separator = "#6c7086";
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-1
         separator_symbol " | "
+        binding_mode_indicator yes
       '';
     }
 
@@ -93,18 +115,25 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
-    # Monitor 2 (HEADLESS-2) - Top bar: System monitoring
+    # Monitor 2 (HEADLESS-2) - Top bar: Enhanced system status (Feature 052)
     {
       position = "top";
-      statusCommand = "${systemMonitorScript}";
+      statusCommand = "${topBarStatusScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
@@ -156,18 +185,25 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-2
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
-    # Monitor 3 (HEADLESS-3) - Top bar: System monitoring
+    # Monitor 3 (HEADLESS-3) - Top bar: Enhanced system status (Feature 052)
     {
       position = "top";
-      statusCommand = "${systemMonitorScript}";
+      statusCommand = "${topBarStatusScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
@@ -219,19 +255,26 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HEADLESS-3
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
   ] else [
     # M1 MacBook mode: Dual bars on two outputs
-    # Top bar: System monitoring (eDP-1 - built-in Retina display)
+    # Top bar: Enhanced system status (Feature 052) - eDP-1 (built-in Retina display)
     {
       position = "top";
-      statusCommand = "${systemMonitorScript}";
+      statusCommand = "${topBarStatusScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
@@ -249,10 +292,10 @@ in
       '';
     }
 
-    # Top bar: System monitoring (HDMI-A-1 - external monitor)
+    # Top bar: Enhanced system status (Feature 052) - HDMI-A-1 (external monitor)
     {
       position = "top";
-      statusCommand = "${systemMonitorScript}";
+      statusCommand = "${topBarStatusScript}";
       fonts = {
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
@@ -304,11 +347,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output eDP-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
 
@@ -346,11 +396,18 @@ in
           border = "#f38ba8";
           text = "#1e1e2e";
         };
+        # Catppuccin Mocha theme for mode indicator (Feature 042 - T034)
+        bindingMode = {
+          background = "#313244";  # surface0
+          border = "#a6e3a1";      # green
+          text = "#cdd6f4";        # text
+        };
       };
       extraConfig = ''
         output HDMI-A-1
         separator_symbol " | "
         strip_workspace_numbers no
+        binding_mode_indicator yes
       '';
     }
   ];
