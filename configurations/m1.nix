@@ -285,6 +285,21 @@
   # Add user to required groups for Wayland/Sway (video for DRM access, seat for seatd)
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" ];
 
+  # Bluetooth support
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;  # Power on bluetooth controller on boot
+    settings = {
+      General = {
+        Enable = "Source,Sink,Media,Socket";
+        Experimental = true;  # Enable experimental features (better device support)
+      };
+    };
+  };
+
+  # Bluetooth manager GUI
+  services.blueman.enable = true;
+
   # Disable X11-specific services (migrated to Sway/Wayland - Feature 045)
   services.xrdp.enable = lib.mkForce false; # RDP replaced with wayvnc for Wayland
   services.touchegg.enable = lib.mkForce false; # Sway has native Wayland gestures

@@ -10,8 +10,10 @@
     ./profiles/declarative-cleanup.nix
 
     # Desktop Environment: Sway (Wayland)
+    ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with HiDPI support
     ./desktop/swaybar.nix      # Swaybar with event-driven status
+    ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
@@ -25,6 +27,7 @@
     ./desktop/walker.nix        # Feature 043: Walker/Elephant launcher (works with Wayland)
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
+    ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
   ];
 
   home.username = "vpittamp";
@@ -46,5 +49,13 @@
     enable = true;
     enableFileWatcher = true;  # Auto-reload on file changes
     debounceMs = 500;  # Wait 500ms after last change before reloading
+  };
+
+  # Feature 052: Enhanced Swaybar Status
+  programs.swaybar-enhanced = {
+    enable = true;
+    # Uses default Catppuccin Mocha theme and standard update intervals
+    # Bluetooth status block enabled with click handler to open Blueman Manager
+    detectBluetooth = true;
   };
 }

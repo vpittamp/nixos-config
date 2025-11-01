@@ -27,6 +27,7 @@
     ./desktop/walker.nix        # Feature 043: Walker/Elephant launcher (works with software rendering)
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
+    ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
   ];
 
   home.username = "vpittamp";

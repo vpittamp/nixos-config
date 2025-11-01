@@ -71,6 +71,7 @@ in {
         network = "${pkgs.networkmanagerapplet}/bin/nm-connection-editor";
         bluetooth = "${pkgs.blueman}/bin/blueman-manager";
         battery = "";  # No default handler
+        calendar = "${pkgs.gnome-calendar}/bin/gnome-calendar";
       };
       description = "Click handler commands for status blocks";
     };
@@ -100,6 +101,7 @@ in {
       pavucontrol         # Volume mixer
       networkmanagerapplet  # Network manager GUI
       blueman             # Bluetooth manager
+      gnome-calendar      # Calendar application
     ];
 
     # Install status generator script and modules

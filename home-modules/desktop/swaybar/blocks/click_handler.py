@@ -36,6 +36,8 @@ class ClickHandler:
             self._handle_bluetooth_click(event)
         elif event.name == "battery":
             self._handle_battery_click(event)
+        elif event.name == "datetime":
+            self._handle_datetime_click(event)
         else:
             logger.warning(f"Unknown block name: {event.name}")
 
@@ -76,6 +78,16 @@ class ClickHandler:
         """
         if event.button == MouseButton.LEFT and self.config.click_handlers.battery:
             self._launch_command(self.config.click_handlers.battery)
+
+    def _handle_datetime_click(self, event: ClickEvent) -> None:
+        """Handle datetime block clicks.
+
+        - Left click: Launch calendar application
+        """
+        if event.button == MouseButton.LEFT:
+            calendar_cmd = getattr(self.config.click_handlers, 'calendar', None)
+            if calendar_cmd:
+                self._launch_command(calendar_cmd)
 
     def _launch_command(self, command: str) -> None:
         """Launch external command in detached subprocess.

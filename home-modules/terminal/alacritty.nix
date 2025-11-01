@@ -24,7 +24,7 @@
           family = "FiraCode Nerd Font";
           style = "Italic";
         };
-        size = 12.0;
+        size = 9.0;
       };
 
       # Window configuration (FR-062)

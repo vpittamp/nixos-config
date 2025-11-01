@@ -5,29 +5,33 @@
 
 [keybindings]
 # ========== WORKSPACE NAVIGATION ==========
+# Workspace overview - show schematic layout of all workspaces
+"Mod+Tab" = { command = "exec echo 1 > /tmp/sovpipe", description = "Show workspace overview" }
+"Mod+Shift+Tab" = { command = "exec echo 0 > /tmp/sovpipe", description = "Hide workspace overview" }
+
 # Focus workspace by number (1-10)
-"Mod+1" = { command = "workspace number 1", description = "Focus workspace 1" }
-"Mod+2" = { command = "workspace number 2", description = "Focus workspace 2" }
-"Mod+3" = { command = "workspace number 3", description = "Focus workspace 3" }
-"Mod+4" = { command = "workspace number 4", description = "Focus workspace 4" }
-"Mod+5" = { command = "workspace number 5", description = "Focus workspace 5" }
-"Mod+6" = { command = "workspace number 6", description = "Focus workspace 6" }
-"Mod+7" = { command = "workspace number 7", description = "Focus workspace 7" }
-"Mod+8" = { command = "workspace number 8", description = "Focus workspace 8" }
-"Mod+9" = { command = "workspace number 9", description = "Focus workspace 9" }
-"Mod+0" = { command = "workspace number 10", description = "Focus workspace 10" }
+"Mod+1" = { command = "workspace number 1; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 1" }
+"Mod+2" = { command = "workspace number 2; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 2" }
+"Mod+3" = { command = "workspace number 3; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 3" }
+"Mod+4" = { command = "workspace number 4; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 4" }
+"Mod+5" = { command = "workspace number 5; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 5" }
+"Mod+6" = { command = "workspace number 6; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 6" }
+"Mod+7" = { command = "workspace number 7; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 7" }
+"Mod+8" = { command = "workspace number 8; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 8" }
+"Mod+9" = { command = "workspace number 9; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 9" }
+"Mod+0" = { command = "workspace number 10; exec echo 0 > /tmp/sovpipe", description = "Focus workspace 10" }
 
 # Move window to workspace (1-10)
-"Mod+Shift+1" = { command = "move container to workspace number 1", description = "Move window to workspace 1" }
-"Mod+Shift+2" = { command = "move container to workspace number 2", description = "Move window to workspace 2" }
-"Mod+Shift+3" = { command = "move container to workspace number 3", description = "Move window to workspace 3" }
-"Mod+Shift+4" = { command = "move container to workspace number 4", description = "Move window to workspace 4" }
-"Mod+Shift+5" = { command = "move container to workspace number 5", description = "Move window to workspace 5" }
-"Mod+Shift+6" = { command = "move container to workspace number 6", description = "Move window to workspace 6" }
-"Mod+Shift+7" = { command = "move container to workspace number 7", description = "Move window to workspace 7" }
-"Mod+Shift+8" = { command = "move container to workspace number 8", description = "Move window to workspace 8" }
-"Mod+Shift+9" = { command = "move container to workspace number 9", description = "Move window to workspace 9" }
-"Mod+Shift+0" = { command = "move container to workspace number 10", description = "Move window to workspace 10" }
+"Mod+Shift+1" = { command = "move container to workspace number 1; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 1" }
+"Mod+Shift+2" = { command = "move container to workspace number 2; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 2" }
+"Mod+Shift+3" = { command = "move container to workspace number 3; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 3" }
+"Mod+Shift+4" = { command = "move container to workspace number 4; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 4" }
+"Mod+Shift+5" = { command = "move container to workspace number 5; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 5" }
+"Mod+Shift+6" = { command = "move container to workspace number 6; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 6" }
+"Mod+Shift+7" = { command = "move container to workspace number 7; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 7" }
+"Mod+Shift+8" = { command = "move container to workspace number 8; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 8" }
+"Mod+Shift+9" = { command = "move container to workspace number 9; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 9" }
+"Mod+Shift+0" = { command = "move container to workspace number 10; exec echo 0 > /tmp/sovpipe", description = "Move window to workspace 10" }
 
 # Workspace mode - Type digits to navigate to any workspace
 # Mod+semicolon is the primary binding

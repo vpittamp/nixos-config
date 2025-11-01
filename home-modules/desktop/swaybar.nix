@@ -272,6 +272,7 @@ in
   ] else [
     # M1 MacBook mode: Dual bars on two outputs
     # Top bar: Enhanced system status (Feature 052) - eDP-1 (built-in Retina display)
+    # Note: Font size 10.0 for HiDPI Retina display (2x scaling = effective 20.0)
     {
       position = "top";
       statusCommand = "${topBarStatusScript}";
@@ -321,7 +322,7 @@ in
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
       };
-      trayOutput = "primary";  # System tray on bottom bar
+      trayOutput = "eDP-1";  # System tray on bottom bar (M1 built-in display)
       workspaceButtons = true;  # Workspace buttons on bottom bar
       colors = {
         background = "#1e1e2e";

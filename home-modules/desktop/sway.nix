@@ -369,6 +369,30 @@ in
           criteria = { instance = "fzf-launcher"; };
           command = "floating enable, border pixel 0, move position center, mark _global_ui";
         }
+
+        # Blueman Bluetooth Manager - floating window
+        {
+          criteria = { app_id = ".blueman-manager-wrapped"; };
+          command = "floating enable";
+        }
+
+        # PulseAudio Volume Control - floating window
+        {
+          criteria = { app_id = "pavucontrol"; };
+          command = "floating enable";
+        }
+
+        # Network Manager Connection Editor - floating window
+        {
+          criteria = { app_id = "nm-connection-editor"; };
+          command = "floating enable";
+        }
+
+        # GNOME Calendar - floating window
+        {
+          criteria = { app_id = "org.gnome.Calendar"; };
+          command = "floating enable";
+        }
       ];
 
       # Startup commands (FR-015)
@@ -384,6 +408,9 @@ in
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
+
+        # sov workspace overview daemon
+        { command = "systemctl --user start sov"; }
       ];
 
       # Bar configuration will be provided by swaybar.nix
@@ -423,16 +450,25 @@ in
       # container = cursor moves to center of container when switching focus
       mouse_warping none
 
-      # Workspace names with icons
-      set $ws1 "1: terminal "
-      set $ws2 "2: code "
-      set $ws3 "3: firefox "
-      set $ws4 "4: youtube "
-      set $ws5 "5: files "
-      set $ws6 "6: k8s "
-      set $ws7 "7: git "
-      set $ws8 "8: ai "
-      set $ws9 "9 "
+      # Workspace names - numbers only for clean display
+      set $ws1 "1"
+      set $ws2 "2"
+      set $ws3 "3"
+      set $ws4 "4"
+      set $ws5 "5"
+      set $ws6 "6"
+      set $ws7 "7"
+      set $ws8 "8"
+      set $ws9 "9"
+
+      # PWA Workspace Assignments (from app-registry-data.nix)
+      # PLATFORM-SPECIFIC: These app_ids are system-generated and differ between hosts
+      # M1 system - update IDs for hetzner-sway separately
+      # YouTube → WS 4, Google AI → WS 10, ChatGPT → WS 11, GitHub Codespaces → WS 2
+      assign [app_id="^FFPWA-01K663E3K8FMGTFVQ6Z6Q2RX7X$"] workspace number 4
+      assign [app_id="^FFPWA-01K664F9E8KXZPXYF4V1Q8A93V$"] workspace number 10
+      assign [app_id="^FFPWA-01K78K7ZQ1190KKGYZ6WJ0HDWX$"] workspace number 11
+      assign [app_id="^FFPWA-01K78K7W5MNT8TDEW2G23ZEM5S$"] workspace number 2
 
       # Feature 047: Include dynamically generated appearance + keybindings from sway-config-manager
       include ~/.config/sway/appearance-generated.conf
@@ -496,6 +532,7 @@ in
     mako             # Notification daemon
     swaylock         # Screen locker
     swayidle         # Idle management
+    sov              # Workspace overview
   ] ++ lib.optionals isHeadless [
     # wayvnc for headless mode (Feature 046)
     pkgs.wayvnc
@@ -622,6 +659,40 @@ in
       BindsTo = [ "graphical-session.target" ];
       Wants = [ "graphical-session-pre.target" ];
       After = [ "graphical-session-pre.target" ];
+    };
+  };
+
+  # sov workspace overview service
+  systemd.user.services.sov = {
+    Unit = {
+      Description = "Sway Overview - Workspace Overview";
+      Documentation = "https://github.com/milgra/sov";
+      After = [ "sway-session.target" ];
+      Requires = [ "sway-session.target" ];
+      PartOf = [ "sway-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStartPre = "${pkgs.writeShellScript "sov-setup-pipe" ''
+        rm -f /tmp/sovpipe
+        mkfifo /tmp/sovpipe
+      ''}";
+      ExecStart = "${pkgs.writeShellScript "sov-daemon" ''
+        # sov options:
+        # -c 3: 3 columns for multi-monitor layout
+        # -a lc: anchor to left-center
+        # -m 20: 20px margin from screen edges
+        # -r 0.15: 15% of screen size for thumbnails
+        # -t 200: 200ms delay before overlay appears
+        tail -f /tmp/sovpipe | ${pkgs.sov}/bin/sov -c 3 -a lc -m 20 -r 0.15 -t 200
+      ''}";
+      Restart = "on-failure";
+      RestartSec = "1";
+    };
+
+    Install = {
+      WantedBy = [ "sway-session.target" ];
     };
   };
 }

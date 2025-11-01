@@ -91,12 +91,12 @@ let
     (mkApp {
       name = "github-codespaces-pwa";
       display_name = "GitHub Codespaces";
-      command = "firefoxpwa";
-      parameters = "site launch 01K772Z7AY5J36Q3NXHH9RYGC0";
+      command = "launch-pwa-by-name";
+      parameters = "GitHub Codespaces";
       scope = "global";
-      expected_class = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";
+      expected_class = "FFPWA-01K78K7W5MNT8TDEW2G23ZEM5S";  # PLATFORM-SPECIFIC: Update per system
       preferred_workspace = 2;
-      icon = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";
+      icon = "FFPWA-01K78K7W5MNT8TDEW2G23ZEM5S";  # PLATFORM-SPECIFIC: Update per system
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -138,12 +138,12 @@ let
     (mkApp {
       name = "youtube-pwa";
       display_name = "YouTube";
-      command = "firefoxpwa";
-      parameters = "site launch 01K666N2V6BQMDSBMX3AY74TY7";
+      command = "launch-pwa-by-name";
+      parameters = "YouTube";
       scope = "scoped";
-      expected_class = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";
+      expected_class = "FFPWA-01K663E3K8FMGTFVQ6Z6Q2RX7X";  # PLATFORM-SPECIFIC: Update per system
       preferred_workspace = 4;
-      icon = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";
+      icon = "FFPWA-01K663E3K8FMGTFVQ6Z6Q2RX7X";  # PLATFORM-SPECIFIC: Update per system
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";
@@ -154,12 +154,12 @@ let
     (mkApp {
       name = "google-ai-pwa";
       display_name = "Google AI";
-      command = "firefoxpwa";
-      parameters = "site launch 01K665SPD8EPMP3JTW02JM1M0Z";
+      command = "launch-pwa-by-name";
+      parameters = "Google AI";
       scope = "scoped";
-      expected_class = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";
+      expected_class = "FFPWA-01K664F9E8KXZPXYF4V1Q8A93V";  # PLATFORM-SPECIFIC: Update per system
       preferred_workspace = 10;
-      icon = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";
+      icon = "FFPWA-01K664F9E8KXZPXYF4V1Q8A93V";  # PLATFORM-SPECIFIC: Update per system
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";
@@ -169,13 +169,13 @@ let
     # WS11: ChatGPT PWA
     (mkApp {
       name = "chatgpt-pwa";
-      display_name = "ChatGPT";
-      command = "firefoxpwa";
-      parameters = "site launch 01K772ZBM45JD68HXYNM193CVW";
+      display_name = "ChatGPT Codex";  # Must match desktop file Name field
+      command = "launch-pwa-by-name";
+      parameters = "ChatGPT Codex";
       scope = "scoped";
-      expected_class = "FFPWA-01K772ZBM45JD68HXYNM193CVW";
+      expected_class = "FFPWA-01K78K7ZQ1190KKGYZ6WJ0HDWX";  # PLATFORM-SPECIFIC: Update per system
       preferred_workspace = 11;
-      icon = "FFPWA-01K772ZBM45JD68HXYNM193CVW";
+      icon = "FFPWA-01K78K7ZQ1190KKGYZ6WJ0HDWX";  # PLATFORM-SPECIFIC: Update per system
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";

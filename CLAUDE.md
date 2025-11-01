@@ -390,6 +390,55 @@ systemctl --user status sway-config-daemon
 
 **Detailed Documentation**: See `/etc/nixos/specs/047-create-a-new/quickstart.md`
 
+## 🗺️ Sway Workspace Overview (sov)
+
+Visual workspace overview for Sway showing schematic layout of all workspaces with app names and window titles. Unlike thumbnail-based approaches, sov maintains clarity even with many workspaces by displaying clear app names instead of confusing downscaled thumbnails.
+
+**Quick Access**:
+- `Mod+Tab` - Show workspace overview
+- `Mod+Shift+Tab` - Hide workspace overview
+- Automatic hide when switching workspaces (Mod+1-9)
+
+**Features**:
+- **Schematic Layout**: Shows app names and titles instead of thumbnails
+- **Multi-Display Support**: Works across all outputs (HEADLESS-1/2/3 on Hetzner, eDP-1 on M1)
+- **Fast Display**: 200ms delay before overlay appears
+- **Left-Center Anchoring**: Positioned at left-center with 20px margin
+- **3-Column Layout**: Optimized for multi-monitor workflow
+- **15% Screen Ratio**: Thumbnails sized at 15% of screen size
+
+**Service Management**:
+```bash
+# Check service status
+systemctl --user status sov
+
+# View logs
+journalctl --user -u sov -f
+
+# Restart service
+systemctl --user restart sov
+
+# Manual control (advanced)
+echo 1 > /tmp/sovpipe  # Show overlay
+echo 0 > /tmp/sovpipe  # Hide overlay
+```
+
+**Configuration**:
+The sov service runs automatically with Sway and listens on `/tmp/sovpipe` for commands. Configuration is managed in `home-modules/desktop/sway.nix` with the following options:
+- `-c 3`: 3 columns for layout
+- `-a lc`: Anchor to left-center
+- `-m 20`: 20px margin from edges
+- `-r 0.15`: 15% thumbnail size
+- `-t 200`: 200ms delay before showing
+
+**Use Cases**:
+- Quick visual navigation across many workspaces
+- Understanding workspace layout at a glance
+- Finding specific windows across outputs
+- Spatial awareness of window organization
+
+**More Information**: See [sov GitHub repository](https://github.com/milgra/sov)
+
 ## ⌨️ Event-Driven Workspace Mode Navigation (Feature 042)
 
 Fast keyboard-driven workspace navigation with <20ms latency. Navigate to any workspace (1-70) by typing digits in a dedicated mode, replacing slow bash scripts (70ms) with event-driven Python daemon.

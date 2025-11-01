@@ -226,11 +226,52 @@
         # - vm-*.nix, kubevirt-*.nix (VM/KubeVirt deployments)
 
         # Secondary: M1 MacBook Pro (aarch64)
-        # Note: Still uses KDE Plasma temporarily (migration deferred)
-        m1 = mkSystem {
-          hostname = "nixos-m1";
+        # Note: Migrated to Sway/Wayland (Feature 051)
+        # Defined manually instead of using mkSystem to include home-manager
+        m1 = nixpkgs.lib.nixosSystem {
           system = "aarch64-linux";
-          modules = [ ./configurations/m1.nix ];
+          specialArgs = { inherit inputs; };
+          modules = [
+            ./configurations/m1.nix
+
+            # Track git revision and metadata
+            {
+              system.configurationRevision = self.rev or self.dirtyRev or "unknown";
+              environment.etc."nixos-metadata".text = ''
+                # NixOS Build Metadata
+                GIT_COMMIT=${self.rev or self.dirtyRev or "unknown"}
+                GIT_SHORT_COMMIT=${nixpkgs.lib.substring 0 7 (self.rev or self.dirtyRev or "unknown")}
+                GIT_DIRTY=${if self ? rev then "false" else "true"}
+                GIT_LAST_MODIFIED=${self.lastModifiedDate or "unknown"}
+                HOSTNAME=nixos-m1
+                SYSTEM=aarch64-linux
+                BUILD_DATE=${builtins.substring 0 8 self.lastModifiedDate or "unknown"}
+              '';
+            }
+
+            # Home Manager integration with M1-specific config
+            home-manager.nixosModules.home-manager
+            {
+              home-manager = {
+                backupFileExtension = "backup";
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = {
+                  inherit inputs;
+                  pkgs-unstable = import nixpkgs-bleeding {
+                    system = "aarch64-linux";
+                    config.allowUnfree = true;
+                  };
+                };
+                users.vpittamp = {
+                  imports = [
+                    ./home-modules/m1.nix
+                  ];
+                  home.enableNixpkgsReleaseCheck = false;
+                };
+              };
+            }
+          ];
         };
 
         # Container: Docker/K8s deployments
