@@ -63,20 +63,9 @@ let
   ];
 
   # Python testing environment (Feature 039)
-  pythonTestEnv = pkgs.python3.withPackages (ps: with ps; [
-    # Testing frameworks
-    pytest
-    pytest-asyncio
-    pytest-cov
-
-    # Test dependencies
-    click         # For CLI testing
-    rich          # For display testing
-    pydantic      # For model testing
-    i3ipc         # For i3 integration testing
-    psutil        # Process utilities for system tests
-    # Note: textual not in nixpkgs - i3pm TUI tests can be skipped or run separately
-  ]);
+  # REMOVED: Merged into sharedPythonEnv in python-environment.nix to prevent buildEnv conflicts
+  # All testing packages (pytest, pytest-asyncio, pytest-cov, click, rich, pydantic, i3ipc, psutil)
+  # are now available via the shared Python environment
 
   # Language servers and development tools (from nixpkgs)
   languageServers = with pkgs; [
@@ -89,7 +78,7 @@ let
     pyright
     black
     ruff
-    pythonTestEnv  # Feature 039: Testing framework with async support
+    # Feature 039: Python testing environment now provided by sharedPythonEnv (python-environment.nix)
 
     # Nix
     nil

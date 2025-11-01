@@ -1445,6 +1445,7 @@ async def on_output(
     event: OutputEvent,
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
+    workspace_mode_manager=None,
 ) -> None:
     """Handle output events - monitor connect/disconnect (Feature 024: R012).
 
@@ -1456,6 +1457,7 @@ async def on_output(
         event: Output event (mode change, connect, disconnect)
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
+        workspace_mode_manager: WorkspaceModeManager instance (Feature 042)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -1479,6 +1481,11 @@ async def on_output(
             else:
                 logger.debug(f"  Inactive output: {output.name}")
 
+        # Feature 042: Refresh workspace mode output cache on monitor changes
+        if workspace_mode_manager:
+            await workspace_mode_manager._refresh_output_cache()
+            logger.debug("Workspace mode output cache refreshed")
+
         # Feature 033: Automatic workspace reassignment on monitor changes (T036-T038)
         # DISABLED: Automatic reassignment was causing unintended consequences
         # await _schedule_workspace_reassignment(conn, active_outputs)
@@ -1499,6 +1506,75 @@ async def on_output(
                 timestamp=datetime.now(),
                 source="i3",
                 project_name=await state_manager.get_active_project(),
+                processing_duration_ms=duration_ms,
+                error=error_msg,
+            )
+            await event_buffer.add_event(entry)
+
+
+async def on_mode(
+    conn,
+    event,
+    workspace_mode_manager=None,
+    ipc_server=None,
+    event_buffer=None,
+    state_manager=None,
+):
+    """Handle Sway mode change events (Feature 042).
+
+    Args:
+        conn: i3/Sway IPC connection
+        event: Mode change event
+        workspace_mode_manager: WorkspaceModeManager instance (Feature 042)
+        ipc_server: IPC server for event broadcasting
+        event_buffer: Event buffer for recording events
+        state_manager: State manager
+    """
+    start_time = time.perf_counter()
+    error_msg: Optional[str] = None
+    mode_name = event.change
+
+    try:
+        logger.debug(f"Mode event: {mode_name}")
+
+        # Feature 042: Workspace mode navigation
+        if workspace_mode_manager and ipc_server:
+            # Support both old (goto_workspace) and new (→ WS) mode names for compatibility
+            if mode_name in ("goto_workspace", "→ WS"):
+                logger.info("Entering workspace goto mode")
+                await workspace_mode_manager.enter_mode("goto")
+                event_payload = workspace_mode_manager.create_event("enter")
+                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+
+            elif mode_name in ("move_workspace", "⇒ WS"):
+                logger.info("Entering workspace move mode")
+                await workspace_mode_manager.enter_mode("move")
+                event_payload = workspace_mode_manager.create_event("enter")
+                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+
+            elif mode_name == "default":
+                # User exited workspace mode (Escape or successful execution)
+                if workspace_mode_manager.state.active:
+                    logger.info("Exiting workspace mode")
+                    await workspace_mode_manager.cancel()
+                    event_payload = workspace_mode_manager.create_event("exit")
+                    await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error handling mode event: {e}")
+        if state_manager:
+            await state_manager.increment_error_count()
+
+    finally:
+        # Record event in buffer
+        if event_buffer:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            entry = EventEntry(
+                event_id=event_buffer.event_counter,
+                event_type="mode",
+                timestamp=datetime.now(),
+                source="i3",
                 processing_duration_ms=duration_ms,
                 error=error_msg,
             )

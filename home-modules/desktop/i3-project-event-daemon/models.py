@@ -1231,3 +1231,69 @@ class LaunchRegistryStats(BaseModel):
             f"matched={self.total_matched}, expired={self.total_expired}, "
             f"match_rate={self.match_rate:.1f}%)"
         )
+
+
+# ============================================================================
+# Workspace Mode Models (Feature 042)
+# ============================================================================
+
+@dataclass
+class WorkspaceModeState:
+    """State for workspace mode navigation (Feature 042)."""
+
+    active: bool = False
+    mode_type: str = "goto"  # "goto" or "move"
+    accumulated_digits: str = ""
+    entered_at: Optional[datetime] = None
+
+    def reset(self) -> None:
+        """Reset state to inactive."""
+        self.active = False
+        self.mode_type = "goto"
+        self.accumulated_digits = ""
+        self.entered_at = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for IPC."""
+        return {
+            "active": self.active,
+            "mode_type": self.mode_type,
+            "accumulated_digits": self.accumulated_digits,
+            "entered_at": self.entered_at.isoformat() if self.entered_at else None,
+        }
+
+
+@dataclass
+class WorkspaceSwitch:
+    """Record of a workspace switch (Feature 042 - US4)."""
+
+    workspace_number: int
+    output_name: str
+    mode_type: str  # "goto" or "move"
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for IPC."""
+        return {
+            "workspace_number": self.workspace_number,
+            "output_name": self.output_name,
+            "mode_type": self.mode_type,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
+
+@dataclass
+class WorkspaceModeEvent:
+    """Event broadcast for workspace mode state changes (Feature 042 - US3)."""
+
+    event_type: str  # "digit", "execute", "cancel", "enter", "exit"
+    state: WorkspaceModeState
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    def model_dump(self) -> Dict[str, Any]:
+        """Convert to dictionary for IPC (Pydantic-compatible name)."""
+        return {
+            "event_type": self.event_type,
+            "state": self.state.to_dict(),
+            "timestamp": self.timestamp.isoformat(),
+        }

@@ -46,6 +46,7 @@ from .handlers import (
     on_workspace_empty,
     on_workspace_move,
     on_output,  # Feature 024: R013
+    on_mode,  # Feature 042: Workspace mode navigation
 )
 from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
@@ -262,6 +263,12 @@ class I3ProjectDaemon:
         self.ipc_server.i3_connection = self.connection
         logger.info("IPC server updated with i3 connection")
 
+        # Feature 042: Initialize workspace mode manager
+        from .workspace_mode import WorkspaceModeManager
+        self.workspace_mode_manager = WorkspaceModeManager(self.connection.conn)
+        self.state_manager.workspace_mode_manager = self.workspace_mode_manager
+        logger.info("Workspace mode manager initialized")
+
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
 
@@ -401,11 +408,30 @@ class I3ProjectDaemon:
         )
 
         # Feature 024: R013 - Multi-monitor output event handling
+        # Feature 042: Also refresh workspace mode cache on output changes
         self.connection.subscribe(
             "output",
-            partial(on_output, state_manager=self.state_manager, event_buffer=self.event_buffer)
+            partial(
+                on_output,
+                state_manager=self.state_manager,
+                event_buffer=self.event_buffer,
+                workspace_mode_manager=self.workspace_mode_manager
+            )
         )
         logger.info("Subscribed to output events for monitor connect/disconnect detection")
+
+        # Feature 042: Workspace mode navigation via Sway mode events
+        self.connection.subscribe(
+            "mode",
+            partial(
+                on_mode,
+                workspace_mode_manager=self.workspace_mode_manager,
+                ipc_server=self.ipc_server,
+                event_buffer=self.event_buffer,
+                state_manager=self.state_manager
+            )
+        )
+        logger.info("Subscribed to mode events for workspace mode navigation")
 
         # Shutdown event (for i3 restart/exit)
         self.connection.subscribe("shutdown", self.connection.handle_shutdown_event)

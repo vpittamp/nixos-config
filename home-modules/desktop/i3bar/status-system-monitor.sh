@@ -212,7 +212,7 @@ get_mode_indicator() {
 
     # Special handling for workspace modes - show typed digits only
     local display_text=" ⚡ ${mode_upper} ⚡ "
-    if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ]; then
+    if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ] || [ "$mode" = "→ WS" ] || [ "$mode" = "⇒ WS" ]; then
         local typed_digits=""
         if [ -f "/tmp/sway-workspace-mode-state" ]; then
             typed_digits=$(cat /tmp/sway-workspace-mode-state 2>/dev/null || echo "")

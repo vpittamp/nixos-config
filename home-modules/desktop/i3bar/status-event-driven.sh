@@ -214,6 +214,7 @@ build_status_line() {
 
     # Layout: [monitor] [spacer] [project] [spacer] [cpu] [memory] [network] [date]
     # The spacers push project toward the center
+    # Workspace mode indicator is shown via Sway's native binding_mode_indicator (Feature 042)
     "$JQ_BIN" -n \
         --argjson monitor "$monitor" \
         --argjson spacer1 "$spacer1" \
