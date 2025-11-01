@@ -26,6 +26,7 @@ let
   # Falls back to legacy shell script if swaybar-enhanced is disabled
   # Note: Uses shared Python environment from python-environment.nix
   enhancedStatusScript = pkgs.writeShellScript "swaybar-enhanced-status" ''
+    export GI_TYPELIB_PATH="${pkgs.glib.out}/lib/girepository-1.0:${pkgs.gobject-introspection}/lib/girepository-1.0"
     exec ${sharedPythonEnv}/bin/python \
       ${config.xdg.configHome}/sway/swaybar/status-generator.py
   '';
