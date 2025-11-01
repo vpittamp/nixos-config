@@ -1497,6 +1497,8 @@ _Last updated: 2025-10-29 with Sway/Wayland migration and Feature 047 (Dynamic C
 ## Active Technologies
 - Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing) (042-event-driven-workspace-mode)
 - In-memory state only (no persistence) - workspace mode state and history stored in daemon memory, cleared on restart (042-event-driven-workspace-mode)
+- Configuration files only (swaybar config, status generator config) - no persistent data storage (052-enhanced-swaybar-status)
 
 ## Recent Changes
+- 052-enhanced-swaybar-status: Enhanced swaybar with event-driven status blocks (volume, battery, network, bluetooth) using D-Bus integration, while preserving all original system monitoring features
 - 042-event-driven-workspace-mode: Added Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing)
