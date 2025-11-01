@@ -6,7 +6,7 @@ let
   cfg = config.programs.sway-config-manager;
 
   # Note: Python environment is provided by python-environment.nix (shared environment)
-  # pythonEnv = sharedPythonEnv;  # No longer needed - use sharedPythonEnv directly
+  # sharedPythonEnv = sharedPythonEnv;  # No longer needed - use sharedPythonEnv directly
 
   # Daemon source directory
   daemonSrc = ./sway-config-manager;
@@ -329,13 +329,13 @@ in {
       # CLI client
       (pkgs.writeShellScriptBin "swayconfig" ''
         export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-        exec ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
+        exec ${sharedPythonEnv}/bin/python ${./sway-config-manager/cli.py} "$@"
       '')
 
       # Configuration migration tool (Feature 047 Phase 8 T065)
       (pkgs.writeShellScriptBin "swayconfig-migrate" ''
         export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-        exec ${pythonEnv}/bin/python ${./sway-config-manager/migrate_config.py} "$@"
+        exec ${sharedPythonEnv}/bin/python ${./sway-config-manager/migrate_config.py} "$@"
       '')
     ];
 
@@ -419,7 +419,7 @@ in {
         Type = "oneshot";
         ExecStart = "${pkgs.writeShellScript "sway-config-validate" ''
           export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages''${PYTHONPATH:+:}''${PYTHONPATH}"
-          ${pythonEnv}/bin/python ${./sway-config-manager/cli.py} validate
+          ${sharedPythonEnv}/bin/python ${./sway-config-manager/cli.py} validate
         ''}";
         # Send desktop notification on failure
         ExecStopPost = "${pkgs.writeShellScript "validation-notify" ''
