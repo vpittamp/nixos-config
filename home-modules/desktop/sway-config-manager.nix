@@ -1,17 +1,12 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, sharedPythonEnv, ... }:
 
 with lib;
 
 let
   cfg = config.programs.sway-config-manager;
 
-  # Python environment with required packages
-  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-    i3ipc        # i3/Sway IPC library
-    pydantic     # Data validation
-    jsonschema   # JSON schema validation
-    watchdog     # File system monitoring
-  ]);
+  # Note: Python environment is provided by python-environment.nix (shared environment)
+  # pythonEnv = sharedPythonEnv;  # No longer needed - use sharedPythonEnv directly
 
   # Daemon source directory
   daemonSrc = ./sway-config-manager;
@@ -33,7 +28,7 @@ let
     export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages:''${PYTHONPATH}"
     export PYTHONUNBUFFERED=1
     cd ~
-    exec ${pythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
+    exec ${sharedPythonEnv}/bin/python ${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages/sway_config_manager/daemon.py
   '';
 
   # Default keybindings file (external TOML file for easier maintenance)

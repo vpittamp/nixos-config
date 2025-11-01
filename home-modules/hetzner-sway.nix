@@ -10,8 +10,10 @@
     ./profiles/declarative-cleanup.nix
 
     # Desktop Environment: Sway (Wayland)
+    ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with headless support
     ./desktop/swaybar.nix      # Swaybar with event-driven status
+    ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
@@ -46,5 +48,11 @@
     enable = true;
     enableFileWatcher = true;  # Auto-reload on file changes
     debounceMs = 500;  # Wait 500ms after last change before reloading
+  };
+
+  # Feature 052: Enhanced Swaybar Status
+  programs.swaybar-enhanced = {
+    enable = true;
+    # Uses default Catppuccin Mocha theme and standard update intervals
   };
 }

@@ -21,6 +21,10 @@ let
 
     # sway-config-manager specific
     jsonschema     # JSON schema validation
+
+    # swaybar-enhanced specific (Feature 052)
+    pydbus         # D-Bus bindings for system status queries
+    pygobject3     # GObject introspection for D-Bus
   ]);
 in
 {
