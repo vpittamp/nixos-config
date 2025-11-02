@@ -148,6 +148,10 @@ in
     home.activation.managePWAs = lib.hm.dag.entryAfter ["writeBoundary"] ''
       echo "Managing declarative PWAs..."
 
+      # Define activation script helpers
+      VERBOSE_ECHO="echo"
+      DRY_RUN_CMD=""
+
       FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
       MANIFEST_DIR="$HOME/.local/share/pwa-manifests"
 
