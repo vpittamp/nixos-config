@@ -48,6 +48,115 @@ grep -r "assign \[" ~/.config/sway/
 # Should return empty (no results)
 ```
 
+### Comprehensive Event Logging with Decision Tree (Phase 6) ⭐ NEW
+
+**NEW in Feature 053**: Rich event monitoring with decision tree visualization showing workspace assignment priority matching logic.
+
+```bash
+# Real-time event monitoring with rich formatting (RECOMMENDED)
+i3pm events --follow --verbose
+
+# View recent workspace assignments with decision tree
+i3pm events --type workspace::assignment --verbose --limit 10
+
+# Filter events by window ID
+i3pm events --window 123456 --verbose
+
+# Filter events by project
+i3pm events --project nixos --limit 20
+
+# View failed assignments (shows why all priorities failed)
+i3pm events --type workspace::assignment_failed --verbose
+
+# JSON output for scripting
+i3pm events --type workspace::assignment --json --limit 5
+
+# Follow specific event types in real-time
+i3pm events --follow --type window::new
+i3pm events --follow --type project::switch
+```
+
+**Example Output** (table format):
+```
+TIME     TYPE                    WINDOW/APP              WORKSPACE  DETAILS
+─────────────────────────────────────────────────────────────────────────────────────
+09:06:18 ws:assign               firefox                → 1         ✓ daemon [nixos]
+09:06:18 win:new                 firefox                ?          #24
+09:05:12 ws:assign               firefox                → 3         ✓ daemon [nixos]
+09:05:12 win:new                 firefox                ?          #23
+```
+
+**Decision Tree Details** (available in journal logs):
+```bash
+$ sudo journalctl -u i3-project-daemon | grep "workspace::assignment" | tail -1
+INFO | EVENT: workspace::assignment | window_id=24 | window_class=firefox |
+  target_workspace=1 | assignment_source=registry[terminal] | project=nixos |
+  decision_tree=[
+    {"priority": 0, "name": "launch_notification", "matched": false, "reason": "no_launch_notification"},
+    {"priority": 1, "name": "I3PM_TARGET_WORKSPACE", "matched": false, "reason": "env_var_empty"},
+    {"priority": 2, "name": "I3PM_APP_NAME_registry", "matched": true, "workspace": 1, "details": {"app_name": "terminal"}}
+  ]
+```
+
+**Legacy Commands** (raw structured logs via journalctl):
+
+```bash
+# View real-time event stream with full details
+journalctl --user -u i3-project-event-listener -f | grep "EVENT:"
+
+# Filter by specific event types
+journalctl --user -u i3-project-event-listener -f | grep "EVENT: window::new"
+journalctl --user -u i3-project-event-listener -f | grep "EVENT: workspace::assignment"
+journalctl --user -u i3-project-event-listener -f | grep "EVENT: project::switch"
+
+# View recent window creations
+journalctl --user -u i3-project-event-listener -n 100 | grep "EVENT: window::new"
+
+# View recent workspace assignments
+journalctl --user -u i3-project-event-listener -n 100 | grep "EVENT: workspace::assignment"
+
+# View output (monitor) changes
+journalctl --user -u i3-project-event-listener -n 50 | grep "EVENT: output"
+
+# View project switches
+journalctl --user -u i3-project-event-listener | grep "EVENT: project::switch"
+
+# View all workspace events (init, empty, move)
+journalctl --user -u i3-project-event-listener -n 100 | grep "EVENT: workspace::"
+```
+
+**Event Types Available**:
+- `window::new` - Window creation with class, title, workspace, output, PID
+- `window::close` - Window closure
+- `window::focus` - Focus changes
+- `window::move` - Window moves between workspaces
+- `window::mark` - Mark additions/removals
+- `window::title` - Title changes
+- `workspace::assignment` - Workspace assignment decisions with source tracking
+- `workspace::init` - Workspace creation
+- `workspace::empty` - Workspace deletion
+- `workspace::move` - Workspace moves between outputs
+- `output` - Monitor connect/disconnect with resolutions
+- `mode` - Sway mode changes
+- `tick` - Tick events with payloads
+- `project::switch` - Project switching
+
+**Log Format**:
+```
+[TIMESTAMP] | EVENT: <event_type> | key1=value1 | key2=value2 | ...
+```
+
+**Example Log Output**:
+```
+[2025-11-02 12:34:56.789] | EVENT: window::new | window_id=123456 | window_class=FFPWA-01K666N2V6BQMDSBMX3AY74TY7 | window_title=YouTube | workspace_num=1 | output=HEADLESS-1 | pid=98765
+
+[2025-11-02 12:34:56.790] | EVENT: workspace::assignment | window_id=123456 | window_class=FFPWA-01K666N2V6BQMDSBMX3AY74TY7 | target_workspace=4 | assignment_source=launch_notification | correlation_confidence=0.95
+
+[2025-11-02 12:35:10.123] | EVENT: project::switch | old_project=none | new_project=nixos
+
+[2025-11-02 12:35:20.456] | EVENT: output | active_outputs=3 | output_names=HEADLESS-1, HEADLESS-2, HEADLESS-3
+```
+
 ---
 
 ## How It Works

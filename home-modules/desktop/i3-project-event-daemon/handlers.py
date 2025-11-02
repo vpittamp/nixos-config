@@ -1077,6 +1077,21 @@ async def on_window_new(
                     level="INFO"
                 )
 
+                # Feature 053 Phase 6: Add workspace assignment to event buffer
+                if event_buffer:
+                    from .models import EventEntry
+                    assignment_entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="workspace::assignment",
+                        timestamp=datetime.now(),
+                        source="daemon",
+                        window_id=container.id,
+                        window_class=window_class,
+                        workspace_name=f"{preferred_ws}",  # Store as string
+                        project_name=actual_project if actual_project else None,
+                    )
+                    await event_buffer.add_event(assignment_entry)
+
                 # BUGFIX 039 T066: Re-fetch container from tree to get current workspace
                 # container.workspace() returns None during window::new event (timing issue)
                 # Solution: Query fresh container from tree
@@ -1139,6 +1154,25 @@ async def on_window_new(
                 },
                 level="WARNING"
             )
+
+            # Feature 053 Phase 6: Add workspace assignment failure to event buffer
+            if event_buffer:
+                from .models import EventEntry
+                # Build error message from decision tree
+                failed_reasons = [f"P{d['priority']}:{d.get('reason', 'no_match')}" for d in decision_tree if not d.get('matched', False)]
+                error_summary = f"All priorities failed: {', '.join(failed_reasons)}"
+
+                failed_entry = EventEntry(
+                    event_id=event_buffer.event_counter,
+                    event_type="workspace::assignment_failed",
+                    timestamp=datetime.now(),
+                    source="daemon",
+                    window_id=container.id,
+                    window_class=window_class,
+                    project_name=actual_project if actual_project else None,
+                    error=error_summary,
+                )
+                await event_buffer.add_event(failed_entry)
 
         if not preferred_ws:
             # Feature 053: Delayed property re-check for native Wayland apps (US1 T035-T038)

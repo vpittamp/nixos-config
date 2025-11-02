@@ -204,8 +204,9 @@ function formatEventRow(event: any, options: EventOptions): void {
     typeShort = "output";
   }
 
-  // Extract data
-  const d = event.data || {};
+  // Access fields directly from event (EventEntry is flat, not nested)
+  // For logged events from handlers.py, some data is in event.data
+  const d = event.data || event;
 
   // Format columns based on event type
   let windowApp = "";
@@ -213,43 +214,52 @@ function formatEventRow(event: any, options: EventOptions): void {
   let details = "";
 
   if (eventType.includes("window::new")) {
-    windowApp = truncate(d.window_class || "unknown", 22);
-    workspace = String(d.workspace_num || "?");
-    details = `${DIM}#${d.window_id}${RESET}`;
-    if (d.output) details += ` ${DIM}${d.output}${RESET}`;
+    windowApp = truncate(d.window_class || event.window_class || "unknown", 22);
+    workspace = d.workspace_name || event.workspace_name || "?";
+    details = `${DIM}#${d.window_id || event.window_id}${RESET}`;
+    const output = d.output || event.workspace_name;
+    if (output && output !== "?") details += ` ${DIM}${output}${RESET}`;
   } else if (eventType === "workspace::assignment") {
-    windowApp = truncate(d.window_class || "unknown", 22);
-    workspace = `${DIM}→${RESET} ${BOLD}${d.target_workspace}${RESET}`;
-    const source = d.assignment_source || "unknown";
+    windowApp = truncate(d.window_class || event.window_class || "unknown", 22);
+    // EventEntry stores workspace in workspace_name field
+    const targetWs = d.target_workspace || d.workspace_name || event.workspace_name || "?";
+    workspace = `${DIM}→${RESET} ${BOLD}${targetWs}${RESET}`;
+    // assignment_source not in EventEntry, derive from project_name or show generic
+    const project = d.project_name || event.project_name;
+    const source = d.assignment_source || (project ? "daemon" : "unknown");
     const sourceShort = source.includes("launch") ? "launch" :
                         source.includes("I3PM_TARGET") ? "env:ws" :
-                        source.includes("registry") ? "registry" : source.substring(0, 10);
+                        source.includes("registry") ? "registry" :
+                        source.includes("daemon") ? "daemon" : source.substring(0, 10);
     details = `${GREEN}✓${RESET} ${sourceShort}`;
-    if (d.correlation_confidence && d.correlation_confidence !== "n/a") {
-      details += ` ${DIM}(${d.correlation_confidence})${RESET}`;
-    }
+    if (project) details += ` ${DIM}[${project}]${RESET}`;
   } else if (eventType === "workspace::assignment_failed") {
-    windowApp = truncate(d.window_class || "unknown", 22);
+    windowApp = truncate(d.window_class || event.window_class || "unknown", 22);
     workspace = `${DIM}none${RESET}`;
-    details = `${RED}✗ no assignment${RESET}`;
+    // EventEntry stores error summary in error field
+    const errorMsg = d.error || event.error;
+    details = errorMsg ? `${RED}✗${RESET} ${DIM}${truncate(errorMsg, 30)}${RESET}` : `${RED}✗ no assignment${RESET}`;
   } else if (eventType === "project::switch") {
-    const oldProj = d.old_project || "none";
-    const newProj = d.new_project || "none";
+    const oldProj = d.old_project || event.old_project || "none";
+    const newProj = d.new_project || event.new_project || "none";
     windowApp = `${oldProj} → ${BOLD}${newProj}${RESET}`;
     workspace = "";
     details = "";
   } else if (eventType.includes("output")) {
-    windowApp = `${d.active_outputs || 0} outputs`;
+    const count = d.output_count || event.output_count || d.active_outputs || 0;
+    windowApp = `${count} outputs`;
     workspace = "";
-    details = d.output_names ? truncate(d.output_names, 30) : "";
+    const names = d.output_names || d.output_name || event.output_name;
+    details = names ? truncate(names, 30) : "";
   } else if (eventType.includes("workspace::")) {
-    windowApp = `workspace ${d.workspace_num || d.num || "?"}`;
+    const wsNum = d.workspace_num || d.num || event.workspace_name || "?";
+    windowApp = `workspace ${wsNum}`;
     workspace = "";
     details = d.output ? `${DIM}${d.output}${RESET}` : "";
   } else if (eventType.includes("window::")) {
-    windowApp = truncate(d.window_class || "unknown", 22);
-    workspace = String(d.workspace_num || "?");
-    details = `${DIM}#${d.window_id}${RESET}`;
+    windowApp = truncate(d.window_class || event.window_class || "unknown", 22);
+    workspace = d.workspace_name || event.workspace_name || "?";
+    details = `${DIM}#${d.window_id || event.window_id}${RESET}`;
   }
 
   // Print table row
@@ -273,7 +283,8 @@ function printVerboseDetails(event: any, eventType: string): void {
   const RED = "\x1b[31m";
   const CYAN = "\x1b[36m";
 
-  const d = event.data || {};
+  // Access fields from event.data (logged events) or event directly (EventEntry)
+  const d = event.data || event;
 
   if (eventType === "workspace::assignment" && d.decision_tree) {
     try {
@@ -311,9 +322,11 @@ function printVerboseDetails(event: any, eventType: string): void {
     } catch (e) {
       // Ignore JSON parse errors
     }
-  } else if (eventType === "window::new" && d.window_title) {
-    console.log(`  ${DIM}├─ Title: ${d.window_title}${RESET}`);
-    if (d.pid) console.log(`  ${DIM}└─ PID: ${d.pid}${RESET}`);
+  } else if (eventType === "window::new") {
+    const title = d.window_title || event.window_title;
+    const pid = d.pid || event.window_instance;
+    if (title) console.log(`  ${DIM}├─ Title: ${title}${RESET}`);
+    if (pid) console.log(`  ${DIM}└─ PID/Instance: ${pid}${RESET}`);
   }
 }
 

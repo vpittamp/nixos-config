@@ -94,9 +94,9 @@ let
       command = "launch-pwa-by-name";
       parameters = "GitHub Codespaces";
       scope = "global";
-      expected_class = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";  # hetzner-sway PWA ID
+      expected_class = "FFPWA-";  # Dynamic PWA ID - daemon detects via firefoxpwa query
       preferred_workspace = 2;
-      icon = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";  # hetzner-sway PWA ID
+      icon = "github";  # Generic GitHub icon (system-independent)
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -141,9 +141,9 @@ let
       command = "launch-pwa-by-name";
       parameters = "YouTube";
       scope = "scoped";
-      expected_class = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";  # hetzner-sway PWA ID
+      expected_class = "FFPWA-";  # Dynamic PWA ID - daemon detects via firefoxpwa query
       preferred_workspace = 4;
-      icon = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";  # hetzner-sway PWA ID
+      icon = "youtube";  # Generic YouTube icon (system-independent)
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";
@@ -157,9 +157,9 @@ let
       command = "launch-pwa-by-name";
       parameters = "Google AI";
       scope = "scoped";
-      expected_class = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";  # hetzner-sway PWA ID
+      expected_class = "FFPWA-";  # Dynamic PWA ID - daemon detects via firefoxpwa query
       preferred_workspace = 10;
-      icon = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";  # hetzner-sway PWA ID
+      icon = "google";  # Generic Google icon (system-independent)
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";
@@ -173,9 +173,9 @@ let
       command = "launch-pwa-by-name";
       parameters = "ChatGPT Codex";
       scope = "scoped";
-      expected_class = "FFPWA-01K772ZBM45JD68HXYNM193CVW";  # hetzner-sway PWA ID
+      expected_class = "FFPWA-";  # Dynamic PWA ID - daemon detects via firefoxpwa query
       preferred_workspace = 11;
-      icon = "FFPWA-01K772ZBM45JD68HXYNM193CVW";  # hetzner-sway PWA ID
+      icon = "chatgpt";  # Generic ChatGPT icon (system-independent)
       nix_package = "pkgs.firefoxpwa";
       multi_instance = false;
       fallback_behavior = "use_home";

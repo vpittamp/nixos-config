@@ -66,7 +66,8 @@ in
     ../tools/chromium.nix # Enabled for Playwright MCP support
     ../tools/firefox.nix
     ../tools/docker.nix # Docker with 1Password authentication
-    ../tools/firefox-pwas-declarative.nix  # Best available declarative PWA solution
+    ../tools/pwa-helpers.nix  # PWA validation and helper commands (manual installation via Firefox GUI)
+    ../tools/pwa-launcher.nix  # Dynamic PWA launcher with cross-machine compatibility
     # ../tools/web-apps-declarative.nix  # Chromium-based web app launcher - DISABLED (using Firefox PWAs instead)
     ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
     ../tools/screenshot-ocr.nix  # Screenshot (Spectacle) and OCR (gImageReader) tools

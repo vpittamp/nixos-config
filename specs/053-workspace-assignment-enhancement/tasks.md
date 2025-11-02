@@ -7,6 +7,48 @@
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+---
+
+## Implementation Progress
+
+### Completed Phases
+
+- ✅ **Phase 1: Setup** (T001-T003) - Diagnostic baseline and existing configuration backup
+- ✅ **Phase 2: Foundational** (T004-T009) - Core infrastructure preparation
+- ✅ **Phase 3: User Story 2** (T010-T020) - Root cause investigation and event system reliability
+- ⚠️  **Phase 4: User Story 4** (T021-T029) - Consolidated single assignment mechanism (PARTIAL - needs audit)
+- ✅ **Phase 5: User Story 1** (T030-T045) - PWA reliable workspace placement
+- ✅ **Phase 6: User Story 3** (T046a-T046j) - Comprehensive event logging foundation (COMPLETE)
+- ⏳ **Phase 6: User Story 3** (T046-T061) - Advanced diagnostic features (PENDING - optional enhancement)
+- ⏳ **Phase 7: Polish** (T062-T071) - Cross-cutting concerns and documentation
+
+### Current Status
+
+**Latest Update**: 2025-11-02 - Completed Phase 6 with comprehensive event logging AND decision tree visualization
+
+**Key Achievements**:
+1. ✅ All Sway/i3 events have detailed structured logging with timestamps and full context
+2. ✅ Workspace assignment now includes complete decision tree showing all priority tiers
+3. ✅ New `i3pm events` command with rich formatting and filtering
+4. ✅ Decision tree shows which priorities matched/failed and why
+
+**Viewing Logs**:
+```bash
+# Real-time with rich formatting (NEW - Feature 053 Phase 6)
+i3pm events --follow --verbose
+
+# Filter by event type
+i3pm events --type workspace::assignment --limit 20
+
+# View recent assignment decisions with full decision tree
+i3pm events --type workspace::assignment --verbose
+
+# Legacy: View raw structured logs via journalctl
+journalctl --user -u i3-project-event-listener -f | grep "EVENT:"
+```
+
+---
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -133,6 +175,52 @@ This is a system tooling enhancement targeting the existing i3pm daemon infrastr
 
 ### Implementation for User Story 3
 
+#### Comprehensive Event Logging (Foundation)
+
+- [X] T046a [US3] Create centralized `log_event_entry()` utility function in `handlers.py` for structured event logging
+- [X] T046b [US3] Add comprehensive logging to `window::new` event handler with all window properties
+- [X] T046c [US3] Add comprehensive logging to `workspace::assignment` decision with assignment source tracking
+- [X] T046d [US3] Add comprehensive logging to `workspace::init`, `workspace::empty`, `workspace::move` handlers
+- [X] T046e [US3] Add comprehensive logging to `output` event handler with monitor details
+- [X] T046f [US3] Add comprehensive logging to `mode` event handler for workspace mode tracking
+- [X] T046g [US3] Add comprehensive logging to `window::close`, `window::focus`, `window::move` handlers
+- [X] T046h [US3] Add comprehensive logging to `window::mark` and `window::title` handlers
+- [X] T046i [US3] Add comprehensive logging to `tick` event handler with payload details
+- [X] T046j [US3] Add comprehensive logging to `project::switch` events with old/new project tracking
+
+**Status**: ✅ COMPLETE - All Sway/i3 events now have structured, comprehensive logging with timestamps and full context. Logs viewable via `journalctl --user -u i3-project-event-listener -f | grep "EVENT:"`.
+
+#### Decision Tree Logging Enhancement (Phase 6 Extension)
+
+- [X] T046k [US3] Add decision_tree tracking to workspace assignment logic in `handlers.py` (lines 896-1060)
+- [X] T046l [US3] Track Priority 0 (launch_notification) decision with match details and failure reasons
+- [X] T046m [US3] Track Priority 1 (I3PM_TARGET_WORKSPACE) decision with match details and failure reasons
+- [X] T046n [US3] Track Priority 2 (I3PM_APP_NAME registry) decision with match details and failure reasons
+- [X] T046o [US3] Track Priority 3 (class registry match) decision with match details and failure reasons
+- [X] T046p [US3] Include decision_tree JSON in workspace::assignment log event (line 1075)
+- [X] T046q [US3] Add workspace::assignment_failed event for windows with no assignment (lines 1130-1141)
+- [X] T046r [US3] Create new `i3pm events` command in `/etc/nixos/home-modules/tools/i3pm/src/commands/events.ts`
+- [X] T046s [US3] Implement rich formatting with colors for event types (window, workspace, project, output)
+- [X] T046t [US3] Add --verbose flag to show complete decision tree in formatted output
+- [X] T046u [US3] Add filtering by --type, --window, --project, --limit
+- [X] T046v [US3] Register `i3pm events` command in main.ts CLI router
+- [X] T046w [US3] Update main.ts help text with `i3pm events` examples
+- [X] T046x [US3] Add event buffer recording for workspace::assignment events in handlers.py
+- [X] T046y [US3] Add event buffer recording for workspace::assignment_failed events in handlers.py
+- [X] T046z [US3] Fix EventEntry field access in events.ts CLI for proper data display
+- [X] T046aa [US3] Update quickstart.md with table-based output examples
+
+**Status**: ✅ COMPLETE - Decision tree tracking implemented, event buffer recording added, and visualized via `i3pm events` command with rich table formatting.
+
+**Benefits**:
+- See exactly why each priority tier matched or failed
+- Debug assignment issues without reading daemon source code
+- Understand correlation confidence and matching signals
+- Filter events by type, window, or project
+- Real-time monitoring with `--follow` flag
+
+#### Advanced Diagnostic Features (Optional Enhancement)
+
 - [ ] T046 [P] [US3] Create event gap detector class in `home-modules/tools/i3pm/daemon/event_monitor.py`
 - [ ] T047 [P] [US3] Implement window ID sequence gap detection in `event_monitor.py:check_for_gaps()`
 - [ ] T048 [US3] Add gap logging when consecutive window IDs differ by >1
@@ -150,7 +238,7 @@ This is a system tooling enhancement targeting the existing i3pm daemon infrastr
 - [ ] T060 [US3] Test event gap detection by simulating event loss (if possible)
 - [ ] T061 [US3] Test subscription health monitoring by restarting daemon and verifying reconnection
 
-**Checkpoint**: Comprehensive diagnostic tooling available for troubleshooting event delivery issues
+**Checkpoint**: ✅ **Foundation Complete** - Comprehensive event logging implemented and operational. Advanced diagnostic features (gap detection, health monitoring) are optional enhancements for future work.
 
 ---
 

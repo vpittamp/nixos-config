@@ -406,7 +406,10 @@ if command -v systemd-run &>/dev/null; then
         CMD_STRING="${ARGS[*]}"
     fi
 
-    systemd-run --user --scope \
+    log "INFO" "Launching via systemd-run: $CMD_STRING"
+
+    # Capture systemd-run output for logging
+    SYSTEMD_OUTPUT=$(systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
         --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
         --setenv=I3PM_PROJECT_NAME="$I3PM_PROJECT_NAME" \
@@ -420,8 +423,17 @@ if command -v systemd-run &>/dev/null; then
         --setenv=DISPLAY="${DISPLAY:-:0}" \
         --setenv=HOME="$HOME" \
         --setenv=PATH="$PATH" \
-        bash -c "$CMD_STRING"
+        bash -c "$CMD_STRING" 2>&1)
+
+    SYSTEMD_EXIT=$?
+
+    if [ $SYSTEMD_EXIT -eq 0 ]; then
+        log "INFO" "systemd-run launched successfully: $SYSTEMD_OUTPUT"
+    else
+        error "systemd-run failed (exit $SYSTEMD_EXIT): $SYSTEMD_OUTPUT"
+    fi
 else
     # Fallback to exec if systemd-run not available
+    log "INFO" "Launching via exec (systemd-run not available)"
     exec "${ARGS[@]}"
 fi
