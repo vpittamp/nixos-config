@@ -185,4 +185,76 @@ in {
     pwaInstallGuide
     pwa1PasswordStatus
   ];
+
+  # Feature 055: Symlink PWA desktop files to standard XDG location
+  # firefoxpwa places desktop files in ~/.local/share/firefox-pwas/ instead of
+  # the XDG-standard ~/.local/share/applications/, so Walker can't discover them.
+  # Create symlinks to make PWAs visible in Walker launcher.
+  # Also cleans up legacy files from deprecated firefox-pwas-declarative.nix.
+  home.activation.linkPWADesktopFiles = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    PWA_DIR="$HOME/.local/share/firefox-pwas"
+    APPS_DIR="$HOME/.local/share/applications"
+    ICONS_DIR="$HOME/.local/share/icons"
+
+    # Clean up legacy PWA files from old system (Feature 050)
+    echo "Cleaning up legacy PWA files..."
+
+    # Remove legacy desktop files (*-pwa.desktop pattern from old system)
+    for legacy_desktop in "$APPS_DIR"/*-pwa.desktop; do
+      if [ -f "$legacy_desktop" ] && [ ! -L "$legacy_desktop" ]; then
+        $DRY_RUN_CMD rm "$legacy_desktop"
+        $VERBOSE_ECHO "  Removed legacy desktop file: $(basename "$legacy_desktop")"
+      fi
+    done
+
+    # Remove legacy icon files (pwa-* pattern from old system)
+    if [ -d "$ICONS_DIR/hicolor" ]; then
+      for size_dir in "$ICONS_DIR/hicolor"/*/apps; do
+        if [ -d "$size_dir" ]; then
+          for legacy_icon in "$size_dir"/pwa-*.png; do
+            if [ -f "$legacy_icon" ]; then
+              $DRY_RUN_CMD rm "$legacy_icon"
+              $VERBOSE_ECHO "  Removed legacy icon: $(basename "$legacy_icon")"
+            fi
+          done
+        fi
+      done
+    fi
+
+    # Remove legacy icon cache directory
+    if [ -d "$ICONS_DIR/pwa-cache" ]; then
+      $DRY_RUN_CMD rm -rf "$ICONS_DIR/pwa-cache"
+      $VERBOSE_ECHO "  Removed legacy icon cache directory"
+    fi
+
+    # Create symlinks for current firefoxpwa desktop files
+    if [ -d "$PWA_DIR" ]; then
+      echo "Symlinking PWA desktop files to $APPS_DIR..."
+
+      # Create applications directory if it doesn't exist
+      mkdir -p "$APPS_DIR"
+
+      # Create symlinks for all PWA desktop files
+      for desktop_file in "$PWA_DIR"/*.desktop; do
+        if [ -f "$desktop_file" ]; then
+          basename=$(basename "$desktop_file")
+          link_path="$APPS_DIR/$basename"
+
+          # Create or update symlink
+          if [ -L "$link_path" ] || [ ! -e "$link_path" ]; then
+            $DRY_RUN_CMD ln -sf "$desktop_file" "$link_path"
+            $VERBOSE_ECHO "  Linked: $basename"
+          fi
+        fi
+      done
+
+      # Clean up broken symlinks pointing to firefox-pwas
+      for link in "$APPS_DIR"/FFPWA-*.desktop; do
+        if [ -L "$link" ] && [ ! -e "$link" ]; then
+          $DRY_RUN_CMD rm "$link"
+          $VERBOSE_ECHO "  Removed broken link: $(basename "$link")"
+        fi
+      done
+    fi
+  '';
 }

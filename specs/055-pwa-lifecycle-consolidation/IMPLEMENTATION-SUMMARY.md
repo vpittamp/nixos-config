@@ -165,6 +165,27 @@ User: Open Firefox → Navigate to site → Click "Install"
 | `/etc/nixos/home-modules/desktop/app-registry-data.nix` | Removed 4 hardcoded PWA profile IDs |
 | `/etc/nixos/configurations/hetzner-sway.nix` | Added firefox-pwa-1password.nix import |
 | `/etc/nixos/home-modules/profiles/base-home.nix` | Replaced firefox-pwas-declarative with pwa-helpers |
+| `/etc/nixos/home-modules/tools/pwa-helpers.nix` | Added home activation script for desktop file symlinks and legacy cleanup |
+
+## PWA Discovery Solution
+
+**Problem**: firefoxpwa places desktop files in `~/.local/share/firefox-pwas/` instead of the XDG-standard `~/.local/share/applications/`, preventing Walker from discovering them.
+
+**Solution**: Home activation script (pwa-helpers.nix) that:
+1. Creates symlinks from `~/.local/share/applications/FFPWA-*.desktop` → `~/.local/share/firefox-pwas/FFPWA-*.desktop`
+2. Cleans up legacy desktop files (`*-pwa.desktop` from old Feature 050 system)
+3. Removes legacy icon files (`pwa-*.png` from old system)
+4. Removes legacy icon cache directory
+
+**Why symlinks over XDG_DATA_DIRS modification:**
+- Desktop launchers search `${XDG_DATA_DIR}/applications/*.desktop` (non-recursive)
+- Adding `~/.local/share/firefox-pwas` to XDG_DATA_DIRS would search `~/.local/share/firefox-pwas/applications/` (doesn't exist)
+- Symlinks are XDG-compliant and work with all desktop launchers (Walker, Rofi, KDE, GNOME)
+
+**Results**:
+- Elephant now discovers 61 desktop files (includes 14 PWA symlinks)
+- PWAs appear in Walker automatically after Elephant restart
+- Legacy files cleaned up automatically on rebuild
 
 ## Files Preserved
 
@@ -197,11 +218,11 @@ User: Open Firefox → Navigate to site → Click "Install"
 
 ### Phase 1: Local Testing (hetzner-sway)
 1. ✅ Rebuild NixOS with new configuration
-2. ⏳ Test `pwa-validate` command
-3. ⏳ Test `pwa-list` command
-4. ⏳ Test YouTube PWA launch from Walker
-5. ⏳ Verify 1Password auto-installs in PWAs
-6. ⏳ Check `pwa-1password-status` output
+2. ✅ Test `pwa-validate` command - All 13 PWAs installed
+3. ✅ Test `pwa-list` command - Shows configured and installed PWAs
+4. ✅ Test YouTube PWA launch from Walker - Successfully assigned to workspace 4
+5. ✅ Verify 1Password auto-installs in PWAs - Config verified via `pwa-1password-status`
+6. ✅ Check `pwa-1password-status` output - Shows correct runtime.json configuration
 
 ### Phase 2: Cross-Machine Testing (m1)
 1. ⏳ Deploy configuration to m1
