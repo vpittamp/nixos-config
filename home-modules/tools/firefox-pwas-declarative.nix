@@ -156,23 +156,27 @@ in
     # Generate desktop entries for all PWAs
     # Desktop files use ULID in filename: FFPWA-<ULID>.desktop
     # This makes window class matching predictable: FFPWA-<ULID>
+    # Using home.file instead of xdg.desktopEntries due to schema issues with newer home-manager
     #
-    xdg.desktopEntries = builtins.listToAttrs (builtins.map (pwa: {
-      name = "FFPWA-${pwa.ulid}";
-      value = {
-        name = pwa.name;
-        comment = pwa.description;
-        exec = "firefoxpwa site launch ${pwa.ulid} --protocol %u";
-        icon = "FFPWA-${pwa.ulid}";  # firefoxpwa manages icon cache
-        terminal = false;
-        type = "Application";
-        categories = if (pwa ? categories)
-          then builtins.filter (x: x != "") (lib.splitString ";" pwa.categories)
-          else [ "Network" ];
-        startupNotify = true;
-        # Note: Window class will be FFPWA-<ULID> set by firefoxpwa itself
-        mimeType = [ "x-scheme-handler/http" "x-scheme-handler/https" ];
-      };
-    }) pwas);
+    home.file = builtins.listToAttrs (builtins.map (pwa:
+      let
+        categoriesStr = if (pwa ? categories)
+          then pwa.categories  # Already has semicolons from pwa-sites.nix
+          else "Network;";
+      in {
+        name = ".local/share/applications/FFPWA-${pwa.ulid}.desktop";
+        value.text = ''
+          [Desktop Entry]
+          Type=Application
+          Name=${pwa.name}
+          Comment=${pwa.description}
+          Exec=firefoxpwa site launch ${pwa.ulid} --protocol %u
+          Icon=FFPWA-${pwa.ulid}
+          Terminal=false
+          Categories=${categoriesStr}
+          MimeType=x-scheme-handler/http;x-scheme-handler/https;
+          StartupNotify=true
+        '';
+      }) pwas);
   };
 }
