@@ -7,6 +7,9 @@
 # for generating window rules, etc.)
 
 let
+  # Import centralized PWA site definitions (Feature 056)
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  pwas = pwaSitesConfig.pwaSites;
   # Validation helper: check for dangerous characters
   validateParameters = params:
     if builtins.match ".*[;|&`].*" params != null then
@@ -36,6 +39,22 @@ let
       parameters = splitParameters params;
       terminal = isTerminalApp attrs.command;
     };
+
+  # Helper to convert PWA site definition → app registry entry (Feature 056)
+  mkPWAApp = pwa: mkApp {
+    name = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
+    display_name = pwa.name;
+    command = "launch-pwa-by-name";
+    parameters = pwa.name;
+    scope = pwa.app_scope;
+    expected_class = "FFPWA-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
+    preferred_workspace = pwa.preferred_workspace;
+    icon = lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name);
+    nix_package = "pkgs.firefoxpwa";
+    multi_instance = false;
+    fallback_behavior = "use_home";
+    description = pwa.description;
+  };
 
   applications = [
     # WS1: Terminals (Primary: alacritty)
@@ -88,20 +107,6 @@ let
       description = "Neovim text editor in terminal";
     })
 
-    (mkApp {
-      name = "github-codespaces-pwa";
-      display_name = "GitHub Codespaces";
-      command = "launch-pwa-by-name";
-      parameters = "GitHub Codespaces";
-      scope = "global";
-      expected_class = "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0";  # TODO: PWA IDs are machine-specific (Feature 055 limitation)
-      preferred_workspace = 2;
-      icon = "github";  # Generic GitHub icon (system-independent)
-      nix_package = "pkgs.firefoxpwa";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      description = "GitHub cloud development environment";
-    })
 
     # WS3: Browsers (Primary: firefox)
     (mkApp {
@@ -132,54 +137,6 @@ let
       multi_instance = false;
       fallback_behavior = "skip";
       description = "Chromium web browser";
-    })
-
-    # WS4: YouTube PWA
-    (mkApp {
-      name = "youtube-pwa";
-      display_name = "YouTube";
-      command = "launch-pwa-by-name";
-      parameters = "YouTube";
-      scope = "scoped";
-      expected_class = "FFPWA-01K666N2V6BQMDSBMX3AY74TY7";  # TODO: PWA IDs are machine-specific (Feature 055 limitation)
-      preferred_workspace = 4;
-      icon = "youtube";  # Generic YouTube icon (system-independent)
-      nix_package = "pkgs.firefoxpwa";
-      multi_instance = false;
-      fallback_behavior = "use_home";
-      description = "YouTube video platform";
-    })
-
-    # WS10: Google AI PWA (beyond standard 1-9)
-    (mkApp {
-      name = "google-ai-pwa";
-      display_name = "Google AI";
-      command = "launch-pwa-by-name";
-      parameters = "Google AI";
-      scope = "scoped";
-      expected_class = "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z";  # TODO: PWA IDs are machine-specific (Feature 055 limitation)
-      preferred_workspace = 10;
-      icon = "google";  # Generic Google icon (system-independent)
-      nix_package = "pkgs.firefoxpwa";
-      multi_instance = false;
-      fallback_behavior = "use_home";
-      description = "Google AI assistant";
-    })
-
-    # WS11: ChatGPT PWA
-    (mkApp {
-      name = "chatgpt-pwa";
-      display_name = "ChatGPT Codex";  # Must match desktop file Name field
-      command = "launch-pwa-by-name";
-      parameters = "ChatGPT Codex";
-      scope = "scoped";
-      expected_class = "FFPWA-01K772ZBM45JD68HXYNM193CVW";  # TODO: PWA IDs are machine-specific (Feature 055 limitation)
-      preferred_workspace = 11;
-      icon = "chatgpt";  # Generic ChatGPT icon (system-independent)
-      nix_package = "pkgs.firefoxpwa";
-      multi_instance = false;
-      fallback_behavior = "use_home";
-      description = "ChatGPT AI assistant";
     })
 
     # WS5: Git Tools (Primary: lazygit)
@@ -292,7 +249,10 @@ let
       fallback_behavior = "use_home";
       description = "Ghostty terminal (backup option)";
     })
-  ];
+  ]
+  # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
+  # All PWAs will have correct expected_class with declarative ULIDs
+  ++ (builtins.map mkPWAApp pwas);
 
   # Additional validation: check for duplicate names
   appNames = map (app: app.name) applications;
@@ -300,9 +260,9 @@ let
     (lib.length (lib.filter (n: n == name) appNames)) > 1
   ) (lib.unique appNames);
 
-  # Additional validation: check workspace range (1-20 for flexibility)
+  # Additional validation: check workspace range (1-70 to accommodate PWAs on WS 50-64)
   invalidWorkspaces = lib.filter (app:
-    app ? preferred_workspace && (app.preferred_workspace < 1 || app.preferred_workspace > 20)
+    app ? preferred_workspace && (app.preferred_workspace < 1 || app.preferred_workspace > 70)
   ) applications;
 
   # Additional validation: check name format (kebab-case)

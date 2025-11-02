@@ -4,6 +4,9 @@
 
 {
   # List of PWA sites with static ULID identifiers
+  # App Registry Fields:
+  #   - app_scope: "scoped" (project-specific) or "global" (shared across projects)
+  #   - preferred_workspace: workspace number (50-64 for PWAs to avoid conflicts with standard apps on 1-9)
   pwaSites = [
     # YouTube
     {
@@ -16,6 +19,9 @@
       keywords = "video;streaming;youtube;";
       scope = "https://www.youtube.com/";
       ulid = "01HQ1Z9J8G7X2K5MNBVWXYZ013";  # Generated 2024-03-15
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 50;
     }
 
     # Google AI (Gemini)
@@ -29,6 +35,9 @@
       keywords = "ai;gemini;google;assistant;";
       scope = "https://gemini.google.com/";
       ulid = "01HQ1Z9J8G7X2K5MNBVWXYZ014";  # Generated 2024-03-15
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 51;
     }
 
     # Claude (Anthropic AI)
@@ -42,6 +51,9 @@
       keywords = "ai;claude;anthropic;assistant;";
       scope = "https://claude.ai/";
       ulid = "01JCYF8Z2M7R4N6QW9XKPHVTB5";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 52;
     }
 
     # GitHub
@@ -55,6 +67,9 @@
       keywords = "git;github;code;development;";
       scope = "https://github.com/";
       ulid = "01JCYF9A3P8T5W7XH0KMQRNZC6";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 53;
     }
 
     # Gmail
@@ -68,6 +83,9 @@
       keywords = "email;gmail;google;mail;";
       scope = "https://mail.google.com/";
       ulid = "01JCYF9K4Q9V6X8YJ1MNSPT0D7";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 54;
     }
 
     # Google Calendar
@@ -81,6 +99,9 @@
       keywords = "calendar;google;schedule;events;";
       scope = "https://calendar.google.com/";
       ulid = "01JCYF9T5R0W7Y9ZK2PQTVX1E8";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 55;
     }
 
     # Notion
@@ -94,6 +115,9 @@
       keywords = "notion;notes;wiki;workspace;";
       scope = "https://www.notion.so/";
       ulid = "01JCYFA36S1X8Z0AM3QSWZ2F9A";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 56;
     }
 
     # Figma
@@ -107,6 +131,9 @@
       keywords = "figma;design;ui;ux;prototyping;";
       scope = "https://www.figma.com/";
       ulid = "01JCYFAC7T2Y9A1BN4RTVXYA3G";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 57;
     }
 
     # Linear
@@ -120,6 +147,9 @@
       keywords = "linear;issues;tracker;project;";
       scope = "https://linear.app/";
       ulid = "01JCYFAM8V3Z0B2CP5SVWYZB4H";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 58;
     }
 
     # Slack
@@ -133,6 +163,9 @@
       keywords = "slack;chat;team;communication;";
       scope = "https://app.slack.com/";
       ulid = "01JCYFAV9W4A1C3DQ6TWXZ0C5K";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 59;
     }
 
     # WhatsApp Web
@@ -146,6 +179,9 @@
       keywords = "whatsapp;messaging;chat;";
       scope = "https://web.whatsapp.com/";
       ulid = "01JCYFB5AX5B2D4ER7VXYA1D6M";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 60;
     }
 
     # Spotify
@@ -159,6 +195,9 @@
       keywords = "spotify;music;streaming;audio;";
       scope = "https://open.spotify.com/";
       ulid = "01JCYFBFBY6C3E5FS8WYZB2E7N";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 61;
     }
 
     # Netflix
@@ -172,6 +211,9 @@
       keywords = "netflix;streaming;video;movies;shows;";
       scope = "https://www.netflix.com/";
       ulid = "01JCYFBPCZ7D4F6GT9XZA0C3F8";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 62;
     }
 
     # Discord
@@ -185,6 +227,9 @@
       keywords = "discord;chat;voice;gaming;";
       scope = "https://discord.com/";
       ulid = "01JCYFBZD08E5G7HV0AZB1D4G9";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 63;
     }
 
     # Excalidraw
@@ -198,6 +243,9 @@
       keywords = "excalidraw;whiteboard;drawing;diagrams;";
       scope = "https://excalidraw.com/";
       ulid = "01JCYFC9E19F6H8JW1BZC2E5H0";  # Generated 2025-11-02
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 64;
     }
   ];
 
