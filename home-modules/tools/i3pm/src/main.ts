@@ -16,13 +16,14 @@ const VERSION = "2.1.0";
 async function main(): Promise<number> {
   const args = parseArgs(Deno.args, {
     boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow", "sources"],
-    string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output", "category", "project"],
+    string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output", "category", "project", "window", "since"],
     alias: {
       h: "help",
       v: "version",
       V: "verbose",
       d: "directory",
       n: "display-name",
+      f: "follow",
     },
   });
 
@@ -72,6 +73,10 @@ async function main(): Promise<number> {
         const { monitorsCommand } = await import("./commands/monitors.ts");
         return await monitorsCommand(restArgs, args);
 
+      case "events":
+        const { eventsCommand } = await import("./commands/events.ts");
+        return await eventsCommand(restArgs, args);
+
       default:
         console.error(`Unknown command: ${commandStr}`);
         console.error("Run 'i3pm --help' for usage information");
@@ -104,6 +109,7 @@ COMMANDS:
     layout      Save and restore window layouts
     windows     View and monitor window state
     daemon      Query daemon status and events
+    events      Monitor events with rich formatting (Feature 053 Phase 6)
     config      Manage Sway configuration (show, conflicts)
     monitors    View monitor status and workspace distribution (Feature 049)
 
@@ -134,6 +140,12 @@ EXAMPLES:
 
     # Check daemon status
     i3pm daemon status
+
+    # Monitor events in real-time (Feature 053)
+    i3pm events --follow --verbose
+
+    # View recent workspace assignments
+    i3pm events --type workspace::assignment --limit 10
 
     # Show current configuration
     i3pm config show

@@ -3,7 +3,8 @@
 let
   # Feature 035 + Feature 037: Window visibility commands
   # Feature 048: Monitor detection for multi-display VNC setup
-  version = "2.2.2";
+  # Feature 053: Enhanced event logging with decision tree visualization - table layout
+  version = "2.4.0";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
