@@ -164,6 +164,19 @@ in
       # Get currently installed PWAs (T038: Idempotency check)
       INSTALLED_NAMES=$($FFPWA profile list 2>/dev/null | grep "^- " | sed 's/^- \([^:]*\):.*/\1/' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' || echo "")
 
+      # Start temporary HTTP server to serve manifests
+      # firefoxpwa requires HTTP URLs, not local file paths
+      HTTP_PORT=34567
+      echo "Starting temporary HTTP server on port $HTTP_PORT..."
+      ${pkgs.python3}/bin/python3 -m http.server $HTTP_PORT --bind 127.0.0.1 --directory "$MANIFEST_DIR" > /tmp/pwa-http-server.log 2>&1 &
+      HTTP_SERVER_PID=$!
+
+      # Wait for server to start
+      sleep 1
+
+      # Ensure server is killed on exit
+      trap "kill $HTTP_SERVER_PID 2>/dev/null || true" EXIT
+
       # Install each PWA (T037: installPWAScript)
       ${lib.concatMapStrings (pwa: ''
         # T038: Check if already installed (idempotency)
@@ -172,11 +185,13 @@ in
         else
           $VERBOSE_ECHO "Installing PWA: ${pwa.name}..."
 
-          # Use manifest from xdg.dataFile
-          MANIFEST_PATH="$MANIFEST_DIR/${pwa.ulid}.json"
+          # Use HTTP URL for manifest (firefoxpwa requires HTTP/HTTPS URLs)
+          MANIFEST_URL="http://127.0.0.1:$HTTP_PORT/${pwa.ulid}.json"
 
           # T040: Error handling - log errors but continue
-          if $FFPWA site install "$MANIFEST_PATH" \
+          # Use --document-url to bypass cross-origin restrictions
+          if $FFPWA site install "$MANIFEST_URL" \
+               --document-url "${pwa.url}" \
                --name "${pwa.name}" \
                --description "${pwa.description}" \
                --start-url "${pwa.url}" \
@@ -189,6 +204,11 @@ in
           fi
         fi
       '') pwas}
+
+      # Stop HTTP server
+      kill $HTTP_SERVER_PID 2>/dev/null || true
+      wait $HTTP_SERVER_PID 2>/dev/null || true
+      echo "HTTP server stopped"
 
       # T041: Create desktop entry symlinks
       PWA_DIR="$HOME/.local/share/firefox-pwas"
