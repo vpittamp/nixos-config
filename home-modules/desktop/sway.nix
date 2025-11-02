@@ -463,12 +463,12 @@ in
 
       # PWA Workspace Assignments (from app-registry-data.nix)
       # PLATFORM-SPECIFIC: These app_ids are system-generated and differ between hosts
-      # M1 system - update IDs for hetzner-sway separately
+      # hetzner-sway PWA IDs (updated 2025-11-01)
       # YouTube → WS 4, Google AI → WS 10, ChatGPT → WS 11, GitHub Codespaces → WS 2
-      assign [app_id="^FFPWA-01K663E3K8FMGTFVQ6Z6Q2RX7X$"] workspace number 4
-      assign [app_id="^FFPWA-01K664F9E8KXZPXYF4V1Q8A93V$"] workspace number 10
-      assign [app_id="^FFPWA-01K78K7ZQ1190KKGYZ6WJ0HDWX$"] workspace number 11
-      assign [app_id="^FFPWA-01K78K7W5MNT8TDEW2G23ZEM5S$"] workspace number 2
+      assign [app_id="^FFPWA-01K666N2V6BQMDSBMX3AY74TY7$"] workspace number 4
+      assign [app_id="^FFPWA-01K665SPD8EPMP3JTW02JM1M0Z$"] workspace number 10
+      assign [app_id="^FFPWA-01K772ZBM45JD68HXYNM193CVW$"] workspace number 11
+      assign [app_id="^FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0$"] workspace number 2
 
       # Feature 047: Include dynamically generated appearance + keybindings from sway-config-manager
       include ~/.config/sway/appearance-generated.conf

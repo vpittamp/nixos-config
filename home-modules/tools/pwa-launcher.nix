@@ -37,7 +37,13 @@ let
       exit 1
     fi
 
-    # Launch the PWA
+    # Launch the PWA with Wayland support and software rendering
+    # Required for headless/VNC environments without GPU acceleration
+    export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
+    export MOZ_ENABLE_WAYLAND=1
+    export MOZ_DISABLE_RDD_SANDBOX=1
+    export LIBGL_ALWAYS_SOFTWARE=1
+
     exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"
   '';
 in
