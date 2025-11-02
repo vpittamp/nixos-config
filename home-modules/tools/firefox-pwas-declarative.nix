@@ -149,6 +149,7 @@ in
     #
     xdg.dataFile."firefoxpwa/config.json" = {
       text = builtins.toJSON (generateFirefoxPWAConfig pwas);
+      force = true;  # Always override without backup
     };
 
     #
