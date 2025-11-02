@@ -4,7 +4,7 @@ let
   isM1 = osConfig.networking.hostName or "" == "nixos-m1";
 
   # Import centralized PWA site definitions
-  pwaSitesConfig = import ./pwa-sites.nix { inherit lib; };
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
 
   # Generate Firefox policy exception patterns from PWA sites
   trackingExceptions = pwaSitesConfig.helpers.getDomainPatterns

@@ -220,4 +220,44 @@
     if builtins.length ulids != builtins.length uniqueULIDs
     then throw "Duplicate ULIDs detected in pwa-sites.nix"
     else true;
+
+  # Additional trusted domains for Firefox policies
+  # These are domains that need clipboard/tracking exception but aren't PWAs
+  additionalTrustedDomains = [
+    # GitHub ecosystem
+    "github.dev"
+    "codespaces.githubusercontent.com"
+
+    # AI tools (not all are PWAs)
+    "chatgpt.com"
+
+    # Authentication
+    "my.1password.com"
+    "1password.com"
+  ];
+
+  # Helper functions to extract domain patterns for Firefox policies
+  helpers = {
+    # Extract unique base domains from PWA sites
+    # Returns list like: ["google.com", "youtube.com", "github.com", ...]
+    getBaseDomains = sites: lib.unique (builtins.map (site: site.domain) sites);
+
+    # Generate Firefox policy exception patterns
+    # Returns list like: ["https://google.com", "https://*.google.com", ...]
+    getDomainPatterns = sites: additionalDomains:
+      let
+        pwaDomains = lib.unique (builtins.map (site: site.domain) sites);
+        allDomains = lib.unique (pwaDomains ++ additionalDomains);
+
+        # Generate both exact and wildcard patterns for each domain
+        generatePatterns = domain:
+          if lib.hasPrefix "localhost" domain || lib.hasPrefix "127.0.0.1" domain
+          then [ "http://${domain}" ]  # localhost uses HTTP
+          else [
+            "https://${domain}"
+            "https://*.${domain}"
+          ];
+      in
+        lib.flatten (builtins.map generatePatterns allDomains);
+  };
 }

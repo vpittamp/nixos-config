@@ -5,26 +5,28 @@
 with lib;
 
 let
-  # Import PWA site definitions
-  pwaSitesConfig = import ../tools/pwa-sites.nix { inherit lib; };
+  # Import PWA site definitions from shared location
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
   pwaSites = pwaSitesConfig.pwaSites;
 
   # Define emoji/icon mappings for PWAs (fallback if no custom icon)
   pwaEmojiMap = {
-    "Google AI" = "🔍";
+    # Core PWAs from shared/pwa-sites.nix
     "YouTube" = "";
-    "Gitea" = "";
-    "Backstage" = "";
-    "Kargo" = "";
-    "ArgoCD" = "";
-    "Home Assistant" = "";
-    "Uber Eats" = "🍔";
-    "GitHub Codespaces" = "";
-    "Azure Portal" = "☁";
-    "Hetzner Cloud" = "";
-    "ChatGPT Codex" = "";
-    "Tailscale" = "";
-    "Headlamp" = "";
+    "Google AI" = "🔍";
+    "Claude" = "";
+    "GitHub" = "";
+    "Gmail" = "📧";
+    "Google Calendar" = "📅";
+    "Notion" = "";
+    "Figma" = "🎨";
+    "Linear" = "";
+    "Slack" = "";
+    "WhatsApp" = "";
+    "Spotify" = "";
+    "Netflix" = "";
+    "Discord" = "";
+    "Excalidraw" = "✏";
   };
 
   # Script to generate i3wsr config with current PWA IDs
@@ -69,23 +71,24 @@ let
     # Add PWA-specific icons based on IDs from mapping
     echo "" >> "$CONFIG_FILE"
     ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key)=\(.value)"' "$MAPPING_FILE" | while IFS== read -r name id; do
-      # Map names to emojis
+      # Map names to emojis (from shared/pwa-sites.nix)
       case "$name" in
-        "Google AI") ICON="🔍" ;;
         "YouTube") ICON="" ;;
-        "Gitea") ICON="" ;;
-        "Backstage") ICON="" ;;
-        "Kargo") ICON="" ;;
-        "ArgoCD") ICON="" ;;
-        "Home Assistant") ICON="" ;;
-        "Uber Eats") ICON="🍔" ;;
-        "GitHub Codespaces") ICON="" ;;
-        "Azure Portal") ICON="☁" ;;
-        "Hetzner Cloud") ICON="" ;;
-        "ChatGPT Codex") ICON="" ;;
-        "Tailscale") ICON="" ;;
-        "Headlamp") ICON="" ;;
-        *) ICON="🌐" ;;
+        "Google AI") ICON="🔍" ;;
+        "Claude") ICON="" ;;
+        "GitHub") ICON="" ;;
+        "Gmail") ICON="📧" ;;
+        "Google Calendar") ICON="📅" ;;
+        "Notion") ICON="" ;;
+        "Figma") ICON="🎨" ;;
+        "Linear") ICON="" ;;
+        "Slack") ICON="" ;;
+        "WhatsApp") ICON="" ;;
+        "Spotify") ICON="" ;;
+        "Netflix") ICON="" ;;
+        "Discord") ICON="" ;;
+        "Excalidraw") ICON="✏" ;;
+        *) ICON="🌐" ;;  # Default for any other PWA
       esac
 
       if [ ! -z "$ICON" ]; then
