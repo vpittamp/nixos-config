@@ -127,7 +127,7 @@
       domain = "figma.com";
       icon = "file:///etc/nixos/assets/pwa-icons/figma.png";
       description = "Figma Design Tool";
-      categories = "Graphics;Design;";
+      categories = "Graphics;";  # Design is not a standard category
       keywords = "figma;design;ui;ux;prototyping;";
       scope = "https://www.figma.com/";
       ulid = "01JCYFAC7T2Y9A1BN4RTVXYA3G";  # Generated 2025-11-02
