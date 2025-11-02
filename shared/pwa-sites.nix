@@ -93,7 +93,7 @@
       categories = "Office;ProjectManagement;";
       keywords = "notion;notes;wiki;workspace;";
       scope = "https://www.notion.so/";
-      ulid = "01JCYFA36S1X8Z0AM3QSUWZ2F9";  # Generated 2025-11-02
+      ulid = "01JCYFA36S1X8Z0AM3QSWZ2F9A";  # Generated 2025-11-02
     }
 
     # Figma
@@ -171,7 +171,7 @@
       categories = "AudioVideo;Video;";
       keywords = "netflix;streaming;video;movies;shows;";
       scope = "https://www.netflix.com/";
-      ulid = "01JCYFBPCZ7D4F6GT9XZA0C3F8P";  # Generated 2025-11-02
+      ulid = "01JCYFBPCZ7D4F6GT9XZA0C3F8";  # Generated 2025-11-02
     }
 
     # Discord
@@ -184,7 +184,7 @@
       categories = "Network;InstantMessaging;";
       keywords = "discord;chat;voice;gaming;";
       scope = "https://discord.com/";
-      ulid = "01JCYFBZD08E5G7HV0AZB1D4G9Q";  # Generated 2025-11-02
+      ulid = "01JCYFBZD08E5G7HV0AZB1D4G9";  # Generated 2025-11-02
     }
 
     # Excalidraw
@@ -197,7 +197,7 @@
       categories = "Graphics;";
       keywords = "excalidraw;whiteboard;drawing;diagrams;";
       scope = "https://excalidraw.com/";
-      ulid = "01JCYFC9E19F6H8JW1BZC2E5H0R";  # Generated 2025-11-02
+      ulid = "01JCYFC9E19F6H8JW1BZC2E5H0";  # Generated 2025-11-02
     }
   ];
 
