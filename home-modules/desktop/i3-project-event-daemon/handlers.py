@@ -885,25 +885,42 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 053 Priority 0: Workspace assignment with priority
-        # Priority 0: Launch notification workspace (Feature 053 - HIGHEST PRIORITY)
-        # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
-        # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
-        # Priority 3: Class-based registry matching (fallback when PID unavailable)
+        # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 056 REFACTORED: Workspace assignment
+        #
+        # SIMPLIFIED ARCHITECTURE:
+        #   Firefox PWAs (FFPWA-*): Direct class-based lookup (deterministic)
+        #   Non-PWAs: Priority system (1: Launch notification, 2: TARGET_WORKSPACE, 3: APP_NAME registry, 4: Class match)
         preferred_ws = None
         assignment_source = None
+        decision_tree = []  # Track assignment decision path for logging
 
-        # Feature 053 Phase 6: Decision tree tracking for detailed logging
-        decision_tree = []
+        # Firefox PWA: Direct class-based lookup (deterministic)
+        if window_class and window_class.startswith("FFPWA-"):
+            if application_registry:
+                for app_name, app_def in application_registry.items():
+                    expected_class = app_def.get("expected_class", "")
+                    if expected_class == window_class:
+                        preferred_ws = app_def.get("preferred_workspace")
+                        assignment_source = f"pwa_class_match[{app_name}]"
+                        logger.info(
+                            f"[PWA] Assigned window {window_id} to workspace {preferred_ws} "
+                            f"via direct class match (class={window_class}, app={app_name})"
+                        )
+                        break
 
-        # Feature 053: Priority 0 - Launch notification workspace (US1 T030-T034)
+                if not preferred_ws:
+                    logger.warning(
+                        f"[PWA] No registry match for Firefox PWA class {window_class}"
+                    )
+
+        # Priority 1: Launch notification workspace (Feature 053)
         # Use workspace from matched_launch if correlation succeeded
         # This provides <100ms assignment latency and 100% accuracy for walker-launched apps
-        if matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
+        if not preferred_ws and matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
             preferred_ws = matched_launch.workspace_number
             assignment_source = "launch_notification"
             decision_tree.append({
-                "priority": 0,
+                "priority": 1,
                 "name": "launch_notification",
                 "matched": True,
                 "workspace": preferred_ws,
@@ -913,12 +930,12 @@ async def on_window_new(
                 }
             })
             logger.info(
-                f"✓ Priority 0: Using launch notification workspace {preferred_ws} "
+                f"✓ Priority 1: Using launch notification workspace {preferred_ws} "
                 f"for window {window_id} ({window_class}) from app '{matched_launch.app_name}' "
                 f"[correlation_confidence={correlation_confidence:.2f}]"
             )
-        else:
-            # Priority 0 failed - record why
+        elif not preferred_ws:
+            # Priority 1 failed - record why
             reason = "no_launch_notification"
             if matched_launch:
                 if not hasattr(matched_launch, 'workspace_number'):
@@ -926,19 +943,19 @@ async def on_window_new(
                 elif not matched_launch.workspace_number:
                     reason = "launch_workspace_number_empty"
             decision_tree.append({
-                "priority": 0,
+                "priority": 1,
                 "name": "launch_notification",
                 "matched": False,
                 "reason": reason
             })
 
         if not preferred_ws and window_env:
-            # Priority 1: I3PM_TARGET_WORKSPACE (Feature 039 T060)
+            # Priority 2: I3PM_TARGET_WORKSPACE (Feature 039 T060)
             if hasattr(window_env, 'target_workspace') and window_env.target_workspace:
                 preferred_ws = window_env.target_workspace
                 assignment_source = "I3PM_TARGET_WORKSPACE"
                 decision_tree.append({
-                    "priority": 1,
+                    "priority": 2,
                     "name": "I3PM_TARGET_WORKSPACE",
                     "matched": True,
                     "workspace": preferred_ws,
@@ -946,16 +963,16 @@ async def on_window_new(
                 })
                 logger.info(f"Using I3PM_TARGET_WORKSPACE={preferred_ws} for window {window_id}")
             else:
-                # Priority 1 failed
+                # Priority 2 failed
                 reason = "env_var_not_set" if not hasattr(window_env, 'target_workspace') else "env_var_empty"
                 decision_tree.append({
-                    "priority": 1,
+                    "priority": 2,
                     "name": "I3PM_TARGET_WORKSPACE",
                     "matched": False,
                     "reason": reason
                 })
 
-            # Priority 2: I3PM_APP_NAME registry lookup (Feature 037)
+            # Priority 3: I3PM_APP_NAME registry lookup (Feature 037)
             if not preferred_ws and window_env.app_name and application_registry:
                 app_name = window_env.app_name
                 app_def = application_registry.get(app_name)
@@ -964,52 +981,52 @@ async def on_window_new(
                     preferred_ws = app_def["preferred_workspace"]
                     assignment_source = f"registry[{app_name}]"
                     decision_tree.append({
-                        "priority": 2,
+                        "priority": 3,
                         "name": "I3PM_APP_NAME_registry",
                         "matched": True,
                         "workspace": preferred_ws,
                         "details": {"app_name": app_name}
                     })
                 else:
-                    # Priority 2 failed
+                    # Priority 3 failed
                     reason = "app_not_in_registry"
                     if app_def and "preferred_workspace" not in app_def:
                         reason = "app_has_no_preferred_workspace"
                     decision_tree.append({
-                        "priority": 2,
+                        "priority": 3,
                         "name": "I3PM_APP_NAME_registry",
                         "matched": False,
                         "reason": reason,
                         "details": {"app_name": app_name if app_name else "none"}
                     })
             elif not preferred_ws:
-                # Priority 2 not attempted
+                # Priority 3 not attempted
                 reason = "no_window_env" if not window_env else "no_app_name"
                 if not application_registry:
                     reason = "no_registry_loaded"
                 decision_tree.append({
-                    "priority": 2,
+                    "priority": 3,
                     "name": "I3PM_APP_NAME_registry",
                     "matched": False,
                     "reason": reason
                 })
         elif not preferred_ws and not window_env:
-            # Skip Priority 1 and 2 - no window_env
+            # Skip Priority 2 and 3 - no window_env
             decision_tree.append({
-                "priority": 1,
+                "priority": 2,
                 "name": "I3PM_TARGET_WORKSPACE",
                 "matched": False,
                 "reason": "no_window_env"
             })
             decision_tree.append({
-                "priority": 2,
+                "priority": 3,
                 "name": "I3PM_APP_NAME_registry",
                 "matched": False,
                 "reason": "no_window_env"
             })
 
         if not preferred_ws:
-            # Priority 3: Class-based registry matching (fallback for apps without PID)
+            # Priority 4: Class-based registry matching (fallback for apps without PID)
             # BUGFIX 039: When PID is unavailable (e.g., VS Code, Ghostty), use window class
             # to match against application registry and get preferred workspace
             if application_registry:
@@ -1027,7 +1044,7 @@ async def on_window_new(
                     match_type = app_match.get("_match_type", "unknown")
                     assignment_source = f"registry[{app_name}] via class-match ({match_type})"
                     decision_tree.append({
-                        "priority": 3,
+                        "priority": 4,
                         "name": "class_registry_match",
                         "matched": True,
                         "workspace": preferred_ws,
@@ -1042,10 +1059,10 @@ async def on_window_new(
                         f"via {match_type}, assigning workspace {preferred_ws}"
                     )
                 else:
-                    # Priority 3 failed
+                    # Priority 4 failed
                     reason = "no_class_match_in_registry"
                     decision_tree.append({
-                        "priority": 3,
+                        "priority": 4,
                         "name": "class_registry_match",
                         "matched": False,
                         "reason": reason,
@@ -1053,7 +1070,7 @@ async def on_window_new(
                     })
             else:
                 decision_tree.append({
-                    "priority": 3,
+                    "priority": 4,
                     "name": "class_registry_match",
                     "matched": False,
                     "reason": "no_registry_loaded"
@@ -1110,6 +1127,45 @@ async def on_window_new(
                         await conn.command(
                             f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
                         )
+
+                        # Feature 056: Validate workspace assignment with retry (PWA race condition fix)
+                        # PWAs may not be on any workspace yet (workspace_num=?) during window::new
+                        # Wait for Sway to process the move, then verify it succeeded
+                        await asyncio.sleep(0.1)  # 100ms delay for Sway to process the move
+
+                        validation_tree = await conn.get_tree()
+                        validated_container = validation_tree.find_by_id(container.id)
+                        validated_workspace = validated_container.workspace() if validated_container else None
+
+                        if not validated_workspace or validated_workspace.num != preferred_ws:
+                            # Move failed - window still not on target workspace
+                            # Retry once after another delay
+                            logger.warning(
+                                f"⚠ Workspace assignment validation failed: Window {window_id} not on "
+                                f"workspace {preferred_ws} after move (currently on "
+                                f"{validated_workspace.num if validated_workspace else 'none'}). Retrying..."
+                            )
+                            await asyncio.sleep(0.1)  # Another 100ms delay
+                            await conn.command(
+                                f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
+                            )
+
+                            # Final validation
+                            await asyncio.sleep(0.05)  # Short delay before final check
+                            final_tree = await conn.get_tree()
+                            final_container = final_tree.find_by_id(container.id)
+                            final_workspace = final_container.workspace() if final_container else None
+
+                            if not final_workspace or final_workspace.num != preferred_ws:
+                                logger.error(
+                                    f"✗ Workspace assignment FAILED after retry: Window {window_id} "
+                                    f"still not on workspace {preferred_ws} (currently on "
+                                    f"{final_workspace.num if final_workspace else 'none'})"
+                                )
+                            else:
+                                logger.info(
+                                    f"✓ Retry successful: Window {window_id} now on workspace {preferred_ws}"
+                                )
 
                         # T026: Track initial workspace assignment
                         if workspace_tracker:

@@ -169,6 +169,60 @@ class WorkspaceAssigner:
         self.assignments_total += 1
 
         try:
+            # Priority 0: Smart PWA Detection
+            # For PWAs (FFPWA-* or Google-chrome):
+            # 1. If I3PM_APP_NAME matches the actual PWA in registry, use env var (project-scoped PWAs)
+            # 2. Otherwise, use direct class matching (ignore mismatched env vars like "terminal")
+            if window_class and (window_class.startswith("FFPWA-") or window_class == "Google-chrome"):
+                # Check if I3PM_APP_NAME is set and matches a PWA in the registry
+                env_app_name = None
+                if i3pm_env and hasattr(i3pm_env, 'app_name') and i3pm_env.app_name:
+                    env_app_name = i3pm_env.app_name
+
+                # Find the PWA entry by class matching
+                pwa_app_name = None
+                pwa_workspace = None
+
+                if application_registry:
+                    for app_name, app_def in application_registry.items():
+                        expected_class = app_def.get("expected_class", "")
+                        if expected_class == window_class:
+                            pwa_app_name = app_name
+                            pwa_workspace = app_def.get("preferred_workspace")
+                            break
+
+                # Decision: Use env var only if it matches the actual PWA
+                if env_app_name and env_app_name == pwa_app_name:
+                    # Env var matches actual PWA - allow normal priority flow (for project-scoped PWAs)
+                    logger.debug(
+                        f"[Priority 0 - PWA] I3PM_APP_NAME={env_app_name} matches PWA {pwa_app_name}, "
+                        f"allowing normal priority flow"
+                    )
+                elif pwa_app_name and pwa_workspace and self._validate_workspace(pwa_workspace):
+                    # Env var doesn't match or not set - use direct class matching
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    self.assignments_by_tier["class_match"] += 1
+                    self._update_avg_latency(duration_ms)
+
+                    logger.info(
+                        f"[Priority 0 - PWA] Assigned window {window_id} to workspace {pwa_workspace} "
+                        f"via PWA class matching (class={window_class}, app={pwa_app_name}, "
+                        f"ignored_env_app={env_app_name})"
+                    )
+
+                    return WorkspaceAssignment(
+                        success=True,
+                        workspace=pwa_workspace,
+                        source="pwa_class_match",
+                        duration_ms=duration_ms,
+                        metadata={
+                            "app_name": pwa_app_name,
+                            "match_type": "pwa_exact",
+                            "expected_class": window_class,
+                            "ignored_env_app_name": env_app_name
+                        }
+                    )
+
             # Priority 1: App-specific handler
             if window_class in self.app_specific_handlers:
                 handler_result = await self.app_specific_handlers[window_class](
@@ -318,19 +372,19 @@ class WorkspaceAssigner:
 
     def _validate_workspace(self, workspace: int) -> bool:
         """
-        Validate workspace number is in valid range.
+        Validate workspace number is positive.
 
         Args:
             workspace: Workspace number to validate
 
         Returns:
-            True if valid (1-10), False otherwise
+            True if valid (>= 1), False otherwise
         """
         if not isinstance(workspace, int):
             return False
 
-        # i3 default workspace range is 1-10 (configurable, but this is typical)
-        return 1 <= workspace <= 10
+        # i3/Sway support arbitrary workspace numbers, only validate positive
+        return workspace >= 1
 
     def _update_avg_latency(self, duration_ms: float):
         """Update rolling average latency metric."""

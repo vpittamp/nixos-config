@@ -66,7 +66,7 @@ let
             start_url = pwa.url;
             icon_url = null;  # firefoxpwa will populate this
             document_url = pwa.url;  # CRITICAL: Provides security context
-            manifest_url = "https://${pwa.domain}/manifest.json";  # Standard location
+            manifest_url = "${pwa.url}/manifest.json";  # Use same base URL as document_url
             categories = if (pwa ? categories)
               then builtins.filter (x: x != "") (lib.splitString ";" pwa.categories)
               else [];
@@ -163,6 +163,8 @@ in
         categoriesStr = if (pwa ? categories)
           then pwa.categories  # Already has semicolons from pwa-sites.nix
           else "Network;";
+        # PWA app name in app registry (e.g., "youtube-pwa")
+        appName = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
       in {
         name = ".local/share/applications/FFPWA-${pwa.ulid}.desktop";
         value.text = ''
@@ -170,7 +172,7 @@ in
           Type=Application
           Name=${pwa.name}
           Comment=${pwa.description}
-          Exec=firefoxpwa site launch ${pwa.ulid} --protocol %u
+          Exec=launch-pwa-by-name ${pwa.ulid}
           Icon=FFPWA-${pwa.ulid}
           Terminal=false
           Categories=${categoriesStr}
