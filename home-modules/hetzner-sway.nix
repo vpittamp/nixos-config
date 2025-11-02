@@ -28,6 +28,10 @@
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
     ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
+
+    # Feature 056: Declarative PWA Installation
+    ./tools/firefox-pwas-declarative.nix  # TDD-driven declarative PWA management with ULIDs
+    ./tools/pwa-helpers.nix               # Helper CLI commands for PWA management
   ];
 
   home.username = "vpittamp";
@@ -55,5 +59,10 @@
   programs.swaybar-enhanced = {
     enable = true;
     # Uses default Catppuccin Mocha theme and standard update intervals
+  };
+
+  # Feature 056: Declarative PWA Installation
+  programs.firefoxpwa-declarative = {
+    enable = true;
   };
 }

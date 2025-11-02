@@ -1,401 +1,208 @@
-# Declarative PWA Installation and Management Module
+# Declarative PWA Installation Module (Feature 056)
+# TDD-driven implementation with ULID-based cross-machine portability
 { config, lib, pkgs, ... }:
 
 with lib;
 
 let
   # Import centralized PWA site definitions
-  pwaSitesConfig = import ./pwa-sites.nix { inherit lib; };
-
-  # Use PWA sites from centralized configuration
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
   pwas = pwaSitesConfig.pwaSites;
 
-  # Script to install and manage PWAs
-  managePWAsScript = pkgs.writeShellScript "manage-pwas" ''
-    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.jq}/bin:${pkgs.imagemagick}/bin:${pkgs.gawk}/bin:$PATH"
-    FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
-    # Feature 034: Use separate directory for PWAs so Walker/Elephant only shows app-registry apps
-    DESKTOP_DIR="$HOME/.local/share/firefox-pwas"
-    STATE_FILE="$HOME/.config/firefoxpwa/installed-pwas.json"
+  #
+  # Core Functions (Phase 2: Foundational)
+  #
 
-    # Ensure directories exist
-    mkdir -p "$DESKTOP_DIR"
-    mkdir -p "$(dirname "$STATE_FILE")"
+  # validateULID: Validates ULID format (T010)
+  # ULID spec: 26 characters from alphabet [0-9A-HJKMNP-TV-Z]
+  # Excludes: I, L, O, U (to avoid confusion with 1, 1, 0, V)
+  #
+  # Test coverage: T007-T009 in tests/pwa-installation/unit/test-validate-ulid.nix
+  # Returns: true if valid, false otherwise
+  validateULID = ulid:
+    let
+      # Check length is exactly 26 characters
+      len = builtins.stringLength ulid;
 
-    # Initialize state file if it doesn't exist
-    if [ ! -f "$STATE_FILE" ]; then
-      echo '{}' > "$STATE_FILE"
-    fi
+      # ULID alphabet: 0-9, A-Z excluding I, L, O, U
+      # Regex pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      #
+      # We use builtins.match which returns null if no match, or a list if match
+      isValidFormat = builtins.match "[0-9A-HJKMNP-TV-Z]{26}" ulid != null;
+    in
+    len == 26 && isValidFormat;
 
-    # Check if firefoxpwa is available
-    if [ ! -x "$FFPWA" ]; then
-      echo "firefoxpwa not found, cannot manage PWAs" >&2
-      exit 1
-    fi
+  # generateManifest: Generate Web App Manifest JSON from PWA definition (T015)
+  # Generates a standards-compliant Web App Manifest
+  #
+  # Test coverage: T012-T014 in tests/pwa-installation/unit/test-generate-manifest.nix
+  # Spec: https://www.w3.org/TR/appmanifest/
+  # Returns: attrset representing manifest JSON
+  generateManifest = pwa: {
+    name = pwa.name;
+    short_name = pwa.name;  # Use same as name for simplicity
+    start_url = pwa.url;
+    scope = pwa.scope or "https://${pwa.domain}/";  # Default to domain root
+    display = "standalone";  # Always standalone for PWAs
+    description = pwa.description;
+    icons = [
+      {
+        src = pwa.icon;
+        sizes = "512x512";
+        type = "image/png";
+      }
+    ];
+  };
 
-    echo "Managing declarative PWAs..."
+  # generateFirefoxPWAConfig: Generate firefoxpwa config.json (T021)
+  # Creates the config.json structure for firefoxpwa runtime
+  #
+  # Test coverage: T017-T020
+  # Returns: attrset representing config.json
+  generateFirefoxPWAConfig = pwaList:
+    let
+      # Check for duplicate ULIDs
+      ulids = builtins.map (pwa: pwa.ulid) pwaList;
+      uniqueULIDs = lib.lists.unique ulids;
+      hasDuplicates = builtins.length ulids != builtins.length uniqueULIDs;
 
-    # Get currently installed PWAs
-    INSTALLED_IDS=$($FFPWA profile list 2>/dev/null | grep "^- " | awk -F'[()]' '{print $2}' | xargs)
+      # Convert PWA list to sites attrset keyed by ULID
+      sitesAttrset = builtins.listToAttrs (builtins.map (pwa: {
+        name = pwa.ulid;
+        value = {
+          name = pwa.name;
+          description = pwa.description;
+          start_url = pwa.url;
+          scope = pwa.scope or "https://${pwa.domain}/";
+          # manifest_url and icon_path will be set during installation
+          manifest_url = "file:///tmp/placeholder-${pwa.ulid}.json";
+          icon_path = pwa.icon;
+        };
+      }) pwaList);
+    in
+    if hasDuplicates
+    then throw "Duplicate ULIDs detected in PWA configuration"
+    else {
+      version = 5;
+      runtime_version = "2.12.3";  # firefoxpwa version
+      profiles = {
+        "00000000000000000000000000" = {  # Default profile ULID
+          name = "Default";
+          description = "Default Firefox PWA Profile";
+          config = {};
+          sites = sitesAttrset;
+        };
+      };
+    };
 
-    # Process each declared PWA
-    ${lib.concatMapStrings (pwa: ''
-      echo "Checking PWA: ${pwa.name}"
+in
+{
+  #
+  # Module Configuration (T023-T024)
+  #
 
-      # Check if this PWA is already installed
-      PWA_INSTALLED=false
-      for id in $INSTALLED_IDS; do
-        # Get the name of the installed PWA
-        INSTALLED_NAME=$($FFPWA profile list 2>/dev/null | grep "$id" | sed 's/^- \([^:]*\):.*/\1/' | xargs)
-        if [ "$INSTALLED_NAME" = "${pwa.name}" ]; then
-          PWA_INSTALLED=true
-          PWA_ID="$id"
-          echo "  Already installed with ID: $id"
-          break
-        fi
-      done
+  # Module options (T024)
+  options.programs.firefoxpwa-declarative = {
+    enable = mkEnableOption "Declarative Firefox PWA management";
+  };
 
-      # Install if not present
-      if [ "$PWA_INSTALLED" = false ]; then
-        echo "  Installing ${pwa.name}..."
+  config = mkIf config.programs.firefoxpwa-declarative.enable {
+    # Validate all ULIDs in pwa-sites.nix on module load
+    assertions = [
+      {
+        assertion = builtins.all (pwa: validateULID pwa.ulid) pwas;
+        message = ''
+          Invalid ULID detected in pwa-sites.nix
+          All ULIDs must be exactly 26 characters from alphabet [0-9A-HJKMNP-TV-Z]
+          (excludes I, L, O, U to avoid confusion)
+        '';
+      }
+    ];
 
-        # Create a simple manifest URL (most sites have one)
-        MANIFEST_URL="${pwa.url}/manifest.json"
+    #
+    # Phase 3: User Story 1 - Zero-Touch PWA Deployment (T033-T041)
+    #
 
-        # Try to install the PWA
-        # Use the site URL as both manifest and document URL for simplicity
-        $FFPWA site install "${pwa.url}" \
-          --document-url "${pwa.url}" \
-          --start-url "${pwa.url}" \
-          --name "${pwa.name}" \
-          --description "${pwa.description}" \
-          --icon-url "${pwa.icon}" \
-          --no-system-integration \
-          2>&1 | grep -E "(installed|error|failed)" || true
+    # Ensure firefoxpwa is installed (T033)
+    home.packages = [
+      pkgs.firefoxpwa
 
-        # Note: This will likely fail for sites without manifests
-        # In that case, we provide manual instructions
-        if [ $? -ne 0 ]; then
-          echo "  Auto-install failed for ${pwa.name}"
-          echo "  Manual installation required: firefoxpwa site install '${pwa.url}'"
-        fi
-      else
-        # Create/update desktop file for existing PWA
-        if [ ! -z "$PWA_ID" ]; then
-          cat > "$DESKTOP_DIR/FFPWA-$PWA_ID.desktop" << DESKTOP
-    [Desktop Entry]
-    Type=Application
-    Version=1.4
-    Name=${pwa.name}
-    Comment=Firefox Progressive Web App - ${pwa.url}
-    Icon=FFPWA-$PWA_ID
-    Exec=${pkgs.firefoxpwa}/bin/firefoxpwa site launch $PWA_ID --protocol %u
-    Terminal=false
-    StartupNotify=true
-    StartupWMClass=FFPWA-$PWA_ID
-    Categories=Network;
-    MimeType=x-scheme-handler/https;x-scheme-handler/http;
-    X-KDE-Activities=00000000-0000-0000-0000-000000000000
-    DESKTOP
-          chmod 644 "$DESKTOP_DIR/FFPWA-$PWA_ID.desktop"
+      # T052: Cross-machine PWA launcher
+      (pkgs.writeShellScriptBin "launch-pwa-by-name" (builtins.readFile ./launch-pwa-by-name.sh))
+    ];
 
-          # Process icon for proper KRunner display
-          ICON_PATH="${pwa.icon}"
-          if [[ "$ICON_PATH" == file://* ]]; then
-            ICON_FILE="''${ICON_PATH#file://}"
-            if [ -f "$ICON_FILE" ]; then
-              echo "  Processing custom icon for ${pwa.name}"
+    # T034: Generate manifest files for all PWAs
+    xdg.dataFile = builtins.listToAttrs (builtins.map (pwa:
+      {
+        name = "pwa-manifests/${pwa.ulid}.json";
+        value = {
+          text = builtins.toJSON (generateManifest pwa);
+        };
+      }
+    ) pwas);
 
-              # Create all required icon sizes for KDE integration
-              for size in 16 22 24 32 48 64 128 256 512; do
-                icon_dir="$HOME/.local/share/icons/hicolor/''${size}x''${size}/apps"
-                mkdir -p "$icon_dir"
+    # T035-T036: Generate firefoxpwa config.json
+    xdg.configFile."firefoxpwa/config.json" = {
+      text = builtins.toJSON (generateFirefoxPWAConfig pwas);
+    };
 
-                # Check if icon is square and resize appropriately
-                dimensions=$(identify "$ICON_FILE" 2>/dev/null | awk '{print $3}' || echo "")
-                if [ ! -z "$dimensions" ]; then
-                  width=$(echo $dimensions | cut -dx -f1)
-                  height=$(echo $dimensions | cut -dx -f2)
+    # T037-T040: Installation script with idempotency and error handling
+    home.activation.managePWAs = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      echo "Managing declarative PWAs..."
 
-                  if [ "$width" != "$height" ]; then
-                    # Convert to square format
-                    magick "$ICON_FILE" \
-                      -resize ''${size}x''${size} \
-                      -gravity center \
-                      -background transparent \
-                      -extent ''${size}x''${size} \
-                      "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
-                    convert "$ICON_FILE" \
-                      -resize ''${size}x''${size} \
-                      -gravity center \
-                      -background transparent \
-                      -extent ''${size}x''${size} \
-                      "$icon_dir/FFPWA-$PWA_ID.png"
-                  else
-                    # Just resize
-                    magick "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
-                    convert "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png"
-                  fi
-                else
-                  # Fallback if identify fails
-                  magick "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png" 2>/dev/null || \
-                  convert "$ICON_FILE" -resize ''${size}x''${size} "$icon_dir/FFPWA-$PWA_ID.png"
-                fi
-              done
-            fi
+      FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
+      MANIFEST_DIR="$HOME/.local/share/pwa-manifests"
+
+      # Check if firefoxpwa is available
+      if [ ! -x "$FFPWA" ]; then
+        echo "Warning: firefoxpwa not found, skipping PWA installation"
+        exit 0
+      fi
+
+      # Get currently installed PWAs (T038: Idempotency check)
+      INSTALLED_NAMES=$($FFPWA profile list 2>/dev/null | grep "^- " | sed 's/^- \([^:]*\):.*/\1/' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' || echo "")
+
+      # Install each PWA (T037: installPWAScript)
+      ${lib.concatMapStrings (pwa: ''
+        # T038: Check if already installed (idempotency)
+        if echo "$INSTALLED_NAMES" | grep -qxF "${pwa.name}"; then
+          $VERBOSE_ECHO "PWA already installed: ${pwa.name}"
+        else
+          $VERBOSE_ECHO "Installing PWA: ${pwa.name}..."
+
+          # Use manifest from xdg.dataFile
+          MANIFEST_PATH="$MANIFEST_DIR/${pwa.ulid}.json"
+
+          # T040: Error handling - log errors but continue
+          if $FFPWA site install "$MANIFEST_PATH" \
+               --name "${pwa.name}" \
+               --description "${pwa.description}" \
+               --start-url "${pwa.url}" \
+               ${if (pwa ? categories) then "--categories \"${pwa.categories}\"" else ""} \
+               ${if (pwa ? keywords) then "--keywords \"${pwa.keywords}\"" else ""} \
+               2>&1 | grep -q "installed"; then
+            $VERBOSE_ECHO "  ✓ ${pwa.name} installed successfully"
+          else
+            echo "  Warning: Failed to install ${pwa.name}" >&2
           fi
         fi
-      fi
-
-    '') pwas}
-
-    # Update desktop database
-    if command -v update-desktop-database >/dev/null 2>&1; then
-      update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
-    fi
-
-    # Clear old icon cache for KRunner
-    rm -rf ~/.cache/icon-cache.kcache 2>/dev/null || true
-
-    # Update XDG menu
-    if command -v xdg-desktop-menu >/dev/null 2>&1; then
-      xdg-desktop-menu forceupdate 2>/dev/null || true
-    fi
-
-    # Rebuild KDE cache for KRunner icon visibility
-    if command -v kbuildsycoca6 >/dev/null 2>&1; then
-      kbuildsycoca6 --noincremental 2>/dev/null || true
-      echo "KDE cache rebuilt for icon visibility"
-    fi
-
-    echo "PWA management completed"
-
-    # Apply dialog fixes for Wayland compatibility
-    if [ -x /etc/nixos/scripts/fix-pwa-dialogs.sh ]; then
-      echo "Applying dialog fixes..."
-      /etc/nixos/scripts/fix-pwa-dialogs.sh >/dev/null 2>&1 || echo "Dialog fixes not available"
-    fi
-
-    # Optional: Pin to taskbar if the script exists
-    if command -v pwa-pin-taskbar >/dev/null 2>&1; then
-      echo "Updating taskbar pins..."
-      pwa-pin-taskbar 2>/dev/null || echo "Taskbar pinning not configured"
-    elif [ -x /etc/nixos/scripts/pwa-taskbar-pin.sh ]; then
-      echo "Updating taskbar pins..."
-      /etc/nixos/scripts/pwa-taskbar-pin.sh 2>/dev/null || echo "Taskbar pinning not configured"
-    fi
-  '';
-
-  # Script to auto-install PWAs (idempotent)
-  autoInstallScript = pkgs.writeShellScript "auto-install-pwas" ''
-    export PATH="${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.curl}/bin:${pkgs.lsof}/bin:$PATH"
-    FFPWA="${pkgs.firefoxpwa}/bin/firefoxpwa"
-
-    echo "Checking configured PWAs (idempotent operation)..."
-    echo ""
-
-    # Debug: Show currently installed PWAs
-    echo "Currently installed PWAs:"
-    $FFPWA profile list 2>/dev/null | grep "^- " | sed 's/^- /  - /' || echo "  None"
-    echo ""
-
-    # Get currently installed PWAs (names only, one per line)
-    # This extracts just the name part before the colon
-    INSTALLED_NAMES=$($FFPWA profile list 2>/dev/null | grep "^- " | cut -d: -f1 | sed 's/^- //' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-
-    # Track what we install
-    INSTALLED_COUNT=0
-    SKIPPED_COUNT=0
-    FAILED_COUNT=0
-
-    # Install each PWA from configuration
-    ${lib.concatMapStrings (pwa: ''
-      # Check if already installed (exact match)
-      if echo "$INSTALLED_NAMES" | grep -qx "${pwa.name}"; then
-        echo "✓ ${pwa.name} - already installed"
-        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
-      else
-        echo "Installing ${pwa.name}..."
-
-        # Create a temporary manifest file
-        MANIFEST_FILE=$(mktemp /tmp/pwa-manifest-XXXXXX.json)
-        echo '{
-          "name": "${pwa.name}",
-          "short_name": "${pwa.name}",
-          "start_url": "${pwa.url}",
-          "scope": "${if (pwa.scope or null) != null then pwa.scope else "https://${pwa.domain}/"}",
-          "display": "standalone",
-          "description": "${pwa.description}",
-          "icons": [{
-            "src": "${pwa.icon}",
-            "sizes": "512x512",
-            "type": "image/png"
-          }]
-        }' > "$MANIFEST_FILE"
-
-        # Find an available port for the HTTP server
-        PORT=8899
-        while lsof -i:$PORT >/dev/null 2>&1; do
-          PORT=$((PORT + 1))
-        done
-
-        # Start a simple HTTP server to serve the manifest
-        (cd /tmp && ${pkgs.python3}/bin/python3 -m http.server $PORT >/dev/null 2>&1) &
-        SERVER_PID=$!
-        sleep 1
-
-        # Try to install using local manifest with proper icon
-        ICON_ARG=""
-        if [ ! -z "${pwa.icon}" ]; then
-          ICON_ARG="--icon-url ${pwa.icon}"
-        fi
-
-        if $FFPWA site install "http://localhost:$PORT/$(basename $MANIFEST_FILE)" \
-             --document-url "${pwa.url}" \
-             --name "${pwa.name}" \
-             --description "${pwa.description}" \
-             $ICON_ARG \
-             ${if (pwa.categories or null) != null then "--categories \"${pwa.categories}\"" else ""} \
-             ${if (pwa.keywords or null) != null then "--keywords \"${pwa.keywords}\"" else ""} \
-             2>&1 | tee /tmp/pwa-install.log | grep -q "Web app installed"; then
-          echo "✓ ${pwa.name} - successfully installed"
-          INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
-        else
-          echo "✗ ${pwa.name} - installation failed"
-          echo "  Error output:"
-          cat /tmp/pwa-install.log | grep -E "(ERROR|error)" | head -3
-          echo "  Manual installation may be required"
-          FAILED_COUNT=$((FAILED_COUNT + 1))
-        fi
-
-        # Clean up
-        kill $SERVER_PID 2>/dev/null || true
-        wait $SERVER_PID 2>/dev/null || true
-        rm -f "$MANIFEST_FILE"
-      fi
-      echo ""
-    '') pwas}
-
-    # Summary
-    echo "Installation complete:"
-    echo "  - Installed: $INSTALLED_COUNT"
-    echo "  - Skipped (already installed): $SKIPPED_COUNT"
-    echo "  - Failed: $FAILED_COUNT"
-
-    if [ $INSTALLED_COUNT -gt 0 ]; then
-      echo ""
-      echo "Updating desktop files..."
-      systemctl --user restart manage-pwas.service
-    fi
-
-    # Clean up
-    rm -f /tmp/pwa-install.log
-  '';
-
-in {
-  # Run the management script on activation
-  home.activation.managePWAs = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    echo "Managing declarative PWAs..."
-    ${managePWAsScript}
-  '';
-
-  # Service to manage PWAs
-  systemd.user.services.manage-pwas = {
-    Unit = {
-      Description = "Manage declarative Firefox PWAs";
-      After = [ "graphical-session.target" ];
-    };
-    Service = {
-      Type = "oneshot";
-      ExecStart = "${managePWAsScript}";
-      StandardOutput = "journal";
-    };
-    Install = {
-      WantedBy = [ "default.target" ];
-    };
-  };
-
-  # Timer to check PWAs daily
-  systemd.user.timers.manage-pwas = {
-    Unit = {
-      Description = "Check declarative PWAs daily";
-    };
-    Timer = {
-      OnCalendar = "daily";
-      Persistent = true;
-    };
-    Install = {
-      WantedBy = [ "timers.target" ];
-    };
-  };
-
-  # Provide installation helper scripts
-  home.packages = [
-    pkgs.firefoxpwa
-    (pkgs.writeShellScriptBin "pwa-install-all" ''
-      ${autoInstallScript}
-    '')
-    (pkgs.writeShellScriptBin "pwa-list" ''
-      echo "Configured PWAs:"
-      ${lib.concatMapStrings (pwa: ''
-        echo "  - ${pwa.name}: ${pwa.url}"
       '') pwas}
-      echo ""
-      echo "Installed PWAs:"
-      ${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | grep "^- " || echo "  None"
-    '')
-    (pkgs.writeShellScriptBin "pwa-update-panels" ''
-      # Check PWA panel status (safe version that doesn't modify panels)
-      if [ -f /etc/nixos/scripts/pwa-update-panels-fixed.sh ]; then
-        /etc/nixos/scripts/pwa-update-panels-fixed.sh
-      elif [ -f /etc/nixos/scripts/pwa-update-panels.sh ]; then
-        echo "Warning: Using old panel update script. This may cause issues."
-        echo "Showing status only..."
-        echo ""
-        # Just show PWA status, don't modify anything
-        firefoxpwa profile list 2>/dev/null | grep "^- " || echo "No PWAs installed"
-        echo ""
-        echo "To update panels, edit panels.nix with the IDs above and rebuild."
-      else
-        echo "Error: Panel update script not found"
-        echo "Please run from within /etc/nixos"
-        exit 1
-      fi
-    '')
-    (pkgs.writeShellScriptBin "pwa-get-ids" ''
-      # Get current PWA IDs for updating panels.nix
-      echo "Current PWA IDs (for panels.nix):"
-      echo ""
-      firefoxpwa profile list 2>/dev/null | grep "^- " | while IFS=: read -r name_part rest; do
-        name=$(echo "$name_part" | sed 's/^- //' | xargs)
-        id=$(echo "$rest" | awk -F'[()]' '{print $2}' | xargs)
-        if [ ! -z "$id" ]; then
-          varname=$(echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
-          echo "      ''${varname}Id = \"$id\";  # $name"
-        fi
-      done
-      echo ""
-      echo "Copy these IDs to panels.nix and rebuild to make permanent."
-    '')
-    (pkgs.writeShellScriptBin "pwa-show-mappings" ''
-      # Show PWA WM class mappings for window rules
-      MAPPING_FILE="$HOME/.config/plasma-pwas/pwa-classes.json"
 
-      echo "PWA Window Class Mappings (for KWin rules):"
-      echo "=============================================="
-      echo ""
+      # T041: Create desktop entry symlinks
+      PWA_DIR="$HOME/.local/share/firefox-pwas"
+      APPS_DIR="$HOME/.local/share/applications"
 
-      if [ ! -f "$MAPPING_FILE" ]; then
-        echo "Mapping file not found: $MAPPING_FILE"
-        echo "Run 'home-manager switch' to generate it."
-        exit 1
+      if [ -d "$PWA_DIR" ]; then
+        mkdir -p "$APPS_DIR"
+        for desktop_file in "$PWA_DIR"/*.desktop; do
+          if [ -f "$desktop_file" ]; then
+            basename=$(basename "$desktop_file")
+            $DRY_RUN_CMD ln -sf "$desktop_file" "$APPS_DIR/$basename"
+          fi
+        done
       fi
 
-      ${pkgs.jq}/bin/jq -r 'to_entries[] | "\(.key):\n  WM Class: \(.value.wmclass)\n  URL: \(.value.url)\n"' "$MAPPING_FILE"
-
-      echo ""
-      echo "These WM classes can be used in KWin window rules for reliable matching."
-      echo "Location: $MAPPING_FILE"
-    '')
-  ];
+      $VERBOSE_ECHO "PWA management completed"
+    '';
+  };
 }
