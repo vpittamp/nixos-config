@@ -126,9 +126,7 @@ in
     # Ensure firefoxpwa is installed (T033)
     home.packages = [
       pkgs.firefoxpwa
-
-      # T052: Cross-machine PWA launcher
-      (pkgs.writeShellScriptBin "launch-pwa-by-name" (builtins.readFile ./launch-pwa-by-name.sh))
+      # Note: launch-pwa-by-name provided by existing pwa-launcher.nix module
     ];
 
     # T034: Generate manifest files for all PWAs
