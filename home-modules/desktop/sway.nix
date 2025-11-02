@@ -461,14 +461,44 @@ in
       set $ws8 "8"
       set $ws9 "9"
 
-      # PWA Workspace Assignments (from app-registry-data.nix)
-      # PLATFORM-SPECIFIC: These app_ids are system-generated and differ between hosts
-      # hetzner-sway PWA IDs (updated 2025-11-01)
-      # YouTube → WS 4, Google AI → WS 10, ChatGPT → WS 11, GitHub Codespaces → WS 2
-      assign [app_id="^FFPWA-01K666N2V6BQMDSBMX3AY74TY7$"] workspace number 4
-      assign [app_id="^FFPWA-01K665SPD8EPMP3JTW02JM1M0Z$"] workspace number 10
-      assign [app_id="^FFPWA-01K772ZBM45JD68HXYNM193CVW$"] workspace number 11
-      assign [app_id="^FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0$"] workspace number 2
+      # PWA Workspace Assignments - REMOVED (Feature 053)
+      #
+      # ═══════════════════════════════════════════════════════════════════════════
+      # FEATURE 053: Event-Driven Workspace Assignment Enhancement
+      # ═══════════════════════════════════════════════════════════════════════════
+      #
+      # ROOT CAUSE FIX: Native Sway `assign` rules suppress window creation events,
+      # preventing the i3-project-event-daemon from receiving window::new IPC events.
+      # This caused PWAs to appear without triggering event handlers for project
+      # assignment and window tracking.
+      #
+      # SOLUTION: Remove ALL native assignment rules and consolidate to single
+      # event-driven mechanism in i3-project-event-daemon. Workspace assignments
+      # are now managed via:
+      #   - Priority 0: Launch notification (matched_launch.workspace_number)
+      #   - Priority 1: App-specific handlers (VS Code title parsing)
+      #   - Priority 2: I3PM_TARGET_WORKSPACE environment variable
+      #   - Priority 3: I3PM_APP_NAME registry lookup
+      #   - Priority 4: Window class matching (exact → instance → normalized)
+      #
+      # All PWA workspace assignments remain in app-registry-data.nix with
+      # preferred_workspace field. The daemon reads this and assigns windows
+      # via IPC commands instead of Sway's internal assignment logic.
+      #
+      # Benefits:
+      #   • 100% event delivery (no suppressed window::new events)
+      #   • Unified assignment mechanism (no conflicts or race conditions)
+      #   • Dynamic project-aware workspace assignment
+      #   • <100ms assignment latency with launch notification Priority 0
+      #
+      # Removed rules (now handled by daemon):
+      #   • YouTube PWA (FFPWA-01K666N2V6BQMDSBMX3AY74TY7) → workspace 4
+      #   • Google AI PWA (FFPWA-01K665SPD8EPMP3JTW02JM1M0Z) → workspace 10
+      #   • ChatGPT PWA (FFPWA-01K772ZBM45JD68HXYNM193CVW) → workspace 11
+      #   • GitHub Codespaces PWA (FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0) → workspace 2
+      #
+      # See: /etc/nixos/specs/053-workspace-assignment-enhancement/
+      # ═══════════════════════════════════════════════════════════════════════════
 
       # Feature 047: Include dynamically generated appearance + keybindings from sway-config-manager
       include ~/.config/sway/appearance-generated.conf

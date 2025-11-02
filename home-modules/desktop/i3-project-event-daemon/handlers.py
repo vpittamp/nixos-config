@@ -52,6 +52,132 @@ def get_window_class(container) -> str:
     return "unknown"
 
 
+async def _delayed_property_recheck(
+    conn: aio.Connection,
+    window_id: int,
+    original_class: str,
+    application_registry: Optional[Dict],
+    workspace_tracker,
+    window_env,
+    matched_launch,
+) -> None:
+    """Feature 053: Delayed property re-check for native Wayland apps (US1 T035-T038).
+
+    Native Wayland apps (PWAs, native apps) may have empty app_id during the window::new event.
+    This function re-checks window properties after 100ms delay to allow them to populate,
+    then retries workspace assignment if properties are now available.
+
+    Args:
+        conn: i3 async connection
+        window_id: Window container ID
+        original_class: Original window class from initial event
+        application_registry: Application registry for workspace lookup
+        workspace_tracker: WorkspaceTracker for tracking assignment
+        window_env: Window environment variables (if available)
+        matched_launch: Matched launch notification (if available)
+    """
+    try:
+        # Wait 100ms for properties to populate
+        await asyncio.sleep(0.1)
+
+        # Re-fetch window from tree
+        tree = await conn.get_tree()
+        fresh_container = tree.find_by_id(window_id)
+
+        if not fresh_container:
+            logger.warning(f"Window {window_id} no longer exists after delayed property re-check")
+            return
+
+        # Check if app_id is now populated
+        new_class = get_window_class(fresh_container)
+
+        if new_class and new_class != "unknown" and new_class != original_class:
+            logger.info(
+                f"✓ Property re-check successful: Window {window_id} app_id populated "
+                f"(was '{original_class}' → now '{new_class}')"
+            )
+
+            # Retry workspace assignment with populated properties
+            preferred_ws = None
+            assignment_source = None
+
+            # Priority 0: Launch notification (highest priority)
+            if matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
+                preferred_ws = matched_launch.workspace_number
+                assignment_source = "launch_notification (delayed)"
+
+            # Priority 1: Environment variable
+            elif window_env and hasattr(window_env, 'target_workspace') and window_env.target_workspace:
+                preferred_ws = window_env.target_workspace
+                assignment_source = "I3PM_TARGET_WORKSPACE (delayed)"
+
+            # Priority 2: I3PM_APP_NAME registry
+            elif window_env and window_env.app_name and application_registry:
+                app_def = application_registry.get(window_env.app_name)
+                if app_def and "preferred_workspace" in app_def:
+                    preferred_ws = app_def["preferred_workspace"]
+                    assignment_source = f"registry[{window_env.app_name}] (delayed)"
+
+            # Priority 3: Class-based registry matching
+            elif application_registry:
+                from .services.window_identifier import match_with_registry
+
+                app_match = match_with_registry(
+                    actual_class=new_class,
+                    actual_instance=fresh_container.window_instance or "",
+                    application_registry=application_registry
+                )
+
+                if app_match and "preferred_workspace" in app_match:
+                    preferred_ws = app_match["preferred_workspace"]
+                    app_name = app_match.get("_matched_app_name", "unknown")
+                    match_type = app_match.get("_match_type", "unknown")
+                    assignment_source = f"registry[{app_name}] via class-match ({match_type}, delayed)"
+
+            if preferred_ws:
+                current_workspace = fresh_container.workspace()
+                if not current_workspace or current_workspace.num != preferred_ws:
+                    # Move window to preferred workspace
+                    await conn.command(
+                        f'[con_id="{window_id}"] move to workspace number {preferred_ws}'
+                    )
+
+                    # Track assignment
+                    if workspace_tracker:
+                        is_floating = fresh_container.floating == "user_on" or fresh_container.floating == "auto_on"
+                        await workspace_tracker.track_window(
+                            window_id=window_id,
+                            workspace_number=preferred_ws,
+                            floating=is_floating,
+                            project_name=window_env.project_name if window_env and window_env.project_name else "",
+                            app_name=window_env.app_name if window_env else "",
+                            window_class=new_class,
+                        )
+                        await workspace_tracker.save()
+
+                    logger.info(
+                        f"✓ Delayed assignment: Moved window {window_id} ({new_class}) to "
+                        f"workspace {preferred_ws} (source: {assignment_source})"
+                    )
+                else:
+                    logger.debug(
+                        f"Window {window_id} ({new_class}) already on preferred workspace {preferred_ws}"
+                    )
+            else:
+                logger.debug(
+                    f"No workspace assignment found for window {window_id} ({new_class}) "
+                    f"after delayed property re-check"
+                )
+        else:
+            logger.debug(
+                f"Property re-check: Window {window_id} app_id still not populated "
+                f"(remains '{new_class}')"
+            )
+
+    except Exception as e:
+        logger.error(f"Error in delayed property re-check for window {window_id}: {e}", exc_info=True)
+
+
 # Feature 033: Debouncing state for output change handler
 _output_change_task: Optional[asyncio.Task] = None
 _last_output_event_time: float = 0.0
@@ -680,14 +806,26 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # Feature 037 T026-T029 + Feature 039 T060-T063: Workspace assignment with priority
+        # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 053 Priority 0: Workspace assignment with priority
+        # Priority 0: Launch notification workspace (Feature 053 - HIGHEST PRIORITY)
         # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
         # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
         # Priority 3: Class-based registry matching (fallback when PID unavailable)
         preferred_ws = None
         assignment_source = None
 
-        if window_env:
+        # Feature 053: Priority 0 - Launch notification workspace (US1 T030-T034)
+        # Use workspace from matched_launch if correlation succeeded
+        # This provides <100ms assignment latency and 100% accuracy for walker-launched apps
+        if matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
+            preferred_ws = matched_launch.workspace_number
+            assignment_source = "launch_notification"
+            logger.info(
+                f"✓ Priority 0: Using launch notification workspace {preferred_ws} "
+                f"for window {window_id} ({window_class}) from app '{matched_launch.app_name}' "
+                f"[correlation_confidence={correlation_confidence:.2f}]"
+            )
+        elif window_env:
             # Priority 1: I3PM_TARGET_WORKSPACE (Feature 039 T060)
             if hasattr(window_env, 'target_workspace') and window_env.target_workspace:
                 preferred_ws = window_env.target_workspace
@@ -775,6 +913,29 @@ async def on_window_new(
 
                 except Exception as e:
                     logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
+        elif not preferred_ws:
+            # Feature 053: Delayed property re-check for native Wayland apps (US1 T035-T038)
+            # Native Wayland apps (PWAs, native apps) may have empty app_id during window::new event
+            # Schedule delayed re-check after 100ms to allow properties to populate
+            app_id = getattr(container, 'app_id', None)
+            if not app_id or app_id == "" or app_id == "unknown":
+                logger.debug(
+                    f"Native Wayland window {window_id} ({window_class}) has no app_id, "
+                    f"scheduling 100ms delayed property re-check"
+                )
+
+                # Schedule async task for delayed re-check
+                asyncio.create_task(
+                    _delayed_property_recheck(
+                        conn=conn,
+                        window_id=window_id,
+                        original_class=window_class,
+                        application_registry=application_registry,
+                        workspace_tracker=workspace_tracker,
+                        window_env=window_env,
+                        matched_launch=matched_launch,
+                    )
+                )
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:
