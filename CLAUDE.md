@@ -1561,6 +1561,8 @@ _Last updated: 2025-10-29 with Sway/Wayland migration and Feature 047 (Dynamic C
 - Configuration files only (swaybar config, status generator config) - no persistent data storage (052-enhanced-swaybar-status)
 - Python 3.11+ (existing i3pm daemon runtime), Nix for configuration management + i3ipc-python (i3ipc.aio for async Sway IPC), asyncio, existing i3pm daemon infrastructure (053-workspace-assignment-enhancement)
 - In-memory event tracking with persistent assignment configuration in JSON (053-workspace-assignment-enhancement)
+- Nix expression language (nixpkgs-unstable), Bash scripts for helper utilities + firefoxpwa package, home-manager with programs.firefoxpwa module, ulid CLI tool for ULID generation (056-declarative-pwa-installation)
+- JSON configuration files (~/.local/share/firefoxpwa/config.json), Web App Manifest JSON files (hosted via HTTP or file://), ULID mapping file for persistence (056-declarative-pwa-installation)
 
 ## Recent Changes
 - 053-workspace-assignment-enhancement: Fixed PWA workspace assignment reliability by removing native Sway assign rules that suppressed window creation events. Added Priority 0 tier (launch notification workspace) for <100ms assignment latency and delayed property re-check for native Wayland apps with async app_id population. Consolidated to single event-driven assignment mechanism with 100% event delivery guarantee.
