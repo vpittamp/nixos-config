@@ -169,7 +169,7 @@ in
           then builtins.filter (x: x != "") (lib.splitString ";" pwa.categories)
           else [ "Network" ];
         startupNotify = true;
-        startupWMClass = "FFPWA-${pwa.ulid}";  # For window matching!
+        # Note: Window class will be FFPWA-<ULID> set by firefoxpwa itself
         mimeType = [ "x-scheme-handler/http" "x-scheme-handler/https" ];
       };
     }) pwas);
