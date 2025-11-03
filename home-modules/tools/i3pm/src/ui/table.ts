@@ -19,8 +19,9 @@ interface Column {
 
 const COLUMNS: Column[] = [
   { header: "ID", width: 16, align: "right" },
-  { header: "Class", width: 20, align: "left" },
-  { header: "Title", width: 40, align: "left" },
+  { header: "PID", width: 8, align: "right" },
+  { header: "Class", width: 18, align: "left" },
+  { header: "Title", width: 35, align: "left" },
   { header: "WS", width: 4, align: "left" },
   { header: "Output", width: 12, align: "left" },
   { header: "Project", width: 12, align: "left" },
@@ -288,16 +289,18 @@ function formatRow(window: WindowState, change?: WindowChange): string {
   const project = getProjectFromMarks(window.marks) || "-";
   const status = getStatusIndicators(window);
   const changeIndicator = getChangeIndicator(change);
+  const pid = window.pid ? window.pid.toString() : "-";
 
   const cells = [
     padString(window.id.toString(), COLUMNS[0].width, COLUMNS[0].align),
-    padString(window.class, COLUMNS[1].width, COLUMNS[1].align),
-    padString(window.title, COLUMNS[2].width, COLUMNS[2].align),
-    padString(window.workspace, COLUMNS[3].width, COLUMNS[3].align),
-    padString(window.output, COLUMNS[4].width, COLUMNS[4].align),
-    padString(project, COLUMNS[5].width, COLUMNS[5].align),
-    padString(status, COLUMNS[6].width, COLUMNS[6].align),
-    padString(changeIndicator, COLUMNS[7].width, COLUMNS[7].align),
+    padString(pid, COLUMNS[1].width, COLUMNS[1].align),
+    padString(window.class, COLUMNS[2].width, COLUMNS[2].align),
+    padString(window.title, COLUMNS[3].width, COLUMNS[3].align),
+    padString(window.workspace, COLUMNS[4].width, COLUMNS[4].align),
+    padString(window.output, COLUMNS[5].width, COLUMNS[5].align),
+    padString(project, COLUMNS[6].width, COLUMNS[6].align),
+    padString(status, COLUMNS[7].width, COLUMNS[7].align),
+    padString(changeIndicator, COLUMNS[8].width, COLUMNS[8].align),
   ];
 
   return cells.join(" | ");

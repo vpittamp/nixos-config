@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 #
-# Application Launcher Wrapper Script
+# Unified Application Launcher
 #
-# Feature: 034-create-a-feature
-# Purpose: Runtime execution layer for unified application launcher
+# Feature: 056-pwa-window-tracking-fix
+# Purpose: Consolidated launch wrapper for ALL applications (regular apps, PWAs, VS Code)
 #
-# This script:
-# 1. Loads registry JSON
-# 2. Queries i3pm daemon for project context
-# 3. Substitutes variables in parameters
-# 4. Validates directory paths
-# 5. Executes application with proper argument array
+# This script provides:
+# 1. Unified I3PM_* environment variable injection for ALL app types
+# 2. Launch notification to daemon (Feature 041)
+# 3. Workspace assignment via I3PM_TARGET_WORKSPACE
+# 4. systemd-run process isolation
+# 5. Project context propagation
 #
 # Usage: app-launcher-wrapper.sh <app-name>
+#
+# Supported App Types:
+# - Regular applications (firefox, thunar, btop, etc.)
+# - Firefox PWAs (claude-pwa, youtube-pwa, etc.) - deterministic class matching
+# - VS Code (multi-instance with project context)
+# - Terminal apps (alacritty, ghostty with sesh integration)
 #
 # Environment Variables:
 #   DRY_RUN=1  - Show resolved command without executing
 #   DEBUG=1    - Enable verbose logging
-#   FALLBACK   - Override fallback behavior (skip/use_home/error)
 
 set -euo pipefail
 
@@ -25,17 +30,6 @@ set -euo pipefail
 REGISTRY="${HOME}/.config/i3/application-registry.json"
 LOG_FILE="${HOME}/.local/state/app-launcher.log"
 LOG_MAX_LINES=1000
-
-# Feature 035: Environment-based window filtering
-# Generate unique application instance ID for deterministic window matching
-# Format: ${app_name}-${project_name}-${pid}-${timestamp}
-generate_app_instance_id() {
-    local app_name="$1"
-    local project_name="${2:-global}"
-    local timestamp
-    timestamp=$(date +%s)
-    echo "${app_name}-${project_name}-$$-${timestamp}"
-}
 
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -84,39 +78,28 @@ if [[ ! -f "$REGISTRY" ]]; then
 fi
 
 # Load application from registry
-COMMAND=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | .command' \
-    "$REGISTRY" 2>/dev/null || echo "")
+APP_JSON=$(jq --arg name "$APP_NAME" \
+    '.applications[] | select(.name == $name)' \
+    "$REGISTRY" 2>/dev/null || echo "{}")
 
-if [[ -z "$COMMAND" ]]; then
+if [[ "$APP_JSON" == "{}" ]]; then
     error "Application '$APP_NAME' not found in registry
   Registry: $REGISTRY
   Available applications: $(jq -r '.applications[].name' "$REGISTRY" | tr '\n' ' ')"
 fi
 
-# Load application properties
-PARAMETERS=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | if .parameters then (.parameters | join(" ")) else "" end' \
-    "$REGISTRY")
-FALLBACK_BEHAVIOR=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | .fallback_behavior // "skip"' \
-    "$REGISTRY")
-PREFERRED_WORKSPACE=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | .preferred_workspace // ""' \
-    "$REGISTRY")
-# Feature 035: Load scope from registry
-SCOPE=$(jq -r --arg name "$APP_NAME" \
-    '.applications[] | select(.name == $name) | .scope // "global"' \
-    "$REGISTRY")
-
-# Override fallback if environment variable set
-if [[ -n "${FALLBACK:-}" ]]; then
-    FALLBACK_BEHAVIOR="$FALLBACK"
-fi
+# Extract application properties
+COMMAND=$(echo "$APP_JSON" | jq -r '.command')
+PARAMETERS=$(echo "$APP_JSON" | jq -r 'if .parameters then (.parameters | join(" ")) else "" end')
+FALLBACK_BEHAVIOR=$(echo "$APP_JSON" | jq -r '.fallback_behavior // "skip"')
+PREFERRED_WORKSPACE=$(echo "$APP_JSON" | jq -r '.preferred_workspace // ""')
+SCOPE=$(echo "$APP_JSON" | jq -r '.scope // "global"')
+EXPECTED_CLASS=$(echo "$APP_JSON" | jq -r '.expected_class // ""')
 
 log "DEBUG" "Command: $COMMAND"
 log "DEBUG" "Parameters: $PARAMETERS"
-log "DEBUG" "Fallback: $FALLBACK_BEHAVIOR"
+log "DEBUG" "Scope: $SCOPE"
+log "DEBUG" "Expected class: $EXPECTED_CLASS"
 
 # Query daemon for project context
 log "DEBUG" "Querying daemon for project context"
@@ -220,8 +203,6 @@ fi
 # Build argument array
 ARGS=("$COMMAND")
 if [[ -n "$PARAM_RESOLVED" ]]; then
-    # Split on whitespace but preserve the parameter structure
-    # Note: Complex quoting is handled by using argument arrays
     read -ra PARAMS <<< "$PARAM_RESOLVED"
     ARGS+=("${PARAMS[@]}")
 fi
@@ -240,22 +221,32 @@ fi
 
 # Verify command exists
 if ! command -v "$COMMAND" &>/dev/null; then
-    # Extract package name from registry if available
-    NIX_PACKAGE=$(jq -r --arg name "$APP_NAME" \
-        '.applications[] | select(.name == $name) | .nix_package // ""' \
-        "$REGISTRY")
+    NIX_PACKAGE=$(echo "$APP_JSON" | jq -r '.nix_package // ""')
 
     error "Command not found: $COMMAND
   Package: ${NIX_PACKAGE:-<unknown>}
   Install package or add command to PATH."
 fi
 
-# Feature 035: Inject I3PM_* environment variables for window-to-project association
-# These variables are read by the daemon via /proc/<pid>/environ for deterministic matching
+# ============================================================================
+# UNIFIED I3PM ENVIRONMENT VARIABLE INJECTION
+# ============================================================================
+# These variables enable window-to-project association for ALL app types:
+# - Regular apps: Tier 1 matching via /proc/<pid>/environ
+# - PWAs: Deterministic class matching + env context for project filtering
+# - VS Code: Multi-instance tracking with unique app IDs
 
-# Feature 035: Support I3PM_APP_ID_OVERRIDE for layout restore
-# When restoring a layout, the layout engine sets this variable to the expected instance ID
-# This ensures windows can be matched exactly even with multiple instances
+# Generate unique application instance ID
+# Format: ${app_name}-${project_name}-${pid}-${timestamp}
+generate_app_instance_id() {
+    local app_name="$1"
+    local project_name="${2:-global}"
+    local timestamp
+    timestamp=$(date +%s)
+    echo "${app_name}-${project_name}-$$-${timestamp}"
+}
+
+# Support I3PM_APP_ID_OVERRIDE for layout restore (Feature 030)
 if [[ -n "${I3PM_APP_ID_OVERRIDE:-}" ]]; then
     APP_INSTANCE_ID="$I3PM_APP_ID_OVERRIDE"
     log "INFO" "Using overridden APP_ID for layout restore: $APP_INSTANCE_ID"
@@ -263,6 +254,7 @@ else
     APP_INSTANCE_ID=$(generate_app_instance_id "$APP_NAME" "$PROJECT_NAME")
 fi
 
+# Standard I3PM environment variables (injected for ALL apps)
 export I3PM_APP_ID="$APP_INSTANCE_ID"
 export I3PM_APP_NAME="$APP_NAME"
 export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
@@ -274,23 +266,32 @@ export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "f
 export I3PM_LAUNCH_TIME="$(date +%s)"
 export I3PM_LAUNCHER_PID="$$"
 
+# Workspace assignment (Feature 053: Reliable event-driven assignment)
+export I3PM_TARGET_WORKSPACE="$PREFERRED_WORKSPACE"
+export I3PM_EXPECTED_CLASS="$EXPECTED_CLASS"
+
 log "DEBUG" "I3PM_APP_ID=$I3PM_APP_ID"
 log "DEBUG" "I3PM_APP_NAME=$I3PM_APP_NAME"
 log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
 log "DEBUG" "I3PM_SCOPE=$I3PM_SCOPE"
-log "DEBUG" "I3PM_ACTIVE=$I3PM_ACTIVE"
+log "DEBUG" "I3PM_TARGET_WORKSPACE=$I3PM_TARGET_WORKSPACE"
+log "DEBUG" "I3PM_EXPECTED_CLASS=$I3PM_EXPECTED_CLASS"
 
-# Feature 041 T021: Send launch notification to daemon via IPC
-# This enables the daemon to correlate the upcoming window with this launch context
+# ============================================================================
+# LAUNCH NOTIFICATION TO DAEMON (Feature 041)
+# ============================================================================
+# Notifies daemon BEFORE app launch for Tier 0 window correlation
+# Works for ALL app types (regular, PWA, VS Code)
+
 notify_launch() {
     local app_name="$1"
     local project_name="$2"
     local project_dir="$3"
     local workspace="$4"
     local timestamp="$5"
+    local expected_class="$6"
 
-    # Build JSON-RPC request for notify_launch endpoint
-    # IMPORTANT: Use -c flag for compact output (single line) to avoid issues with echo/socat
+    # Build JSON-RPC request
     local request
     request=$(jq -nc \
         --arg app "$app_name" \
@@ -299,6 +300,7 @@ notify_launch() {
         --arg ws "$workspace" \
         --arg ts "$timestamp" \
         --arg pid "$$" \
+        --arg class "$expected_class" \
         '{
             jsonrpc: "2.0",
             method: "notify_launch",
@@ -308,15 +310,14 @@ notify_launch() {
                 project_directory: $dir,
                 launcher_pid: ($pid | tonumber),
                 workspace_number: ($ws | tonumber),
-                timestamp: ($ts | tonumber)
+                timestamp: ($ts | tonumber),
+                expected_class: $class
             },
             id: 1
         }')
 
-    # Send to daemon via Unix socket with 1-second timeout
-    # Feature 037: System service socket path (substituted at build time by Nix)
-    # Placeholder @DAEMON_SOCKET@ is replaced by app-launcher.nix
-    local socket="${I3PM_DAEMON_SOCKET:-@DAEMON_SOCKET@}"
+    # Send to daemon via Unix socket
+    local socket="/run/i3-project-daemon/ipc.sock"
     local response
 
     if [[ ! -S "$socket" ]]; then
@@ -324,15 +325,14 @@ notify_launch() {
         return 1
     fi
 
-    # Use timeout and socat to send request
     response=$(timeout 1s bash -c "echo '$request' | socat - UNIX-CONNECT:$socket" 2>&1 || echo "")
 
     if [[ -z "$response" ]]; then
-        warn "No response from daemon for launch notification (timeout or connection failure)"
+        warn "No response from daemon for launch notification"
         return 1
     fi
 
-    # Check for errors in response
+    # Check for errors
     local error
     error=$(echo "$response" | jq -r '.error // empty' 2>/dev/null || echo "")
 
@@ -341,32 +341,38 @@ notify_launch() {
         return 1
     fi
 
-    # Log successful notification
+    # Log success
     local launch_id
     launch_id=$(echo "$response" | jq -r '.result.launch_id // "unknown"' 2>/dev/null || echo "unknown")
-    log "INFO" "Launch notification sent: launch_id=$launch_id, app=$app_name, project=$project_name"
+    log "INFO" "Launch notification sent: launch_id=$launch_id, app=$app_name, class=$expected_class"
 
     return 0
 }
 
-# Send launch notification BEFORE executing app (Feature 041 T021)
-if [[ "${SCOPE}" == "scoped" ]] && [[ -n "${PROJECT_NAME}" ]]; then
-    log "DEBUG" "Sending launch notification for scoped app: $APP_NAME"
+# Send launch notification BEFORE executing app (Feature 041)
+# Send for both scoped and global apps to enable Tier 0 matching for ALL apps
+if [[ -n "$PREFERRED_WORKSPACE" ]]; then
+    log "DEBUG" "Sending launch notification for $APP_NAME"
 
-    # Get current timestamp (seconds since epoch with decimals)
     LAUNCH_TIMESTAMP=$(date +%s.%N)
 
-    # Send notification (best-effort, don't fail launch if notification fails)
-    if notify_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" "$PREFERRED_WORKSPACE" "$LAUNCH_TIMESTAMP"; then
-        log "INFO" "Launch notification successful for $APP_NAME → $PROJECT_NAME"
+    if notify_launch "$APP_NAME" "$PROJECT_NAME" "$PROJECT_DIR" "$PREFERRED_WORKSPACE" "$LAUNCH_TIMESTAMP" "$EXPECTED_CLASS"; then
+        log "INFO" "Launch notification successful for $APP_NAME"
     else
         warn "Launch notification failed for $APP_NAME (app will still launch)"
     fi
 else
-    log "DEBUG" "Skipping launch notification (app=$APP_NAME, scope=$SCOPE, project=${PROJECT_NAME:-none})"
+    log "DEBUG" "Skipping launch notification (no preferred workspace)"
 fi
 
-# Execute application (replaces this process with the application)
+# ============================================================================
+# EXECUTE APPLICATION VIA SYSTEMD-RUN
+# ============================================================================
+# All apps launched through systemd-run for:
+# - Process isolation from launcher
+# - Proper environment variable propagation
+# - Independence from Walker/Elephant lifecycle
+
 log "INFO" "Executing: ${ARGS[*]}"
 
 # Rotate log if too large
@@ -379,36 +385,17 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Execute with systemd-run for proper process isolation
-# This ensures the application runs independently of the launcher's lifecycle
-#
-# Why systemd-run?
-# - Creates a transient systemd scope/service
-# - Completely isolated from parent process tree
-# - Walker/Elephant can't kill it when they exit
-# - Environment variables are preserved
-# - Works reliably with desktop file execution
-#
-# Why --user --scope?
-# - --user: Run in user session (not system)
-# - --scope: Lightweight process group (not full service)
-# - Process continues until application exits
+# Build command string for bash -c execution
+if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+    CMD_STRING="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
+else
+    CMD_STRING="${ARGS[*]}"
+fi
 
-# Use systemd-run for desktop file execution environments (Walker/Elephant)
-# This ensures proper process isolation from the launcher
+log "INFO" "Launching via systemd-run: $CMD_STRING"
+
+# Execute with systemd-run for process isolation
 if command -v systemd-run &>/dev/null; then
-    # Build the command string for bash -c execution
-    # We need bash -c to properly handle complex commands with arguments
-    # If project directory is set, cd to it first
-    if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
-        CMD_STRING="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
-    else
-        CMD_STRING="${ARGS[*]}"
-    fi
-
-    log "INFO" "Launching via systemd-run: $CMD_STRING"
-
-    # Capture systemd-run output for logging
     SYSTEMD_OUTPUT=$(systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
         --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
@@ -420,7 +407,10 @@ if command -v systemd-run &>/dev/null; then
         --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
         --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
         --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
+        --setenv=I3PM_TARGET_WORKSPACE="$I3PM_TARGET_WORKSPACE" \
+        --setenv=I3PM_EXPECTED_CLASS="$I3PM_EXPECTED_CLASS" \
         --setenv=DISPLAY="${DISPLAY:-:0}" \
+        --setenv=WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
         --setenv=HOME="$HOME" \
         --setenv=PATH="$PATH" \
         bash -c "$CMD_STRING" 2>&1)

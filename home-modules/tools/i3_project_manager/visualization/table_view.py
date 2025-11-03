@@ -41,9 +41,10 @@ class WindowTableView(Container):
     # Column definitions
     COLUMNS = [
         ("ID", "id", 10),
+        ("PID", "pid", 10),
         ("Class", "window_class", 20),
         ("Instance", "instance", 15),
-        ("Title", "title", 40),
+        ("Title", "title", 35),
         ("Workspace", "workspace", 10),
         ("Output", "output", 15),
         ("Project", "project", 15),
@@ -138,9 +139,10 @@ class WindowTableView(Container):
             for window in sorted_windows:
                 self._table.add_row(
                     str(window.get("id", "")),
+                    str(window.get("pid", "")) if window.get("pid") else "-",
                     window.get("window_class", ""),
                     window.get("instance", ""),
-                    self._truncate(window.get("title", ""), 40),
+                    self._truncate(window.get("title", ""), 35),
                     f"WS{window.get('workspace', '?')}",
                     window.get("output", ""),
                     window.get("project", "-") or "-",
@@ -231,8 +233,8 @@ class WindowTableView(Container):
         # Get sort key function
         sort_key = lambda w: w.get(self.sort_column, "")
 
-        # Handle numeric sorting for id and workspace
-        if self.sort_column in ["id", "workspace"]:
+        # Handle numeric sorting for id, pid, and workspace
+        if self.sort_column in ["id", "pid", "workspace"]:
             sort_key = lambda w: w.get(self.sort_column, 0) or 0
 
         # Sort

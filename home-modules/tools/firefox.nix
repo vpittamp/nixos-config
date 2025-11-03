@@ -39,7 +39,14 @@ in
       };
       PasswordManagerEnabled = false;
       # Grant permissions to extensions
-      ExtensionSettings = lib.optionalAttrs (isM1) {
+      ExtensionSettings = {
+        "{d634138d-c276-4fc8-924b-40a0ea21d284}" = {
+          installation_mode = "force_installed";
+          install_url = "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi";
+          default_area = "navbar";
+          allowed_in_private_browsing = true;
+        };
+      } // lib.optionalAttrs (isM1) {
         # Plasma Browser Integration (M1 only - temporarily retained for KDE Plasma)
         "plasma-browser-integration@kde.org" = {
           installation_mode = "allowed";
@@ -56,6 +63,13 @@ in
       WebsiteFilter = {
         Block = [];  # No blocked sites
         Exceptions = trackingExceptions;
+      };
+
+      PopupBlocking = {
+        Allow = [
+          "https://my.1password.com"
+          "https://*.my.1password.com"
+        ];
       };
 
       # Disable tracking protection globally via policy (cannot be overridden)

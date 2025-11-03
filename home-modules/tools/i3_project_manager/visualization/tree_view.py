@@ -195,6 +195,7 @@ class WindowTreeView(Container):
         """
         window_class = window.get("window_class", "?")
         title = window.get("title", "")
+        pid = window.get("pid")
         project = window.get("project")
         classification = window.get("classification", "global")
         hidden = window.get("hidden", False)
@@ -225,6 +226,10 @@ class WindowTreeView(Container):
 
         # Class and title
         parts.append(f"{window_class}: {title}")
+
+        # PID (if available)
+        if pid:
+            parts.append(f"(PID: {pid})")
 
         # Project tag
         if project:

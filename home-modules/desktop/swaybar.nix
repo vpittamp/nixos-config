@@ -61,7 +61,7 @@ in
         names = [ "FiraCode Nerd Font" "Font Awesome 6 Free" ];
         size = 10.0;
       };
-      trayOutput = "none";
+      trayOutput = "HEADLESS-1";
       workspaceButtons = false;
       colors = {
         background = "#1e1e2e";

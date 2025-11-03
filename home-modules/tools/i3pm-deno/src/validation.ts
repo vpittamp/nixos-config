@@ -37,6 +37,7 @@ export type WindowGeometryValidated = z.infer<typeof WindowGeometrySchema>;
 
 export const WindowStateSchema = z.object({
   id: z.number().int().positive(),
+  pid: z.number().int().positive().optional(),
   class: z.string().min(1),
   instance: z.string().optional(),
   title: z.string(),

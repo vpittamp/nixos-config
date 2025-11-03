@@ -135,8 +135,8 @@ in
       set -g status-left-length 40
       set -g status-right-length 60
 
-      # Status left with Catppuccin colors - PREFIX in red, ZOOM icon in yellow, normal in green
-      set -g status-left "#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,#[fg=#11111b bg=#a6e3a1 bold] TMUX }#{?window_zoomed_flag,#[fg=#11111b bg=#f9e2af bold] 🔍 ,}#[fg=#cdd6f4 bg=#313244] #S #[default] "
+      # Status left with Catppuccin colors - COPY in blue, PREFIX in red, ZOOM icon in yellow, normal in green
+      set -g status-left "#{?pane_in_mode,#[fg=#11111b bg=#89b4fa bold] COPY ,#{?client_prefix,#[fg=#11111b bg=#f38ba8 bold] PREFIX ,#[fg=#11111b bg=#a6e3a1 bold] TMUX }}#{?window_zoomed_flag,#[fg=#11111b bg=#f9e2af bold] 🔍 ,}#[fg=#cdd6f4 bg=#313244] #S #[default] "
 
       # Status right - Catppuccin colors
       set -g status-right "#[fg=#cdd6f4 bg=#313244] #( ${i3pmProjectBadgeScript} --tmux ) #H | %H:%M #[default]"

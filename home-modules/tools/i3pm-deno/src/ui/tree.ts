@@ -62,6 +62,9 @@ function formatWindow(window: WindowState, indent: string): string {
   // Build project tag
   const projectTag = project ? ` [${project}]` : "";
 
+  // Build PID tag
+  const pidTag = window.pid ? ` (PID: ${window.pid})` : "";
+
   // Truncate long titles
   const maxTitleLength = 60;
   let title = window.title;
@@ -69,7 +72,7 @@ function formatWindow(window: WindowState, indent: string): string {
     title = title.substring(0, maxTitleLength - 3) + "...";
   }
 
-  return `${indent}${window.class} - ${title}${projectTag}${status}`;
+  return `${indent}${window.class} - ${title}${pidTag}${projectTag}${status}`;
 }
 
 /**

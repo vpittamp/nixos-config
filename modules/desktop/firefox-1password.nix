@@ -11,7 +11,7 @@
       # Extensions configuration
       ExtensionSettings = {
         # 1Password extension - force install and pin
-        "onepassword@1password.com" = {
+        "{d634138d-c276-4fc8-924b-40a0ea21d284}" = {
           installation_mode = "force_installed";
           install_url = "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi";
           default_area = "navbar";  # Pin to toolbar by default
@@ -64,6 +64,13 @@
         Locked = false;
         Cryptomining = true;
         Fingerprinting = true;
+      };
+
+      PopupBlocking = {
+        Allow = [
+          "https://my.1password.com"
+          "https://*.my.1password.com"
+        ];
       };
     };
 

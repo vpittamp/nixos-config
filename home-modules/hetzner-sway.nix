@@ -45,6 +45,21 @@
     executable = true;
   };
 
+  # Provide a swaymsg wrapper that auto-discovers the IPC socket when run over SSH
+  home.file.".local/bin/swaymsg" = {
+    text = ''
+      #!/usr/bin/env bash
+      if [ -z "$SWAYSOCK" ]; then
+        socket="$(${pkgs.sway}/bin/sway --get-socketpath 2>/dev/null || true)"
+        if [ -n "$socket" ]; then
+          export SWAYSOCK="$socket"
+        fi
+      fi
+      exec ${pkgs.sway}/bin/swaymsg "$@"
+    '';
+    executable = true;
+  };
+
   # Feature 015: i3 project event listener daemon
   # NOTE: Runs as system service (configurations/hetzner-sway.nix: services.i3ProjectDaemon.enable)
   # Home-manager module removed to prevent Python environment conflicts

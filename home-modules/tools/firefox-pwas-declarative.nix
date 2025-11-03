@@ -9,6 +9,209 @@ let
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
   pwas = pwaSitesConfig.pwaSites;
 
+  inherit (lib.hm.dag) entryAfter;
+
+  pwaDialogFixScript = pkgs.writeShellScriptBin "pwa-fix-dialogs" ''
+    # Fix thin sliver dialog rendering on Wayland with fractional scaling
+    # Applies user.js fixes to all PWA profiles
+
+    PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
+
+    usage() {
+      cat <<'EOF'
+Usage: pwa-fix-dialogs [--profile ULID]
+
+Apply Wayland/PWA preferences (including 1Password pinning) to all profiles or a single profile.
+EOF
+    }
+
+    TARGET=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --profile)
+          TARGET="$2"
+          shift 2
+          ;;
+        -h|--help)
+          usage
+          exit 0
+          ;;
+        *)
+          echo "Unknown argument: $1" >&2
+          usage >&2
+          exit 1
+          ;;
+      esac
+    done
+
+    if [ ! -d "$PROFILES_DIR" ]; then
+      echo "Error: PWA profiles directory not found: $PROFILES_DIR"
+      exit 1
+    fi
+
+    if [ -n "$TARGET" ]; then
+      set -- "$PROFILES_DIR/$TARGET"
+    else
+      set -- "$PROFILES_DIR"/*
+    fi
+
+    count=0
+    for profile in "$@"; do
+      if [ -d "$profile" ]; then
+        cat > "$profile/user.js" << 'EOF'
+// Wayland Dialog/Popup Fixes (Feature 056)
+// Fix thin sliver dialog rendering on Wayland with fractional scaling
+
+// CRITICAL: Disable fractional scaling - causes dialog sizing bugs
+// Bug 1849109: Context menus and popups broken with this enabled
+user_pref("widget.wayland.fractional-scale.enabled", false);
+
+// Use system DPI scaling (-1 = automatic)
+// Bug 1634404: Popups broken when this is not -1 or 1
+user_pref("layout.css.devPixelsPerPx", -1);
+
+// Disable fingerprinting resistance which can interfere with window sizing
+user_pref("privacy.resistFingerprinting", false);
+
+// Force use of XDG desktop portals for better Wayland integration
+user_pref("widget.use-xdg-desktop-portal.file-picker", 1);
+user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
+
+// Ensure native Wayland backend
+user_pref("gfx.webrender.all", true);
+user_pref("gfx.webrender.enabled", true);
+
+// === 1Password Integration (Feature 056) ===
+// Enable 1Password extension and native messaging
+
+// Install and enable 1Password extension
+user_pref("extensions.autoDisableScopes", 0);
+user_pref("extensions.enabledScopes", 15);
+
+// Disable Firefox password manager - use 1Password instead
+user_pref("signon.rememberSignons", false);
+user_pref("signon.autofillForms", false);
+user_pref("signon.generation.enabled", false);
+user_pref("signon.management.page.breach-alerts.enabled", false);
+
+// Enable extensions in private browsing
+user_pref("extensions.allowPrivateBrowsingByDefault", true);
+
+// Native messaging for 1Password desktop integration
+user_pref("privacy.resistFingerprinting.block_mozAddonManager", true);
+
+// Allow signed extensions
+user_pref("xpinstall.signatures.required", true);
+
+// Enable web extensions
+user_pref("extensions.webextensions.remote", true);
+
+// Pin 1Password button on toolbar by default
+user_pref("browser.uiCustomization.state", "{\"placements\":{\"widget-overflow-fixed-list\":[],\"nav-bar\":[\"back-button\",\"forward-button\",\"urlbar-container\",\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"toolbar-menubar\":[\"menubar-items\"],\"TabsToolbar\":[\"tabbrowser-tabs\",\"new-tab-button\",\"alltabs-button\"],\"PersonalToolbar\":[\"personal-bookmarks\"],\"unified-extensions-area\":[]},\"seen\":[\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"dirtyAreaCache\":[\"nav-bar\",\"TabsToolbar\",\"PersonalToolbar\"],\"currentVersion\":23,\"newElementCount\":2}");
+EOF
+        echo "Updated: $profile/user.js"
+        ((count++))
+
+        # Ensure 1Password toolbar button is pinned inside each profile
+        if [ -f "$profile/prefs.js" ]; then
+          ${pkgs.python3}/bin/python3 - <<'PY' "$profile/prefs.js"
+import json
+import re
+import sys
+from pathlib import Path
+
+prefs_path = Path(sys.argv[1])
+text = prefs_path.read_text()
+
+pattern = re.compile(r'user_pref\("browser.uiCustomization.state", "(.*?)"\);')
+match = pattern.search(text)
+placement = "_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action"
+
+def dump_state(state):
+    return json.dumps(state, separators=(",", ":")).replace('"', '\\"')
+
+if not match:
+    state = {
+        "placements": {
+            "nav-bar": ["back-button", "forward-button", "urlbar-container", placement, "unified-extensions-button"],
+            "toolbar-menubar": ["menubar-items"],
+            "TabsToolbar": ["tabbrowser-tabs", "new-tab-button", "alltabs-button"],
+            "PersonalToolbar": ["personal-bookmarks"],
+            "unified-extensions-area": [],
+        },
+        "seen": [placement, "unified-extensions-button"],
+        "dirtyAreaCache": ["nav-bar", "TabsToolbar", "PersonalToolbar"],
+        "currentVersion": 23,
+        "newElementCount": 2,
+    }
+    line = f'user_pref("browser.uiCustomization.state", "{dump_state(state)}");\n'
+    if not text.endswith("\n"):
+        text += "\n"
+    prefs_path.write_text(text + line)
+    raise SystemExit
+
+decoded = bytes(match.group(1), "utf-8").decode("unicode_escape")
+state = json.loads(decoded)
+placements = state.setdefault("placements", {})
+nav = placements.setdefault("nav-bar", [])
+changed = False
+
+nav = [item for item in nav if item != placement]
+
+if placement not in nav:
+    insert_idx = len(nav)
+    for anchor in ("unified-extensions-button", "urlbar-container", "vertical-spacer"):
+        if anchor in nav:
+            insert_idx = nav.index(anchor)
+            if anchor == "urlbar-container":
+                insert_idx += 1
+            break
+    nav.insert(insert_idx, placement)
+    changed = True
+
+seen = state.setdefault("seen", [])
+if placement not in seen:
+    seen.append(placement)
+    changed = True
+
+if "unified-extensions-button" not in nav:
+    nav.append("unified-extensions-button")
+    changed = True
+
+if "unified-extensions-button" not in seen:
+    seen.append("unified-extensions-button")
+    changed = True
+
+if changed:
+    new_json = dump_state(state)
+    replacement = f'user_pref("browser.uiCustomization.state", "{new_json}");'
+    text = pattern.sub(replacement, text, count=1)
+    if not text.endswith("\n"):
+        text += "\n"
+    prefs_path.write_text(text)
+PY
+        fi
+      fi
+    done
+
+    echo ""
+    echo "✓ Updated $count PWA profiles with Wayland dialog fixes"
+    echo ""
+    echo "Reloading Sway to refresh i3pm daemon with new PWA configuration..."
+    sway_socket="$(${pkgs.sway}/bin/sway --get-socketpath 2>/dev/null || true)"
+    if [ -n "$sway_socket" ]; then
+      ${pkgs.sway}/bin/swaymsg -s "$sway_socket" reload >/dev/null 2>&1 || true
+    else
+      ${pkgs.sway}/bin/swaymsg reload >/dev/null 2>&1 || true
+    fi
+    echo ""
+    echo "✓ Sway reloaded - new PWAs are now registered"
+    echo ""
+    echo "Restart your PWAs for changes to take effect:"
+    echo "  1. Close all PWA windows"
+    echo "  2. Relaunch PWAs from Walker (Meta+D)"
+  '';
+
   #
   # Core Functions
   #
@@ -112,9 +315,9 @@ let
       config = {
         always_patch = false;
         runtime_enable_wayland = true;   # Enable native Wayland for Sway
-        runtime_use_portals = false;
+        runtime_use_portals = true;      # Use XDG desktop portals for dialogs
         runtime_use_xinput2 = false;
-        use_linked_runtime = true;      # Use immutable runtime from Nix package
+        use_linked_runtime = false;     # Prefer system Firefox for latest Wayland fixes
       };
 
       # Profiles section - separate profile for each PWA
@@ -150,89 +353,20 @@ in
     # Ensure firefoxpwa is installed
     home.packages = [
       pkgs.firefoxpwa
-
-      # Fix dialog rendering issues on Wayland (Feature 056)
-      (pkgs.writeShellScriptBin "pwa-fix-dialogs" ''
-        # Fix thin sliver dialog rendering on Wayland with fractional scaling
-        # Applies user.js fixes to all PWA profiles
-
-        PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
-
-        if [ ! -d "$PROFILES_DIR" ]; then
-          echo "Error: PWA profiles directory not found: $PROFILES_DIR"
-          exit 1
-        fi
-
-        count=0
-        for profile in "$PROFILES_DIR"/*; do
-          if [ -d "$profile" ]; then
-            cat > "$profile/user.js" << 'EOF'
-// Wayland Dialog/Popup Fixes (Feature 056)
-// Fix thin sliver dialog rendering on Wayland with fractional scaling
-
-// CRITICAL: Disable fractional scaling - causes dialog sizing bugs
-// Bug 1849109: Context menus and popups broken with this enabled
-user_pref("widget.wayland.fractional-scale.enabled", false);
-
-// Use system DPI scaling (-1 = automatic)
-// Bug 1634404: Popups broken when this is not -1 or 1
-user_pref("layout.css.devPixelsPerPx", -1);
-
-// Disable fingerprinting resistance which can interfere with window sizing
-user_pref("privacy.resistFingerprinting", false);
-
-// Force use of XDG desktop portals for better Wayland integration
-user_pref("widget.use-xdg-desktop-portal.file-picker", 1);
-user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
-
-// Ensure native Wayland backend
-user_pref("gfx.webrender.all", true);
-user_pref("gfx.webrender.enabled", true);
-
-// === 1Password Integration (Feature 056) ===
-// Enable 1Password extension and native messaging
-
-// Install and enable 1Password extension
-user_pref("extensions.autoDisableScopes", 0);
-user_pref("extensions.enabledScopes", 15);
-
-// Disable Firefox password manager - use 1Password instead
-user_pref("signon.rememberSignons", false);
-user_pref("signon.autofillForms", false);
-user_pref("signon.generation.enabled", false);
-user_pref("signon.management.page.breach-alerts.enabled", false);
-
-// Enable extensions in private browsing
-user_pref("extensions.allowPrivateBrowsingByDefault", true);
-
-// Native messaging for 1Password desktop integration
-user_pref("privacy.resistFingerprinting.block_mozAddonManager", true);
-
-// Allow signed extensions
-user_pref("xpinstall.signatures.required", true);
-
-// Enable web extensions
-user_pref("extensions.webextensions.remote", true);
-EOF
-            echo "Updated: $profile/user.js"
-            ((count++))
-          fi
-        done
-
-        echo ""
-        echo "✓ Updated $count PWA profiles with Wayland dialog fixes"
-        echo ""
-        echo "Reloading Sway to refresh i3pm daemon with new PWA configuration..."
-        swaymsg reload
-        echo ""
-        echo "✓ Sway reloaded - new PWAs are now registered"
-        echo ""
-        echo "Restart your PWAs for changes to take effect:"
-        echo "  1. Close all PWA windows"
-        echo "  2. Relaunch PWAs from Walker (Meta+D)"
-      '')
-
+      pwaDialogFixScript
     ];
+
+    home.activation.firefoxpwaWaylandPrefs = entryAfter [ "writeBoundary" ] ''
+      if [ -x "${pwaDialogFixScript}/bin/pwa-fix-dialogs" ]; then
+        "${pwaDialogFixScript}/bin/pwa-fix-dialogs" || true
+      fi
+    '';
+
+    home.activation.firefoxpwaEnsure1Password = entryAfter [ "firefoxpwaWaylandPrefs" ] ''
+      if command -v pwa-enable-1password >/dev/null 2>&1; then
+        pwa-enable-1password >/dev/null 2>&1 || true
+      fi
+    '';
 
     #
     # BREAKTHROUGH: Write config to CORRECT location!

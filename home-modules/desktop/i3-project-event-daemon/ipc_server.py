@@ -1670,6 +1670,7 @@ class IPCServer:
 
                 window_data = {
                     "id": node.window,
+                    "pid": node.pid if hasattr(node, 'pid') else None,
                     "class": node.window_class or "",
                     "instance": node.window_instance or "",
                     "title": node.name or "",

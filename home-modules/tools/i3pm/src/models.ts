@@ -27,6 +27,9 @@ export interface WindowState {
   /** Unique window identifier from i3 */
   id: number;
 
+  /** Process ID of the window */
+  pid?: number;
+
   /** Window class (application identifier) */
   class: string;
 

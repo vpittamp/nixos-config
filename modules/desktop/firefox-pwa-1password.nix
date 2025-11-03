@@ -5,24 +5,6 @@
 with lib;
 
 {
-  # Native messaging host configuration for PWAs
-  environment.etc = {
-    # PWA native messaging host for 1Password
-    "firefox/native-messaging-hosts/com.1password.1password.json" = {
-      text = builtins.toJSON {
-        name = "com.1password.1password";
-        description = "1Password Native Messaging Host";
-        type = "stdio";
-        allowed_extensions = [
-          "onepassword@1password.com"
-          "{d634138d-c276-4fc8-924b-40a0ea21d284}"  # 1Password extension ID
-        ];
-        path = "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport";
-      };
-      mode = "0644";
-    };
-  };
-
   # Configure firefoxpwa to enable extensions and provide helper script
   environment.systemPackages = with pkgs; [
     (firefoxpwa.overrideAttrs (oldAttrs: {
@@ -43,13 +25,41 @@ with lib;
         EOF
       '';
     }))
-    # Script to enable 1Password in existing PWAs
     (writeShellScriptBin "pwa-enable-1password" ''
+      # Script to enable 1Password in existing PWAs
       #!/usr/bin/env bash
       echo "Enabling 1Password for all PWAs..."
 
+      TARGET=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --profile)
+            TARGET="$2"
+            shift 2
+            ;;
+          -h|--help)
+            cat <<'EOF'
+Usage: pwa-enable-1password [--profile ULID]
+
+Install/configure the 1Password extension for all PWAs or a single profile.
+EOF
+            exit 0
+            ;;
+          *)
+            echo "Unknown argument: $1" >&2
+            exit 1
+            ;;
+        esac
+      done
+
+      if [ -n "$TARGET" ]; then
+        set -- "$HOME/.local/share/firefoxpwa/profiles/$TARGET/"
+      else
+        set -- "$HOME/.local/share/firefoxpwa/profiles"/*/
+      fi
+
       # Find all PWA profiles
-      for profile in ~/.local/share/firefoxpwa/profiles/*/; do
+      for profile in "$@"; do
         if [ -d "$profile" ]; then
           profile_name=$(basename "$profile")
           echo "  Updating profile: $profile_name"
@@ -58,9 +68,24 @@ with lib;
           mkdir -p "$profile/extensions"
 
           # Download and install 1Password extension
-          echo "    Downloading 1Password extension..."
-          curl -sL "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi" \
-            -o "$profile/extensions/onepassword@1password.com.xpi"
+          if [ ! -f "$profile/extensions/onepassword@1password.com.xpi" ]; then
+            echo "    Downloading 1Password extension..."
+            curl -sSL "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi" \
+              -o "$profile/extensions/onepassword@1password.com.xpi"
+          else
+            echo "    1Password extension already present"
+          fi
+
+          # Install extension into profile if not already registered
+          if [ -f "$profile/extensions.json" ] && ${pkgs.jq}/bin/jq -e 'any(.addons[]?; .id == "onepassword@1password.com")' "$profile/extensions.json" >/dev/null 2>&1; then
+            echo "    1Password extension already installed"
+          else
+            echo "    Installing 1Password extension into profile"
+            timeout 30s MOZ_HEADLESS=1 MOZ_FORCE_DISABLE_E10S=1 ${pkgs.firefox}/bin/firefox \
+              --headless --profile "$profile" --install-addon "$profile/extensions/onepassword@1password.com.xpi" \
+              >/dev/null 2>&1 || true
+            rm -f "$profile/.parentlock"
+          fi
 
           # Update prefs.js for the profile
           if [ -f "$profile/prefs.js" ]; then
@@ -84,20 +109,17 @@ PREFS
 
           # Set up native messaging
           mkdir -p "$profile/.mozilla/native-messaging-hosts"
-          ln -sf ${pkgs._1password-gui}/share/1password/mozilla/native-messaging-hosts/*.json \
-            "$profile/.mozilla/native-messaging-hosts/" 2>/dev/null || true
+          for host in ${pkgs._1password-gui}/share/1password/mozilla/native-messaging-hosts/*.json; do
+            target="$profile/.mozilla/native-messaging-hosts/$(basename "$host")"
+            ln -sf "$host" "$target"
+          done
           echo "    Configured native messaging"
         fi
       done
 
       echo ""
-      echo "1Password enabled for all PWAs!"
-      echo "Note: You need to restart each PWA for changes to take effect."
-      echo ""
-      echo "After restarting a PWA:"
-      echo "1. Click the puzzle piece icon in the toolbar"
-      echo "2. Pin 1Password to the toolbar"
-      echo "3. Sign in to 1Password"
+      echo "1Password enabled for selected PWAs!"
+      echo "Restart the PWA to load the extension and toolbar pin."
     '')
   ];
 

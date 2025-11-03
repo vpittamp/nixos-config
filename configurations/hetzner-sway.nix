@@ -27,6 +27,7 @@
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
     ../modules/desktop/wayvnc.nix     # VNC server for headless Wayland (from Feature 045)
+    ../modules/desktop/firefox-1password.nix      # Global Firefox policies for 1Password
     ../modules/desktop/firefox-pwa-1password.nix  # Declarative 1Password integration for PWAs
 
     # Services
@@ -118,6 +119,16 @@
     GSK_RENDERER = "cairo";
   };
 
+  # XDG portals for Wayland dialogs and file pickers
+  xdg.portal = {
+    enable = true;
+    extraPortals = with pkgs; [
+      xdg-desktop-portal-wlr
+      xdg-desktop-portal-gtk
+    ];
+    config.common.default = [ "wlr" "gtk" ];
+  };
+
   # User lingering for persistent session after SSH logout
   # Required for Sway session to continue running after SSH disconnection
   systemd.tmpfiles.rules = [
@@ -158,9 +169,6 @@
     };
     updateInterval = "hourly";  # Check for password changes hourly
   };
-
-  # Fallback password for initial setup before 1Password is configured
-  users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
   # SSH settings for initial access
   services.openssh.settings = {

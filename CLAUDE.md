@@ -1244,6 +1244,74 @@ i3pm windows --json > window-state.json
 i3pm windows --json | jq '.total_windows'
 ```
 
+## 🔍 Window Environment Query Tool
+
+The `window-env` command makes it easy to query window PIDs and environment variables without manual jq queries.
+
+**Quick Examples:**
+```bash
+# Show all environment variables for YouTube PWA
+window-env YouTube
+
+# Get just the PID
+window-env --pid YouTube
+
+# Show only I3PM_* environment variables
+window-env --filter I3PM_ YouTube
+
+# Show environment variables for all VS Code windows
+window-env --all Code
+
+# Get raw JSON data
+window-env --json Firefox | jq .
+```
+
+**Features:**
+- **Fuzzy matching**: Case-insensitive pattern matching on window class
+- **Colored output**: I3PM_* variables highlighted in green, others dimmed
+- **PID validation**: Checks if process exists before reading /proc
+- **Multiple window handling**: Shows first match by default, use `--all` for all matches
+- **Filtering**: Use `--filter PATTERN` to show only matching environment variables
+
+**Common Use Cases:**
+```bash
+# Debug PWA project assignment
+window-env --filter I3PM_ "YouTube"
+# Shows: I3PM_PROJECT_NAME, I3PM_APP_NAME, I3PM_SCOPE, etc.
+
+# Find PID for environment inspection
+PID=$(window-env --pid Ghostty)
+cat /proc/$PID/environ | tr '\0' '\n'
+
+# Check which project context an app was launched in
+window-env --filter I3PM_PROJECT vscode
+
+# List all available window classes
+window-env youtube 2>&1 | grep "Available window classes"
+```
+
+**Output Format:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Window: FFPWA-01JBCXYZ... - YouTube
+ID: 94532735639728  PID: 12345  Workspace: 3  Project: personal
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Environment variables (filtered by 'I3PM_'):
+
+  I3PM_PROJECT_NAME=personal
+  I3PM_APP_NAME=youtube
+  I3PM_SCOPE=global
+  I3PM_TARGET_WORKSPACE=3
+```
+
+**Integration with i3pm windows:**
+The `window-env` tool uses `i3pm windows --json` under the hood, which now includes PID information in all output modes:
+- Tree view: Shows `(PID: 12345)` in window labels
+- Table view: Dedicated PID column
+- Live TUI: PID column in both tree and table tabs
+- JSON output: `pid` field in window objects
+
 ## 🐍 Python Project Testing & Monitoring
 
 ### i3 Project System Monitor
