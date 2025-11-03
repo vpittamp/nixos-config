@@ -1685,9 +1685,16 @@ class IPCServer:
                         from .services.window_filter import read_process_environ
                         env = read_process_environ(node.pid)
                         app_id = env.get("I3PM_APP_ID")
-                    except (FileNotFoundError, PermissionError):
+                        if app_id:
+                            logger.debug(f"Found I3PM_APP_ID for window {window_id} PID {node.pid}: {app_id}")
+                        else:
+                            i3pm_keys = [k for k in env.keys() if k.startswith('I3PM')]
+                            logger.debug(f"No I3PM_APP_ID for window {window_id} PID {node.pid}, I3PM keys: {i3pm_keys}")
+                    except (FileNotFoundError, PermissionError) as e:
                         # Process may have exited or we don't have permission
-                        pass
+                        logger.debug(f"Failed to read environ for window {window_id} PID {node.pid}: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error reading environ for window {window_id} PID {node.pid}: {e}", exc_info=True)
 
                 window_data = {
                     "id": window_id,
