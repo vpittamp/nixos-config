@@ -7,7 +7,7 @@ let
     # window-env: Query window PIDs and environment variables
     #
     # Usage:
-    #   window-env [OPTIONS] <window-class-pattern>
+    #   window-env [OPTIONS] <pattern-or-pid>
     #
     # Options:
     #   --pid              Show only PID(s)
@@ -34,6 +34,7 @@ let
     OUTPUT_JSON=false
     SHOW_ALL=false
     WINDOW_PATTERN=""
+    SEARCH_BY_PID=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -59,7 +60,7 @@ let
     window-env: Query window PIDs and environment variables
 
     Usage:
-      window-env [OPTIONS] <window-class-pattern>
+      window-env [OPTIONS] <pattern-or-pid>
 
     Options:
       --pid              Show only PID(s)
@@ -68,15 +69,22 @@ let
       --all              Show all matching windows (default: first match)
       --help             Show this help message
 
+    Search Modes:
+      - By PID:    Provide numeric PID (e.g., 4099278)
+      - By Class:  Provide window class pattern (e.g., Code, FFPWA)
+      - By Title:  Provide window title pattern (e.g., YouTube, Claude)
+
     Examples:
-      window-env YouTube                    # Show all env vars for YouTube window
-      window-env --pid YouTube              # Show just the PID
-      window-env --filter I3PM_ YouTube     # Show only I3PM_* variables
+      window-env 4099278                    # Query by PID
+      window-env YouTube                    # Query by title (fuzzy match)
+      window-env --pid YouTube              # Show just the PID for YouTube
+      window-env --filter I3PM_ Claude      # Show only I3PM_* variables for Claude
       window-env --all Code                 # Show env vars for all VS Code windows
-      window-env --json Firefox | jq .      # Get raw JSON data
+      window-env FFPWA-01K666               # Query by class (partial ULID)
 
     Notes:
-      - Pattern matching is case-insensitive and fuzzy (matches anywhere in class name)
+      - Pattern matching is case-insensitive and fuzzy (matches class or title)
+      - If numeric pattern provided, searches by PID first
       - If multiple windows match, only the first is shown unless --all is used
       - PID must be valid (process still running) to read environment variables
     EOF
@@ -96,10 +104,15 @@ let
 
     # Validate arguments
     if [[ -z "$WINDOW_PATTERN" ]]; then
-        echo -e "''${RED}Error: Window class pattern required''${NC}" >&2
-        echo "Usage: window-env [OPTIONS] <window-class-pattern>" >&2
+        echo -e "''${RED}Error: Pattern or PID required''${NC}" >&2
+        echo "Usage: window-env [OPTIONS] <pattern-or-pid>" >&2
         echo "Use --help for more information" >&2
         exit 1
+    fi
+
+    # Detect if pattern is a numeric PID
+    if [[ "$WINDOW_PATTERN" =~ ^[0-9]+$ ]]; then
+        SEARCH_BY_PID=true
     fi
 
     # Check if jq is available
@@ -116,22 +129,40 @@ let
         exit 1
     }
 
-    # Find matching windows (case-insensitive)
-    MATCHING_WINDOWS=$(echo "$WINDOWS_JSON" | ${pkgs.jq}/bin/jq -r --arg pattern "$WINDOW_PATTERN" '
-        [
-            .outputs[].workspaces[].windows[] |
-            select(.class | ascii_downcase | contains($pattern | ascii_downcase))
-        ]
-    ')
+    # Find matching windows (case-insensitive, by PID or class/title)
+    if [[ "$SEARCH_BY_PID" == "true" ]]; then
+        # Search by numeric PID
+        MATCHING_WINDOWS=$(echo "$WINDOWS_JSON" | ${pkgs.jq}/bin/jq -r --argjson pid "$WINDOW_PATTERN" '
+            [
+                .[].workspaces[].windows[] |
+                select(.pid == $pid)
+            ]
+        ')
+    else
+        # Search by class or title (fuzzy, case-insensitive)
+        MATCHING_WINDOWS=$(echo "$WINDOWS_JSON" | ${pkgs.jq}/bin/jq -r --arg pattern "$WINDOW_PATTERN" '
+            [
+                .[].workspaces[].windows[] |
+                select(
+                    (.class | ascii_downcase | contains($pattern | ascii_downcase)) or
+                    (.title | ascii_downcase | contains($pattern | ascii_downcase))
+                )
+            ]
+        ')
+    fi
 
     # Check if any windows matched
     WINDOW_COUNT=$(echo "$MATCHING_WINDOWS" | ${pkgs.jq}/bin/jq 'length')
 
     if [[ "$WINDOW_COUNT" -eq 0 ]]; then
-        echo -e "''${YELLOW}No windows found matching pattern: ''${BOLD}$WINDOW_PATTERN''${NC}" >&2
+        if [[ "$SEARCH_BY_PID" == "true" ]]; then
+            echo -e "''${YELLOW}No window found with PID: ''${BOLD}$WINDOW_PATTERN''${NC}" >&2
+        else
+            echo -e "''${YELLOW}No windows found matching pattern: ''${BOLD}$WINDOW_PATTERN''${NC}" >&2
+        fi
         echo "" >&2
-        echo -e "''${DIM}Available window classes:''${NC}" >&2
-        echo "$WINDOWS_JSON" | ${pkgs.jq}/bin/jq -r '.outputs[].workspaces[].windows[].class' | sort -u | ${pkgs.gnused}/bin/sed 's/^/  /' >&2
+        echo -e "''${DIM}Available windows:''${NC}" >&2
+        echo "$WINDOWS_JSON" | ${pkgs.jq}/bin/jq -r '.[].workspaces[].windows[] | "  PID: \(.pid | tostring | if length < 7 then . + (" " * (7 - length)) else . end)  Class: \(.class)  Title: \(.title)"' | head -10 >&2
         exit 1
     fi
 

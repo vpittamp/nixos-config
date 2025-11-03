@@ -411,6 +411,10 @@ if command -v systemd-run &>/dev/null; then
         --setenv=I3PM_EXPECTED_CLASS="$I3PM_EXPECTED_CLASS" \
         --setenv=DISPLAY="${DISPLAY:-:0}" \
         --setenv=WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
+        --setenv=MOZ_ENABLE_WAYLAND="${MOZ_ENABLE_WAYLAND:-1}" \
+        --setenv=MOZ_DBUS_REMOTE="${MOZ_DBUS_REMOTE:-1}" \
+        --setenv=EGL_PLATFORM="${EGL_PLATFORM:-wayland}" \
+        --setenv=GDK_BACKEND="${GDK_BACKEND:-wayland}" \
         --setenv=HOME="$HOME" \
         --setenv=PATH="$PATH" \
         bash -c "$CMD_STRING" 2>&1)

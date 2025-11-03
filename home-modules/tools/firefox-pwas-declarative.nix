@@ -398,7 +398,7 @@ in
           Type=Application
           Name=${pwa.name}
           Comment=${pwa.description}
-          Exec=launch-pwa-by-name ${pwa.ulid}
+          Exec=${config.home.homeDirectory}/.local/bin/app-launcher-wrapper.sh ${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa
           Icon=FFPWA-${pwa.ulid}
           Terminal=false
           Categories=${categoriesStr}

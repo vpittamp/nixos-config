@@ -84,13 +84,13 @@
       # Hint characters (home row optimized)
       chars = "fjghdkslaemuvitywoqpcbnxz";
 
-      # Catppuccin Mocha theme colors
-      window_background_color = "#1e1e2e";  # Base
+      # Catppuccin Mocha theme colors (rrggbb format, no # prefix)
+      window_background_color = "1e1e2e";  # Base
       window_background_opacity = 0.3;
-      label_background_color = "#313244";   # Surface0
-      label_text_color = "#cdd6f4";         # Text
-      focused_background_color = "#89b4fa"; # Blue
-      focused_text_color = "#1e1e2e";       # Base
+      label_background_color = "313244";   # Surface0
+      label_text_color = "cdd6f4";         # Text
+      focused_background_color = "89b4fa"; # Blue
+      focused_text_color = "1e1e2e";       # Base
 
       # Font settings
       font_family = "monospace";

@@ -15,7 +15,7 @@ const VERSION = "2.1.0";
  */
 async function main(): Promise<number> {
   const args = parseArgs(Deno.args, {
-    boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow", "sources"],
+    boolean: ["help", "version", "json", "verbose", "dry-run", "overwrite", "force", "follow", "sources", "table", "tree", "live", "hidden", "legend"],
     string: ["directory", "dir", "display-name", "display", "icon", "scope", "workspace", "limit", "type", "output", "category", "project", "window", "since"],
     alias: {
       h: "help",

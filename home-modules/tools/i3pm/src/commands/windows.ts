@@ -693,21 +693,15 @@ export async function windowsCommand(
   }
 
   // Default visualization command (original behavior)
-  const parsed = parseArgs(args, {
-    boolean: ["help", "tree", "table", "json", "live", "hidden", "legend"],
-    string: ["project", "output"],
-    alias: { h: "help" },
-    default: {},
-  });
-
-  if (parsed.help) {
+  // Note: flags are already parsed in main.ts, so we use them directly
+  if (flags.help) {
     showHelp();
     return 0;
   }
 
   // Show legend if requested
-  if (parsed.legend) {
-    console.log(parsed.table ? renderTableLegend() : renderTreeLegend());
+  if (flags.legend) {
+    console.log(flags.table ? renderTableLegend() : renderTreeLegend());
     return 0;
   }
 
@@ -717,9 +711,9 @@ export async function windowsCommand(
   };
 
   // Determine output mode (default to tree)
-  const isLive = parsed.live === true;
-  const isTable = parsed.table === true;
-  const isJson = parsed.json === true;
+  const isLive = flags.live === true;
+  const isTable = flags.table === true;
+  const isJson = flags.json === true;
   // Determine if tree mode (default)
 
   // Live mode is handled separately (T023)
@@ -776,8 +770,8 @@ export async function windowsCommand(
 
     // Apply filters
     const filtered = filterOutputs(outputs, {
-      project: parsed.project as string | undefined,
-      output: parsed.output as string | undefined,
+      project: flags.project as string | undefined,
+      output: flags.output as string | undefined,
     });
 
     // Render output based on mode
@@ -786,10 +780,10 @@ export async function windowsCommand(
       console.log(JSON.stringify(filtered, null, 2));
     } else if (isTable) {
       // Table mode (T020)
-      console.log(renderTable(filtered, { showHidden: parsed.hidden === true }));
+      console.log(renderTable(filtered, { showHidden: flags.hidden === true }));
     } else {
       // Tree mode (T019) - default
-      console.log(renderTree(filtered, { showHidden: parsed.hidden === true }));
+      console.log(renderTree(filtered, { showHidden: flags.hidden === true }));
     }
 
     await client.close();

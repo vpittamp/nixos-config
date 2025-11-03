@@ -4,7 +4,9 @@ let
   # Feature 035 + Feature 037: Window visibility commands
   # Feature 048: Monitor detection for multi-display VNC setup
   # Feature 053: Enhanced event logging with decision tree visualization - table layout
-  version = "2.5.1";
+  # PID support: Added window PID display to all i3pm windows commands
+  # Fix: Use flags parameter directly instead of re-parsing args in windowsCommand
+  version = "2.5.4";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {

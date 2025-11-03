@@ -1246,18 +1246,26 @@ i3pm windows --json | jq '.total_windows'
 
 ## 🔍 Window Environment Query Tool
 
-The `window-env` command makes it easy to query window PIDs and environment variables without manual jq queries.
+The `window-env` command makes it easy to query window PIDs and environment variables without manual jq queries. Supports searching by **PID**, **window class**, or **window title**.
 
 **Quick Examples:**
 ```bash
-# Show all environment variables for YouTube PWA
-window-env YouTube
+# Search by PID (NEW!)
+window-env 4099278
+
+# Search by window title (NEW!)
+window-env YouTube        # Matches "YouTube — Mozilla Firefox"
+window-env Claude         # Matches "Claude — Mozilla Firefox"
+
+# Search by window class (original)
+window-env Code           # Matches class "Code"
+window-env FFPWA-01K666   # Partial ULID match
 
 # Get just the PID
-window-env --pid YouTube
+window-env --pid YouTube  # Returns: 4099278
 
 # Show only I3PM_* environment variables
-window-env --filter I3PM_ YouTube
+window-env --filter I3PM_ Claude
 
 # Show environment variables for all VS Code windows
 window-env --all Code
@@ -1266,28 +1274,40 @@ window-env --all Code
 window-env --json Firefox | jq .
 ```
 
+**Search Modes:**
+- **By PID**: Provide numeric PID (e.g., `4099278`)
+- **By Title**: Provide window title pattern (e.g., `YouTube`, `Claude`)
+- **By Class**: Provide window class pattern (e.g., `Code`, `FFPWA`)
+
 **Features:**
-- **Fuzzy matching**: Case-insensitive pattern matching on window class
+- **Multi-mode search**: Searches by PID, class, or title automatically
+- **Fuzzy matching**: Case-insensitive pattern matching
 - **Colored output**: I3PM_* variables highlighted in green, others dimmed
 - **PID validation**: Checks if process exists before reading /proc
 - **Multiple window handling**: Shows first match by default, use `--all` for all matches
 - **Filtering**: Use `--filter PATTERN` to show only matching environment variables
+- **Helpful errors**: Shows table of available windows when no match found
 
 **Common Use Cases:**
 ```bash
+# Query environment by PID from another tool
+PID=4099278
+window-env $PID
+
+# Find PID for YouTube PWA by friendly name
+window-env --pid YouTube
+# Returns: 4099278
+
 # Debug PWA project assignment
-window-env --filter I3PM_ "YouTube"
+window-env --filter I3PM_ YouTube
 # Shows: I3PM_PROJECT_NAME, I3PM_APP_NAME, I3PM_SCOPE, etc.
 
-# Find PID for environment inspection
-PID=$(window-env --pid Ghostty)
-cat /proc/$PID/environ | tr '\0' '\n'
+# Check environment for specific process
+window-env 1188968
+# Shows all environment variables for PID 1188968
 
-# Check which project context an app was launched in
-window-env --filter I3PM_PROJECT vscode
-
-# List all available window classes
-window-env youtube 2>&1 | grep "Available window classes"
+# Find and inspect environment in one step
+window-env --filter PATH Claude
 ```
 
 **Output Format:**

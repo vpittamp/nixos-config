@@ -45,7 +45,7 @@ let
     name = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
     display_name = pwa.name;
     command = "launch-pwa-by-name";
-    parameters = pwa.name;
+    parameters = pwa.ulid;  # Use ULID for reliable PWA launch
     scope = pwa.app_scope;
     expected_class = "FFPWA-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
     preferred_workspace = pwa.preferred_workspace;

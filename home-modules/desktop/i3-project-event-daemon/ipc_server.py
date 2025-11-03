@@ -1643,8 +1643,12 @@ class IPCServer:
         windows = []
 
         def extract(node, depth=0):
-            # Check if this is an actual window (has window ID)
-            if node.window and node.window > 0:
+            # Check if this is an actual window (has X11 window ID or Wayland app_id)
+            # X11 windows have node.window > 0, Wayland windows have app_id
+            is_x11_window = node.window and node.window > 0
+            is_wayland_window = hasattr(node, 'app_id') and node.app_id and not node.window
+
+            if is_x11_window or is_wayland_window:
                 # Get project from marks (format: project:PROJECT_NAME:WINDOW_ID)
                 project = None
                 for mark in node.marks:
@@ -1653,11 +1657,14 @@ class IPCServer:
                         project = mark_parts[1] if len(mark_parts) >= 2 else None
                         break
 
+                # Get window class (X11 uses window_class, Wayland uses app_id)
+                window_class = node.window_class if hasattr(node, 'window_class') and node.window_class else (node.app_id if hasattr(node, 'app_id') else "")
+
                 # Determine classification from daemon state
                 classification = "global"
                 hidden = False
-                if node.window_class:
-                    if project and node.window_class in self.state_manager.state.scoped_classes:
+                if window_class:
+                    if project and window_class in self.state_manager.state.scoped_classes:
                         classification = "scoped"
                     # Check if window is hidden (not on visible workspace or project mismatch)
                     active_project = self.state_manager.state.active_project
@@ -1668,10 +1675,13 @@ class IPCServer:
                 workspace_name = container.name if container.type == "workspace" else ""
                 workspace_str = workspace_name if workspace_name else str(workspace_num)
 
+                # Use node.id for Wayland windows (unique identifier), node.window for X11
+                window_id = node.window if is_x11_window else node.id
+
                 window_data = {
-                    "id": node.window,
+                    "id": window_id,
                     "pid": node.pid if hasattr(node, 'pid') else None,
-                    "class": node.window_class or "",
+                    "class": window_class,
                     "instance": node.window_instance or "",
                     "title": node.name or "",
                     "workspace": workspace_str,
