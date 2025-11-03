@@ -6,7 +6,7 @@
   # List of PWA sites with static ULID identifiers
   # App Registry Fields:
   #   - app_scope: "scoped" (project-specific) or "global" (shared across projects)
-  #   - preferred_workspace: workspace number (50-64 for PWAs to avoid conflicts with standard apps on 1-9)
+  #   - preferred_workspace: workspace number (50-70 for PWAs to avoid conflicts with standard apps on 1-9)
   pwaSites = [
     # YouTube
     {
@@ -14,11 +14,11 @@
       url = "https://www.youtube.com";
       domain = "youtube.com";
       icon = "file:///etc/nixos/assets/pwa-icons/youtube.png";
-      description = "YouTube Video Platform";
+      description = "YouTube video platform";
       categories = "AudioVideo;Video;";
       keywords = "video;streaming;youtube;";
       scope = "https://www.youtube.com/";
-      ulid = "01HQ1Z9J8G7X2K5MNBVWXYZ013";  # Generated 2024-03-15
+      ulid = "01K666N2V6BQMDSBMX3AY74TY7";  # FFPWA ID
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 50;
@@ -30,11 +30,11 @@
       url = "https://gemini.google.com/app";
       domain = "gemini.google.com";
       icon = "file:///etc/nixos/assets/pwa-icons/google-ai.png";
-      description = "Google Gemini AI Assistant";
+      description = "Google AI assistant";
       categories = "Network;Development;";
       keywords = "ai;gemini;google;assistant;";
       scope = "https://gemini.google.com/";
-      ulid = "01HQ1Z9J8G7X2K5MNBVWXYZ014";  # Generated 2024-03-15
+      ulid = "01K665SPD8EPMP3JTW02JM1M0Z";  # FFPWA ID
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 51;
@@ -56,6 +56,22 @@
       preferred_workspace = 52;
     }
 
+    # ChatGPT
+    {
+      name = "ChatGPT";
+      url = "https://chatgpt.com";
+      domain = "chatgpt.com";
+      icon = "file:///etc/nixos/assets/pwa-icons/chatgpt.png";
+      description = "ChatGPT AI assistant";
+      categories = "Network;Development;";
+      keywords = "ai;chatgpt;openai;assistant;";
+      scope = "https://chatgpt.com/";
+      ulid = "01K772ZBM45JD68HXYNM193CVW";  # FFPWA ID
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 65;
+    }
+
     # GitHub
     {
       name = "GitHub";
@@ -70,6 +86,22 @@
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 53;
+    }
+
+    # GitHub Codespaces
+    {
+      name = "GitHub Codespaces";
+      url = "https://github.dev";
+      domain = "github.dev";
+      icon = "file:///etc/nixos/assets/pwa-icons/github-codespaces.png";
+      description = "GitHub cloud development environment";
+      categories = "Development;Network;";
+      keywords = "github;codespaces;cloud;ide;development;";
+      scope = "https://github.dev/";
+      ulid = "01K772Z7AY5J36Q3NXHH9RYGC0";  # FFPWA ID
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 66;
     }
 
     # Gmail
