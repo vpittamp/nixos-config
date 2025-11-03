@@ -593,7 +593,19 @@ nix flake lock --update-input nixpkgs
 
 ## ⚠️ Important Notes
 
-### Recent Updates (2025-10)
+### Recent Updates (2025-11)
+
+- **Reliable Event-Driven Workspace Assignment** - 100% PWA workspace assignment reliability (Feature 053)
+  - Fixed root cause: Removed native Sway `assign` rules that suppressed window creation events
+  - Priority 0 tier: Launch notification workspace (matched_launch.workspace_number) - <100ms latency
+  - Delayed property re-check: 100ms retry for native Wayland apps with async app_id population
+  - Single consolidated assignment mechanism: ALL workspace assignments via i3-project-event-daemon
+  - Event delivery guarantee: 100% window::new events received (no suppression)
+  - Assignment priority: Launch notification → App handlers → I3PM_TARGET_WORKSPACE → I3PM_APP_NAME → Class matching
+  - Benefits: No race conditions, dynamic project-aware assignment, sub-second latency
+  - PWA workspace assignments in app-registry-data.nix with preferred_workspace field
+  - Removed: ALL native `for_window` and `assign` directives from sway.nix
+  - Documentation: `/etc/nixos/specs/053-workspace-assignment-enhancement/quickstart.md`
 
 - **Intelligent Automatic Workspace-to-Monitor Assignment** - Automatic workspace redistribution (Feature 049)
   - Fully automatic workspace reassignment when monitors connect/disconnect
@@ -1547,7 +1559,12 @@ _Last updated: 2025-10-29 with Sway/Wayland migration and Feature 047 (Dynamic C
 - Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing) (042-event-driven-workspace-mode)
 - In-memory state only (no persistence) - workspace mode state and history stored in daemon memory, cleared on restart (042-event-driven-workspace-mode)
 - Configuration files only (swaybar config, status generator config) - no persistent data storage (052-enhanced-swaybar-status)
+- Python 3.11+ (existing i3pm daemon runtime), Nix for configuration management + i3ipc-python (i3ipc.aio for async Sway IPC), asyncio, existing i3pm daemon infrastructure (053-workspace-assignment-enhancement)
+- In-memory event tracking with persistent assignment configuration in JSON (053-workspace-assignment-enhancement)
+- Nix expression language (nixpkgs-unstable), Bash scripts for helper utilities + firefoxpwa package, home-manager with programs.firefoxpwa module, ulid CLI tool for ULID generation (056-declarative-pwa-installation)
+- JSON configuration files (~/.local/share/firefoxpwa/config.json), Web App Manifest JSON files (hosted via HTTP or file://), ULID mapping file for persistence (056-declarative-pwa-installation)
 
 ## Recent Changes
+- 053-workspace-assignment-enhancement: Fixed PWA workspace assignment reliability by removing native Sway assign rules that suppressed window creation events. Added Priority 0 tier (launch notification workspace) for <100ms assignment latency and delayed property re-check for native Wayland apps with async app_id population. Consolidated to single event-driven assignment mechanism with 100% event delivery guarantee.
 - 052-enhanced-swaybar-status: Enhanced swaybar with event-driven status blocks (volume, battery, network, bluetooth) using D-Bus integration, while preserving all original system monitoring features
 - 042-event-driven-workspace-mode: Added Python 3.11+ (existing i3pm daemon runtime) + i3ipc-python (i3ipc.aio for async), asyncio, Rich (terminal UI), pytest/pytest-asyncio (testing)

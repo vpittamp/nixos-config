@@ -24,6 +24,46 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# Feature 053 Phase 6: Comprehensive Event Logging Utilities
+# ============================================================================
+
+
+def log_event_entry(event_type: str, event_data: Dict, level: str = "DEBUG") -> None:
+    """Log comprehensive event details for debugging (Feature 053 Phase 6).
+
+    Provides structured logging for all Sway/i3 events including:
+    - Event type and timestamp
+    - Window properties (class, title, ID, PID)
+    - Workspace information (number, name, output)
+    - Project context
+    - Application classification
+
+    Args:
+        event_type: Type of event (window::new, workspace::init, output, etc.)
+        event_data: Dictionary of event-specific data
+        level: Log level (DEBUG, INFO, WARNING, ERROR)
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+    # Build log message with comprehensive details
+    log_parts = [
+        f"[{timestamp}]",
+        f"EVENT: {event_type}",
+    ]
+
+    # Add all event-specific data
+    for key, value in event_data.items():
+        if value is not None:
+            log_parts.append(f"{key}={value}")
+
+    log_message = " | ".join(log_parts)
+
+    # Log at appropriate level
+    log_func = getattr(logger, level.lower(), logger.debug)
+    log_func(log_message)
+
+
 def get_window_class(container) -> str:
     """Get window class in a Sway/i3-compatible way (Feature 045).
 
@@ -50,6 +90,132 @@ def get_window_class(container) -> str:
             return container.window_properties.get('class', 'unknown')
 
     return "unknown"
+
+
+async def _delayed_property_recheck(
+    conn: aio.Connection,
+    window_id: int,
+    original_class: str,
+    application_registry: Optional[Dict],
+    workspace_tracker,
+    window_env,
+    matched_launch,
+) -> None:
+    """Feature 053: Delayed property re-check for native Wayland apps (US1 T035-T038).
+
+    Native Wayland apps (PWAs, native apps) may have empty app_id during the window::new event.
+    This function re-checks window properties after 100ms delay to allow them to populate,
+    then retries workspace assignment if properties are now available.
+
+    Args:
+        conn: i3 async connection
+        window_id: Window container ID
+        original_class: Original window class from initial event
+        application_registry: Application registry for workspace lookup
+        workspace_tracker: WorkspaceTracker for tracking assignment
+        window_env: Window environment variables (if available)
+        matched_launch: Matched launch notification (if available)
+    """
+    try:
+        # Wait 100ms for properties to populate
+        await asyncio.sleep(0.1)
+
+        # Re-fetch window from tree
+        tree = await conn.get_tree()
+        fresh_container = tree.find_by_id(window_id)
+
+        if not fresh_container:
+            logger.warning(f"Window {window_id} no longer exists after delayed property re-check")
+            return
+
+        # Check if app_id is now populated
+        new_class = get_window_class(fresh_container)
+
+        if new_class and new_class != "unknown" and new_class != original_class:
+            logger.info(
+                f"✓ Property re-check successful: Window {window_id} app_id populated "
+                f"(was '{original_class}' → now '{new_class}')"
+            )
+
+            # Retry workspace assignment with populated properties
+            preferred_ws = None
+            assignment_source = None
+
+            # Priority 0: Launch notification (highest priority)
+            if matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
+                preferred_ws = matched_launch.workspace_number
+                assignment_source = "launch_notification (delayed)"
+
+            # Priority 1: Environment variable
+            elif window_env and hasattr(window_env, 'target_workspace') and window_env.target_workspace:
+                preferred_ws = window_env.target_workspace
+                assignment_source = "I3PM_TARGET_WORKSPACE (delayed)"
+
+            # Priority 2: I3PM_APP_NAME registry
+            elif window_env and window_env.app_name and application_registry:
+                app_def = application_registry.get(window_env.app_name)
+                if app_def and "preferred_workspace" in app_def:
+                    preferred_ws = app_def["preferred_workspace"]
+                    assignment_source = f"registry[{window_env.app_name}] (delayed)"
+
+            # Priority 3: Class-based registry matching
+            elif application_registry:
+                from .services.window_identifier import match_with_registry
+
+                app_match = match_with_registry(
+                    actual_class=new_class,
+                    actual_instance=fresh_container.window_instance or "",
+                    application_registry=application_registry
+                )
+
+                if app_match and "preferred_workspace" in app_match:
+                    preferred_ws = app_match["preferred_workspace"]
+                    app_name = app_match.get("_matched_app_name", "unknown")
+                    match_type = app_match.get("_match_type", "unknown")
+                    assignment_source = f"registry[{app_name}] via class-match ({match_type}, delayed)"
+
+            if preferred_ws:
+                current_workspace = fresh_container.workspace()
+                if not current_workspace or current_workspace.num != preferred_ws:
+                    # Move window to preferred workspace
+                    await conn.command(
+                        f'[con_id="{window_id}"] move to workspace number {preferred_ws}'
+                    )
+
+                    # Track assignment
+                    if workspace_tracker:
+                        is_floating = fresh_container.floating == "user_on" or fresh_container.floating == "auto_on"
+                        await workspace_tracker.track_window(
+                            window_id=window_id,
+                            workspace_number=preferred_ws,
+                            floating=is_floating,
+                            project_name=window_env.project_name if window_env and window_env.project_name else "",
+                            app_name=window_env.app_name if window_env else "",
+                            window_class=new_class,
+                        )
+                        await workspace_tracker.save()
+
+                    logger.info(
+                        f"✓ Delayed assignment: Moved window {window_id} ({new_class}) to "
+                        f"workspace {preferred_ws} (source: {assignment_source})"
+                    )
+                else:
+                    logger.debug(
+                        f"Window {window_id} ({new_class}) already on preferred workspace {preferred_ws}"
+                    )
+            else:
+                logger.debug(
+                    f"No workspace assignment found for window {window_id} ({new_class}) "
+                    f"after delayed property re-check"
+                )
+        else:
+            logger.debug(
+                f"Property re-check: Window {window_id} app_id still not populated "
+                f"(remains '{new_class}')"
+            )
+
+    except Exception as e:
+        logger.error(f"Error in delayed property re-check for window {window_id}: {e}", exc_info=True)
 
 
 # Feature 033: Debouncing state for output change handler
@@ -183,6 +349,18 @@ async def on_tick(
 
     try:
         payload = event.payload
+
+        # Feature 053 Phase 6: Comprehensive tick event logging
+        active_project = await state_manager.get_active_project()
+        log_event_entry(
+            "tick",
+            {
+                "payload": payload,
+                "active_project": active_project or "none",
+            },
+            level="INFO" if payload.startswith("project:") else "DEBUG"
+        )
+
         logger.info(f"✓ TICK EVENT RECEIVED: {payload}")  # Changed to INFO to ensure visibility
         logger.debug(f"Received tick event: {payload}")
 
@@ -275,6 +453,16 @@ async def _switch_project(
     if old_project == project_name:
         logger.info(f"Already on project {project_name}")
         return
+
+    # Feature 053 Phase 6: Comprehensive project switch logging
+    log_event_entry(
+        "project::switch",
+        {
+            "old_project": old_project or "none",
+            "new_project": project_name,
+        },
+        level="INFO"
+    )
 
     logger.info(f"TICK: Switching project: {old_project} → {project_name}")
 
@@ -442,8 +630,25 @@ async def on_window_new(
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
 
-    # DEBUG: Log all window::new events
-    logger.info(f"✓ WINDOW::NEW HANDLER CALLED: {window_id} ({window_class})")
+    # Feature 053 Phase 6: Comprehensive event logging
+    current_ws = container.workspace()
+    log_event_entry(
+        "window::new",
+        {
+            "window_id": window_id,
+            "window_class": window_class,
+            "window_title": window_title[:50] if window_title else "",
+            "window_instance": container.window_instance or "",
+            "app_id": getattr(container, 'app_id', None),
+            "workspace_num": current_ws.num if current_ws else "?",
+            "workspace_name": current_ws.name if current_ws else "?",
+            "output": current_ws.ipc_data.get("output", "?") if current_ws else "?",
+            "pid": getattr(container, 'pid', None),
+            "floating": container.floating,
+            "x11_window": container.window,
+        },
+        level="INFO"
+    )
 
     try:
         active_project = await state_manager.get_active_project()
@@ -680,30 +885,148 @@ async def on_window_new(
             )
             await state_manager.add_window(window_info)
 
-        # Feature 037 T026-T029 + Feature 039 T060-T063: Workspace assignment with priority
-        # Priority 1: I3PM_TARGET_WORKSPACE (direct env var) - Feature 039 T060
-        # Priority 2: I3PM_APP_NAME registry lookup (existing Feature 037)
-        # Priority 3: Class-based registry matching (fallback when PID unavailable)
+        # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 056 REFACTORED: Workspace assignment
+        #
+        # SIMPLIFIED ARCHITECTURE:
+        #   Firefox PWAs (FFPWA-*): Direct class-based lookup (deterministic)
+        #   Non-PWAs: Priority system (1: Launch notification, 2: TARGET_WORKSPACE, 3: APP_NAME registry, 4: Class match)
         preferred_ws = None
         assignment_source = None
+        decision_tree = []  # Track assignment decision path for logging
 
-        if window_env:
-            # Priority 1: I3PM_TARGET_WORKSPACE (Feature 039 T060)
+        # Firefox PWA: Direct class-based lookup (deterministic)
+        if window_class and window_class.startswith("FFPWA-"):
+            if application_registry:
+                for app_name, app_def in application_registry.items():
+                    expected_class = app_def.get("expected_class", "")
+                    if expected_class == window_class:
+                        preferred_ws = app_def.get("preferred_workspace")
+                        assignment_source = f"pwa_class_match[{app_name}]"
+                        logger.info(
+                            f"[PWA] Assigned window {window_id} to workspace {preferred_ws} "
+                            f"via direct class match (class={window_class}, app={app_name})"
+                        )
+                        break
+
+                if not preferred_ws:
+                    logger.warning(
+                        f"[PWA] No registry match for Firefox PWA class {window_class}"
+                    )
+
+        # Priority 1: Launch notification workspace (Feature 053)
+        # Use workspace from matched_launch if correlation succeeded
+        # This provides <100ms assignment latency and 100% accuracy for walker-launched apps
+        if not preferred_ws and matched_launch and hasattr(matched_launch, 'workspace_number') and matched_launch.workspace_number:
+            preferred_ws = matched_launch.workspace_number
+            assignment_source = "launch_notification"
+            decision_tree.append({
+                "priority": 1,
+                "name": "launch_notification",
+                "matched": True,
+                "workspace": preferred_ws,
+                "details": {
+                    "app_name": matched_launch.app_name if matched_launch else "unknown",
+                    "confidence": f"{correlation_confidence:.2f}" if correlation_confidence else "n/a"
+                }
+            })
+            logger.info(
+                f"✓ Priority 1: Using launch notification workspace {preferred_ws} "
+                f"for window {window_id} ({window_class}) from app '{matched_launch.app_name}' "
+                f"[correlation_confidence={correlation_confidence:.2f}]"
+            )
+        elif not preferred_ws:
+            # Priority 1 failed - record why
+            reason = "no_launch_notification"
+            if matched_launch:
+                if not hasattr(matched_launch, 'workspace_number'):
+                    reason = "launch_missing_workspace_number"
+                elif not matched_launch.workspace_number:
+                    reason = "launch_workspace_number_empty"
+            decision_tree.append({
+                "priority": 1,
+                "name": "launch_notification",
+                "matched": False,
+                "reason": reason
+            })
+
+        if not preferred_ws and window_env:
+            # Priority 2: I3PM_TARGET_WORKSPACE (Feature 039 T060)
             if hasattr(window_env, 'target_workspace') and window_env.target_workspace:
                 preferred_ws = window_env.target_workspace
                 assignment_source = "I3PM_TARGET_WORKSPACE"
+                decision_tree.append({
+                    "priority": 2,
+                    "name": "I3PM_TARGET_WORKSPACE",
+                    "matched": True,
+                    "workspace": preferred_ws,
+                    "details": {}
+                })
                 logger.info(f"Using I3PM_TARGET_WORKSPACE={preferred_ws} for window {window_id}")
+            else:
+                # Priority 2 failed
+                reason = "env_var_not_set" if not hasattr(window_env, 'target_workspace') else "env_var_empty"
+                decision_tree.append({
+                    "priority": 2,
+                    "name": "I3PM_TARGET_WORKSPACE",
+                    "matched": False,
+                    "reason": reason
+                })
 
-            # Priority 2: I3PM_APP_NAME registry lookup (Feature 037)
-            elif window_env.app_name and application_registry:
+            # Priority 3: I3PM_APP_NAME registry lookup (Feature 037)
+            if not preferred_ws and window_env.app_name and application_registry:
                 app_name = window_env.app_name
                 app_def = application_registry.get(app_name)
 
                 if app_def and "preferred_workspace" in app_def:
                     preferred_ws = app_def["preferred_workspace"]
                     assignment_source = f"registry[{app_name}]"
-        else:
-            # Priority 3: Class-based registry matching (fallback for apps without PID)
+                    decision_tree.append({
+                        "priority": 3,
+                        "name": "I3PM_APP_NAME_registry",
+                        "matched": True,
+                        "workspace": preferred_ws,
+                        "details": {"app_name": app_name}
+                    })
+                else:
+                    # Priority 3 failed
+                    reason = "app_not_in_registry"
+                    if app_def and "preferred_workspace" not in app_def:
+                        reason = "app_has_no_preferred_workspace"
+                    decision_tree.append({
+                        "priority": 3,
+                        "name": "I3PM_APP_NAME_registry",
+                        "matched": False,
+                        "reason": reason,
+                        "details": {"app_name": app_name if app_name else "none"}
+                    })
+            elif not preferred_ws:
+                # Priority 3 not attempted
+                reason = "no_window_env" if not window_env else "no_app_name"
+                if not application_registry:
+                    reason = "no_registry_loaded"
+                decision_tree.append({
+                    "priority": 3,
+                    "name": "I3PM_APP_NAME_registry",
+                    "matched": False,
+                    "reason": reason
+                })
+        elif not preferred_ws and not window_env:
+            # Skip Priority 2 and 3 - no window_env
+            decision_tree.append({
+                "priority": 2,
+                "name": "I3PM_TARGET_WORKSPACE",
+                "matched": False,
+                "reason": "no_window_env"
+            })
+            decision_tree.append({
+                "priority": 3,
+                "name": "I3PM_APP_NAME_registry",
+                "matched": False,
+                "reason": "no_window_env"
+            })
+
+        if not preferred_ws:
+            # Priority 4: Class-based registry matching (fallback for apps without PID)
             # BUGFIX 039: When PID is unavailable (e.g., VS Code, Ghostty), use window class
             # to match against application registry and get preferred workspace
             if application_registry:
@@ -720,12 +1043,72 @@ async def on_window_new(
                     app_name = app_match.get("_matched_app_name", "unknown")
                     match_type = app_match.get("_match_type", "unknown")
                     assignment_source = f"registry[{app_name}] via class-match ({match_type})"
+                    decision_tree.append({
+                        "priority": 4,
+                        "name": "class_registry_match",
+                        "matched": True,
+                        "workspace": preferred_ws,
+                        "details": {
+                            "app_name": app_name,
+                            "match_type": match_type,
+                            "window_class": window_class
+                        }
+                    })
                     logger.info(
                         f"Window {window_id} ({window_class}) matched to app {app_name} "
                         f"via {match_type}, assigning workspace {preferred_ws}"
                     )
+                else:
+                    # Priority 4 failed
+                    reason = "no_class_match_in_registry"
+                    decision_tree.append({
+                        "priority": 4,
+                        "name": "class_registry_match",
+                        "matched": False,
+                        "reason": reason,
+                        "details": {"window_class": window_class}
+                    })
+            else:
+                decision_tree.append({
+                    "priority": 4,
+                    "name": "class_registry_match",
+                    "matched": False,
+                    "reason": "no_registry_loaded"
+                })
 
         if preferred_ws:
+                # Feature 053 Phase 6: Log workspace assignment decision with full context including decision tree
+                import json
+                log_event_entry(
+                    "workspace::assignment",
+                    {
+                        "window_id": container.id,
+                        "window_class": window_class,
+                        "target_workspace": preferred_ws,
+                        "assignment_source": assignment_source,
+                        "project": actual_project or "none",
+                        "app_name": window_env.app_name if window_env else "none",
+                        "correlation_confidence": f"{correlation_confidence:.2f}" if matched_launch else "n/a",
+                        "decision_tree": json.dumps(decision_tree),  # Full decision path for debugging
+                    },
+                    level="INFO"
+                )
+
+                # Feature 053 Phase 6: Add workspace assignment to event buffer
+                if event_buffer:
+                    from .models import EventEntry
+                    assignment_entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="workspace::assignment",
+                        timestamp=datetime.now(),
+                        source="daemon",
+                        window_id=container.id,
+                        window_class=window_class,
+                        workspace_name=f"{preferred_ws}",  # Store as string
+                        project_name=actual_project if actual_project else None,
+                    )
+                    await event_buffer.add_event(assignment_entry)
+
                 # BUGFIX 039 T066: Re-fetch container from tree to get current workspace
                 # container.workspace() returns None during window::new event (timing issue)
                 # Solution: Query fresh container from tree
@@ -744,6 +1127,45 @@ async def on_window_new(
                         await conn.command(
                             f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
                         )
+
+                        # Feature 056: Validate workspace assignment with retry (PWA race condition fix)
+                        # PWAs may not be on any workspace yet (workspace_num=?) during window::new
+                        # Wait for Sway to process the move, then verify it succeeded
+                        await asyncio.sleep(0.1)  # 100ms delay for Sway to process the move
+
+                        validation_tree = await conn.get_tree()
+                        validated_container = validation_tree.find_by_id(container.id)
+                        validated_workspace = validated_container.workspace() if validated_container else None
+
+                        if not validated_workspace or validated_workspace.num != preferred_ws:
+                            # Move failed - window still not on target workspace
+                            # Retry once after another delay
+                            logger.warning(
+                                f"⚠ Workspace assignment validation failed: Window {window_id} not on "
+                                f"workspace {preferred_ws} after move (currently on "
+                                f"{validated_workspace.num if validated_workspace else 'none'}). Retrying..."
+                            )
+                            await asyncio.sleep(0.1)  # Another 100ms delay
+                            await conn.command(
+                                f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
+                            )
+
+                            # Final validation
+                            await asyncio.sleep(0.05)  # Short delay before final check
+                            final_tree = await conn.get_tree()
+                            final_container = final_tree.find_by_id(container.id)
+                            final_workspace = final_container.workspace() if final_container else None
+
+                            if not final_workspace or final_workspace.num != preferred_ws:
+                                logger.error(
+                                    f"✗ Workspace assignment FAILED after retry: Window {window_id} "
+                                    f"still not on workspace {preferred_ws} (currently on "
+                                    f"{final_workspace.num if final_workspace else 'none'})"
+                                )
+                            else:
+                                logger.info(
+                                    f"✓ Retry successful: Window {window_id} now on workspace {preferred_ws}"
+                                )
 
                         # T026: Track initial workspace assignment
                         if workspace_tracker:
@@ -775,6 +1197,62 @@ async def on_window_new(
 
                 except Exception as e:
                     logger.error(f"Failed to move window {window_id} to workspace {preferred_ws}: {e}")
+        else:
+            # Feature 053 Phase 6: Log when NO workspace assignment found (all priorities failed)
+            import json
+            log_event_entry(
+                "workspace::assignment_failed",
+                {
+                    "window_id": container.id,
+                    "window_class": window_class,
+                    "project": actual_project or "none",
+                    "decision_tree": json.dumps(decision_tree),  # Show why each priority failed
+                },
+                level="WARNING"
+            )
+
+            # Feature 053 Phase 6: Add workspace assignment failure to event buffer
+            if event_buffer:
+                from .models import EventEntry
+                # Build error message from decision tree
+                failed_reasons = [f"P{d['priority']}:{d.get('reason', 'no_match')}" for d in decision_tree if not d.get('matched', False)]
+                error_summary = f"All priorities failed: {', '.join(failed_reasons)}"
+
+                failed_entry = EventEntry(
+                    event_id=event_buffer.event_counter,
+                    event_type="workspace::assignment_failed",
+                    timestamp=datetime.now(),
+                    source="daemon",
+                    window_id=container.id,
+                    window_class=window_class,
+                    project_name=actual_project if actual_project else None,
+                    error=error_summary,
+                )
+                await event_buffer.add_event(failed_entry)
+
+        if not preferred_ws:
+            # Feature 053: Delayed property re-check for native Wayland apps (US1 T035-T038)
+            # Native Wayland apps (PWAs, native apps) may have empty app_id during window::new event
+            # Schedule delayed re-check after 100ms to allow properties to populate
+            app_id = getattr(container, 'app_id', None)
+            if not app_id or app_id == "" or app_id == "unknown":
+                logger.debug(
+                    f"Native Wayland window {window_id} ({window_class}) has no app_id, "
+                    f"scheduling 100ms delayed property re-check"
+                )
+
+                # Schedule async task for delayed re-check
+                asyncio.create_task(
+                    _delayed_property_recheck(
+                        conn=conn,
+                        window_id=window_id,
+                        original_class=window_class,
+                        application_registry=application_registry,
+                        workspace_tracker=workspace_tracker,
+                        window_env=window_env,
+                        matched_launch=matched_launch,
+                    )
+                )
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:
@@ -867,6 +1345,19 @@ async def on_window_mark(
     window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
+    # Feature 053 Phase 6: Comprehensive window::mark event logging
+    current_ws = container.workspace()
+    log_event_entry(
+        "window::mark",
+        {
+            "window_id": window_id,
+            "window_class": window_class,
+            "marks": ', '.join(container.marks) if container.marks else "none",
+            "workspace_num": current_ws.num if current_ws else "?",
+        },
+        level="DEBUG"
+    )
+
     try:
         # Skip processing if performing startup scan (prevents race conditions)
         if resilient_connection and resilient_connection.is_performing_startup_scan:
@@ -944,6 +1435,19 @@ async def on_window_title(
     window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
     window_title = container.name or ""
+
+    # Feature 053 Phase 6: Comprehensive window::title event logging
+    current_ws = container.workspace()
+    log_event_entry(
+        "window::title",
+        {
+            "window_id": window_id,
+            "window_class": window_class,
+            "new_title": window_title[:50] if window_title else "",
+            "workspace_num": current_ws.num if current_ws else "?",
+        },
+        level="DEBUG"
+    )
 
     try:
         # Get active project for classification
@@ -1087,6 +1591,19 @@ async def on_window_close(
     window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
 
+    # Feature 053 Phase 6: Comprehensive window::close event logging
+    current_ws = container.workspace()
+    log_event_entry(
+        "window::close",
+        {
+            "window_id": window_id,
+            "window_class": window_class,
+            "workspace_num": current_ws.num if current_ws else "?",
+            "workspace_name": current_ws.name if current_ws else "?",
+        },
+        level="DEBUG"
+    )
+
     try:
         await state_manager.remove_window(window_id)
         logger.debug(f"Removed closed window {window_id}")
@@ -1138,6 +1655,19 @@ async def on_window_focus(
     # (container.window is None for native Wayland apps, container.id works for both)
     window_id = container.id
     window_class = get_window_class(container)  # Feature 045: Sway-compatible
+
+    # Feature 053 Phase 6: Comprehensive window::focus event logging
+    current_ws = container.workspace()
+    log_event_entry(
+        "window::focus",
+        {
+            "window_id": window_id,
+            "window_class": window_class,
+            "workspace_num": current_ws.num if current_ws else "?",
+            "workspace_name": current_ws.name if current_ws else "?",
+        },
+        level="DEBUG"
+    )
 
     try:
         await state_manager.update_window(window_id, last_focus=datetime.now())
@@ -1205,6 +1735,19 @@ async def on_window_move(
 
         workspace_num = workspace.num
         is_floating = container.floating == "user_on" or container.floating == "auto_on"
+
+        # Feature 053 Phase 6: Comprehensive window::move event logging
+        log_event_entry(
+            "window::move",
+            {
+                "window_id": window_id,
+                "window_class": window_class,
+                "target_workspace_num": workspace_num,
+                "target_workspace_name": workspace.name,
+                "floating": is_floating,
+            },
+            level="DEBUG"
+        )
 
         # Feature 037 T020: Update workspace tracker with new location
         if workspace_tracker:
@@ -1275,6 +1818,20 @@ async def on_workspace_init(
     """
     try:
         current = event.current
+
+        # Feature 053 Phase 6: Comprehensive workspace event logging
+        log_event_entry(
+            "workspace::init",
+            {
+                "workspace_name": current.name,
+                "workspace_num": current.num,
+                "output": current.ipc_data.get("output", ""),
+                "visible": True,
+                "focused": True,
+            },
+            level="DEBUG"
+        )
+
         workspace_info = WorkspaceInfo(
             name=current.name,
             num=current.num,
@@ -1302,6 +1859,18 @@ async def on_workspace_empty(
     """
     try:
         current = event.current
+
+        # Feature 053 Phase 6: Comprehensive workspace event logging
+        log_event_entry(
+            "workspace::empty",
+            {
+                "workspace_name": current.name,
+                "workspace_num": current.num,
+                "output": current.ipc_data.get("output", ""),
+            },
+            level="DEBUG"
+        )
+
         await state_manager.remove_workspace(current.name)
         logger.debug(f"Removed workspace {current.name}")
 
@@ -1323,6 +1892,22 @@ async def on_workspace_move(
     try:
         current = event.current
         new_output = current.ipc_data.get("output", "")
+
+        # Feature 053 Phase 6: Comprehensive workspace event logging
+        old = event.old if hasattr(event, 'old') else None
+        log_event_entry(
+            "workspace::move",
+            {
+                "workspace_name": current.name,
+                "workspace_num": current.num,
+                "old_output": old.ipc_data.get("output", "?") if old else "?",
+                "new_output": new_output,
+                "visible": current.ipc_data.get("visible", False),
+                "focused": current.ipc_data.get("focused", False),
+            },
+            level="INFO"
+        )
+
         # Update workspace output
         # (StateManager doesn't have direct update method for workspaces, recreate)
         workspace_info = WorkspaceInfo(
@@ -1467,6 +2052,21 @@ async def on_output(
         outputs = await conn.get_outputs()
         active_outputs = [o for o in outputs if o.active]
 
+        # Feature 053 Phase 6: Comprehensive output event logging
+        log_event_entry(
+            "output",
+            {
+                "active_outputs": len(active_outputs),
+                "output_names": ', '.join(o.name for o in active_outputs),
+                "total_outputs": len(outputs),
+                "resolutions": ', '.join(
+                    f"{o.name}:{o.rect.width}x{o.rect.height}"
+                    for o in active_outputs
+                ),
+            },
+            level="INFO"
+        )
+
         logger.info(
             f"Output event detected: {len(active_outputs)} active outputs - "
             f"{', '.join(o.name for o in active_outputs)}"
@@ -1535,6 +2135,16 @@ async def on_mode(
     mode_name = event.change
 
     try:
+        # Feature 053 Phase 6: Comprehensive mode event logging
+        log_event_entry(
+            "mode",
+            {
+                "mode_name": mode_name,
+                "workspace_mode_active": workspace_mode_manager.state.active if workspace_mode_manager else False,
+            },
+            level="DEBUG"
+        )
+
         logger.debug(f"Mode event: {mode_name}")
 
         # Feature 042: Workspace mode navigation

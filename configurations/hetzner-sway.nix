@@ -27,6 +27,7 @@
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
     ../modules/desktop/wayvnc.nix     # VNC server for headless Wayland (from Feature 045)
+    ../modules/desktop/firefox-pwa-1password.nix  # Declarative 1Password integration for PWAs
 
     # Services
     ../modules/services/onepassword-automation.nix

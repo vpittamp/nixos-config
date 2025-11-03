@@ -12,6 +12,7 @@
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with headless support
+    # sway-easyfocus now provided by home-manager upstream
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
@@ -28,6 +29,10 @@
     ./desktop/app-registry.nix  # Feature 034: Application registry with desktop files
     ./tools/app-launcher.nix    # Feature 034: Launcher wrapper script and CLI
     ./tools/pwa-launcher.nix    # Dynamic PWA launcher (queries IDs at runtime)
+
+    # Feature 056: Declarative PWA Installation
+    ./tools/firefox-pwas-declarative.nix  # TDD-driven declarative PWA management with ULIDs
+    ./tools/pwa-helpers.nix               # Helper CLI commands for PWA management
   ];
 
   home.username = "vpittamp";
@@ -55,5 +60,41 @@
   programs.swaybar-enhanced = {
     enable = true;
     # Uses default Catppuccin Mocha theme and standard update intervals
+  };
+
+  # sway-easyfocus - Keyboard-driven window hints
+  programs.sway-easyfocus = {
+    enable = true;
+    settings = {
+      # Hint characters (home row optimized)
+      chars = "fjghdkslaemuvitywoqpcbnxz";
+
+      # Catppuccin Mocha theme colors
+      window_background_color = "#1e1e2e";  # Base
+      window_background_opacity = 0.3;
+      label_background_color = "#313244";   # Surface0
+      label_text_color = "#cdd6f4";         # Text
+      focused_background_color = "#89b4fa"; # Blue
+      focused_text_color = "#1e1e2e";       # Base
+
+      # Font settings
+      font_family = "monospace";
+      font_weight = "bold";
+      font_size = "18pt";
+
+      # Spacing
+      label_padding_x = 8;
+      label_padding_y = 4;
+      label_margin_x = 4;
+      label_margin_y = 4;
+
+      # No confirmation window
+      show_confirmation = false;
+    };
+  };
+
+  # Feature 056: Declarative PWA Installation
+  programs.firefoxpwa-declarative = {
+    enable = true;
   };
 }

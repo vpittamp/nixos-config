@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.4.4";  # Feature 042: Remove explicit output focusing (Sway auto-focuses correct output on workspace switch)
+    version = "1.4.8";  # Feature 056: Fixed decision_tree initialization for simplified PWA logic
     src = daemonSrc;
 
     installPhase = ''

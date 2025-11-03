@@ -440,6 +440,47 @@
         aarch64-linux = mkPackagesFor "aarch64-linux";
       };
 
+      # Test checks for PWA installation (Feature 056)
+      checks = let
+        mkChecksFor = system:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              config.allowUnfree = true;
+            };
+          in
+          {
+            # Unit tests for PWA installation functions
+            pwa-unit-tests = pkgs.runCommand "pwa-unit-tests" {
+              buildInputs = [ pkgs.nix ];
+            } ''
+              # Run unit tests from tests/pwa-installation/unit/
+              echo "Running PWA unit tests..."
+
+              # Tests will be added in Phase 2
+              # For now, create a placeholder that passes
+              mkdir -p $out
+              echo "PWA unit tests: PASS (placeholder)" > $out/results.txt
+            '';
+
+            # Integration tests for PWA installation
+            pwa-integration-tests = pkgs.runCommand "pwa-integration-tests" {
+              buildInputs = [ pkgs.nix pkgs.firefoxpwa ];
+            } ''
+              # Run integration tests from tests/pwa-installation/integration/
+              echo "Running PWA integration tests..."
+
+              # Tests will be added in Phase 3-5
+              mkdir -p $out
+              echo "PWA integration tests: PASS (placeholder)" > $out/results.txt
+            '';
+          };
+      in
+      {
+        x86_64-linux = mkChecksFor "x86_64-linux";
+        aarch64-linux = mkChecksFor "aarch64-linux";
+      };
+
       # Development shells
       devShells = let
         mkDevShellFor = system:

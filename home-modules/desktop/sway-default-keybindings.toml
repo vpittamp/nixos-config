@@ -59,6 +59,10 @@
 "Mod+Up" = { command = "focus up", description = "Focus up" }
 "Mod+Right" = { command = "focus right", description = "Focus right" }
 
+# Easy focus - keyboard hints for quick window selection
+"Mod+apostrophe" = { command = "exec sway-easyfocus", description = "Focus window with keyboard hints" }
+"Mod+Shift+apostrophe" = { command = "exec sway-easyfocus swap", description = "Swap windows with keyboard hints" }
+
 # Move windows
 "Mod+Shift+h" = { command = "move left", description = "Move window left" }
 "Mod+Shift+j" = { command = "move down", description = "Move window down" }
