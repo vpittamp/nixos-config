@@ -150,6 +150,57 @@ in
     # Ensure firefoxpwa is installed
     home.packages = [
       pkgs.firefoxpwa
+
+      # Fix dialog rendering issues on Wayland (Feature 056)
+      (pkgs.writeShellScriptBin "pwa-fix-dialogs" ''
+        # Fix thin sliver dialog rendering on Wayland with fractional scaling
+        # Applies user.js fixes to all PWA profiles
+
+        PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
+
+        if [ ! -d "$PROFILES_DIR" ]; then
+          echo "Error: PWA profiles directory not found: $PROFILES_DIR"
+          exit 1
+        fi
+
+        count=0
+        for profile in "$PROFILES_DIR"/*; do
+          if [ -d "$profile" ]; then
+            cat > "$profile/user.js" << 'EOF'
+// Wayland Dialog/Popup Fixes (Feature 056)
+// Fix thin sliver dialog rendering on Wayland with fractional scaling
+
+// CRITICAL: Disable fractional scaling - causes dialog sizing bugs
+// Bug 1849109: Context menus and popups broken with this enabled
+user_pref("widget.wayland.fractional-scale.enabled", false);
+
+// Use system DPI scaling (-1 = automatic)
+// Bug 1634404: Popups broken when this is not -1 or 1
+user_pref("layout.css.devPixelsPerPx", -1);
+
+// Disable fingerprinting resistance which can interfere with window sizing
+user_pref("privacy.resistFingerprinting", false);
+
+// Force use of XDG desktop portals for better Wayland integration
+user_pref("widget.use-xdg-desktop-portal.file-picker", 1);
+user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
+
+// Ensure native Wayland backend
+user_pref("gfx.webrender.all", true);
+user_pref("gfx.webrender.enabled", true);
+EOF
+            echo "Updated: $profile/user.js"
+            ((count++))
+          fi
+        done
+
+        echo ""
+        echo "✓ Updated $count PWA profiles with Wayland dialog fixes"
+        echo ""
+        echo "Restart your PWAs for changes to take effect:"
+        echo "  1. Close all PWA windows"
+        echo "  2. Relaunch PWAs from Walker (Meta+D)"
+      '')
     ];
 
     #
