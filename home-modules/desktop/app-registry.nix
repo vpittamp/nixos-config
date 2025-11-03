@@ -43,10 +43,11 @@ let
   # Generate home.file entries for each .desktop file
   # Use completely separate directory outside standard XDG paths
   # so Walker/Elephant only shows our apps (Feature 034)
+  # EXCLUDE PWA apps - they have desktop files from firefox-pwas-declarative.nix
   desktopFileEntries = builtins.listToAttrs (map (app: {
     name = ".local/share/i3pm-applications/applications/${app.name}.desktop";
     value.text = mkDesktopFile app;
-  }) validated);
+  }) (builtins.filter (app: !lib.hasSuffix "-pwa" app.name) validated));
 
 in
 {

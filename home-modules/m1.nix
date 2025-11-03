@@ -12,7 +12,7 @@
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with HiDPI support
-    ./desktop/sway-easyfocus.nix  # Keyboard-driven window hints
+    # sway-easyfocus now provided by home-manager upstream
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
@@ -62,6 +62,11 @@
     # Uses default Catppuccin Mocha theme and standard update intervals
     # Bluetooth status block enabled with click handler to open Blueman Manager
     detectBluetooth = true;
+  };
+
+  # Feature 056: Declarative PWA Installation
+  programs.firefoxpwa-declarative = {
+    enable = true;
   };
 
   # sway-easyfocus - Keyboard-driven window hints

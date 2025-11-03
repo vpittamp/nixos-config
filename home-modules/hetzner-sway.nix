@@ -12,7 +12,7 @@
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with headless support
-    ./desktop/sway-easyfocus.nix  # Keyboard-driven window hints
+    # sway-easyfocus now provided by home-manager upstream
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management

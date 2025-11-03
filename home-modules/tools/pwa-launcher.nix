@@ -22,8 +22,8 @@ let
     # Try multiple discovery methods for flexibility
     PWA_ID=""
 
-    # Method 1: Check if NAME is already a profile ID (starts with 01K)
-    if [[ "$NAME" =~ ^01K[A-Z0-9]+ ]]; then
+    # Method 1: Check if NAME is already a ULID (26 character ULID format)
+    if [[ "$NAME" =~ ^01[0-9A-HJKMNP-TV-Z]{24}$ ]]; then
       PWA_ID="$NAME"
     fi
 
@@ -32,8 +32,7 @@ let
     if [[ -z "$PWA_ID" ]]; then
       PWA_ID=$(${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | \
                grep -E "^- $NAME:" | \
-               grep -oP '\(01K[A-Z0-9]+\)' | \
-               tr -d '()' | \
+               grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | \
                head -1)
     fi
 
@@ -42,11 +41,11 @@ let
       for pattern in "FFPWA*.desktop" "*-pwa.desktop"; do
         DESKTOP_FILE=$(grep -l "^Name=$NAME\(\s\|$\)" ~/.local/share/applications/$pattern 2>/dev/null | head -1)
         if [[ -n "$DESKTOP_FILE" ]]; then
-          # Try extracting PWA ID from Exec line
-          PWA_ID=$(grep "^Exec=" "$DESKTOP_FILE" | grep -oP '01K[A-Z0-9]+' | head -1)
+          # Try extracting ULID from Exec line
+          PWA_ID=$(grep "^Exec=" "$DESKTOP_FILE" | grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | head -1)
           # Also try StartupWMClass field
           if [[ -z "$PWA_ID" ]]; then
-            PWA_ID=$(grep "^StartupWMClass=" "$DESKTOP_FILE" | grep -oP '01K[A-Z0-9]+' | head -1)
+            PWA_ID=$(grep "^StartupWMClass=" "$DESKTOP_FILE" | grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | head -1)
           fi
           [[ -n "$PWA_ID" ]] && break
         fi
@@ -60,12 +59,12 @@ let
       exit 1
     fi
 
-    # Launch the PWA with Wayland support and software rendering
-    # Required for headless/VNC environments without GPU acceleration
+    # Launch the PWA with Wayland support
     export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
     export MOZ_ENABLE_WAYLAND=1
-    export MOZ_DISABLE_RDD_SANDBOX=1
-    export LIBGL_ALWAYS_SOFTWARE=1
+    export MOZ_DBUS_REMOTE=1
+    export EGL_PLATFORM=wayland
+    export GDK_BACKEND=wayland
 
     exec ${pkgs.firefoxpwa}/bin/firefoxpwa site launch "$PWA_ID"
   '';

@@ -28,17 +28,25 @@ let
   generateManifest = pwa: {
     name = pwa.name;
     short_name = pwa.name;
-    start_url = pwa.url;
-    scope = pwa.scope or "https://${pwa.domain}/";
+    start_url = "${pwa.url}/";  # Trailing slash
+    scope = pwa.scope or "${pwa.url}/";
     display = "standalone";
     description = pwa.description;
+    dir = "auto";
+    orientation = "any";
+    prefer_related_applications = false;
+    related_applications = [];
+    protocol_handlers = [];
+    shortcuts = [];
     icons = [
       {
         src = pwa.icon;
         sizes = "512x512";
         type = "image/png";
+        purpose = "any";
       }
     ];
+    screenshots = [];
   };
 
   # generateFirefoxPWAConfig: Generate complete firefoxpwa config.json
@@ -51,22 +59,31 @@ let
       uniqueULIDs = lib.lists.unique ulids;
       hasDuplicates = builtins.length ulids != builtins.length uniqueULIDs;
 
-      # Default profile ULID (firefoxpwa convention)
-      defaultProfileUlid = "00000000000000000000000000";
+      # Create separate profiles for each PWA (recommended due to issue #322)
+      # Each PWA gets its own profile with ULID derived from site ULID
+      profilesAttrset = builtins.listToAttrs (builtins.map (pwa: {
+        name = pwa.ulid;  # Use site ULID as profile ULID
+        value = {
+          ulid = pwa.ulid;
+          name = "${pwa.name} Profile";
+          description = "Dedicated profile for ${pwa.name}";
+          sites = [ pwa.ulid ];
+        };
+      }) pwaList);
 
       # Convert PWA list to sites attrset keyed by ULID
       sitesAttrset = builtins.listToAttrs (builtins.map (pwa: {
         name = pwa.ulid;
         value = {
           ulid = pwa.ulid;
-          profile = defaultProfileUlid;
+          profile = pwa.ulid;  # Each site uses its own profile
           config = {
             name = pwa.name;
             description = pwa.description;
-            start_url = pwa.url;
-            icon_url = null;  # firefoxpwa will populate this
-            document_url = pwa.url;  # CRITICAL: Provides security context
-            manifest_url = "${pwa.url}/manifest.json";  # Use same base URL as document_url
+            start_url = "${pwa.url}/";  # Must match document_url with trailing slash
+            icon_url = pwa.icon;
+            document_url = "${pwa.url}/";  # Trailing slash is important!
+            manifest_url = "${pwa.url}/";  # Point to document_url
             categories = if (pwa ? categories)
               then builtins.filter (x: x != "") (lib.splitString ";" pwa.categories)
               else [];
@@ -94,21 +111,14 @@ let
       arguments = [];
       config = {
         always_patch = false;
-        runtime_enable_wayland = false;
+        runtime_enable_wayland = true;   # Enable native Wayland for Sway
         runtime_use_portals = false;
         runtime_use_xinput2 = false;
-        use_linked_runtime = false;
+        use_linked_runtime = true;      # Use immutable runtime from Nix package
       };
 
-      # Profiles section
-      profiles = {
-        "${defaultProfileUlid}" = {
-          ulid = defaultProfileUlid;
-          name = "Default";
-          description = "Default profile for all web apps";
-          sites = siteUlids;
-        };
-      };
+      # Profiles section - separate profile for each PWA
+      profiles = profilesAttrset;
 
       # Sites section
       sites = sitesAttrset;

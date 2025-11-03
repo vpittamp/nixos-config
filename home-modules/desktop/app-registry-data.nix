@@ -252,6 +252,7 @@ let
   ]
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
   # All PWAs will have correct expected_class with declarative ULIDs
+  # This provides workspace assignments and window rules for i3pm
   ++ (builtins.map mkPWAApp pwas);
 
   # Additional validation: check for duplicate names
