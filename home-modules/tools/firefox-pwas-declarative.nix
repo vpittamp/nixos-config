@@ -188,6 +188,31 @@ user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
 // Ensure native Wayland backend
 user_pref("gfx.webrender.all", true);
 user_pref("gfx.webrender.enabled", true);
+
+// === 1Password Integration (Feature 056) ===
+// Enable 1Password extension and native messaging
+
+// Install and enable 1Password extension
+user_pref("extensions.autoDisableScopes", 0);
+user_pref("extensions.enabledScopes", 15);
+
+// Disable Firefox password manager - use 1Password instead
+user_pref("signon.rememberSignons", false);
+user_pref("signon.autofillForms", false);
+user_pref("signon.generation.enabled", false);
+user_pref("signon.management.page.breach-alerts.enabled", false);
+
+// Enable extensions in private browsing
+user_pref("extensions.allowPrivateBrowsingByDefault", true);
+
+// Native messaging for 1Password desktop integration
+user_pref("privacy.resistFingerprinting.block_mozAddonManager", true);
+
+// Allow signed extensions
+user_pref("xpinstall.signatures.required", true);
+
+// Enable web extensions
+user_pref("extensions.webextensions.remote", true);
 EOF
             echo "Updated: $profile/user.js"
             ((count++))
@@ -200,6 +225,96 @@ EOF
         echo "Restart your PWAs for changes to take effect:"
         echo "  1. Close all PWA windows"
         echo "  2. Relaunch PWAs from Walker (Meta+D)"
+      '')
+
+      # 1Password extension installer for PWAs (Feature 056)
+      (pkgs.writeShellScriptBin "pwa-setup-1password" ''
+        # Setup 1Password extension for all Firefox PWA profiles
+        # - Installs extension from Mozilla addons
+        # - Configures native messaging
+        # - Pins to toolbar
+
+        PROFILES_DIR="$HOME/.local/share/firefoxpwa/profiles"
+        EXTENSION_ID="aeblfdkhhhdcdjpifhhbdiojplfjncoa"  # 1Password extension ID
+        EXTENSION_XPI_URL="https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi"
+
+        if [ ! -d "$PROFILES_DIR" ]; then
+          echo "Error: PWA profiles directory not found: $PROFILES_DIR"
+          exit 1
+        fi
+
+        echo "Setting up 1Password for all PWA profiles..."
+        echo ""
+
+        count=0
+        for profile in "$PROFILES_DIR"/*; do
+          if [ -d "$profile" ]; then
+            profile_name=$(basename "$profile")
+            echo "[$profile_name]"
+
+            # Create extensions directory
+            mkdir -p "$profile/extensions"
+
+            # Download 1Password extension
+            echo "  → Downloading 1Password extension..."
+            if ${pkgs.curl}/bin/curl -sL "$EXTENSION_XPI_URL" -o "$profile/extensions/{d634138d-c276-4fc8-924b-40a0ea21d284}.xpi"; then
+              echo "  ✓ Extension downloaded"
+            else
+              echo "  ✗ Failed to download extension"
+              continue
+            fi
+
+            # Setup native messaging host manifest
+            mkdir -p "$profile/.mozilla/native-messaging-hosts"
+
+            cat > "$profile/.mozilla/native-messaging-hosts/com.1password.1password.json" << EOF
+{
+  "name": "com.1password.1password",
+  "description": "1Password Native Messaging Host",
+  "type": "stdio",
+  "allowed_extensions": [
+    "onepassword@1password.com",
+    "{d634138d-c276-4fc8-924b-40a0ea21d284}"
+  ],
+  "path": "${pkgs._1password-gui}/share/1password/1Password-BrowserSupport"
+}
+EOF
+            echo "  ✓ Native messaging configured"
+
+            # Create extension preferences file to pin to toolbar
+            mkdir -p "$profile/browser-extension-data/{d634138d-c276-4fc8-924b-40a0ea21d284}"
+
+            # Add extension settings to prefs.js if it exists
+            if [ -f "$profile/prefs.js" ]; then
+              # Backup prefs.js
+              cp "$profile/prefs.js" "$profile/prefs.js.backup-$(date +%s)"
+
+              # Add 1Password-specific prefs if not present
+              if ! grep -q "browser.uiCustomization.state" "$profile/prefs.js"; then
+                cat >> "$profile/prefs.js" << 'PREFS'
+
+// 1Password toolbar configuration
+user_pref("browser.uiCustomization.state", "{\"placements\":{\"widget-overflow-fixed-list\":[],\"unified-extensions-area\":[],\"nav-bar\":[\"back-button\",\"forward-button\",\"stop-reload-button\",\"urlbar-container\",\"downloads-button\",\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\",\"unified-extensions-button\"],\"toolbar-menubar\":[\"menubar-items\"],\"TabsToolbar\":[\"tabbrowser-tabs\",\"new-tab-button\",\"alltabs-button\"],\"PersonalToolbar\":[\"personal-bookmarks\"]},\"seen\":[\"_d634138d-c276-4fc8-924b-40a0ea21d284_-browser-action\"],\"dirtyAreaCache\":[\"nav-bar\"],\"currentVersion\":20,\"newElementCount\":0}");
+PREFS
+                echo "  ✓ Extension pinned to toolbar"
+              fi
+            fi
+
+            ((count++))
+          fi
+        done
+
+        echo ""
+        echo "✓ Setup complete for $count PWA profiles"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Make sure 1Password desktop app is running"
+        echo "  2. Close all PWA windows: pkill -f firefoxpwa"
+        echo "  3. Relaunch any PWA from Walker (Meta+D)"
+        echo "  4. The 1Password icon should appear in the toolbar"
+        echo "  5. Click it to connect to 1Password desktop app"
+        echo ""
+        echo "Note: You may need to authorize the connection in 1Password desktop"
       '')
     ];
 
