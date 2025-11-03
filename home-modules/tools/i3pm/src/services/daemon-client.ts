@@ -319,6 +319,30 @@ export class DaemonClient {
   }
 
   /**
+   * Get applications from daemon's registry
+   *
+   * Query the daemon's in-memory application registry to see what apps
+   * it has loaded. Useful for debugging configuration sync issues.
+   *
+   * @param params - Optional filter parameters
+   * @param params.name - Filter by application name
+   * @param params.scope - Filter by scope (scoped/global)
+   * @param params.workspace - Filter by preferred workspace number
+   */
+  async getDaemonApps(params?: {
+    name?: string;
+    scope?: string;
+    workspace?: number;
+  }): Promise<{
+    applications: Array<unknown>;
+    version: string;
+    count: number;
+    registry_path: string;
+  }> {
+    return await this.request("daemon.apps", params);
+  }
+
+  /**
    * Get daemon socket path
    */
   getSocketPath(): string {

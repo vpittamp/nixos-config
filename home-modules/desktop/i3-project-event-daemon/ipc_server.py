@@ -252,6 +252,8 @@ class IPCServer:
                 result = await self._daemon_events(params)
             elif method == "daemon.diagnose":
                 result = await self._daemon_diagnose(params)
+            elif method == "daemon.apps":
+                result = await self._daemon_apps(params)
             elif method == "layout.save":
                 result = await self._layout_save(params)
             elif method == "layout.restore":
@@ -1913,6 +1915,70 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="query::daemon_diagnose",
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def _daemon_apps(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get applications currently loaded in daemon's memory
+
+        This method reads the application registry file that the daemon loaded
+        at startup, providing visibility into what apps the daemon knows about.
+
+        Implements daemon.apps JSON-RPC method
+
+        Returns:
+            Dict containing:
+                - applications: List of application entries
+                - version: Registry version
+                - count: Number of applications
+                - registry_path: Path to registry file
+        """
+        start_time = time.perf_counter()
+
+        try:
+            registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
+
+            if not registry_path.exists():
+                raise RuntimeError(json.dumps({
+                    "code": -32001,
+                    "message": "Application registry not found",
+                    "data": {"reason": "registry_file_not_found", "path": str(registry_path)}
+                }))
+
+            with open(registry_path, "r") as f:
+                registry = json.load(f)
+
+            applications = registry.get("applications", [])
+            version = registry.get("version", "unknown")
+
+            # Filter by name if requested
+            name_filter = params.get("name")
+            if name_filter:
+                applications = [app for app in applications if app.get("name") == name_filter]
+
+            # Filter by scope if requested
+            scope_filter = params.get("scope")
+            if scope_filter:
+                applications = [app for app in applications if app.get("scope") == scope_filter]
+
+            # Filter by workspace if requested
+            workspace_filter = params.get("workspace")
+            if workspace_filter:
+                applications = [app for app in applications if app.get("preferred_workspace") == workspace_filter]
+
+            return {
+                "applications": applications,
+                "version": version,
+                "count": len(applications),
+                "registry_path": str(registry_path),
+            }
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::daemon_apps",
                 params=params,
                 duration_ms=duration_ms,
             )

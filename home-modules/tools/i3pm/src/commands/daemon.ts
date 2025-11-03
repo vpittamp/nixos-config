@@ -16,8 +16,10 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
         return await daemonEvents(flags);
       case "ping":
         return await daemonPing(flags);
+      case "apps":
+        return await daemonApps(args.slice(1), flags);
       default:
-        console.error("Usage: i3pm daemon <status|events|ping>");
+        console.error("Usage: i3pm daemon <status|events|ping|apps>");
         return 1;
     }
   } catch (error) {
@@ -135,5 +137,54 @@ async function daemonPing(flags: Record<string, unknown>): Promise<number> {
     }
   }
 
+  return 0;
+}
+
+async function daemonApps(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const client = new DaemonClient();
+  await client.connect();
+
+  // Build query parameters
+  const params: Record<string, unknown> = {};
+
+  if (flags.scope) {
+    params.scope = String(flags.scope);
+  }
+
+  if (flags.workspace) {
+    params.workspace = Number(flags.workspace);
+  }
+
+  if (args.length > 0) {
+    params.name = args[0];
+  }
+
+  const result = await client.getDaemonApps(params);
+
+  if (flags.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`\nApplications in Daemon Registry (v${result.version}):`);
+    console.log("─".repeat(80));
+    console.log("NAME".padEnd(25), "DISPLAY NAME".padEnd(30), "WS".padEnd(4), "SCOPE");
+    console.log("─".repeat(80));
+
+    for (const app of result.applications as any[]) {
+      const ws = app.preferred_workspace ? app.preferred_workspace.toString() : "-";
+      console.log(
+        app.name.padEnd(25),
+        app.display_name.padEnd(30),
+        ws.padEnd(4),
+        app.scope
+      );
+    }
+
+    console.log();
+    console.log(`Total: ${result.count} applications`);
+    console.log(`Registry: ${result.registry_path}`);
+    console.log();
+  }
+
+  client.disconnect();
   return 0;
 }
