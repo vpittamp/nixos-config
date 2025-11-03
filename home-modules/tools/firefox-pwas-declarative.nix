@@ -222,6 +222,11 @@ EOF
         echo ""
         echo "✓ Updated $count PWA profiles with Wayland dialog fixes"
         echo ""
+        echo "Reloading Sway to refresh i3pm daemon with new PWA configuration..."
+        swaymsg reload
+        echo ""
+        echo "✓ Sway reloaded - new PWAs are now registered"
+        echo ""
         echo "Restart your PWAs for changes to take effect:"
         echo "  1. Close all PWA windows"
         echo "  2. Relaunch PWAs from Walker (Meta+D)"
