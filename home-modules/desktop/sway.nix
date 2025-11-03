@@ -563,6 +563,7 @@ in
     swaylock         # Screen locker
     swayidle         # Idle management
     sov              # Workspace overview
+    # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals isHeadless [
     # wayvnc for headless mode (Feature 046)
     pkgs.wayvnc
