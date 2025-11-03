@@ -43,7 +43,7 @@
     # Claude (Anthropic AI)
     {
       name = "Claude";
-      url = "https://claude.ai/chats";
+      url = "https://claude.ai/code";
       domain = "claude.ai";
       icon = "file:///etc/nixos/assets/pwa-icons/claude.png";
       description = "Claude AI Assistant by Anthropic";
