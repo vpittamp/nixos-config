@@ -30,6 +30,9 @@ export interface WindowState {
   /** Process ID of the window */
   pid?: number;
 
+  /** I3PM_APP_ID from process environment (unique launch identifier) */
+  app_id?: string;
+
   /** Window class (application identifier) */
   class: string;
 

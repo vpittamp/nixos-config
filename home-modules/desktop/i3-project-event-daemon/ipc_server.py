@@ -1678,9 +1678,21 @@ class IPCServer:
                 # Use node.id for Wayland windows (unique identifier), node.window for X11
                 window_id = node.window if is_x11_window else node.id
 
+                # Read I3PM_APP_ID from process environment if PID available
+                app_id = None
+                if hasattr(node, 'pid') and node.pid:
+                    try:
+                        from .services.window_filter import read_process_environ
+                        env = read_process_environ(node.pid)
+                        app_id = env.get("I3PM_APP_ID")
+                    except (FileNotFoundError, PermissionError):
+                        # Process may have exited or we don't have permission
+                        pass
+
                 window_data = {
                     "id": window_id,
                     "pid": node.pid if hasattr(node, 'pid') else None,
+                    "app_id": app_id,  # I3PM_APP_ID from process environment
                     "class": window_class,
                     "instance": node.window_instance or "",
                     "title": node.name or "",
