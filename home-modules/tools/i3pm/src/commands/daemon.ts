@@ -30,7 +30,110 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
 }
 
 /**
- * Format event data in a human-readable way with colors
+ * Format event data in columnar layout (default mode)
+ */
+function formatEventColumnar(event: any): string {
+  const typeInfo = getEventTypeInfo(event.event_type || "unknown");
+  const timeStr = formatTimestamp(event.timestamp).padEnd(8);
+
+  // Column 1: Timestamp (8 chars)
+  const col1 = dim(timeStr);
+
+  // Column 2: Icon + Type (25 chars)
+  const typeLabel = `${typeInfo.icon} ${typeInfo.label}`;
+  const col2 = typeInfo.color(typeLabel.padEnd(25));
+
+  // Column 3: Duration (10 chars)
+  let col3 = "";
+  if (event.processing_duration_ms !== null && event.processing_duration_ms !== undefined) {
+    const duration = event.processing_duration_ms;
+    const durationStr = duration < 1 ? `${duration.toFixed(2)}ms` : `${Math.round(duration)}ms`;
+    const durationColor = duration > 100 ? red : duration > 50 ? yellow : green;
+    col3 = durationColor(durationStr.padEnd(10));
+  } else {
+    col3 = dim("—".padEnd(10));
+  }
+
+  // Column 4: Source (8 chars)
+  const source = event.source || "—";
+  const sourceColor = source === "ipc" ? cyan : source === "proc" ? green : source === "i3" ? blue : dim;
+  const col4 = sourceColor(source.padEnd(8));
+
+  // Column 5: Target/Resource (20 chars)
+  const target = getEventTarget(event);
+  const col5 = target ? magenta(target.padEnd(20).substring(0, 20)) : dim("—".padEnd(20));
+
+  // Column 6: Details (remaining space)
+  const details = getEventSummary(event);
+  const col6 = details || "";
+
+  // Error indicator
+  const errorIndicator = event.error ? ` ${red("✗")}` : "";
+
+  return `${col1} ${col2} ${col3} ${col4} ${col5} ${col6}${errorIndicator}`;
+}
+
+/**
+ * Get the main target/resource for an event
+ */
+function getEventTarget(event: any): string {
+  if (event.project_name) return event.project_name;
+  if (event.query_params?.name) return event.query_params.name;
+  if (event.query_params?.active) return event.query_params.active;
+  if (event.window_class) return event.window_class;
+  if (event.window_title) return event.window_title.substring(0, 20);
+  if (event.process_name) return event.process_name;
+  if (event.workspace_name) return `WS${event.workspace_name}`;
+  if (event.output_name) return event.output_name;
+  return "";
+}
+
+/**
+ * Get a brief summary of the event
+ */
+function getEventSummary(event: any): string {
+  const parts: string[] = [];
+
+  // Results count
+  if (event.query_result_count !== null && event.query_result_count !== undefined) {
+    parts.push(dim(`${event.query_result_count} results`));
+  }
+
+  // Windows affected
+  if (event.windows_affected) {
+    parts.push(yellow(`${event.windows_affected} windows`));
+  }
+
+  // Project switch details
+  if (event.old_project || event.new_project) {
+    parts.push(`${dim(event.old_project || "none")} ${dim("→")} ${green(event.new_project || "none")}`);
+  }
+
+  // Process PID
+  if (event.process_pid && !event.process_name) {
+    parts.push(dim(`PID ${event.process_pid}`));
+  }
+
+  // Workspace number
+  if (event.workspace_name && !event.output_name) {
+    parts.push(dim(`WS ${event.workspace_name}`));
+  }
+
+  // Output changes
+  if (event.output_name && event.output_count) {
+    parts.push(dim(`${event.output_count} outputs`));
+  }
+
+  // Error message
+  if (event.error) {
+    parts.push(red(event.error.substring(0, 40)));
+  }
+
+  return parts.join(dim(" • "));
+}
+
+/**
+ * Format event data in a human-readable way with colors (verbose mode)
  */
 function formatEvent(event: any, verbose: boolean = false): string {
   // Event type with icon and color
@@ -250,10 +353,17 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
   if (flags.follow) {
     try {
       // Print header with styling
-      console.error(bold(cyan("\n╔═══════════════════════════════════════════════════════════════╗")));
-      console.error(bold(cyan("║")) + bold("          i3pm Daemon Event Stream (Live)                ") + bold(cyan("║")));
-      console.error(bold(cyan("╚═══════════════════════════════════════════════════════════════╝")));
-      console.error(dim("Press Ctrl+C to stop\n"));
+      console.error(bold(cyan("\n╔═══════════════════════════════════════════════════════════════════════════════════════════════════════╗")));
+      console.error(bold(cyan("║")) + bold("                              i3pm Daemon Event Stream (Live)                                    ") + bold(cyan("║")));
+      console.error(bold(cyan("╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝")));
+
+      if (!verbose && !flags.json) {
+        // Print column headers
+        console.error(dim("TIME     EVENT TYPE                DURATION   SOURCE   TARGET/RESOURCE      DETAILS"));
+        console.error(dim("─".repeat(110)));
+      } else {
+        console.error(dim("Press Ctrl+C to stop\n"));
+      }
 
       for await (const event of client.subscribeToEvents()) {
         if (flags.json) {
@@ -266,7 +376,13 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
             timestamp: event.timestamp,
             ...(event.data as any),
           };
-          console.log(formatEvent(fullEvent, verbose));
+
+          // Use columnar format by default, verbose format with --verbose
+          if (verbose) {
+            console.log(formatEvent(fullEvent, verbose));
+          } else {
+            console.log(formatEventColumnar(fullEvent));
+          }
         }
       }
     } catch (error) {
