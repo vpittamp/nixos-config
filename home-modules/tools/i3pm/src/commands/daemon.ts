@@ -259,7 +259,14 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
         if (flags.json) {
           console.log(JSON.stringify(event));
         } else {
-          console.log(formatEvent(event, verbose));
+          // subscribeToEvents yields { type, data, timestamp }
+          // but formatEvent expects the full event data
+          const fullEvent = {
+            event_type: event.type,
+            timestamp: event.timestamp,
+            ...(event.data as any),
+          };
+          console.log(formatEvent(fullEvent, verbose));
         }
       }
     } catch (error) {
