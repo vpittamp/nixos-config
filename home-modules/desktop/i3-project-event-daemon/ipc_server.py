@@ -355,6 +355,8 @@ class IPCServer:
             # Feature 042: Workspace mode navigation methods
             elif method == "workspace_mode.digit":
                 result = await self._workspace_mode_digit(params)
+            elif method == "workspace_mode.char":
+                result = await self._workspace_mode_char(params)
             elif method == "workspace_mode.execute":
                 result = await self._workspace_mode_execute(params)
             elif method == "workspace_mode.cancel":
@@ -4320,6 +4322,41 @@ class IPCServer:
         )
 
         return {"accumulated_digits": accumulated}
+
+    async def _workspace_mode_char(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.char IPC method for project switching.
+
+        Args:
+            params: {"char": "n"}
+
+        Returns:
+            {"accumulated_chars": "nix"}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        char = params.get("char")
+        if not char or len(char) != 1 or char.lower() not in "abcdefghijklmnopqrstuvwxyz":
+            raise ValueError(f"Invalid char: {char}. Must be a single letter a-z")
+
+        manager = self.state_manager.workspace_mode_manager
+        accumulated = await manager.add_char(char)
+
+        # Broadcast event for status bar update
+        event = manager.create_event("char")
+        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::char",
+            duration_ms=duration_ms,
+            params={"char": char, "accumulated": accumulated}
+        )
+
+        return {"accumulated_chars": accumulated}
 
     async def _workspace_mode_execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle workspace_mode.execute IPC method.

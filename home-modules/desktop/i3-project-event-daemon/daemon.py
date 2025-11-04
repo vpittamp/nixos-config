@@ -265,7 +265,11 @@ class I3ProjectDaemon:
 
         # Feature 042: Initialize workspace mode manager
         from .workspace_mode import WorkspaceModeManager
-        self.workspace_mode_manager = WorkspaceModeManager(self.connection.conn)
+        self.workspace_mode_manager = WorkspaceModeManager(
+            self.connection.conn,
+            config_dir=self.config_dir,
+            state_manager=self.state_manager
+        )
         self.state_manager.workspace_mode_manager = self.workspace_mode_manager
         logger.info("Workspace mode manager initialized")
 

@@ -23,7 +23,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.4.0";  # Feature 038: Window state preservation - v1.4.0 fixes scratchpad floating state bug
+    version = "1.5.0";  # Unified workspace/project mode navigation
     src = daemonSrc;
 
     installPhase = ''

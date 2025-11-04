@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""i3bar status block for workspace mode navigation.
+"""i3bar status block for workspace mode navigation and project switching.
 
-Feature 042: Event-Driven Workspace Mode Navigation
+Feature 042: Event-Driven Workspace Mode Navigation + Unified Project Switching
 Subscribes to daemon workspace_mode events and outputs i3bar protocol JSON.
 
 Output Format:
 - Mode inactive: Empty block (no output)
-- Mode active: "WS: 23" (accumulated digits) or "WS: _" (no digits yet)
+- Workspace mode: "→ WS: 23" (accumulated digits) or "→ WS: _" (no digits yet)
+- Project mode: "→ PR: nix" (accumulated chars) or "→ PR: _" (no chars yet)
 """
 
 import asyncio
@@ -75,26 +76,35 @@ async def main():
             if event.get("method") == "event":
                 params = event.get("params", {})
                 if params.get("type") == "workspace_mode":
-                    # Event payload structure: {type, event_type, state: {active, mode_type, accumulated_digits}, timestamp}
+                    # Event payload structure: {type, event_type, state: {active, mode_type, accumulated_digits, accumulated_chars, input_type}, timestamp}
                     state = params.get("state", {})
 
                     mode_active = state.get("active", False)
                     mode_type = state.get("mode_type")
                     accumulated_digits = state.get("accumulated_digits", "")
+                    accumulated_chars = state.get("accumulated_chars", "")
+                    input_type = state.get("input_type")
 
                     if mode_active:
-                        # Show accumulated digits or placeholder
-                        display_digits = accumulated_digits if accumulated_digits else "_"
+                        # Determine display based on input type
+                        if input_type == "project":
+                            # Project switching mode
+                            display_text = accumulated_chars if accumulated_chars else "_"
+                            label = "PR"
+                        else:
+                            # Workspace navigation mode (default)
+                            display_text = accumulated_digits if accumulated_digits else "_"
+                            label = "WS"
 
                         # Mode indicator symbol
                         if mode_type == "goto":
-                            mode_symbol = "→"  # Navigate to workspace
+                            mode_symbol = "→"  # Navigate to workspace/project
                         elif mode_type == "move":
                             mode_symbol = "⇒"  # Move window to workspace
                         else:
                             mode_symbol = "•"  # Unknown mode
 
-                        full_text = f"{mode_symbol} WS: {display_digits}"
+                        full_text = f"{mode_symbol} {label}: {display_text}"
 
                         output = {
                             "full_text": full_text,

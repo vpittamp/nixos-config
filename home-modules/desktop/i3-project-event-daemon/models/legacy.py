@@ -1239,18 +1239,23 @@ class LaunchRegistryStats(BaseModel):
 
 @dataclass
 class WorkspaceModeState:
-    """State for workspace mode navigation (Feature 042)."""
+    """State for workspace mode navigation (Feature 042) + project switching."""
 
     active: bool = False
     mode_type: str = "goto"  # "goto" or "move"
-    accumulated_digits: str = ""
+    accumulated_digits: str = ""  # For workspace numbers
+    accumulated_chars: str = ""  # For project letters (NEW)
+    input_type: Optional[str] = None  # "workspace" or "project" (NEW)
     entered_at: Optional[datetime] = None
+    output_cache: Dict[str, str] = field(default_factory=dict)  # Monitor mappings
 
     def reset(self) -> None:
         """Reset state to inactive."""
         self.active = False
         self.mode_type = "goto"
         self.accumulated_digits = ""
+        self.accumulated_chars = ""  # NEW
+        self.input_type = None  # NEW
         self.entered_at = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1259,6 +1264,8 @@ class WorkspaceModeState:
             "active": self.active,
             "mode_type": self.mode_type,
             "accumulated_digits": self.accumulated_digits,
+            "accumulated_chars": self.accumulated_chars,  # NEW
+            "input_type": self.input_type,  # NEW
             "entered_at": self.entered_at.isoformat() if self.entered_at else None,
         }
 

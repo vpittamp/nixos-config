@@ -507,6 +507,7 @@ in
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes
       mode "→ WS" {
+          # Digits for workspace navigation
           bindsym 0 exec i3pm-workspace-mode digit 0
           bindsym 1 exec i3pm-workspace-mode digit 1
           bindsym 2 exec i3pm-workspace-mode digit 2
@@ -517,12 +518,43 @@ in
           bindsym 7 exec i3pm-workspace-mode digit 7
           bindsym 8 exec i3pm-workspace-mode digit 8
           bindsym 9 exec i3pm-workspace-mode digit 9
+
+          # Letters for project switching
+          bindsym a exec i3pm-workspace-mode char a
+          bindsym b exec i3pm-workspace-mode char b
+          bindsym c exec i3pm-workspace-mode char c
+          bindsym d exec i3pm-workspace-mode char d
+          bindsym e exec i3pm-workspace-mode char e
+          bindsym f exec i3pm-workspace-mode char f
+          bindsym g exec i3pm-workspace-mode char g
+          bindsym h exec i3pm-workspace-mode char h
+          bindsym i exec i3pm-workspace-mode char i
+          bindsym j exec i3pm-workspace-mode char j
+          bindsym k exec i3pm-workspace-mode char k
+          bindsym l exec i3pm-workspace-mode char l
+          bindsym m exec i3pm-workspace-mode char m
+          bindsym n exec i3pm-workspace-mode char n
+          bindsym o exec i3pm-workspace-mode char o
+          bindsym p exec i3pm-workspace-mode char p
+          bindsym q exec i3pm-workspace-mode char q
+          bindsym r exec i3pm-workspace-mode char r
+          bindsym s exec i3pm-workspace-mode char s
+          bindsym t exec i3pm-workspace-mode char t
+          bindsym u exec i3pm-workspace-mode char u
+          bindsym v exec i3pm-workspace-mode char v
+          bindsym w exec i3pm-workspace-mode char w
+          bindsym x exec i3pm-workspace-mode char x
+          bindsym y exec i3pm-workspace-mode char y
+          bindsym z exec i3pm-workspace-mode char z
+
+          # Execute/cancel
           bindsym Return exec i3pm-workspace-mode execute
           bindsym KP_Enter exec i3pm-workspace-mode execute
           bindsym Escape exec i3pm-workspace-mode cancel
       }
 
       mode "⇒ WS" {
+          # Digits for workspace navigation
           bindsym 0 exec i3pm-workspace-mode digit 0
           bindsym 1 exec i3pm-workspace-mode digit 1
           bindsym 2 exec i3pm-workspace-mode digit 2
@@ -533,6 +565,36 @@ in
           bindsym 7 exec i3pm-workspace-mode digit 7
           bindsym 8 exec i3pm-workspace-mode digit 8
           bindsym 9 exec i3pm-workspace-mode digit 9
+
+          # Letters for project switching
+          bindsym a exec i3pm-workspace-mode char a
+          bindsym b exec i3pm-workspace-mode char b
+          bindsym c exec i3pm-workspace-mode char c
+          bindsym d exec i3pm-workspace-mode char d
+          bindsym e exec i3pm-workspace-mode char e
+          bindsym f exec i3pm-workspace-mode char f
+          bindsym g exec i3pm-workspace-mode char g
+          bindsym h exec i3pm-workspace-mode char h
+          bindsym i exec i3pm-workspace-mode char i
+          bindsym j exec i3pm-workspace-mode char j
+          bindsym k exec i3pm-workspace-mode char k
+          bindsym l exec i3pm-workspace-mode char l
+          bindsym m exec i3pm-workspace-mode char m
+          bindsym n exec i3pm-workspace-mode char n
+          bindsym o exec i3pm-workspace-mode char o
+          bindsym p exec i3pm-workspace-mode char p
+          bindsym q exec i3pm-workspace-mode char q
+          bindsym r exec i3pm-workspace-mode char r
+          bindsym s exec i3pm-workspace-mode char s
+          bindsym t exec i3pm-workspace-mode char t
+          bindsym u exec i3pm-workspace-mode char u
+          bindsym v exec i3pm-workspace-mode char v
+          bindsym w exec i3pm-workspace-mode char w
+          bindsym x exec i3pm-workspace-mode char x
+          bindsym y exec i3pm-workspace-mode char y
+          bindsym z exec i3pm-workspace-mode char z
+
+          # Execute/cancel
           bindsym Return exec i3pm-workspace-mode execute
           bindsym KP_Enter exec i3pm-workspace-mode execute
           bindsym Escape exec i3pm-workspace-mode cancel
