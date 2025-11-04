@@ -193,13 +193,6 @@ class I3ProjectDaemon:
         # Update IPC server with event buffer
         self.ipc_server.event_buffer = self.event_buffer
 
-        # CRITICAL FIX v1.6.0: Signal READY to systemd immediately after IPC server is functional
-        # This prevents blocking during socket activation - clients can connect while Sway connection
-        # is being established. If Sway isn't ready yet, connection retries won't block the IPC server.
-        import systemd.daemon as sd_daemon
-        sd_daemon.notify('READY=1')
-        logger.info("Sent READY=1 to systemd (IPC server is now accepting connections)")
-
         # Load project configurations
         projects_dir = self.config_dir / "projects"
         projects = load_project_configs(projects_dir)
@@ -233,8 +226,6 @@ class I3ProjectDaemon:
         self.connection = ResilientI3Connection(self.state_manager)
 
         # Connect to i3 with retry
-        # CRITICAL FIX v1.6.0: Don't raise exception on connection failure - allow daemon to run
-        # IPC server is already functional, so daemon can still respond to basic queries
         try:
             connect_start = time.perf_counter()
             await self.connection.connect_with_retry(max_attempts=10)
@@ -262,9 +253,8 @@ class I3ProjectDaemon:
                 await self.event_buffer.add_event(entry)
                 logger.info(f"Logged daemon::connect event (duration: {connect_duration_ms:.2f}ms)")
         except ConnectionError as e:
-            logger.warning(f"Failed to connect to Sway/i3 (daemon will continue without event processing): {e}")
-            self.state_manager.state.is_connected = False
-            # Don't raise - allow daemon to run without Sway connection
+            logger.error(f"Failed to connect to i3: {e}")
+            raise
 
         # NOTE: We DO NOT call subscribe_events() here!
         # i3ipc.aio.Connection.on() automatically subscribes to base events
@@ -480,8 +470,9 @@ class I3ProjectDaemon:
         """Main event loop."""
         logger.info("Starting daemon event loop...")
 
-        # NOTE: READY signal is now sent earlier in initialize() after IPC server creation (v1.6.0)
-        # This prevents blocking during socket activation
+        # Signal READY to systemd (after full initialization completes)
+        if self.health_monitor:
+            self.health_monitor.notify_ready()
 
         # Start watchdog loop in background
         watchdog_task = None
@@ -525,16 +516,8 @@ class I3ProjectDaemon:
 
         try:
             # Run i3 event loop (blocks until shutdown)
-            # CRITICAL FIX v1.6.0: Only start event loop if Sway connection was successful
-            if self.connection and self.state_manager.state.is_connected:
-                logger.info("Starting Sway/i3 event loop")
+            if self.connection:
                 await self.connection.main()
-            else:
-                logger.warning("No Sway/i3 connection available - daemon will run without event processing")
-                logger.warning("IPC server is still functional for basic queries")
-                # Keep daemon running indefinitely until shutdown signal
-                # IPC server can still handle requests, just without Sway event processing
-                await asyncio.Event().wait()
 
         except Exception as e:
             logger.error(f"Error in main loop: {e}")

@@ -405,11 +405,11 @@ in
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
         # i3pm daemon (socket-activated system service)
-        # Trigger socket activation early to ensure daemon connects to Sway while it's ready
-        # The daemon will start on first IPC request via socket activation
-        { command = "timeout 5 i3pm daemon status || true"; }
+        # Socket activation happens automatically on first IPC request
+        # The 2-second delay in reassign-workspaces allows daemon to fully initialize
+        # before any IPC connections, avoiding deadlock during startup
 
-        # Monitor workspace distribution (wait for daemon)
+        # Monitor workspace distribution (wait for daemon to initialize)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
 
         # sov workspace overview daemon
