@@ -163,8 +163,8 @@ class ProjectService:
 
         # If this was the active project, clear active state
         active_state = ActiveProjectState.load(self.config_dir)
-        if active_state.name == name:
-            active_state.name = None
+        if active_state.project_name == name:
+            active_state.project_name = None
             active_state.save(self.config_dir)
             logger.info(f"Cleared active project state (deleted project was active)")
 
@@ -179,7 +179,7 @@ class ProjectService:
             Project name if active, None if in global mode
         """
         state = ActiveProjectState.load(self.config_dir)
-        return state.name
+        return state.project_name
 
     def set_active(self, name: Optional[str]) -> Dict[str, Optional[str]]:
         """
@@ -196,7 +196,7 @@ class ProjectService:
         """
         # Load current state
         current_state = ActiveProjectState.load(self.config_dir)
-        previous = current_state.name
+        previous = current_state.project_name
 
         # Validate project exists (if not None)
         if name is not None:
@@ -204,7 +204,7 @@ class ProjectService:
             self.get(name)
 
         # Update active state
-        current_state.name = name
+        current_state.project_name = name
         current_state.save(self.config_dir)
 
         logger.info(f"Set active project: {name} (previous: {previous})")
