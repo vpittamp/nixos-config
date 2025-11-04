@@ -4,6 +4,8 @@ Pydantic models for i3pm daemon.
 Feature 058: Python Backend Consolidation
 - Added Pydantic models for Layout and Project (replacing old dataclasses)
 - Legacy models re-exported from legacy.py for backward compatibility
+
+Version: 1.0.1 - Force rebuild with legacy.py inclusion
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
