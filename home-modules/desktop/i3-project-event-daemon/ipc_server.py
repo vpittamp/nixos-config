@@ -726,9 +726,7 @@ class IPCServer:
             # Save active project state to disk
             from pathlib import Path
             active_state = ActiveProjectState(
-                project_name=project_name,
-                activated_at=datetime.now(),
-                previous_project=previous_project
+                project_name=project_name
             )
             config_dir = Path.home() / ".config" / "i3"
             config_file = config_dir / "active-project.json"
@@ -754,6 +752,13 @@ class IPCServer:
                 )
             else:
                 logger.warning(f"IPC: Cannot apply filtering - i3 connection not available")
+
+            # Broadcast project change event for immediate status bar update
+            await self.broadcast_event({
+                "type": "project",
+                "action": "switch",
+                "project": project_name
+            })
 
             return {
                 "previous_project": previous_project,
@@ -794,6 +799,12 @@ class IPCServer:
 
             if previous_project is None:
                 # Already in global mode
+                # Broadcast event even if no-op for consistency
+                await self.broadcast_event({
+                    "type": "project",
+                    "action": "clear",
+                    "project": None
+                })
                 return {
                     "previous_project": None,
                     "windows_shown": 0,
@@ -814,9 +825,7 @@ class IPCServer:
             # Save cleared state to disk
             from pathlib import Path
             active_state = ActiveProjectState(
-                project_name=None,
-                activated_at=datetime.now(),
-                previous_project=previous_project
+                project_name=None
             )
             config_dir = Path.home() / ".config" / "i3"
             config_file = config_dir / "active-project.json"
@@ -828,6 +837,13 @@ class IPCServer:
                     if window.project != previous_project:
                         # Move hidden windows back from scratchpad
                         await self.i3_connection.conn.command(f'[con_id={window.window_id}] move scratchpad; move workspace current')
+
+            # Broadcast project clear event for immediate status bar update
+            await self.broadcast_event({
+                "type": "project",
+                "action": "clear",
+                "project": None
+            })
 
             return {
                 "previous_project": previous_project,
@@ -4375,6 +4391,14 @@ class IPCServer:
         # Broadcast event (mode now inactive)
         event = manager.create_event("execute")
         await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+
+        # If project switch, also broadcast project change event for immediate status bar update
+        if result and result.get("type") == "project":
+            await self.broadcast_event({
+                "type": "project",
+                "action": "switch",
+                "project": result.get("project")
+            })
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 

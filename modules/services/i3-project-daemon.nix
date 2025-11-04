@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.4.27";  # DEBUG: Add logging to trace hiding logic (investigate why marks aren't found)
+    version = "1.5.10";  # Broadcast project events for ALL switch/clear operations
     src = daemonSrc;
 
     installPhase = ''

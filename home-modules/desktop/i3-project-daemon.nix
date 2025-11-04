@@ -23,7 +23,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.5.0";  # Unified workspace/project mode navigation
+    version = "1.5.1";  # Fixed project switching (removed premature service check)
     src = daemonSrc;
 
     installPhase = ''

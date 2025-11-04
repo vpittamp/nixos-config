@@ -23,17 +23,19 @@ logger = logging.getLogger(__name__)
 class WorkspaceModeManager:
     """Manages workspace mode state in-memory."""
 
-    def __init__(self, i3_connection: "Connection", config_dir=None, state_manager=None):
+    def __init__(self, i3_connection: "Connection", config_dir=None, state_manager=None, workspace_tracker=None):
         """Initialize workspace mode manager.
 
         Args:
             i3_connection: i3ipc async connection for workspace switching
             config_dir: Path to i3 config directory (for ProjectService lazy-loading)
             state_manager: StateManager instance (for ProjectService lazy-loading)
+            workspace_tracker: WorkspaceTracker for window filtering (Feature 037)
         """
         self._i3 = i3_connection
         self._config_dir = config_dir
         self._state_manager = state_manager
+        self._workspace_tracker = workspace_tracker
         self._project_service = None  # Lazy-loaded on first use
         self._state = WorkspaceModeState()
         self._history: List[WorkspaceSwitch] = []  # Circular buffer, max 100
@@ -206,10 +208,7 @@ class WorkspaceModeManager:
 
     async def _execute_project_switch(self) -> Dict[str, any]:
         """Execute project switch with accumulated characters (NEW)."""
-        if not self._project_service:
-            raise RuntimeError("Project switching not available (no project service)")
-
-        # Fuzzy match project from accumulated characters
+        # Fuzzy match project from accumulated characters (lazy-loads ProjectService)
         matched_project = await self._fuzzy_match_project(self._state.accumulated_chars)
 
         if not matched_project:
@@ -221,11 +220,14 @@ class WorkspaceModeManager:
 
         start_time = time.time()
         try:
-            # Switch project via tick event
-            await self._i3.command(f'nop "project:switch:{matched_project}"')
+            # Switch project directly (Sway doesn't send tick events for nop commands)
+            from .handlers import _switch_project
+            await _switch_project(matched_project, self._state_manager, self._i3, self._config_dir, self._workspace_tracker)
 
             # Exit mode in Sway (return to default mode)
-            await self._i3.command("mode default")
+            logger.info(f"Project switch complete, exiting workspace mode...")
+            mode_result = await self._i3.command("mode default")
+            logger.info(f"Mode default command executed: {mode_result}")
 
             total_elapsed_ms = (time.time() - start_time) * 1000
             logger.info(f"Project switch successful: {matched_project} (took {total_elapsed_ms:.2f}ms)")
@@ -273,7 +275,7 @@ class WorkspaceModeManager:
             logger.debug("Lazy-loaded ProjectService for project matching")
 
         # Get all projects
-        projects = await self._project_service.list_projects()
+        projects = self._project_service.list()
         project_names = [p.name.lower() for p in projects]
         chars_lower = chars.lower()
 

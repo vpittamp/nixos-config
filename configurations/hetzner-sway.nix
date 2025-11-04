@@ -66,6 +66,13 @@
   # Enable wayvnc VNC server for remote access
   services.wayvnc.enable = true;
 
+  # Enable dotool for keyboard/mouse automation (no daemon required)
+  # Simpler and faster than ydotool - uses direct uinput access
+  services.udev.extraRules = ''
+    # Allow input group to access uinput for dotool
+    KERNEL=="uinput", GROUP="input", MODE="0660", TAG+="uaccess"
+  '';
+
   # Display manager: greetd with auto-login for headless operation
   services.greetd = {
     enable = true;
@@ -182,6 +189,7 @@
     wl-clipboard  # Clipboard utilities for Wayland (Feature 043 dependency)
     wlr-randr     # Output management for wlroots compositors
     wayvnc        # VNC server (already in system, adding CLI tool)
+    dotool        # Keyboard/mouse automation for Wayland (simpler than ydotool, no daemon)
 
     # System monitoring
     htop
@@ -228,6 +236,14 @@
 
   # Enable rtkit for better audio performance
   security.rtkit.enable = true;
+
+  # wshowkeys setuid wrapper for workspace mode visual feedback
+  security.wrappers.wshowkeys = {
+    owner = "root";
+    group = "root";
+    capabilities = "cap_sys_admin+ep";
+    source = "${pkgs.wshowkeys}/bin/wshowkeys";
+  };
 
   # Stream audio over Tailscale to Surface laptop (update destinationAddress with your MagicDNS entry or Tailscale IP)
   services.tailscaleAudio = {

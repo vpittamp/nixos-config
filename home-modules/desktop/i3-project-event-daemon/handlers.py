@@ -491,8 +491,6 @@ async def _switch_project(
 
     state = ActiveProjectState(
         project_name=project_name,
-        activated_at=datetime.now(),
-        previous_project=old_project,
     )
     save_active_project(state, config_dir / "active-project.json")
 
@@ -526,7 +524,7 @@ async def _clear_project(
     from .models import ActiveProjectState
 
     state = ActiveProjectState(
-        project_name=None, activated_at=datetime.now(), previous_project=old_project
+        project_name=None
     )
     save_active_project(state, config_dir / "active-project.json")
 

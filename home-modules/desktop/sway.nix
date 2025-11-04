@@ -506,6 +506,7 @@ in
 
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes
+      # Visual feedback: wshowkeys shows typed keys on all outputs while in workspace mode
       mode "→ WS" {
           # Digits for workspace navigation
           bindsym 0 exec i3pm-workspace-mode digit 0
@@ -547,10 +548,10 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel
-          bindsym Return exec i3pm-workspace-mode execute
-          bindsym KP_Enter exec i3pm-workspace-mode execute
-          bindsym Escape exec i3pm-workspace-mode cancel
+          # Execute/cancel (kill wshowkeys visual feedback on exit)
+          bindsym Return exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
+          bindsym Escape exec "i3pm-workspace-mode cancel; pkill -x wshowkeys"
       }
 
       mode "⇒ WS" {
@@ -594,24 +595,26 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel
-          bindsym Return exec i3pm-workspace-mode execute
-          bindsym KP_Enter exec i3pm-workspace-mode execute
-          bindsym Escape exec i3pm-workspace-mode cancel
+          # Execute/cancel (kill wshowkeys visual feedback on exit)
+          bindsym Return exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
+          bindsym Escape exec "i3pm-workspace-mode cancel; pkill -x wshowkeys"
       }
 
       # Platform-conditional workspace mode keybindings
       ${if isHeadless then ''
         # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
         # Sway will automatically send mode events to daemon when entering these modes
-        bindsym Control+0 mode "→ WS"
-        bindsym Control+Shift+0 mode "⇒ WS"
+        # Launch wshowkeys for visual feedback on mode entry
+        bindsym Control+0 exec "wshowkeys -a bottom -t 1"; mode "→ WS"
+        bindsym Control+Shift+0 exec "wshowkeys -a bottom -t 1"; mode "⇒ WS"
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
-        bindcode --release 66 mode "→ WS"
-        bindcode --release Shift+66 mode "⇒ WS"
+        # Launch wshowkeys for visual feedback on mode entry
+        bindcode --release 66 exec "wshowkeys -a bottom -t 1"; mode "→ WS"
+        bindcode --release Shift+66 exec "wshowkeys -a bottom -t 1"; mode "⇒ WS"
       ''}
     '';
   };
@@ -625,6 +628,7 @@ in
     swaylock         # Screen locker
     swayidle         # Idle management
     sov              # Workspace overview
+    wshowkeys        # Visual key overlay for workspace mode
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals isHeadless [
     # wayvnc for headless mode (Feature 046)

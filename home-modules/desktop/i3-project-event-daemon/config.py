@@ -180,12 +180,8 @@ def save_active_project(state: ActiveProjectState, config_file: Path) -> None:
         # Ensure parent directory exists
         config_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Prepare data
-        data = {
-            "project_name": state.project_name,
-            "activated_at": state.activated_at.isoformat(),
-            "previous_project": state.previous_project,
-        }
+        # Prepare data - use Pydantic model serialization
+        data = state.model_dump(mode='json')
 
         # Atomic write using temp file + rename
         fd, temp_path = tempfile.mkstemp(
@@ -230,15 +226,9 @@ def load_active_project(config_file: Path) -> Optional[ActiveProjectState]:
         with open(config_file, "r") as f:
             data = json.load(f)
 
-        # Handle null activated_at (Feature 035: can be null when no project active)
-        activated_at = None
-        if data.get("activated_at") is not None:
-            activated_at = datetime.fromisoformat(data["activated_at"])
-
+        # New Pydantic ActiveProjectState only has project_name field
         state = ActiveProjectState(
             project_name=data.get("project_name"),
-            activated_at=activated_at,
-            previous_project=data.get("previous_project"),
         )
 
         logger.info(f"Loaded active project: {state.project_name}")

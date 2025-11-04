@@ -13,6 +13,10 @@
           echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.digit\",\"params\":{\"digit\":\"$2\"},\"id\":1}" | \
             ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK > /dev/null 2>&1
           ;;
+        char)
+          echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.char\",\"params\":{\"char\":\"$2\"},\"id\":1}" | \
+            ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK > /dev/null 2>&1
+          ;;
         execute)
           echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.execute\",\"params\":{},\"id\":1}" | \
             ${pkgs.socat}/bin/socat - UNIX-CONNECT:$SOCK > /dev/null 2>&1
@@ -34,7 +38,7 @@
           fi
           ;;
         *)
-          echo "Usage: $0 {digit <0-9>|execute|cancel|state [--json]}"
+          echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|state [--json]}"
           exit 1
           ;;
       esac
