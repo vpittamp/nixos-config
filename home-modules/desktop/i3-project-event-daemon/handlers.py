@@ -1387,11 +1387,12 @@ async def on_window_mark(
             logger.debug(f"Suppressing window::mark handler during startup scan for window {window_id}")
             return
 
-        # Extract project marks (format: project:PROJECT_NAME:WINDOW_ID)
-        project_marks = [mark for mark in container.marks if mark.startswith("project:")]
+        # Extract project marks (format: project:PROJECT_NAME:WINDOW_ID or scoped:PROJECT_NAME:WINDOW_ID or global:PROJECT_NAME:WINDOW_ID)
+        # Support both old "project:" and new "scoped:/global:" formats
+        project_marks = [mark for mark in container.marks if mark.startswith("project:") or mark.startswith("scoped:") or mark.startswith("global:")]
 
         if project_marks:
-            # Parse mark: "project:nixos:16777219" → extract "nixos"
+            # Parse mark: "project:nixos:16777219" or "scoped:nixos:16777219" → extract "nixos"
             mark_parts = project_marks[0].split(":")
             project_name = mark_parts[1] if len(mark_parts) >= 2 else None
             await state_manager.update_window(window_id, project=project_name, marks=container.marks)
