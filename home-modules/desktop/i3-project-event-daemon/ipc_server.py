@@ -2917,12 +2917,10 @@ class IPCServer:
                 # For Wayland: con.window is None, but con.id exists
                 # For X11: both con.window and con.id exist
                 if hasattr(con, 'id') and (con.window is not None or (hasattr(con, 'app_id') and con.app_id)):
-                    # Feature 058: Use window marks instead of /proc for project detection
-                    # Marks are mutable and updated by intent-first architecture, while
-                    # /proc environment is immutable and frozen at process launch.
-                    # This fixes filtering for shared-PID apps (VS Code, Chrome, Electron).
-                    window_project = None
-                    is_scoped = False
+                    # NEW: Use scope prefix in marks to determine filtering
+                    # Format: SCOPE:PROJECT:WINDOW_ID
+                    # Only hide windows with "scoped:" prefix matching the old project
+                    # Global windows (with "global:" prefix) are never hidden
 
                     # DEBUG: Log all windows with marks
                     if con.marks:
@@ -2933,24 +2931,21 @@ class IPCServer:
                             f"name={getattr(con, 'name', '')[:30]}"
                         )
 
+                    # Check for scoped mark matching this project
+                    scoped_mark_prefix = f"scoped:{project_name}:"
                     for mark in con.marks:
-                        if mark.startswith("project:"):
-                            mark_parts = mark.split(":")
-                            if len(mark_parts) >= 2:
-                                window_project = mark_parts[1]
-                                is_scoped = True  # If it has a project mark, it's scoped
-                                logger.debug(
-                                    f"Window {con.id} has project mark: {mark} "
-                                    f"(extracted project: {window_project})"
-                                )
-                                break
-
-                    # Only hide if matches project and is scoped
-                    if window_project == project_name and is_scoped:
-                        logger.info(
-                            f"Will hide window {con.id} (project '{window_project}' matches '{project_name}')"
-                        )
-                        window_ids_to_hide.append(con.id)
+                        if mark.startswith(scoped_mark_prefix):
+                            logger.info(
+                                f"Will hide scoped window {con.id} "
+                                f"(mark: {mark}, project: {project_name})"
+                            )
+                            window_ids_to_hide.append(con.id)
+                            break  # Found matching scoped mark
+                        elif mark.startswith(f"global:{project_name}:"):
+                            logger.debug(
+                                f"Skipping global window {con.id} "
+                                f"(mark: {mark}, always visible)"
+                            )
 
                 for child in con.nodes:
                     await collect_project_windows(child)
@@ -3030,20 +3025,19 @@ class IPCServer:
             )
 
             # Find windows matching project
-            # Use window marks instead of /proc for project detection (Feature 046)
-            # Marks format: "project:PROJECT_NAME:WINDOW_ID"
+            # NEW: Only restore scoped windows (format: scoped:PROJECT:WINDOW_ID)
+            # Global windows are never hidden, so they don't need restoration
             window_ids_to_restore = []
+            scoped_mark_prefix = f"scoped:{project_name}:"
             for window in scratchpad_windows:
-                window_project = None
                 for mark in window.marks:
-                    if mark.startswith("project:"):
-                        mark_parts = mark.split(":")
-                        if len(mark_parts) >= 2:
-                            window_project = mark_parts[1]
-                            break
-
-                if window_project == project_name:
-                    window_ids_to_restore.append(window.id)
+                    if mark.startswith(scoped_mark_prefix):
+                        window_ids_to_restore.append(window.id)
+                        logger.debug(
+                            f"Will restore scoped window {window.id} "
+                            f"(mark: {mark}, project: {project_name})"
+                        )
+                        break  # Found matching scoped mark
 
             # Restore windows in batch
             restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(

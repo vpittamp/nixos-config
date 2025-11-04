@@ -856,26 +856,36 @@ async def on_window_new(
                 actual_project = title_project
 
         # Apply project mark if we have a project assignment
-        # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
+        # Note: i3 marks must be UNIQUE - use format SCOPE:PROJECT:WINDOW_ID
         # Feature 041 T020: Mark windows from launch correlation
-        # Feature 035: Mark windows from I3PM environment (scoped only)
+        # Feature 035: Mark windows from I3PM environment
+        # NEW: All windows get marks with scope prefix (global/scoped)
         should_mark = False
         mark_source = None
+        window_scope = "global"  # Default to global if no scope info
 
         if correlated_project and actual_project:
             # Project assigned via launch correlation
             should_mark = True
             mark_source = "launch correlation"
-        elif window_env and window_env.scope == "scoped" and actual_project:
-            # Project assigned via I3PM environment (scoped apps only)
+            # Get scope from window_env if available, otherwise look up in registry
+            if window_env:
+                window_scope = window_env.scope
+            elif application_registry and matched_launch:
+                # Look up scope from registry using matched app
+                app_def = application_registry.get(matched_launch.app_name, {})
+                window_scope = app_def.get("scope", "global")
+        elif window_env and actual_project:
+            # Project assigned via I3PM environment (both scoped and global apps)
             should_mark = True
             mark_source = "I3PM environment"
+            window_scope = window_env.scope
 
         if should_mark and actual_project:
-            mark = f"project:{actual_project}:{window_id}"
+            mark = f"{window_scope}:{actual_project}:{window_id}"
             # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
             await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
-            logger.info(f"Marked window {window_id} with {mark} (from {mark_source})")
+            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, from {mark_source})")
 
             # Add to state (mark event will update this)
             # Feature 041 T022: Include correlation metadata if window was matched via launch
@@ -1520,34 +1530,47 @@ async def on_window_title(
             if title_project:
                 # Get current project mark
                 current_marks = container.marks or []
-                current_project_marks = [m for m in current_marks if m.startswith("project:")]
+                # NEW: Support both old "project:" and new "scoped:/global:" format
+                current_project_marks = [
+                    m for m in current_marks
+                    if m.startswith("project:") or m.startswith("scoped:") or m.startswith("global:")
+                ]
 
                 if current_project_marks:
-                    # Extract current project from mark: "project:nixos:12345" -> "nixos"
-                    current_project = current_project_marks[0].split(":")[1]
+                    # Extract current project and scope from mark
+                    # Old format: "project:nixos:12345" -> scope="scoped" (default), project="nixos"
+                    # New format: "scoped:nixos:12345" -> scope="scoped", project="nixos"
+                    old_mark = current_project_marks[0]
+                    mark_parts = old_mark.split(":")
+
+                    if mark_parts[0] == "project":
+                        # Old format - assume scoped (VS Code is scoped)
+                        current_scope = "scoped"
+                        current_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                    else:
+                        # New format
+                        current_scope = mark_parts[0]
+                        current_project = mark_parts[1] if len(mark_parts) >= 2 else None
 
                     # Update mark if project changed
                     if current_project != title_project:
                         # Remove old mark
-                        old_mark = current_project_marks[0]
-                        # Feature 046: Use con_id for Sway compatibility
                         await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
 
-                        # Add new mark
-                        new_mark = f"project:{title_project}:{window_id}"
-                        # Feature 046: Use con_id for Sway compatibility
+                        # Add new mark with same scope
+                        new_mark = f"{current_scope}:{title_project}:{window_id}"
                         await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
 
                         logger.info(
                             f"VSCode window {window_id}: Updated project mark from "
-                            f"{current_project} to {title_project} (title-based detection)"
+                            f"{current_project} to {title_project} (title-based detection, scope={current_scope})"
                         )
 
                         # Update state
                         await state_manager.update_window(
                             window_id,
                             project=title_project,
-                            marks=[new_mark] + [m for m in current_marks if not m.startswith("project:")]
+                            marks=[new_mark] + [m for m in current_marks if not (m.startswith("project:") or m.startswith("scoped:") or m.startswith("global:"))]
                         )
 
         # If workspace changed, move window

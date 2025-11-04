@@ -329,11 +329,22 @@ async def filter_windows_by_project(
         # Feature 046: Use node ID (window.id) for Sway/Wayland compatibility
         window_id = window.id
 
-        # Get project from window marks (format: project:PROJECT_NAME:WINDOW_ID)
+        # Get project and scope from window marks
+        # Old format: project:PROJECT:WINDOW_ID (assume scoped)
+        # New format: SCOPE:PROJECT:WINDOW_ID (explicit scope)
         window_project = None
+        window_scope = None
         for mark in window.marks:
             if mark.startswith("project:"):
+                # Old format - assume scoped
                 mark_parts = mark.split(":")
+                window_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                window_scope = "scoped"
+                break
+            elif mark.startswith("scoped:") or mark.startswith("global:"):
+                # New format - explicit scope
+                mark_parts = mark.split(":")
+                window_scope = mark_parts[0]
                 window_project = mark_parts[1] if len(mark_parts) >= 2 else None
                 break
 
@@ -343,6 +354,10 @@ async def filter_windows_by_project(
             # No project mark → global scope → always visible
             should_show = True
             logger.debug(f"Window {window_id} ({window.window_class}): global (no project mark)")
+        elif window_scope == "global":
+            # Global window → always visible
+            should_show = True
+            logger.debug(f"Window {window_id} ({window.window_class}): global (explicit scope)")
         elif active_project is None:
             # No active project → hide scoped windows
             should_show = False
