@@ -27,6 +27,21 @@ from . import window_filtering  # Feature 037: Window filtering utilities
 logger = logging.getLogger(__name__)
 
 
+# JSON-RPC 2.0 Standard Error Codes
+PARSE_ERROR = -32700       # Invalid JSON
+INVALID_REQUEST = -32600   # Not valid JSON-RPC request
+METHOD_NOT_FOUND = -32601  # Method doesn't exist
+INVALID_PARAMS = -32602    # Invalid method parameters
+INTERNAL_ERROR = -32603    # Server internal error
+
+# Application-specific error codes (Feature 058)
+PROJECT_NOT_FOUND = 1001
+LAYOUT_NOT_FOUND = 1002
+VALIDATION_ERROR = 1003
+FILE_IO_ERROR = 1004
+I3_IPC_ERROR = 1005
+
+
 class IPCServer:
     """JSON-RPC IPC server for CLI tool queries."""
 
@@ -95,6 +110,23 @@ class IPCServer:
             await server.start(None)
 
         return server
+
+    def _error_response(self, request_id: Any, code: int, message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Format JSON-RPC error response.
+
+        Args:
+            request_id: Request ID from original request
+            code: Error code (standard or application-specific)
+            message: Error message
+            data: Optional additional error data
+
+        Returns:
+            JSON-RPC error response dictionary
+        """
+        error = {"code": code, "message": message}
+        if data:
+            error["data"] = data
+        return {"jsonrpc": "2.0", "error": error, "id": request_id}
 
     async def start(self, sock: Optional[socket.socket] = None) -> None:
         """Start IPC server.
@@ -300,6 +332,9 @@ class IPCServer:
                 result = await self._health_check()
             elif method == "get_window_identity":
                 result = await self._get_window_identity_diagnostic(params)
+            elif method == "get_window_environment":
+                # Feature 058: Phase 3 - Get window environment by PID
+                result = await self._get_window_environment(params)
             elif method == "get_workspace_rule":
                 result = await self._get_workspace_rule_diagnostic(params)
             elif method == "validate_state":
@@ -328,6 +363,22 @@ class IPCServer:
                 result = await self._workspace_mode_state(params)
             elif method == "workspace_mode.history":
                 result = await self._workspace_mode_history(params)
+
+            # Feature 058: Project management methods (T030-T033)
+            elif method == "project_create":
+                result = await self._project_create(params)
+            elif method == "project_list":
+                result = await self._project_list(params)
+            elif method == "project_get":
+                result = await self._project_get(params)
+            elif method == "project_update":
+                result = await self._project_update(params)
+            elif method == "project_delete":
+                result = await self._project_delete(params)
+            elif method == "project_get_active":
+                result = await self._project_get_active(params)
+            elif method == "project_set_active":
+                result = await self._project_set_active(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -374,13 +425,68 @@ class IPCServer:
 
             return {"jsonrpc": "2.0", "result": result, "id": request_id}
 
+        except KeyError as e:
+            # Missing required parameter
+            logger.warning(f"Missing required parameter in {method}: {e}")
+            return self._error_response(
+                request_id,
+                INVALID_PARAMS,
+                f"Missing required parameter: {e}",
+                {"parameter": str(e)}
+            )
+
+        except FileNotFoundError as e:
+            # Layout or project file not found
+            logger.warning(f"File not found in {method}: {e}")
+            error_code = LAYOUT_NOT_FOUND if "layout" in str(e).lower() else PROJECT_NOT_FOUND
+            return self._error_response(
+                request_id,
+                error_code,
+                str(e),
+                {"path": str(e.filename) if hasattr(e, 'filename') else str(e)}
+            )
+
+        except ValueError as e:
+            # Pydantic validation error or invalid parameters
+            logger.warning(f"Validation error in {method}: {e}")
+            return self._error_response(
+                request_id,
+                VALIDATION_ERROR,
+                f"Validation error: {str(e)}",
+                {"details": str(e)}
+            )
+
+        except OSError as e:
+            # File I/O error
+            logger.error(f"File I/O error in {method}: {e}")
+            return self._error_response(
+                request_id,
+                FILE_IO_ERROR,
+                f"File I/O error: {str(e)}",
+                {"errno": e.errno if hasattr(e, 'errno') else None}
+            )
+
         except Exception as e:
-            logger.error(f"Error handling request {method}: {e}")
-            return {
-                "jsonrpc": "2.0",
-                "error": {"code": -32603, "message": str(e)},
-                "id": request_id,
-            }
+            # Unexpected error - check if it's i3 IPC related
+            error_type = type(e).__name__
+            logger.error(f"Error handling request {method}: {error_type}: {e}")
+
+            # Check if it's an i3ipc exception
+            if 'i3ipc' in error_type.lower() or 'connection' in error_type.lower():
+                return self._error_response(
+                    request_id,
+                    I3_IPC_ERROR,
+                    "i3 IPC communication error",
+                    {"exception": error_type, "details": str(e)}
+                )
+
+            # Generic internal error
+            return self._error_response(
+                request_id,
+                INTERNAL_ERROR,
+                "Internal server error",
+                {"exception": error_type, "details": str(e)}
+            )
 
     async def _log_ipc_event(
         self,
@@ -2015,226 +2121,277 @@ class IPCServer:
 
     async def _layout_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Capture and save current workspace layout
+        Capture and save current workspace layout.
 
-        Implements layout.save JSON-RPC method from daemon-ipc.json
-        Feature 030: Tasks T030-T035 (Layout capture and persistence)
+        Feature 058: Python Backend Consolidation - User Story 2
+        Implements layout_save JSON-RPC method from contracts/layout-api.json
 
         Args:
             params: Save parameters
-                - project: Project name
-                - name: Layout name
-                - workspaces: Optional list of workspace numbers to capture
-                - discover_commands: Discover launch commands (default: true)
+                - project_name: Project name (required)
+                - layout_name: Layout name (optional, defaults to project_name)
+
+        Returns:
+            {
+                "project": str,
+                "layout_name": str,
+                "windows_captured": int,
+                "file_path": str
+            }
+
+        Raises:
+            ValueError: If project_name is missing
+            LayoutError: If capture or save fails
         """
         start_time = time.perf_counter()
 
         try:
-            project = params.get("project")
-            layout_name = params.get("name")
+            project_name = params.get("project_name")
+            layout_name = params.get("layout_name")
 
-            if not project or not layout_name:
-                raise ValueError("Both 'project' and 'name' are required")
+            if not project_name:
+                raise ValueError("project_name parameter is required")
 
-            # Import layout module
-            from .layout import capture_layout, save_layout
+            # Create LayoutEngine instance
+            from .services.layout_engine import LayoutEngine
+            layout_engine = LayoutEngine(self.i3_connection)
 
-            # Capture current layout (T030-T033)
-            snapshot = await capture_layout(
-                self.i3_connection,
-                name=layout_name,
-                project=project,
-            )
+            # Capture layout
+            layout, warnings = await layout_engine.capture_layout(project_name, layout_name)
 
-            # Save to disk (T034-T035)
-            filepath = save_layout(snapshot)
+            # Log warnings
+            for warning in warnings:
+                logger.warning(f"Layout capture warning: {warning}")
+
+            # Save to file
+            filepath = layout_engine.save_layout(layout)
 
             result = {
-                "success": True,
-                "name": layout_name,
-                "project": project,
-                "file_path": str(filepath),
-                "total_windows": snapshot.metadata.get("total_windows", 0),
-                "total_workspaces": snapshot.metadata.get("total_workspaces", 0),
-                "total_monitors": snapshot.metadata.get("total_monitors", 0),
+                "project": layout.project_name,
+                "layout_name": layout.layout_name,
+                "windows_captured": len(layout.windows),
+                "file_path": str(filepath)
             }
 
-            logger.info(f"Layout saved: {project}/{layout_name} ({result['total_windows']} windows)")
+            logger.info(
+                f"Layout saved: {layout.project_name}/{layout.layout_name} "
+                f"({len(layout.windows)} windows) to {filepath}"
+            )
 
             return result
 
+        except ValueError as e:
+            # Invalid params error code
+            raise ValueError(str(e))
+        except FileNotFoundError as e:
+            # Project not found
+            raise RuntimeError(f"Project not found: {params.get('project_name')}")
+        except Exception as e:
+            logger.error(f"Layout save failed: {e}", exc_info=True)
+            raise RuntimeError(f"Layout save failed: {e}")
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="layout::save",
-                project_name=params.get("project"),
+                project_name=params.get("project_name"),
                 params=params,
                 duration_ms=duration_ms,
             )
 
     async def _layout_restore(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Restore workspace layout from snapshot
+        Restore workspace layout from snapshot.
 
-        Implements layout.restore JSON-RPC method from daemon-ipc.json
-        Feature 030: Tasks T036-T040 (Layout restoration)
+        Feature 058: Python Backend Consolidation - User Story 2
+        Implements layout_restore JSON-RPC method from contracts/layout-api.json
 
         Args:
             params: Restore parameters
-                - project: Project name
-                - name: Layout name
-                - workspaces: Optional list of workspace numbers to restore
-                - adapt_monitors: Adapt to current monitor config (default: true)
-                - dry_run: Validate without restoring (default: false)
+                - project_name: Project name (required)
+                - layout_name: Layout name (optional, defaults to project_name)
+
+        Returns:
+            {
+                "restored": int,  # Number of windows successfully restored
+                "missing": [  # Windows that couldn't be restored
+                    {
+                        "app_id": str,
+                        "app_name": str,
+                        "workspace": int
+                    }
+                ],
+                "total": int  # Total windows in layout
+            }
+
+        Raises:
+            ValueError: If project_name is missing
+            LayoutError: If layout file not found or restoration fails
         """
         start_time = time.perf_counter()
 
         try:
-            project = params.get("project", "global")
-            layout_name = params.get("name")
-            adapt_monitors = params.get("adapt_monitors", True)
-            dry_run = params.get("dry_run", False)
+            project_name = params.get("project_name")
+            layout_name = params.get("layout_name")
 
-            if not layout_name:
-                raise ValueError("'name' parameter is required")
+            if not project_name:
+                raise ValueError("project_name parameter is required")
 
-            # Import layout module
-            from .layout import restore_layout
+            # Create LayoutEngine instance
+            from .services.layout_engine import LayoutEngine
+            layout_engine = LayoutEngine(self.i3_connection)
 
-            if dry_run:
-                # Just validate layout exists
-                from .layout import load_layout
-                snapshot = load_layout(layout_name, project)
-                if not snapshot:
-                    raise ValueError(f"Layout not found: {layout_name} (project: {project})")
+            # Restore layout
+            restore_results = await layout_engine.restore_layout(project_name, layout_name)
 
-                result = {
-                    "success": True,
-                    "dry_run": True,
-                    "name": layout_name,
-                    "project": project,
-                    "total_windows": snapshot.metadata.get("total_windows", 0),
-                    "total_workspaces": snapshot.metadata.get("total_workspaces", 0),
-                }
+            result = {
+                "restored": restore_results["restored"],
+                "missing": restore_results["missing"],
+                "total": restore_results["total"]
+            }
 
-            else:
-                # Restore layout (T036-T040)
-                restore_results = await restore_layout(
-                    self.i3_connection,
-                    name=layout_name,
-                    project=project,
-                    adapt_monitors=adapt_monitors,
-                )
-
-                result = {
-                    "success": restore_results["success"],
-                    "name": layout_name,
-                    "project": project,
-                    "windows_launched": restore_results["windows_launched"],
-                    "windows_swallowed": restore_results["windows_swallowed"],
-                    "windows_failed": restore_results["windows_failed"],
-                    "duration_seconds": restore_results.get("duration_seconds", 0),
-                    "errors": restore_results.get("errors", []),
-                }
-
-                logger.info(
-                    f"Layout restored: {project}/{layout_name} "
-                    f"({result['windows_swallowed']}/{result['windows_launched']} windows)"
-                )
+            logger.info(
+                f"Layout restored: {project_name}/{layout_name or project_name} - "
+                f"{result['restored']}/{result['total']} windows restored, "
+                f"{len(result['missing'])} missing"
+            )
 
             return result
 
+        except FileNotFoundError as e:
+            # Layout not found
+            raise RuntimeError(
+                f"Layout not found: {params.get('layout_name') or params.get('project_name')} "
+                f"for project {params.get('project_name')}"
+            )
+        except ValueError as e:
+            # Invalid params
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Layout restore failed: {e}", exc_info=True)
+            raise RuntimeError(f"Layout restore failed: {e}")
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="layout::restore",
-                project_name=params.get("project"),
+                project_name=params.get("project_name"),
                 params=params,
                 duration_ms=duration_ms,
             )
 
     async def _layout_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        List saved layout snapshots
+        List saved layout snapshots.
 
-        Implements layout.list JSON-RPC method
-        Feature 030: Task T043 (CLI list command)
+        Feature 058: Python Backend Consolidation - User Story 2
+        Implements layout_list JSON-RPC method from contracts/layout-api.json
 
         Args:
             params: List parameters
-                - project: Filter by project name (optional)
+                - project_name: Project name (required)
 
         Returns:
-            Dictionary with layouts array
+            {
+                "project": str,
+                "layouts": [
+                    {
+                        "layout_name": str,
+                        "timestamp": str (ISO 8601),
+                        "windows_count": int,
+                        "file_path": str
+                    }
+                ]
+            }
+
+        Raises:
+            ValueError: If project_name is missing
         """
         start_time = time.perf_counter()
 
         try:
-            project = params.get("project")
+            project_name = params.get("project_name")
 
-            # Import layout module
-            from .layout import list_layouts
+            if not project_name:
+                raise ValueError("project_name parameter is required")
 
-            # Get layouts
-            layouts = list_layouts(project=project)
+            # Create LayoutEngine instance
+            from .services.layout_engine import LayoutEngine
+            layout_engine = LayoutEngine(self.i3_connection)
+
+            # List layouts
+            layouts = layout_engine.list_layouts(project_name)
 
             result = {
-                "layouts": layouts,
+                "project": project_name,
+                "layouts": layouts
             }
 
-            logger.info(f"Listed layouts: {len(layouts)} found (project: {project or 'all'})")
+            logger.info(f"Listed layouts: {len(layouts)} found for project {project_name}")
 
             return result
 
+        except ValueError as e:
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Layout list failed: {e}", exc_info=True)
+            raise RuntimeError(f"Layout list failed: {e}")
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="query::layout_list",
-                project_name=params.get("project"),
+                project_name=params.get("project_name"),
                 params=params,
                 duration_ms=duration_ms,
             )
 
     async def _layout_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Delete a saved layout snapshot
+        Delete a saved layout snapshot.
 
-        Implements layout.delete JSON-RPC method
-        Feature 030: Task T044 (CLI delete command)
+        Feature 058: Python Backend Consolidation - User Story 2
+        Implements layout_delete JSON-RPC method from contracts/layout-api.json
 
         Args:
             params: Delete parameters
-                - name: Layout name (required)
-                - project: Project name (default: "global")
+                - project_name: Project name (required)
+                - layout_name: Layout name (required)
 
         Returns:
-            Dictionary with success status
+            {
+                "deleted": bool,
+                "layout_name": str
+            }
+
+        Raises:
+            ValueError: If required parameters are missing
+            LayoutError: If layout not found
         """
         start_time = time.perf_counter()
 
         try:
-            name = params.get("name")
-            project = params.get("project", "global")
+            project_name = params.get("project_name")
+            layout_name = params.get("layout_name")
 
-            if not name:
-                raise ValueError("'name' parameter is required")
+            if not project_name or not layout_name:
+                raise ValueError("project_name and layout_name parameters are required")
 
-            # Import layout module
-            from .layout import delete_layout
+            # Create LayoutEngine instance
+            from .services.layout_engine import LayoutEngine
+            layout_engine = LayoutEngine(self.i3_connection)
 
             # Delete layout
-            success = delete_layout(name=name, project=project)
+            deleted = layout_engine.delete_layout(project_name, layout_name)
 
-            if not success:
-                raise ValueError(f"Layout not found: {name} (project: {project})")
+            if not deleted:
+                raise RuntimeError(
+                    f"Layout not found: {layout_name} for project {project_name}"
+                )
 
             result = {
-                "success": True,
-                "name": name,
-                "project": project,
+                "deleted": True,
+                "layout_name": layout_name
             }
 
-            logger.info(f"Deleted layout: {project}/{name}")
+            logger.info(f"Deleted layout: {project_name}/{layout_name}")
 
             return result
 
@@ -3463,6 +3620,69 @@ class IPCServer:
             logger.error(f"Error getting window identity: {e}")
             raise
 
+    async def _get_window_environment(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get I3PM environment variables for a window by PID.
+
+        Feature 058 - Phase 3: Eliminate duplicate environment reading
+
+        Args:
+            params: {"pid": int} - Process ID of the window
+
+        Returns:
+            Dictionary with I3PM environment variables or None if not available:
+            {
+                "app_id": str | None,
+                "app_name": str | None,
+                "project_name": str | None,
+                "project_dir": str | None,
+                "scope": str | None,
+                "target_workspace": int | None,
+                "expected_class": str | None
+            }
+
+        Raises:
+            ValueError: If PID parameter is missing or invalid
+        """
+        start_time = time.perf_counter()
+        pid = params.get("pid")
+
+        if not pid:
+            raise ValueError("pid parameter required")
+
+        if not isinstance(pid, int) or pid <= 0:
+            raise ValueError(f"Invalid PID: {pid}")
+
+        # Read process environment using existing window_filter module
+        from .services.window_filter import read_process_environ
+        env = read_process_environ(pid)
+
+        result = {
+            "app_id": env.get("I3PM_APP_ID") if env else None,
+            "app_name": env.get("I3PM_APP_NAME") if env else None,
+            "project_name": env.get("I3PM_PROJECT_NAME") if env else None,
+            "project_dir": env.get("I3PM_PROJECT_DIR") if env else None,
+            "scope": env.get("I3PM_SCOPE") if env else None,
+            "target_workspace": None,
+            "expected_class": env.get("I3PM_EXPECTED_CLASS") if env else None
+        }
+
+        # Parse target workspace if present
+        if env and "I3PM_TARGET_WORKSPACE" in env:
+            try:
+                result["target_workspace"] = int(env["I3PM_TARGET_WORKSPACE"])
+            except (ValueError, TypeError):
+                pass  # Invalid workspace value, leave as None
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        await self._log_ipc_event(
+            event_type="get_window_environment",
+            duration_ms=duration_ms,
+            params={"pid": pid}
+        )
+
+        return result
+
     async def _get_workspace_rule_diagnostic(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Get workspace assignment rule for an application.
@@ -4189,3 +4409,492 @@ class IPCServer:
             "history": [switch.to_dict() for switch in history],
             "total": total_count
         }
+
+    # ======================
+    # Feature 058: Project Management JSON-RPC Handlers (T030-T033)
+    # ======================
+
+    async def _project_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new project.
+
+        Args:
+            params: {
+                "name": str,          # Unique project identifier
+                "directory": str,     # Absolute path to project directory
+                "display_name": str,  # Human-readable project name
+                "icon": str = "📁"    # Project icon (optional)
+            }
+
+        Returns:
+            Project data (name, directory, display_name, icon, created_at, updated_at)
+
+        Raises:
+            VALIDATION_ERROR (1003): Invalid parameters or directory
+            FILE_IO_ERROR (1004): Project already exists
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Extract parameters
+            name = params.get("name")
+            directory = params.get("directory")
+            display_name = params.get("display_name")
+            icon = params.get("icon", "📁")
+
+            # Validate required parameters
+            if not name or not directory or not display_name:
+                raise ValueError("Missing required parameters: name, directory, display_name")
+
+            # Create project
+            project = service.create(
+                name=name,
+                directory=directory,
+                display_name=display_name,
+                icon=icon
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::create",
+                duration_ms=duration_ms,
+                params={"name": name, "directory": directory}
+            )
+
+            # Return project data
+            return {
+                "name": project.name,
+                "directory": project.directory,
+                "display_name": project.display_name,
+                "icon": project.icon,
+                "created_at": project.created_at.isoformat(),
+                "updated_at": project.updated_at.isoformat()
+            }
+
+        except FileExistsError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::create",
+                duration_ms=duration_ms,
+                params={"name": params.get("name")},
+                error=str(e)
+            )
+            raise RuntimeError(f"{FILE_IO_ERROR}:{str(e)}")
+
+        except ValueError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::create",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise RuntimeError(f"{VALIDATION_ERROR}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::create",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    async def _project_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all projects.
+
+        Args:
+            params: {} (no parameters required)
+
+        Returns:
+            {"projects": [Project data...]}
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # List projects
+            projects = service.list()
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::list",
+                duration_ms=duration_ms,
+                result_count=len(projects)
+            )
+
+            return {
+                "projects": [
+                    {
+                        "name": p.name,
+                        "directory": p.directory,
+                        "display_name": p.display_name,
+                        "icon": p.icon,
+                        "created_at": p.created_at.isoformat(),
+                        "updated_at": p.updated_at.isoformat()
+                    }
+                    for p in projects
+                ]
+            }
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::list",
+                duration_ms=duration_ms,
+                error=str(e)
+            )
+            raise
+
+    async def _project_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get project details.
+
+        Args:
+            params: {"name": str}
+
+        Returns:
+            Project data
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Project doesn't exist
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Get project name
+            name = params.get("name")
+            if not name:
+                raise ValueError("Missing required parameter: name")
+
+            # Get project
+            project = service.get(name)
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::get",
+                duration_ms=duration_ms,
+                params={"name": name}
+            )
+
+            return {
+                "name": project.name,
+                "directory": project.directory,
+                "display_name": project.display_name,
+                "icon": project.icon,
+                "created_at": project.created_at.isoformat(),
+                "updated_at": project.updated_at.isoformat()
+            }
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::get",
+                duration_ms=duration_ms,
+                params={"name": params.get("name")},
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::get",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    async def _project_update(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update project metadata.
+
+        Args:
+            params: {
+                "name": str,              # Project to update
+                "directory": str = None,  # New directory (optional)
+                "display_name": str = None,  # New display name (optional)
+                "icon": str = None        # New icon (optional)
+            }
+
+        Returns:
+            Updated project data
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Project doesn't exist
+            VALIDATION_ERROR (1003): Invalid parameters
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Get parameters
+            name = params.get("name")
+            if not name:
+                raise ValueError("Missing required parameter: name")
+
+            directory = params.get("directory")
+            display_name = params.get("display_name")
+            icon = params.get("icon")
+
+            # Update project
+            project = service.update(
+                name=name,
+                directory=directory,
+                display_name=display_name,
+                icon=icon
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::update",
+                duration_ms=duration_ms,
+                params={"name": name}
+            )
+
+            return {
+                "name": project.name,
+                "directory": project.directory,
+                "display_name": project.display_name,
+                "icon": project.icon,
+                "created_at": project.created_at.isoformat(),
+                "updated_at": project.updated_at.isoformat()
+            }
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::update",
+                duration_ms=duration_ms,
+                params={"name": params.get("name")},
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except ValueError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::update",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise RuntimeError(f"{VALIDATION_ERROR}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::update",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    async def _project_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete a project.
+
+        Args:
+            params: {"name": str}
+
+        Returns:
+            {"deleted": bool, "name": str}
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Project doesn't exist
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Get project name
+            name = params.get("name")
+            if not name:
+                raise ValueError("Missing required parameter: name")
+
+            # Delete project
+            deleted = service.delete(name)
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::delete",
+                duration_ms=duration_ms,
+                params={"name": name}
+            )
+
+            return {
+                "deleted": deleted,
+                "name": name
+            }
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::delete",
+                duration_ms=duration_ms,
+                params={"name": params.get("name")},
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::delete",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    async def _project_get_active(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get currently active project.
+
+        Args:
+            params: {} (no parameters required)
+
+        Returns:
+            {"name": str | null}  # null if in global mode
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Get active project
+            active_name = service.get_active()
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::get_active",
+                duration_ms=duration_ms,
+                params={"active": active_name}
+            )
+
+            return {"name": active_name}
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::get_active",
+                duration_ms=duration_ms,
+                error=str(e)
+            )
+            raise
+
+    async def _project_set_active(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set active project (triggers window filtering).
+
+        Args:
+            params: {"name": str | null}  # null to clear (global mode)
+
+        Returns:
+            {
+                "previous": str | null,
+                "current": str | null,
+                "filtering_applied": bool
+            }
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Project doesn't exist
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import ProjectService
+            from .services.project_service import ProjectService
+            config_dir = Path.home() / ".config" / "i3"
+            service = ProjectService(config_dir)
+
+            # Get project name (can be None for global mode)
+            name = params.get("name")
+
+            # Set active project
+            result = service.set_active(name)
+
+            # Trigger window filtering (Feature 037 integration)
+            filtering_applied = False
+            if self.workspace_tracker:
+                try:
+                    # Switch projects with filtering
+                    old_project = result["previous"] or ""
+                    new_project = result["current"]
+
+                    if old_project or new_project:
+                        filter_result = await self._switch_with_filtering({
+                            "old_project": old_project,
+                            "new_project": new_project or "",
+                            "fallback_workspace": 1
+                        })
+                        filtering_applied = True
+                        logger.info(
+                            f"Window filtering applied: "
+                            f"{filter_result.get('windows_hidden', 0)} hidden, "
+                            f"{filter_result.get('windows_restored', 0)} restored"
+                        )
+                except Exception as e:
+                    logger.warning(f"Window filtering failed (non-fatal): {e}")
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::set_active",
+                duration_ms=duration_ms,
+                params={"name": name, "previous": result["previous"]}
+            )
+
+            return {
+                "previous": result["previous"],
+                "current": result["current"],
+                "filtering_applied": filtering_applied
+            }
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::set_active",
+                duration_ms=duration_ms,
+                params={"name": params.get("name")},
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::set_active",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise

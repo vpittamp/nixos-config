@@ -1,9 +1,10 @@
 /**
  * Project command - Manage projects
  * Feature 035: User Story 2 - Project Management Commands
+ * Feature 058: Updated to use daemon ProjectService via JSON-RPC
  */
 
-import { ProjectManager } from "../services/project-manager.ts";
+import { DaemonClient } from "../services/daemon-client.ts";
 
 export async function projectCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
@@ -53,107 +54,164 @@ async function createProject(args: string[], flags: Record<string, unknown>): Pr
     return 1;
   }
 
-  const manager = new ProjectManager();
-  const project = await manager.create({
-    name,
-    display_name: String(displayName),
-    directory: String(directory),
-    icon: icon ? String(icon) : undefined,
-  });
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    const project = await client.request<{
+      name: string;
+      directory: string;
+      display_name: string;
+      icon: string;
+      created_at: string;
+      updated_at: string;
+    }>("project_create", {
+      name,
+      display_name: String(displayName),
+      directory: String(directory),
+      icon: icon ? String(icon) : "📁",
+    });
 
-  if (flags.json) {
-    console.log(JSON.stringify(project, null, 2));
-  } else {
-    console.log(`\n✓ Project '${name}' created successfully`);
-    console.log(`  Location: ~/.config/i3/projects/${name}.json\n`);
-    console.log(`To switch to this project:`);
-    console.log(`  i3pm project switch ${name}\n`);
+    if (flags.json) {
+      console.log(JSON.stringify(project, null, 2));
+    } else {
+      console.log(`\n✓ Project '${name}' created successfully`);
+      console.log(`  Location: ~/.config/i3/projects/${name}.json\n`);
+      console.log(`To switch to this project:`);
+      console.log(`  i3pm project switch ${name}\n`);
+    }
+
+    return 0;
+  } finally {
+    client.disconnect();
   }
-
-  return 0;
 }
 
 async function listProjects(flags: Record<string, unknown>): Promise<number> {
-  const manager = new ProjectManager();
-  const projects = await manager.list();
-  const active = await manager.getActive();
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    const projectsResult = await client.request<{
+      projects: Array<{
+        name: string;
+        directory: string;
+        display_name: string;
+        icon: string;
+        created_at: string;
+        updated_at: string;
+      }>;
+    }>("project_list", {});
 
-  if (flags.json) {
-    console.log(JSON.stringify({ projects, active }, null, 2));
+    const activeResult = await client.request<{ name: string | null }>("project_get_active", {});
+
+    const projects = projectsResult.projects;
+    const activeName = activeResult.name;
+
+    if (flags.json) {
+      console.log(JSON.stringify({ projects, active: { project_name: activeName } }, null, 2));
+      return 0;
+    }
+
+    console.log("\nProjects:\n");
+    console.log("NAME".padEnd(20), "DISPLAY NAME".padEnd(30), "ACTIVE");
+    console.log("─".repeat(60));
+
+    for (const project of projects) {
+      const isActive = activeName === project.name ? "●" : "";
+      console.log(
+        project.name.padEnd(20),
+        project.display_name.padEnd(30),
+        isActive
+      );
+    }
+
+    console.log(`\nTotal: ${projects.length} projects\n`);
     return 0;
+  } finally {
+    client.disconnect();
   }
-
-  console.log("\nProjects:\n");
-  console.log("NAME".padEnd(20), "DISPLAY NAME".padEnd(30), "ACTIVE");
-  console.log("─".repeat(60));
-
-  for (const project of projects) {
-    const isActive = active.project_name === project.name ? "●" : "";
-    console.log(
-      project.name.padEnd(20),
-      project.display_name.padEnd(30),
-      isActive
-    );
-  }
-
-  console.log(`\nTotal: ${projects.length} projects\n`);
-  return 0;
 }
 
 async function showProject(name: string | undefined, flags: Record<string, unknown>): Promise<number> {
-  const manager = new ProjectManager();
-
   // If no name provided, show current project
   if (!name) {
     return await currentProject(flags);
   }
 
-  const project = await manager.load(name);
-  const active = await manager.getActive();
-  const isActive = active.project_name === name;
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    const project = await client.request<{
+      name: string;
+      directory: string;
+      display_name: string;
+      icon: string;
+      created_at: string;
+      updated_at: string;
+    }>("project_get", { name });
 
-  if (flags.json) {
-    console.log(JSON.stringify({ ...project, is_active: isActive }, null, 2));
+    const activeResult = await client.request<{ name: string | null }>("project_get_active", {});
+    const isActive = activeResult.name === name;
+
+    if (flags.json) {
+      console.log(JSON.stringify({ ...project, is_active: isActive }, null, 2));
+      return 0;
+    }
+
+    console.log(`\nProject: ${project.display_name}`);
+    console.log("─".repeat(60));
+    console.log(`Name:           ${project.name}`);
+    console.log(`Directory:      ${project.directory}`);
+    console.log(`Icon:           ${project.icon || "none"}`);
+    console.log(`Active:         ${isActive ? "yes" : "no"}`);
+    console.log(`Created:        ${project.created_at}`);
+    console.log(`Updated:        ${project.updated_at}`);
+    console.log();
+
     return 0;
+  } finally {
+    client.disconnect();
   }
-
-  console.log(`\nProject: ${project.display_name}`);
-  console.log("─".repeat(60));
-  console.log(`Name:           ${project.name}`);
-  console.log(`Directory:      ${project.directory}`);
-  console.log(`Icon:           ${project.icon || "none"}`);
-  console.log(`Active:         ${isActive ? "yes" : "no"}`);
-  console.log(`Saved Layout:   ${project.saved_layout || "none"}`);
-  console.log(`Created:        ${project.created_at}`);
-  console.log(`Updated:        ${project.updated_at}`);
-  console.log();
-
-  return 0;
 }
 
 async function currentProject(flags: Record<string, unknown>): Promise<number> {
-  const manager = new ProjectManager();
-  const project = await manager.getCurrent();
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    const activeResult = await client.request<{ name: string | null }>("project_get_active", {});
+    const activeName = activeResult.name;
 
-  if (!project) {
-    if (flags.json) {
-      console.log(JSON.stringify({ project_name: null, message: "No active project" }, null, 2));
-    } else {
-      console.log("No active project. Use 'i3pm project switch <name>' to activate a project.");
+    if (!activeName) {
+      if (flags.json) {
+        console.log(JSON.stringify({ project_name: null, message: "No active project" }, null, 2));
+      } else {
+        console.log("No active project. Use 'i3pm project switch <name>' to activate a project.");
+      }
+      return 0;
     }
+
+    // Get full project details
+    const project = await client.request<{
+      name: string;
+      directory: string;
+      display_name: string;
+      icon: string;
+      created_at: string;
+      updated_at: string;
+    }>("project_get", { name: activeName });
+
+    if (flags.json) {
+      console.log(JSON.stringify(project, null, 2));
+      return 0;
+    }
+
+    console.log(`\nCurrent Project: ${project.display_name}`);
+    console.log(`  Name:       ${project.name}`);
+    console.log(`  Directory:  ${project.directory}\n`);
+
     return 0;
+  } finally {
+    client.disconnect();
   }
-
-  if (flags.json) {
-    console.log(JSON.stringify(project, null, 2));
-    return 0;
-  }
-
-  console.log(`\nCurrent Project: ${project.display_name}`);
-  console.log(`  Name:       ${project.name}`);
-  console.log(`  Directory:  ${project.directory}\n`);
-
-  return 0;
 }
 
 async function updateProject(args: string[], flags: Record<string, unknown>): Promise<number> {
@@ -164,28 +222,40 @@ async function updateProject(args: string[], flags: Record<string, unknown>): Pr
     return 1;
   }
 
-  const manager = new ProjectManager();
-  const updates: Record<string, unknown> = {};
+  const params: Record<string, unknown> = { name };
 
-  if (flags.directory || flags.dir) updates.directory = String(flags.directory || flags.dir);
-  if (flags["display-name"] || flags.display) updates.display_name = String(flags["display-name"] || flags.display);
-  if (flags.icon) updates.icon = String(flags.icon);
+  if (flags.directory || flags.dir) params.directory = String(flags.directory || flags.dir);
+  if (flags["display-name"] || flags.display) params.display_name = String(flags["display-name"] || flags.display);
+  if (flags.icon) params.icon = String(flags.icon);
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(params).length === 1) { // Only 'name' key
     console.error("Error: No updates provided");
     console.error("Specify at least one of: --directory, --display-name, --icon");
     return 1;
   }
 
-  const project = await manager.update(name, updates);
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    const project = await client.request<{
+      name: string;
+      directory: string;
+      display_name: string;
+      icon: string;
+      created_at: string;
+      updated_at: string;
+    }>("project_update", params);
 
-  if (flags.json) {
-    console.log(JSON.stringify(project, null, 2));
-  } else {
-    console.log(`\n✓ Project '${name}' updated successfully\n`);
+    if (flags.json) {
+      console.log(JSON.stringify(project, null, 2));
+    } else {
+      console.log(`\n✓ Project '${name}' updated successfully\n`);
+    }
+
+    return 0;
+  } finally {
+    client.disconnect();
   }
-
-  return 0;
 }
 
 async function deleteProject(name: string | undefined, flags: Record<string, unknown>): Promise<number> {
@@ -208,11 +278,16 @@ async function deleteProject(name: string | undefined, flags: Record<string, unk
     }
   }
 
-  const manager = new ProjectManager();
-  await manager.delete(name);
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  const client = new DaemonClient();
+  try {
+    await client.request<{ deleted: boolean; name: string }>("project_delete", { name });
 
-  console.log(`\n✓ Project '${name}' deleted\n`);
-  return 0;
+    console.log(`\n✓ Project '${name}' deleted\n`);
+    return 0;
+  } finally {
+    client.disconnect();
+  }
 }
 
 async function switchProject(name: string | undefined, flags: Record<string, unknown>): Promise<number> {
@@ -222,43 +297,57 @@ async function switchProject(name: string | undefined, flags: Record<string, unk
     return 1;
   }
 
-  const manager = new ProjectManager();
-  await manager.setActive(name);
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  // project_set_active automatically triggers window filtering
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      previous: string | null;
+      current: string | null;
+      filtering_applied: boolean;
+    }>("project_set_active", { name });
 
-  // Notify daemon via i3-msg tick event (daemon will filter windows via /proc reading)
-  const tickCmd = new Deno.Command("i3-msg", {
-    args: ["-t", "send_tick", `project:switch:${name}`],
-    stdout: "null",
-    stderr: "null",
-  });
-  await tickCmd.output();
+    if (flags.json) {
+      console.log(JSON.stringify({ status: "success", ...result }, null, 2));
+    } else {
+      console.log(`\n✓ Switched to project '${name}'`);
+      if (result.filtering_applied) {
+        console.log(`  Window filtering applied\n`);
+      } else {
+        console.log();
+      }
+    }
 
-  if (flags.json) {
-    console.log(JSON.stringify({ status: "success", project: name }, null, 2));
-  } else {
-    console.log(`\n✓ Switched to project '${name}'\n`);
+    return 0;
+  } finally {
+    client.disconnect();
   }
-
-  return 0;
 }
 
 async function clearProject(flags: Record<string, unknown>): Promise<number> {
-  const manager = new ProjectManager();
-  await manager.clearActive();
+  // Feature 058: Use daemon ProjectService via JSON-RPC
+  // project_set_active with null clears active project and triggers window filtering
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      previous: string | null;
+      current: string | null;
+      filtering_applied: boolean;
+    }>("project_set_active", { name: null });
 
-  // Notify daemon to show all windows
-  const tickCmd = new Deno.Command("i3-msg", {
-    args: ["-t", "send_tick", "project:clear"],
-    stdout: "null",
-    stderr: "null",
-  });
-  await tickCmd.output();
+    if (flags.json) {
+      console.log(JSON.stringify({ status: "success", ...result }, null, 2));
+    } else {
+      console.log("\n✓ Cleared active project (returned to global mode)");
+      if (result.filtering_applied) {
+        console.log(`  Window filtering applied\n`);
+      } else {
+        console.log();
+      }
+    }
 
-  if (flags.json) {
-    console.log(JSON.stringify({ status: "success", project: null }, null, 2));
-  } else {
-    console.log("\n✓ Cleared active project (returned to global mode)\n");
+    return 0;
+  } finally {
+    client.disconnect();
   }
-
-  return 0;
 }

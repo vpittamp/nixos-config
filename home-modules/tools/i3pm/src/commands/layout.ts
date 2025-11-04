@@ -1,10 +1,11 @@
 /**
  * Layout command - Save and restore window layouts
- * Feature 035: User Story 4 - Layout Management
+ * Feature 058: Python Backend Consolidation - User Story 2
+ *
+ * Uses daemon for all layout operations (capture, restore, list, delete).
  */
 
-import { LayoutEngine } from "../services/layout-engine.ts";
-import { ProjectManager } from "../services/project-manager.ts";
+import { DaemonClient } from "../services/daemon-client.ts";
 
 export async function layoutCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
@@ -18,7 +19,7 @@ export async function layoutCommand(args: string[], flags: Record<string, unknow
       case "delete":
         return await deleteLayout(args.slice(1), flags);
       case "list":
-        return await listLayouts(flags);
+        return await listLayouts(args.slice(1), flags);
       default:
         console.error("Usage: i3pm layout <save|restore|delete|list>");
         return 1;
@@ -35,46 +36,43 @@ async function saveLayout(args: string[], flags: Record<string, unknown>): Promi
 
   if (!projectName) {
     console.error("Error: Missing project name");
-    console.error("Usage: i3pm layout save <project> [layout-name] [--overwrite]");
+    console.error("Usage: i3pm layout save <project> [layout-name]");
     return 1;
   }
 
-  // Verify project exists
-  const projectManager = new ProjectManager();
-  await projectManager.load(projectName); // Just verify it exists
+  const daemon = new DaemonClient();
 
-  const engine = new LayoutEngine();
-  console.log(`\nCapturing layout for project '${projectName}'...\n`);
+  try {
+    await daemon.connect();
 
-  const { layout, warnings } = await engine.capture(projectName, layoutName);
+    console.log(`\nCapturing layout for project '${projectName}'...\n`);
 
-  // Show warnings
-  if (warnings.length > 0) {
-    console.log("\nWarnings:");
-    for (const warning of warnings) {
-      console.log(`  ⚠ ${warning}`);
+    // Call daemon to save layout
+    const result = await daemon.request("layout.save", {
+      project_name: projectName,
+      layout_name: layoutName,
+    }) as {
+      project: string;
+      layout_name: string;
+      windows_captured: number;
+      file_path: string;
+    };
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`\n✓ Layout '${result.layout_name}' saved successfully`);
+      console.log(`  Windows captured: ${result.windows_captured}`);
+      console.log(`  Location: ${result.file_path}\n`);
     }
-    console.log();
+
+    return 0;
+  } catch (error) {
+    console.error(`Failed to save layout: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  } finally {
+    daemon.disconnect();
   }
-
-  // Save layout
-  const overwrite = flags.overwrite || flags.force;
-  await engine.save(layout, Boolean(overwrite));
-
-  // Update project's saved_layout field
-  await projectManager.update(projectName, {
-    saved_layout: layout.layout_name,
-  });
-
-  if (flags.json) {
-    console.log(JSON.stringify(layout, null, 2));
-  } else {
-    console.log(`\n✓ Layout '${layout.layout_name}' saved successfully`);
-    console.log(`  Windows: ${layout.windows.length}`);
-    console.log(`  Location: ~/.config/i3/layouts/${layout.layout_name}.json\n`);
-  }
-
-  return 0;
 }
 
 async function restoreLayout(args: string[], flags: Record<string, unknown>): Promise<number> {
@@ -83,61 +81,72 @@ async function restoreLayout(args: string[], flags: Record<string, unknown>): Pr
 
   if (!projectName) {
     console.error("Error: Missing project name");
-    console.error("Usage: i3pm layout restore <project> [layout-name] [--dry-run]");
+    console.error("Usage: i3pm layout restore <project> [layout-name]");
     return 1;
   }
 
-  // Load project to get saved layout if no layout name provided
-  const projectManager = new ProjectManager();
-  const project = await projectManager.load(projectName);
+  const daemon = new DaemonClient();
 
-  const finalLayoutName = layoutName || project.saved_layout;
-  if (!finalLayoutName) {
-    console.error(`Error: No layout specified and project has no saved layout`);
-    console.error(`Save a layout first: i3pm layout save ${projectName}`);
-    return 1;
-  }
+  try {
+    await daemon.connect();
 
-  const engine = new LayoutEngine();
-  const layout = await engine.load(projectName, finalLayoutName);
+    console.log(`\nRestoring layout for project '${projectName}'...\n`);
 
-  const dryRun = flags["dry-run"] || flags.n;
+    // Call daemon to restore layout
+    const result = await daemon.request("layout.restore", {
+      project_name: projectName,
+      layout_name: layoutName,
+    }) as {
+      restored: number;
+      missing: Array<{
+        app_id: string;
+        app_name: string;
+        workspace: number;
+      }>;
+      total: number;
+    };
 
-  console.log(`\nRestoring layout '${finalLayoutName}' for project '${projectName}'...\n`);
-
-  const { launched, positioned, failed } = await engine.restore(layout, Boolean(dryRun));
-
-  if (failed.length > 0) {
-    console.log("\nFailed:");
-    for (const error of failed) {
-      console.log(`  ✗ ${error}`);
+    if (result.missing.length > 0) {
+      console.log("\nMissing windows (not currently open):");
+      for (const window of result.missing) {
+        console.log(`  ⚠ ${window.app_name} (workspace ${window.workspace})`);
+      }
+      console.log();
     }
-  }
 
-  if (!dryRun) {
-    console.log(`\n✓ Layout restore initiated`);
-    console.log(`  Launched: ${launched}`);
-    console.log(`  Positioned: ${positioned}`);
-    console.log(`  Failed: ${failed.length}\n`);
-  }
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`\n✓ Layout restored successfully`);
+      console.log(`  Restored: ${result.restored}/${result.total} windows`);
+      if (result.missing.length > 0) {
+        console.log(`  Missing: ${result.missing.length} windows not currently open`);
+      }
+      console.log();
+    }
 
-  return 0;
+    return 0;
+  } catch (error) {
+    console.error(`Failed to restore layout: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  } finally {
+    daemon.disconnect();
+  }
 }
 
 async function deleteLayout(args: string[], flags: Record<string, unknown>): Promise<number> {
   const projectName = args[0];
-  const layoutName = args[1] as string | undefined;
+  const layoutName = args[1];
 
-  if (!projectName) {
-    console.error("Error: Missing project name");
-    console.error("Usage: i3pm layout delete <project> [layout-name]");
+  if (!projectName || !layoutName) {
+    console.error("Error: Missing required arguments");
+    console.error("Usage: i3pm layout delete <project> <layout-name>");
     return 1;
   }
 
   // Confirmation prompt unless --yes flag
   if (!flags.yes && !flags.y) {
-    const name = layoutName || projectName;
-    console.log(`Delete layout '${name}'? (y/N)`);
+    console.log(`Delete layout '${layoutName}' for project '${projectName}'? (y/N)`);
     const buf = new Uint8Array(1024);
     const n = await Deno.stdin.read(buf);
     const response = new TextDecoder().decode(buf.subarray(0, n || 0)).trim().toLowerCase();
@@ -148,48 +157,88 @@ async function deleteLayout(args: string[], flags: Record<string, unknown>): Pro
     }
   }
 
-  const engine = new LayoutEngine();
-  await engine.delete(projectName, layoutName);
+  const daemon = new DaemonClient();
 
-  // Clear project's saved_layout if it was the deleted one
-  const projectManager = new ProjectManager();
-  const project = await projectManager.load(projectName);
-  if (project.saved_layout === (layoutName || projectName)) {
-    await projectManager.update(projectName, { saved_layout: undefined });
+  try {
+    await daemon.connect();
+
+    // Call daemon to delete layout
+    const result = await daemon.request("layout.delete", {
+      project_name: projectName,
+      layout_name: layoutName,
+    }) as {
+      deleted: boolean;
+      layout_name: string;
+    };
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`\n✓ Layout '${result.layout_name}' deleted successfully\n`);
+    }
+
+    return 0;
+  } catch (error) {
+    console.error(`Failed to delete layout: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  } finally {
+    daemon.disconnect();
   }
-
-  console.log(`\n✓ Layout deleted\n`);
-  return 0;
 }
 
-async function listLayouts(flags: Record<string, unknown>): Promise<number> {
-  const layoutsDir = `${Deno.env.get("HOME")}/.config/i3/layouts`;
+async function listLayouts(args: string[], flags: Record<string, unknown>): Promise<number> {
+  const projectName = args[0];
 
-  const layouts: string[] = [];
+  if (!projectName) {
+    console.error("Error: Missing project name");
+    console.error("Usage: i3pm layout list <project>");
+    return 1;
+  }
+
+  const daemon = new DaemonClient();
+
   try {
-    for await (const entry of Deno.readDir(layoutsDir)) {
-      if (entry.isFile && entry.name.endsWith(".json")) {
-        layouts.push(entry.name.replace(".json", ""));
-      }
-    }
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      console.log("\nNo layouts saved yet\n");
+    await daemon.connect();
+
+    // Call daemon to list layouts
+    const result = await daemon.request("layout.list", {
+      project_name: projectName,
+    }) as {
+      project: string;
+      layouts: Array<{
+        layout_name: string;
+        timestamp: string;
+        windows_count: number;
+        file_path: string;
+      }>;
+    };
+
+    if (result.layouts.length === 0) {
+      console.log(`\nNo layouts saved for project '${projectName}'\n`);
       return 0;
     }
-    throw error;
-  }
 
-  if (flags.json) {
-    console.log(JSON.stringify(layouts, null, 2));
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    console.log(`\nSaved Layouts for project '${result.project}':\n`);
+    for (const layout of result.layouts) {
+      const date = new Date(layout.timestamp).toLocaleString();
+      console.log(`  ${layout.layout_name}`);
+      console.log(`    Windows: ${layout.windows_count}`);
+      console.log(`    Saved: ${date}`);
+      console.log(`    Path: ${layout.file_path}`);
+      console.log();
+    }
+    console.log(`Total: ${result.layouts.length} layout(s)\n`);
+
     return 0;
+  } catch (error) {
+    console.error(`Failed to list layouts: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  } finally {
+    daemon.disconnect();
   }
-
-  console.log("\nSaved Layouts:\n");
-  for (const layout of layouts.sort()) {
-    console.log(`  ${layout}`);
-  }
-  console.log(`\nTotal: ${layouts.length} layouts\n`);
-
-  return 0;
 }
