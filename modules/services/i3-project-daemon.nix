@@ -36,8 +36,11 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.5.12";  # Fix: Thread-safe signal handling + shutdown timeouts + improved watchdog
+    version = "1.6.0";  # Fix: Non-blocking initialization - Sway connection in background to prevent socket activation hangs
     src = daemonSrc;
+
+    # Force rebuild by adding build timestamp as environment variable
+    __rebuild_trigger = builtins.currentTime;
 
     installPhase = ''
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
