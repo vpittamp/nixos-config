@@ -4,6 +4,7 @@
  */
 
 import { DaemonClient } from "../services/daemon-client.ts";
+import { bold, cyan, green, yellow, red, gray, magenta, blue, dim } from "jsr:@std/fmt/colors";
 
 export async function daemonCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
   const [subcommand] = args;
@@ -26,6 +27,169 @@ export async function daemonCommand(args: string[], flags: Record<string, unknow
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }
+}
+
+/**
+ * Format event data in a human-readable way with colors
+ */
+function formatEvent(event: any, verbose: boolean = false): string {
+  // Event type with icon and color
+  const typeInfo = getEventTypeInfo(event.event_type || "unknown");
+  const timeStr = dim(formatTimestamp(event.timestamp));
+
+  // Build header line
+  let output = `${timeStr} ${typeInfo.icon} ${typeInfo.color(bold(typeInfo.label))}`;
+
+  // Add duration if present and significant
+  if (event.processing_duration_ms !== null && event.processing_duration_ms !== undefined) {
+    const duration = event.processing_duration_ms;
+    const durationStr = duration < 1 ? `${duration.toFixed(2)}ms` : `${Math.round(duration)}ms`;
+    const durationColor = duration > 100 ? red : duration > 50 ? yellow : green;
+    output += ` ${dim("•")} ${durationColor(durationStr)}`;
+  }
+
+  // Add error if present
+  if (event.error) {
+    output += `\n  ${red("✗")} ${red(event.error)}`;
+    return output;
+  }
+
+  // Add event-specific details
+  const details = formatEventDetails(event, verbose);
+  if (details) {
+    output += `\n  ${details}`;
+  }
+
+  return output;
+}
+
+/**
+ * Get icon, color, and label for event type
+ */
+function getEventTypeInfo(eventType: string): { icon: string; color: (s: string) => string; label: string } {
+  const typeMap: Record<string, { icon: string; color: (s: string) => string; label: string }> = {
+    // Project events
+    "project::create": { icon: "✨", color: green, label: "Project Created" },
+    "project::delete": { icon: "🗑️", color: red, label: "Project Deleted" },
+    "project::list": { icon: "📋", color: cyan, label: "List Projects" },
+    "project::get": { icon: "📁", color: blue, label: "Get Project" },
+    "project::get_active": { icon: "🎯", color: magenta, label: "Active Project" },
+    "project::set_active": { icon: "🔄", color: yellow, label: "Switch Project" },
+    "project::update": { icon: "✏️", color: yellow, label: "Update Project" },
+
+    // Layout events
+    "layout::save": { icon: "💾", color: green, label: "Save Layout" },
+    "layout::restore": { icon: "📥", color: blue, label: "Restore Layout" },
+    "layout::delete": { icon: "🗑️", color: red, label: "Delete Layout" },
+    "layout::list": { icon: "📋", color: cyan, label: "List Layouts" },
+
+    // Window events
+    "window::new": { icon: "🪟", color: green, label: "Window Opened" },
+    "window::close": { icon: "✖️", color: red, label: "Window Closed" },
+    "window::focus": { icon: "👁️", color: yellow, label: "Window Focused" },
+    "window::mark": { icon: "🏷️", color: magenta, label: "Window Marked" },
+
+    // Process events
+    "process::start": { icon: "🚀", color: green, label: "Process Started" },
+    "process::query": { icon: "🔍", color: cyan, label: "Process Query" },
+
+    // Tick events
+    "tick": { icon: "⏱️", color: gray, label: "Tick Event" },
+
+    // System events
+    "output::change": { icon: "🖥️", color: blue, label: "Output Changed" },
+    "workspace::init": { icon: "🏗️", color: green, label: "Workspace Init" },
+
+    // IPC events
+    "ipc::request": { icon: "📡", color: dim, label: "IPC Request" },
+  };
+
+  return typeMap[eventType] || { icon: "•", color: gray, label: eventType };
+}
+
+/**
+ * Format timestamp in relative or absolute format
+ */
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+
+  // If within last minute, show relative time
+  if (diff < 60000) {
+    const seconds = Math.floor(diff / 1000);
+    return seconds === 0 ? "now" : `${seconds}s ago`;
+  }
+
+  // Otherwise show HH:MM:SS
+  return date.toLocaleTimeString('en-US', { hour12: false });
+}
+
+/**
+ * Format event-specific details
+ */
+function formatEventDetails(event: any, verbose: boolean): string {
+  const details: string[] = [];
+
+  // Project name
+  if (event.project_name) {
+    details.push(`${cyan("project:")} ${event.project_name}`);
+  }
+
+  // Window info
+  if (event.window_class || event.window_title) {
+    const winInfo = event.window_class || event.window_title;
+    details.push(`${blue("window:")} ${winInfo}`);
+  }
+
+  // Process info
+  if (event.process_name) {
+    details.push(`${green("process:")} ${event.process_name}${event.process_pid ? ` (${event.process_pid})` : ""}`);
+  }
+
+  // Query params (for project/layout operations)
+  if (event.query_params) {
+    const params = event.query_params;
+    if (params.name) {
+      details.push(`${magenta("name:")} ${params.name}`);
+    }
+    if (params.active) {
+      details.push(`${magenta("active:")} ${params.active}`);
+    }
+  }
+
+  // Result count
+  if (event.query_result_count !== null && event.query_result_count !== undefined) {
+    details.push(`${dim("results:")} ${event.query_result_count}`);
+  }
+
+  // Project switch details
+  if (event.old_project || event.new_project) {
+    details.push(`${yellow("from:")} ${event.old_project || "none"} ${dim("→")} ${green("to:")} ${event.new_project || "none"}`);
+  }
+
+  // Windows affected (for filtering operations)
+  if (event.windows_affected) {
+    details.push(`${yellow("affected:")} ${event.windows_affected} windows`);
+  }
+
+  // In verbose mode, show all non-null fields
+  if (verbose) {
+    const verboseFields = Object.entries(event)
+      .filter(([key, value]) =>
+        value !== null &&
+        value !== undefined &&
+        !["timestamp", "event_type", "processing_duration_ms", "error", "event_id", "source"].includes(key) &&
+        !details.some(d => d.includes(key))
+      )
+      .map(([key, value]) => `${dim(key + ":")} ${JSON.stringify(value)}`);
+
+    if (verboseFields.length > 0) {
+      details.push(...verboseFields);
+    }
+  }
+
+  return details.join(` ${dim("•")} `);
 }
 
 async function daemonStatus(flags: Record<string, unknown>): Promise<number> {
@@ -80,20 +244,26 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
   const client = new DaemonClient();
   await client.connect();
 
+  const verbose = !!flags.verbose;
+
   // Follow mode: Subscribe to event stream
   if (flags.follow) {
     try {
-      console.error("Subscribing to daemon events... (press Ctrl+C to stop)");
+      // Print header with styling
+      console.error(bold(cyan("\n╔═══════════════════════════════════════════════════════════════╗")));
+      console.error(bold(cyan("║")) + bold("          i3pm Daemon Event Stream (Live)                ") + bold(cyan("║")));
+      console.error(bold(cyan("╚═══════════════════════════════════════════════════════════════╝")));
+      console.error(dim("Press Ctrl+C to stop\n"));
 
       for await (const event of client.subscribeToEvents()) {
         if (flags.json) {
           console.log(JSON.stringify(event));
         } else {
-          console.log(`${event.timestamp} [${event.type}] ${JSON.stringify(event.data)}`);
+          console.log(formatEvent(event, verbose));
         }
       }
     } catch (error) {
-      console.error(`Subscription error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(red(`\n✗ Subscription error: ${error instanceof Error ? error.message : String(error)}`));
       client.disconnect();
       return 1;
     }
@@ -111,11 +281,20 @@ async function daemonEvents(flags: Record<string, unknown>): Promise<number> {
   if (flags.json) {
     console.log(JSON.stringify(events, null, 2));
   } else {
-    console.log(`\nRecent Daemon Events (last ${limit}):\n`);
-    for (const event of events as any[]) {
-      console.log(`${event.timestamp} [${event.type}] ${event.message}`);
+    // Print header
+    const typeFilter = eventType ? ` (type: ${cyan(eventType)})` : "";
+    console.log(bold(cyan("\n╔═══════════════════════════════════════════════════════════════╗")));
+    console.log(bold(cyan("║")) + bold(`     Recent Daemon Events (last ${limit})${typeFilter}`.padEnd(61)) + bold(cyan("║")));
+    console.log(bold(cyan("╚═══════════════════════════════════════════════════════════════╝\n")));
+
+    if ((events as any[]).length === 0) {
+      console.log(dim("  No events found\n"));
+    } else {
+      for (const event of events as any[]) {
+        console.log(formatEvent(event, verbose));
+      }
+      console.log();
     }
-    console.log();
   }
 
   client.disconnect();
