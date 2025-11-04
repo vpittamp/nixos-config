@@ -7,13 +7,57 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
+**Test-Driven Development Approach** (Principle XIV):
+- All tests MUST be written BEFORE implementation
+- Tests MUST execute autonomously without manual intervention
+- State verification via Sway IPC tree queries when UI simulation not needed
+- Test suite MUST be runnable in headless CI/CD environment
+- Follow test-first iteration: spec → tests → implement → run → fix → repeat until passing
+
 ### User Story 1 - Deterministic Window Identification (Priority: P1)
 
 When a user launches any application (regular application or Firefox PWA), the system must reliably identify that window using environment variables injected at launch time, without relying on non-deterministic properties like window class or title.
 
 **Why this priority**: This is the foundational capability that all other features depend on. Without deterministic window identification, project management, workspace assignment, and layout restoration cannot work reliably.
 
-**Independent Test**: Can be fully tested by launching multiple instances of the same application (e.g., 3 VS Code windows, 2 Firefox PWAs) and verifying each window can be uniquely identified by its I3PM_APP_ID environment variable. Delivers reliable window identification independent of window properties.
+**Test Automation Strategy**:
+- **Type**: Integration test (Sway IPC + /proc filesystem)
+- **Approach**: Programmatic application launch + state verification
+- **Tools**: pytest-asyncio, i3ipc.aio (Sway IPC), /proc filesystem access
+- **Execution**: Fully autonomous - no UI simulation needed
+- **Validation**: Query Sway IPC tree for window, read /proc/<pid>/environ, assert I3PM_* variables present
+
+**Automated Test Implementation**:
+```python
+@pytest.mark.asyncio
+async def test_deterministic_window_identification():
+    """Test window identification via I3PM_* environment variables."""
+    # Launch VS Code programmatically with project context
+    proc = await asyncio.create_subprocess_exec(
+        "i3pm", "app", "launch", "vscode",
+        env={**os.environ, "I3PM_PROJECT_NAME": "nixos"}
+    )
+    await asyncio.sleep(0.5)  # Wait for window creation
+
+    # Query Sway IPC for new window
+    async with i3ipc.aio.Connection() as sway:
+        tree = await sway.get_tree()
+        vscode_windows = find_windows_by_class(tree, "Code")
+        assert len(vscode_windows) > 0, "VS Code window not created"
+
+        window = vscode_windows[-1]  # Most recent window
+
+        # Read environment variables from /proc
+        env_vars = read_process_environ(window.pid)
+
+        # Assert I3PM_* variables present
+        assert "I3PM_APP_ID" in env_vars
+        assert env_vars["I3PM_APP_NAME"] == "vscode"
+        assert env_vars["I3PM_PROJECT_NAME"] == "nixos"
+
+        # Assert unique instance ID
+        assert env_vars["I3PM_APP_ID"].startswith("vscode-nixos-")
+```
 
 **Acceptance Scenarios**:
 
@@ -31,7 +75,56 @@ The system must validate that all launched applications (100% coverage) receive 
 
 **Why this priority**: Any gap in environment variable injection breaks the deterministic identification model. This must be verified before relying on environment variables as the primary identification mechanism.
 
-**Independent Test**: Can be tested by launching every registered application type (regular apps and PWAs) and verifying I3PM_* variables are present. Delivers confidence that environment injection is complete.
+**Test Automation Strategy**:
+- **Type**: Integration test (application registry + Sway IPC + /proc)
+- **Approach**: Parametrized tests for all registered applications
+- **Tools**: pytest-asyncio with @pytest.mark.parametrize, app registry parser
+- **Execution**: Fully autonomous - launches apps programmatically, validates coverage
+- **Validation**: Query all windows, check I3PM_* presence, report coverage percentage
+
+**Automated Test Implementation**:
+```python
+@pytest.mark.parametrize("app_name", get_all_registered_apps())
+@pytest.mark.asyncio
+async def test_environment_variable_coverage(app_name):
+    """Test that all registered apps have I3PM_* environment variables."""
+    # Launch application programmatically
+    proc = await asyncio.create_subprocess_exec(
+        "i3pm", "app", "launch", app_name
+    )
+    await asyncio.sleep(0.5)  # Wait for window creation
+
+    # Query Sway for new window
+    async with i3ipc.aio.Connection() as sway:
+        tree = await sway.get_tree()
+        windows = find_windows_by_app_name(tree, app_name)
+
+        assert len(windows) > 0, f"{app_name} window not created"
+        window = windows[-1]
+
+        # Read environment from /proc
+        env_vars = read_process_environ(window.pid)
+
+        # Assert required I3PM_* variables present
+        assert "I3PM_APP_ID" in env_vars, f"{app_name}: Missing I3PM_APP_ID"
+        assert "I3PM_APP_NAME" in env_vars, f"{app_name}: Missing I3PM_APP_NAME"
+        assert "I3PM_SCOPE" in env_vars, f"{app_name}: Missing I3PM_SCOPE"
+
+        # Validate values
+        assert env_vars["I3PM_APP_NAME"] == app_name
+        assert env_vars["I3PM_SCOPE"] in ("global", "scoped")
+
+# Coverage validation test
+@pytest.mark.asyncio
+async def test_overall_coverage_percentage():
+    """Test that 100% of launched windows have I3PM_* variables."""
+    report = await validate_environment_coverage()
+
+    assert report.coverage_percentage == 100.0, \
+        f"Coverage: {report.coverage_percentage}%, expected 100%"
+    assert report.status == "PASS"
+    assert len(report.missing_windows) == 0
+```
 
 **Acceptance Scenarios**:
 
@@ -49,7 +142,68 @@ The system must measure the latency of querying environment variables from /proc
 
 **Why this priority**: If environment variable queries are too slow, they will create lag in window management operations, degrading user experience. Performance validation is essential before replacing existing logic.
 
-**Independent Test**: Can be tested by running a benchmark that queries environment variables for 100 windows and measures average latency. Delivers performance metrics to validate viability.
+**Test Automation Strategy**:
+- **Type**: Performance/benchmark test
+- **Approach**: Measure latency statistics (avg, p50, p95, p99, max) for /proc reads
+- **Tools**: pytest-benchmark or custom timing harness with statistics library
+- **Execution**: Fully autonomous - creates test processes, measures /proc read times
+- **Validation**: Assert p95 latency < 10ms, average < 1ms, handles 100 windows in <100ms
+
+**Automated Test Implementation**:
+```python
+@pytest.mark.benchmark
+@pytest.mark.asyncio
+async def test_environment_query_performance():
+    """Benchmark /proc/<pid>/environ read performance."""
+    import time
+    import statistics
+
+    # Create test processes with known environments
+    test_pids = []
+    for i in range(100):
+        proc = await asyncio.create_subprocess_exec(
+            "sleep", "60",
+            env={**os.environ, f"TEST_VAR_{i}": "value"}
+        )
+        test_pids.append(proc.pid)
+
+    # Benchmark environment reads
+    latencies_ms = []
+    for pid in test_pids:
+        start = time.perf_counter()
+        env_vars = read_process_environ(pid)
+        end = time.perf_counter()
+        latencies_ms.append((end - start) * 1000)  # Convert to ms
+
+    # Calculate statistics
+    avg_latency = statistics.mean(latencies_ms)
+    p50 = statistics.median(latencies_ms)
+    p95 = sorted(latencies_ms)[int(len(latencies_ms) * 0.95)]
+    p99 = sorted(latencies_ms)[int(len(latencies_ms) * 0.99)]
+    max_latency = max(latencies_ms)
+
+    # Assert performance requirements
+    assert avg_latency < 1.0, \
+        f"Average latency {avg_latency:.2f}ms exceeds 1ms target"
+    assert p95 < 10.0, \
+        f"p95 latency {p95:.2f}ms exceeds 10ms target"
+    assert sum(latencies_ms) < 100.0, \
+        f"Total time {sum(latencies_ms):.2f}ms exceeds 100ms for 100 windows"
+
+    # Cleanup test processes
+    for proc in test_pids:
+        os.kill(proc, signal.SIGTERM)
+
+    # Log performance report
+    print(f"\nPerformance Benchmark Results:")
+    print(f"  Samples: {len(latencies_ms)}")
+    print(f"  Average: {avg_latency:.2f}ms")
+    print(f"  p50: {p50:.2f}ms")
+    print(f"  p95: {p95:.2f}ms")
+    print(f"  p99: {p99:.2f}ms")
+    print(f"  Max: {max_latency:.2f}ms")
+    print(f"  Status: PASS")
+```
 
 **Acceptance Scenarios**:
 
@@ -193,3 +347,83 @@ The system should use environment variables to restore window layouts, matching 
 - Support for X11-only systems without Wayland (system is Sway-focused)
 - Performance optimization beyond stated latency targets (10ms average is sufficient)
 - Environment variable encryption or security (I3PM_* variables are not sensitive)
+
+---
+
+## Test Execution Plan *(Principle XIV - Test-Driven Development)*
+
+This feature follows **Principle XIV: Test-Driven Development & Autonomous Testing** from the constitution.
+
+### Test-First Development Workflow
+
+1. **Write Tests BEFORE Implementation**:
+   - Phase 0: Write all automated tests during spec/plan phase
+   - Tests for User Stories 1-3 (P1) must pass before implementing P2 features
+   - Tests serve as executable specification and acceptance criteria
+
+2. **Autonomous Test Execution**:
+   - All tests run without manual user intervention
+   - Test suite executable via `pytest tests/057-env-window-matching/` with zero configuration
+   - Tests create/cleanup resources automatically (launch apps, create processes, query state)
+   - Headless operation compatible with CI/CD environments
+
+3. **State Verification Strategy**:
+   - **Sway IPC tree queries**: Validate window creation, workspace assignment, window properties
+   - **/proc filesystem access**: Validate environment variable injection and parsing
+   - **Application registry parsing**: Validate coverage across all registered applications
+   - **Performance benchmarking**: Measure and assert latency targets
+
+4. **Test Iteration Loop**:
+   ```
+   spec → write tests → implement → run tests → debug/fix → repeat until all tests pass → commit
+   ```
+
+5. **Test Organization**:
+   ```
+   tests/057-env-window-matching/
+   ├── unit/
+   │   ├── test_window_environment_parsing.py    # WindowEnvironment data model
+   │   ├── test_proc_filesystem_reader.py        # /proc read logic
+   │   └── test_validation_rules.py              # Environment variable validation
+   ├── integration/
+   │   ├── test_sway_ipc_integration.py          # Sway IPC + /proc integration
+   │   ├── test_app_launch_coverage.py           # Coverage validation per app
+   │   └── test_parent_traversal.py              # Parent PID traversal
+   ├── performance/
+   │   ├── test_env_query_benchmark.py           # /proc read latency
+   │   ├── test_batch_query_benchmark.py         # Bulk window query latency
+   │   └── test_parent_traversal_benchmark.py    # Parent traversal overhead
+   └── scenarios/
+       ├── test_window_identification_e2e.py     # Full workflow: launch → identify → verify
+       ├── test_coverage_validation_e2e.py       # Full coverage test across registry
+       └── test_project_association_e2e.py       # Project switching with env vars
+   ```
+
+6. **Test Execution Targets**:
+   - **Unit tests**: <1 second total (fast feedback loop)
+   - **Integration tests**: <10 seconds total (Sway IPC + /proc operations)
+   - **Performance tests**: <30 seconds total (100+ samples for statistical confidence)
+   - **End-to-end scenarios**: <60 seconds total (full workflows with cleanup)
+   - **Full test suite**: <2 minutes (acceptable for CI/CD)
+
+7. **Continuous Validation**:
+   - Run full test suite on every commit before push
+   - CI/CD pipeline blocks merge if tests fail
+   - Coverage validation runs on system startup (daemon integration)
+   - Performance benchmarks logged to system journal for regression tracking
+
+### Test Success Criteria
+
+**All tests must pass before feature is considered complete**:
+- ✅ 100% of registered applications pass coverage validation
+- ✅ Performance benchmarks meet all latency targets (p95 < 10ms)
+- ✅ Parent traversal handles edge cases without errors
+- ✅ No regressions in existing window management tests
+- ✅ Code removal (legacy matching logic) verified via negative tests
+
+**Test-Driven Benefits**:
+- Executable specification ensures implementation matches requirements
+- Autonomous tests enable rapid iteration without manual validation
+- Performance validation prevents latency regressions
+- Coverage validation ensures 100% environment injection reliability
+- State verification via Sway IPC provides ground truth for correctness

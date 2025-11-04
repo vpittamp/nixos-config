@@ -1,10 +1,31 @@
 { lib, ... }:
 
 # Feature 034/035: Application Registry Data
+# Feature 057: Environment Variable-Based Window Matching
 #
 # This file contains the validated application definitions that can be imported
 # by multiple modules (app-registry.nix for generating files, i3-window-rules.nix
 # for generating window rules, etc.)
+#
+# IMPORTANT - Feature 057 Changes:
+#
+# 1. `expected_class` field:
+#    - Used for VALIDATION ONLY (not for window matching)
+#    - Window matching uses I3PM_APP_NAME from environment variables
+#    - expected_class helps debug mismatches between env vars and actual window class
+#    - Example: expected_class="FFPWA-01JCYF8Z2M" validates PWA window class
+#
+# 2. `aliases` field (if present):
+#    - Used for LAUNCHER SEARCH ONLY (not for window matching)
+#    - Allows users to find apps by alternative names in rofi/walker
+#    - Window identification never uses aliases (uses I3PM_APP_NAME directly)
+#    - Example: aliases=["code", "vsc"] allows launching VS Code via "code" or "vsc"
+#
+# 3. Window Matching Flow (Feature 057):
+#    - Application launched → wrapper injects I3PM_APP_NAME, I3PM_APP_ID, etc.
+#    - Window appears → daemon reads /proc/<pid>/environ
+#    - Match uses I3PM_APP_NAME (not window class or aliases)
+#    - Result: 15-27x faster, 100% deterministic, zero race conditions
 
 let
   # Import centralized PWA site definitions (Feature 056)

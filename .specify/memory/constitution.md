@@ -1,31 +1,31 @@
 <!--
 Sync Impact Report:
-- Version: 1.4.0 → 1.5.0 (MINOR - New principle added for Deno CLI development standards)
+- Version: 1.5.0 → 1.6.0 (MINOR - New principle added for Test-Driven Development & Autonomous Testing)
 - Modified principles:
   * None - existing principles remain unchanged
 - New principles created:
-  * Principle XIII: "Deno CLI Development Standards" (NEW)
-    - Mandates Deno runtime (1.40+) for all new CLI tool development
-    - Requires heavy reliance on Deno standard library modules
-    - Specifies @std/cli/parse-args for command-line argument parsing (minimist-style API)
-    - Mandates TypeScript with strict type safety for all Deno code
-    - Requires compilation to standalone executables for distribution
-    - Establishes Deno as replacement for Python in CLI contexts
+  * Principle XIV: "Test-Driven Development & Autonomous Testing" (NEW)
+    - Mandates test-first development approach for all new features
+    - Requires comprehensive test pyramid (unit, integration, end-to-end, user flow)
+    - Specifies automated user flow testing via MCP tools (Playwright, Chrome DevTools) and Wayland input simulation
+    - Requires state verification via Sway IPC tree queries when UI simulation not possible
+    - Mandates autonomous test execution and iteration without user intervention
+    - Establishes test-driven iteration: spec → plan → tasks → implementation → tests → fix → repeat until passing
 - New sections added:
   * None - principle added to existing Core Principles section
 - Updated sections:
   * None - existing sections remain compatible
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - Already technology-agnostic, compatible with Deno specs
-  ✅ .specify/templates/plan-template.md - Already supports language-specific implementation planning
-  ✅ .specify/templates/tasks-template.md - Already accommodates varied tech stacks
-  ⚠️ .specify/templates/commands/ - May benefit from Deno CLI creation examples
+  ✅ .specify/templates/spec-template.md - Already includes test scenarios in user stories
+  ✅ .specify/templates/plan-template.md - Already includes testing framework selection
+  ✅ .specify/templates/tasks-template.md - Compatible with test-driven task ordering
+  ⚠️ .specify/templates/commands/ - May benefit from test execution workflow examples
 - Follow-up TODOs:
-  * Begin TypeScript/Deno CLI rewrite (Feature 026) using Deno std library extensively
-  * Create Deno CLI project structure template in home-modules/tools/
-  * Document Deno compilation and NixOS packaging patterns
-  * Evaluate replacing other Python CLI tools with Deno implementations
-  * Add Deno CLI examples to CLAUDE.md
+  * Document Wayland input simulation tools (ydotool, wtype, or wl-clipboard for testing)
+  * Create MCP server integration examples for Playwright browser automation
+  * Add example test workflows using Sway IPC state verification
+  * Update CLAUDE.md with test-driven development workflow guidance
+  * Create test template files for common testing patterns (unit, integration, e2e, user flow)
 -->
 
 # NixOS Modular Configuration Constitution
@@ -448,6 +448,215 @@ deno compile --allow-net --allow-read --output=i3pm main.ts
 
 **Rationale**: Feature 026 (TypeScript/Deno CLI Rewrite) establishes Deno as the modern standard for CLI tool development. Deno's built-in TypeScript support eliminates build complexity, the extensive standard library reduces third-party dependencies, and compiled executables remove runtime installation requirements. The `parseArgs()` function from `@std/cli/parse-args` provides a mature, well-documented API for command-line parsing that rivals popular Node.js libraries. Deno's security model (explicit permissions) and fast startup time make it ideal for CLI tools that need to execute quickly and reliably. This principle positions Deno as the replacement for Python in CLI contexts while preserving Python's strengths in daemon/event-driven architectures.
 
+### XIV. Test-Driven Development & Autonomous Testing
+
+All feature development MUST follow test-driven development principles with comprehensive automated testing across the test pyramid, including autonomous user flow testing via UI automation and system state verification.
+
+**Rules**:
+- Feature development MUST follow test-first approach: write tests before implementation
+- Test pyramid MUST be comprehensive: unit tests (70%), integration tests (20%), end-to-end tests (10%)
+- User flow tests MUST simulate real user interactions whenever technically feasible
+- Browser-based features MUST use MCP server tools (Playwright, Chrome DevTools) for automated UI testing
+- Wayland/Sway UI interactions MUST be tested programmatically via input simulation tools (ydotool, wtype, wl-clipboard)
+- When UI simulation is not feasible, state verification MUST be performed via Sway IPC tree queries and daemon state inspection
+- Test execution MUST be autonomous - no manual user intervention except when technically impossible
+- Test failures MUST trigger iterative refinement: spec → plan → tasks → implementation → tests → fix → repeat until all tests pass
+- Test suites MUST be executable in headless CI/CD environments without human interaction
+- Test results MUST provide actionable failure messages with expected vs actual state diffs
+
+**Test Pyramid Layers**:
+
+1. **Unit Tests (70% of test suite)**:
+   - Test individual functions, classes, and modules in isolation
+   - Use mocks/stubs for external dependencies
+   - Fast execution (<1ms per test)
+   - Examples: Data model validation, utility functions, parsers
+
+2. **Integration Tests (20% of test suite)**:
+   - Test component interactions (daemon ↔ IPC, API ↔ database)
+   - Use real dependencies where feasible, mocks for external services
+   - Medium execution speed (<100ms per test)
+   - Examples: Daemon IPC communication, file system operations, subprocess interactions
+
+3. **End-to-End Tests (10% of test suite)**:
+   - Test complete user workflows from start to finish
+   - Use production-like environment (real Sway session, real applications)
+   - Slower execution (<5s per test)
+   - Examples: Project switch workflow, window management lifecycle, PWA launch and workspace assignment
+
+**User Flow Testing Strategies**:
+
+**Browser Automation (MCP Playwright/Chrome DevTools)**:
+```python
+# Example: Test PWA launch and workspace assignment
+async def test_pwa_launch_workspace_assignment():
+    """Test that Claude PWA launches on correct workspace."""
+    # Via MCP Playwright server
+    page = await browser.new_page()
+    await page.goto("https://claude.ai")
+
+    # Verify workspace via Sway IPC
+    async with i3ipc.aio.Connection() as sway:
+        tree = await sway.get_tree()
+        claude_window = find_window_by_class(tree, "FFPWA-01JCYF8Z2")
+
+        assert claude_window.workspace().num == 52, \
+            f"Claude PWA on workspace {claude_window.workspace().num}, expected 52"
+```
+
+**Wayland Input Simulation (ydotool/wtype)**:
+```python
+# Example: Test workspace mode navigation via keyboard
+async def test_workspace_mode_navigation():
+    """Test keyboard-driven workspace navigation."""
+    # Simulate CapsLock + digits + Enter
+    subprocess.run(["ydotool", "key", "58:1", "58:0"])  # CapsLock press+release
+    subprocess.run(["ydotool", "key", "3:1", "3:0"])    # Digit 2
+    subprocess.run(["ydotool", "key", "4:1", "4:0"])    # Digit 3
+    subprocess.run(["ydotool", "key", "28:1", "28:0"])  # Enter
+
+    # Verify focused workspace via Sway IPC
+    await asyncio.sleep(0.2)  # Allow navigation to complete
+    async with i3ipc.aio.Connection() as sway:
+        workspaces = await sway.get_workspaces()
+        focused = next(ws for ws in workspaces if ws.focused)
+
+        assert focused.num == 23, \
+            f"Focused workspace is {focused.num}, expected 23"
+```
+
+**Sway IPC State Verification** (when UI simulation not possible):
+```python
+# Example: Verify window environment variable injection
+async def test_environment_variable_injection():
+    """Test that launched applications have I3PM_* environment variables."""
+    # Launch application programmatically (not via UI)
+    proc = await asyncio.create_subprocess_exec(
+        "i3pm", "app", "launch", "vscode",
+        env={**os.environ, "I3PM_PROJECT_NAME": "nixos"}
+    )
+    await proc.wait()
+
+    # Query Sway for new window
+    await asyncio.sleep(0.5)  # Allow window creation
+    async with i3ipc.aio.Connection() as sway:
+        tree = await sway.get_tree()
+        vscode_windows = find_windows_by_class(tree, "Code")
+
+        assert len(vscode_windows) > 0, "VS Code window not found"
+        window = vscode_windows[-1]  # Get most recent
+
+        # Read environment variables from /proc
+        env_vars = read_process_environ(window.pid)
+
+        assert "I3PM_APP_ID" in env_vars, "Missing I3PM_APP_ID"
+        assert env_vars["I3PM_APP_NAME"] == "vscode"
+        assert env_vars["I3PM_PROJECT_NAME"] == "nixos"
+```
+
+**Autonomous Test Execution Requirements**:
+- Test suites MUST run without prompting for user input
+- Test setup MUST automatically prepare test environment (launch Sway session, start daemon, seed data)
+- Test teardown MUST clean up resources (close windows, stop processes, remove temp files)
+- Test failures MUST provide reproducible steps and diagnostic data
+- Tests MUST be idempotent - safe to run multiple times without side effects
+- Tests MUST handle timing issues with explicit waits/retries, not arbitrary sleep()
+
+**Test-Driven Iteration Workflow**:
+1. **Write specification** (spec.md) - Define user stories with acceptance criteria
+2. **Write tests** (before implementation) - Convert acceptance criteria to executable tests
+3. **Run tests** (expect failures) - All tests should fail initially
+4. **Implement feature** - Write minimal code to make tests pass
+5. **Run tests** (iterate until passing) - Fix code until all tests pass
+6. **Refactor** (with test safety net) - Improve code quality while maintaining passing tests
+7. **Commit** (only when tests pass) - Never commit failing tests to main branch
+
+**Test Framework Requirements**:
+
+**Python (pytest)**:
+```python
+# tests/test_window_environment.py
+import pytest
+from i3pm.services.window_environment import WindowEnvironment
+
+@pytest.mark.asyncio
+async def test_window_environment_parsing():
+    """Unit test: Parse I3PM_* environment variables."""
+    env_dict = {
+        "I3PM_APP_ID": "test-app-project-123-456",
+        "I3PM_APP_NAME": "test-app",
+        "I3PM_SCOPE": "scoped",
+        "I3PM_PROJECT_NAME": "project",
+    }
+
+    window_env = WindowEnvironment.from_env_dict(env_dict)
+
+    assert window_env.app_id == "test-app-project-123-456"
+    assert window_env.app_name == "test-app"
+    assert window_env.is_scoped is True
+```
+
+**Deno (Deno.test)**:
+```typescript
+// tests/window_matcher_test.ts
+import { assertEquals } from "@std/assert";
+import { matchWindow } from "../src/window_matcher.ts";
+
+Deno.test("matchWindow: matches by I3PM_APP_NAME", async () => {
+  const window = {
+    pid: 12345,
+    environment: {
+      I3PM_APP_NAME: "vscode",
+      I3PM_APP_ID: "vscode-nixos-123-456",
+    },
+  };
+
+  const result = await matchWindow(window, "vscode");
+
+  assertEquals(result.matched, true);
+  assertEquals(result.matchType, "environment");
+});
+```
+
+**Wayland Input Simulation Tools**:
+- **ydotool**: Low-level input injection (keyboard, mouse) - works on Wayland
+- **wtype**: Wayland-native text input tool (simpler alternative to ydotool for text)
+- **wl-clipboard**: Clipboard operations (wl-copy, wl-paste) for clipboard testing
+- **swaymsg**: Sway IPC commands for window/workspace manipulation
+
+**MCP Server Integration**:
+- **Playwright MCP**: Browser automation via MCP server (if available)
+- **Chrome DevTools MCP**: Chrome/Chromium browser control (if available)
+- Fallback: Direct Playwright/Puppeteer library usage if MCP servers not available
+
+**State Verification via Sway IPC**:
+```python
+# Verify window properties after action
+async with i3ipc.aio.Connection() as sway:
+    tree = await sway.get_tree()
+
+    # Check window exists
+    windows = find_windows_by_criteria(tree, class_name="Code")
+    assert len(windows) > 0, "Expected VS Code window not found"
+
+    # Check workspace assignment
+    window = windows[0]
+    assert window.workspace().num == 2, \
+        f"Window on workspace {window.workspace().num}, expected 2"
+
+    # Check window marks
+    assert "project:nixos" in window.marks, \
+        f"Window marks: {window.marks}, expected 'project:nixos'"
+```
+
+**Test Execution Patterns**:
+- Tests MUST be executable via `pytest tests/` or `deno test` with zero configuration
+- CI/CD integration MUST run full test suite on every commit
+- Test duration MUST be reasonable (<2 minutes for full suite)
+- Flaky tests MUST be fixed or disabled (never tolerate intermittent failures)
+
+**Rationale**: Test-driven development ensures features work correctly before deployment, reduces debugging time, and provides confidence during refactoring. Autonomous testing via UI automation (Playwright, ydotool) and state verification (Sway IPC) enables comprehensive validation without manual intervention. This approach scales to CI/CD environments and ensures consistent quality. The test-driven iteration loop (spec → plan → test → implement → fix → repeat) produces robust, well-tested code that meets requirements. MCP server integration (when available) provides standardized browser automation, while Wayland input simulation tools enable desktop UI testing. State verification via Sway IPC provides fallback validation when UI simulation is not feasible.
+
 ## Platform Support Standards
 
 ### Multi-Platform Compatibility
@@ -582,7 +791,7 @@ Python-based system tooling MUST include comprehensive automated tests for funct
 - All Python modules MUST have pytest-based unit tests for data models and business logic
 - Integration tests MUST validate daemon communication, i3 IPC interaction, and state synchronization
 - Test scenarios MUST simulate real user workflows (project lifecycle, window management, monitor configuration)
-- Tests MUST support headless operation for CI/CD integration
+- Tests MUST support headless operation for CI/CD environments
 - Mock implementations MUST be provided for external dependencies (daemon, i3 IPC socket)
 - Test reports MUST be output in machine-readable format (JSON) for CI/CD parsing
 - Automated test suites MUST execute in under 10 seconds for complete workflow validation
@@ -730,6 +939,7 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ Python standards - async patterns, pytest testing, type hints, Rich UI
 - ✅ i3 IPC alignment - state queries via native IPC, event-driven architecture
 - ✅ Forward-only development - optimal solutions without legacy compatibility preservation
+- ✅ Test-driven development - tests written before implementation, autonomous test execution
 
 ### Complexity Justification
 
@@ -738,4 +948,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.5.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-10-22
+**Version**: 1.6.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-11-03

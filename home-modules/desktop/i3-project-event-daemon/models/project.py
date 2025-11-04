@@ -25,10 +25,14 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    @field_validator('directory')
+    @field_validator('directory', mode='before')
     @classmethod
-    def validate_directory(cls, v: str) -> str:
-        """Ensure directory exists and is absolute path."""
+    def validate_directory(cls, v) -> str:
+        """Ensure directory exists and is absolute path. Handles PosixPath for backward compatibility."""
+        # Convert PosixPath to string (backward compatibility with old dataclass serialization)
+        if isinstance(v, Path):
+            v = str(v)
+
         path = Path(v).expanduser()
 
         if not path.is_absolute():
@@ -92,7 +96,7 @@ class Project(BaseModel):
 class ActiveProjectState(BaseModel):
     """Singleton state for active project."""
 
-    name: Optional[str] = Field(default=None, description="Active project name (null = global)")
+    project_name: Optional[str] = Field(default=None, description="Active project name (null = global)")
 
     @classmethod
     def load(cls, config_dir: Path) -> "ActiveProjectState":
@@ -100,7 +104,7 @@ class ActiveProjectState(BaseModel):
         state_file = config_dir / "active-project.json"
 
         if not state_file.exists():
-            return cls(name=None)
+            return cls(project_name=None)
 
         with open(state_file) as f:
             data = json.load(f)
@@ -117,8 +121,8 @@ class ActiveProjectState(BaseModel):
 
     def is_active(self, project_name: str) -> bool:
         """Check if given project is active."""
-        return self.name == project_name
+        return self.project_name == project_name
 
     def is_global_mode(self) -> bool:
         """Check if in global mode (no active project)."""
-        return self.name is None
+        return self.project_name is None
