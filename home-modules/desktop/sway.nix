@@ -400,11 +400,14 @@ in
         # D-Bus activation environment
         { command = "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all"; }
 
-        # Import DISPLAY for systemd services
-        { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY"; }
+        # Import Wayland/Sway environment for systemd services and shells
+        # SWAYSOCK is needed for swaymsg commands in terminals
+        { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
-        # i3pm daemon (systemd service)
-        { command = "systemctl --user start i3-project-event-listener"; }
+        # i3pm daemon (socket-activated system service)
+        # Trigger socket activation early to ensure daemon connects to Sway while it's ready
+        # The daemon will start on first IPC request via socket activation
+        { command = "timeout 5 i3pm daemon status || true"; }
 
         # Monitor workspace distribution (wait for daemon)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
@@ -605,16 +608,22 @@ in
       ${if isHeadless then ''
         # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
         # Sway will automatically send mode events to daemon when entering these modes
-        # Launch wshowkeys for visual feedback on mode entry
-        bindsym Control+0 exec "wshowkeys -a bottom -t 1"; mode "→ WS"
-        bindsym Control+Shift+0 exec "wshowkeys -a bottom -t 1"; mode "⇒ WS"
+        # Launch wshowkeys with Catppuccin Mocha blue accent (#89b4fa)
+        # - Position: bottom center with 40px margin
+        # - Font: monospace 28pt for readability
+        # - Timeout: 60s (effectively persists until manual exit via pkill)
+        bindsym Control+0 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "→ WS"
+        bindsym Control+Shift+0 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "⇒ WS"
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
-        # Launch wshowkeys for visual feedback on mode entry
-        bindcode --release 66 exec "wshowkeys -a bottom -t 1"; mode "→ WS"
-        bindcode --release Shift+66 exec "wshowkeys -a bottom -t 1"; mode "⇒ WS"
+        # Launch wshowkeys with Catppuccin Mocha blue accent (#89b4fa)
+        # - Position: bottom center with 40px margin
+        # - Font: monospace 28pt for readability on Retina display
+        # - Timeout: 60s (effectively persists until manual exit via pkill)
+        bindcode --release 66 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "→ WS"
+        bindcode --release Shift+66 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "⇒ WS"
       ''}
     '';
   };
