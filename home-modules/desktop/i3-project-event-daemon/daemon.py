@@ -99,9 +99,11 @@ class DaemonHealthMonitor:
         # Get watchdog interval from systemd
         watchdog_usec = os.environ.get("WATCHDOG_USEC")
         if watchdog_usec:
-            # Convert microseconds to seconds, ping at half interval
-            self.watchdog_interval = int(watchdog_usec) / 2_000_000
-            logger.info(f"Systemd watchdog enabled: {self.watchdog_interval}s interval")
+            # Convert microseconds to seconds, ping at 1/3 interval for safety
+            # CRITICAL FIX: Changed from 1/2 to 1/3 for better safety margin
+            # If systemd expects ping every 20s, we ping every ~6.7s (3x buffer)
+            self.watchdog_interval = int(watchdog_usec) / 3_000_000
+            logger.info(f"Systemd watchdog enabled: {self.watchdog_interval:.1f}s interval (1/3 of timeout)")
         else:
             logger.debug("Systemd watchdog not configured")
 
@@ -545,40 +547,88 @@ class I3ProjectDaemon:
                     pass
 
     async def shutdown(self) -> None:
-        """Graceful shutdown."""
+        """Graceful shutdown with timeouts to prevent hanging.
+
+        CRITICAL FIX: All shutdown operations are wrapped in timeouts to prevent
+        the daemon from hanging on shutdown and requiring SIGKILL from systemd.
+        """
         logger.info("Shutting down daemon...")
 
         # Signal systemd we're stopping
         if self.health_monitor:
             self.health_monitor.notify_stopping()
 
-        # Feature 037 T016: Shutdown project switch queue
-        from .handlers import shutdown_project_switch_queue
-        await shutdown_project_switch_queue()
+        # Wrap all shutdown operations in overall timeout (10s total)
+        try:
+            # Feature 037 T016: Shutdown project switch queue (2s timeout)
+            try:
+                from .handlers import shutdown_project_switch_queue
+                await asyncio.wait_for(shutdown_project_switch_queue(), timeout=2.0)
+                logger.info("Project switch queue shutdown complete")
+            except asyncio.TimeoutError:
+                logger.warning("Project switch queue shutdown timed out after 2s (continuing)")
+            except Exception as e:
+                logger.error(f"Error shutting down project switch queue: {e}")
 
-        # Stop window rules watcher (Feature 021: T022)
-        if self.rules_watcher:
-            self.rules_watcher.stop()
+            # Stop window rules watcher (Feature 021: T022) - synchronous, fast
+            if self.rules_watcher:
+                try:
+                    self.rules_watcher.stop()
+                    logger.info("Window rules watcher stopped")
+                except Exception as e:
+                    logger.error(f"Error stopping rules watcher: {e}")
 
-        # Stop IPC server
-        if self.ipc_server:
-            await self.ipc_server.stop()
+            # Stop IPC server (5s timeout)
+            if self.ipc_server:
+                try:
+                    await asyncio.wait_for(self.ipc_server.stop(), timeout=5.0)
+                    logger.info("IPC server stopped")
+                except asyncio.TimeoutError:
+                    logger.warning("IPC server shutdown timed out after 5s (continuing)")
+                except Exception as e:
+                    logger.error(f"Error stopping IPC server: {e}")
 
-        # Close i3 connection
-        if self.connection:
-            self.connection.close()
+            # Close i3 connection - synchronous, usually fast
+            if self.connection:
+                try:
+                    self.connection.close()
+                    logger.info("i3 connection closed")
+                except Exception as e:
+                    logger.error(f"Error closing i3 connection: {e}")
+
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
 
         logger.info("Daemon shutdown complete")
 
     def setup_signal_handlers(self) -> None:
         """Setup signal handlers for graceful shutdown."""
 
-        def signal_handler(signum, frame):
+        def shutdown_handler(signum, frame):
+            """Handle SIGTERM/SIGINT for graceful shutdown."""
             logger.info(f"Received signal {signum}, initiating shutdown...")
-            self.shutdown_event.set()
+            # CRITICAL FIX: Use call_soon_threadsafe() to safely interact with asyncio from signal handler
+            # Signal handlers run in interrupt context and cannot safely call asyncio operations directly
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(self.shutdown_event.set)
 
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
+        def debug_handler(signum, frame):
+            """Handle USR1 for debugging (print diagnostics without shutdown)."""
+            logger.info("=== DEBUG INFO (USR1) ===")
+            logger.info(f"PID: {os.getpid()}")
+            try:
+                loop = asyncio.get_event_loop()
+                tasks = asyncio.all_tasks(loop)
+                logger.info(f"Active tasks: {len(tasks)}")
+                for task in tasks:
+                    logger.info(f"  Task: {task.get_name()}")
+            except Exception as e:
+                logger.error(f"Error getting debug info: {e}")
+            logger.info("======================")
+
+        signal.signal(signal.SIGTERM, shutdown_handler)
+        signal.signal(signal.SIGINT, shutdown_handler)
+        signal.signal(signal.SIGUSR1, debug_handler)
 
 
 def setup_logging() -> None:

@@ -137,6 +137,13 @@ class StatusGenerator:
         except Exception as e:
             logger.error(f"Failed to get temperature block: {e}")
 
+        # Daemon Health Indicator (i3pm daemon responsiveness)
+        try:
+            daemon_block = system.create_daemon_health_block(self.config)
+            blocks.append(daemon_block)
+        except Exception as e:
+            logger.error(f"Failed to get daemon health block: {e}")
+
         # Volume block (enhanced feature)
         try:
             vol_state = volume.get_volume_state()

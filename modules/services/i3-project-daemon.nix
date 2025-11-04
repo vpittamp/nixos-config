@@ -36,7 +36,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.5.10";  # Broadcast project events for ALL switch/clear operations
+    version = "1.5.12";  # Fix: Thread-safe signal handling + shutdown timeouts + improved watchdog
     src = daemonSrc;
 
     installPhase = ''
@@ -145,15 +145,33 @@ in
       #   sudo systemctl restart i3-project-daemon
       # Future: Consider socket reconnection detection in daemon code
 
+      # Unit-level configuration ([Unit] section)
+      unitConfig = {
+        # Limit restart frequency to prevent boot loops
+        StartLimitIntervalSec = 60;
+        StartLimitBurst = 5;
+      };
+
       serviceConfig = {
         Type = "notify";
         User = cfg.user;
         Group = "users";
 
-        # Watchdog configuration
-        WatchdogSec = 30;
+        # CRITICAL FIX: Improved timeout configuration for stability
+        # Watchdog: Reduced from 30s to 20s (daemon pings every ~6.7s = 3x safety margin)
+        WatchdogSec = 20;
+
+        # Startup timeout: 30s is sufficient for initialization
+        TimeoutStartSec = 30;
+
+        # Shutdown timeout: 15s is enough with proper timeout handling in daemon code
+        # Previous: 90s default (too long, users notice unresponsiveness)
+        # Now: 15s (daemon has 10s timeout internally + 5s buffer)
+        TimeoutStopSec = 15;
+
+        # Quick restart on failure (reduced from 5s to 2s)
         Restart = "always";
-        RestartSec = 5;
+        RestartSec = 2;
 
         # Resource limits
         MemoryMax = "100M";

@@ -267,6 +267,17 @@
         . "/etc/profiles/per-user/$USER/etc/profile.d/hm-session-vars.sh"
       fi
 
+      # CRITICAL: Set SWAYSOCK for Sway/swaymsg commands
+      # This allows swaymsg to work from any terminal without explicit SWAYSOCK export
+      # Auto-detect the Sway IPC socket in the user's runtime directory
+      if [ -z "$SWAYSOCK" ]; then
+        SWAY_SOCK=$(find /run/user/$(id -u) -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | head -n1)
+        if [ -n "$SWAY_SOCK" ]; then
+          export SWAYSOCK="$SWAY_SOCK"
+          export I3SOCK="$SWAY_SOCK"  # Compatibility for i3ipc library
+        fi
+      fi
+
       # FZF widget options with built-in walker
       # These override the defaults for Ctrl+P, Alt+C, and Ctrl+R
       # Using centered popup format (90%,80%) matching clipboard history style

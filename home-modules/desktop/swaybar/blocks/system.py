@@ -1,7 +1,9 @@
-"""System monitoring status blocks (load, memory, disk, temperature, date/time)."""
+"""System monitoring status blocks (load, memory, disk, temperature, daemon health, date/time)."""
 
 import subprocess
 import logging
+import socket
+import json
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
@@ -212,10 +214,10 @@ def create_load_block(config: Config) -> Optional[StatusBlock]:
 
     return StatusBlock(
         name="load",
-        full_text=f"  LOAD {load:.2f}",
+        full_text=f" {load:.1f}",
         color="#89b4fa",  # Blue
         separator=False,
-        separator_block_width=15
+        separator_block_width=10
     )
 
 
@@ -229,10 +231,10 @@ def create_memory_block(config: Config) -> Optional[StatusBlock]:
 
     return StatusBlock(
         name="memory",
-        full_text=f"  {used_gb:.1f}/{total_gb:.1f}GB ({percent}%)",
+        full_text=f" {used_gb:.1f}G/{percent}%",
         color="#74c7ec",  # Sapphire
         separator=False,
-        separator_block_width=15
+        separator_block_width=10
     )
 
 
@@ -246,10 +248,10 @@ def create_disk_block(config: Config) -> Optional[StatusBlock]:
 
     return StatusBlock(
         name="disk",
-        full_text=f"  {used}/{total} ({percent}%)",
+        full_text=f" {used}/{percent}%",
         color="#89dceb",  # Sky
         separator=False,
-        separator_block_width=15
+        separator_block_width=10
     )
 
 
@@ -263,10 +265,10 @@ def create_network_traffic_block(config: Config) -> Optional[StatusBlock]:
 
     return StatusBlock(
         name="network_traffic",
-        full_text=f"  ↓{rx_mb:.1f}MB ↑{tx_mb:.1f}MB",
+        full_text=f" ↓{rx_mb:.0f}M ↑{tx_mb:.0f}M",
         color="#94e2d5",  # Teal
         separator=False,
-        separator_block_width=15
+        separator_block_width=10
     )
 
 
@@ -278,11 +280,107 @@ def create_temperature_block(config: Config) -> Optional[StatusBlock]:
 
     return StatusBlock(
         name="temperature",
-        full_text=f"  {temp}°C",
+        full_text=f" {temp}°",
         color="#fab387",  # Peach
         separator=False,
-        separator_block_width=15
+        separator_block_width=10
     )
+
+
+def check_daemon_health() -> Optional[tuple]:
+    """Check i3pm daemon health via IPC ping.
+
+    Returns:
+        Tuple of (is_healthy, response_time_ms) or None on error
+    """
+    socket_path = "/run/i3-project-daemon/ipc.sock"
+
+    try:
+        # Create ping request
+        request = {
+            "jsonrpc": "2.0",
+            "method": "get_active_project",
+            "params": {},
+            "id": 1
+        }
+
+        # Connect to Unix socket with 1s timeout
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(1.0)
+
+        import time
+        start_time = time.time()
+
+        sock.connect(socket_path)
+        sock.sendall((json.dumps(request) + "\n").encode())
+
+        # Read response
+        response = sock.recv(4096).decode()
+
+        response_time_ms = (time.time() - start_time) * 1000
+        sock.close()
+
+        # Parse response
+        data = json.loads(response)
+
+        # Check if valid response
+        if "result" in data or "error" in data:
+            is_healthy = True
+            return (is_healthy, response_time_ms)
+        else:
+            return (False, response_time_ms)
+
+    except (socket.timeout, socket.error, ConnectionRefusedError):
+        # Daemon not responding or not running
+        return (False, None)
+    except Exception as e:
+        logger.error(f"Daemon health check failed: {e}")
+        return (False, None)
+
+
+def create_daemon_health_block(config: Config) -> StatusBlock:
+    """Create i3pm daemon health indicator block."""
+    health_info = check_daemon_health()
+
+    if health_info is None or not health_info[0]:
+        # Daemon unhealthy or not responding
+        return StatusBlock(
+            name="daemon_health",
+            full_text=" ❌",
+            color="#f38ba8",  # Red
+            separator=False,
+            separator_block_width=10
+        )
+
+    is_healthy, response_time = health_info
+
+    if response_time and response_time < 100:
+        # Fast response (<100ms) - green
+        return StatusBlock(
+            name="daemon_health",
+            full_text=" ✓",
+            color="#a6e3a1",  # Green
+            separator=False,
+            separator_block_width=10
+        )
+    elif response_time and response_time < 500:
+        # Slow response (100-500ms) - yellow warning
+        return StatusBlock(
+            name="daemon_health",
+            full_text=" ⚠",
+            color="#f9e2af",  # Yellow
+            separator=False,
+            separator_block_width=10
+        )
+    else:
+        # Very slow response (>500ms) - orange warning
+        return StatusBlock(
+            name="daemon_health",
+            full_text=" ⚠",
+            color="#fab387",  # Orange
+            separator=False,
+            separator_block_width=10
+        )
 
 
 def create_datetime_block(config: Config) -> StatusBlock:
