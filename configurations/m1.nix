@@ -88,6 +88,15 @@
     voskModelPackage = pkgs.callPackage ../pkgs/vosk-model-en-us-0.22-lgraph.nix { };
   };
 
+  # wshowkeys setuid wrapper for workspace mode visual feedback (Feature 042)
+  # Provides on-screen overlay showing keypresses when navigating workspaces
+  security.wrappers.wshowkeys = {
+    owner = "root";
+    group = "input";
+    setuid = true;
+    source = "${pkgs.wshowkeys}/bin/wshowkeys";
+  };
+
   # Swap configuration - 8GB swap file for memory pressure relief
   swapDevices = [
     {
@@ -282,8 +291,8 @@
   # Fallback password for initial setup before 1Password is configured
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
-  # Add user to required groups for Wayland/Sway (video for DRM access, seat for seatd)
-  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" ];
+  # Add user to required groups for Wayland/Sway (video for DRM access, seat for seatd, input for wshowkeys)
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" ];
 
   # Bluetooth support
   hardware.bluetooth = {

@@ -44,10 +44,14 @@ def calculate_confidence(
     signals: Dict[str, any] = {}
 
     # Signal 1: Application class match (REQUIRED)
-    if window.window_class == launch.expected_class:
+    # Case-insensitive comparison (Fix: code vs Code mismatch)
+    window_class_lower = (window.window_class or "").lower()
+    expected_class_lower = (launch.expected_class or "").lower()
+
+    if window_class_lower == expected_class_lower:
         confidence = 0.5  # Baseline for class match
         signals["class_match"] = True
-        logger.debug(f"Class match: {window.window_class} == {launch.expected_class}")
+        logger.debug(f"Class match: {window.window_class} == {launch.expected_class} (case-insensitive)")
     else:
         # No match possible without class alignment
         signals["class_match"] = False

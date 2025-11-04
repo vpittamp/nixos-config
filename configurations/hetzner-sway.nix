@@ -240,8 +240,8 @@
   # wshowkeys setuid wrapper for workspace mode visual feedback
   security.wrappers.wshowkeys = {
     owner = "root";
-    group = "root";
-    capabilities = "cap_sys_admin+ep";
+    group = "input";
+    setuid = true;
     source = "${pkgs.wshowkeys}/bin/wshowkeys";
   };
 
