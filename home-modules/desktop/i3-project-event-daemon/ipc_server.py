@@ -2913,14 +2913,43 @@ class IPCServer:
             window_ids_to_hide = []
 
             async def collect_project_windows(con):
-                if con.window and hasattr(con, 'window_id'):
-                    # Read I3PM_PROJECT_NAME from /proc
-                    i3pm_env = await window_filtering.get_window_i3pm_env(con.id, con.pid, con.window)
-                    window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
-                    scope = i3pm_env.get("I3PM_SCOPE", "global")
+                # Feature 046: Check for windows using container ID (works for both X11 and Wayland)
+                # For Wayland: con.window is None, but con.id exists
+                # For X11: both con.window and con.id exist
+                if hasattr(con, 'id') and (con.window is not None or (hasattr(con, 'app_id') and con.app_id)):
+                    # Feature 058: Use window marks instead of /proc for project detection
+                    # Marks are mutable and updated by intent-first architecture, while
+                    # /proc environment is immutable and frozen at process launch.
+                    # This fixes filtering for shared-PID apps (VS Code, Chrome, Electron).
+                    window_project = None
+                    is_scoped = False
+
+                    # DEBUG: Log all windows with marks
+                    if con.marks:
+                        logger.debug(
+                            f"Scanning window {con.id} for hiding: "
+                            f"marks={con.marks}, "
+                            f"app_id={getattr(con, 'app_id', None)}, "
+                            f"name={getattr(con, 'name', '')[:30]}"
+                        )
+
+                    for mark in con.marks:
+                        if mark.startswith("project:"):
+                            mark_parts = mark.split(":")
+                            if len(mark_parts) >= 2:
+                                window_project = mark_parts[1]
+                                is_scoped = True  # If it has a project mark, it's scoped
+                                logger.debug(
+                                    f"Window {con.id} has project mark: {mark} "
+                                    f"(extracted project: {window_project})"
+                                )
+                                break
 
                     # Only hide if matches project and is scoped
-                    if window_project == project_name and scope == "scoped":
+                    if window_project == project_name and is_scoped:
+                        logger.info(
+                            f"Will hide window {con.id} (project '{window_project}' matches '{project_name}')"
+                        )
                         window_ids_to_hide.append(con.id)
 
                 for child in con.nodes:
@@ -3001,10 +3030,17 @@ class IPCServer:
             )
 
             # Find windows matching project
+            # Use window marks instead of /proc for project detection (Feature 046)
+            # Marks format: "project:PROJECT_NAME:WINDOW_ID"
             window_ids_to_restore = []
             for window in scratchpad_windows:
-                i3pm_env = await window_filtering.get_window_i3pm_env(window.id, window.pid, window.window)
-                window_project = i3pm_env.get("I3PM_PROJECT_NAME", "")
+                window_project = None
+                for mark in window.marks:
+                    if mark.startswith("project:"):
+                        mark_parts = mark.split(":")
+                        if len(mark_parts) >= 2:
+                            window_project = mark_parts[1]
+                            break
 
                 if window_project == project_name:
                     window_ids_to_restore.append(window.id)
@@ -4438,7 +4474,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Extract parameters
             name = params.get("name")
@@ -4521,7 +4557,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # List projects
             projects = service.list()
@@ -4575,7 +4611,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Get project name
             name = params.get("name")
@@ -4646,7 +4682,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Get parameters
             name = params.get("name")
@@ -4730,7 +4766,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Get project name
             name = params.get("name")
@@ -4788,7 +4824,7 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Get active project
             active_name = service.get_active()
@@ -4834,13 +4870,13 @@ class IPCServer:
             # Import ProjectService
             from .services.project_service import ProjectService
             config_dir = Path.home() / ".config" / "i3"
-            service = ProjectService(config_dir)
+            service = ProjectService(config_dir, self.state_manager)
 
             # Get project name (can be None for global mode)
             name = params.get("name")
 
             # Set active project
-            result = service.set_active(name)
+            result = await service.set_active(name)
 
             # Trigger window filtering (Feature 037 integration)
             filtering_applied = False

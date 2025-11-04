@@ -18,16 +18,18 @@ logger = logging.getLogger(__name__)
 class ProjectService:
     """Service for managing projects and active project state."""
 
-    def __init__(self, config_dir: Path):
+    def __init__(self, config_dir: Path, state_manager=None):
         """
         Initialize ProjectService.
 
         Args:
             config_dir: Path to i3 config directory (e.g., ~/.config/i3)
+            state_manager: Optional StateManager instance for in-memory state synchronization
         """
         self.config_dir = config_dir
         self.projects_dir = config_dir / "projects"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.state_manager = state_manager
 
     def create(
         self,
@@ -181,7 +183,7 @@ class ProjectService:
         state = ActiveProjectState.load(self.config_dir)
         return state.project_name
 
-    def set_active(self, name: Optional[str]) -> Dict[str, Optional[str]]:
+    async def set_active(self, name: Optional[str]) -> Dict[str, Optional[str]]:
         """
         Set active project (or clear to global mode).
 
@@ -206,6 +208,12 @@ class ProjectService:
         # Update active state
         current_state.project_name = name
         current_state.save(self.config_dir)
+
+        # Synchronize in-memory state (Feature 058: Fix for intent-first priority)
+        # CRITICAL: handlers.py reads state_manager.state.active_project, so we must
+        # update it here to keep disk and memory in sync!
+        if self.state_manager:
+            await self.state_manager.set_active_project(name)
 
         logger.info(f"Set active project: {name} (previous: {previous})")
 

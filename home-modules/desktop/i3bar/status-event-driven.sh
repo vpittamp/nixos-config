@@ -266,14 +266,27 @@ main() {
     initial_status=$(build_status_line)
     echo "$initial_status,"
 
-    # Start status generation in background
-    # Hybrid approach: Poll every 2 seconds + listen for tick events
+    # Start event-driven status updates in background
+    # Listen to daemon tick events for instant project updates (<100ms latency)
     (
-        while true; do
-            # Build and output new status line
+        # Initial update
+        status_line=$(build_status_line)
+        printf '%s,\n' "$status_line"
+
+        # Subscribe to daemon events (blocks until events occur)
+        # Updates: instant on tick events, every 2s for system stats
+        "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
+            # Rebuild status on any daemon event (tick, window, etc.)
             status_line=$(build_status_line)
             printf '%s,\n' "$status_line"
+        done &
+
+        # Fallback: periodic refresh for system stats (CPU, memory, network, time)
+        # This runs even if daemon events stop flowing
+        while true; do
             sleep 2
+            status_line=$(build_status_line)
+            printf '%s,\n' "$status_line"
         done
     ) &
     STATUS_PID=$!

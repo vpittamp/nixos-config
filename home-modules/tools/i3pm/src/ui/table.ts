@@ -18,16 +18,16 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
-  { header: "ID", width: 16, align: "right" },
-  { header: "PID", width: 8, align: "right" },
-  { header: "APP_ID", width: 25, align: "left" },
-  { header: "Class", width: 18, align: "left" },
-  { header: "Title", width: 35, align: "left" },
+  { header: "ID", width: 10, align: "right" },
+  { header: "PID", width: 7, align: "right" },
+  { header: "APP_ID", width: 20, align: "left" },
+  { header: "Class", width: 12, align: "left" },
+  { header: "Title", width: 25, align: "left" },
   { header: "WS", width: 4, align: "left" },
-  { header: "Output", width: 12, align: "left" },
-  { header: "Project", width: 12, align: "left" },
-  { header: "Status", width: 10, align: "left" },
-  { header: "Change", width: 7, align: "left" },
+  { header: "Output", width: 10, align: "left" },
+  { header: "Project", width: 10, align: "left" },
+  { header: "Status", width: 8, align: "left" },
+  { header: "Change", width: 6, align: "left" },
 ];
 
 /**

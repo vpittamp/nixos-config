@@ -419,8 +419,9 @@ async def get_scratchpad_windows(i3_conn) -> List:
         # Scratchpad is a special workspace named "__i3_scratch"
         if con.name == "__i3_scratch":
             # Collect all windows in scratchpad
+            # Feature 046: Include both X11 (window.window) and Wayland (window.app_id) windows
             for window in con.floating_nodes:
-                if window.window:
+                if window.window is not None or (hasattr(window, 'app_id') and window.app_id):
                     scratchpad_windows.append(window)
         for child in con.nodes:
             find_scratchpad(child)
@@ -502,7 +503,8 @@ async def hide_windows_batch(
     window_map = {}
 
     def collect_windows(con):
-        if con.window and con.id in window_ids:
+        # Feature 046: Check for both X11 (con.window) and Wayland (con.app_id) windows
+        if con.id in window_ids and (con.window is not None or (hasattr(con, 'app_id') and con.app_id)):
             # Find workspace
             workspace = con
             while workspace and workspace.type != "workspace":
@@ -617,7 +619,9 @@ async def restore_windows_batch(
         tracked = await workspace_tracker.get_window_workspace(window_id)
 
         if tracked:
-            workspace_number, floating = tracked
+            # Feature 038: get_window_workspace returns Dict, not tuple
+            workspace_number = tracked.get("workspace_number", fallback_workspace)
+            floating = tracked.get("floating", False)
 
             # Validate workspace exists
             if not await validate_workspace_exists(i3_conn, workspace_number):
@@ -635,9 +639,11 @@ async def restore_windows_batch(
             floating = False
 
         # Build restore command
+        # Feature 046: For Sway scratchpad restoration, use 'scratchpad show' first
+        # See: https://github.com/swaywm/sway/blob/master/sway/commands/scratchpad.c
         floating_cmd = "floating enable" if floating else "floating disable"
         restore_commands.append(
-            f'[con_id="{window_id}"] move to workspace number {workspace_number}, {floating_cmd}'
+            f'[con_id="{window_id}"] scratchpad show, move workspace number {workspace_number}, {floating_cmd}'
         )
 
     # Execute batch restore command
@@ -658,3 +664,5 @@ async def restore_windows_batch(
 
     restored_count = len(window_ids) - len(errors)
     return (restored_count, errors, fallback_warnings)
+# Force rebuild Tue Nov  4 05:29:55 AM EST 2025
+# Force rebuild Tue Nov  4 05:50:56 AM EST 2025

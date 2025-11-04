@@ -24,6 +24,7 @@ class Project(BaseModel):
     icon: str = Field(default="📁")
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    scoped_classes: List[str] = Field(default_factory=list, description="App classes scoped to this project")
 
     @field_validator('directory', mode='before')
     @classmethod

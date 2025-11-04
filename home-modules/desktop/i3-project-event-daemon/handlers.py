@@ -794,10 +794,11 @@ async def on_window_new(
                 f"(workspace={workspace_number}, pid={window_pid})"
             )
 
-        # Determine actual project using priority order (Feature 041 T020):
-        # Priority 1: Launch correlation (Feature 041 - highest priority)
-        # Priority 2: I3PM environment (Feature 035)
-        # Priority 3: No assignment (global scope)
+        # Determine actual project using priority order (Feature 058 - Intent-first architecture):
+        # Priority 1: Launch correlation (Feature 041 - explicit user action via walker)
+        # Priority 2: Active project (Feature 058 - current user intent, fixes shared-PID apps)
+        # Priority 3: I3PM environment (Feature 035 - fallback for non-walker launches)
+        # Priority 4: No assignment (global scope)
         actual_project = None
 
         if correlated_project:
@@ -807,8 +808,18 @@ async def on_window_new(
                 f"Window {window_id} assigned to project '{actual_project}' via launch correlation "
                 f"(confidence={correlation_confidence:.2f})"
             )
+        elif state_manager.state.active_project:
+            # Priority 2: Use active project (current user intent)
+            # This handles shared-PID apps (VS Code, Chrome, Electron) where environment
+            # variables from the main process don't reflect the per-window project context.
+            # Since all apps are launched via walker (which injects environment at launch),
+            # active_project is the source of truth for user intent.
+            actual_project = state_manager.state.active_project
+            logger.info(
+                f"Window {window_id} assigned to project '{actual_project}' from active project (user intent)"
+            )
         elif window_env and window_env.project_name:
-            # Priority 2: Use I3PM environment if present
+            # Priority 3: Use I3PM environment (fallback for non-walker launches)
             actual_project = window_env.project_name
             logger.info(
                 f"Window {window_id} has I3PM environment: "
@@ -816,7 +827,7 @@ async def on_window_new(
                 f"scope={window_env.scope}, instance_id={window_env.app_id}"
             )
         else:
-            # Priority 3: No project assignment → assume global scope
+            # Priority 4: No project assignment → assume global scope
             actual_project = None
             logger.debug(f"Window {window_id} has no project assignment, assuming global scope")
 
@@ -824,21 +835,25 @@ async def on_window_new(
         # VSCode windows share a single process, so I3PM environment doesn't distinguish
         # between multiple workspaces. Parse title to get the actual project directory.
         if window_class == "Code" and window_title:
-            # VSCode title format: "PROJECT_NAME - HOSTNAME - Visual Studio Code"
-            # Example: "nixos - nixos - Visual Studio Code"
-            import re
-            # Match either "Code - PROJECT -" or just "PROJECT - hostname -" format
-            match = re.match(r"(?:Code - )?([^-]+) -", window_title)
-            if match:
-                title_project = match.group(1).strip().lower()
-                # Check if this matches a known project name
-                if title_project in state_manager.state.projects:
-                    if actual_project != title_project:
-                        logger.info(
-                            f"VSCode window {window_id}: Overriding project from I3PM "
-                            f"({actual_project}) to title-based ({title_project})"
-                        )
-                        actual_project = title_project
+            # VSCode title formats:
+            #   No file: "PROJECT - HOSTNAME - Visual Studio Code"
+            #   File open: "FILENAME - PROJECT - HOSTNAME - Visual Studio Code"
+            # Strategy: Split by " - " and find first segment matching a known project
+            segments = [seg.strip().lower() for seg in window_title.split(" - ")]
+            title_project = None
+
+            for segment in segments:
+                if segment in state_manager.state.projects:
+                    title_project = segment
+                    logger.debug(f"Found project '{segment}' in VS Code title: {window_title}")
+                    break
+
+            if title_project and actual_project != title_project:
+                logger.info(
+                    f"VSCode window {window_id}: Overriding project from I3PM "
+                    f"({actual_project}) to title-based ({title_project})"
+                )
+                actual_project = title_project
 
         # Apply project mark if we have a project assignment
         # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
@@ -1488,45 +1503,52 @@ async def on_window_title(
         # VS Code windows inherit I3PM environment from first launch, so title-based
         # project detection is needed when the window title updates
         if window_class == "Code" and window_title:
-            # Parse project from VS Code title: "PROJECT - hostname - Visual Studio Code"
-            import re
-            match = re.match(r"(?:Code - )?([^-]+) -", window_title)
-            if match:
-                title_project = match.group(1).strip().lower()
+            # VSCode title formats:
+            #   No file: "PROJECT - HOSTNAME - Visual Studio Code"
+            #   File open: "FILENAME - PROJECT - HOSTNAME - Visual Studio Code"
+            # Strategy: Split by " - " and find first segment matching a known project
+            segments = [seg.strip().lower() for seg in window_title.split(" - ")]
+            title_project = None
 
-                # Check if this matches a known project
-                if title_project in state_manager.state.projects:
-                    # Get current project mark
-                    current_marks = container.marks or []
-                    current_project_marks = [m for m in current_marks if m.startswith("project:")]
+            for segment in segments:
+                if segment in state_manager.state.projects:
+                    title_project = segment
+                    logger.debug(f"Found project '{segment}' in VS Code title: {window_title}")
+                    break
 
-                    if current_project_marks:
-                        # Extract current project from mark: "project:nixos:12345" -> "nixos"
-                        current_project = current_project_marks[0].split(":")[1]
+            # Check if this matches a known project
+            if title_project:
+                # Get current project mark
+                current_marks = container.marks or []
+                current_project_marks = [m for m in current_marks if m.startswith("project:")]
 
-                        # Update mark if project changed
-                        if current_project != title_project:
-                            # Remove old mark
-                            old_mark = current_project_marks[0]
-                            # Feature 046: Use con_id for Sway compatibility
-                            await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
+                if current_project_marks:
+                    # Extract current project from mark: "project:nixos:12345" -> "nixos"
+                    current_project = current_project_marks[0].split(":")[1]
 
-                            # Add new mark
-                            new_mark = f"project:{title_project}:{window_id}"
-                            # Feature 046: Use con_id for Sway compatibility
-                            await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
+                    # Update mark if project changed
+                    if current_project != title_project:
+                        # Remove old mark
+                        old_mark = current_project_marks[0]
+                        # Feature 046: Use con_id for Sway compatibility
+                        await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
 
-                            logger.info(
-                                f"VSCode window {window_id}: Updated project mark from "
-                                f"{current_project} to {title_project} (title-based detection)"
-                            )
+                        # Add new mark
+                        new_mark = f"project:{title_project}:{window_id}"
+                        # Feature 046: Use con_id for Sway compatibility
+                        await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
 
-                            # Update state
-                            await state_manager.update_window(
-                                window_id,
-                                project=title_project,
-                                marks=[new_mark] + [m for m in current_marks if not m.startswith("project:")]
-                            )
+                        logger.info(
+                            f"VSCode window {window_id}: Updated project mark from "
+                            f"{current_project} to {title_project} (title-based detection)"
+                        )
+
+                        # Update state
+                        await state_manager.update_window(
+                            window_id,
+                            project=title_project,
+                            marks=[new_mark] + [m for m in current_marks if not m.startswith("project:")]
+                        )
 
         # If workspace changed, move window
         if classification.workspace is not None:
@@ -2189,3 +2211,4 @@ async def on_mode(
                 error=error_msg,
             )
             await event_buffer.add_event(entry)
+# Force rebuild Tue Nov  4 06:38:24 AM EST 2025

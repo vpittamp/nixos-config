@@ -65,7 +65,7 @@
   services.i3ProjectDaemon = {
     enable = true;
     user = "vpittamp";
-    logLevel = "INFO";
+    logLevel = "DEBUG";
   };
 
   # Display manager - greetd for Wayland/Sway login
