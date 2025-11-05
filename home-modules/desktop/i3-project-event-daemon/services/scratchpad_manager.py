@@ -127,9 +127,9 @@ class ScratchpadManager:
             if proc.stderr:
                 stderr_output = await asyncio.wait_for(proc.stderr.read(), timeout=0.5)
                 if stderr_output:
-                    self.logger.error(f"Ghostty stderr: {stderr_output.decode()}")
+                    self.logger.error(f"Alacritty stderr: {stderr_output.decode()}")
         except FileNotFoundError:
-            raise RuntimeError("Ghostty not found - ensure it is installed")
+            raise RuntimeError("Alacritty not found - ensure it is installed")
         except asyncio.TimeoutError:
             pass  # No stderr within timeout, continue
 
