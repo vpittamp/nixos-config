@@ -9,7 +9,8 @@ let
   # Feature 058: Columnar output formatting + comprehensive help menu
   # Feature 059: Unified window view - show all windows including scratchpad by default
   # Feature 060: Project-centric tree view - group windows by project
-  version = "2.6.1";
+  # Feature 061: Unified mark format - only project:NAME:ID
+  version = "2.7.0";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {

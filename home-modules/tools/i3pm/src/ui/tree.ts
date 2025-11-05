@@ -19,23 +19,17 @@ const STATUS_ICONS = {
 
 /**
  * Extract project name from window marks
- * Handles multiple mark formats:
- * - "project:name" or "project:name:id" (scratchpad windows)
- * - "scoped:name:id" (scoped visible windows)
- * - "global:name:id" (global visible windows, but we ignore these)
+ * Feature 061: Unified mark format - only "project:NAME:ID"
  */
 function getProjectFromMarks(marks: string[]): string | null {
   for (const mark of marks) {
     if (mark.startsWith("project:")) {
-      // Format: "project:name" or "project:name:id"
+      // Unified format: "project:name:id"
       const parts = mark.split(":");
-      return parts[1] || null;
-    } else if (mark.startsWith("scoped:")) {
-      // Format: "scoped:name:id"
-      const parts = mark.split(":");
-      return parts[1] || null;
+      // Return project name (skip "none" which means no project)
+      const projectName = parts[1] || null;
+      return projectName === "none" ? null : projectName;
     }
-    // Skip "global:" marks - those are truly global windows
   }
   return null;
 }

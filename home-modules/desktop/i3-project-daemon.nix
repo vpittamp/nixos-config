@@ -23,7 +23,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.6.0";  # Feature 059: Include scratchpad windows in window tree by default
+    version = "1.7.0";  # Feature 061: Unified mark format - all windows use project:NAME:ID
     src = daemonSrc;
 
     installPhase = ''

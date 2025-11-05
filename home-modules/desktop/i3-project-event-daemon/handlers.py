@@ -854,52 +854,43 @@ async def on_window_new(
                 actual_project = title_project
 
         # Apply project mark if we have a project assignment
-        # Note: i3 marks must be UNIQUE - use format SCOPE:PROJECT:WINDOW_ID
+        # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
         # Feature 041 T020: Mark windows from launch correlation
         # Feature 035: Mark windows from I3PM environment
-        # NEW: All windows get marks with scope prefix (global/scoped)
+        # Feature 061: Unified mark format - all windows use "project:" prefix
         should_mark = False
         mark_source = None
-        window_scope = "global"  # Default to global if no scope info
 
         if correlated_project and actual_project:
             # Project assigned via launch correlation
             should_mark = True
             mark_source = "launch correlation"
-            # Get scope from window_env if available, otherwise look up in registry
-            if window_env:
-                window_scope = window_env.scope
-            elif application_registry and matched_launch:
-                # Look up scope from registry using matched app
-                app_def = application_registry.get(matched_launch.app_name, {})
-                window_scope = app_def.get("scope", "global")
         elif window_env and actual_project:
             # Project assigned via I3PM environment (both scoped and global apps)
             should_mark = True
             mark_source = "I3PM environment"
-            window_scope = window_env.scope
         elif actual_project and classification.scope == "scoped":
             # Project assigned via active project (user intent) for scoped windows
             # This handles windows opened without launch notification or I3PM environment
             should_mark = True
             mark_source = "active project"
-            window_scope = classification.scope
 
         # ALWAYS mark windows for consistency and debugging
-        # Format: {scope}:{project}:{window_id}
-        # - scope: scoped/global (from classification)
-        # - project: project name or "none" if no active project
-        # - window_id: unique window identifier
+        # Unified format: project:PROJECT:WINDOW_ID
+        # - project: always literal "project" prefix
+        # - PROJECT: project name or "none" if no active project
+        # - WINDOW_ID: unique window identifier (container.id)
+        # Scope info (scoped/global) is tracked separately in classification/state
         project_for_mark = actual_project or "none"
-        mark = f"{window_scope}:{project_for_mark}:{window_id}"
+        mark = f"project:{project_for_mark}:{window_id}"
 
         # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
         await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
 
         if actual_project:
-            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, from {mark_source or 'classification'})")
+            logger.info(f"Marked window {window_id} with {mark} (from {mark_source or 'classification'})")
         else:
-            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, no active project)")
+            logger.info(f"Marked window {window_id} with {mark} (no active project)")
 
         marks_list = [mark]
 
@@ -1407,12 +1398,11 @@ async def on_window_mark(
             logger.debug(f"Suppressing window::mark handler during startup scan for window {window_id}")
             return
 
-        # Extract project marks (format: project:PROJECT_NAME:WINDOW_ID or scoped:PROJECT_NAME:WINDOW_ID or global:PROJECT_NAME:WINDOW_ID)
-        # Support both old "project:" and new "scoped:/global:" formats
-        project_marks = [mark for mark in container.marks if mark.startswith("project:") or mark.startswith("scoped:") or mark.startswith("global:")]
+        # Extract project marks (Feature 061: unified format project:PROJECT_NAME:WINDOW_ID)
+        project_marks = [mark for mark in container.marks if mark.startswith("project:")]
 
         if project_marks:
-            # Parse mark: "project:nixos:16777219" or "scoped:nixos:16777219" → extract "nixos"
+            # Parse mark: "project:nixos:16777219" → extract "nixos"
             mark_parts = project_marks[0].split(":")
             project_name = mark_parts[1] if len(mark_parts) >= 2 else None
             await state_manager.update_window(window_id, project=project_name, marks=container.marks)
@@ -1549,47 +1539,38 @@ async def on_window_title(
             if title_project:
                 # Get current project mark
                 current_marks = container.marks or []
-                # NEW: Support both old "project:" and new "scoped:/global:" format
+                # Feature 061: Unified format - only look for "project:" marks
                 current_project_marks = [
                     m for m in current_marks
-                    if m.startswith("project:") or m.startswith("scoped:") or m.startswith("global:")
+                    if m.startswith("project:")
                 ]
 
                 if current_project_marks:
-                    # Extract current project and scope from mark
-                    # Old format: "project:nixos:12345" -> scope="scoped" (default), project="nixos"
-                    # New format: "scoped:nixos:12345" -> scope="scoped", project="nixos"
+                    # Extract current project from mark
+                    # Format: "project:nixos:12345" -> project="nixos"
                     old_mark = current_project_marks[0]
                     mark_parts = old_mark.split(":")
-
-                    if mark_parts[0] == "project":
-                        # Old format - assume scoped (VS Code is scoped)
-                        current_scope = "scoped"
-                        current_project = mark_parts[1] if len(mark_parts) >= 2 else None
-                    else:
-                        # New format
-                        current_scope = mark_parts[0]
-                        current_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                    current_project = mark_parts[1] if len(mark_parts) >= 2 else None
 
                     # Update mark if project changed
                     if current_project != title_project:
                         # Remove old mark
                         await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
 
-                        # Add new mark with same scope
-                        new_mark = f"{current_scope}:{title_project}:{window_id}"
+                        # Add new mark with unified format
+                        new_mark = f"project:{title_project}:{window_id}"
                         await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
 
                         logger.info(
                             f"VSCode window {window_id}: Updated project mark from "
-                            f"{current_project} to {title_project} (title-based detection, scope={current_scope})"
+                            f"{current_project} to {title_project} (title-based detection)"
                         )
 
                         # Update state
                         await state_manager.update_window(
                             window_id,
                             project=title_project,
-                            marks=[new_mark] + [m for m in current_marks if not (m.startswith("project:") or m.startswith("scoped:") or m.startswith("global:"))]
+                            marks=[new_mark] + [m for m in current_marks if not m.startswith("project:")]
                         )
 
         # If workspace changed, move window

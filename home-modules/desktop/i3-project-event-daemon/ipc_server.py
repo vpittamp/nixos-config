@@ -3046,21 +3046,16 @@ class IPCServer:
                             f"name={getattr(con, 'name', '')[:30]}"
                         )
 
-                    # Check for scoped mark matching this project
-                    scoped_mark_prefix = f"scoped:{project_name}:"
+                    # Check for project mark matching this project (Feature 061: Unified format)
+                    project_mark_prefix = f"project:{project_name}:"
                     for mark in con.marks:
-                        if mark.startswith(scoped_mark_prefix):
+                        if mark.startswith(project_mark_prefix):
                             logger.info(
-                                f"Will hide scoped window {con.id} "
+                                f"Will hide project window {con.id} "
                                 f"(mark: {mark}, project: {project_name})"
                             )
                             window_ids_to_hide.append(con.id)
-                            break  # Found matching scoped mark
-                        elif mark.startswith(f"global:{project_name}:"):
-                            logger.debug(
-                                f"Skipping global window {con.id} "
-                                f"(mark: {mark}, always visible)"
-                            )
+                            break  # Found matching project mark
 
                 for child in con.nodes:
                     await collect_project_windows(child)
@@ -3140,19 +3135,19 @@ class IPCServer:
             )
 
             # Find windows matching project
-            # NEW: Only restore scoped windows (format: scoped:PROJECT:WINDOW_ID)
-            # Global windows are never hidden, so they don't need restoration
+            # Only restore windows marked with project (Feature 061: Unified format)
+            # Format: project:PROJECT:WINDOW_ID
             window_ids_to_restore = []
-            scoped_mark_prefix = f"scoped:{project_name}:"
+            project_mark_prefix = f"project:{project_name}:"
             for window in scratchpad_windows:
                 for mark in window.marks:
-                    if mark.startswith(scoped_mark_prefix):
+                    if mark.startswith(project_mark_prefix):
                         window_ids_to_restore.append(window.id)
                         logger.debug(
-                            f"Will restore scoped window {window.id} "
+                            f"Will restore project window {window.id} "
                             f"(mark: {mark}, project: {project_name})"
                         )
-                        break  # Found matching scoped mark
+                        break  # Found matching project mark
 
             # Restore windows in batch
             restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(
