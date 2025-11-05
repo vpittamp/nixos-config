@@ -189,17 +189,24 @@ class IPCServer:
         try:
             while True:
                 # Read JSON-RPC request
+                logger.debug(f"[DEBUG] Waiting for readline from {addr}")
                 data = await reader.readline()
+                logger.debug(f"[DEBUG] Read {len(data) if data else 0} bytes from {addr}: {data[:100] if data else b''}")
                 if not data:
+                    logger.debug(f"[DEBUG] No data received, breaking connection for {addr}")
                     break
 
                 try:
+                    logger.debug(f"[DEBUG] Parsing JSON from {addr}")
                     request = json.loads(data.decode())
+                    logger.debug(f"[DEBUG] Request method: {request.get('method')} from {addr}")
                     response = await self._handle_request(request, writer)
                     writer.write(json.dumps(response).encode() + b"\n")
                     await writer.drain()
+                    logger.debug(f"[DEBUG] Response sent to {addr}")
 
                 except json.JSONDecodeError as e:
+                    logger.error(f"[DEBUG] JSON decode error from {addr}: {e}")
                     error_response = {
                         "jsonrpc": "2.0",
                         "error": {"code": -32700, "message": "Parse error"},
@@ -209,7 +216,7 @@ class IPCServer:
                     await writer.drain()
 
         except Exception as e:
-            logger.error(f"Error handling client: {e}")
+            logger.error(f"Error handling client {addr}: {e}", exc_info=True)
 
         finally:
             self.clients.remove(writer)
