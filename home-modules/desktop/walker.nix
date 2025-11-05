@@ -395,6 +395,7 @@ in
         windows = true           # Window switcher for fuzzy window navigation
         bookmarks = true         # Quick URL access via bookmarks
         snippets = true          # User-defined command shortcuts ($ prefix)
+        providerlist = true      # Help menu - lists all providers and prefixes (? prefix)
 
         # NOTE: Projects and Sesh menus are defined as Elephant Lua menus
         # See ~/.config/elephant/menus/projects.lua and sesh.lua
@@ -439,6 +440,14 @@ in
         [[providers.prefixes]]
         prefix = "w"
         provider = "windows"
+
+        [[providers.prefixes]]
+        prefix = "b"
+        provider = "bookmarks"
+
+        [[providers.prefixes]]
+        prefix = "?"
+        provider = "providerlist"
 
         [[providers.prefixes]]
         prefix = ";p "
@@ -537,64 +546,79 @@ in
     default = "Google"
   '';
 
+  # Providerlist configuration - native help menu
+  xdg.configFile."elephant/providerlist.toml".text = ''
+    # Elephant Providerlist Configuration
+    # Shows all installed providers and configured menus
+    # Access: Meta+D → ? → shows all providers with descriptions
+
+    # Minimum fuzzy match score (0-100)
+    min_score = 30
+
+    # Hidden providers (exclude from list)
+    # hidden = ["providerlist"]  # Hide the help menu from itself
+  '';
+
   # Feature 050: Bookmarks provider configuration
+  # Elephant bookmarks are stored in CSV format, this file only contains configuration
   xdg.configFile."elephant/bookmarks.toml".text = ''
     # Elephant Bookmarks Configuration
-    # Quick access to frequently visited URLs
+    # Bookmarks are stored in CSV: ~/.cache/elephant/bookmarks/bookmarks.csv
+    # Use Walker to add bookmarks: Meta+D → b → <url> → Return
 
-    [[bookmarks]]
-    name = "NixOS Manual"
-    url = "https://nixos.org/manual/nixos/stable/"
-    description = "Official NixOS documentation"
-    tags = ["docs", "nix"]
+    # Minimum fuzzy match score (0-100)
+    min_score = 30
 
-    [[bookmarks]]
-    name = "GitHub"
-    url = "https://github.com"
-    description = "GitHub code hosting platform"
-    tags = ["dev", "git"]
+    # Prefix for creating new bookmarks (optional)
+    # If set, use: Meta+D → b → add:github.com GitHub
+    # If not set, any non-matching query creates a bookmark
+    # create_prefix = "add"
 
-    [[bookmarks]]
-    name = "Google AI Studio"
-    url = "https://aistudio.google.com"
-    description = "Google AI development platform"
-    tags = ["ai", "dev"]
+    # Categories for organizing bookmarks
+    # Usage: Meta+D → b → dev:github.com → adds to "dev" category
 
-    [[bookmarks]]
-    name = "Stack Overflow"
-    url = "https://stackoverflow.com"
-    description = "Programming Q&A community"
-    tags = ["dev", "help"]
+    [[categories]]
+    name = "docs"
+    prefix = "d:"
 
-    [[bookmarks]]
-    name = "Rust Documentation"
-    url = "https://doc.rust-lang.org"
-    description = "Official Rust programming language documentation"
-    tags = ["docs", "rust", "dev"]
+    [[categories]]
+    name = "dev"
+    prefix = "dv:"
 
-    [[bookmarks]]
-    name = "Arch Wiki"
-    url = "https://wiki.archlinux.org"
-    description = "Comprehensive Linux documentation"
-    tags = ["docs", "linux"]
+    [[categories]]
+    name = "ai"
+    prefix = "ai:"
 
-    [[bookmarks]]
-    name = "Nix Packages Search"
-    url = "https://search.nixos.org/packages"
-    description = "Search NixOS package repository"
-    tags = ["nix", "packages"]
+    [[categories]]
+    name = "nix"
+    prefix = "nx:"
 
-    [[bookmarks]]
-    name = "Home Manager Options"
-    url = "https://nix-community.github.io/home-manager/options.xhtml"
-    description = "Home Manager configuration options reference"
-    tags = ["nix", "docs", "home-manager"]
+    [[categories]]
+    name = "work"
+    prefix = "w:"
 
-    [[bookmarks]]
-    name = "NixOS Config (Local)"
-    url = "file:///etc/nixos"
-    description = "Local NixOS configuration directory"
-    tags = ["local", "nix", "config"]
+    [[categories]]
+    name = "personal"
+    prefix = "p:"
+
+    # Browsers for opening bookmarks
+    # Usage: Set browser when adding bookmark or edit CSV later
+
+    [[browsers]]
+    name = "Firefox"
+    command = "firefox"
+
+    [[browsers]]
+    name = "Firefox Private"
+    command = "firefox --private-window"
+
+    [[browsers]]
+    name = "Chromium"
+    command = "chromium"
+
+    [[browsers]]
+    name = "Firefox App Mode"
+    command = "firefox --new-window --kiosk"
   '';
 
   # Files provider configuration
