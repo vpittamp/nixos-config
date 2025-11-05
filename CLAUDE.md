@@ -315,10 +315,77 @@ Project-scoped workspace management for i3/Sway. Switch contexts, auto show/hide
 | Key | Action |
 |-----|--------|
 | `Win+P` | Project switcher | `Win+Shift+P` | Clear (global mode) |
+| `Win+Shift+Return` | **Scratchpad Terminal** | Toggle project terminal |
 | `Win+C` | VS Code | `Win+Return` | Terminal | `Win+G` | Lazygit | `Win+Y` | Yazi |
 
 **Scoped apps** (hidden on switch): Ghostty, VS Code, Yazi, Lazygit
 **Global apps** (always visible): Firefox, PWAs, K9s
+
+### Scratchpad Terminal (Feature 062)
+
+Project-scoped floating terminal that toggles show/hide without affecting other windows. Each project maintains independent terminal with separate command history and working directory.
+
+**Quick Access**: `Win+Shift+Return` (launches if doesn't exist, shows if hidden, hides if visible)
+
+**Key Features**:
+- **Project Isolation**: Each project has its own terminal with independent command history
+- **State Persistence**: Running processes persist when terminal is hidden
+- **Auto Working Directory**: Terminal opens in project root directory
+- **Global Terminal**: Use `i3pm scratchpad toggle global` for project-less terminal
+- **Fast Toggle**: <500ms for existing terminals, <2s for initial launch
+
+**CLI Commands**:
+```bash
+# Toggle terminal (most common)
+i3pm scratchpad toggle [project]     # Launch/show/hide terminal
+
+# Explicit operations
+i3pm scratchpad launch [project]     # Launch new terminal
+i3pm scratchpad status [--all]       # Get status of terminal(s)
+i3pm scratchpad close [project]      # Close terminal
+i3pm scratchpad cleanup              # Remove invalid terminals
+
+# Status includes: PID, window ID, state, working directory, timestamps
+```
+
+**Examples**:
+```bash
+# Use with current project
+i3pm scratchpad toggle              # Toggle current project's terminal
+
+# Use with specific project
+i3pm scratchpad toggle nixos        # Toggle nixos project terminal
+
+# Global terminal (no project)
+i3pm scratchpad toggle global       # Toggle global terminal in $HOME
+
+# Check status
+i3pm scratchpad status --all        # View all terminals
+i3pm scratchpad status nixos --json # Get terminal info as JSON
+```
+
+**How It Works**:
+- Terminal is marked with `scratchpad:{project_name}` in Sway
+- Uses Sway's native scratchpad mechanism (hidden ≠ closed)
+- Daemon tracks terminal state via `ScratchpadManager`
+- Environment variables: `I3PM_SCRATCHPAD=true`, `I3PM_PROJECT_NAME=...`, `I3PM_WORKING_DIR=...`
+
+**Troubleshooting**:
+```bash
+# Terminal not appearing?
+i3pm scratchpad status              # Check if terminal exists
+i3pm daemon status                  # Verify daemon is running
+i3pm scratchpad cleanup             # Remove invalid terminals
+
+# Multiple terminals per project?
+i3pm scratchpad status --all        # List all terminals
+i3pm scratchpad close <project>     # Close specific terminal
+
+# Terminal state issues?
+i3pm scratchpad launch <project>    # Force new launch
+```
+
+**Docs**: See `/etc/nixos/specs/062-project-scratchpad-terminal/quickstart.md`
 
 ### Essential Commands
 
@@ -510,3 +577,10 @@ _Last updated: 2025-11-04 - Sway/Wayland primary, hot-reloadable config, event-d
 **Storage**: In-memory daemon state, JSON config files (`~/.config/i3/`, `~/.config/sway/`, `~/.local/share/firefoxpwa/`)
 
 **Recent**: Feature 058 (Python backend consolidation, 10-20x perf), 053 (100% workspace assignment), 052 (enhanced swaybar), 042 (workspace mode navigation)
+
+## Active Technologies
+- Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation) (062-project-scratchpad-terminal)
+- In-memory daemon state (project → terminal PID/window ID mapping), Sway window marks for persistence (062-project-scratchpad-terminal)
+
+## Recent Changes
+- 062-project-scratchpad-terminal: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation)

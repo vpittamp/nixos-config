@@ -394,7 +394,7 @@ in
         todo = true              # Todo list management (! prefix)
         windows = true           # Window switcher for fuzzy window navigation
         bookmarks = true         # Quick URL access via bookmarks
-        customcommands = true    # User-defined command shortcuts
+        snippets = true          # User-defined command shortcuts ($ prefix)
 
         # NOTE: Projects and Sesh menus are defined as Elephant Lua menus
         # See ~/.config/elephant/menus/projects.lua and sesh.lua
@@ -425,8 +425,20 @@ in
         provider = "files"
 
         [[providers.prefixes]]
+        prefix = "//"
+        provider = "menus:project-files"
+
+        [[providers.prefixes]]
         prefix = "!"
         provider = "todo"
+
+        [[providers.prefixes]]
+        prefix = "$"
+        provider = "snippets"
+
+        [[providers.prefixes]]
+        prefix = "w"
+        provider = "windows"
 
         [[providers.prefixes]]
         prefix = ";p "

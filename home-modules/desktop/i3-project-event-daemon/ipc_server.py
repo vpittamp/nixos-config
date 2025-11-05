@@ -51,7 +51,8 @@ class IPCServer:
         event_buffer: Optional[Any] = None,
         i3_connection: Optional[Any] = None,
         window_rules_getter: Optional[callable] = None,
-        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None
+        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
+        scratchpad_manager: Optional[Any] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -61,12 +62,14 @@ class IPCServer:
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
             window_rules_getter: Callable that returns current window rules list (Feature 021)
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
+            scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
         self.i3_connection = i3_connection
         self.window_rules_getter = window_rules_getter
         self.workspace_tracker = workspace_tracker
+        self.scratchpad_manager = scratchpad_manager
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -79,7 +82,8 @@ class IPCServer:
         event_buffer: Optional[Any] = None,
         i3_connection: Optional[Any] = None,
         window_rules_getter: Optional[callable] = None,
-        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None
+        workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
+        scratchpad_manager: Optional[Any] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -89,11 +93,12 @@ class IPCServer:
             i3_connection: ResilientI3Connection instance for i3 IPC queries (Feature 018)
             window_rules_getter: Callable that returns current window rules list (Feature 021)
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
+            scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -424,6 +429,18 @@ class IPCServer:
                     }
                     for rule in rules
                 ]
+
+            # Feature 062: Scratchpad terminal methods
+            elif method == "scratchpad.toggle":
+                result = await self._scratchpad_toggle(params)
+            elif method == "scratchpad.launch":
+                result = await self._scratchpad_launch(params)
+            elif method == "scratchpad.status":
+                result = await self._scratchpad_status(params)
+            elif method == "scratchpad.close":
+                result = await self._scratchpad_close(params)
+            elif method == "scratchpad.cleanup":
+                result = await self._scratchpad_cleanup(params)
 
             else:
                 return {
@@ -5081,3 +5098,261 @@ class IPCServer:
                 error=str(e)
             )
             raise
+
+    # Feature 062: Scratchpad terminal management methods
+    async def _scratchpad_toggle(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Toggle scratchpad terminal visibility.
+        
+        Args:
+            params: {"project_name": str | null}  # null = current project
+            
+        Returns:
+            {"status": "launched"|"relaunched"|"shown"|"hidden", "project_name": str, "message": str}
+        """
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+            
+        from pathlib import Path
+        
+        # Get project name (use current if not specified)
+        project_name = params.get("project_name")
+        if not project_name:
+            project_name = await self.state_manager.get_active_project() or "global"
+            
+        # Check if terminal exists
+        terminal = self.scratchpad_manager.get_terminal(project_name)
+        
+        if not terminal:
+            # Launch new terminal
+            working_dir = await self._get_project_working_dir(project_name)
+            terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            return {
+                "status": "launched",
+                "project_name": project_name,
+                "pid": terminal.pid,
+                "window_id": terminal.window_id,
+                "message": f"Scratchpad terminal launched for project '{project_name}'"
+            }
+        
+        # Validate existing terminal
+        if not await self.scratchpad_manager.validate_terminal(project_name):
+            # Terminal invalid, relaunch
+            working_dir = await self._get_project_working_dir(project_name)
+            terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            return {
+                "status": "relaunched",
+                "project_name": project_name,
+                "pid": terminal.pid,
+                "window_id": terminal.window_id,
+                "message": f"Scratchpad terminal relaunched for project '{project_name}'"
+            }
+        
+        # Toggle existing terminal
+        result_state = await self.scratchpad_manager.toggle_terminal(project_name)
+        return {
+            "status": result_state,
+            "project_name": project_name,
+            "window_id": terminal.window_id,
+            "message": f"Scratchpad terminal {result_state} for project '{project_name}'"
+        }
+    
+    async def _scratchpad_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Launch new scratchpad terminal (fails if exists).
+        
+        Args:
+            params: {"project_name": str | null, "working_dir": str | null}
+            
+        Returns:
+            {"project_name": str, "pid": int, "window_id": int, "mark": str, "working_dir": str, "message": str}
+        """
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+            
+        from pathlib import Path
+        
+        # Get project name
+        project_name = params.get("project_name")
+        if not project_name:
+            project_name = await self.state_manager.get_active_project() or "global"
+            
+        # Get working directory
+        working_dir_str = params.get("working_dir")
+        if working_dir_str:
+            working_dir = Path(working_dir_str)
+        else:
+            working_dir = await self._get_project_working_dir(project_name)
+            
+        # Launch terminal
+        terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+        
+        return {
+            "project_name": terminal.project_name,
+            "pid": terminal.pid,
+            "window_id": terminal.window_id,
+            "mark": terminal.mark,
+            "working_dir": str(terminal.working_dir),
+            "message": f"Scratchpad terminal launched for project '{project_name}'"
+        }
+    
+    async def _scratchpad_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get status of scratchpad terminals.
+        
+        Args:
+            params: {"project_name": str | null}  # null = all terminals
+            
+        Returns:
+            {"terminals": [...], "count": int}
+        """
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+            
+        project_name = params.get("project_name")
+        
+        if project_name:
+            # Single terminal status
+            terminal = self.scratchpad_manager.get_terminal(project_name)
+            if not terminal:
+                return {"terminals": [], "count": 0}
+                
+            # Get terminal state
+            state = await self.scratchpad_manager.get_terminal_state(project_name)
+            process_running = terminal.is_process_running()
+            
+            # Check window exists
+            tree = await self.scratchpad_manager.sway.get_tree()
+            window = tree.find_by_id(terminal.window_id)
+            window_exists = window is not None
+            
+            return {
+                "terminals": [{
+                    "project_name": terminal.project_name,
+                    "pid": terminal.pid,
+                    "window_id": terminal.window_id,
+                    "mark": terminal.mark,
+                    "working_dir": str(terminal.working_dir),
+                    "state": state or "unknown",
+                    "process_running": process_running,
+                    "window_exists": window_exists,
+                    "created_at": terminal.created_at,
+                    "last_shown_at": terminal.last_shown_at,
+                }],
+                "count": 1
+            }
+        else:
+            # All terminals status
+            terminals = await self.scratchpad_manager.list_terminals()
+            result_terminals = []
+            
+            for terminal in terminals:
+                state = await self.scratchpad_manager.get_terminal_state(terminal.project_name)
+                process_running = terminal.is_process_running()
+                
+                tree = await self.scratchpad_manager.sway.get_tree()
+                window = tree.find_by_id(terminal.window_id)
+                window_exists = window is not None
+                
+                result_terminals.append({
+                    "project_name": terminal.project_name,
+                    "pid": terminal.pid,
+                    "window_id": terminal.window_id,
+                    "mark": terminal.mark,
+                    "working_dir": str(terminal.working_dir),
+                    "state": state or "unknown",
+                    "process_running": process_running,
+                    "window_exists": window_exists,
+                    "created_at": terminal.created_at,
+                    "last_shown_at": terminal.last_shown_at,
+                })
+            
+            return {
+                "terminals": result_terminals,
+                "count": len(result_terminals)
+            }
+    
+    async def _scratchpad_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close scratchpad terminal.
+        
+        Args:
+            params: {"project_name": str | null}
+            
+        Returns:
+            {"project_name": str, "message": str}
+        """
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+            
+        # Get project name
+        project_name = params.get("project_name")
+        if not project_name:
+            project_name = await self.state_manager.get_active_project() or "global"
+            
+        # Get terminal
+        terminal = self.scratchpad_manager.get_terminal(project_name)
+        if not terminal:
+            raise ValueError(f"No scratchpad terminal found for project: {project_name}")
+            
+        # Close window via Sway IPC
+        await self.scratchpad_manager.sway.command(f'[con_id={terminal.window_id}] kill')
+        
+        # Remove from state (window close event will also remove it, but we do it immediately)
+        del self.scratchpad_manager.terminals[project_name]
+        
+        return {
+            "project_name": project_name,
+            "message": f"Scratchpad terminal closed for project '{project_name}'"
+        }
+    
+    async def _scratchpad_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clean up invalid scratchpad terminals.
+        
+        Args:
+            params: {}
+            
+        Returns:
+            {"cleaned_up": int, "remaining": int, "projects_cleaned": [str], "message": str}
+        """
+        if not self.scratchpad_manager:
+            raise RuntimeError("Scratchpad manager not initialized")
+            
+        # Track projects before cleanup
+        projects_before = list(self.scratchpad_manager.terminals.keys())
+        
+        # Run cleanup
+        cleaned_count = await self.scratchpad_manager.cleanup_invalid_terminals()
+        
+        # Track projects after cleanup
+        projects_after = list(self.scratchpad_manager.terminals.keys())
+        
+        # Find removed projects
+        projects_cleaned = [p for p in projects_before if p not in projects_after]
+        
+        remaining = len(projects_after)
+        
+        return {
+            "cleaned_up": cleaned_count,
+            "remaining": remaining,
+            "projects_cleaned": projects_cleaned,
+            "message": f"Cleaned up {cleaned_count} invalid terminal(s), {remaining} terminal(s) remaining"
+        }
+    
+    async def _get_project_working_dir(self, project_name: str) -> Path:
+        """Get working directory for project.
+        
+        Args:
+            project_name: Project name or "global"
+            
+        Returns:
+            Path to working directory
+        """
+        from pathlib import Path
+        
+        if project_name == "global":
+            return Path.home()
+            
+        # Look up project in state
+        projects = self.state_manager.state.projects
+        if project_name in projects:
+            return Path(projects[project_name].directory)
+
+        # Fallback to home directory
+        return Path.home()

@@ -30,9 +30,6 @@ export interface WindowState {
   /** Process ID of the window */
   pid?: number;
 
-  /** I3PM_APP_ID from process environment (unique launch identifier) */
-  app_id?: string;
-
   /** Window class (application identifier) */
   class: string;
 
@@ -636,4 +633,141 @@ export interface ClassificationRule {
 export interface ProjectExtended extends Project {
   /** Saved workspace layouts */
   layoutSnapshots?: LayoutSnapshot[];
+}
+
+// ============================================================================
+// Scratchpad Terminal Models (Feature 062)
+// ============================================================================
+
+/**
+ * Scratchpad terminal instance
+ */
+export interface ScratchpadTerminal {
+  /** Project identifier or "global" */
+  project_name: string;
+
+  /** Alacritty process ID */
+  pid: number;
+
+  /** Sway window container ID */
+  window_id: number;
+
+  /** Sway window mark (format: "scratchpad:{project_name}") */
+  mark: string;
+
+  /** Initial working directory (project root) */
+  working_dir: string;
+
+  /** Unix timestamp of terminal creation */
+  created_at: number;
+
+  /** Unix timestamp of last show operation (null if never shown) */
+  last_shown_at: number | null;
+}
+
+/**
+ * Scratchpad terminal with validation status
+ */
+export interface ScratchpadTerminalStatus extends ScratchpadTerminal {
+  /** Visibility state: "visible", "hidden", or "unknown" */
+  state: "visible" | "hidden" | "unknown";
+
+  /** Whether terminal is valid (process running, window exists) */
+  valid: boolean;
+
+  /** Validation error message if invalid */
+  validation_error?: string;
+}
+
+/**
+ * Result of scratchpad toggle operation
+ */
+export interface ScratchpadToggleResult {
+  /** Project name */
+  project_name: string;
+
+  /** Action taken: "launched", "shown", "hidden" */
+  action: "launched" | "shown" | "hidden";
+
+  /** Resulting state: "visible" or "hidden" */
+  state: "visible" | "hidden";
+
+  /** Terminal instance */
+  terminal: ScratchpadTerminal;
+}
+
+/**
+ * Result of scratchpad launch operation
+ */
+export interface ScratchpadLaunchResult {
+  /** Project name */
+  project_name: string;
+
+  /** Launched terminal instance */
+  terminal: ScratchpadTerminal;
+}
+
+/**
+ * Result of scratchpad status query
+ */
+export interface ScratchpadStatusResult {
+  /** List of terminals with status */
+  terminals: ScratchpadTerminalStatus[];
+}
+
+/**
+ * Result of scratchpad close operation
+ */
+export interface ScratchpadCloseResult {
+  /** Project name */
+  project_name: string;
+
+  /** Success status */
+  success: boolean;
+}
+
+/**
+ * Result of scratchpad cleanup operation
+ */
+export interface ScratchpadCleanupResult {
+  /** Number of terminals cleaned up */
+  cleaned_count: number;
+
+  /** List of project names that were cleaned up */
+  cleaned_projects: string[];
+}
+
+/**
+ * Parameters for scratchpad toggle request
+ */
+export interface ScratchpadToggleParams {
+  /** Project name (omit for current project) */
+  project_name?: string;
+}
+
+/**
+ * Parameters for scratchpad launch request
+ */
+export interface ScratchpadLaunchParams {
+  /** Project name (omit for current project) */
+  project_name?: string;
+
+  /** Working directory (omit for project root) */
+  working_dir?: string;
+}
+
+/**
+ * Parameters for scratchpad status request
+ */
+export interface ScratchpadStatusParams {
+  /** Project name (omit for all terminals) */
+  project_name?: string;
+}
+
+/**
+ * Parameters for scratchpad close request
+ */
+export interface ScratchpadCloseParams {
+  /** Project name (omit for current project) */
+  project_name?: string;
 }

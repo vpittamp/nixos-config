@@ -1,0 +1,411 @@
+{
+  "title": "Scratchpad Terminal JSON-RPC API",
+  "version": "1.0.0",
+  "description": "JSON-RPC methods for managing project-scoped scratchpad terminals in i3pm daemon",
+  "methods": {
+    "scratchpad.toggle": {
+      "description": "Toggle scratchpad terminal visibility for current/specified project. If terminal doesn't exist, launches new terminal. If terminal exists but invalid (process dead), relaunches. If terminal valid and hidden, shows it. If terminal valid and visible, hides it.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier. If omitted, uses current active project from daemon state. Use 'global' for global terminal.",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 100,
+            "required": false
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["launched", "relaunched", "shown", "hidden"],
+            "description": "Action performed: launched (new terminal created), relaunched (invalid terminal replaced), shown (hidden terminal made visible), hidden (visible terminal moved to scratchpad)"
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier for the terminal"
+          },
+          "pid": {
+            "type": "integer",
+            "description": "Process ID of the terminal (for launched/relaunched status)"
+          },
+          "window_id": {
+            "type": "integer",
+            "description": "Sway window container ID"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable status message"
+          }
+        },
+        "required": ["status", "project_name", "message"]
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid project_name parameter"
+        },
+        {
+          "code": -32000,
+          "message": "Terminal launch failed (Alacritty not found, working directory invalid, etc.)"
+        },
+        {
+          "code": -32001,
+          "message": "Sway IPC command failed (window not found, command syntax error, etc.)"
+        }
+      ],
+      "example": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "scratchpad.toggle",
+          "params": {}
+        },
+        "response": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "status": "shown",
+            "project_name": "nixos",
+            "window_id": 94489280339584,
+            "message": "Scratchpad terminal shown for project 'nixos'"
+          }
+        }
+      }
+    },
+    "scratchpad.launch": {
+      "description": "Explicitly launch new scratchpad terminal for project. Fails if terminal already exists (use toggle for idempotent operation).",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier. If omitted, uses current active project.",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "required": false
+          },
+          "working_dir": {
+            "type": "string",
+            "description": "Override working directory. If omitted, uses project root from daemon configuration.",
+            "required": false
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier"
+          },
+          "pid": {
+            "type": "integer",
+            "description": "Process ID of launched terminal"
+          },
+          "window_id": {
+            "type": "integer",
+            "description": "Sway window container ID"
+          },
+          "mark": {
+            "type": "string",
+            "description": "Sway window mark applied to terminal",
+            "pattern": "^scratchpad:.+$"
+          },
+          "working_dir": {
+            "type": "string",
+            "description": "Working directory of terminal"
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message"
+          }
+        },
+        "required": ["project_name", "pid", "window_id", "mark", "working_dir", "message"]
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid parameters"
+        },
+        {
+          "code": -32000,
+          "message": "Terminal already exists for project"
+        },
+        {
+          "code": -32001,
+          "message": "Terminal launch failed"
+        }
+      ],
+      "example": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "scratchpad.launch",
+          "params": {
+            "project_name": "dotfiles"
+          }
+        },
+        "response": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": {
+            "project_name": "dotfiles",
+            "pid": 123456,
+            "window_id": 94489280339600,
+            "mark": "scratchpad:dotfiles",
+            "working_dir": "/home/user/dotfiles",
+            "message": "Scratchpad terminal launched for project 'dotfiles'"
+          }
+        }
+      }
+    },
+    "scratchpad.status": {
+      "description": "Get status of scratchpad terminal(s). If project_name provided, returns single terminal status. If omitted, returns all terminals.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier. If omitted, returns status for all terminals.",
+            "required": false
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "terminals": {
+            "type": "array",
+            "description": "List of scratchpad terminal statuses",
+            "items": {
+              "type": "object",
+              "properties": {
+                "project_name": {
+                  "type": "string"
+                },
+                "pid": {
+                  "type": "integer"
+                },
+                "window_id": {
+                  "type": "integer"
+                },
+                "mark": {
+                  "type": "string"
+                },
+                "working_dir": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": ["visible", "hidden"],
+                  "description": "Current visibility state"
+                },
+                "process_running": {
+                  "type": "boolean",
+                  "description": "Whether terminal process is still running"
+                },
+                "window_exists": {
+                  "type": "boolean",
+                  "description": "Whether window exists in Sway tree"
+                },
+                "created_at": {
+                  "type": "number",
+                  "description": "Unix timestamp of creation"
+                },
+                "last_shown_at": {
+                  "type": ["number", "null"],
+                  "description": "Unix timestamp of last show operation, null if never shown"
+                }
+              },
+              "required": ["project_name", "pid", "window_id", "mark", "working_dir", "state", "process_running", "window_exists", "created_at"]
+            }
+          },
+          "count": {
+            "type": "integer",
+            "description": "Total number of terminals"
+          }
+        },
+        "required": ["terminals", "count"]
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid project_name parameter"
+        }
+      ],
+      "example": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "scratchpad.status",
+          "params": {}
+        },
+        "response": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "result": {
+            "terminals": [
+              {
+                "project_name": "nixos",
+                "pid": 123456,
+                "window_id": 94489280339584,
+                "mark": "scratchpad:nixos",
+                "working_dir": "/etc/nixos",
+                "state": "hidden",
+                "process_running": true,
+                "window_exists": true,
+                "created_at": 1730815200.123,
+                "last_shown_at": 1730815300.456
+              },
+              {
+                "project_name": "dotfiles",
+                "pid": 123457,
+                "window_id": 94489280339600,
+                "mark": "scratchpad:dotfiles",
+                "working_dir": "/home/user/dotfiles",
+                "state": "visible",
+                "process_running": true,
+                "window_exists": true,
+                "created_at": 1730815250.789,
+                "last_shown_at": null
+              }
+            ],
+            "count": 2
+          }
+        }
+      }
+    },
+    "scratchpad.close": {
+      "description": "Close scratchpad terminal for project. Terminates process and removes from daemon state.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier. If omitted, uses current active project.",
+            "required": false
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project identifier of closed terminal"
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message"
+          }
+        },
+        "required": ["project_name", "message"]
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid project_name parameter"
+        },
+        {
+          "code": -32000,
+          "message": "No scratchpad terminal found for project"
+        },
+        {
+          "code": -32001,
+          "message": "Failed to close terminal window"
+        }
+      ],
+      "example": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 4,
+          "method": "scratchpad.close",
+          "params": {
+            "project_name": "dotfiles"
+          }
+        },
+        "response": {
+          "jsonrpc": "2.0",
+          "id": 4,
+          "result": {
+            "project_name": "dotfiles",
+            "message": "Scratchpad terminal closed for project 'dotfiles'"
+          }
+        }
+      }
+    },
+    "scratchpad.cleanup": {
+      "description": "Clean up invalid scratchpad terminals (dead processes, missing windows). Runs validation on all tracked terminals.",
+      "params": {
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "cleaned_up": {
+            "type": "integer",
+            "description": "Number of invalid terminals removed"
+          },
+          "remaining": {
+            "type": "integer",
+            "description": "Number of valid terminals still tracked"
+          },
+          "projects_cleaned": {
+            "type": "array",
+            "description": "List of project names whose terminals were removed",
+            "items": {
+              "type": "string"
+            }
+          },
+          "message": {
+            "type": "string",
+            "description": "Summary message"
+          }
+        },
+        "required": ["cleaned_up", "remaining", "projects_cleaned", "message"]
+      },
+      "errors": [],
+      "example": {
+        "request": {
+          "jsonrpc": "2.0",
+          "id": 5,
+          "method": "scratchpad.cleanup",
+          "params": {}
+        },
+        "response": {
+          "jsonrpc": "2.0",
+          "id": 5,
+          "result": {
+            "cleaned_up": 1,
+            "remaining": 1,
+            "projects_cleaned": ["old-project"],
+            "message": "Cleaned up 1 invalid terminal(s), 1 terminal(s) remaining"
+          }
+        }
+      }
+    }
+  },
+  "common_error_codes": {
+    "-32700": "Parse error - Invalid JSON",
+    "-32600": "Invalid Request - Missing required fields",
+    "-32601": "Method not found",
+    "-32602": "Invalid params - Parameter validation failed",
+    "-32603": "Internal error - Unexpected daemon error",
+    "-32000": "Application error - Terminal lifecycle error",
+    "-32001": "Application error - Sway IPC command failed"
+  },
+  "authentication": "None - daemon socket uses Unix permissions for access control",
+  "transport": "Unix domain socket at /run/user/$UID/i3-project-daemon.sock",
+  "notes": [
+    "All methods are asynchronous and may take up to 2 seconds for terminal launch operations",
+    "Toggle operation is idempotent and handles all edge cases (missing terminal, invalid terminal, etc.)",
+    "Status queries validate terminal state against Sway IPC before returning results",
+    "Cleanup operation is automatically run on daemon startup and periodically every 5 minutes"
+  ]
+}

@@ -6,84 +6,108 @@ let
     #!/usr/bin/env bash
     set -euo pipefail
 
-    COMMANDS_FILE="$HOME/.config/elephant/commands.toml"
+    SNIPPETS_FILE="$HOME/.config/elephant/snippets.toml"
 
     usage() {
       cat <<EOF
     Usage: walker-cmd <command> [options]
 
     Commands:
-      add <name> <command>    Add or update a custom command
-      save <command>          Save command with interactive name prompt
-      remove <name>           Remove a custom command
-      list                    List all custom commands
-      edit                    Edit commands file directly
-      reload                  Reload Elephant service
+      add <name> <command> [description]    Add or update a command snippet
+      save <command>                        Save command with interactive name prompt
+      remove <name>                         Remove a command snippet
+      list                                  List all command snippets
+      edit                                  Edit snippets file directly
+      reload                                Reload Elephant service
 
     Examples:
-      walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/"
+      walker-cmd add "backup nixos" "sudo rsync -av /etc/nixos /backup/" "Backup NixOS config"
       walker-cmd save "git status"  # Prompts for name interactively
       walker-cmd remove "backup nixos"
       walker-cmd list
       walker-cmd edit
       walker-cmd reload
 
-    Note: Commands are stored in $COMMANDS_FILE
+    Usage in Walker:
+      Meta+D → type "$" → type command name → Return
+
+    Note: Commands are stored in $SNIPPETS_FILE as snippets ($ prefix in Walker)
     EOF
     }
 
     ensure_file() {
-      if [ ! -f "$COMMANDS_FILE" ]; then
-        mkdir -p "$(dirname "$COMMANDS_FILE")"
+      if [ ! -f "$SNIPPETS_FILE" ]; then
+        mkdir -p "$(dirname "$SNIPPETS_FILE")"
         {
-          echo "# Elephant Custom Commands Configuration"
-          echo "# Managed by walker-cmd CLI tool (Feature 050)"
-          echo "# Usage: walker-cmd add \"name\" \"command\""
+          echo "# Elephant Snippets Configuration"
+          echo "# Managed by walker-cmd CLI tool"
+          echo "# Usage: walker-cmd add \"name\" \"command\" \"description\""
+          echo "# Access in Walker: Meta+D → type '\$' → type command name"
           echo ""
-          echo "[customcommands]"
-          echo "# System Management Examples"
-          echo "\"reload sway config\" = \"swaymsg reload\""
-          echo "\"lock screen\" = \"swaylock -f\""
-          echo "\"suspend system\" = \"systemctl suspend\""
+          echo "[[snippets]]"
+          echo "name = \"reload sway\""
+          echo "snippet = \"swaymsg reload\""
+          echo "description = \"Reload Sway configuration\""
           echo ""
-          echo "# NixOS Examples"
-          echo "\"rebuild nixos\" = \"cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway\""
-          echo "\"update nixos\" = \"cd /etc/nixos && nix flake update && sudo nixos-rebuild switch --flake .#hetzner-sway\""
+          echo "[[snippets]]"
+          echo "name = \"lock screen\""
+          echo "snippet = \"swaylock -f\""
+          echo "description = \"Lock the screen\""
           echo ""
-          echo "# Project Management Examples"
-          echo "\"list projects\" = \"i3pm project list\""
-          echo "\"show active project\" = \"i3pm project current\""
-          echo ""
-          echo "# Service Management Examples"
-          echo "\"restart elephant\" = \"systemctl --user restart elephant\""
-          echo "\"check elephant status\" = \"systemctl --user status elephant\""
-        } > "$COMMANDS_FILE"
-        echo "✓ Created commands file with examples: $COMMANDS_FILE"
-        echo "  Run 'walker-cmd list' to see all commands"
-        echo "  Run 'walker-cmd add \"name\" \"command\"' to add more"
+          echo "[[snippets]]"
+          echo "name = \"rebuild nixos\""
+          echo "snippet = \"cd /etc/nixos && sudo nixos-rebuild switch --flake .#hetzner-sway\""
+          echo "description = \"Rebuild NixOS configuration\""
+        } > "$SNIPPETS_FILE"
+        echo "✓ Created snippets file with examples: $SNIPPETS_FILE"
+        echo "  Run 'walker-cmd list' to see all snippets"
+        echo "  Use Meta+D then '#' prefix to access snippets in Walker"
       fi
     }
 
     add_command() {
       local name="$1"
       local cmd="$2"
+      local desc="''${3:-Execute $name}"
 
       ensure_file
 
-      # Check if [customcommands] section exists
-      if ! grep -q '^\[customcommands\]' "$COMMANDS_FILE"; then
-        echo "" >> "$COMMANDS_FILE"
-        echo "[customcommands]" >> "$COMMANDS_FILE"
-      fi
+      # Remove existing snippet with same name (if exists)
+      # This removes the entire [[snippets]] block
+      ${pkgs.gawk}/bin/awk -v name="$name" '
+        /^\[\[snippets\]\]/ { in_block=1; block="" }
+        in_block {
+          block = block $0 "\n"
+          if (/^name = ".*"$/) {
+            if ($0 ~ "name = \"" name "\"") {
+              skip_block=1
+            }
+          }
+          if (/^$/ || /^\[\[snippets\]\]/) {
+            if (!skip_block && block != "") print block
+            in_block=0
+            skip_block=0
+            block=""
+          }
+          next
+        }
+        !in_block { print }
+      ' "$SNIPPETS_FILE" > "$SNIPPETS_FILE.tmp"
+      mv "$SNIPPETS_FILE.tmp" "$SNIPPETS_FILE"
 
-      # Remove existing command with same name (if exists)
-      ${pkgs.gnused}/bin/sed -i "/^\"$name\" = /d" "$COMMANDS_FILE"
+      # Add new snippet
+      {
+        echo ""
+        echo "[[snippets]]"
+        echo "name = \"$name\""
+        echo "snippet = \"$cmd\""
+        echo "description = \"$desc\""
+      } >> "$SNIPPETS_FILE"
 
-      # Add new command
-      echo "\"$name\" = \"$cmd\"" >> "$COMMANDS_FILE"
-
-      echo "✓ Added command: $name"
+      echo "✓ Added snippet: $name"
       echo "  Command: $cmd"
+      echo "  Description: $desc"
+      echo "  Access: Meta+D → type '\$$name'"
 
       # Reload Elephant
       systemctl --user restart elephant 2>/dev/null && echo "✓ Elephant reloaded" || echo "⚠ Failed to reload Elephant"
@@ -111,41 +135,60 @@ let
     remove_command() {
       local name="$1"
 
-      if [ ! -f "$COMMANDS_FILE" ]; then
-        echo "Error: Commands file not found: $COMMANDS_FILE"
+      if [ ! -f "$SNIPPETS_FILE" ]; then
+        echo "Error: Snippets file not found: $SNIPPETS_FILE"
         exit 1
       fi
 
-      # Remove command
-      if ${pkgs.gnused}/bin/sed -i "/^\"$name\" = /d" "$COMMANDS_FILE"; then
-        echo "✓ Removed command: $name"
-        systemctl --user restart elephant 2>/dev/null && echo "✓ Elephant reloaded" || echo "⚠ Failed to reload Elephant"
-      else
-        echo "Error: Command not found: $name"
-        exit 1
-      fi
+      # Remove snippet block
+      ${pkgs.gawk}/bin/awk -v name="$name" '
+        /^\[\[snippets\]\]/ { in_block=1; block="" }
+        in_block {
+          block = block $0 "\n"
+          if (/^name = ".*"$/) {
+            if ($0 ~ "name = \"" name "\"") {
+              skip_block=1
+            }
+          }
+          if (/^$/ || /^\[\[snippets\]\]/) {
+            if (!skip_block && block != "") print block
+            in_block=0
+            skip_block=0
+            block=""
+          }
+          next
+        }
+        !in_block { print }
+      ' "$SNIPPETS_FILE" > "$SNIPPETS_FILE.tmp"
+      mv "$SNIPPETS_FILE.tmp" "$SNIPPETS_FILE"
+
+      echo "✓ Removed snippet: $name"
+      systemctl --user restart elephant 2>/dev/null && echo "✓ Elephant reloaded" || echo "⚠ Failed to reload Elephant"
     }
 
     list_commands() {
-      if [ ! -f "$COMMANDS_FILE" ]; then
-        echo "No commands file found. Use 'walker-cmd add' to create one."
+      if [ ! -f "$SNIPPETS_FILE" ]; then
+        echo "No snippets file found. Use 'walker-cmd add' to create one."
         exit 0
       fi
 
-      echo "Custom Commands in $COMMANDS_FILE:"
+      echo "Command Snippets in $SNIPPETS_FILE:"
+      echo "(Use Meta+D → '#' prefix to access in Walker)"
       echo ""
 
-      # Extract commands from TOML
-      ${pkgs.gnugrep}/bin/grep -E '^"[^"]+" = ' "$COMMANDS_FILE" | while IFS= read -r line; do
-        name=$(echo "$line" | ${pkgs.gnused}/bin/sed 's/^"\([^"]*\)" = .*/\1/')
-        cmd=$(echo "$line" | ${pkgs.gnused}/bin/sed 's/^"[^"]*" = "\(.*\)"$/\1/')
-        printf "  %-30s %s\n" "$name" "$cmd"
-      done
+      # Extract snippets from TOML
+      ${pkgs.gawk}/bin/awk '
+        /^\[\[snippets\]\]/ { if (name) printf "  %-25s %-40s %s\n", name, snippet, desc; name=""; snippet=""; desc="" }
+        /^name = / { gsub(/^name = "|"$/, ""); name=$0 }
+        /^snippet = / { gsub(/^snippet = "|"$/, ""); snippet=$0 }
+        /^description = / { gsub(/^description = "|"$/, ""); desc=$0 }
+        END { if (name) printf "  %-25s %-40s %s\n", name, snippet, desc }
+      ' "$SNIPPETS_FILE" | ${pkgs.gnused}/bin/sed 's/^/  /'
     }
 
     edit_commands() {
       ensure_file
-      ''${EDITOR:-nano} "$COMMANDS_FILE"
+      ''${EDITOR:-nano} "$SNIPPETS_FILE"
       echo "✓ Reloading Elephant..."
       systemctl --user restart elephant
     }

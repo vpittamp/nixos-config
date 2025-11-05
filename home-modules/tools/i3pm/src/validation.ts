@@ -6,6 +6,21 @@
  */
 
 import { z } from "zod";
+import type {
+  ApplicationClass,
+  ClassifyWindowResult,
+  ClearProjectResult,
+  DaemonStatus,
+  EventNotification,
+  Output,
+  OutputGeometry,
+  Project,
+  SwitchProjectResult,
+  WindowGeometry,
+  WindowRule,
+  WindowState,
+  Workspace,
+} from "./models.ts";
 
 // ============================================================================
 // Core Window Management Schemas
@@ -23,11 +38,11 @@ export type WindowGeometryValidated = z.infer<typeof WindowGeometrySchema>;
 export const WindowStateSchema = z.object({
   id: z.number().int().positive(),
   pid: z.number().int().positive().optional(),
-  app_id: z.string().optional(),
+  app_id: z.string().nullable(),  // I3PM_APP_ID from process environment (can be null)
   class: z.string().min(1),
-  instance: z.string().nullable().optional(), // Allow null for Wayland windows without instance
+  instance: z.string().nullable().optional(),  // Can be null or missing
   title: z.string(),
-  workspace: z.string().regex(/^(\d+(:.+)?|scratchpad( \(tracked: WS \d+\))?)$/), // Allow "scratchpad" or "scratchpad (tracked: WS N)"
+  workspace: z.string(),  // Accept any workspace string including "scratchpad"
   output: z.string().min(1),
   marks: z.array(z.string()),
   focused: z.boolean(),
@@ -35,12 +50,14 @@ export const WindowStateSchema = z.object({
   floating: z.boolean(),
   fullscreen: z.boolean(),
   geometry: WindowGeometrySchema,
+  classification: z.enum(["scoped", "global"]).optional(),  // Window classification
+  project: z.string().optional(),  // Project name (can be empty string)
 });
 
 export type WindowStateValidated = z.infer<typeof WindowStateSchema>;
 
 export const WorkspaceSchema = z.object({
-  number: z.number().int().min(-1).max(999), // Allow -1 for scratchpad workspace
+  number: z.number().int().min(-1).max(999),  // -1 for scratchpad workspace
   name: z.string().min(1),
   focused: z.boolean(),
   visible: z.boolean(),

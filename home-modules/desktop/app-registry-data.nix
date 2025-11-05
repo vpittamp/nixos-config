@@ -270,6 +270,23 @@ let
       fallback_behavior = "use_home";
       description = "Ghostty terminal (backup option)";
     })
+
+    # Scratchpad Terminal (Feature 062)
+    # Special floating terminal for quick project access
+    (mkApp {
+      name = "scratchpad-terminal";
+      display_name = "Scratchpad Terminal";
+      command = "alacritty";
+      parameters = "";
+      scope = "scoped";
+      expected_class = "Alacritty";
+      preferred_workspace = 1;  # Default to workspace 1, but managed dynamically
+      icon = "terminal";
+      nix_package = "pkgs.alacritty";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      description = "Project-scoped floating scratchpad terminal (Feature 062)";
+    })
   ]
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
   # All PWAs will have correct expected_class with declarative ULIDs

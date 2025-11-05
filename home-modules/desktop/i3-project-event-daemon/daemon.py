@@ -50,6 +50,7 @@ from .handlers import (
 )
 from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
+from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
 from datetime import datetime
 import time
 
@@ -162,6 +163,7 @@ class I3ProjectDaemon:
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
         self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
+        self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -275,6 +277,11 @@ class I3ProjectDaemon:
         )
         self.state_manager.workspace_mode_manager = self.workspace_mode_manager
         logger.info("Workspace mode manager initialized")
+
+        # Feature 062: Initialize scratchpad manager
+        self.scratchpad_manager = ScratchpadManager(self.connection.conn)
+        self.ipc_server.scratchpad_manager = self.scratchpad_manager
+        logger.info("Scratchpad manager initialized")
 
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()

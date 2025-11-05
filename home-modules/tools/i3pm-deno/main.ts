@@ -39,6 +39,7 @@ GLOBAL OPTIONS:
 
 COMMANDS:
   project          Project management commands
+  scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
   daemon           Daemon status and event monitoring
   layout           Workspace layout persistence (save/restore)
@@ -53,6 +54,7 @@ Run 'i3pm <command> --help' for more information on a specific command.
 EXAMPLES:
   i3pm project list                    List all projects
   i3pm project switch nixos            Switch to nixos project
+  i3pm scratchpad toggle               Toggle project terminal
   i3pm windows --live                  Live window visualization
   i3pm daemon status                   Show daemon status
   i3pm layout save my-layout           Save current workspace layout
@@ -120,6 +122,13 @@ async function main(): Promise<void> {
       {
         const { projectCommand } = await import("./src/commands/project.ts");
         await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "scratchpad":
+      {
+        const { scratchpadCommand } = await import("./src/commands/scratchpad.ts");
+        await scratchpadCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 

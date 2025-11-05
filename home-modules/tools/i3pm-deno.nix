@@ -10,7 +10,7 @@ let
   # Feature 059: Unified window view - show all windows including scratchpad by default
   # Feature 060: Project-centric tree view - group windows by project
   # Feature 061: Unified mark format - only project:NAME:ID
-  version = "2.7.0";
+  version = "2.7.1";  # Fixed app_id nullable validation
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
@@ -27,7 +27,7 @@ let
 
       mkdir -p $out/bin
 
-      # Main i3pm CLI
+      # Main i3pm CLI (v2.7.1 - fixed app_id nullable validation)
       cat > $out/bin/i3pm <<EOF
 #!/usr/bin/env bash
 exec ${pkgs.deno}/bin/deno run \\

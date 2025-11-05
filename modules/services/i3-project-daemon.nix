@@ -29,6 +29,7 @@ let
     pytest-cov   # Coverage reporting
     rich         # Terminal UI for diagnostic commands
     jsonschema   # JSON schema validation (for compatibility with other modules)
+    psutil       # Process utilities for scratchpad terminal validation (Feature 062)
   ]);
 
   # Daemon package (Feature 061: Unified mark format)
@@ -76,11 +77,12 @@ let
     if [ -n "$WAYLAND_SOCK" ]; then
       WAYLAND_DISPLAY=$(${pkgs.coreutils}/bin/basename "$WAYLAND_SOCK")
       export WAYLAND_DISPLAY
+      export XDG_RUNTIME_DIR="$USER_RUNTIME_DIR"
       echo "Found Wayland display: $WAYLAND_DISPLAY" >&2
     fi
 
     # Log final environment for debugging
-    echo "i3pm daemon environment: SWAYSOCK=$SWAYSOCK I3SOCK=$I3SOCK WAYLAND_DISPLAY=$WAYLAND_DISPLAY" >&2
+    echo "i3pm daemon environment: SWAYSOCK=$SWAYSOCK I3SOCK=$I3SOCK WAYLAND_DISPLAY=$WAYLAND_DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >&2
 
     # Run daemon
     exec ${pythonEnv}/bin/python3 -m i3_project_daemon
@@ -194,9 +196,7 @@ in
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
-          "PATH=/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
-          "DISPLAY=:10.0"
-          "XAUTHORITY=/home/${cfg.user}/.Xauthority"
+          "PATH=/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.alacritty}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
         ];
 
         # Logging
