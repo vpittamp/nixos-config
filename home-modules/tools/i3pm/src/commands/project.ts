@@ -4,29 +4,42 @@
  * Feature 058: Updated to use daemon ProjectService via JSON-RPC
  */
 
+import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../services/daemon-client.ts";
 
 export async function projectCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
-  const [subcommand] = args;
+  // Parse command-specific flags
+  const parsed = parseArgs(args, {
+    boolean: ["json", "verbose", "debug"],
+    string: ["directory", "dir", "display-name", "display", "icon"],
+    alias: {
+      d: "directory",
+    },
+    "--": true,
+  });
+
+  // Merge parsed flags with global flags
+  const allFlags = { ...flags, ...parsed };
+  const subcommand = String(parsed._[0] || "");
 
   try {
     switch (subcommand) {
       case "create":
-        return await createProject(args.slice(1), flags);
+        return await createProject(parsed._.slice(1).map(String), allFlags);
       case "list":
-        return await listProjects(flags);
+        return await listProjects(allFlags);
       case "show":
-        return await showProject(args[1], flags);
+        return await showProject(String(parsed._[1] || ""), allFlags);
       case "current":
-        return await currentProject(flags);
+        return await currentProject(allFlags);
       case "update":
-        return await updateProject(args.slice(1), flags);
+        return await updateProject(parsed._.slice(1).map(String), allFlags);
       case "delete":
-        return await deleteProject(args[1], flags);
+        return await deleteProject(String(parsed._[1] || ""), allFlags);
       case "switch":
-        return await switchProject(args[1], flags);
+        return await switchProject(String(parsed._[1] || ""), allFlags);
       case "clear":
-        return await clearProject(flags);
+        return await clearProject(allFlags);
       default:
         console.error("Usage: i3pm project <create|list|show|current|update|delete|switch|clear>");
         return 1;
