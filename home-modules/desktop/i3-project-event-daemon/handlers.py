@@ -1,6 +1,7 @@
 """Event handlers for i3 window/workspace/tick events.
 
 This module contains all event handlers that process i3 IPC events.
+Feature 061: Unified mark format (project:NAME:ID).
 """
 
 import asyncio

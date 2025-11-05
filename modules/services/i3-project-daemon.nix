@@ -31,12 +31,12 @@ let
     jsonschema   # JSON schema validation (for compatibility with other modules)
   ]);
 
-  # Daemon package
+  # Daemon package (Feature 061: Unified mark format)
   daemonSrc = ../../home-modules/desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.6.0";  # Fix: Non-blocking initialization - Sway connection in background to prevent socket activation hangs
+    version = "1.7.0";  # Feature 061: Unified mark format - all windows use project:NAME:ID
     src = daemonSrc;
 
     installPhase = ''
