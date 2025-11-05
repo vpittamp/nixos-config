@@ -878,35 +878,53 @@ async def on_window_new(
             should_mark = True
             mark_source = "I3PM environment"
             window_scope = window_env.scope
+        elif actual_project and classification.scope == "scoped":
+            # Project assigned via active project (user intent) for scoped windows
+            # This handles windows opened without launch notification or I3PM environment
+            should_mark = True
+            mark_source = "active project"
+            window_scope = classification.scope
 
-        if should_mark and actual_project:
-            mark = f"{window_scope}:{actual_project}:{window_id}"
-            # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
-            await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
-            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, from {mark_source})")
+        # ALWAYS mark windows for consistency and debugging
+        # Format: {scope}:{project}:{window_id}
+        # - scope: scoped/global (from classification)
+        # - project: project name or "none" if no active project
+        # - window_id: unique window identifier
+        project_for_mark = actual_project or "none"
+        mark = f"{window_scope}:{project_for_mark}:{window_id}"
 
-            # Add to state (mark event will update this)
-            # Feature 041 T022: Include correlation metadata if window was matched via launch
-            window_info = WindowInfo(
-                window_id=window_id,
-                con_id=container.id,
-                window_class=window_class,
-                window_title=window_title,
-                window_instance=container.window_instance or "",
-                app_identifier=window_env.app_name if window_env else (matched_launch.app_name if matched_launch else window_class),
-                project=actual_project,
-                marks=[mark],
-                workspace=container.workspace().name if container.workspace() else "",
-                created=datetime.now(),
-                # Feature 041 T022: Store correlation metadata if matched via launch
-                # T040: Now using full signals from calculate_confidence including workspace details
-                correlation_matched=bool(matched_launch),
-                correlation_launch_id=f"{matched_launch.app_name}-{matched_launch.timestamp}" if matched_launch else None,
-                correlation_confidence=correlation_confidence if matched_launch else None,
-                correlation_confidence_level=confidence_level if matched_launch else None,
-                correlation_signals=correlation_signals if matched_launch else None,
-            )
-            await state_manager.add_window(window_info)
+        # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
+        await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
+
+        if actual_project:
+            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, from {mark_source or 'classification'})")
+        else:
+            logger.info(f"Marked window {window_id} with {mark} (scope={window_scope}, no active project)")
+
+        marks_list = [mark]
+
+        # ALWAYS add window to state (for tracking), even if not marked
+        # Feature 041 T022: Include correlation metadata if window was matched via launch
+        window_info = WindowInfo(
+            window_id=window_id,
+            con_id=container.id,
+            window_class=window_class,
+            window_title=window_title,
+            window_instance=container.window_instance or "",
+            app_identifier=window_env.app_name if window_env else (matched_launch.app_name if matched_launch else window_class),
+            project=actual_project,  # May be None for global windows
+            marks=marks_list,
+            workspace=container.workspace().name if container.workspace() else "",
+            created=datetime.now(),
+            # Feature 041 T022: Store correlation metadata if matched via launch
+            # T040: Now using full signals from calculate_confidence including workspace details
+            correlation_matched=bool(matched_launch),
+            correlation_launch_id=f"{matched_launch.app_name}-{matched_launch.timestamp}" if matched_launch else None,
+            correlation_confidence=correlation_confidence if matched_launch else None,
+            correlation_confidence_level=confidence_level if matched_launch else None,
+            correlation_signals=correlation_signals if matched_launch else None,
+        )
+        await state_manager.add_window(window_info)
 
         # Feature 037 T026-T029 + Feature 039 T060-T063 + Feature 056 REFACTORED: Workspace assignment
         #
