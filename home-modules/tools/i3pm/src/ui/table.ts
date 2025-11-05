@@ -316,7 +316,7 @@ export function renderTable(
   outputs: Output[],
   options: { showHidden?: boolean; changeTracker?: ChangeTracker } = {},
 ): string {
-  const { showHidden = false, changeTracker } = options;
+  const { showHidden = true, changeTracker } = options; // Changed default to true: always show all windows including scratchpad
 
   if (outputs.length === 0) {
     return "No windows found";

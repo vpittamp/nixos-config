@@ -7,7 +7,9 @@ let
   # PID support: Added window PID display to all i3pm windows commands
   # Fix: Use flags parameter directly instead of re-parsing args in windowsCommand
   # Feature 058: Columnar output formatting + comprehensive help menu
-  version = "2.5.6";
+  # Feature 059: Unified window view - show all windows including scratchpad by default
+  # Feature 060: Project-centric tree view - group windows by project
+  version = "2.6.1";
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {

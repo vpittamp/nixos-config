@@ -27,6 +27,8 @@
         startup_command = "";
         # Show directory contents with eza when previewing
         preview_command = "eza --all --git --icons --color=always --group-directories-first --long {}";
+        # Automatically add these windows to every session
+        windows = ["git"];
       };
 
       # Session configurations
@@ -38,7 +40,7 @@
       window = [
         {
           name = "git";
-          startup_command = "git status && git diff";
+          startup_command = "lazygit";
         }
         {
           name = "build";

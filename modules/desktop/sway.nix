@@ -96,7 +96,11 @@ in {
     # Add users to video group for DRM access
     users.groups.video = {};
 
-    # Allow input group to access /dev/uinput for dotool
+    # Load uinput module at boot for wshowkeys and dotool
+    # Use mkBefore to ensure it's added even if other modules set boot.kernelModules
+    boot.kernelModules = lib.mkBefore [ "uinput" ];
+
+    # Allow input group to access /dev/uinput for dotool and wshowkeys
     services.udev.extraRules = ''
       KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
     '';

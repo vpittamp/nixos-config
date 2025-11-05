@@ -9,7 +9,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../client.ts";
 import { OutputSchema } from "../validation.ts";
 import type { Output } from "../models.ts";
-import { renderTree, renderLegend as renderTreeLegend } from "../ui/tree.ts";
+import { renderTree, renderTreeByProject, renderLegend as renderTreeLegend } from "../ui/tree.ts";
 import { renderTable, renderLegend as renderTableLegend } from "../ui/table.ts";
 import { z } from "zod";
 import { setup, Spinner } from "@cli-ux";
@@ -780,10 +780,12 @@ export async function windowsCommand(
       console.log(JSON.stringify(filtered, null, 2));
     } else if (isTable) {
       // Table mode (T020)
-      console.log(renderTable(filtered, { showHidden: flags.hidden === true }));
+      // Don't pass showHidden - let default (true) handle it to show all windows including scratchpad
+      console.log(renderTable(filtered, {}));
     } else {
-      // Tree mode (T019) - default
-      console.log(renderTree(filtered, { showHidden: flags.hidden === true }));
+      // Tree mode (T019) - default, now project-centric
+      // Use project-centric view that groups windows by project instead of output/workspace
+      console.log(renderTreeByProject(filtered, {}));
     }
 
     await client.close();

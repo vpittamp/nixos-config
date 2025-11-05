@@ -1730,6 +1730,96 @@ class IPCServer:
 
                 outputs.append(output_node)
 
+            # Add scratchpad windows as a special workspace on first output
+            # This ensures ALL windows are visible by default (Feature 025 enhancement)
+            if outputs and self.workspace_tracker:
+                scratchpad_windows_list = await window_filtering.get_scratchpad_windows(
+                    self.i3_connection.conn
+                )
+
+                if scratchpad_windows_list:
+                    scratchpad_windows = []
+                    for window in scratchpad_windows_list:
+                        # Get tracking info for workspace number
+                        tracking_info = self.workspace_tracker.windows.get(window.id, {})
+                        tracked_workspace = tracking_info.get("workspace_number", -1)
+
+                        # Read I3PM environment variables
+                        i3pm_env = await window_filtering.get_window_i3pm_env(
+                            window.id, window.pid, window.window
+                        )
+
+                        # Get project from marks or I3PM_PROJECT_NAME
+                        project = None
+                        for mark in window.marks:
+                            if mark.startswith("project:"):
+                                mark_parts = mark.split(":")
+                                project = mark_parts[1] if len(mark_parts) >= 2 else None
+                                break
+                        if not project:
+                            project = i3pm_env.get("I3PM_PROJECT_NAME")
+
+                        # Build marks list (include project mark for consistency)
+                        marks = list(window.marks)
+                        if project and not any(m.startswith("project:") for m in marks):
+                            marks.append(f"project:{project}")
+
+                        # Get window class
+                        window_class = window.window_class if hasattr(window, 'window_class') and window.window_class else (window.app_id if hasattr(window, 'app_id') else "unknown")
+
+                        # Determine if hidden (scoped to different project)
+                        classification = "global"
+                        hidden = True  # Scratchpad windows are hidden by definition
+                        if window_class and project:
+                            if window_class in self.state_manager.state.scoped_classes:
+                                classification = "scoped"
+
+                        # Read I3PM_APP_ID from environment
+                        app_id = i3pm_env.get("I3PM_APP_ID")
+
+                        # Format workspace field - only show tracked workspace if valid (> 0)
+                        if tracked_workspace > 0:
+                            workspace_str = f"scratchpad (tracked: WS {tracked_workspace})"
+                        else:
+                            workspace_str = "scratchpad"
+
+                        window_data = {
+                            "id": window.id,
+                            "pid": window.pid if hasattr(window, 'pid') else None,
+                            "app_id": app_id,
+                            "class": window_class,
+                            "instance": window.window_instance if hasattr(window, 'window_instance') else "",
+                            "title": window.name or "(no title)",
+                            "workspace": workspace_str,
+                            "output": outputs[0]["name"],  # Associate with first output
+                            "marks": marks,
+                            "floating": True,  # Scratchpad windows are always floating
+                            "focused": False,  # Can't be focused if in scratchpad
+                            "hidden": hidden,
+                            "fullscreen": False,
+                            "geometry": {
+                                "x": window.rect.x if hasattr(window, 'rect') else 0,
+                                "y": window.rect.y if hasattr(window, 'rect') else 0,
+                                "width": window.rect.width if hasattr(window, 'rect') else 0,
+                                "height": window.rect.height if hasattr(window, 'rect') else 0,
+                            },
+                            "classification": classification,
+                            "project": project or "",
+                        }
+                        scratchpad_windows.append(window_data)
+                        total_windows += 1
+
+                    # Add scratchpad as a special workspace on the first output
+                    scratchpad_workspace = {
+                        "number": -1,  # Special workspace number for scratchpad
+                        "name": "scratchpad",
+                        "focused": False,
+                        "visible": False,
+                        "output": outputs[0]["name"],
+                        "windows": scratchpad_windows,
+                    }
+                    outputs[0]["workspaces"].append(scratchpad_workspace)
+
             return {
                 "outputs": outputs,
                 "total_windows": total_windows,

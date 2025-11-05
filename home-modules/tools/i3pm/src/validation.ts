@@ -25,9 +25,9 @@ export const WindowStateSchema = z.object({
   pid: z.number().int().positive().optional(),
   app_id: z.string().optional(),
   class: z.string().min(1),
-  instance: z.string().optional(),
+  instance: z.string().nullable().optional(), // Allow null for Wayland windows without instance
   title: z.string(),
-  workspace: z.string().regex(/^\d+(:.+)?$/),
+  workspace: z.string().regex(/^(\d+(:.+)?|scratchpad( \(tracked: WS \d+\))?)$/), // Allow "scratchpad" or "scratchpad (tracked: WS N)"
   output: z.string().min(1),
   marks: z.array(z.string()),
   focused: z.boolean(),
@@ -40,7 +40,7 @@ export const WindowStateSchema = z.object({
 export type WindowStateValidated = z.infer<typeof WindowStateSchema>;
 
 export const WorkspaceSchema = z.object({
-  number: z.number().int().min(1).max(999),
+  number: z.number().int().min(-1).max(999), // Allow -1 for scratchpad workspace
   name: z.string().min(1),
   focused: z.boolean(),
   visible: z.boolean(),

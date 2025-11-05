@@ -5,8 +5,37 @@
 
 set -euo pipefail
 
+DEBUG_LOG="/tmp/swaybar-status-debug.log"
+log_debug() {
+    # Guard to avoid exploding log files; keep to ~200KB by truncating when large.
+    if [ -n "${DEBUG_LOG:-}" ]; then
+        if [ -f "$DEBUG_LOG" ] && [ "$(stat -c%s "$DEBUG_LOG" 2>/dev/null || echo 0)" -gt 204800 ]; then
+            : > "$DEBUG_LOG"
+        fi
+        local date_cmd="${DATE_BIN:-$(command -v date)}"
+        printf '[%s] %s\n' "$("$date_cmd" '+%Y-%m-%d %H:%M:%S')" "$*" >> "$DEBUG_LOG"
+    fi
+}
+
 # Output name passed as parameter (e.g., "rdp0" or "rdp1")
 OUTPUT_NAME="${1:-unknown}"
+
+# Resolve home directory (fallback if HOME unset in environment)
+if [ -n "${HOME:-}" ]; then
+    USER_HOME="$HOME"
+else
+    if command -v getent >/dev/null 2>&1; then
+        USER_HOME="$( (getent passwd "$(id -u)" | awk -F: '{print $6}') 2>/dev/null || echo "")"
+    else
+        USER_HOME="/home/$(id -un 2>/dev/null || echo user)"
+    fi
+
+    if [ -z "$USER_HOME" ]; then
+        USER_HOME="/tmp"
+    fi
+fi
+
+log_debug "status-event-driven.sh start PID=$$ OUTPUT=$OUTPUT_NAME HOME=${USER_HOME}"
 
 # Configuration paths (will be substituted by Nix)
 I3PM_BIN="@i3pm@"
@@ -20,6 +49,9 @@ WALKER_BIN="@walker@"
 WALKER_PROJECT_LIST_BIN="@walker_project_list@"
 WALKER_PROJECT_SWITCH_BIN="@walker_project_switch@"
 
+ACTIVE_PROJECT_FILE="${USER_HOME}/.config/i3/active-project.json"
+PROJECTS_DIR="${USER_HOME}/.config/i3/projects"
+
 # Colors (Catppuccin Mocha)
 COLOR_LAVENDER="#b4befe"
 COLOR_GREEN="#a6e3a1"
@@ -32,12 +64,14 @@ COLOR_SURFACE0="#313244"
 
 # Build project block
 build_project_block() {
-    local current project_info icon display_name
+    local current icon display_name project_file icon_value full_text
 
-    # Get current project name (extract from "Name: <project>" line)
-    current=$("$I3PM_BIN" project current 2>/dev/null | \
-        "$GREP_BIN" "^  Name:" | \
-        "$AWK_BIN" '{print $2}' || echo "")
+    # Determine current project from daemon state file (no CLI call)
+    if [ -f "$ACTIVE_PROJECT_FILE" ]; then
+        current=$("$JQ_BIN" -r '.project_name // empty' "$ACTIVE_PROJECT_FILE" 2>/dev/null || echo "")
+    else
+        current=""
+    fi
 
     if [ -z "$current" ]; then
         # No active project - global mode
@@ -52,23 +86,33 @@ build_project_block() {
                 min_width: 150,
                 align: "center"
             }'
-    else
-        # Get project info (icon + display name) from project list
-        project_info=$("$I3PM_BIN" project list --json 2>/dev/null | \
-            "$JQ_BIN" -r ".projects[] | select(.name == \"$current\") | \"\(.icon // \"📁\") \(.display_name // .name)\"" || echo "📁 $current")
-
-        "$JQ_BIN" -n --arg text "$project_info" --arg instance "$current" \
-            '{
-                full_text: $text,
-                color: "'"$COLOR_LAVENDER"'",
-                name: "project",
-                instance: $instance,
-                separator: false,
-                separator_block_width: 20,
-                min_width: 150,
-                align: "center"
-            }'
+        return
     fi
+
+    icon="📁"
+    display_name="$current"
+    project_file="${PROJECTS_DIR}/${current}.json"
+    if [ -f "$project_file" ]; then
+        display_name=$("$JQ_BIN" -r '.display_name // empty' "$project_file" 2>/dev/null || echo "$display_name")
+        icon_value=$("$JQ_BIN" -r '.icon // empty' "$project_file" 2>/dev/null || echo "")
+        if [ -n "$icon_value" ] && [ "$icon_value" != "null" ]; then
+            icon="$icon_value"
+        fi
+    fi
+
+    full_text=$(printf "%s %s" "$icon" "$display_name")
+
+    "$JQ_BIN" -n --arg text "$full_text" --arg instance "$current" \
+        '{
+            full_text: $text,
+            color: "'"$COLOR_LAVENDER"'",
+            name: "project",
+            instance: $instance,
+            separator: false,
+            separator_block_width: 20,
+            min_width: 150,
+            align: "center"
+        }'
 }
 
 # Build CPU block
@@ -203,6 +247,7 @@ build_spacer_block() {
 build_status_line() {
     local monitor spacer1 project spacer2 cpu memory network date
 
+    log_debug "build_status_line invoked"
     monitor=$(build_monitor_block)
     spacer1=$(build_spacer_block)
     project=$(build_project_block)
@@ -270,6 +315,7 @@ main() {
     # Listen to daemon tick events for instant project updates (<100ms latency)
     (
         # Initial update
+        log_debug "initial event stream update"
         status_line=$(build_status_line)
         printf '%s,\n' "$status_line"
 
@@ -277,6 +323,7 @@ main() {
         # Updates: instant on tick events, every 2s for system stats
         "$I3PM_BIN" daemon events --follow 2>/dev/null | while read -r event; do
             # Rebuild status on any daemon event (tick, window, etc.)
+            log_debug "event-triggered update: ${event}"
             status_line=$(build_status_line)
             printf '%s,\n' "$status_line"
         done &
@@ -285,6 +332,7 @@ main() {
         # This runs even if daemon events stop flowing
         while true; do
             sleep 2
+            log_debug "fallback update tick"
             status_line=$(build_status_line)
             printf '%s,\n' "$status_line"
         done

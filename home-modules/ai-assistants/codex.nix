@@ -69,6 +69,10 @@ in
       auto_save = true;
       theme = "dark";
       vim_mode = false;
+      # Enable new web search tool (replaces deprecated tools.web_search)
+      features = {
+        web_search_request = true;
+      };
 
       mcp_servers = lib.optionalAttrs enableChromiumMcpServers {
         # Playwright and Chrome DevTools MCP servers only available on Linux

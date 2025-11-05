@@ -222,10 +222,9 @@ in
   programs.walker = {
     enable = true;
 
-    # Disable runAsService - Walker has issues with GApplication DBus in X11/XRDP
-    # Instead, invoke Walker directly which works fine
-    # Plugins still work in direct mode
-    runAsService = false;
+    # Enable service mode for Wayland/Sway (plugins require GApplication service)
+    # Disable for X11/XRDP due to GApplication DBus issues
+    runAsService = isWaylandMode;
 
     # NOTE: config generation disabled - we override with xdg.configFile below to add X11 settings
     # Walker configuration with sesh plugin integration (Feature 034)
@@ -397,31 +396,9 @@ in
         bookmarks = true         # Quick URL access via bookmarks
         customcommands = true    # User-defined command shortcuts
 
-        [[plugins]]
-        # Modified to launch Alacritty with the selected tmux session
-        # Original sesh docs use "sesh connect --switch %RESULT%" but that only works inside tmux
-        # We launch Alacritty to attach to the selected session instead
-        cmd = "alacritty -e tmux attach-session -t %RESULT%"
-        keep_sort = false
-        name = "sesh"
-        prefix = ";s "
-        recalculate_score = true
-        show_icon_when_single = true
-        src_once = "sesh list -d -c -t -T"
-        switcher_only = true
-
-        [[plugins]]
-        # Project switcher - integrated with i3pm
-        # Lists all projects with icons, display names, and directories
-        # Supports clearing active project to return to global mode
-        cmd = "${walkerProjectSwitchCmd} %RESULT%"
-        keep_sort = false
-        name = "projects"
-        prefix = ";p "
-        recalculate_score = true
-        show_icon_when_single = true
-        src_once = "${walkerProjectListCmd}"
-        switcher_only = true
+        # NOTE: Projects and Sesh menus are defined as Elephant Lua menus
+        # See ~/.config/elephant/menus/projects.lua and sesh.lua
+        # Activated via provider prefixes below (;p and ;s)
 
         [[providers.prefixes]]
         prefix = "="
@@ -450,6 +427,14 @@ in
         [[providers.prefixes]]
         prefix = "!"
         provider = "todo"
+
+        [[providers.prefixes]]
+        prefix = ";p "
+        provider = "menus:projects"
+
+        [[providers.prefixes]]
+        prefix = ";s "
+        provider = "menus:sesh"
 
         [[providers.actions.desktopapplications]]
         action = "open"
