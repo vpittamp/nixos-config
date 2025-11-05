@@ -376,3 +376,52 @@ After completing all phases, verify against spec.md success criteria:
 **MVP Scope**: Phase 1 + Phase 2 + Phase 3 = 26 tasks (37% of total) delivers core value
 
 **Test Coverage**: 25 test tasks (36% of implementation tasks) ensures comprehensive validation
+
+---
+
+## Phase 9: Post-Deployment Fixes & Improvements
+
+**Purpose**: Address issues discovered during production testing and validation
+
+**Status**: In Progress
+
+### Critical Fixes
+
+- [X] T071 Fix copy-paste error: Change "Ghostty" references to "Alacritty" in scratchpad_manager.py lines 130, 132 (commit bc10de8)
+- [X] T072 Fix --json flag parsing in project command - add parseArgs to project.ts to properly handle command-specific flags (commit 3e0e166)
+- [ ] T073 [P1-CRITICAL] Fix multi-terminal launch timeout - Second terminal launch blocks daemon for 5+ seconds causing timeout
+  - **Location**: home-modules/desktop/i3-project-event-daemon/services/scratchpad_manager.py:126-134
+  - **Issue**: `stderr.read()` with timeout blocks event loop when launching multiple terminals
+  - **Root Cause**: Async subprocess stderr reading blocks subsequent launches
+  - **Solution Options**:
+    1. Use `asyncio.subprocess.DEVNULL` for stderr instead of PIPE
+    2. Spawn stderr reading in separate non-blocking task
+    3. Remove stderr reading entirely (rely on daemon logs)
+  - **Testing**: Launch terminals for 2+ projects in quick succession (e.g., `i3pm scratchpad toggle nixos && i3pm scratchpad toggle sdk`)
+  - **Impact**: Cannot use scratchpad for multiple projects simultaneously
+
+### Minor Fixes
+
+- [ ] T074 [P3-LOW] Fix error handler in cleanup command - Add type checking for error.message
+  - **Location**: home-modules/tools/i3pm/src/commands/scratchpad.ts:469
+  - **Current**: `error.message` assumes Error type
+  - **Fix**: `error instanceof Error ? error.message : String(error)`
+  - **Impact**: Potential runtime error if non-Error exception thrown
+
+### Documentation & Verification
+
+- [ ] T075 [P4-DOC] Verify Sway keybinding configuration - Confirm Mod+Shift+Return is properly configured
+  - **Location**: Check ~/.config/sway/config or home-modules/desktop/sway.nix
+  - **Note**: Commit message mentions keybinding but not found in config file
+  - **Action**: Either add keybinding or update documentation if using different mechanism
+
+---
+
+## Updated Task Count Summary
+
+- **Total Tasks**: 75 (70 original + 5 post-deployment)
+- **Completed**: 72
+- **In Progress**: 3
+  - T073: Multi-terminal timeout (critical)
+  - T074: Cleanup error handler (minor)
+  - T075: Keybinding verification (documentation)
