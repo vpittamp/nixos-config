@@ -132,7 +132,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = {
-                  inherit inputs;
+                  inherit inputs self;
                   pkgs-unstable = import nixpkgs-bleeding {
                     inherit system;
                     config.allowUnfree = true;
@@ -200,7 +200,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = {
-                  inherit inputs;
+                  inherit inputs self;
                   pkgs-unstable = import nixpkgs-bleeding {
                     system = "x86_64-linux";
                     config.allowUnfree = true;
@@ -257,7 +257,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 extraSpecialArgs = {
-                  inherit inputs;
+                  inherit inputs self;
                   pkgs-unstable = import nixpkgs-bleeding {
                     system = "aarch64-linux";
                     config.allowUnfree = true;

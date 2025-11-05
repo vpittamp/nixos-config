@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, pkgs-unstable ? pkgs, ... }:
+{ config, pkgs, lib, inputs, self, pkgs-unstable ? pkgs, ... }:
 
 let
   # Use claude-code from the dedicated flake for latest version (2.0.1)
@@ -32,7 +32,8 @@ lib.mkIf enableClaudeCode {
 
     # Path to custom commands directory
     # Commands from this directory will be symlinked to .claude/commands/
-    commandsDir = /etc/nixos/.claude/commands;
+    # Using self to reference the flake directory (pure evaluation compatible)
+    commandsDir = "${self}/.claude/commands";
 
     # Settings for Claude Code
     settings = {
@@ -68,10 +69,10 @@ lib.mkIf enableClaudeCode {
           matcher = "Bash";
           hooks = [{
             type = "command";
-            # Use absolute path to hook script stored in NixOS config
+            # Use path to hook script stored in NixOS config
             # This script receives JSON via stdin with structure:
             # {"tool_input": {"command": "..."}, "tool_name": "Bash", ...}
-            command = "/etc/nixos/scripts/claude-hooks/bash-history.sh";
+            command = "${self}/scripts/claude-hooks/bash-history.sh";
             # Set 5-second timeout (hook is simple, shouldn't take long)
             timeout = 5;
           }];
