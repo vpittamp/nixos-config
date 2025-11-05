@@ -20,7 +20,7 @@ from typing import List, Optional
 from blocks.models import StatusBlock, ClickEvent
 from blocks.config import Config
 from blocks.click_handler import ClickHandler
-from blocks import volume, battery, network, bluetooth, system
+from blocks import volume, battery, network, bluetooth, system, project
 
 # Setup logging
 logging.basicConfig(
@@ -88,6 +88,14 @@ class StatusGenerator:
             List of status blocks in display order (preserves original system monitor layout)
         """
         blocks = []
+
+        # i3pm Project Indicator (Feature 011 FR-006)
+        try:
+            project_block = project.create_project_block(self.config)
+            if project_block:
+                blocks.append(project_block)
+        except Exception as e:
+            logger.error(f"Failed to get project block: {e}")
 
         # NixOS Generation (if available)
         try:

@@ -28,7 +28,9 @@ class ClickHandler:
         """
         logger.debug(f"Click event: {event.name} button={event.button.value}")
 
-        if event.name == "volume":
+        if event.name == "project":
+            self._handle_project_click(event)
+        elif event.name == "volume":
             self._handle_volume_click(event)
         elif event.name == "network":
             self._handle_network_click(event)
@@ -40,6 +42,19 @@ class ClickHandler:
             self._handle_datetime_click(event)
         else:
             logger.warning(f"Unknown block name: {event.name}")
+
+    def _handle_project_click(self, event: ClickEvent) -> None:
+        """Handle project indicator block clicks (Feature 011 FR-007, FR-008).
+
+        - Left click: Open project switcher (walker project selector)
+        - Right click: Clear active project
+        """
+        if event.button == MouseButton.LEFT:
+            # FR-007: Click project indicator to open project switcher
+            self._launch_command("walker --modules projects")
+        elif event.button == MouseButton.RIGHT:
+            # FR-008: Right-click to clear active project
+            self._launch_command("i3pm project clear")
 
     def _handle_volume_click(self, event: ClickEvent) -> None:
         """Handle volume block clicks.

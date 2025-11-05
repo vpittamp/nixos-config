@@ -31,6 +31,9 @@ let
     wl-clipboard # Wayland clipboard
     xclip # X11 clipboard
 
+    # Input automation (Wayland/X11)
+    dotool # Wayland input automation tool
+
     # Network/IPC utilities
     socat # Socket communication tool (required by app-launcher-wrapper.sh)
 

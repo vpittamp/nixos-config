@@ -124,6 +124,7 @@ in {
       "sway/swaybar/blocks/network.py".source = ./swaybar/blocks/network.py;
       "sway/swaybar/blocks/bluetooth.py".source = ./swaybar/blocks/bluetooth.py;
       "sway/swaybar/blocks/system.py".source = ./swaybar/blocks/system.py;
+      "sway/swaybar/blocks/project.py".source = ./swaybar/blocks/project.py;
     };
 
     # Note: To enable enhanced status bar, update home-modules/desktop/swaybar.nix

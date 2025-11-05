@@ -1164,9 +1164,11 @@ async def on_window_new(
 
                     # T028: Check if window is already on preferred workspace
                     if not current_workspace or current_workspace.num != preferred_ws:
-                        # Move window to preferred workspace
+                        # Move window to preferred workspace and focus it
+                        # The focus command ensures Sway switches to the target workspace
+                        # to show the newly launched window (respects focus_on_window_activation)
                         await conn.command(
-                            f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
+                            f'[con_id="{container.id}"] move to workspace number {preferred_ws}; [con_id="{container.id}"] focus'
                         )
 
                         # Feature 056: Validate workspace assignment with retry (PWA race condition fix)
@@ -1188,7 +1190,7 @@ async def on_window_new(
                             )
                             await asyncio.sleep(0.1)  # Another 100ms delay
                             await conn.command(
-                                f'[con_id="{container.id}"] move to workspace number {preferred_ws}'
+                                f'[con_id="{container.id}"] move to workspace number {preferred_ws}; [con_id="{container.id}"] focus'
                             )
 
                             # Final validation
