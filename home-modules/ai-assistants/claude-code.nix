@@ -30,6 +30,10 @@ lib.mkIf enableClaudeCode {
     enable = true;
     package = claudeCodePackage;
 
+    # Path to custom commands directory
+    # Commands from this directory will be symlinked to .claude/commands/
+    commandsDir = /etc/nixos/.claude/commands;
+
     # Settings for Claude Code
     settings = {
       # Model selection removed - will use default or user's choice
