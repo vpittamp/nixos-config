@@ -329,6 +329,11 @@ async def filter_windows_by_project(
         # Feature 046: Use node ID (window.id) for Sway/Wayland compatibility
         window_id = window.id
 
+        # Skip scratchpad terminals (Feature 062) - they manage their own visibility
+        if any(mark.startswith("scratchpad:") for mark in window.marks):
+            logger.debug(f"Window {window_id} ({window.window_class}): skipping (scratchpad terminal)")
+            continue
+
         # Get project and scope from window marks
         # Old format: project:PROJECT:WINDOW_ID (assume scoped)
         # New format: SCOPE:PROJECT:WINDOW_ID (explicit scope)

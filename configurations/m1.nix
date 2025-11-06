@@ -309,6 +309,9 @@
   # Bluetooth manager GUI
   services.blueman.enable = true;
 
+  # UPower for battery monitoring (required by swaybar-enhanced battery indicator)
+  services.upower.enable = true;
+
   # Disable X11-specific services (migrated to Sway/Wayland - Feature 045)
   services.xrdp.enable = lib.mkForce false; # RDP replaced with wayvnc for Wayland
   services.touchegg.enable = lib.mkForce false; # Sway has native Wayland gestures
