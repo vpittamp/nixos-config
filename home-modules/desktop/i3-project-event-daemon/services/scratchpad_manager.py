@@ -119,7 +119,6 @@ class ScratchpadManager:
         try:
             proc = await asyncio.create_subprocess_exec(
                 "alacritty",
-                "-e", "bash",  # Run plain interactive bash (no login mode to avoid .bash_profile)
                 env=env,
                 cwd=str(working_dir),
                 stdout=asyncio.subprocess.DEVNULL,
