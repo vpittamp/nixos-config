@@ -47,7 +47,7 @@ case "${subcommand}" in
       send_notification "Active. Type digits or letters to filter." 60000
     else
       "${pkill_bin}" -x wshowkeys >/dev/null 2>&1 || true
-      "${setsid_bin}" -f wshowkeys \
+      "${setsid_bin}" -f "@wshowkeys@" \
         -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60 \
         >/dev/null 2>&1 || true
     fi

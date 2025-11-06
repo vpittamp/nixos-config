@@ -180,7 +180,7 @@
 - [ ] T052 [P] Add performance metrics logging (track latency for state queries, transitions) [Optional - can be added later]
 - [X] T053 Update quickstart.md with final keybinding recommendations and examples (if needed after implementation) [Already comprehensive]
 - [X] T054 Add example keybindings to home-modules/desktop/sway-keybindings.nix (commented examples for common apps)
-- [ ] T055 Run full workflow validation per quickstart.md scenarios (all 5 user stories) [Requires rebuild and testing]
+- [ ] T055 Run full workflow validation per quickstart.md scenarios (all 5 user stories) [Requires rebuild and testing - blocked by Nix build cache issue]
 - [ ] T056 Verify scratchpad state persistence across daemon restarts (restart daemon, show hidden window, check geometry) [Requires rebuild and testing]
 - [ ] T057 Verify multi-monitor support (test on Hetzner 3-display setup, ensure geometry preserved) [Requires rebuild and testing]
 
