@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -26,18 +27,29 @@ class RunRaiseManager:
         self,
         sway: Connection,
         workspace_tracker: WorkspaceTracker,
-        app_launcher_path: str = "/run/current-system/sw/bin/app-launcher-wrapper.sh",
+        app_launcher_path: Optional[str] = None,
     ):
         """Initialize run-raise manager.
 
         Args:
             sway: Sway IPC connection
             workspace_tracker: WorkspaceTracker instance for state storage
-            app_launcher_path: Path to app-launcher-wrapper.sh
+            app_launcher_path: Path to app-launcher-wrapper (auto-detected if None)
         """
         self.sway = sway
         self.workspace_tracker = workspace_tracker
+
+        # Auto-detect app-launcher-wrapper path if not provided
+        if app_launcher_path is None:
+            app_launcher_path = shutil.which("app-launcher-wrapper")
+            if app_launcher_path is None:
+                raise RuntimeError(
+                    "app-launcher-wrapper not found in PATH. "
+                    "Ensure home-modules/tools/app-launcher.nix is enabled."
+                )
+
         self.app_launcher_path = app_launcher_path
+        logger.info(f"Using app launcher: {self.app_launcher_path}")
         self._window_tracking: Dict[str, int] = {}  # app_name -> window_id mapping
 
     def register_window(self, app_name: str, window_id: int) -> None:
