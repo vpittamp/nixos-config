@@ -7,7 +7,7 @@
   # Perfect for VNC/remote scenarios
 
   services.keyd = {
-    enable = false;  # Disabled - causes keyboard blocking issues
+    enable = true;  # Enabled for CapsLock -> F9 remapping
     keyboards = {
       default = {
         ids = [ "*" ];  # Apply to all keyboards

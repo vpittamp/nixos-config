@@ -24,16 +24,16 @@
       preferred_workspace = 50;
     }
 
-    # Google AI (Gemini)
+    # Google AI (AI Mode Search)
     {
       name = "Google AI";
-      url = "https://gemini.google.com/app";
-      domain = "gemini.google.com";
-      icon = "file:///etc/nixos/assets/pwa-icons/google-ai.png";
-      description = "Google AI assistant";
+      url = "https://google.com/ai";
+      domain = "google.com";
+      icon = "file:///etc/nixos/assets/pwa-icons/google.png";
+      description = "Google AI Mode - Advanced AI search with Gemini 2.5";
       categories = "Network;Development;";
-      keywords = "ai;gemini;google;assistant;";
-      scope = "https://gemini.google.com/";
+      keywords = "ai;gemini;google;search;assistant;";
+      scope = "https://google.com/";
       ulid = "01K665SPD8EPMP3JTW02JM1M0Z";  # FFPWA ID
       # App registry metadata
       app_scope = "scoped";

@@ -37,8 +37,8 @@ in
     # Terminal configurations
     ../terminal/tmux.nix
     ../terminal/sesh.nix
-    ../terminal/alacritty.nix  # Alacritty terminal with sesh integration (default)
-    # ../terminal/ghostty.nix    # Ghostty terminal (backup option at WS12) - DISABLED: Using Alacritty as default, uncomment to re-enable
+    ../terminal/ghostty.nix    # Ghostty terminal (default)
+    # ../terminal/alacritty.nix  # Alacritty terminal - DISABLED: Using Ghostty as default, uncomment to re-enable if needed
     ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
 
     # Desktop configurations

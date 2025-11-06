@@ -38,6 +38,8 @@ class ClickHandler:
             self._handle_bluetooth_click(event)
         elif event.name == "battery":
             self._handle_battery_click(event)
+        elif event.name == "notification":
+            self._handle_notification_click(event)
         elif event.name == "datetime":
             self._handle_datetime_click(event)
         else:
@@ -93,6 +95,19 @@ class ClickHandler:
         """
         if event.button == MouseButton.LEFT and self.config.click_handlers.battery:
             self._launch_command(self.config.click_handlers.battery)
+
+    def _handle_notification_click(self, event: ClickEvent) -> None:
+        """Handle notification block clicks.
+
+        - Left click: Toggle SwayNC control center
+        - Right click: Toggle Do Not Disturb
+        """
+        if event.button == MouseButton.LEFT:
+            # Toggle control center with swaync-client -t (toggle) -sw (show window)
+            self._launch_command("swaync-client -t -sw")
+        elif event.button == MouseButton.RIGHT:
+            # Toggle Do Not Disturb with swaync-client -d (toggle dnd) -sw (show window)
+            self._launch_command("swaync-client -d -sw")
 
     def _handle_datetime_click(self, event: ClickEvent) -> None:
         """Handle datetime block clicks.

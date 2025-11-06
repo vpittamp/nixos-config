@@ -22,7 +22,7 @@ in
 
     # ========== APPLICATION LAUNCHERS ==========
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
-    "${modifier}+Shift+Return" = "exec alacritty";
+    "${modifier}+Shift+Return" = "exec ghostty";
     "${modifier}+d" = "exec walker";
 
     # Run-raise-hide launcher (Feature 051) - example keybindings
@@ -30,14 +30,14 @@ in
     # Toggle mode (default): Launch if not running, focus if visible, summon to current workspace
     # "${modifier}+b" = "exec i3pm run firefox";          # Toggle Firefox
     # "${modifier}+Shift+c" = "exec i3pm run code";       # Toggle VS Code
-    # "${modifier}+t" = "exec i3pm run alacritty";        # Toggle terminal
+    # "${modifier}+t" = "exec i3pm run ghostty";          # Toggle terminal
     #
     # Hide mode: Toggle visibility (hide focused window to scratchpad)
     # "${modifier}+Ctrl+b" = "exec i3pm run firefox --hide";
     # "${modifier}+Ctrl+c" = "exec i3pm run code --hide";
     #
     # Force new instance:
-    # "${modifier}+Alt+t" = "exec i3pm run alacritty --force";
+    # "${modifier}+Alt+t" = "exec i3pm run ghostty --force";
 
     # ========== WINDOW MANAGEMENT ==========
     # Focus windows (vim-style)
@@ -93,6 +93,10 @@ in
     # ========== PROJECT MANAGEMENT (i3pm) ==========
     "${modifier}+p" = "exec i3-project-switch";
     "${modifier}+Shift+p" = "exec i3-project-clear";
+
+    # ========== NOTIFICATIONS (SwayNC) ==========
+    "${modifier}+i" = "exec swaync-client -t -sw";  # Toggle notification center (i for info/inbox)
+    "${modifier}+Shift+i" = "exec swaync-client -d -sw";  # Toggle Do Not Disturb
 
     # ========== ADDITIONAL UTILITIES ==========
     # Screenshots (Wayland with grim + slurp)

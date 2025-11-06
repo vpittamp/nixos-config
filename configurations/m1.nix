@@ -336,7 +336,7 @@
   environment.systemPackages = with pkgs; [
     # Tools that work well on ARM
     neovim
-    alacritty
+    ghostty
 
     # Firefox PWA support (same as Hetzner)
     firefoxpwa # Native component for Progressive Web Apps

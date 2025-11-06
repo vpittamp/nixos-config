@@ -24,7 +24,7 @@ in {
         wl-clipboard  # Wayland clipboard utilities
         grim          # Screenshot utility for Wayland
         slurp         # Screen area selection tool
-        mako          # Notification daemon for Wayland
+        swaynotificationcenter  # Notification daemon with action button support
       ];
       description = "Additional packages to install with Sway";
     };

@@ -92,6 +92,19 @@ lib.mkIf enableClaudeCode {
             timeout = 5;
           }];
         }];
+
+        # Stop hook - Notify when Claude Code finishes and awaits input
+        # Sends desktop notification with limited output preview and action to return to terminal
+        Stop = [{
+          hooks = [{
+            type = "command";
+            # Hook script extracts last message, finds terminal window, sends notification
+            # Notification handler runs in background with "Return to Terminal" action button
+            command = "${self}/scripts/claude-hooks/stop-notification.sh";
+            # Short timeout - script spawns background handler and exits immediately
+            timeout = 3;
+          }];
+        }];
       };
 
       # Permissions configuration for sandboxed environment

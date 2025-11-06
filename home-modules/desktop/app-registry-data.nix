@@ -78,19 +78,19 @@ let
   };
 
   applications = [
-    # WS1: Terminals (Primary: alacritty)
+    # WS1: Terminals (Primary: ghostty)
     (mkApp {
       name = "terminal";
-      display_name = "Alacritty Terminal";
-      command = "alacritty";
+      display_name = "Ghostty Terminal";
+      command = "ghostty";
       # Use sesh connect to attach/create tmux session in project directory
       # sesh will use PROJECT_DIR as session directory context
       parameters = "-e sesh connect $PROJECT_DIR";
       scope = "scoped";
-      expected_class = "Alacritty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       icon = "terminal";
-      nix_package = "pkgs.alacritty";
+      nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
       description = "Terminal with sesh session management for project directory";
@@ -115,11 +115,11 @@ let
     (mkApp {
       name = "neovim";
       display_name = "Neovim";
-      command = "alacritty";
+      command = "ghostty";
       # parameters = "-e nvim $PROJECT_DIR";
       parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
       scope = "scoped";
-      expected_class = "Alacritty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
       icon = "nvim";
       nix_package = "pkgs.neovim";
@@ -164,10 +164,10 @@ let
     (mkApp {
       name = "lazygit";
       display_name = "Lazygit";
-      command = "alacritty";
+      command = "ghostty";
       parameters = "-e lazygit --work-tree=$PROJECT_DIR";
       scope = "scoped";
-      expected_class = "Alacritty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       icon = "git";
       nix_package = "pkgs.lazygit";
@@ -196,8 +196,8 @@ let
     (mkApp {
       name = "btop";
       display_name = "btop";
-      command = "alacritty";
-      parameters = "--class btop -e btop";
+      command = "ghostty";
+      parameters = "--class=btop -e btop";
       scope = "global";
       expected_class = "btop";
       preferred_workspace = 7;
@@ -211,8 +211,8 @@ let
     (mkApp {
       name = "htop";
       display_name = "htop";
-      command = "alacritty";
-      parameters = "--class htop -e htop";
+      command = "ghostty";
+      parameters = "--class=htop -e htop";
       scope = "global";
       expected_class = "htop";
       preferred_workspace = 7;
@@ -227,10 +227,10 @@ let
     (mkApp {
       name = "yazi";
       display_name = "Yazi File Manager";
-      command = "alacritty";
+      command = "ghostty";
       parameters = "-e yazi $PROJECT_DIR";
       scope = "scoped";
-      expected_class = "Alacritty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
       icon = "folder";
       nix_package = "pkgs.yazi";
@@ -243,8 +243,8 @@ let
     (mkApp {
       name = "k9s";
       display_name = "K9s";
-      command = "alacritty";
-      parameters = "--class k9s -e k9s";
+      command = "ghostty";
+      parameters = "--class=k9s -e k9s";
       scope = "global";
       expected_class = "k9s";
       preferred_workspace = 9;
@@ -255,12 +255,14 @@ let
       description = "Kubernetes cluster management";
     })
 
-    # WS12: Ghostty Terminal (backup terminal, less frequently used)
+    # WS12: Ghostty Terminal (now primary terminal with sesh)
     (mkApp {
       name = "ghostty";
       display_name = "Ghostty Terminal";
       command = "ghostty";
-      parameters = "";
+      # Use sesh connect to attach/create tmux session in project directory
+      # sesh will use PROJECT_DIR as session directory context
+      parameters = "-e sesh connect $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 12;
@@ -268,7 +270,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Ghostty terminal (backup option)";
+      description = "Ghostty terminal with sesh session management for project directory";
     })
 
     # Scratchpad Terminal (Feature 062)
@@ -276,13 +278,13 @@ let
     (mkApp {
       name = "scratchpad-terminal";
       display_name = "Scratchpad Terminal";
-      command = "alacritty";
+      command = "ghostty";
       parameters = "";
       scope = "scoped";
-      expected_class = "Alacritty";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;  # Default to workspace 1, but managed dynamically
       icon = "terminal";
-      nix_package = "pkgs.alacritty";
+      nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
       description = "Project-scoped floating scratchpad terminal (Feature 062)";

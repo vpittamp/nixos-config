@@ -20,7 +20,7 @@ from typing import List, Optional
 from blocks.models import StatusBlock, ClickEvent
 from blocks.config import Config
 from blocks.click_handler import ClickHandler
-from blocks import volume, battery, network, bluetooth, system, project
+from blocks import volume, battery, network, bluetooth, system, project, notification
 
 # Setup logging
 logging.basicConfig(
@@ -189,6 +189,14 @@ class StatusGenerator:
                         blocks.append(bt_block)
             except Exception as e:
                 logger.error(f"Failed to get bluetooth block: {e}")
+
+        # Notification block (SwayNC integration)
+        try:
+            notif_state = notification.get_notification_state()
+            if notif_state:
+                blocks.append(notif_state.to_status_block(self.config))
+        except Exception as e:
+            logger.error(f"Failed to get notification block: {e}")
 
         # Date/Time (always last)
         try:
