@@ -182,6 +182,9 @@ class ScratchpadManager:
                         f'[con_id={window.id}] floating enable, '
                         f'resize set 1000 600, move position center'
                     )
+                    # Move to scratchpad immediately and then show it
+                    await self.sway.command(f'[con_id={window.id}] move scratchpad')
+                    await self.sway.command(f'[con_mark="{mark}"] scratchpad show')
                     self.logger.debug(f"Marked and configured terminal window: ID={window.id}, Mark={mark}")
                     return window.id
 
