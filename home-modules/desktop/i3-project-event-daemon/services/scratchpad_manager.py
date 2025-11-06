@@ -114,24 +114,17 @@ class ScratchpadManager:
 
         # Launch Alacritty terminal
         # Use simple launch like other working Alacritty instances in this environment
+        # Use DEVNULL for stderr to prevent blocking the event loop (T073 fix)
         try:
             proc = await asyncio.create_subprocess_exec(
                 "alacritty",
                 env=env,
                 cwd=str(working_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-
-            # Log stderr output for debugging
-            if proc.stderr:
-                stderr_output = await asyncio.wait_for(proc.stderr.read(), timeout=0.5)
-                if stderr_output:
-                    self.logger.error(f"Alacritty stderr: {stderr_output.decode()}")
         except FileNotFoundError:
             raise RuntimeError("Alacritty not found - ensure it is installed")
-        except asyncio.TimeoutError:
-            pass  # No stderr within timeout, continue
 
         # Wait for window to appear (with timeout)
         window_id = await self._wait_for_terminal_window(proc.pid, mark, timeout=5.0)

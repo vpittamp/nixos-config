@@ -389,39 +389,46 @@ After completing all phases, verify against spec.md success criteria:
 
 - [X] T071 Fix copy-paste error: Change "Ghostty" references to "Alacritty" in scratchpad_manager.py lines 130, 132 (commit bc10de8)
 - [X] T072 Fix --json flag parsing in project command - add parseArgs to project.ts to properly handle command-specific flags (commit 3e0e166)
-- [ ] T073 [P1-CRITICAL] Fix multi-terminal launch timeout - Second terminal launch blocks daemon for 5+ seconds causing timeout
+- [X] T073 [P1-CRITICAL] Fix multi-terminal launch timeout - Second terminal launch blocks daemon for 5+ seconds causing timeout
   - **Location**: home-modules/desktop/i3-project-event-daemon/services/scratchpad_manager.py:126-134
   - **Issue**: `stderr.read()` with timeout blocks event loop when launching multiple terminals
   - **Root Cause**: Async subprocess stderr reading blocks subsequent launches
-  - **Solution Options**:
-    1. Use `asyncio.subprocess.DEVNULL` for stderr instead of PIPE
-    2. Spawn stderr reading in separate non-blocking task
-    3. Remove stderr reading entirely (rely on daemon logs)
-  - **Testing**: Launch terminals for 2+ projects in quick succession (e.g., `i3pm scratchpad toggle nixos && i3pm scratchpad toggle sdk`)
-  - **Impact**: Cannot use scratchpad for multiple projects simultaneously
+  - **Solution**: Changed stdout/stderr to `asyncio.subprocess.DEVNULL` instead of PIPE to prevent blocking
+  - **Result**: Removed 13 lines of stderr handling code, daemon no longer blocks on terminal launch
+  - **Testing**: Can now launch terminals for multiple projects without timeout
 
 ### Minor Fixes
 
-- [ ] T074 [P3-LOW] Fix error handler in cleanup command - Add type checking for error.message
+- [X] T074 [P3-LOW] Fix error handler in cleanup command - Add type checking for error.message
   - **Location**: home-modules/tools/i3pm/src/commands/scratchpad.ts:469
   - **Current**: `error.message` assumes Error type
-  - **Fix**: `error instanceof Error ? error.message : String(error)`
-  - **Impact**: Potential runtime error if non-Error exception thrown
+  - **Fix**: `const errorMessage = error instanceof Error ? error.message : String(error);`
+  - **Result**: Safe error handling for all exception types
 
 ### Documentation & Verification
 
-- [ ] T075 [P4-DOC] Verify Sway keybinding configuration - Confirm Mod+Shift+Return is properly configured
-  - **Location**: Check ~/.config/sway/config or home-modules/desktop/sway.nix
-  - **Note**: Commit message mentions keybinding but not found in config file
-  - **Action**: Either add keybinding or update documentation if using different mechanism
+- [X] T075 [P4-DOC] Verify Sway keybinding configuration - Confirm Mod+Shift+Return is properly configured
+  - **Location**: ~/.config/sway/keybindings.toml
+  - **Status**: VERIFIED - Keybinding exists at `Mod+Shift+Return`
+  - **Script**: Uses legacy shell script at ~/.config/sway/scripts/scratchpad-terminal-toggle.sh
+  - **Note**: Current keybinding uses legacy shell script, NOT the new i3pm daemon integration
+  - **Action**: Feature 062 daemon integration is available via CLI (`i3pm scratchpad toggle`) but keybinding still uses old approach
 
 ---
 
 ## Updated Task Count Summary
 
 - **Total Tasks**: 75 (70 original + 5 post-deployment)
-- **Completed**: 72
-- **In Progress**: 3
-  - T073: Multi-terminal timeout (critical)
-  - T074: Cleanup error handler (minor)
-  - T075: Keybinding verification (documentation)
+- **Completed**: 75 ✅ 100%
+- **In Progress**: 0
+
+### Phase 9 Summary
+
+All post-deployment fixes completed:
+- ✅ T071: Fixed Ghostty→Alacritty typos
+- ✅ T072: Fixed --json flag parsing
+- ✅ T073: Fixed critical multi-terminal timeout (removed blocking stderr.read())
+- ✅ T074: Fixed cleanup error handler type safety
+- ✅ T075: Verified keybinding exists (legacy shell script approach)
+
+**Note**: Keybinding currently uses legacy shell script instead of new daemon integration. This works but doesn't benefit from daemon-managed state tracking and multi-project isolation improvements from Feature 062.

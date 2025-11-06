@@ -466,7 +466,8 @@ EXAMPLES:
     if (parsed.json) {
       console.error(JSON.stringify({ error: String(error) }, null, 2));
     } else {
-      console.error(`${red("✗")} Error during cleanup: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`${red("✗")} Error during cleanup: ${errorMessage}`);
     }
     Deno.exit(1);
   }
