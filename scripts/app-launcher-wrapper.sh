@@ -366,12 +366,13 @@ else
 fi
 
 # ============================================================================
-# EXECUTE APPLICATION VIA SYSTEMD-RUN
+# EXECUTE APPLICATION VIA SWAY EXEC
 # ============================================================================
-# All apps launched through systemd-run for:
-# - Process isolation from launcher
-# - Proper environment variable propagation
-# - Independence from Walker/Elephant lifecycle
+# All apps launched through Sway exec for:
+# - Proper display server context (WAYLAND_DISPLAY, etc.)
+# - Reliable window creation in compositor environment
+# - Independence from launcher process lifecycle
+# - Environment variable propagation to spawned processes
 
 log "INFO" "Executing: ${ARGS[*]}"
 
@@ -385,49 +386,53 @@ if [[ -f "$LOG_FILE" ]]; then
     fi
 fi
 
-# Build command string for bash -c execution
+# Build environment variable exports for shell command
+# Export all I3PM_* variables so daemon can identify the window
+ENV_EXPORTS=(
+    "export I3PM_APP_ID='$I3PM_APP_ID'"
+    "export I3PM_APP_NAME='$I3PM_APP_NAME'"
+    "export I3PM_PROJECT_NAME='$I3PM_PROJECT_NAME'"
+    "export I3PM_PROJECT_DIR='$I3PM_PROJECT_DIR'"
+    "export I3PM_PROJECT_DISPLAY_NAME='$I3PM_PROJECT_DISPLAY_NAME'"
+    "export I3PM_PROJECT_ICON='$I3PM_PROJECT_ICON'"
+    "export I3PM_SCOPE='$I3PM_SCOPE'"
+    "export I3PM_ACTIVE='$I3PM_ACTIVE'"
+    "export I3PM_LAUNCH_TIME='$I3PM_LAUNCH_TIME'"
+    "export I3PM_LAUNCHER_PID='$I3PM_LAUNCHER_PID'"
+    "export I3PM_TARGET_WORKSPACE='$I3PM_TARGET_WORKSPACE'"
+    "export I3PM_EXPECTED_CLASS='$I3PM_EXPECTED_CLASS'"
+)
+
+ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
+
+# Build application command with working directory
 if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
-    CMD_STRING="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
+    APP_CMD="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
 else
-    CMD_STRING="${ARGS[*]}"
+    APP_CMD="${ARGS[*]}"
 fi
 
-log "INFO" "Launching via systemd-run: $CMD_STRING"
+# Complete shell command with environment setup
+FULL_CMD="$ENV_STRING; $APP_CMD"
 
-# Execute with systemd-run for process isolation
-if command -v systemd-run &>/dev/null; then
-    SYSTEMD_OUTPUT=$(systemd-run --user --scope \
-        --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
-        --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
-        --setenv=I3PM_PROJECT_NAME="$I3PM_PROJECT_NAME" \
-        --setenv=I3PM_PROJECT_DIR="$I3PM_PROJECT_DIR" \
-        --setenv=I3PM_PROJECT_DISPLAY_NAME="$I3PM_PROJECT_DISPLAY_NAME" \
-        --setenv=I3PM_PROJECT_ICON="$I3PM_PROJECT_ICON" \
-        --setenv=I3PM_SCOPE="$I3PM_SCOPE" \
-        --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
-        --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
-        --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
-        --setenv=I3PM_TARGET_WORKSPACE="$I3PM_TARGET_WORKSPACE" \
-        --setenv=I3PM_EXPECTED_CLASS="$I3PM_EXPECTED_CLASS" \
-        --setenv=DISPLAY="${DISPLAY:-:0}" \
-        --setenv=WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}" \
-        --setenv=MOZ_ENABLE_WAYLAND="${MOZ_ENABLE_WAYLAND:-1}" \
-        --setenv=MOZ_DBUS_REMOTE="${MOZ_DBUS_REMOTE:-1}" \
-        --setenv=EGL_PLATFORM="${EGL_PLATFORM:-wayland}" \
-        --setenv=GDK_BACKEND="${GDK_BACKEND:-wayland}" \
-        --setenv=HOME="$HOME" \
-        --setenv=PATH="$PATH" \
-        bash -c "$CMD_STRING" 2>&1)
+log "INFO" "Launching via Sway exec: ${FULL_CMD:0:200}..."  # Log first 200 chars
 
-    SYSTEMD_EXIT=$?
+# Execute via Sway IPC - this runs in the compositor's context
+if command -v swaymsg &>/dev/null; then
+    # Use bash -c to run the command with exported variables
+    SWAY_RESULT=$(swaymsg exec "bash -c \"$FULL_CMD\"" 2>&1)
+    SWAY_EXIT=$?
 
-    if [ $SYSTEMD_EXIT -eq 0 ]; then
-        log "INFO" "systemd-run launched successfully: $SYSTEMD_OUTPUT"
+    if [ $SWAY_EXIT -eq 0 ]; then
+        log "INFO" "Sway exec successful: $SWAY_RESULT"
     else
-        error "systemd-run failed (exit $SYSTEMD_EXIT): $SYSTEMD_OUTPUT"
+        error "Sway exec failed (exit $SWAY_EXIT): $SWAY_RESULT"
     fi
 else
-    # Fallback to exec if systemd-run not available
-    log "INFO" "Launching via exec (systemd-run not available)"
+    # Fallback to direct exec if swaymsg not available
+    log "WARN" "swaymsg not found, using direct exec (may not work in all environments)"
+    if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+        cd "$I3PM_PROJECT_DIR" || true
+    fi
     exec "${ARGS[@]}"
 fi

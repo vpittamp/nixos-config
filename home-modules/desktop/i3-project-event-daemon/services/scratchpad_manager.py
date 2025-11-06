@@ -113,31 +113,54 @@ class ScratchpadManager:
 
         self.logger.info(f"Launching scratchpad terminal for project '{project_name}' in {working_dir}")
 
-        # Launch Alacritty terminal with explicit bash command (no sesh/tmux)
-        # The I3PM_SCRATCHPAD env var signals this is a scratchpad terminal
-        # and should prevent auto-session managers in bashrc
-        # Use DEVNULL for stderr to prevent blocking the event loop (T073 fix)
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "alacritty",
-                env=env,
-                cwd=str(working_dir),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            raise RuntimeError("Alacritty not found - ensure it is installed")
+        # Use Sway exec to launch Ghostty - this ensures proper display server context
+        # Sway runs the command in the compositor's environment with correct WAYLAND_DISPLAY etc.
+        # This is more reliable than subprocess which requires manual environment setup
 
-        # Wait for window to appear (with timeout)
-        window_id = await self._wait_for_terminal_window(proc.pid, mark, timeout=5.0)
+        # Build shell command with environment variables and Ghostty launch
+        # Export I3PM_* variables so daemon can identify the window
+        env_exports = []
+        for key, value in env.items():
+            if key.startswith('I3PM_'):
+                # Escape single quotes in values
+                safe_value = value.replace("'", "'\\''")
+                env_exports.append(f"export {key}='{safe_value}'")
+
+        env_string = '; '.join(env_exports)
+
+        # Build Ghostty command with working directory
+        ghostty_cmd = f"cd '{working_dir}' && ghostty --title='Scratchpad Terminal'"
+
+        # Complete shell command with environment setup
+        full_cmd = f"{env_string}; {ghostty_cmd}"
+
+        self.logger.info(f"Launching via Sway exec: {full_cmd[:200]}...")  # Log first 200 chars
+
+        # Execute via Sway IPC - this runs in the compositor's context
+        try:
+            result = await self.sway.command(f'exec bash -c "{full_cmd}"')
+            self.logger.info(f"Sway exec result: {result}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to execute Sway command: {e}")
+
+        # Wait for window to appear (we don't have a PID anymore, so we search by app_id)
+        window_id = await self._wait_for_terminal_window_by_appid("com.mitchellh.ghostty", mark, timeout=5.0)
 
         if window_id is None:
             raise RuntimeError(f"Terminal window did not appear within timeout for project: {project_name}")
 
+        # Get PID from the window that appeared
+        tree = await self.sway.get_tree()
+        window = tree.find_by_id(window_id)
+        if not window or not window.pid:
+            raise RuntimeError(f"Could not get PID for window {window_id}")
+
+        terminal_pid = window.pid
+
         # Create terminal model
         terminal = ScratchpadTerminal(
             project_name=project_name,
-            pid=proc.pid,
+            pid=terminal_pid,
             window_id=window_id,
             mark=mark,
             working_dir=working_dir,
@@ -146,21 +169,23 @@ class ScratchpadManager:
         # Track in state
         self.terminals[project_name] = terminal
 
-        self.logger.info(f"Scratchpad terminal launched: PID={proc.pid}, WindowID={window_id}, Project={project_name}")
+        self.logger.info(f"Scratchpad terminal launched: PID={terminal_pid}, WindowID={window_id}, Project={project_name}")
 
         return terminal
 
-    async def _wait_for_terminal_window(
+    async def _wait_for_terminal_window_by_appid(
         self,
-        pid: int,
+        app_id: str,
         mark: str,
         timeout: float = 5.0,
     ) -> Optional[int]:
         """
-        Wait for terminal window to appear and mark it.
+        Wait for terminal window to appear by app_id and mark it.
+
+        Used when launching via Sway exec (no PID available).
 
         Args:
-            pid: Terminal process ID
+            app_id: Application ID to search for (e.g., "com.mitchellh.ghostty")
             mark: Window mark to apply
             timeout: Maximum time to wait in seconds
 
@@ -168,27 +193,48 @@ class ScratchpadManager:
             Window ID if found, None otherwise
         """
         start_time = asyncio.get_event_loop().time()
+        seen_windows = set()  # Track windows we've seen
 
         while asyncio.get_event_loop().time() - start_time < timeout:
             await asyncio.sleep(0.1)  # Poll interval
 
-            # Query Sway tree for windows with matching PID
+            # Query Sway tree for windows with matching app_id
             tree = await self.sway.get_tree()
             for window in tree.descendants():
-                if window.pid == pid and window.app_id and "alacritty" in window.app_id.lower():
-                    # Found the window - mark and configure it
-                    await self.sway.command(f'[con_id={window.id}] mark {mark}')
-                    await self.sway.command(
-                        f'[con_id={window.id}] floating enable, '
-                        f'resize set 1000 600, move position center'
-                    )
-                    # Move to scratchpad immediately and then show it
-                    await self.sway.command(f'[con_id={window.id}] move scratchpad')
-                    await self.sway.command(f'[con_mark="{mark}"] scratchpad show')
-                    self.logger.debug(f"Marked and configured terminal window: ID={window.id}, Mark={mark}")
-                    return window.id
+                if window.app_id != app_id:
+                    continue
 
-        self.logger.error(f"Terminal window not found within {timeout}s for PID={pid}")
+                # Skip if we've already processed this window
+                if window.id in seen_windows:
+                    continue
+
+                # Check if window already has a scratchpad mark (from another project)
+                if any(m.startswith("scratchpad:") for m in window.marks):
+                    seen_windows.add(window.id)
+                    continue
+
+                # Found an unmarked window with matching app_id - this is likely our new terminal
+                self.logger.info(
+                    f"Found new {app_id} window: ID={window.id}, "
+                    f"name={window.name}, marks={window.marks}"
+                )
+
+                # Mark and configure it
+                await self.sway.command(f'[con_id={window.id}] mark {mark}')
+                await self.sway.command(
+                    f'[con_id={window.id}] floating enable, '
+                    f'resize set 1000 600, move position center'
+                )
+                # Move to scratchpad immediately and then show it
+                await self.sway.command(f'[con_id={window.id}] move scratchpad')
+                await self.sway.command(f'[con_mark="{mark}"] scratchpad show')
+                self.logger.info(f"Marked and configured terminal window: ID={window.id}, Mark={mark}")
+                return window.id
+
+        self.logger.error(
+            f"Terminal window with app_id={app_id} not found within {timeout}s. "
+            f"Seen {len(seen_windows)} existing {app_id} windows."
+        )
         return None
 
     async def validate_terminal(self, project_name: str) -> bool:

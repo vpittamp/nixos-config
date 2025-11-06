@@ -191,6 +191,9 @@
     wayvnc        # VNC server (already in system, adding CLI tool)
     dotool        # Keyboard/mouse automation for Wayland (simpler than ydotool, no daemon)
 
+    # Terminal emulators
+    ghostty       # Scratchpad terminal (Feature 062)
+
     # System monitoring
     htop
     btop
