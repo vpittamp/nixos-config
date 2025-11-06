@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "i3pm Daemon RPC API - Feature 051 Extensions",
+  "description": "JSON-RPC 2.0 API contract for run-raise-hide application launching",
+  "version": "1.0.0",
+  "methods": {
+    "app.run": {
+      "description": "Intelligent application launcher with run-raise-hide semantics",
+      "params": {
+        "type": "object",
+        "required": ["app_name"],
+        "properties": {
+          "app_name": {
+            "type": "string",
+            "description": "Application name from registry (e.g., 'firefox', 'vscode')",
+            "minLength": 1,
+            "example": "firefox"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["summon", "hide", "nohide"],
+            "default": "summon",
+            "description": "Run mode: summon (default), hide (toggle), nohide (never hide)",
+            "examples": ["summon", "hide", "nohide"]
+          },
+          "force_launch": {
+            "type": "boolean",
+            "default": false,
+            "description": "Always launch new instance (skip existing window check)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "required": ["action", "focused", "message"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["launched", "focused", "moved", "hidden", "shown", "none"],
+            "description": "Action taken by the run command"
+          },
+          "window_id": {
+            "type": ["integer", "null"],
+            "description": "Sway container ID (null if launched but window not yet created)"
+          },
+          "focused": {
+            "type": "boolean",
+            "description": "True if window is now focused after operation"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable result message"
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "app_name is required"
+        },
+        {
+          "code": -32001,
+          "message": "Application not found in registry",
+          "data": "No application named 'nonexistent-app' in registry"
+        },
+        {
+          "code": -32002,
+          "message": "Launch failed",
+          "data": "app-launcher-wrapper.sh returned exit code 1"
+        },
+        {
+          "code": -32003,
+          "message": "Sway IPC error",
+          "data": "Failed to execute Sway command: [con_id=123] focus"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Launch or focus Firefox (summon mode)",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "app.run",
+            "params": {
+              "app_name": "firefox",
+              "mode": "summon",
+              "force_launch": false
+            },
+            "id": 1
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "action": "focused",
+              "window_id": 123456,
+              "focused": true,
+              "message": "Focused Firefox on workspace 3"
+            },
+            "id": 1
+          }
+        },
+        {
+          "description": "Toggle Firefox visibility (hide mode)",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "app.run",
+            "params": {
+              "app_name": "firefox",
+              "mode": "hide"
+            },
+            "id": 2
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "action": "hidden",
+              "window_id": 123456,
+              "focused": false,
+              "message": "Hidden Firefox to scratchpad"
+            },
+            "id": 2
+          }
+        },
+        {
+          "description": "Always launch new Alacritty instance",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "app.run",
+            "params": {
+              "app_name": "alacritty",
+              "force_launch": true
+            },
+            "id": 3
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "action": "launched",
+              "window_id": null,
+              "focused": false,
+              "message": "Launched new Alacritty instance"
+            },
+            "id": 3
+          }
+        },
+        {
+          "description": "Show window without hiding (nohide mode)",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "app.run",
+            "params": {
+              "app_name": "vscode",
+              "mode": "nohide"
+            },
+            "id": 4
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "action": "shown",
+              "window_id": 789012,
+              "focused": true,
+              "message": "Shown VS Code from scratchpad"
+            },
+            "id": 4
+          }
+        },
+        {
+          "description": "Application not found error",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "app.run",
+            "params": {
+              "app_name": "nonexistent-app"
+            },
+            "id": 5
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "error": {
+              "code": -32001,
+              "message": "Application not found in registry",
+              "data": "No application named 'nonexistent-app' in registry"
+            },
+            "id": 5
+          }
+        }
+      ]
+    },
+    "window.get_state": {
+      "description": "Query window state for run-raise-hide state machine (internal use)",
+      "params": {
+        "type": "object",
+        "required": ["app_name"],
+        "properties": {
+          "app_name": {
+            "type": "string",
+            "description": "Application name from registry"
+          },
+          "app_id": {
+            "type": ["string", "null"],
+            "description": "Specific instance ID (optional, for multi-instance apps)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "required": ["state", "current_workspace"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["not_found", "different_workspace", "same_workspace_unfocused", "same_workspace_focused", "scratchpad"],
+            "description": "Current window state"
+          },
+          "window_id": {
+            "type": ["integer", "null"],
+            "description": "Sway container ID (null if not found)"
+          },
+          "current_workspace": {
+            "type": "string",
+            "description": "Current focused workspace name"
+          },
+          "window_workspace": {
+            "type": ["string", "null"],
+            "description": "Window's workspace name (null if not found)"
+          },
+          "is_focused": {
+            "type": "boolean",
+            "description": "True if window is currently focused"
+          },
+          "is_floating": {
+            "type": "boolean",
+            "description": "True if window is in floating mode"
+          },
+          "geometry": {
+            "type": ["object", "null"],
+            "properties": {
+              "x": {"type": "integer"},
+              "y": {"type": "integer"},
+              "width": {"type": "integer"},
+              "height": {"type": "integer"}
+            },
+            "description": "Window geometry (null if not floating or not found)"
+          }
+        }
+      },
+      "examples": [
+        {
+          "description": "Query Firefox state (on different workspace)",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "window.get_state",
+            "params": {
+              "app_name": "firefox"
+            },
+            "id": 10
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "state": "different_workspace",
+              "window_id": 123456,
+              "current_workspace": "1",
+              "window_workspace": "3",
+              "is_focused": false,
+              "is_floating": false,
+              "geometry": null
+            },
+            "id": 10
+          }
+        }
+      ]
+    }
+  },
+  "notes": [
+    "This API extends the existing i3pm daemon RPC interface (Feature 058)",
+    "All methods use JSON-RPC 2.0 protocol over Unix socket (/run/i3-project-daemon/ipc.sock)",
+    "Request timeout is 5 seconds (configurable in DaemonClient)",
+    "Error codes follow JSON-RPC 2.0 standard: -32xxx for protocol errors, custom codes for application errors",
+    "The app.run method integrates with existing features:",
+    "  - Feature 041 (launch notification) for window correlation",
+    "  - Feature 057 (app-launcher-wrapper.sh) for launching",
+    "  - Feature 038 (window-workspace-map.json) for state persistence",
+    "Mode behaviors:",
+    "  - summon: Show window on current workspace (default, move if on different workspace)",
+    "  - hide: Toggle visibility (hide if focused, show if hidden)",
+    "  - nohide: Show window without hiding (idempotent show operation)",
+    "Force launch flag bypasses existing window detection and always launches new instance"
+  ]
+}
