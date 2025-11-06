@@ -106,6 +106,7 @@ class ScratchpadManager:
             "I3PM_APP_ID": f"scratchpad-{project_name}-{int(asyncio.get_event_loop().time())}",
             "I3PM_APP_NAME": "scratchpad-terminal",
             "I3PM_SCOPE": "scoped",
+            "I3PM_NO_SESH": "1",  # Signal to skip sesh/tmux auto-start in bashrc
             # Force software rendering for headless/VNC environments
             "LIBGL_ALWAYS_SOFTWARE": "1",
         }
