@@ -511,8 +511,8 @@ in
       # Feature 062: Project-Scoped Scratchpad Terminal
       # Essential window rule for floating, centered scratchpad terminal
       # Matches app_id pattern: scratchpad-terminal-{project-slug}
-      # Size: 1200x700 pixels, centered on current display
-      for_window [app_id="^scratchpad-terminal(-[a-z0-9-]+)?$"] floating enable, resize set width 1200 px height 700 px, move position center
+      # Size: 1000x600 pixels, centered vertically and horizontally
+      for_window [app_id="^scratchpad-terminal(-[a-z0-9-]+)?$"] floating enable, resize set width 1000 px height 600 px, move position center
 
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes
