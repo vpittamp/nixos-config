@@ -92,6 +92,8 @@ class RunRaiseManager:
         Returns:
             WindowStateInfo with detected state
         """
+        start_time = time.perf_counter()
+
         # Get Sway tree and focused workspace
         tree = await self.sway.get_tree()
         focused = tree.find_focused()
@@ -101,6 +103,8 @@ class RunRaiseManager:
         window_id = self._get_window_id_by_app_name(app_name)
 
         if window_id is None:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → NOT_FOUND")
             return WindowStateInfo(
                 state=WindowState.NOT_FOUND,
                 window=None,
@@ -115,6 +119,8 @@ class RunRaiseManager:
         if not window:
             # Window was tracked but no longer exists
             self.unregister_window(app_name)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → NOT_FOUND (stale tracking)")
             return WindowStateInfo(
                 state=WindowState.NOT_FOUND,
                 window=None,
@@ -129,6 +135,8 @@ class RunRaiseManager:
 
         # Check if in scratchpad
         if window_workspace_name == "__i3_scratch":
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → SCRATCHPAD")
             return WindowStateInfo(
                 state=WindowState.SCRATCHPAD,
                 window=window,
@@ -139,6 +147,8 @@ class RunRaiseManager:
 
         # Check workspace match
         if window_workspace_name != current_workspace:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → DIFFERENT_WORKSPACE")
             return WindowStateInfo(
                 state=WindowState.DIFFERENT_WORKSPACE,
                 window=window,
@@ -149,8 +159,10 @@ class RunRaiseManager:
 
         # Same workspace - check focus
         is_focused = window.focused
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         if is_focused:
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → SAME_WORKSPACE_FOCUSED")
             return WindowStateInfo(
                 state=WindowState.SAME_WORKSPACE_FOCUSED,
                 window=window,
@@ -159,6 +171,7 @@ class RunRaiseManager:
                 is_focused=True,
             )
         else:
+            logger.debug(f"[perf] detect_window_state('{app_name}'): {elapsed_ms:.2f}ms → SAME_WORKSPACE_UNFOCUSED")
             return WindowStateInfo(
                 state=WindowState.SAME_WORKSPACE_UNFOCUSED,
                 window=window,
@@ -232,6 +245,7 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         logger.info(f"Launching {app_name} via app-launcher-wrapper")
 
         try:
@@ -258,6 +272,8 @@ class RunRaiseManager:
                 # This is normal - the script should complete soon
                 logger.debug(f"Launch script still running for {app_name} (normal)")
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] _transition_launch('{app_name}'): {elapsed_ms:.2f}ms")
             return {
                 "action": "launched",
                 "window_id": None,  # Window not yet created
@@ -282,11 +298,14 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         logger.info(f"Focusing window {window.id}")
 
         try:
             await self.sway.command(f'[con_id={window.id}] focus')
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] _transition_focus({window.id}): {elapsed_ms:.2f}ms")
             return {
                 "action": "focused",
                 "window_id": window.id,
@@ -307,6 +326,7 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         workspace = window.workspace()
         workspace_name = workspace.name if workspace else "unknown"
 
@@ -319,6 +339,8 @@ class RunRaiseManager:
             # Focus window
             await self.sway.command(f'[con_id={window.id}] focus')
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] _transition_goto({window.id}, ws={workspace_name}): {elapsed_ms:.2f}ms")
             return {
                 "action": "focused",
                 "window_id": window.id,
@@ -342,6 +364,7 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         logger.info(f"Summoning window {window.id} to workspace {current_workspace}")
 
         try:
@@ -382,6 +405,8 @@ class RunRaiseManager:
                     )
                     logger.debug(f"Restored geometry for window {window.id}")
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] _transition_summon({window.id}, ws={current_workspace}): {elapsed_ms:.2f}ms")
             return {
                 "action": "summoned",
                 "window_id": window.id,
@@ -405,6 +430,7 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         logger.info(f"Hiding window {window.id} to scratchpad")
 
         try:
@@ -435,7 +461,9 @@ class RunRaiseManager:
             # Move to scratchpad
             await self.sway.command(f'[con_id={window.id}] move scratchpad')
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
             logger.info(f"Window {window.id} hidden to scratchpad with state preserved")
+            logger.debug(f"[perf] _transition_hide({window.id}, '{app_name}'): {elapsed_ms:.2f}ms")
 
             return {
                 "action": "hidden",
@@ -460,6 +488,7 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
+        start_time = time.perf_counter()
         logger.info(f"Showing window {window.id} from scratchpad")
 
         try:
@@ -489,6 +518,8 @@ class RunRaiseManager:
                     )
                     logger.debug(f"Restored geometry for window {window.id}: {geometry}")
 
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[perf] _transition_show({window.id}, '{app_name}'): {elapsed_ms:.2f}ms")
             return {
                 "action": "shown",
                 "window_id": window.id,
