@@ -108,7 +108,7 @@ async function main(): Promise<void> {
   }
 
   // Initialize logging
-  const { enableVerbose, enableDebug } = await import("./src/utils/logger.ts");
+  const { enableVerbose, enableDebug } = await import("./utils/logger.ts");
   if (args.debug) {
     enableDebug();
   } else if (args.verbose) {
@@ -123,77 +123,77 @@ async function main(): Promise<void> {
   switch (command) {
     case "project":
       {
-        const { projectCommand } = await import("./src/commands/project.ts");
+        const { projectCommand } = await import("./commands/project.ts");
         await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "run":
       {
-        const { runCommand } = await import("./src/commands/run.ts");
+        const { runCommand } = await import("./commands/run.ts");
         await runCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "scratchpad":
       {
-        const { scratchpadCommand } = await import("./src/commands/scratchpad.ts");
+        const { scratchpadCommand } = await import("./commands/scratchpad.ts");
         await scratchpadCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "windows":
       {
-        const { windowsCommand } = await import("./src/commands/windows.ts");
+        const { windowsCommand } = await import("./commands/windows.ts");
         await windowsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "daemon":
       {
-        const { daemonCommand } = await import("./src/commands/daemon.ts");
+        const { daemonCommand } = await import("./commands/daemon.ts");
         await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "layout":
       {
-        const { layoutCommand } = await import("./src/commands/layout.ts");
+        const { layoutCommand } = await import("./commands/layout.ts");
         await layoutCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "rules":
       {
-        const { rulesCommand } = await import("./src/commands/rules.ts");
+        const { rulesCommand } = await import("./commands/rules.ts");
         await rulesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "monitors":
       {
-        const { monitorsCommand } = await import("./src/commands/monitors.ts");
+        const { monitorsCommand } = await import("./commands/monitors.ts");
         await monitorsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "monitor":
       {
-        const { monitorCommand } = await import("./src/commands/monitor.ts");
+        const { monitorCommand } = await import("./commands/monitor.ts");
         await monitorCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "app-classes":
       {
-        const { appClassesCommand } = await import("./src/commands/app-classes.ts");
+        const { appClassesCommand } = await import("./commands/app-classes.ts");
         await appClassesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
     case "apps":
       {
-        const { appsCommand } = await import("./src/commands/apps.ts");
+        const { appsCommand } = await import("./commands/apps.ts");
         await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
