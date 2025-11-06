@@ -128,8 +128,14 @@ class ScratchpadManager:
 
         env_string = '; '.join(env_exports)
 
-        # Build Ghostty command with working directory
-        ghostty_cmd = f"cd '{working_dir}' && ghostty --title='Scratchpad Terminal'"
+        # Build Ghostty command with tmux session
+        # Session name format: scratchpad-{project_name}
+        tmux_session_name = f"scratchpad-{project_name}"
+
+        # Wrap tmux in bash to ensure proper execution and environment
+        # Use double quotes for bash -c to allow variable expansion, escape inner quotes
+        tmux_cmd = f'tmux new-session -A -s {tmux_session_name} -c "{working_dir}"'
+        ghostty_cmd = f"ghostty --title='Scratchpad Terminal' -e bash -c '{tmux_cmd}'"
 
         # Complete shell command with environment setup
         full_cmd = f"{env_string}; {ghostty_cmd}"
@@ -213,19 +219,41 @@ class ScratchpadManager:
                     seen_windows.add(window.id)
                     continue
 
-                # Found an unmarked window with matching app_id - this is likely our new terminal
+                # CRITICAL: Check process environment to distinguish scratchpad from regular Ghostty
+                # Scratchpad terminals have I3PM_SCRATCHPAD=true and I3PM_APP_NAME=scratchpad-terminal
+                # Regular Ghostty terminals have I3PM_APP_NAME=terminal (or no I3PM vars)
+                if not window.pid:
+                    self.logger.debug(f"Skipping window without PID: ID={window.id}")
+                    seen_windows.add(window.id)
+                    continue
+
+                try:
+                    env = read_process_environ(window.pid)
+                    is_scratchpad = env.get("I3PM_SCRATCHPAD") == "true"
+                    app_name = env.get("I3PM_APP_NAME", "")
+
+                    if not is_scratchpad or app_name != "scratchpad-terminal":
+                        self.logger.debug(
+                            f"Skipping window with wrong env: ID={window.id}, PID={window.pid}, "
+                            f"I3PM_SCRATCHPAD={env.get('I3PM_SCRATCHPAD')}, "
+                            f"I3PM_APP_NAME={app_name} (expected scratchpad-terminal)"
+                        )
+                        seen_windows.add(window.id)
+                        continue
+                except (ProcessLookupError, PermissionError) as e:
+                    self.logger.debug(f"Could not read env for PID {window.pid}: {e}")
+                    seen_windows.add(window.id)
+                    continue
+
+                # Found an unmarked window with matching app_id AND correct environment
                 self.logger.info(
-                    f"Found new {app_id} window: ID={window.id}, "
+                    f"Found new scratchpad terminal window: ID={window.id}, PID={window.pid}, "
                     f"name={window.name}, marks={window.marks}"
                 )
 
-                # Mark and configure it
+                # Mark the window (floating, size, and centering handled by window rule)
                 await self.sway.command(f'[con_id={window.id}] mark {mark}')
-                await self.sway.command(
-                    f'[con_id={window.id}] floating enable, '
-                    f'resize set 1000 600, move position center'
-                )
-                # Move to scratchpad immediately and then show it
+                # Move to scratchpad immediately (window rule already made it floating + centered)
                 await self.sway.command(f'[con_id={window.id}] move scratchpad')
                 await self.sway.command(f'[con_mark="{mark}"] scratchpad show')
                 self.logger.info(f"Marked and configured terminal window: ID={window.id}, Mark={mark}")

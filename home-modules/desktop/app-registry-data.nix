@@ -78,7 +78,13 @@ let
   };
 
   applications = [
-    # WS1: Terminals (Primary: ghostty)
+    # TERMINAL APPLICATIONS OVERVIEW:
+    # 1. Regular terminals (name="terminal", "ghostty"): Use sesh for smart tmux session management
+    # 2. Scratchpad terminal (name="scratchpad-terminal"): Uses tmux directly with scratchpad-{project} naming
+    #    - Scratchpad is launched by daemon, not via app registry wrapper
+    #    - Provides quick floating terminal access per project
+
+    # WS1: Terminals (Primary: ghostty with sesh)
     (mkApp {
       name = "terminal";
       display_name = "Ghostty Terminal";
@@ -93,7 +99,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Terminal with sesh session management for project directory";
+      description = "Regular terminal with sesh session management for project directory";
     })
 
     # WS2: Editors (Primary: vscode)
@@ -255,7 +261,7 @@ let
       description = "Kubernetes cluster management";
     })
 
-    # WS12: Ghostty Terminal (now primary terminal with sesh)
+    # WS12: Ghostty Terminal (regular terminal with sesh on WS12)
     (mkApp {
       name = "ghostty";
       display_name = "Ghostty Terminal";
@@ -270,16 +276,20 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Ghostty terminal with sesh session management for project directory";
+      description = "Regular terminal with sesh session management for project directory";
     })
 
     # Scratchpad Terminal (Feature 062)
     # Special floating terminal for quick project access
+    # NOTE: Launched by daemon via Sway IPC, not through wrapper
+    # Parameters shown here are for documentation/reference only
     (mkApp {
       name = "scratchpad-terminal";
       display_name = "Scratchpad Terminal";
       command = "ghostty";
-      parameters = "";
+      # Actual launch command (via daemon): ghostty -e bash -c 'tmux new-session -A -s scratchpad-{project} -c {working_dir}'
+      # This creates/attaches to project-specific tmux session named "scratchpad-{project}"
+      parameters = "-e bash -c 'tmux new-session -A -s scratchpad-PROJECT -c PROJECT_DIR'";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;  # Default to workspace 1, but managed dynamically
@@ -287,7 +297,7 @@ let
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
-      description = "Project-scoped floating scratchpad terminal (Feature 062)";
+      description = "Project-scoped floating scratchpad terminal with tmux session (scratchpad-{project})";
     })
   ]
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)

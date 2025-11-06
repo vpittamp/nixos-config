@@ -510,9 +510,11 @@ in
 
       # Feature 062: Project-Scoped Scratchpad Terminal
       # Essential window rule for floating, centered scratchpad terminal
-      # Matches app_id pattern: scratchpad-terminal-{project-slug}
-      # Size: 1200x600 pixels, centered vertically and horizontally
-      for_window [app_id="^scratchpad-terminal(-[a-z0-9-]+)?$"] floating enable, resize set width 1200 px height 600 px, move position center
+      # Matches by app_id (com.mitchellh.ghostty) AND title "Scratchpad Terminal"
+      # Regular Ghostty terminals have different titles (e.g., "Ghostty") and won't match
+      # Size: 1100x550 pixels (optimized for 9pt font), centered on display
+      # Note: Daemon handles marking with scratchpad:{project} and moving to scratchpad
+      for_window [app_id="com.mitchellh.ghostty" title="^Scratchpad Terminal$"] floating enable, resize set width 1100 px height 550 px, move position center
 
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes

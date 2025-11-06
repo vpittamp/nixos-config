@@ -13,7 +13,7 @@
 
       size = lib.mkOption {
         type = lib.types.number;
-        default = 11;
+        default = 9;
         description = "Default font size for all terminal emulators";
       };
     };

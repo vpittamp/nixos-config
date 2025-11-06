@@ -273,7 +273,7 @@ PY
     # List and resume Claude Code sessions via Walker
     set -euo pipefail
 
-    # Function to extract session metadata
+    # Function to extract session metadata with message preview
     get_session_metadata() {
         local session_file="$1"
         local session_id=$(basename "$session_file" .jsonl)
@@ -283,38 +283,82 @@ PY
             return
         fi
 
-        # Extract first user message and timestamp
-        local metadata=$(${pkgs.jq}/bin/jq -r '
-            select(.type == "user") |
+        # Extract first 3 messages (user + assistant exchanges)
+        # For assistant messages, extract text from content array
+        local messages=$(${pkgs.jq}/bin/jq -r '
+            select(.type == "user" or .type == "assistant") |
             {
+                type: .type,
                 timestamp: .timestamp,
                 branch: .gitBranch,
-                content: .message.content
+                content: (
+                    if .type == "assistant" then
+                        (.message.content[] | select(.type == "text") | .text)
+                    else
+                        .message.content
+                    end
+                )
             } | @json
-        ' "$session_file" 2>/dev/null | head -1)
+        ' "$session_file" 2>/dev/null | head -3)
 
-        if [ -z "$metadata" ]; then
+        if [ -z "$messages" ]; then
             return
         fi
 
-        # Parse metadata
-        local timestamp=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.timestamp')
-        local branch=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.branch // "no-branch"')
-        local content=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.content')
+        # Parse first message for metadata
+        local first_msg=$(echo "$messages" | head -1)
+        local timestamp=$(echo "$first_msg" | ${pkgs.jq}/bin/jq -r '.timestamp')
+        local branch=$(echo "$first_msg" | ${pkgs.jq}/bin/jq -r '.branch // "no-branch"')
+        local first_content=$(echo "$first_msg" | ${pkgs.jq}/bin/jq -r '.content')
 
-        # Extract first line as title (limit to 100 chars)
-        local title=$(echo "$content" | head -1 | ${pkgs.coreutils}/bin/cut -c1-100)
+        # Extract first line as title (limit to 50 chars to make room for preview)
+        local title=$(echo "$first_content" | head -1 | ${pkgs.coreutils}/bin/cut -c1-50)
 
         # If it's a command, clean it up
         if [[ "$title" == *"<command-"* ]]; then
             title=$(echo "$title" | ${pkgs.gnused}/bin/sed 's/<command-[^>]*>//g' | ${pkgs.gnused}/bin/sed 's/<\/command-[^>]*>//g')
         fi
 
+        # Build preview from messages
+        local preview=""
+        local msg_count=0
+        while IFS= read -r msg_line; do
+            if [ -z "$msg_line" ]; then continue; fi
+
+            local msg_type=$(echo "$msg_line" | ${pkgs.jq}/bin/jq -r '.type')
+            local msg_content=$(echo "$msg_line" | ${pkgs.jq}/bin/jq -r '.content')
+
+            # Get first line and limit length (text already extracted from assistant messages)
+            msg_content=$(echo "$msg_content" | head -1 | ${pkgs.coreutils}/bin/cut -c1-120)
+
+            # Clean command tags
+            if [[ "$msg_content" == *"<command-"* ]]; then
+                msg_content=$(echo "$msg_content" | ${pkgs.gnused}/bin/sed 's/<command-[^>]*>//g' | ${pkgs.gnused}/bin/sed 's/<\/command-[^>]*>//g')
+            fi
+
+            # Add to preview with prefix
+            if [ "$msg_type" = "user" ]; then
+                if [ $msg_count -eq 0 ]; then
+                    preview="U: ${msg_content}"
+                else
+                    preview="${preview} → U: ${msg_content}"
+                fi
+            else
+                preview="${preview} → A: ${msg_content}"
+            fi
+
+            ((msg_count++))
+            if [ $msg_count -ge 2 ]; then break; fi
+        done <<< "$messages"
+
+        # Trim preview to max 250 chars
+        preview=$(echo "$preview" | ${pkgs.coreutils}/bin/cut -c1-250)
+
         # Convert timestamp to readable format
         local date_str=$(${pkgs.coreutils}/bin/date -d "$timestamp" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
 
-        # Output format: "date | branch | title | session_id"
-        echo "$date_str | $branch | $title | $session_id"
+        # Output format: "date | branch | title | preview | session_id"
+        echo "$date_str | $branch | $title | $preview | $session_id"
     }
 
     # Stage 1: List all sessions
