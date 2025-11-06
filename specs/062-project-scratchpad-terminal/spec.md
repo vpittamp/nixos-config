@@ -1,9 +1,11 @@
 # Feature Specification: Project-Scoped Scratchpad Terminal
 
 **Feature Number**: 062
-**Status**: Draft
+**Status**: Implemented
 **Created**: 2025-11-05
-**Last Updated**: 2025-11-05
+**Last Updated**: 2025-11-06
+
+**Implementation Note**: This feature was implemented using Sway IPC `exec` command for terminal launching instead of Python subprocess or systemd-run due to terminal emulator crashes in headless/VNC environments. See TR-001 for technical rationale.
 
 ## Overview
 
@@ -179,20 +181,20 @@ When a project is deleted from i3pm, the associated scratchpad terminal MUST rem
 **FR-012: Global Mode Terminal**
 When the user activates the scratchpad terminal keybinding without an active project (global mode), the system MUST launch or toggle a global scratchpad terminal with its working directory set to the user's home directory. This terminal persists across all project switches and behaves identically to project-scoped terminals.
 
-**FR-013: Unified Launcher Integration**
-The system MUST launch scratchpad terminals via app-launcher-wrapper.sh to ensure consistent environment variable injection, process isolation via systemd-run, and integration with the unified launcher architecture (Features 041/057). Direct subprocess launching is not permitted.
+**FR-013: Sway Exec Launch Integration**
+The system MUST launch scratchpad terminals via Sway IPC `exec` command to ensure proper display server context (WAYLAND_DISPLAY, graphics access) in headless/VNC environments. The system exports I3PM_* environment variables in the shell command before launching the terminal. Direct subprocess launching via asyncio.create_subprocess_exec or systemd-run is NOT permitted due to terminal emulator crashes from missing compositor context.
 
-**FR-014: Launch Notification Correlation**
-Before launching a scratchpad terminal, the daemon MUST send a pre-launch notification to the launch registry (Feature 041) with payload: app_name="scratchpad-terminal", project_name, expected_class (Ghostty/Alacritty), and timestamp. This enables Tier 0 window correlation with 95%+ accuracy in rapid launch scenarios.
+**FR-014: Window Detection by App ID**
+The system MUST detect newly launched terminal windows by searching for windows with matching app_id ("com.mitchellh.ghostty" for Ghostty or "Alacritty" for Alacritty) and without existing scratchpad marks. Since Sway exec does not return a PID, the system cannot use PID-based detection and must rely on app_id matching with a polling timeout of 5 seconds.
 
-**FR-015: Notification Correlation Timeout**
-The system MUST correlate terminal windows with launch notifications within 2 seconds. If correlation times out, the system MUST fall back to /proc/<pid>/environ reading (Feature 057) for window identification.
+**FR-015: PID Retrieval from Window**
+After identifying the terminal window by app_id, the system MUST retrieve the process PID from the window object's `pid` attribute for subsequent process validation and management.
 
 **FR-016: Ghostty Terminal Launch**
-When launching a scratchpad terminal with Ghostty, the system MUST use Ghostty's working directory flag and ensure the window is identifiable via app_id matching pattern "ghostty". The system MUST inject I3PM_* environment variables via the unified launcher for window correlation.
+When launching a scratchpad terminal with Ghostty, the system MUST use the shell command format: `cd '$PROJECT_DIR' && ghostty --title='Scratchpad Terminal'`. Environment variables are exported before the command via shell exports. The window is identifiable via app_id "com.mitchellh.ghostty".
 
-**FR-017: Alacritty Fallback**
-If Ghostty is not available (checked via `command -v ghostty`), the system MUST fall back to Alacritty with the `-o` flag for window.class.instance and window.class.general configuration to ensure proper app_id setting on Wayland.
+**FR-017: Environment Variable Export Pattern**
+The system MUST export I3PM_* environment variables using shell export statements in the format: `export I3PM_APP_ID='value'; export I3PM_PROJECT_NAME='value'; cd '$PROJECT_DIR' && ghostty`. This ensures variables are available in the spawned process despite Sway exec not inheriting daemon's environment.
 
 **FR-018: Daemon Unavailable Error Handling**
 If the daemon socket is unavailable when the user activates the scratchpad keybinding, the CLI MUST display a user-friendly error message: "i3pm daemon is not running. Start with: systemctl --user start i3-project-event-listener" and exit with code 1.
@@ -214,17 +216,20 @@ The system MUST integrate scratchpad terminal status into `i3pm diagnose` comman
 
 ### Technical Requirements
 
-**TR-001: App Registry Entry**
-The system MUST define a scratchpad-terminal entry in app-registry-data.nix with: name="scratchpad-terminal", command="ghostty", scope="scoped", expected_class="ghostty", multi_instance=true, with parameter substitution for $PROJECT_DIR and $SESSION_NAME variables.
+**TR-001: Sway Exec Launch Method**
+The system MUST launch scratchpad terminals using Sway IPC `exec` command instead of Python subprocess or systemd-run. This is CRITICAL for headless/VNC environments where terminal emulators (Ghostty, Alacritty) require proper compositor context (WAYLAND_DISPLAY, EGL/MESA graphics access) that only Sway exec provides. Subprocess launching results in immediate crashes with "failed to get driver name for fd -1" and "failed to choose pdev" errors.
 
-**TR-002: Environment Variable Injection**
-The system MUST inject the following I3PM_* environment variables via unified launcher: I3PM_APP_ID, I3PM_APP_NAME="scratchpad-terminal", I3PM_PROJECT_NAME, I3PM_PROJECT_DIR, I3PM_SCOPE="scoped", I3PM_SCRATCHPAD="true", I3PM_WORKING_DIR.
+**TR-001a: App Registry Entry**
+The system MUST define a scratchpad-terminal entry in app-registry-data.nix with: name="scratchpad-terminal", command="ghostty", scope="scoped", expected_class="com.mitchellh.ghostty", multi_instance=true, with parameter substitution for $PROJECT_DIR and $SESSION_NAME variables.
 
-**TR-003: Ghostty Launch Parameters**
-When launching Ghostty, the system MUST use: `ghostty --working-directory=$PROJECT_DIR` (exact flag syntax to be verified against Ghostty documentation). If Ghostty uses different syntax, adapt accordingly.
+**TR-002: Environment Variable Injection via Shell Exports**
+The system MUST inject I3PM_* environment variables by building a shell command with export statements: `export I3PM_APP_ID='...'; export I3PM_APP_NAME='scratchpad-terminal'; export I3PM_PROJECT_NAME='...'; export I3PM_PROJECT_DIR='...'; export I3PM_SCOPE='scoped'; export I3PM_SCRATCHPAD='true'; export I3PM_WORKING_DIR='...'; cd '$PROJECT_DIR' && ghostty`. This ensures variables are available in the terminal process despite Sway exec not inheriting the daemon's environment.
 
-**TR-004: Ghostty Window Identification**
-The system MUST identify Ghostty windows by app_id matching "ghostty" (case-insensitive) and validate ownership via I3PM_SCRATCHPAD="true" environment variable from /proc/<pid>/environ.
+**TR-003: Ghostty Launch Command**
+When launching Ghostty, the system MUST use the command: `cd '$working_dir' && ghostty --title='Scratchpad Terminal'`. The working directory is set via shell `cd` command before launching, not via Ghostty flags. Single quotes around paths ensure proper escaping for paths with spaces.
+
+**TR-004: Ghostty Window Identification by App ID**
+The system MUST identify Ghostty windows by searching for windows with app_id="com.mitchellh.ghostty" (exact match, case-sensitive) that do NOT have existing scratchpad marks. The system uses a polling loop with 100ms intervals and 5-second timeout to detect newly created windows.
 
 **TR-005: Window Size Configuration**
 Scratchpad terminals MUST use dimensions 1200x700 pixels (updated from original 1400x850) as currently configured in window-rules.json.
@@ -337,9 +342,9 @@ The implementation should be designed from first principles to deliver the best 
 5. Terminal will use default shell configured in user's environment (e.g., bash, zsh)
 6. tmux/sesh integration (if present) will work with scratchpad terminals as with regular terminals
 7. Existing legacy code can be refactored or replaced as needed to achieve optimal solution
-8. Unified launcher (app-launcher-wrapper.sh) is available for application launching
-9. Feature 041 launch notification system is available for window correlation
-10. systemd-run is available for process isolation
+8. Sway IPC is available via i3ipc.aio Python library for executing commands in compositor context
+9. Terminal emulators require proper display server context (WAYLAND_DISPLAY, graphics access) that only Sway exec provides in headless/VNC environments
+10. Window detection can rely on app_id matching since Sway exec does not return process PIDs
 
 ### Constraints
 
@@ -355,8 +360,7 @@ The implementation should be designed from first principles to deliver the best 
 - Ghostty terminal emulator (primary), Alacritty (fallback)
 - Sway window manager
 - i3pm daemon for project context tracking
-- app-launcher-wrapper.sh (unified launcher)
-- systemd-run for process isolation
-- Feature 041 launch notification system
-- i3ipc.aio (Python async Sway IPC library)
-- Existing scratchpad infrastructure in Sway (may be refactored/replaced if needed)
+- i3ipc.aio (Python async Sway IPC library) for executing commands in compositor context
+- Sway native scratchpad functionality for window management
+- Bash for shell command execution with environment variable exports
+- psutil (Python library) for process validation

@@ -12,7 +12,7 @@ Enable users to access a project-scoped, persistent floating terminal via keybin
 ## Technical Context
 
 **Language/Version**: Python 3.11+ (matching existing i3pm daemon)
-**Primary Dependencies**: i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), app-launcher-wrapper.sh (unified launcher), systemd-run (process isolation)
+**Primary Dependencies**: i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), Bash (shell command execution for environment variable exports)
 **Storage**: In-memory daemon state (project → terminal PID/window ID mapping), Sway window marks for persistence
 **Testing**: pytest with pytest-asyncio, ydotool for Wayland input simulation, Sway IPC state verification
 **Target Platform**: NixOS with Sway Wayland compositor (hetzner-sway, m1 configurations)
@@ -177,75 +177,99 @@ No complexity violations identified. Feature integrates cleanly into existing ar
 
 ## Integration Patterns (Feature 041/057 Alignment)
 
-### Unified Launcher Integration
+### Sway Exec Launch Integration (CRITICAL FOR HEADLESS/VNC)
 
-**Launch Flow**:
-1. User presses `Mod+Shift+Return`
+**Launch Flow** (UPDATED - Subprocess approach ABANDONED due to terminal crashes):
+1. User presses `Mod+Return` (changed from `Mod+Shift+Return` per user preference)
 2. Deno CLI calls daemon RPC: `scratchpad.toggle`
 3. Daemon checks for existing terminal via state lookup
 4. If launching new terminal:
-   a. Daemon sends pre-launch notification to launch registry (Feature 041)
-   b. Daemon invokes `app-launcher-wrapper.sh` with parameters:
+   a. Daemon builds shell command with environment variable exports:
       ```bash
-      /path/to/app-launcher-wrapper.sh \
-        --app-name scratchpad-terminal \
-        --project-name nixos \
-        --project-dir /etc/nixos \
-        --workspace 1 \
-        --command "ghostty --working-directory=/etc/nixos"
+      export I3PM_APP_ID='scratchpad-nixos-1730815200'; \
+      export I3PM_APP_NAME='scratchpad-terminal'; \
+      export I3PM_PROJECT_NAME='nixos'; \
+      export I3PM_PROJECT_DIR='/etc/nixos'; \
+      export I3PM_SCOPE='scoped'; \
+      export I3PM_SCRATCHPAD='true'; \
+      export I3PM_WORKING_DIR='/etc/nixos'; \
+      cd '/etc/nixos' && ghostty --title='Scratchpad Terminal'
       ```
-   c. app-launcher-wrapper.sh:
-      - Injects I3PM_* environment variables (including I3PM_SCRATCHPAD=true)
-      - Uses systemd-run for process isolation
-      - Executes ghostty terminal
-   d. Daemon waits for window event (timeout: 2s)
-   e. On window appearance, daemon correlates via:
-      - Primary: Launch notification (Tier 0, 95%+ accuracy)
-      - Fallback: /proc/<pid>/environ reading (Feature 057)
-   f. Daemon marks window with `scratchpad:nixos` mark
-   g. Daemon moves window to scratchpad and shows it
-   h. Daemon adds to internal state
+   b. Daemon executes via Sway IPC `exec` command:
+      ```python
+      result = await self.sway.command(f'exec bash -c "{full_cmd}"')
+      ```
+   c. Sway runs command in compositor's environment with proper:
+      - WAYLAND_DISPLAY context
+      - EGL/MESA graphics access
+      - All environment variables exported in shell
+   d. Daemon polls for window appearance by app_id (timeout: 5s, 100ms intervals):
+      - Searches for windows with app_id="com.mitchellh.ghostty"
+      - Skips windows that already have scratchpad marks
+      - Identifies first unmarked Ghostty window as new terminal
+   e. On window detection:
+      - Retrieves PID from window object (`window.pid`)
+      - Marks window with `scratchpad:nixos` mark
+      - Sets floating, resizes to 1000x600, centers
+      - Moves to scratchpad and shows
+      - Adds to internal state (project → {pid, window_id, mark})
 
-**Key Difference from Research Phase**: Research phase showed direct `asyncio.create_subprocess_exec()`. Implementation MUST use unified launcher instead for architectural consistency.
+**Why Sway Exec Instead of Subprocess/systemd-run**:
+- Terminal emulators (Ghostty, Alacritty) crash in headless/VNC when launched via subprocess
+- Error: "failed to get driver name for fd -1", "MESA: failed to choose pdev"
+- Root cause: Missing WAYLAND_DISPLAY and compositor graphics context
+- Sway exec provides proper environment that subprocess cannot replicate
+- App-launcher-wrapper.sh also migrated to Sway exec for consistency (all apps benefit)
 
-### Launch Notification Payload
+### Window Detection by App ID (NOT PID-based)
 
-**Notification sent before app execution**:
-```json
-{
-  "launch_id": "<uuid>",
-  "app_name": "scratchpad-terminal",
-  "project_name": "nixos",
-  "expected_class": "ghostty",
-  "workspace_number": 1,
-  "timestamp": 1730815200.123,
-  "correlation_timeout": 2.0
-}
+**Critical Design Change**: Sway exec does not return process PID, requiring app_id-based detection:
+
+**Detection Algorithm**:
+```python
+async def _wait_for_terminal_window_by_appid(
+    app_id: str,  # "com.mitchellh.ghostty"
+    mark: str,    # "scratchpad:nixos"
+    timeout: float = 5.0,
+) -> Optional[int]:
+    start_time = asyncio.get_event_loop().time()
+    seen_windows = set()
+
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        await asyncio.sleep(0.1)  # 100ms polling interval
+
+        tree = await self.sway.get_tree()
+        for window in tree.descendants():
+            if window.app_id != app_id:
+                continue
+            if window.id in seen_windows:
+                continue
+            if any(m.startswith("scratchpad:") for m in window.marks):
+                seen_windows.add(window.id)
+                continue
+
+            # Found unmarked window matching app_id - this is our terminal
+            await self.sway.command(f'[con_id={window.id}] mark {mark}')
+            # ... configure window ...
+            return window.id
 ```
 
-**Window Correlation**:
-- On window::new event, daemon queries launch registry
-- Matches by: app_name + project_name + expected_class (app_id)
-- If match found within 2s: Tier 0 correlation (high confidence)
-- If no match: Fall back to /proc/<pid>/environ reading
+**PID Retrieval**: After window detection, retrieve PID from window object: `terminal_pid = window.pid`
 
-### Environment Variables (Feature 057)
+### Environment Variables (Shell Export Pattern)
 
-**Injected via app-launcher-wrapper.sh**:
+**Injected via shell export statements** (NOT via app-launcher-wrapper.sh):
 ```bash
-I3PM_APP_ID="scratchpad-nixos-1730815200"
-I3PM_APP_NAME="scratchpad-terminal"
-I3PM_PROJECT_NAME="nixos"
-I3PM_PROJECT_DIR="/etc/nixos"
-I3PM_SCOPE="scoped"
-I3PM_SCRATCHPAD="true"
-I3PM_WORKING_DIR="/etc/nixos"
-I3PM_EXPECTED_CLASS="ghostty"
-I3PM_TARGET_WORKSPACE="1"
-I3PM_LAUNCHER_PID="<pid>"
-I3PM_LAUNCH_TIME="1730815200"
-I3SOCK="/run/user/1000/sway-ipc.1000.sock"
+export I3PM_APP_ID='scratchpad-nixos-1730815200'
+export I3PM_APP_NAME='scratchpad-terminal'
+export I3PM_PROJECT_NAME='nixos'
+export I3PM_PROJECT_DIR='/etc/nixos'
+export I3PM_SCOPE='scoped'
+export I3PM_SCRATCHPAD='true'
+export I3PM_WORKING_DIR='/etc/nixos'
 ```
+
+**Rationale**: Sway exec does not inherit daemon's environment. Variables must be explicitly exported in the shell command string before launching the terminal. This pattern is also used in app-launcher-wrapper.sh for consistency across all application launches.
 
 **Window Validation**:
 ```python
