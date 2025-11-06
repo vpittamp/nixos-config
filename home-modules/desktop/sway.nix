@@ -106,6 +106,10 @@ let
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
 in
 {
+  # Import keybindings from separate module (moved from dynamic config to static Nix)
+  imports = [
+    ./sway-keybindings.nix
+  ];
   # Sway window manager configuration via home-manager
   wayland.windowManager.sway = {
     enable = true;
@@ -221,24 +225,21 @@ in
       ];
 
       # ═══════════════════════════════════════════════════════════════════════════
-      # KEYBINDINGS (Feature 047: Fully Dynamic via sway-config-manager)
+      # KEYBINDINGS (Static Nix Configuration)
       # ═══════════════════════════════════════════════════════════════════════════
       #
-      # Feature 047: ALL keybindings are now managed dynamically through
-      # sway-config-manager to prevent conflicts with home-manager's static generation.
+      # Keybindings are now defined in sway-keybindings.nix and managed statically.
+      # This simplifies the configuration stack by removing the dynamic keybinding
+      # layer while keeping window rules and projects fully dynamic.
       #
       # To edit keybindings:
-      #   • Edit: ~/.config/sway/keybindings.toml
-      #   • Validate: i3pm config validate
-      #   • Reload: swayconfig reload (or i3pm config reload)
-      #   • No NixOS rebuild required!
+      #   • Edit: /etc/nixos/home-modules/desktop/sway-keybindings.nix
+      #   • Test: home-manager build
+      #   • Apply: home-manager switch (or nixos-rebuild switch for system changes)
       #
-      # The dynamically generated keybindings file is included via extraConfig below.
+      # Keybindings are imported via the imports section at the top of this file.
       # ═══════════════════════════════════════════════════════════════════════════
-      keybindings = lib.mkForce {
-        # Empty - all keybindings managed by sway-config-manager (Feature 047)
-        # Default keybindings are in: ~/.local/share/sway-config-manager/templates/keybindings.toml
-      };
+      # (Keybindings defined in sway-keybindings.nix)
 
       # ORIGINAL home-manager keybindings (commented out for Feature 047):
       # All keybindings below have been moved to ~/.local/share/sway-config-manager/templates/keybindings.toml
@@ -503,9 +504,9 @@ in
       # See: /etc/nixos/specs/053-workspace-assignment-enhancement/
       # ═══════════════════════════════════════════════════════════════════════════
 
-      # Feature 047: Include dynamically generated appearance + keybindings from sway-config-manager
+      # Feature 047: Include dynamically generated appearance from sway-config-manager
+      # Note: Keybindings are now static (defined in sway-keybindings.nix)
       include ~/.config/sway/appearance-generated.conf
-      include ~/.config/sway/keybindings-generated.conf
 
       # Feature 062: Project-Scoped Scratchpad Terminal
       # Essential window rule for floating, centered scratchpad terminal

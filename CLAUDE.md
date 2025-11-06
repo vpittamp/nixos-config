@@ -155,19 +155,24 @@ walker-cmd edit                   # Edit file directly
 
 ## 🔄 Sway Dynamic Configuration Management (Feature 047)
 
-Hot-reloadable Sway configuration with validation, version control, and conflict detection. Uses template-based approach to avoid home-manager conflicts.
+Hot-reloadable Sway configuration for window rules and appearance. Uses template-based approach to avoid home-manager conflicts.
 
-**Configuration Files** (writable, Git-tracked):
-- `~/.config/sway/keybindings.toml` - Keybinding definitions
-- `~/.config/sway/window-rules.json` - Window rules
+**What's Dynamic** (runtime editable, Git-tracked):
+- `~/.config/sway/window-rules.json` - Window rules (floating, sizing, positioning)
+- `~/.config/sway/appearance.json` - Gaps, borders, colors
 - `~/.config/sway/workspace-assignments.json` - Workspace assignments
+
+**What's Static** (managed in Nix, requires rebuild):
+- **Keybindings** - `/etc/nixos/home-modules/desktop/sway-keybindings.nix`
+  - Edit file, then: `sudo nixos-rebuild switch --flake .#<target>`
+  - Organized by section (workspace nav, window mgmt, system, etc.)
 
 **Essential Commands**:
 ```bash
-# Reload configuration (auto-validates, commits to Git)
+# Reload window rules/appearance (auto-validates, commits to Git)
 swaymsg reload  # or Mod+Shift+C
 
-# Validate without applying
+# Validate window rules without applying
 swayconfig validate
 
 # View version history
@@ -181,11 +186,13 @@ systemctl --user status sway-config-daemon
 ```
 
 **Key Features**:
-- <100ms hot-reload latency
+- <100ms hot-reload latency for window rules
 - Automatic syntax/semantic validation
 - Git version control (auto-commit on success)
 - File watcher with 500ms debounce
-- Template initialization from `~/.local/share/sway-config-manager/templates/`
+- Runtime window rule injection (walker, scratchpad)
+
+**Architecture**: Hybrid approach - keybindings in Nix for simplicity, window rules dynamic for runtime additions
 
 **Detailed Documentation**: See `/etc/nixos/specs/047-create-a-new/quickstart.md`
 
@@ -282,9 +289,10 @@ nix flake lock --update-input nixpkgs
 ### Recent Updates (2025-11)
 
 **Key Features**:
+- **Feature 062**: Project-scoped scratchpad terminal (toggle, state persistence, <500ms). See `specs/062-project-scratchpad-terminal/`
 - **Feature 053**: 100% PWA workspace assignment via event-driven daemon (removed native Sway assign rules). See `specs/053-workspace-assignment-enhancement/`
 - **Feature 049**: Auto workspace-to-monitor redistribution on connect/disconnect (1/2/3 monitor presets). See `specs/049-intelligent-automatic-workspace/`
-- **Feature 047**: Hot-reloadable Sway config with validation, Git versioning, <100ms reload. See `specs/047-create-a-new/`
+- **Feature 047**: Hybrid config management - keybindings static (Nix), window rules dynamic (runtime). See `specs/047-create-a-new/`
 - **Feature 029**: Multi-source event monitoring (systemd, /proc, i3 IPC) with correlation. See `specs/029-linux-system-log/`
 - **Feature 025**: Window state visualization (tree/table/live TUI/JSON). See `specs/025-visual-window-state/`
 - **Feature 015**: Event-driven i3pm daemon (<100ms latency, <1% CPU, <15MB mem). See `specs/015-create-a-new/`
@@ -570,13 +578,13 @@ nix flake update                       # Update packages
 
 ---
 
-_Last updated: 2025-11-04 - Sway/Wayland primary, hot-reloadable config, event-driven i3pm system_
+_Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic window rules (runtime)_
 
 **Tech Stack**: Python 3.11+ (i3pm daemon), i3ipc.aio (async Sway IPC), Pydantic (data validation), TypeScript/Deno (CLI), Nix (config mgmt), firefoxpwa (PWAs)
 
 **Storage**: In-memory daemon state, JSON config files (`~/.config/i3/`, `~/.config/sway/`, `~/.local/share/firefoxpwa/`)
 
-**Recent**: Feature 058 (Python backend consolidation, 10-20x perf), 053 (100% workspace assignment), 052 (enhanced swaybar), 042 (workspace mode navigation)
+**Recent**: Feature 062 (scratchpad terminal), Hybrid config (keybindings→Nix, window rules→dynamic), Feature 058 (Python backend consolidation), 053 (100% workspace assignment)
 
 ## Active Technologies
 - Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation) (062-project-scratchpad-terminal)

@@ -277,9 +277,10 @@ in {
 
       # Store default templates (immutable, in Nix store)
       # Daemon will copy these to ~/.config/sway/ on first run if files don't exist
-      ".local/share/sway-config-manager/templates/keybindings.toml" = {
-        source = defaultKeybindingsPath;
-      };
+      # NOTE: Keybindings are now managed statically in sway-keybindings.nix
+      # ".local/share/sway-config-manager/templates/keybindings.toml" = {
+      #   source = defaultKeybindingsPath;
+      # };
 
       ".local/share/sway-config-manager/templates/window-rules.json" = {
         text = defaultWindowRules;
@@ -372,7 +373,8 @@ in {
 
           # Copy template files to config directory if they don't exist
           # This allows users to edit files without nixos-rebuild
-          for file in keybindings.toml window-rules.json workspace-assignments.json appearance.json .gitignore; do
+          # NOTE: keybindings.toml removed - keybindings now managed statically in sway-keybindings.nix
+          for file in window-rules.json workspace-assignments.json appearance.json .gitignore; do
             if [ ! -f "${cfg.configDir}/$file" ]; then
               if [ -f "$TEMPLATE_DIR/$file" ]; then
                 echo "Creating initial config file: ${cfg.configDir}/$file (from template)"
@@ -387,7 +389,8 @@ in {
           mkdir -p ${cfg.configDir}/scripts
 
           # Ensure generated config placeholders exist to avoid include errors on first launch
-          for generated in keybindings-generated.conf appearance-generated.conf; do
+          # NOTE: keybindings-generated.conf removed - keybindings now managed statically
+          for generated in appearance-generated.conf; do
             if [ ! -f "${cfg.configDir}/$generated" ]; then
               echo "Creating placeholder: ${cfg.configDir}/$generated"
               printf "# Managed by sway-config-manager\n" > "${cfg.configDir}/$generated"

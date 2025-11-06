@@ -194,6 +194,76 @@ PY
   walkerProjectListCmd = lib.getExe walkerProjectList;
   walkerProjectSwitchCmd = lib.getExe walkerProjectSwitch;
 
+  # Walker window action scripts - enhanced window management via Walker
+  walkerWindowClose = pkgs.writeShellScriptBin "walker-window-close" ''
+    #!/usr/bin/env bash
+    # Close/kill the selected window
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    # The windows provider returns the window ID
+    WINDOW_ID="$1"
+
+    # Use swaymsg to kill the focused window
+    # The windows provider should have already focused it
+    swaymsg kill
+  '';
+
+  walkerWindowFloat = pkgs.writeShellScriptBin "walker-window-float" ''
+    #!/usr/bin/env bash
+    # Toggle floating mode for the selected window
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    swaymsg floating toggle
+  '';
+
+  walkerWindowFullscreen = pkgs.writeShellScriptBin "walker-window-fullscreen" ''
+    #!/usr/bin/env bash
+    # Toggle fullscreen mode for the selected window
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    swaymsg fullscreen toggle
+  '';
+
+  walkerWindowScratchpad = pkgs.writeShellScriptBin "walker-window-scratchpad" ''
+    #!/usr/bin/env bash
+    # Move the selected window to scratchpad
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    swaymsg move scratchpad
+  '';
+
+  walkerWindowInfo = pkgs.writeShellScriptBin "walker-window-info" ''
+    #!/usr/bin/env bash
+    # Show detailed window information
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    # Get the focused window info from swaymsg
+    WINDOW_INFO=$(swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '.. | select(.focused? == true) | {id, name, app_id, pid, window_properties, geometry, floating, fullscreen, urgent, visible, focused}')
+
+    # Display in a notification using our terminal
+    echo "$WINDOW_INFO" | ${pkgs.jq}/bin/jq '.' | ${pkgs.rofi}/bin/rofi -dmenu -p "Window Info" -theme-str 'window {width: 800px; height: 600px;}' -no-custom
+  '';
+
   # Feature 034/035: Custom application directory for i3pm-managed apps
   # Desktop files are at ~/.local/share/i3pm-applications/applications/
   # Add to XDG_DATA_DIRS so Walker can find them
@@ -332,6 +402,11 @@ in
     walkerOpenInNvim
     walkerProjectList
     walkerProjectSwitch
+    walkerWindowClose
+    walkerWindowFloat
+    walkerWindowFullscreen
+    walkerWindowScratchpad
+    walkerWindowInfo
   ];
 
   # Desktop file for walker-open-in-nvim - manual creation
@@ -497,6 +572,45 @@ in
         after = "Close"
         bind = "ctrl Return"
         label = "open directory"
+
+        # Windows provider actions
+        # Enhanced window management with multiple actions
+        [[providers.actions.windows]]
+        action = "focus"
+        after = "Close"
+        bind = "Return"
+        default = true
+        label = "focus"
+
+        [[providers.actions.windows]]
+        action = "walker-window-close"
+        after = "Close"
+        bind = "shift Delete"
+        label = "close window"
+
+        [[providers.actions.windows]]
+        action = "walker-window-float"
+        after = "Close"
+        bind = "ctrl f"
+        label = "toggle floating"
+
+        [[providers.actions.windows]]
+        action = "walker-window-fullscreen"
+        after = "Close"
+        bind = "shift f"
+        label = "toggle fullscreen"
+
+        [[providers.actions.windows]]
+        action = "walker-window-scratchpad"
+        after = "Close"
+        bind = "ctrl s"
+        label = "move to scratchpad"
+
+        [[providers.actions.windows]]
+        action = "walker-window-info"
+        after = "Nothing"
+        bind = "ctrl i"
+        label = "window info"
     '';
   };
 
@@ -641,6 +755,22 @@ in
       "${config.home.homeDirectory}/node_modules",
       "${config.home.homeDirectory}/.nix-profile",
     ]
+  '';
+
+  # Windows provider configuration
+  # Enhanced with additional window management actions
+  xdg.configFile."elephant/windows.toml".text = ''
+    # Elephant Windows Provider Configuration
+    # Provides fuzzy window switching with enhanced actions
+
+    # Minimum fuzzy match score (0-100)
+    min_score = 30
+
+    # Delay in ms before focusing to avoid potential focus issues
+    delay = 100
+
+    # Icon for the provider
+    icon = "preferences-system-windows"
   '';
 
   # Create symlink to /etc/nixos in home directory for easy access

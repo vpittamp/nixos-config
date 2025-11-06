@@ -149,14 +149,15 @@ class SwayConfigDaemon:
             logger.info("Loading configuration...")
 
             # Load configurations
-            keybindings = self.loader.load_keybindings_toml()
+            # NOTE: Keybindings loading disabled - keybindings now managed statically in sway-keybindings.nix
+            # keybindings = self.loader.load_keybindings_toml()
             window_rules = self.loader.load_window_rules_json()
             workspace_assignments = self.loader.load_workspace_assignments_json()
             appearance_config = self.loader.load_appearance_json()
 
             # Validate
             errors = self.validator.validate_semantics(
-                keybindings, window_rules, workspace_assignments, appearance_config
+                [], window_rules, workspace_assignments, appearance_config
             )
 
             if errors:
@@ -167,7 +168,7 @@ class SwayConfigDaemon:
                 return False
 
             # Merge (for now, just use runtime config; Nix integration comes later)
-            merged_keybindings = self.merger.merge_keybindings([], keybindings)
+            # merged_keybindings = self.merger.merge_keybindings([], keybindings)
             merged_rules = self.merger.merge_window_rules([], window_rules)
             merged_assignments = self.merger.merge_workspace_assignments([], workspace_assignments)
             self.appearance_config = appearance_config
