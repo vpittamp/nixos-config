@@ -23,7 +23,6 @@ in
     # ========== APPLICATION LAUNCHERS ==========
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
     "${modifier}+Shift+Return" = "exec alacritty";
-    "Control+Alt+Return" = "exec $HOME/.config/sway/scripts/scratchpad-terminal-toggle.sh";
     "${modifier}+d" = "exec walker";
 
     # ========== WINDOW MANAGEMENT ==========

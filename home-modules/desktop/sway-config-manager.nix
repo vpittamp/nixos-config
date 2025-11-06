@@ -92,98 +92,8 @@ let
     }
   '';
 
-  scratchpadToggleScript = pkgs.writeShellScript "scratchpad-terminal-toggle.sh" ''
-    set -euo pipefail
-
-    JQ=${pkgs.jq}/bin/jq
-    SWAYMSG=${pkgs.sway}/bin/swaymsg
-    ALACRITTY=${pkgs.alacritty}/bin/alacritty
-
-    PROJECT_INFO='{}'
-    if command -v i3pm >/dev/null 2>&1; then
-      if PROJECT_JSON=''$(i3pm project current --json 2>/dev/null); then
-        PROJECT_INFO=''$PROJECT_JSON
-      fi
-    fi
-
-    PROJECT_NAME=''$(echo "''$PROJECT_INFO" | "''$JQ" -r '.name // empty' 2>/dev/null || echo "")
-    PROJECT_DIR=''$(echo "''$PROJECT_INFO" | "''$JQ" -r '.directory // empty' 2>/dev/null || echo "")
-    DISPLAY_NAME=''$(echo "''$PROJECT_INFO" | "''$JQ" -r '.display_name // empty' 2>/dev/null || echo "")
-
-    if [[ -z "''$PROJECT_NAME" ]]; then
-      SCOPE="global"
-      SLUG="global"
-      FRIENDLY="Global"
-    else
-      SCOPE="project"
-      SLUG=''$(printf '%s' "''$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/--+/-/g')
-      if [[ -z "''$SLUG" ]]; then
-        SLUG="project"
-      fi
-      if [[ -n "''$DISPLAY_NAME" ]]; then
-        FRIENDLY="''$DISPLAY_NAME"
-      else
-        FRIENDLY="''$PROJECT_NAME"
-      fi
-    fi
-
-    APP_ID="scratchpad-terminal-''${SLUG}"
-    TITLE="Scratchpad (''${FRIENDLY})"
-
-    get_tree() {
-      "''$SWAYMSG" -r -t get_tree
-    }
-
-    TREE=''$(get_tree)
-
-    if printf '%s\n' "''$TREE" | "''$JQ" -e --arg id "''$APP_ID" 'recurse(.nodes[]?, .floating_nodes[]?) | select(.app_id == ''$id)' >/dev/null; then
-      if printf '%s\n' "''$TREE" | "''$JQ" -e --arg id "''$APP_ID" 'recurse(.nodes[]?, .floating_nodes[]?) | select(.app_id == ''$id) | (.scratchpad_state != "none")' >/dev/null; then
-        "''$SWAYMSG" "[app_id=\"^''${APP_ID}$\"] scratchpad show" >/dev/null
-      else
-        "''$SWAYMSG" "[app_id=\"^''${APP_ID}$\"] move scratchpad" >/dev/null
-      fi
-      exit 0
-    fi
-
-    SESSION_DIR="''$PROJECT_DIR"
-    if [[ -z "''$SESSION_DIR" ]]; then
-      SESSION_DIR="''$HOME"
-    fi
-
-    if command -v sesh >/dev/null 2>&1; then
-      TERMINAL_CMD=(sesh connect "''$SESSION_DIR")
-    else
-      TERMINAL_CMD=(bash -lc "cd \"''$SESSION_DIR\" && exec ''${SHELL:-bash}")
-    fi
-
-    (
-      export I3PM_APP_ID="''$APP_ID"
-      export I3PM_APP_NAME="scratchpad-terminal"
-      export I3PM_PROJECT_NAME="''$PROJECT_NAME"
-      export I3PM_PROJECT_DIR="''$SESSION_DIR"
-      export I3PM_PROJECT_DISPLAY_NAME="''$DISPLAY_NAME"
-      export I3PM_SCOPE="''$SCOPE"
-      export I3PM_ACTIVE=''$([[ "''$SCOPE" == "project" ]] && echo "true" || echo "false")
-      export I3PM_LAUNCH_TIME="''$(date +%s)"
-      export I3PM_LAUNCHER_PID="''$$"
-      if command -v sesh >/dev/null 2>&1; then
-        "''${ALACRITTY}" -o 'window.class.instance="'"''$APP_ID"'"' -o 'window.class.general="'"''$APP_ID"'"' --title "''$TITLE" -e sesh connect "''$SESSION_DIR" >/dev/null 2>&1 &
-      else
-        "''${ALACRITTY}" -o 'window.class.instance="'"''$APP_ID"'"' -o 'window.class.general="'"''$APP_ID"'"' --title "''$TITLE" -e bash -lc "cd \"''$SESSION_DIR\" && exec ''${SHELL:-bash}" >/dev/null 2>&1 &
-      fi
-    )
-
-    for _ in ''$(seq 1 50); do
-      sleep 0.05
-      if get_tree | "''$JQ" -e --arg id "''$APP_ID" 'recurse(.nodes[]?, .floating_nodes[]?) | select(.app_id == ''$id)' >/dev/null; then
-        "''$SWAYMSG" "[app_id=\"^''${APP_ID}$\"] scratchpad show" >/dev/null
-        exit 0
-      fi
-    done
-
-    echo "scratchpad-terminal-toggle: Timed out waiting for terminal window" >&2
-    exit 1
-  '';
+  # Legacy scratchpad script removed - now using i3pm scratchpad toggle
+  # See Feature 062: Project-Scoped Scratchpad Terminal
 
   defaultWindowRules = ''
     {
@@ -294,11 +204,8 @@ in {
         source = defaultAppearancePath;
       };
 
-      # Project-aware scratchpad toggle script
-      ".config/sway/scripts/scratchpad-terminal-toggle.sh" = {
-        source = scratchpadToggleScript;
-        executable = true;
-      };
+      # Legacy scratchpad toggle script removed (Feature 062)
+      # Now using: i3pm scratchpad toggle (daemon-based implementation)
 
       # Legacy workspace mode handler removed (Feature 042)
       # Workspace mode now uses daemon IPC via i3pm CLI commands

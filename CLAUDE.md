@@ -323,8 +323,9 @@ Project-scoped workspace management for i3/Sway. Switch contexts, auto show/hide
 | Key | Action |
 |-----|--------|
 | `Win+P` | Project switcher | `Win+Shift+P` | Clear (global mode) |
-| `Win+Shift+Return` | **Scratchpad Terminal** | Toggle project terminal |
-| `Win+C` | VS Code | `Win+Return` | Terminal | `Win+G` | Lazygit | `Win+Y` | Yazi |
+| `Win+Return` | **Scratchpad Terminal** | Toggle project terminal (1200×600, centered) |
+| `Win+Shift+Return` | Regular terminal | Opens Alacritty (non-scratchpad) |
+| `Win+C` | VS Code | `Win+G` | Lazygit | `Win+Y` | Yazi |
 
 **Scoped apps** (hidden on switch): Ghostty, VS Code, Yazi, Lazygit
 **Global apps** (always visible): Firefox, PWAs, K9s
@@ -333,12 +334,15 @@ Project-scoped workspace management for i3/Sway. Switch contexts, auto show/hide
 
 Project-scoped floating terminal that toggles show/hide without affecting other windows. Each project maintains independent terminal with separate command history and working directory.
 
-**Quick Access**: `Win+Shift+Return` (launches if doesn't exist, shows if hidden, hides if visible)
+**Quick Access**: `Win+Return` (launches if doesn't exist, shows if hidden, hides if visible)
 
 **Key Features**:
 - **Project Isolation**: Each project has its own terminal with independent command history
 - **State Persistence**: Running processes persist when terminal is hidden
 - **Auto Working Directory**: Terminal opens in project root directory
+- **Ghostty Terminal**: Modern GPU-accelerated terminal with shell integration
+- **Unified Font Size**: 11pt (centralized terminal configuration)
+- **Compact Size**: 1200×600 pixels, centered on display
 - **Global Terminal**: Use `i3pm scratchpad toggle global` for project-less terminal
 - **Fast Toggle**: <500ms for existing terminals, <2s for initial launch
 
