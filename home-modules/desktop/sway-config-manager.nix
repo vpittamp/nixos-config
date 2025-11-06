@@ -199,7 +199,7 @@ let
           },
           "actions": [
             "floating enable",
-            "resize set width 1400 px height 850 px",
+            "resize set width 1200 px height 700 px",
             "move position center",
             "move scratchpad"
           ]
