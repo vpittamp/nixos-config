@@ -238,6 +238,18 @@ The system MUST measure toggle latency from RPC request receipt to Sway command 
 **TR-008: Keybinding Configuration**
 The Sway keybinding MUST be: `bindsym $mod+Shift+Return exec i3pm scratchpad toggle`. The legacy shell script binding MUST be removed from Sway configuration generation.
 
+**TR-009: Comprehensive Async Operation Timeouts**
+The system MUST enforce the following timeout requirements for all async operations:
+- Launch correlation (notification to window): 2s (FR-015)
+- Terminal launch (total): 2s (FR-019)
+- Toggle operation (total): 5s (FR-020)
+- Window validation (Sway IPC query): 1s
+- Status query (daemon RPC): 500ms
+- Close operation (window kill): 3s
+- Cleanup operation (all terminals): 10s
+- Individual Sway IPC commands: 1s per command
+If any operation exceeds its timeout, the system MUST log an ERROR and return appropriate error response to client.
+
 ### Migration Requirements
 
 **MIG-001: Shell Script Deprecation**
