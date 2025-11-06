@@ -6,6 +6,8 @@ let
   # Detect Wayland mode - if Sway is enabled, we're in Wayland mode
   isWaylandMode = config.wayland.windowManager.sway.enable or false;
 
+  clipboardSyncScript = "/etc/nixos/scripts/clipboard-sync.sh";
+
   walkerOpenInNvim = pkgs.writeShellScriptBin "walker-open-in-nvim" ''
     #!/usr/bin/env bash
     # Launch an Alacritty terminal window with Neovim for a Walker-selected file path
@@ -265,6 +267,119 @@ PY
   '';
 
   # Walker Window Manager - Two-stage dmenu-based window management
+  # Walker Claude Sessions - List and resume Claude Code sessions
+  walkerClaudeSessions = pkgs.writeShellScriptBin "walker-claude-sessions" ''
+    #!/usr/bin/env bash
+    # List and resume Claude Code sessions via Walker
+    set -euo pipefail
+
+    # Function to extract session metadata
+    get_session_metadata() {
+        local session_file="$1"
+        local session_id=$(basename "$session_file" .jsonl)
+
+        # Skip agent files
+        if [[ "$session_id" == agent-* ]]; then
+            return
+        fi
+
+        # Extract first user message and timestamp
+        local metadata=$(${pkgs.jq}/bin/jq -r '
+            select(.type == "user") |
+            {
+                timestamp: .timestamp,
+                branch: .gitBranch,
+                content: .message.content
+            } | @json
+        ' "$session_file" 2>/dev/null | head -1)
+
+        if [ -z "$metadata" ]; then
+            return
+        fi
+
+        # Parse metadata
+        local timestamp=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.timestamp')
+        local branch=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.branch // "no-branch"')
+        local content=$(echo "$metadata" | ${pkgs.jq}/bin/jq -r '.content')
+
+        # Extract first line as title (limit to 100 chars)
+        local title=$(echo "$content" | head -1 | ${pkgs.coreutils}/bin/cut -c1-100)
+
+        # If it's a command, clean it up
+        if [[ "$title" == *"<command-"* ]]; then
+            title=$(echo "$title" | ${pkgs.gnused}/bin/sed 's/<command-[^>]*>//g' | ${pkgs.gnused}/bin/sed 's/<\/command-[^>]*>//g')
+        fi
+
+        # Convert timestamp to readable format
+        local date_str=$(${pkgs.coreutils}/bin/date -d "$timestamp" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+
+        # Output format: "date | branch | title | session_id"
+        echo "$date_str | $branch | $title | $session_id"
+    }
+
+    # Stage 1: List all sessions
+    SESSIONS_DATA=""
+
+    # Scan all project directories
+    for project_dir in ~/.claude/projects/*/; do
+        if [ -d "$project_dir" ]; then
+            # Find all session .jsonl files
+            for session_file in "$project_dir"/*.jsonl; do
+                if [ -f "$session_file" ]; then
+                    session_info=$(get_session_metadata "$session_file")
+                    if [ -n "$session_info" ]; then
+                        SESSIONS_DATA="$SESSIONS_DATA"$'\n'"$session_info"
+                    fi
+                fi
+            done
+        fi
+    done
+
+    if [ -z "$SESSIONS_DATA" ]; then
+        ${pkgs.libnotify}/bin/notify-send "No Sessions" "No Claude Code sessions found"
+        exit 0
+    fi
+
+    # Sort by date (most recent first) and show in walker
+    SELECTED_SESSION=$(echo "$SESSIONS_DATA" | sort -r | ${pkgs.walker}/bin/walker --dmenu -p "Select Claude Session:")
+
+    if [ -z "$SELECTED_SESSION" ]; then
+        exit 0
+    fi
+
+    # Extract session ID from selection
+    SESSION_ID=$(echo "$SELECTED_SESSION" | ${pkgs.gawk}/bin/awk -F'|' '{print $NF}' | ${pkgs.coreutils}/bin/tr -d ' ')
+
+    # Stage 2: Select action
+    ACTIONS="↩️  Resume Session
+🔀  Fork Session (New ID)
+📋  Copy Session ID
+🔍  View Session Info"
+
+    SELECTED_ACTION=$(echo "$ACTIONS" | ${pkgs.rofi}/bin/rofi -dmenu -p "Action on Session:")
+
+    if [ -z "$SELECTED_ACTION" ]; then
+        exit 0
+    fi
+
+    # Execute action
+    case "$SELECTED_ACTION" in
+        "↩️  Resume Session")
+            ${pkgs.alacritty}/bin/alacritty -e bash -c "claude --resume $SESSION_ID; exec bash"
+            ;;
+        "🔀  Fork Session (New ID)")
+            ${pkgs.alacritty}/bin/alacritty -e bash -c "claude --resume $SESSION_ID --fork-session; exec bash"
+            ;;
+        "📋  Copy Session ID")
+            echo -n "$SESSION_ID" | ${pkgs.wl-clipboard}/bin/wl-copy
+            ${pkgs.libnotify}/bin/notify-send "Copied" "Session ID: $SESSION_ID"
+            ;;
+        "🔍  View Session Info")
+            ${pkgs.libnotify}/bin/notify-send "Session Info" "ID: $SESSION_ID"
+            ;;
+    esac
+  '';
+
   walkerWindowManager = pkgs.writeShellScriptBin "walker-window-manager" ''
     #!/usr/bin/env bash
     # Walker-based window manager - two-stage selection
@@ -304,21 +419,21 @@ PY
     ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus"
 
     # Stage 2: Select an action
-    ACTIONS="❌ Close/Kill Window
-    ⬜ Toggle Floating
-    ⛶ Toggle Fullscreen
-    📦 Move to Scratchpad
-    ⬅️  Move Left
-    ➡️  Move Right
-    ⬆️  Move Up
-    ⬇️  Move Down
-    🔲 Split Horizontal
-    ⬛ Split Vertical
-    📊 Layout Stacking
-    📑 Layout Tabbed
-    ⚡ Layout Toggle Split"
+    ACTIONS="❌  Close/Kill Window
+⬜  Toggle Floating
+⛶  Toggle Fullscreen
+📦  Move to Scratchpad
+⬅️  Move Left
+➡️  Move Right
+⬆️  Move Up
+⬇️  Move Down
+🔲  Split Horizontal
+⬛  Split Vertical
+📊  Layout Stacking
+📑  Layout Tabbed
+⚡  Layout Toggle Split"
 
-    SELECTED_ACTION=$(echo "$ACTIONS" | ${pkgs.walker}/bin/walker --dmenu -p "Window Action:")
+    SELECTED_ACTION=$(echo "$ACTIONS" | ${pkgs.rofi}/bin/rofi -dmenu -p "Window Action:")
 
     if [ -z "$SELECTED_ACTION" ]; then
         exit 0
@@ -326,16 +441,16 @@ PY
 
     # Execute the action
     case "$SELECTED_ACTION" in
-        "❌ Close/Kill Window")
+        "❌  Close/Kill Window")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] kill"
             ;;
-        "⬜ Toggle Floating")
+        "⬜  Toggle Floating")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] floating toggle"
             ;;
-        "⛶ Toggle Fullscreen")
+        "⛶  Toggle Fullscreen")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] fullscreen toggle"
             ;;
-        "📦 Move to Scratchpad")
+        "📦  Move to Scratchpad")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move scratchpad"
             ;;
         "⬅️  Move Left")
@@ -350,19 +465,19 @@ PY
         "⬇️  Move Down")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] move down"
             ;;
-        "🔲 Split Horizontal")
+        "🔲  Split Horizontal")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus; split h"
             ;;
-        "⬛ Split Vertical")
+        "⬛  Split Vertical")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus; split v"
             ;;
-        "📊 Layout Stacking")
+        "📊  Layout Stacking")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout stacking"
             ;;
-        "📑 Layout Tabbed")
+        "📑  Layout Tabbed")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout tabbed"
             ;;
-        "⚡ Layout Toggle Split")
+        "⚡  Layout Toggle Split")
             ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] layout toggle split"
             ;;
     esac
@@ -514,6 +629,7 @@ in
     walkerWindowScratchpad
     walkerWindowInfo
     walkerWindowManager
+    walkerClaudeSessions
   ];
 
   # Desktop file for walker-open-in-nvim - manual creation
@@ -701,6 +817,17 @@ in
         label = "window actions"
     '';
   };
+
+  # Elephant clipboard provider configuration - centralizes clipboard sync
+  xdg.configFile."elephant/clipboard.toml".text = ''
+    icon = "edit-paste"
+    min_score = 30
+    max_items = 500
+    command = "${clipboardSyncScript}"
+    recopy = true
+    ignore_symbols = false
+    auto_cleanup = 0
+  '';
 
   # Elephant websearch provider configuration
   # Feature 050: Enhanced with domain-specific search engines
