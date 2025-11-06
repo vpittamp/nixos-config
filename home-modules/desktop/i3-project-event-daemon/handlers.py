@@ -701,9 +701,19 @@ async def on_window_new(
         # Feature 046: Refactored to use PID directly instead of xprop-based lookup
         from .services.window_filter import read_process_environ, parse_window_environment
         window_env = None
+        is_scratchpad_terminal = False
         if window_pid:
             try:
                 env = read_process_environ(window_pid)
+                # Feature 062: Skip project marking for scratchpad terminals
+                if env.get("I3PM_SCRATCHPAD") == "true":
+                    is_scratchpad_terminal = True
+                    logger.info(
+                        f"Window {window_id} is scratchpad terminal for project '{env.get('I3PM_PROJECT_NAME', 'unknown')}', "
+                        "skipping normal project marking (will be handled by scratchpad manager)"
+                    )
+                    # Don't return early - let window proceed through normal event handlers
+                    # but skip project marking later
                 window_env = parse_window_environment(env)
                 if window_env:
                     logger.debug(
@@ -854,46 +864,53 @@ async def on_window_new(
                 )
                 actual_project = title_project
 
-        # Apply project mark if we have a project assignment
-        # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
-        # Feature 041 T020: Mark windows from launch correlation
-        # Feature 035: Mark windows from I3PM environment
-        # Feature 061: Unified mark format - all windows use "project:" prefix
-        should_mark = False
-        mark_source = None
-
-        if correlated_project and actual_project:
-            # Project assigned via launch correlation
-            should_mark = True
-            mark_source = "launch correlation"
-        elif window_env and actual_project:
-            # Project assigned via I3PM environment (both scoped and global apps)
-            should_mark = True
-            mark_source = "I3PM environment"
-        elif actual_project and classification.scope == "scoped":
-            # Project assigned via active project (user intent) for scoped windows
-            # This handles windows opened without launch notification or I3PM environment
-            should_mark = True
-            mark_source = "active project"
-
-        # ALWAYS mark windows for consistency and debugging
-        # Unified format: project:PROJECT:WINDOW_ID
-        # - project: always literal "project" prefix
-        # - PROJECT: project name or "none" if no active project
-        # - WINDOW_ID: unique window identifier (container.id)
-        # Scope info (scoped/global) is tracked separately in classification/state
-        project_for_mark = actual_project or "none"
-        mark = f"project:{project_for_mark}:{window_id}"
-
-        # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
-        await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
-
-        if actual_project:
-            logger.info(f"Marked window {window_id} with {mark} (from {mark_source or 'classification'})")
+        # Feature 062: Skip marking for scratchpad terminals
+        # They will be marked by the scratchpad manager with "scratchpad:PROJECT" format
+        if is_scratchpad_terminal:
+            logger.info(f"Skipping project mark for scratchpad terminal {window_id} (will be marked by scratchpad manager)")
+            marks_list = []
+            mark = None  # No mark applied yet
         else:
-            logger.info(f"Marked window {window_id} with {mark} (no active project)")
+            # Apply project mark if we have a project assignment
+            # Note: i3 marks must be UNIQUE - use format project:PROJECT:WINDOW_ID
+            # Feature 041 T020: Mark windows from launch correlation
+            # Feature 035: Mark windows from I3PM environment
+            # Feature 061: Unified mark format - all windows use "project:" prefix
+            should_mark = False
+            mark_source = None
 
-        marks_list = [mark]
+            if correlated_project and actual_project:
+                # Project assigned via launch correlation
+                should_mark = True
+                mark_source = "launch correlation"
+            elif window_env and actual_project:
+                # Project assigned via I3PM environment (both scoped and global apps)
+                should_mark = True
+                mark_source = "I3PM environment"
+            elif actual_project and classification.scope == "scoped":
+                # Project assigned via active project (user intent) for scoped windows
+                # This handles windows opened without launch notification or I3PM environment
+                should_mark = True
+                mark_source = "active project"
+
+            # ALWAYS mark windows for consistency and debugging
+            # Unified format: project:PROJECT:WINDOW_ID
+            # - project: always literal "project" prefix
+            # - PROJECT: project name or "none" if no active project
+            # - WINDOW_ID: unique window identifier (container.id)
+            # Scope info (scoped/global) is tracked separately in classification/state
+            project_for_mark = actual_project or "none"
+            mark = f"project:{project_for_mark}:{window_id}"
+
+            # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
+            await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
+
+            if actual_project:
+                logger.info(f"Marked window {window_id} with {mark} (from {mark_source or 'classification'})")
+            else:
+                logger.info(f"Marked window {window_id} with {mark} (no active project)")
+
+            marks_list = [mark]
 
         # ALWAYS add window to state (for tracking), even if not marked
         # Feature 041 T022: Include correlation metadata if window was matched via launch
