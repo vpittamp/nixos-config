@@ -507,6 +507,16 @@ in
       include ~/.config/sway/appearance-generated.conf
       include ~/.config/sway/keybindings-generated.conf
 
+      # Feature 062: Project-Scoped Scratchpad Terminal
+      # Essential window rule for floating, centered scratchpad terminal
+      # Matches app_id pattern: scratchpad-terminal-{project-slug}
+      # FR-002: 1400x850 pixels, centered on current display
+      for_window [app_id="^scratchpad-terminal(-[a-z0-9-]+)?$"] {
+          floating enable
+          resize set width 1400 px height 850 px
+          move position center
+      }
+
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes
       # Visual feedback: wshowkeys shows typed keys on all outputs while in workspace mode
