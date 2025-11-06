@@ -75,7 +75,7 @@ class ScratchpadManager:
             3. Wait for window event (timeout: 2s per FR-019)
             4. Correlate window via launch notification or /proc fallback
             5. Mark window with scratchpad:{project_name}
-            6. Set floating + dimensions (1000x600, centered)
+            6. Set floating + dimensions (1200x600, centered)
             7. Track in daemon state
 
         Args:
@@ -152,16 +152,16 @@ class ScratchpadManager:
             # Mark window with scratchpad mark
             await self.sway.command(f'[con_id={window.id}] mark {mark}')
 
-            # Set floating and dimensions (1000x600, centered)
+            # Set floating and dimensions (1200x600, centered)
             await self.sway.command(
                 f'[con_id={window.id}] floating enable, '
-                f'resize set 1000 600, '
+                f'resize set 1200 600, '
                 f'move position center'
             )
 
             self.logger.info(
                 f"Configured scratchpad terminal: "
-                f"window_id={window.id}, mark={mark}, floating=true, size=1000x600"
+                f"window_id={window.id}, mark={mark}, floating=true, size=1200x600"
             )
 
             # Create terminal instance

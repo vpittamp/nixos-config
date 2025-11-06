@@ -3,21 +3,23 @@
 { config, lib, pkgs, ... }:
 
 {
+  imports = [ ./terminal-defaults.nix ];
+
   programs.ghostty = {
     enable = true;
 
     settings = {
-      # Font configuration - matching Alacritty setup
-      font-family = "FiraCode Nerd Font";
-      font-size = 12;
+      # Font configuration - using centralized terminal defaults
+      font-family = config.terminal.defaults.font.family;
+      font-size = config.terminal.defaults.font.size;
 
-      # Theme - Catppuccin Mocha colors (manual)
-      background = "1e1e2e";
-      foreground = "cdd6f4";
+      # Theme - Catppuccin Mocha colors (using centralized defaults)
+      background = config.terminal.defaults.colors.background;
+      foreground = config.terminal.defaults.colors.foreground;
 
-      # Window configuration
-      window-padding-x = 2;
-      window-padding-y = 2;
+      # Window configuration - using centralized defaults
+      window-padding-x = config.terminal.defaults.padding.x;
+      window-padding-y = config.terminal.defaults.padding.y;
 
       # Clipboard
       clipboard-read = "allow";

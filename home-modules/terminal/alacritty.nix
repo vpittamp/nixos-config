@@ -3,6 +3,8 @@
 { config, lib, pkgs, ... }:
 
 {
+  imports = [ ./terminal-defaults.nix ];
+
   programs.alacritty = {
     enable = true;
 
@@ -10,28 +12,28 @@
       # Terminal environment (FR-025)
       env.TERM = "xterm-256color";
 
-      # Font configuration (FR-058)
+      # Font configuration (FR-058) - using centralized terminal defaults
       font = {
         normal = {
-          family = "FiraCode Nerd Font";
+          family = config.terminal.defaults.font.family;
           style = "Regular";
         };
         bold = {
-          family = "FiraCode Nerd Font";
+          family = config.terminal.defaults.font.family;
           style = "Bold";
         };
         italic = {
-          family = "FiraCode Nerd Font";
+          family = config.terminal.defaults.font.family;
           style = "Italic";
         };
-        size = 9.0;
+        size = config.terminal.defaults.font.size;
       };
 
-      # Window configuration (FR-062)
+      # Window configuration (FR-062) - using centralized defaults
       window = {
         padding = {
-          x = 2;
-          y = 2;
+          x = config.terminal.defaults.padding.x;
+          y = config.terminal.defaults.padding.y;
         };
         decorations = "full";
         dynamic_title = true;
@@ -49,15 +51,15 @@
         multiplier = 3;
       };
 
-      # Catppuccin Mocha color scheme (FR-059)
+      # Catppuccin Mocha color scheme (FR-059) - using centralized defaults
       colors = {
         primary = {
-          background = "#1e1e2e";
-          foreground = "#cdd6f4";
+          background = "#${config.terminal.defaults.colors.background}";
+          foreground = "#${config.terminal.defaults.colors.foreground}";
         };
 
         cursor = {
-          text = "#1e1e2e";
+          text = "#${config.terminal.defaults.colors.background}";
           cursor = "#f5e0dc";
         };
 
