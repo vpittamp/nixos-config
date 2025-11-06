@@ -167,9 +167,9 @@ let
       export I3PM_LAUNCH_TIME="''$(date +%s)"
       export I3PM_LAUNCHER_PID="''$$"
       if command -v sesh >/dev/null 2>&1; then
-        "''${ALACRITTY}" --class "''$APP_ID" --title "''$TITLE" -e sesh connect "''$SESSION_DIR" >/dev/null 2>&1 &
+        "''${ALACRITTY}" -o 'window.class.instance="'"''$APP_ID"'"' -o 'window.class.general="'"''$APP_ID"'"' --title "''$TITLE" -e sesh connect "''$SESSION_DIR" >/dev/null 2>&1 &
       else
-        "''${ALACRITTY}" --class "''$APP_ID" --title "''$TITLE" -e bash -lc "cd \"''$SESSION_DIR\" && exec ''${SHELL:-bash}" >/dev/null 2>&1 &
+        "''${ALACRITTY}" -o 'window.class.instance="'"''$APP_ID"'"' -o 'window.class.general="'"''$APP_ID"'"' --title "''$TITLE" -e bash -lc "cd \"''$SESSION_DIR\" && exec ''${SHELL:-bash}" >/dev/null 2>&1 &
       fi
     )
 
