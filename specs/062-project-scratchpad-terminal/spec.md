@@ -48,7 +48,7 @@ When working in a project, users frequently need command-line access to run git 
 
 **Acceptance Scenarios**:
 
-1. **Given** user is in project "nixos", **When** user presses scratchpad terminal keybinding for first time, **Then** Alacritty terminal opens as floating window centered on display with working directory set to nixos project root
+1. **Given** user is in project "nixos", **When** user presses scratchpad terminal keybinding for first time, **Then** Ghostty terminal opens as floating window centered on display with working directory set to nixos project root (falls back to Alacritty if Ghostty unavailable)
 2. **Given** project scratchpad terminal is visible, **When** user presses scratchpad keybinding, **Then** terminal hides to scratchpad (process continues running)
 3. **Given** project scratchpad terminal is hidden, **When** user presses scratchpad keybinding, **Then** same terminal instance appears in same position with command history intact
 
@@ -129,7 +129,7 @@ After hiding a scratchpad terminal, users expect to return to exactly where they
 ### Functional Requirements
 
 **FR-001: Project-Scoped Terminal Creation**
-When the user activates the scratchpad terminal keybinding for a project without an existing scratchpad terminal, the system MUST launch an Alacritty terminal instance with its working directory set to the project's root directory.
+When the user activates the scratchpad terminal keybinding for a project without an existing scratchpad terminal, the system MUST launch a Ghostty terminal instance with its working directory set to the project's root directory. If Ghostty is unavailable, the system MUST fall back to Alacritty.
 
 **FR-002: Terminal Floating Display**
 The scratchpad terminal MUST appear as a floating window, centered on the current display, with dimensions of 1400x850 pixels.
@@ -178,6 +178,79 @@ When a project is deleted from i3pm, the associated scratchpad terminal MUST rem
 
 **FR-012: Global Mode Terminal**
 When the user activates the scratchpad terminal keybinding without an active project (global mode), the system MUST launch or toggle a global scratchpad terminal with its working directory set to the user's home directory. This terminal persists across all project switches and behaves identically to project-scoped terminals.
+
+**FR-013: Unified Launcher Integration**
+The system MUST launch scratchpad terminals via app-launcher-wrapper.sh to ensure consistent environment variable injection, process isolation via systemd-run, and integration with the unified launcher architecture (Features 041/057). Direct subprocess launching is not permitted.
+
+**FR-014: Launch Notification Correlation**
+Before launching a scratchpad terminal, the daemon MUST send a pre-launch notification to the launch registry (Feature 041) with payload: app_name="scratchpad-terminal", project_name, expected_class (Ghostty/Alacritty), and timestamp. This enables Tier 0 window correlation with 95%+ accuracy in rapid launch scenarios.
+
+**FR-015: Notification Correlation Timeout**
+The system MUST correlate terminal windows with launch notifications within 2 seconds. If correlation times out, the system MUST fall back to /proc/<pid>/environ reading (Feature 057) for window identification.
+
+**FR-016: Ghostty Terminal Launch**
+When launching a scratchpad terminal with Ghostty, the system MUST use Ghostty's working directory flag and ensure the window is identifiable via app_id matching pattern "ghostty". The system MUST inject I3PM_* environment variables via the unified launcher for window correlation.
+
+**FR-017: Alacritty Fallback**
+If Ghostty is not available (checked via `command -v ghostty`), the system MUST fall back to Alacritty with the `-o` flag for window.class.instance and window.class.general configuration to ensure proper app_id setting on Wayland.
+
+**FR-018: Daemon Unavailable Error Handling**
+If the daemon socket is unavailable when the user activates the scratchpad keybinding, the CLI MUST display a user-friendly error message: "i3pm daemon is not running. Start with: systemctl --user start i3-project-event-listener" and exit with code 1.
+
+**FR-019: Launch Timeout Handling**
+If terminal launch exceeds 2 seconds without window appearance, the system MUST terminate the launch attempt, log the timeout, and notify the user: "Terminal launch timed out. Check system logs: journalctl --user -u i3-project-event-listener -n 50".
+
+**FR-020: Concurrent Toggle Protection**
+The daemon MUST serialize concurrent toggle requests for the same project using an async lock to prevent race conditions. If a toggle operation is already in progress, subsequent requests MUST wait for completion (max 5 seconds) before processing.
+
+**FR-021: Shell Script Migration**
+The system MUST NOT use the legacy shell script (~/.config/sway/scripts/scratchpad-terminal-toggle.sh) for scratchpad terminal management. The keybinding MUST invoke the daemon via `i3pm scratchpad toggle` CLI command.
+
+**FR-022: Window Rule Migration**
+The system MUST define window rules for scratchpad terminals using I3PM_APP_NAME environment variable matching instead of hard-coded app_id patterns, ensuring consistency with unified launcher architecture.
+
+**FR-023: Diagnostic Integration**
+The system MUST integrate scratchpad terminal status into `i3pm diagnose` command output, showing: terminal count, PID validity, window existence, and state synchronization status.
+
+### Technical Requirements
+
+**TR-001: App Registry Entry**
+The system MUST define a scratchpad-terminal entry in app-registry-data.nix with: name="scratchpad-terminal", command="ghostty", scope="scoped", expected_class="ghostty", multi_instance=true, with parameter substitution for $PROJECT_DIR and $SESSION_NAME variables.
+
+**TR-002: Environment Variable Injection**
+The system MUST inject the following I3PM_* environment variables via unified launcher: I3PM_APP_ID, I3PM_APP_NAME="scratchpad-terminal", I3PM_PROJECT_NAME, I3PM_PROJECT_DIR, I3PM_SCOPE="scoped", I3PM_SCRATCHPAD="true", I3PM_WORKING_DIR.
+
+**TR-003: Ghostty Launch Parameters**
+When launching Ghostty, the system MUST use: `ghostty --working-directory=$PROJECT_DIR` (exact flag syntax to be verified against Ghostty documentation). If Ghostty uses different syntax, adapt accordingly.
+
+**TR-004: Ghostty Window Identification**
+The system MUST identify Ghostty windows by app_id matching "ghostty" (case-insensitive) and validate ownership via I3PM_SCRATCHPAD="true" environment variable from /proc/<pid>/environ.
+
+**TR-005: Window Size Configuration**
+Scratchpad terminals MUST use dimensions 1200x700 pixels (updated from original 1400x850) as currently configured in window-rules.json.
+
+**TR-006: Logging Requirements**
+The daemon MUST log the following events at INFO level: terminal launch (with PID, project), toggle operations (show/hide with window_id), validation failures (with reason), cleanup operations (with count). ERROR level: launch failures, timeout events, Sway IPC failures.
+
+**TR-007: Performance Measurement**
+The system MUST measure toggle latency from RPC request receipt to Sway command completion. Measurement methodology: timestamp at RPC handler entry, timestamp after final Sway IPC command response. Target: <500ms for existing terminals (show/hide), <2s for initial launch.
+
+**TR-008: Keybinding Configuration**
+The Sway keybinding MUST be: `bindsym $mod+Shift+Return exec i3pm scratchpad toggle`. The legacy shell script binding MUST be removed from Sway configuration generation.
+
+### Migration Requirements
+
+**MIG-001: Shell Script Deprecation**
+The shell script ~/.config/sway/scripts/scratchpad-terminal-toggle.sh MUST be removed from version control and Sway configuration generation. A deprecation notice MUST be added to CLAUDE.md documenting the replacement with daemon-based approach.
+
+**MIG-002: for_window Rule Update**
+The existing for_window rule matching app_id="^scratchpad-terminal(-[a-z0-9-]+)?$" MUST be updated to match windows with I3PM_APP_NAME="scratchpad-terminal" environment variable, using the environment variable matching pattern from Feature 057.
+
+**MIG-003: Configuration File Cleanup**
+The sway-config-manager.nix template MUST NOT generate the scratchpad-terminal-toggle.sh script. The scratchpad terminal logic MUST be entirely daemon-based.
+
+**MIG-004: Window Rules Template**
+The window-rules.json template in sway-config-manager.nix MUST define scratchpad terminal rules using the new Ghostty-based criteria with environment variable matching.
 
 ### Key Entities
 
@@ -245,18 +318,21 @@ The implementation should be designed from first principles to deliver the best 
 
 ### Assumptions
 
-1. Users have Alacritty installed and configured as the default terminal
+1. Users have Ghostty installed (with Alacritty as fallback)
 2. Projects are defined with a valid root directory path accessible to the user
 3. i3pm daemon is running and tracking the active project
 4. The scratchpad functionality is available in the Sway/i3 window manager
 5. Terminal will use default shell configured in user's environment (e.g., bash, zsh)
 6. tmux/sesh integration (if present) will work with scratchpad terminals as with regular terminals
 7. Existing legacy code can be refactored or replaced as needed to achieve optimal solution
+8. Unified launcher (app-launcher-wrapper.sh) is available for application launching
+9. Feature 041 launch notification system is available for window correlation
+10. systemd-run is available for process isolation
 
 ### Constraints
 
 1. Only one scratchpad terminal per project (no multi-terminal support in this feature)
-2. Terminal must be Alacritty (other terminal emulators not supported)
+2. Terminal must be Ghostty with fallback to Alacritty (other terminal emulators not supported)
 3. Terminal keybinding operates only within Sway/i3 window manager context
 4. Scratchpad terminal is always floating (cannot be tiled)
 5. Working directory is always project root (no subdirectory support in initial version)
@@ -264,7 +340,11 @@ The implementation should be designed from first principles to deliver the best 
 ### Dependencies
 
 - i3pm project management system
-- Alacritty terminal emulator
+- Ghostty terminal emulator (primary), Alacritty (fallback)
 - Sway window manager
 - i3pm daemon for project context tracking
+- app-launcher-wrapper.sh (unified launcher)
+- systemd-run for process isolation
+- Feature 041 launch notification system
+- i3ipc.aio (Python async Sway IPC library)
 - Existing scratchpad infrastructure in Sway (may be refactored/replaced if needed)
