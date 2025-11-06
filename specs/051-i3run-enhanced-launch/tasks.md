@@ -14,7 +14,7 @@
 
 **Status**: MVP COMPLETE - Feature 051 is functional and ready for use
 
-**Completion**: 53/57 tasks completed (93%)
+**Completion**: 54/57 tasks completed (95%)
 - ✅ Phase 1-8: All core implementation tasks complete
 - ✅ CLI Command: `i3pm run <app_name>` fully functional with all flags
 - ✅ Daemon Integration: RPC handler and RunRaiseManager implemented
@@ -28,6 +28,7 @@
 4. Non-blocking application launch (subprocess.Popen with timeout)
 5. Auto-detection of app-launcher-wrapper path
 6. Comprehensive error handling and user feedback
+7. Performance metrics logging for all state queries and transitions
 
 **Testing Results**:
 - ✅ `i3pm run btop` - Launches application successfully
@@ -37,7 +38,6 @@
 
 **Known Limitations** (Deferred Items):
 - T040-T043: Multi-instance tracking (beyond MVP scope)
-- T052: Performance metrics (optional enhancement)
 - T056-T057: Comprehensive scratchpad/multi-monitor testing
 
 **Fixes Applied**:
@@ -216,7 +216,7 @@
 - [X] T049 [P] Add --json flag support in run.ts (outputs RunResponse as JSON for scripting) [Already implemented]
 - [X] T050 [P] Add --help flag and usage text in run.ts (shows all modes, flags, examples) [Already implemented]
 - [X] T051 [P] Add logging for all RunRaiseManager operations in daemon (state detection, transitions, errors) [Already implemented]
-- [ ] T052 [P] Add performance metrics logging (track latency for state queries, transitions) [Optional - can be added later]
+- [X] T052 [P] Add performance metrics logging (track latency for state queries, transitions) [✓ COMPLETED: Added timing measurements to all detect_window_state and transition methods with [perf] prefix logging at DEBUG level]
 - [X] T053 Update quickstart.md with final keybinding recommendations and examples (if needed after implementation) [Already comprehensive]
 - [X] T054 Add example keybindings to home-modules/desktop/sway-keybindings.nix (commented examples for common apps)
 - [X] T055 Run full workflow validation per quickstart.md scenarios (all 5 user stories) [✓ COMPLETED: Basic launch workflow tested successfully with `i3pm run btop`. Window state detection/focus/raise/hide functionality implemented but requires window tracking integration for full functionality]
