@@ -232,22 +232,31 @@ class RunRaiseManager:
         Returns:
             Response dict
         """
-        logger.info(f"Launching {app_name} via app-launcher-wrapper.sh")
+        logger.info(f"Launching {app_name} via app-launcher-wrapper")
 
         try:
-            # Launch via app-launcher-wrapper.sh
-            # This script injects I3PM_* environment variables
-            result = subprocess.run(
+            # Launch via app-launcher-wrapper (non-blocking)
+            # The wrapper script returns immediately after calling swaymsg exec
+            # We use Popen to avoid blocking on script completion
+            process = subprocess.Popen(
                 [self.app_launcher_path, app_name],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=5,
             )
 
-            if result.returncode != 0:
-                error_msg = result.stderr.strip() or "Launch failed"
-                logger.error(f"Failed to launch {app_name}: {error_msg}")
-                raise RuntimeError(f"Launch failed: {error_msg}")
+            # Wait briefly for script to start (but not for app to launch)
+            # This allows us to catch immediate errors like "command not found"
+            try:
+                stdout, stderr = process.communicate(timeout=2)
+                if process.returncode != 0:
+                    error_msg = stderr.strip() or "Launch failed"
+                    logger.error(f"Failed to launch {app_name}: {error_msg}")
+                    raise RuntimeError(f"Launch failed: {error_msg}")
+            except subprocess.TimeoutExpired:
+                # Script is still running (likely waiting for swaymsg)
+                # This is normal - the script should complete soon
+                logger.debug(f"Launch script still running for {app_name} (normal)")
 
             return {
                 "action": "launched",
