@@ -404,6 +404,12 @@ in
         # SWAYSOCK is needed for swaymsg commands in terminals
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
+        # Blueman applet for Bluetooth management
+        { command = "${pkgs.blueman}/bin/blueman-applet"; }
+
+        # Wob (Wayland Overlay Bar) for brightness/volume feedback
+        { command = "mkfifo /tmp/wobpipe && tail -f /tmp/wobpipe | ${pkgs.wob}/bin/wob"; }
+
         # i3pm daemon (socket-activated system service)
         # Socket activation happens automatically on first IPC request
         # The 2-second delay in reassign-workspaces allows daemon to fully initialize

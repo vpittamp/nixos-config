@@ -111,9 +111,13 @@
 # Clipboard history (if installed)
 "Mod+c" = { command = "exec clipman pick -t wofi", description = "Clipboard history" }
 
-# Brightness control (for systems with backlight)
-"XF86MonBrightnessUp" = { command = "exec light -A 5", description = "Increase brightness" }
-"XF86MonBrightnessDown" = { command = "exec light -U 5", description = "Decrease brightness" }
+# Brightness control (for systems with backlight) - with wob visual feedback
+"XF86MonBrightnessUp" = { command = "exec light -A 5 && light -G | cut -d'.' -f1 > /tmp/wobpipe", description = "Increase brightness" }
+"XF86MonBrightnessDown" = { command = "exec light -U 5 && light -G | cut -d'.' -f1 > /tmp/wobpipe", description = "Decrease brightness" }
+
+# Keyboard backlight control (M1 MacBook Pro) - with wob visual feedback
+"XF86KbdBrightnessUp" = { command = "exec brightnessctl --device=kbd_backlight set +10% | grep -oP '\\d+(?=%)' > /tmp/wobpipe", description = "Increase keyboard backlight" }
+"XF86KbdBrightnessDown" = { command = "exec brightnessctl --device=kbd_backlight set 10%- | grep -oP '\\d+(?=%)' > /tmp/wobpipe", description = "Decrease keyboard backlight" }
 
 # Volume control
 "XF86AudioRaiseVolume" = { command = "exec pactl set-sink-volume @DEFAULT_SINK@ +5%", description = "Increase volume" }

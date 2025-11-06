@@ -312,6 +312,10 @@
   # UPower for battery monitoring (required by swaybar-enhanced battery indicator)
   services.upower.enable = true;
 
+  # Brightness control (display and keyboard backlight)
+  # Allows users in 'video' group to control brightness without sudo
+  programs.light.enable = true;
+
   # Disable X11-specific services (migrated to Sway/Wayland - Feature 045)
   services.xrdp.enable = lib.mkForce false; # RDP replaced with wayvnc for Wayland
   services.touchegg.enable = lib.mkForce false; # Sway has native Wayland gestures
@@ -344,6 +348,14 @@
     # Image processing for PWA icons
     imagemagick # For converting and manipulating images
     librsvg # For SVG to PNG conversion
+
+    # Brightness control utilities
+    brightnessctl # Modern brightness control (display and keyboard backlight)
+    wob           # Wayland overlay bar for visual feedback (brightness, volume)
+    wdisplays     # GUI for display configuration including brightness
+
+    # System information and monitoring
+    neofetch      # System info display (used in Walker snippets)
 
     # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN

@@ -1,6 +1,6 @@
 # Feature Specification: M1 Configuration Alignment with Hetzner-Sway
 
-**Feature Branch**: `051-the-hetzner-sway`
+**Feature Branch**: `063-the-hetzner-sway`
 **Created**: 2025-10-30
 **Status**: Draft
 **Input**: User description: "the hetzner-sway config is our primary configuration.  we also have an m1 configuration that tries to model the hetzner-sway config, but has different architecture using asahi linux with nixos-m1;  create a new spec that transforms that m1 configuration to be as closely aligned as possibel to the hetzner-sway configuration, while being mindful of the architectural differeneces that may need different config."

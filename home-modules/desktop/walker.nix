@@ -457,6 +457,10 @@ in
         prefix = ";s "
         provider = "menus:sesh"
 
+        [[providers.prefixes]]
+        prefix = ";sys "
+        provider = "menus:system"
+
         [[providers.actions.desktopapplications]]
         action = "open"
         after = "Close"

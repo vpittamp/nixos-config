@@ -5,12 +5,32 @@ Feature 058: Python Backend Consolidation
 - Added Pydantic models for Layout and Project (replacing old dataclasses)
 - Legacy models re-exported from legacy.py for backward compatibility
 
-Version: 1.0.1 - Force rebuild with legacy.py inclusion
+Feature 051: i3run-Inspired Scratchpad Enhancements
+- Added models for mouse-cursor positioning and boundary detection
+- State persistence via Sway marks
+- Configurable screen edge gaps and workspace summoning
+
+Version: 1.1.0 - Feature 051 enhancement models
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
 from .layout import WindowSnapshot, Layout
 from .project import Project, ActiveProjectState
+
+# Feature 062: Scratchpad terminal models
+from .scratchpad import ScratchpadTerminal
+
+# Feature 051: Scratchpad enhancement models
+from .scratchpad_enhancement import (
+    GapConfig,
+    WorkspaceGeometry,
+    WindowDimensions,
+    CursorPosition,
+    TerminalPosition,
+    ScratchpadState,
+    SummonBehavior,
+    SummonMode,
+)
 
 # Legacy models - import everything EXCEPT the ones we're replacing
 from .legacy import (
@@ -60,6 +80,17 @@ __all__ = [
     "Layout",
     "Project",
     "ActiveProjectState",
+    # Feature 062: Scratchpad terminal
+    "ScratchpadTerminal",
+    # Feature 051: Scratchpad enhancements
+    "GapConfig",
+    "WorkspaceGeometry",
+    "WindowDimensions",
+    "CursorPosition",
+    "TerminalPosition",
+    "ScratchpadState",
+    "SummonBehavior",
+    "SummonMode",
     # Legacy models
     "WindowInfo",
     "ApplicationClassification",
