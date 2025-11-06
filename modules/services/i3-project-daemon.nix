@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.0";  # Feature 061: Unified mark format - all windows use project:NAME:ID
+    version = "1.7.2";  # Feature 051: Fixed run_raise_manager imports
     src = daemonSrc;
 
     installPhase = ''

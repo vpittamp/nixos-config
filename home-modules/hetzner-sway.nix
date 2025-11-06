@@ -38,6 +38,11 @@
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
 
+  # Headless workspace mode visual feedback uses notification backend instead of wshowkeys
+  home.sessionVariables = {
+    WORKSPACE_MODE_VISUAL_BACKEND = "notification";
+  };
+
   # Feature 046: i3-msg → swaymsg compatibility symlink
   # i3pm CLI uses i3-msg, but Sway uses swaymsg (compatible CLI)
   home.file.".local/bin/i3-msg" = {

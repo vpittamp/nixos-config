@@ -25,6 +25,20 @@ in
     "${modifier}+Shift+Return" = "exec alacritty";
     "${modifier}+d" = "exec walker";
 
+    # Run-raise-hide launcher (Feature 051) - example keybindings
+    # Uncomment and customize based on your most-used applications
+    # Toggle mode (default): Launch if not running, focus if visible, summon to current workspace
+    # "${modifier}+b" = "exec i3pm run firefox";          # Toggle Firefox
+    # "${modifier}+Shift+c" = "exec i3pm run code";       # Toggle VS Code
+    # "${modifier}+t" = "exec i3pm run alacritty";        # Toggle terminal
+    #
+    # Hide mode: Toggle visibility (hide focused window to scratchpad)
+    # "${modifier}+Ctrl+b" = "exec i3pm run firefox --hide";
+    # "${modifier}+Ctrl+c" = "exec i3pm run code --hide";
+    #
+    # Force new instance:
+    # "${modifier}+Alt+t" = "exec i3pm run alacritty --force";
+
     # ========== WINDOW MANAGEMENT ==========
     # Focus windows (vim-style)
     "${modifier}+h" = "focus left";

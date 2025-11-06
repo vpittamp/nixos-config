@@ -13,7 +13,6 @@ except ImportError:
     Connection = None
     Con = None
 
-# Import models from the daemon package
 from ..models.window_state import WindowState, WindowStateInfo, RunMode
 from ..window_filtering import WorkspaceTracker
 
@@ -183,8 +182,12 @@ class RunRaiseManager:
             return await self._transition_launch(app_name)
 
         elif state_info.state == WindowState.DIFFERENT_WORKSPACE:
-            # Mode doesn't matter for different workspace (always bring to focus)
-            return await self._transition_goto(state_info.window)
+            # Summon mode: move window to current workspace
+            # Default mode (goto): switch to window's workspace
+            if mode == "summon":
+                return await self._transition_summon(state_info.window, state_info.current_workspace)
+            else:
+                return await self._transition_goto(state_info.window)
 
         elif state_info.state == WindowState.SAME_WORKSPACE_UNFOCUSED:
             return await self._transition_focus(state_info.window)
@@ -192,30 +195,18 @@ class RunRaiseManager:
         elif state_info.state == WindowState.SAME_WORKSPACE_FOCUSED:
             # Mode matters here - only hide in HIDE mode
             if mode == "hide":
-                # Will be implemented in Phase 5 (User Story 3)
-                return {
-                    "action": "none",
-                    "window_id": state_info.window_id,
-                    "focused": True,
-                    "message": f"Hide mode not yet implemented for {app_name}",
-                }
+                return await self._transition_hide(state_info.window, app_name)
             else:
                 # summon or nohide - window already focused, no action needed
                 return {
                     "action": "none",
-                    "window_id": state_info.window_id,
+                    "window_id": state_info.window.id,
                     "focused": True,
                     "message": f"{app_name.capitalize()} already focused",
                 }
 
         elif state_info.state == WindowState.SCRATCHPAD:
-            # Will be implemented in Phase 5 (User Story 3)
-            return {
-                "action": "none",
-                "window_id": state_info.window_id,
-                "focused": False,
-                "message": f"Scratchpad show not yet implemented for {app_name}",
-            }
+            return await self._transition_show(state_info.window, app_name)
 
         else:
             raise ValueError(f"Unknown window state: {state_info.state}")
@@ -317,3 +308,173 @@ class RunRaiseManager:
         except Exception as e:
             logger.error(f"Failed to goto window {window.id}: {e}")
             raise RuntimeError(f"Goto failed: {e}")
+
+    async def _transition_summon(self, window: Con, current_workspace: str) -> Dict[str, Any]:
+        """Move window to current workspace (summon mode).
+
+        Preserves floating state and geometry during the move.
+
+        Args:
+            window: Sway window container
+            current_workspace: Target workspace name
+
+        Returns:
+            Response dict
+        """
+        logger.info(f"Summoning window {window.id} to workspace {current_workspace}")
+
+        try:
+            # Capture current state
+            is_floating = window.type == "floating_con" or (
+                hasattr(window, 'floating') and window.floating and window.floating != 'auto_off'
+            )
+            geometry = None
+
+            if is_floating and window.rect:
+                geometry = {
+                    "x": window.rect.x,
+                    "y": window.rect.y,
+                    "width": window.rect.width,
+                    "height": window.rect.height,
+                }
+                logger.debug(f"Captured geometry for window {window.id}: {geometry}")
+
+            # Move to current workspace
+            await self.sway.command(f'[con_id={window.id}] move container to workspace {current_workspace}')
+
+            # Focus the window
+            await self.sway.command(f'[con_id={window.id}] focus')
+
+            # Restore floating state if it was floating
+            if is_floating:
+                await self.sway.command(f'[con_id={window.id}] floating enable')
+
+                # Restore geometry if we captured it
+                if geometry:
+                    await self.sway.command(
+                        f'[con_id={window.id}] '
+                        f'move position {geometry["x"]} {geometry["y"]}'
+                    )
+                    await self.sway.command(
+                        f'[con_id={window.id}] '
+                        f'resize set {geometry["width"]} {geometry["height"]}'
+                    )
+                    logger.debug(f"Restored geometry for window {window.id}")
+
+            return {
+                "action": "summoned",
+                "window_id": window.id,
+                "focused": True,
+                "message": f"Summoned to workspace {current_workspace}",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to summon window {window.id}: {e}")
+            raise RuntimeError(f"Summon failed: {e}")
+
+    async def _transition_hide(self, window: Con, app_name: str) -> Dict[str, Any]:
+        """Hide window to scratchpad (preserving state).
+
+        Captures floating state and geometry before hiding, stores in WorkspaceTracker.
+
+        Args:
+            window: Sway window container
+            app_name: Application name for tracking
+
+        Returns:
+            Response dict
+        """
+        logger.info(f"Hiding window {window.id} to scratchpad")
+
+        try:
+            # Capture current state
+            is_floating = window.type == "floating_con" or (
+                hasattr(window, 'floating') and window.floating and window.floating != 'auto_off'
+            )
+            geometry = None
+
+            if window.rect:
+                geometry = {
+                    "x": window.rect.x,
+                    "y": window.rect.y,
+                    "width": window.rect.width,
+                    "height": window.rect.height,
+                }
+                logger.debug(f"Captured geometry for window {window.id}: {geometry}")
+
+            # Store state via WorkspaceTracker
+            # This uses the window-workspace-map.json schema v1.1 with geometry support
+            self.workspace_tracker.track_window(
+                window_id=window.id,
+                workspace="__i3_scratch",  # Mark as scratchpad
+                is_floating=is_floating,
+                geometry=geometry,
+            )
+
+            # Move to scratchpad
+            await self.sway.command(f'[con_id={window.id}] move scratchpad')
+
+            logger.info(f"Window {window.id} hidden to scratchpad with state preserved")
+
+            return {
+                "action": "hidden",
+                "window_id": window.id,
+                "focused": False,
+                "message": f"Hidden {app_name} to scratchpad",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to hide window {window.id}: {e}")
+            raise RuntimeError(f"Hide failed: {e}")
+
+    async def _transition_show(self, window: Con, app_name: str) -> Dict[str, Any]:
+        """Show window from scratchpad (restoring state).
+
+        Restores floating state and geometry from WorkspaceTracker.
+
+        Args:
+            window: Sway window container
+            app_name: Application name for tracking
+
+        Returns:
+            Response dict
+        """
+        logger.info(f"Showing window {window.id} from scratchpad")
+
+        try:
+            # Load stored state from WorkspaceTracker
+            stored_state = self.workspace_tracker.get_window_state(window.id)
+
+            # Show from scratchpad
+            await self.sway.command(f'[con_id={window.id}] scratchpad show')
+
+            # Restore state if we have it
+            if stored_state:
+                is_floating = stored_state.get("is_floating", False)
+                geometry = stored_state.get("geometry")
+
+                if is_floating:
+                    await self.sway.command(f'[con_id={window.id}] floating enable')
+                    logger.debug(f"Restored floating state for window {window.id}")
+
+                if geometry:
+                    await self.sway.command(
+                        f'[con_id={window.id}] '
+                        f'move position {geometry["x"]} {geometry["y"]}'
+                    )
+                    await self.sway.command(
+                        f'[con_id={window.id}] '
+                        f'resize set {geometry["width"]} {geometry["height"]}'
+                    )
+                    logger.debug(f"Restored geometry for window {window.id}: {geometry}")
+
+            return {
+                "action": "shown",
+                "window_id": window.id,
+                "focused": True,
+                "message": f"Shown {app_name} from scratchpad",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to show window {window.id}: {e}")
+            raise RuntimeError(f"Show failed: {e}")

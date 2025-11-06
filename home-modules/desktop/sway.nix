@@ -516,7 +516,7 @@ in
 
       # Workspace modes (Feature 042: Event-Driven Workspace Mode Navigation)
       # Embedded directly instead of include due to Sway not loading included modes
-      # Visual feedback: wshowkeys shows typed keys on all outputs while in workspace mode
+      # Visual feedback: workspace-mode-visual helper shows typed keys (wshowkeys overlay on physical, notifications on headless)
       mode "→ WS" {
           # Digits for workspace navigation
           bindsym 0 exec i3pm-workspace-mode digit 0
@@ -558,10 +558,10 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel (kill wshowkeys visual feedback on exit)
-          bindsym Return exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
-          bindsym Escape exec "i3pm-workspace-mode cancel; pkill -x wshowkeys"
+          # Execute/cancel (stop workspace-mode-visual overlay on exit)
+          bindsym Return exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
+          bindsym Escape exec "i3pm-workspace-mode cancel; workspace-mode-visual stop"
       }
 
       mode "⇒ WS" {
@@ -605,32 +605,27 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel (kill wshowkeys visual feedback on exit)
-          bindsym Return exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute; pkill -x wshowkeys"
-          bindsym Escape exec "i3pm-workspace-mode cancel; pkill -x wshowkeys"
+          # Execute/cancel (stop workspace-mode-visual overlay on exit)
+          bindsym Return exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
+          bindsym Escape exec "i3pm-workspace-mode cancel; workspace-mode-visual stop"
       }
 
       # Platform-conditional workspace mode keybindings
       ${if isHeadless then ''
         # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
         # Sway will automatically send mode events to daemon when entering these modes
-        # Launch wshowkeys with Catppuccin Mocha blue accent (#89b4fa)
-        # - Position: bottom center with 40px margin
-        # - Font: monospace 28pt for readability
-        # - Timeout: 60s (effectively persists until manual exit via pkill)
-        bindsym Control+0 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "→ WS"
-        bindsym Control+Shift+0 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "⇒ WS"
+        # Launch workspace-mode-visual helper (wshowkeys overlay replaced with notification backend on headless)
+        # Helper script auto-selects backend based on WORKSPACE_MODE_VISUAL_BACKEND
+        bindsym Control+0 exec "workspace-mode-visual start; mode \"→ WS\""
+        bindsym Control+Shift+0 exec "workspace-mode-visual start; mode \"⇒ WS\""
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
-        # Launch wshowkeys with Catppuccin Mocha blue accent (#89b4fa)
-        # - Position: bottom center with 40px margin
-        # - Font: monospace 28pt for readability on Retina display
-        # - Timeout: 60s (effectively persists until manual exit via pkill)
-        bindcode --release 66 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "→ WS"
-        bindcode --release Shift+66 exec "wshowkeys -a bottom -m 40 -s '#89b4fa' -F 'monospace 28' -t 60"; mode "⇒ WS"
+        # Launch workspace-mode-visual helper (defaults to wshowkeys overlay on physical devices)
+        bindcode --release 66 exec "workspace-mode-visual start; mode \"→ WS\""
+        bindcode --release Shift+66 exec "workspace-mode-visual start; mode \"⇒ WS\""
       ''}
     '';
   };

@@ -90,11 +90,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Implement _transition_summon() method in home-modules/tools/i3pm/daemon/run_raise_manager.py (moves window to current workspace, preserves floating/geometry)
-- [ ] T027 [US2] Extend execute_transition() in RunRaiseManager to dispatch to _transition_summon() when mode=SUMMON and state=DIFFERENT_WORKSPACE
-- [ ] T028 [US2] Add geometry preservation logic in _transition_summon() (capture geometry before move if floating, restore after move)
-- [ ] T029 [US2] Update run.ts to pass mode="summon" by default (no flag needed)
-- [ ] T030 [US2] Add CLI validation in run.ts to ensure --summon, --hide, --nohide are mutually exclusive
+- [X] T026 [US2] Implement _transition_summon() method in home-modules/tools/i3pm/daemon/run_raise_manager.py (moves window to current workspace, preserves floating/geometry)
+- [X] T027 [US2] Extend execute_transition() in RunRaiseManager to dispatch to _transition_summon() when mode=SUMMON and state=DIFFERENT_WORKSPACE
+- [X] T028 [US2] Add geometry preservation logic in _transition_summon() (capture geometry before move if floating, restore after move)
+- [X] T029 [US2] Update run.ts to pass mode="summon" by default (no flag needed)
+- [X] T030 [US2] Add CLI validation in run.ts to ensure --summon, --hide, --nohide are mutually exclusive
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work - users can choose goto (switch workspace) or summon (move window)
 
@@ -112,14 +112,14 @@
 
 ### Implementation for User Story 3
 
-- [ ] T031 [US3] Implement _transition_hide() method in home-modules/tools/i3pm/daemon/run_raise_manager.py (captures floating state and geometry, stores via WorkspaceTracker)
-- [ ] T032 [US3] Implement _transition_show() method in RunRaiseManager (restores window from scratchpad, applies stored geometry and floating state)
-- [ ] T033 [US3] Add scratchpad state storage logic in _transition_hide() (create ScratchpadState, call tracker.track_window with geometry)
-- [ ] T034 [US3] Add scratchpad state restoration logic in _transition_show() (load state from tracker, apply floating enable/disable and geometry via Sway IPC)
-- [ ] T035 [US3] Add window close event handler in home-modules/tools/i3pm/daemon/ to clear scratchpad state when window is closed (prevent memory leak)
-- [ ] T036 [US3] Update execute_transition() to dispatch to _transition_hide() when mode=HIDE and state=SAME_WORKSPACE_FOCUSED
-- [ ] T037 [US3] Update execute_transition() to dispatch to _transition_show() when state=SCRATCHPAD
-- [ ] T038 [US3] Add --hide flag support in run.ts (sets mode="hide" in RPC request)
+- [X] T031 [US3] Implement _transition_hide() method in home-modules/tools/i3pm/daemon/run_raise_manager.py (captures floating state and geometry, stores via WorkspaceTracker)
+- [X] T032 [US3] Implement _transition_show() method in RunRaiseManager (restores window from scratchpad, applies stored geometry and floating state)
+- [X] T033 [US3] Add scratchpad state storage logic in _transition_hide() (create ScratchpadState, call tracker.track_window with geometry)
+- [X] T034 [US3] Add scratchpad state restoration logic in _transition_show() (load state from tracker, apply floating enable/disable and geometry via Sway IPC)
+- [X] T035 [US3] Add window close event handler in home-modules/tools/i3pm/daemon/ to clear scratchpad state when window is closed (prevent memory leak) [Note: WorkspaceTracker already handles this via existing window::close event handling]
+- [X] T036 [US3] Update execute_transition() to dispatch to _transition_hide() when mode=HIDE and state=SAME_WORKSPACE_FOCUSED
+- [X] T037 [US3] Update execute_transition() to dispatch to _transition_show() when state=SCRATCHPAD
+- [X] T038 [US3] Add --hide flag support in run.ts (sets mode="hide" in RPC request) [Already implemented]
 
 **Checkpoint**: All scratchpad operations preserve window state correctly
 
@@ -137,11 +137,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T039 [US4] Add force_launch handling in execute_transition() (skip state detection, directly call _transition_launch())
-- [ ] T040 [US4] Update _transition_launch() to generate unique I3PM_APP_ID for force-launched instances (include PID and timestamp)
-- [ ] T041 [US4] Add --force flag support in run.ts (sets force_launch=true in RPC request)
-- [ ] T042 [US4] Update daemon window tracking to handle multiple instances per app_name (use I3PM_APP_ID as unique identifier)
-- [ ] T043 [US4] Add most-recently-focused selection logic when multiple instances match app_name (queries Sway IPC for focus timestamps)
+- [X] T039 [US4] Add force_launch handling in execute_transition() (skip state detection, directly call _transition_launch()) [Already implemented]
+- [ ] T040 [US4] Update _transition_launch() to generate unique I3PM_APP_ID for force-launched instances (include PID and timestamp) [Deferred - requires launcher script changes]
+- [X] T041 [US4] Add --force flag support in run.ts (sets force_launch=true in RPC request) [Already implemented]
+- [ ] T042 [US4] Update daemon window tracking to handle multiple instances per app_name (use I3PM_APP_ID as unique identifier) [Deferred - complex tracking beyond MVP]
+- [ ] T043 [US4] Add most-recently-focused selection logic when multiple instances match app_name (queries Sway IPC for focus timestamps) [Deferred - complex tracking beyond MVP]
 
 **Checkpoint**: Users can launch multiple instances of same app and toggle between them
 
@@ -160,10 +160,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T044 [US5] Update execute_transition() to handle mode=NOHIDE (focus but never hide, even when SAME_WORKSPACE_FOCUSED)
-- [ ] T045 [US5] Update execute_transition() to handle mode=HIDE with state=DIFFERENT_WORKSPACE (hide directly without focusing first)
-- [ ] T046 [US5] Add --nohide flag support in run.ts (sets mode="nohide" in RPC request)
-- [ ] T047 [US5] Update CLI flag validation to ensure --hide and --nohide are mutually exclusive with --summon
+- [X] T044 [US5] Update execute_transition() to handle mode=NOHIDE (focus but never hide, even when SAME_WORKSPACE_FOCUSED) [Already implemented]
+- [X] T045 [US5] Update execute_transition() to handle mode=HIDE with state=DIFFERENT_WORKSPACE (hide directly without focusing first) [Already implemented]
+- [X] T046 [US5] Add --nohide flag support in run.ts (sets mode="nohide" in RPC request) [Already implemented]
+- [X] T047 [US5] Update CLI flag validation to ensure --hide and --nohide are mutually exclusive with --summon [Already implemented]
 
 **Checkpoint**: All run modes work correctly - summon, hide, nohide
 
@@ -173,16 +173,16 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T048 [P] Add comprehensive error messages in run.ts (app not found suggests `i3pm apps list`, daemon not running shows systemctl command)
-- [ ] T049 [P] Add --json flag support in run.ts (outputs RunResponse as JSON for scripting)
-- [ ] T050 [P] Add --help flag and usage text in run.ts (shows all modes, flags, examples)
-- [ ] T051 [P] Add logging for all RunRaiseManager operations in daemon (state detection, transitions, errors)
-- [ ] T052 [P] Add performance metrics logging (track latency for state queries, transitions)
-- [ ] T053 Update quickstart.md with final keybinding recommendations and examples (if needed after implementation)
-- [ ] T054 Add example keybindings to home-modules/desktop/sway-keybindings.nix (commented examples for common apps)
-- [ ] T055 Run full workflow validation per quickstart.md scenarios (all 5 user stories)
-- [ ] T056 Verify scratchpad state persistence across daemon restarts (restart daemon, show hidden window, check geometry)
-- [ ] T057 Verify multi-monitor support (test on Hetzner 3-display setup, ensure geometry preserved)
+- [X] T048 [P] Add comprehensive error messages in run.ts (app not found suggests `i3pm apps list`, daemon not running shows systemctl command) [Already implemented]
+- [X] T049 [P] Add --json flag support in run.ts (outputs RunResponse as JSON for scripting) [Already implemented]
+- [X] T050 [P] Add --help flag and usage text in run.ts (shows all modes, flags, examples) [Already implemented]
+- [X] T051 [P] Add logging for all RunRaiseManager operations in daemon (state detection, transitions, errors) [Already implemented]
+- [ ] T052 [P] Add performance metrics logging (track latency for state queries, transitions) [Optional - can be added later]
+- [X] T053 Update quickstart.md with final keybinding recommendations and examples (if needed after implementation) [Already comprehensive]
+- [X] T054 Add example keybindings to home-modules/desktop/sway-keybindings.nix (commented examples for common apps)
+- [ ] T055 Run full workflow validation per quickstart.md scenarios (all 5 user stories) [Requires rebuild and testing]
+- [ ] T056 Verify scratchpad state persistence across daemon restarts (restart daemon, show hidden window, check geometry) [Requires rebuild and testing]
+- [ ] T057 Verify multi-monitor support (test on Hetzner 3-display setup, ensure geometry preserved) [Requires rebuild and testing]
 
 ---
 
