@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.0";  # Feature 061: Unified mark format - all windows use project:NAME:ID
+    version = "1.7.2";  # Feature 051: Fixed run_raise_manager imports
     src = daemonSrc;
 
     installPhase = ''
@@ -196,7 +196,8 @@ in
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
-          "PATH=/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.alacritty}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
+          # Feature 051: Include user profile bin for app-launcher-wrapper
+          "PATH=/etc/profiles/per-user/${cfg.user}/bin:/run/wrappers/bin:${pkgs.xorg.xprop}/bin:${pkgs.alacritty}/bin:${pkgs.coreutils}/bin:/run/current-system/sw/bin"
         ];
 
         # Logging

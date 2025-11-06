@@ -1,7 +1,13 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/cli@1": "1.0.23",
     "npm:zod@^3.22.0": "3.25.76"
+  },
+  "jsr": {
+    "@std/cli@1.0.23": {
+      "integrity": "bf95b7a9425ba2af1ae5a6359daf58c508f2decf711a76ed2993cd352498ccca"
+    }
   },
   "npm": {
     "zod@3.25.76": {

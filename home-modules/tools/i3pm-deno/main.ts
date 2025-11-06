@@ -39,6 +39,7 @@ GLOBAL OPTIONS:
 
 COMMANDS:
   project          Project management commands
+  run              Smart application launcher with run-raise-hide (Feature 051)
   scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
   daemon           Daemon status and event monitoring
@@ -54,6 +55,8 @@ Run 'i3pm <command> --help' for more information on a specific command.
 EXAMPLES:
   i3pm project list                    List all projects
   i3pm project switch nixos            Switch to nixos project
+  i3pm run firefox                     Toggle Firefox (launch/focus/summon)
+  i3pm run alacritty --hide            Toggle terminal visibility
   i3pm scratchpad toggle               Toggle project terminal
   i3pm windows --live                  Live window visualization
   i3pm daemon status                   Show daemon status
@@ -122,6 +125,13 @@ async function main(): Promise<void> {
       {
         const { projectCommand } = await import("./src/commands/project.ts");
         await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "run":
+      {
+        const { runCommand } = await import("./src/commands/run.ts");
+        await runCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 

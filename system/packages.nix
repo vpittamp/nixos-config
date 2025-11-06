@@ -30,6 +30,7 @@ let
     # Clipboard utilities (Wayland/X11)
     wl-clipboard # Wayland clipboard
     xclip # X11 clipboard
+    imagemagick # Required by Elephant clipboard provider for image handling
 
     # Input automation (Wayland/X11)
     dotool # Wayland input automation tool
