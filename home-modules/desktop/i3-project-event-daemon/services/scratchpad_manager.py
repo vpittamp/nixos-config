@@ -112,12 +112,14 @@ class ScratchpadManager:
 
         self.logger.info(f"Launching scratchpad terminal for project '{project_name}' in {working_dir}")
 
-        # Launch Alacritty terminal
-        # Use simple launch like other working Alacritty instances in this environment
+        # Launch Alacritty terminal with explicit bash command (no sesh/tmux)
+        # The I3PM_SCRATCHPAD env var signals this is a scratchpad terminal
+        # and should prevent auto-session managers in bashrc
         # Use DEVNULL for stderr to prevent blocking the event loop (T073 fix)
         try:
             proc = await asyncio.create_subprocess_exec(
                 "alacritty",
+                "-e", "bash",  # Run plain interactive bash (no login mode to avoid .bash_profile)
                 env=env,
                 cwd=str(working_dir),
                 stdout=asyncio.subprocess.DEVNULL,
