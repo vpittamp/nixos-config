@@ -52,7 +52,8 @@ class IPCServer:
         i3_connection: Optional[Any] = None,
         window_rules_getter: Optional[callable] = None,
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
-        scratchpad_manager: Optional[Any] = None
+        scratchpad_manager: Optional[Any] = None,
+        run_raise_manager: Optional[Any] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -63,6 +64,7 @@ class IPCServer:
             window_rules_getter: Callable that returns current window rules list (Feature 021)
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
+            run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
@@ -70,6 +72,7 @@ class IPCServer:
         self.window_rules_getter = window_rules_getter
         self.workspace_tracker = workspace_tracker
         self.scratchpad_manager = scratchpad_manager
+        self.run_raise_manager = run_raise_manager
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -83,7 +86,8 @@ class IPCServer:
         i3_connection: Optional[Any] = None,
         window_rules_getter: Optional[callable] = None,
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
-        scratchpad_manager: Optional[Any] = None
+        scratchpad_manager: Optional[Any] = None,
+        run_raise_manager: Optional[Any] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -94,11 +98,12 @@ class IPCServer:
             window_rules_getter: Callable that returns current window rules list (Feature 021)
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
+            run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager, run_raise_manager)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -441,6 +446,10 @@ class IPCServer:
                 result = await self._scratchpad_close(params)
             elif method == "scratchpad.cleanup":
                 result = await self._scratchpad_cleanup(params)
+
+            # Feature 051: Run-raise-hide application launching
+            elif method == "app.run":
+                result = await self._app_run(params)
 
             else:
                 return {
@@ -5334,7 +5343,65 @@ class IPCServer:
             "projects_cleaned": projects_cleaned,
             "message": f"Cleaned up {cleaned_count} invalid terminal(s), {remaining} terminal(s) remaining"
         }
-    
+
+    # Feature 051: Run-raise-hide application launching
+
+    async def _app_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run, raise, or hide application based on current state.
+
+        Args:
+            params: {
+                "app_name": str,         # Application name from registry
+                "mode": str,             # "summon" | "hide" | "nohide" (default: "summon")
+                "force_launch": bool     # Always launch new instance (default: false)
+            }
+
+        Returns:
+            {
+                "action": str,           # "launched" | "focused" | "moved" | "hidden" | "shown" | "none"
+                "window_id": int | null, # Sway container ID (if window exists)
+                "focused": bool,         # True if window is now focused
+                "message": str           # Human-readable result message
+            }
+
+        Raises:
+            RuntimeError: If run_raise_manager not initialized
+            ValueError: If invalid mode provided
+        """
+        if not self.run_raise_manager:
+            raise RuntimeError("Run-raise manager not initialized")
+
+        # Extract parameters with defaults
+        app_name = params.get("app_name")
+        if not app_name:
+            raise ValueError("Missing required parameter: app_name")
+
+        mode = params.get("mode", "summon")
+        force_launch = params.get("force_launch", False)
+
+        # Validate mode
+        valid_modes = ["summon", "hide", "nohide"]
+        if mode not in valid_modes:
+            raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}")
+
+        try:
+            # Detect current window state
+            state_info = await self.run_raise_manager.detect_window_state(app_name)
+
+            # Execute appropriate transition
+            result = await self.run_raise_manager.execute_transition(
+                app_name=app_name,
+                state_info=state_info,
+                mode=mode,
+                force_launch=force_launch
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to run app '{app_name}': {e}", exc_info=True)
+            raise RuntimeError(f"Failed to run app '{app_name}': {e}")
+
     async def _get_project_working_dir(self, project_name: str) -> Path:
         """Get working directory for project.
         

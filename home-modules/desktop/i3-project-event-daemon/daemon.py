@@ -51,6 +51,7 @@ from .handlers import (
 from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
+from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-raise-hide launching
 from datetime import datetime
 import time
 
@@ -282,6 +283,14 @@ class I3ProjectDaemon:
         self.scratchpad_manager = ScratchpadManager(self.connection.conn)
         self.ipc_server.scratchpad_manager = self.scratchpad_manager
         logger.info("Scratchpad manager initialized")
+
+        # Feature 051: Initialize run-raise manager
+        self.run_raise_manager = RunRaiseManager(
+            sway=self.connection.conn,
+            workspace_tracker=self.workspace_tracker
+        )
+        self.ipc_server.run_raise_manager = self.run_raise_manager
+        logger.info("Run-raise manager initialized")
 
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()

@@ -66,12 +66,12 @@
 - [X] T017 [US1] Implement _transition_focus() method in RunRaiseManager (executes Sway command: [con_id=X] focus)
 - [X] T018 [US1] Implement _transition_goto() method in RunRaiseManager (switches to window's workspace then focuses)
 - [X] T019 [US1] Add error handling to RunRaiseManager methods (window closed, Sway IPC failures, launch failures)
-- [ ] T020 [US1] Add app.run RPC method handler in home-modules/tools/i3pm/daemon/rpc_handlers.py (creates RunRaiseManager, calls detect_window_state, execute_transition, returns RunResponse)
-- [ ] T021 [US1] Create run.ts command file in home-modules/tools/i3pm-deno/src/commands/run.ts (parseArgs with boolean flags, basic summon mode)
-- [ ] T022 [US1] Add run command to router in home-modules/tools/i3pm-deno/src/main.ts (case "run": import and call runCommand)
-- [ ] T023 [US1] Implement CLI to daemon RPC communication in run.ts (createClient, request app.run with app_name/mode/force_launch, handle response)
-- [ ] T024 [US1] Add human-readable output formatting in run.ts (action messages, window_id display)
-- [ ] T025 [US1] Add error handling in run.ts (daemon not running, app not found, timeout, exit codes)
+- [X] T020 [US1] Add app.run RPC method handler in home-modules/tools/i3pm/daemon/rpc_handlers.py (creates RunRaiseManager, calls detect_window_state, execute_transition, returns RunResponse)
+- [X] T021 [US1] Create run.ts command file in home-modules/tools/i3pm-deno/src/commands/run.ts (parseArgs with boolean flags, basic summon mode)
+- [X] T022 [US1] Add run command to router in home-modules/tools/i3pm-deno/src/main.ts (case "run": import and call runCommand)
+- [X] T023 [US1] Implement CLI to daemon RPC communication in run.ts (createClient, request app.run with app_name/mode/force_launch, handle response)
+- [X] T024 [US1] Add human-readable output formatting in run.ts (action messages, window_id display)
+- [X] T025 [US1] Add error handling in run.ts (daemon not running, app not found, timeout, exit codes)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - basic run-raise-focus workflow works (no hide/summon/force yet)
 

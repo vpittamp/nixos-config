@@ -23,7 +23,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.0";  # Feature 061: Unified mark format - all windows use project:NAME:ID
+    version = "1.7.3";  # Feature 051: Added window_state.py models for run-raise-hide
     src = daemonSrc;
 
     installPhase = ''
