@@ -1,3 +1,7 @@
+---
+description: Analyze Git repository for LLM context with optimized file selection
+---
+
 # GitIngest - Analyze Git Repository for LLM Context
 
 You are helping the user analyze a Git repository and create optimized context for LLM consumption (like for NixOS packaging or configuration).

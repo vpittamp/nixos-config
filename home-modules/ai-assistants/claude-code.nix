@@ -19,6 +19,18 @@ let
   chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
+
+  # Auto-import all .md files from .claude/commands/ as slash commands
+  # This creates an attribute set where keys are command names (without .md)
+  # and values are the file contents
+  commandFiles = builtins.readDir (self + "/.claude/commands");
+  commands = lib.mapAttrs'
+    (name: type:
+      lib.nameValuePair
+        (lib.removeSuffix ".md" name)
+        (builtins.readFile (self + "/.claude/commands/${name}"))
+    )
+    (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
 in
 lib.mkIf enableClaudeCode {
   # Chromium is installed via programs.chromium in tools/chromium.nix
@@ -30,10 +42,9 @@ lib.mkIf enableClaudeCode {
     enable = true;
     package = claudeCodePackage;
 
-    # Path to custom commands directory
-    # Commands from this directory will be symlinked to .claude/commands/
-    # Using self to reference the flake directory (pure evaluation compatible)
-    commandsDir = "${self}/.claude/commands";
+    # Auto-imported slash commands from .claude/commands/
+    # All .md files are automatically discovered and loaded
+    commands = commands;
 
     # Settings for Claude Code
     settings = {
@@ -52,6 +63,10 @@ lib.mkIf enableClaudeCode {
         CLAUDE_CODE_ENABLE_TELEMETRY = "1";
         OTEL_METRICS_EXPORTER = "otlp";
         OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+        # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
+        # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
+        # Use system ripgrep instead (available via home-manager)
+        USE_BUILTIN_RIPGREP = "0";
       };
 
       # Hooks - Commands that run in response to Claude Code events
