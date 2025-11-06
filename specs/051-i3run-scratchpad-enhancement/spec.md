@@ -178,7 +178,7 @@ The system MUST support two terminal summoning behaviors, controlled by user con
 - **Summon mode**: When terminal is on different workspace, move terminal to current workspace
 
 **FR-005: Floating State Preservation**
-When hiding a scratchpad terminal, the system MUST record its current floating/tiling state. When showing the terminal again, the system MUST restore it to the same floating/tiling state it had when hidden.
+When hiding a scratchpad terminal, the system MUST record its current floating/tiling state in Sway window marks (not daemon memory). When showing the terminal again, the system MUST restore it to the same floating/tiling state it had when hidden, even if the daemon or Sway has restarted since the terminal was hidden.
 
 **FR-006: Multi-Monitor Boundary Detection**
 When positioning a terminal on multi-monitor setups, the system MUST:
@@ -198,26 +198,45 @@ All window state queries (floating/tiling detection, position queries, workspace
 **FR-010: Terminal Toggle Priority**
 When scratchpad terminal is currently visible on the same workspace where user is located, toggle behavior (hide terminal) MUST take priority over repositioning logic. Mouse-cursor positioning only applies when showing a hidden terminal.
 
+**FR-011: Persistent State Storage via Marks**
+When hiding or repositioning a scratchpad terminal, the system MUST store state data in Sway window marks using the format: `scratchpad_state:{project_name}={key1}:{value1},{key2}:{value2}...`
+
+The following state data MUST be persisted in marks:
+- Floating/tiling state (boolean)
+- Window geometry: x position, y position, width, height (pixels)
+- Last position update timestamp (Unix epoch)
+
+State stored in marks MUST persist across daemon restarts and Sway restarts. When showing a terminal, the system MUST read state from marks and restore the terminal to its previous state. If no marks exist for a terminal (first launch), the system MUST use default positioning logic (FR-001).
+
+Mark storage MUST use a ghost container (invisible, persistent window marked `i3pm_ghost`) to store project-wide scratchpad state that isn't tied to specific terminal windows.
+
 ### Key Entities
 
-**Terminal Position State**
+**Terminal Position State** (persisted in Sway marks)
 - Window ID reference
-- Current floating/tiling state (boolean or enum)
-- Last known position (X, Y coordinates)
-- Last known size (width, height)
-- Workspace ID where terminal is located
-- Monitor ID where terminal was last shown
+- Current floating/tiling state (stored in mark: `floating:true|false`)
+- Last known position (stored in mark: `x:N,y:N` in pixels)
+- Last known size (stored in mark: `w:N,h:N` in pixels)
+- Last update timestamp (stored in mark: `ts:N` Unix epoch)
+- Workspace ID where terminal is located (queried from Sway tree)
+- Monitor ID where terminal was last shown (derived from position and monitor geometry)
 
-**Screen Geometry**
+**Screen Geometry** (queried from Sway outputs)
 - Monitor dimensions (width, height)
 - Monitor offset (X, Y position in multi-monitor layout)
-- Configured gap values (top, bottom, left, right)
-- Available space after accounting for gaps
+- Configured gap values (top, bottom, left, right) from environment variables
+- Available space after accounting for gaps (calculated)
 
-**Mouse Cursor Position**
+**Mouse Cursor Position** (queried from Sway seat)
 - Absolute X, Y coordinates in screen space
-- Monitor ID containing cursor
+- Monitor ID containing cursor (calculated from position and monitor geometry)
 - Validity flag (whether cursor is on current workspace's monitor)
+
+**Ghost Container** (persistent mark storage)
+- Invisible window marked `i3pm_ghost`
+- Size 1x1 pixel, hidden in scratchpad
+- Stores project-wide state in additional marks
+- Created on first scratchpad operation if doesn't exist
 
 ## Success Criteria
 

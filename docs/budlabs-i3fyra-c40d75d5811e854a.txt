@@ -1,0 +1,2066 @@
+Directory structure:
+└── i3fyra/
+    ├── config.mak
+    ├── i3fyra
+    ├── i3fyra.1
+    ├── options
+    ├── watch.sh
+    ├── docs/
+    │   ├── description.md
+    │   ├── environment_variables.md
+    │   └── options/
+    │       ├── array
+    │       ├── clear-virtuals
+    │       ├── conid
+    │       ├── dryrun
+    │       ├── float
+    │       ├── force
+    │       ├── hello
+    │       ├── help
+    │       ├── hide
+    │       ├── layout
+    │       ├── mono
+    │       ├── move
+    │       ├── orientation
+    │       ├── show
+    │       ├── speed
+    │       ├── verbose
+    │       └── version
+    ├── func/
+    │   ├── active_move_in_direction.sh
+    │   ├── active_move_to_container.sh
+    │   ├── apply_splits.sh
+    │   ├── CLEANUP_.sh
+    │   ├── container_create.sh
+    │   ├── container_hide.sh
+    │   ├── container_show.sh
+    │   ├── family_create.sh
+    │   ├── family_hide.sh
+    │   ├── family_show.sh
+    │   ├── float_toggle.sh
+    │   ├── initialize_globals.sh
+    │   ├── monocle.sh
+    │   ├── multi_hide.sh
+    │   ├── multi_show.sh
+    │   ├── orientation.sh
+    │   ├── sezzy.sh
+    │   ├── swap_move.sh
+    │   ├── varset.sh
+    │   ├── virtual_position.sh
+    │   ├── ERR.sh -> ERR.sh
+    │   ├── LOG.sh -> LOG.sh
+    │   ├── MSG.sh -> MSG.sh
+    │   └── TIMER.sh -> TIMER.sh
+    ├── GNUmakefile -> Makefile
+    ├── share.mak -> share.mak
+    └── tests/
+        ├── array
+        ├── ref1
+        └── results
+
+================================================
+FILE: src/i3fyra/config.mak
+================================================
+NAME         := i3fyra
+VERSION      := 1.4.4
+CREATED      := 2017-01-14
+UPDATED      := 2025-03-30
+AUTHOR       := budRich
+CONTACT      := https://github.com/budlabs/i3ass
+USAGE        := options
+DESCRIPTION  := An advanced, simple grid-based tiling layout
+ORGANISATION := budlabs
+LICENSE      := MIT
+
+MANPAGE_LAYOUT  ?=                     \
+	$(CACHE_DIR)/synopsis.txt            \
+	$(DOCS_DIR)/description.md           \
+	$(CACHE_DIR)/help_table.txt          \
+	$(CACHE_DIR)/long_help.md            \
+	$(DOCS_DIR)/environment_variables.md \
+	$(CACHE_DIR)/copyright.txt
+
+$(CACHE_DIR)/wiki.md: config.mak $(MANPAGE_LAYOUT)
+	@$(info making $@)
+	{
+	  printf '%s\n' '## NAME' '$(NAME) - $(DESCRIPTION)' \
+	                '## SYNOPSIS' 
+
+	  sed 's/^/    /g' $(CACHE_DIR)/synopsis.txt
+
+	  cat $(DOCS_DIR)/description.md
+
+	  echo '## OPTIONS'
+	  sed 's/^/    /g' $(CACHE_DIR)/help_table.txt
+	  cat $(CACHE_DIR)/long_help.md
+	  cat $(DOCS_DIR)/environment_variables.md
+
+	  printf '%s\n' \
+		  '## CONTACT' \
+			"Send bugs and feature requests to:  " \
+			"$(CONTACT)/issues" \
+			'## COPYRIGHT'
+
+		cat $(CACHE_DIR)/copyright.txt
+
+	} > $@
+
+
+
+================================================
+FILE: src/i3fyra/i3fyra
+================================================
+#!/bin/bash
+
+: "${I3FYRA_MAIN_CONTAINER:=A}"
+: "${I3FYRA_WS:=}"
+: "${I3FYRA_ORIENTATION:=horizontal}"
+: "${XDG_RUNTIME_DIR:=/tmp}"
+: "${I3_KING_PID_FILE:=$XDG_RUNTIME_DIR/i3ass/i3king.pid}"
+
+main(){
+
+  local arg
+
+  [[ ${_o[clear-virtuals]} ]] && {
+    for k in A B C D; do i3var set "i34VP${k}" ; done
+    exit
+  }
+
+  for _action in move show hide layout float orientation mono; do
+    
+    [[ ${arg:=${_o[$_action]}} ]] || continue
+    err="i3fyra: argument for '--$_action': '$arg' not valid!"
+
+    case "$_action" in
+      move ) 
+        ex="A|B|C|D|l|r|u|d|left|right|up|down"
+        [[ $arg =~ ^(${ex})$ ]] || ERX "$err expected ($ex)"
+        ;;
+      
+      show|hide ) [[ $arg =~ ^[ABCD]+$ ]] || ERX "$err expected (A|B|C|D)" ;;
+      layout    ) [[ $arg =~ = || $arg = redo ]] || ERX "$err"             ;;
+      float     ) (($#)) && ERX "$err expected 0 arguments got '($*)'"     ;;
+      orientation )
+        ex="vertical|horizontal|toggle"
+        [[ $arg =~ ${ex} ]] || ERX "$err expected ($ex)" 
+        ;;
+    esac
+
+    unset err ex
+    break
+
+  done
+
+  [[ $arg ]] || ERX "not a valid operation: $0 $*"
+
+  initialize_globals
+
+  [[ ${_o[layout]} ]] && arg=${arg/${ori[main]}/main}
+  ((_o[force]))       || arg=$(virtual_position "$arg")
+
+  case "$_action" in
+
+    move )
+      if [[ $arg =~ ^[ABCD]$ ]]
+        then active_move_to_container "$arg"
+        else active_move_in_direction "${arg:0:1}"
+      fi
+    ;;
+    show        ) container_show "$arg" ;;
+    hide        ) container_hide "$arg" ;;
+    layout      ) apply_splits "$arg"   ;;
+    float       ) float_toggle          ;;
+    orientation ) orientation "$arg"    ;;
+    mono        ) monocle_toggle        ;;
+
+  esac
+
+  [[ $_action =~ move|show|float && ${i3list[TWC]} ]] \
+    && messy "[con_id=${i3list[TWC]}]" focus
+}
+
+__dir=$(dirname $(readlink -f "${BASH_SOURCE[0]}")) #bashbud
+source "$__dir/_init.sh"                            #bashbud
+
+
+
+================================================
+FILE: src/i3fyra/i3fyra.1
+================================================
+.nh
+.TH I3FYRA   2023-07-22 budlabs "User Manuals"
+.SH NAME
+.PP
+i3fyra - An advanced, simple grid-based tiling layout
+
+.SH SYNOPSIS
+.PP
+.RS
+
+.nf
+i3fyra --show|-s CONTAINER
+i3fyra --float|-a
+i3fyra --hide|-z CONTAINER
+i3fyra --layout|-l LAYOUT [--array ARRAY]
+i3fyra --move|-m DEST [--conid|-n CON_ID] [--speed|-p INT]
+i3fyra --orientation ORIENTATION
+i3fyra --clear-virtuals
+i3fyra [--verbose] [--dryrun] [--force|-f] 
+i3fyra --help|-h
+i3fyra --version|-v 
+
+.fi
+.RE
+
+.PP
+The layout consists of four containers:
+
+.PP
+.RS
+
+.nf
+  A B
+  C D
+
+.fi
+.RE
+
+.PP
+A container can contain one or more windows. The
+internal layout of the containers doesn't matter.
+By default the layout of each container is
+tabbed.
+
+.PP
+A is always to the left of B and D. And always
+above C. B is always to the right of A and C. And
+always above D.
+
+.PP
+This means that the containers will change names
+if their position changes.
+
+.PP
+The size of the containers are defined by the
+three splits: AB, AC and BD.
+
+.PP
+Container A and C belong to one family.
+.br
+Container B and D belong to one family.
+
+.PP
+The visibility of containers and families can be
+toggled. Not visible containers are placed on the
+scratchpad.
+
+.PP
+The visibility is toggled by either using \fB\fC--show\fR
+or \fB\fC--hide\fR\&. But more often by moving a container
+in an \fIimpossible\fP direction,(\fIsee examples
+below\fP).
+
+.PP
+The \fBi3fyra\fP layout is only active on one
+workspace. That workspace can be set with the
+environment variable: \fB\fCi3FYRA_WS\fR, otherwise the
+workspace active when the layout is created will
+be used.
+
+.PP
+The benefit of using this layout is that the
+placement of windows is more predictable and
+easier to control. Especially when using tabbed
+containers, which are very clunky to use
+with \fIdefault i3\fP\&.
+
+
+.SH examples
+.PP
+If containers \fBA\fP,\fBB\fP and \fBC\fP are visible
+but \fBD\fP is hidden or none existent, the visible
+layout would looks like this:
+
+.PP
+.RS
+
+.nf
+  A B
+  C B
+
+.fi
+.RE
+
+.PP
+If action: \fB\fC--move up\fR would be executed when
+container \fBB\fP is active and \fBD\fP is hidden.
+Container \fBD\fP would be shown. If action would
+have been: \fB\fC--move down\fR, \fBD\fP would be shown
+but \fBB\fP would be placed below \fBD\fP, this means
+that the containers will also swap names. If
+action would have been \fB\fC--move left\fR the active
+window in B would be moved to container \fBA\fP\&. If
+action was \fB\fC--move right\fR, \fBA\fP and \fBC\fP would
+be hidden:
+
+.PP
+.RS
+
+.nf
+  B B
+  B B
+
+.fi
+.RE
+
+.PP
+If we now \fB\fC--move left\fR, \fBA\fP and \fBC\fP
+would be shown again but to the right of \fBB\fP,
+the containers would also change names, so \fBB\fP
+becomes \fBA\fP, \fBA\fP becomes \fBB\fP and \fBC\fP
+becomes \fBD\fP:
+
+.PP
+.RS
+
+.nf
+  A B
+  A D
+
+.fi
+.RE
+
+.PP
+If this doesn't make sense, check out this
+demonstration on youtube:
+https://youtu.be/kU8gb6WLFk8
+
+.SH OPTIONS
+.PP
+.RS
+
+.nf
+--array              ARRAY       | ARRAY should be the output of `i3list`  
+--clear-virtuals                 | clear/reset virtual positions  
+-n, --conid          CON_ID      | window with **CON_ID** will be used instead of active window  
+--dryrun                         | don't execute wm commands  
+-a, --float                      | toggle floating state of a window  
+-f, --force                      | ignore virtual positioning.  
+-h, --help                       | print help and exit  
+-z, --hide           CONTAINER   | Hide target containers if visible.  
+-l, --layout         LAYOUT      | update the size of the layout  
+-m, --move           DEST        | move window/create container  
+--orientation        ORIENTATION | short description  
+-s, --show           CONTAINER   | Show target container.  
+-p, --speed          INT         | distance in px a floating windows will be moved  
+--verbose                        | print more stuff to stderr  
+-v, --version                    | louder output  
+
+.fi
+.RE
+
+.SS --array              ARRAY
+.PP
+Use \fB\fC--array ARRAY\fR to improve speed when
+\fBi3fyra\fP is executed from a script that already
+have the array, f.i. \fBi3run\fP and \fBi3Kornhe\fP\&.
+
+.SS -a, --float
+.PP
+Autolayout. If current window is tiled: floating
+enabled If window is floating, it will be put in a
+visible container. If there is no visible
+containers. The window will be placed in a hidden
+container. If no containers exist, container
+'A'will be created and the window will be put
+there.
+
+.SS -l, --layout         LAYOUT
+.PP
+AB is point on the X axis, calculated from the
+left side if INT is positive, from the right side
+if it is negative. AC and BD is on Y axis from
+the top if INT is positive, from the bottom if it
+is negative. The whole argument needs to be
+quoted. Example:
+
+.PP
+`i3fyra --layout 'AB=-300 BD=420'
+
+.PP
+LAYOUT argument can also be the word 'redo', if it
+is, the last layout appended will be restored.
+
+.SS -m, --move           DEST
+.PP
+DEST can either be the name of a container
+(A|B|C|D), or it's position relative to the
+current container with a direction:[\fB\fCl\fR|\fB\fCleft\fR]
+[\fB\fCr\fR|\fB\fCright\fR][\fB\fCu\fR|\fB\fCup\fR][\fB\fCd\fR|\fB\fCdown\fR] If the
+container doesnt exist it is created. If argument
+is a direction and there is no container in that
+direction, Connected container(s) visibility is
+toggled. If current window is floating or not
+inside ABCD, normal movement is performed.
+Distance for moving floating windows with this
+action can be defined with the \fB\fC--speed\fR option.
+Example: \fB\fC$ i3fyra --speed 30 -m r\fR Will move
+current window 30 pixels to the right, if it is
+floating.
+
+.SS -s, --show           CONTAINER
+.PP
+If it doesn't exist, it will be created and
+current window will be put in it. If it is
+visible, nothing happens.
+
+.SH ENVIRONMENT
+.SS I3FYRA_WS
+.PP
+Workspace to use for i3fyra. If not set, the firs
+workspace that request to create the layout will
+be used.
+
+.SS I3FYRA_MAIN_CONTAINER
+.PP
+This container will be the chosen when a container
+is requested but not given. When using the command
+autolayout (\fB\fC-a\fR) for example, if the window is
+floating it will be sent to the main container, if
+no other containers exist. Defaults to A.
+
+.SS I3FYRA_ORIENTATION
+.PP
+If set to \fB\fCvertical\fR main split will be \fB\fCAC\fR and
+families will be \fB\fCAB\fR and \fB\fCCD\fR\&. Otherwise main
+split will be \fB\fCAB\fR and families will be \fB\fCAC\fR and
+\fB\fCBD\fR\&.
+
+.SS I3_KING_PID_FILE
+.PP
+When i3king is running this file contains the pid
+of the i3king process. It is used by \fBi3fyra\fP to
+know if i3king is running, if it is, it will try
+to match windows against the rules when \fB\fC--float\fR
+option toggles the floating state to tiled.
+
+.SH CONTACT
+.PP
+Send bugs and feature requests to:
+.br
+https://github.com/budlabs/i3ass/issues
+
+.SH COPYRIGHT
+.PP
+Copyright (c) 2017-2023, budRich of budlabs
+.br
+SPDX-License-Identifier: MIT
+
+
+
+================================================
+FILE: src/i3fyra/options
+================================================
+--show|-s CONTAINER
+--float|-a
+--hide|-z CONTAINER
+--layout|-l LAYOUT [--array ARRAY]
+--move|-m DEST [--conid|-n CON_ID] [--speed|-p INT]
+--orientation ORIENTATION
+--clear-virtuals
+--mono
+[--verbose] [--dryrun] [--force|-f] 
+--help|-h
+--version|-v 
+
+
+
+================================================
+FILE: src/i3fyra/watch.sh
+================================================
+#!/bin/bash
+
+_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+name=${_dir##*/}
+monolith="_${name}.sh"
+
+monolith="_${_dir##*/}.sh"
+cmd_base+=("$_dir/$monolith" --array "$(< "$_dir/tests/array")" --dryrun --verbose)
+cmd1+=(--move up)
+
+loops=20
+
+# source_files are all manually written code
+# used to get correct linecount (LOC)
+source_files=("$_dir/$name")
+
+for f in "$_dir/func"/* ; do
+  [[ ${f##*/} =~ ^[a-z] ]] && source_files+=("$f")
+done
+
+[[ -d "$_dir/awklib" ]] && source_files+=("$_dir/awklib"/*)
+
+while read -r ; do
+  clear
+  make
+  shellcheck "$_dir/$monolith" && {
+
+    "${cmd_base[@]}" "${cmd1[@]}"
+    "${cmd_base[@]}" "${cmd1[@]}" 2> "$_dir/tests/results"
+    
+    diff "$_dir/tests/results" "$_dir/tests/ref1"
+
+    echo $'\n'"loop: $monolith ${cmd1[*]} ; x$loops:"
+    time(
+      while ((++i<loops));do 
+        "${cmd_base[@]}" "${cmd1[@]}"
+      done > /dev/null 2>&1
+    )
+
+    echo -n $'\n'"LOC: "
+    cat "${source_files[@]}" | grep -E '^\s*[^#].+$' | wc -l
+  }
+done < <(
+  inotifywait \
+    --event close_write --monitor --recursive \
+    --exclude '^[.]/((func/)?_.*)|([.]cache.+)|(tests.+)|(.+[.]1)' .
+)
+
+
+
+================================================
+FILE: src/i3fyra/docs/description.md
+================================================
+The layout consists of four containers:  
+
+``` text
+  A B
+  C D
+```
+
+A container can contain one or more windows. The
+internal layout of the containers doesn't matter.
+By default the layout of each container is
+tabbed.  
+
+A is always to the left of B and D. And always
+above C. B is always to the right of A and C. And
+always above D.  
+
+This means that the containers will change names
+if their position changes.  
+
+The size of the containers are defined by the
+three splits: AB, AC and BD.  
+
+Container A and C belong to one family.  
+Container B and D belong to one family.  
+
+The visibility of containers and families can be
+toggled. Not visible containers are placed on the
+scratchpad.  
+
+The visibility is toggled by either using `--show`
+or `--hide`. But more often by moving a container
+in an *impossible* direction,(*see examples
+below*).  
+
+The **i3fyra** layout is only active on one
+workspace. That workspace can be set with the
+environment variable: `i3FYRA_WS`, otherwise the
+workspace active when the layout is created will
+be used.  
+
+The benefit of using this layout is that the
+placement of windows is more predictable and
+easier to control. Especially when using tabbed
+containers, which are very clunky to use
+with *default i3*.
+
+# examples
+
+If containers **A**,**B** and **C** are visible
+but **D** is hidden or none existent, the visible
+layout would looks like this:  
+
+``` text
+  A B
+  C B
+```
+
+If action: `--move up` would be executed when
+container **B** is active and **D** is hidden.
+Container **D** would be shown. If action would
+have been: `--move down`, **D** would be shown
+but **B** would be placed below **D**, this means
+that the containers will also swap names. If
+action would have been `--move left` the active
+window in B would be moved to container **A**. If
+action was `--move right`, **A** and **C** would
+be hidden:  
+
+``` text
+  B B
+  B B
+```
+
+If we now `--move left`, **A** and **C**
+would be shown again but to the right of **B**,
+the containers would also change names, so **B**
+becomes **A**, **A** becomes **B** and **C**
+becomes **D**:  
+
+``` text
+  A B
+  A D
+```
+
+If this doesn't make sense, check out this
+demonstration on youtube:
+https://youtu.be/kU8gb6WLFk8
+
+
+
+
+================================================
+FILE: src/i3fyra/docs/environment_variables.md
+================================================
+
+## ENVIRONMENT
+
+### I3FYRA_WS
+
+Workspace to use for i3fyra. If not set, the firs
+workspace that request to create the layout will
+be used.
+
+### I3FYRA_MAIN_CONTAINER  
+
+This container will be the chosen when a container
+is requested but not given. When using the command
+autolayout (`-a`) for example, if the window is
+floating it will be sent to the main container, if
+no other containers exist. Defaults to A.
+
+### I3FYRA_ORIENTATION  
+
+If set to `vertical` main split will be `AC` and
+families will be `AB` and `CD`. Otherwise main
+split will be `AB` and families will be `AC` and
+`BD`.
+
+### I3_KING_PID_FILE  
+
+When i3king is running this file contains the pid
+of the i3king process. It is used by **i3fyra** to
+know if i3king is running, if it is, it will try
+to match windows against the rules when `--float`
+option toggles the floating state to tiled.
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/array
+================================================
+ARRAY should be the output of `i3list`  
+
+Use `--array ARRAY` to improve speed when
+**i3fyra** is executed from a script that already
+have the array, f.i. **i3run** and **i3Kornhe**.
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/clear-virtuals
+================================================
+clear/reset virtual positions  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/conid
+================================================
+window with **CON_ID** will be used instead of active window  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/dryrun
+================================================
+don't execute wm commands  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/float
+================================================
+toggle floating state of a window  
+
+Autolayout. If current window is tiled: floating
+enabled If window is floating, it will be put in a
+visible container. If there is no visible
+containers. The window will be placed in a hidden
+container. If no containers exist, container
+'A'will be created and the window will be put
+there.
+
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/force
+================================================
+ignore virtual positioning.  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/hello
+================================================
+short description  
+
+`--hello` long description  
+this is the long description for `--hello`  
+first line in `./docs/hello` is the short description.
+
+
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/help
+================================================
+print help and exit  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/hide
+================================================
+Hide target containers if visible.  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/layout
+================================================
+update the size of the layout  
+
+AB is point on the X axis, calculated from the
+left side if INT is positive, from the right side
+if it is negative. AC and BD is on Y axis from
+the top if INT is positive, from the bottom if it
+is negative. The whole argument needs to be
+quoted. Example:  
+
+`i3fyra --layout 'AB=-300 BD=420'
+
+LAYOUT argument can also be the word 'redo', if it
+is, the last layout appended will be restored.
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/mono
+================================================
+toggle monocle mode 
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/move
+================================================
+move window/create container  
+
+DEST can either be the name of a container
+(A|B|C|D), or it's position relative to the
+current container with a direction:[`l`|`left`]
+[`r`|`right`][`u`|`up`][`d`|`down`] If the
+container doesnt exist it is created. If argument
+is a direction and there is no container in that
+direction, Connected container(s) visibility is
+toggled. If current window is floating or not
+inside ABCD, normal movement is performed.
+Distance for moving floating windows with this
+action can be defined with the `--speed` option.
+Example: `$ i3fyra --speed 30 -m r` Will move
+current window 30 pixels to the right, if it is
+floating.
+
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/orientation
+================================================
+main split orientation on i3fyra WS (horizontal|vertical|toggle)
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/show
+================================================
+Show target container.  
+
+If it doesn't exist, it will be created and
+current window will be put in it. If it is
+visible, nothing happens. 
+
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/speed
+================================================
+distance in px a floating windows will be moved  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/verbose
+================================================
+print more stuff to stderr  
+
+
+
+================================================
+FILE: src/i3fyra/docs/options/version
+================================================
+louder output  
+
+
+
+================================================
+FILE: src/i3fyra/func/active_move_in_direction.sh
+================================================
+#!/bin/bash
+
+move_normal() {
+  local ldir
+
+  case "${1:0:1}" in
+    l ) ldir=left  ;;
+    d ) ldir=down  ;;
+    u ) ldir=up    ;;
+    r ) ldir=right ;;
+  esac
+
+  messy "[con_id=${i3list[TWC]}]" move "$ldir"
+}
+
+active_move_in_direction() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local direction=$1
+
+  ((i3list[TWF])) || [[ ${i3list[WTN]} != "${i3list[WFN]}" ]] \
+    && exec i3Kornhe --array "$_array" m "$direction"
+
+  # get visible info from i3viswiz
+  # vw_target is the container currently at target pos
+  # vw_parent is the parent of vw_target (A|B|C|D)
+  # vw_groupsize is the number of siblings to the
+  #   currently focused container
+  # vw_wall is not none if target focus lands outside
+  #   the current workspace
+  local vw_wall vw_parent wizoutput
+  declare -i vw_groupsize vw_target
+
+  if [[ ${_o[dryrun]} ]]; then
+    wizoutput=${i3list[VISWIZ]:=vw_target=3333 vw_wall=up vw_parent=C vw_groupsize=1}
+    eval "$wizoutput"
+  else
+    read -r vw_wall vw_groupsize vw_target vw_parent < <(
+      i3viswiz --parent=LIST  \
+               --debug "wall,groupsize,trgcon,trgpar" \
+               --debug-format "%v " "$direction"
+    )
+
+  fi
+
+  ((_o[verbose])) && ERM "w "                         \
+                         "vw_target=$vw_target "      \
+                         "vw_wall=$vw_wall "          \
+                         "vw_parent=$vw_parent "      \
+                         "vw_groupsize=$vw_groupsize" \
+
+  declare -A swapon
+
+  swapon=([u]=AB [d]=CD [l]=AC [r]=BD)
+
+  local sibdir target family sibling relatives
+
+  ((_isvertical)) && sibdir=lr || sibdir=ud
+    
+  target=${i3list[TWP]}
+  family=${i3list[TFF]}
+  sibling=${i3list[TFS]}
+  relatives=${i3list[TFO]}
+
+  if   [[ ! ${i3list[TWP]} =~ [ABCD] ]]; then
+    # when triggered on a tiled window on the i3fyra ws
+    # that for some reason isn't part of the layout
+    move_normal "$direction"
+  elif [[ $vw_wall != none ]]; then # hit wall, toggle something
+
+    if [[ $sibdir =~ $direction ]]; then # sibling toggling
+      
+      if [[ ${i3list[LVI]} =~ $sibling ]]; then
+        container_hide "$sibling"
+      elif [[ ${i3list[LHI]} =~ $sibling ]]; then
+        container_show "$sibling"
+        [[ ${swapon[$direction]} =~ $sibling ]] \
+          && swap_move "i34$sibling" "i34$target"
+      elif ((vw_groupsize > 1)); then # sibling doesn't exist
+        active_move_to_container "$sibling"
+        [[ ${swapon[$direction]} =~ $sibling ]] \
+          || swap_move "i34$sibling" "i34$target"
+        messy "[con_id=${i3list[TWC]}]" focus
+      fi
+    
+    else # family toggling
+
+      if [[ ${i3list[LVI]} =~ [${relatives}] ]]; then
+        family_hide "$relatives"
+      elif [[ ${i3list[LHI]} =~ [${relatives}] ]]; then
+        family_show "$relatives"
+        [[ ${swapon[$direction]} =~ [${relatives}] ]] \
+          && swap_move "i34X$relatives" "i34X$family"
+      elif ((vw_groupsize > 1)); then # no other family exist
+        active_move_to_container "${relatives:0:1}"
+
+        # hor: AC    vert: AB
+        [[ $direction =~ u|l && $relatives = "${ori[fam2]}" ]] \
+          && swap_move "i34X$relatives" "i34X$family"
+
+        messy "[con_id=${i3list[TWC]}]" focus
+      fi
+    fi
+
+  elif [[ $vw_parent = "$target" ]]; then
+    # target and current container is the same
+    # which indicates it is also not in a tabbed|stacked
+    # container -> move normally
+    move_normal "$direction"
+  else
+
+    if [[ ${i3list[C${vw_parent}L]} =~ splitv|splith && $direction =~ r|d ]]; then
+      
+      # move above/to the left of target container
+      messy "[con_id=${vw_target}]" \
+        mark --add i34tmp
+      messy "[con_id=${i3list[TWC]}]" \
+        move to mark i34tmp, swap mark i34tmp
+      messy "[con_id=${vw_target}]" \
+        mark --add --toggle i34tmp
+
+    else 
+      messy "[con_id=${i3list[TWC]}]" \
+        move to mark "i34${vw_parent}", focus
+    fi
+  fi
+  
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/active_move_to_container.sh
+================================================
+#!/bin/bash
+
+active_move_to_container() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local target=$1 newcont
+
+  [[ ${i3list[LEX]} =~ $target ]] || newcont=1
+
+  container_show "$target"
+
+  ((newcont)) || messy "[con_id=${i3list[TWC]}]"      \
+                        focus, floating disable,      \
+                        move to mark "i34$target", focus
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/apply_splits.sh
+================================================
+#!/bin/env bash
+
+apply_splits(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local i tsn dir target sibling layout_string last_layout
+  declare -i tsv splitexist size
+
+  if [[ ${_o[layout]} = redo ]]
+    then layout_string=${i3list[RED]//:/ }
+    else layout_string=$1
+  fi
+
+  [[ $layout_string =~ = ]] \
+    || ERX "$layout_string is not a valid layout"
+
+  for i in ${layout_string}; do
+    tsn=${i%=*} # target split name
+    tsv=${i#*=} # target split value
+
+    if [[ $tsn = "${ori[main]}" || $tsn = main ]]; then
+      tsn=${ori[main]}
+      target="X${ori[fam1]}" # name of split to resize
+      dir=${ori[resizemain]} size=${ori[sizemain]}
+
+      # when --layout option is used, invert split
+      # if families are inverted
+      # container A virtual position (VPA)
+      # inverse mainsplit (2|3 || 1|3)
+      [[ -n ${_o[layout]} ]] \
+        && (( (_isvertical  && i3list[VPA] > 1)    \
+           || (!_isvertical && i3list[VPA] % 2) )) \
+        && ((tsv *= -1))
+
+      [[ ${i3list[X${tsn}]} ]] && splitexist=1
+    else
+      target=${tsn:0:1} sibling=${tsn:1:1}
+      dir=${ori[resizefam]} size=${ori[sizefam]}
+
+      [[ ${i3list[LVI]} =~ $target && ${i3list[LVI]} =~ $sibling ]] \
+        && splitexist=1
+    fi
+
+    ((tsv<0)) && tsv=$((size-(tsv*-1)))
+
+    last_layout+="${tsn}=${i3list[S${tsn}]}:"
+
+    ((splitexist)) && {
+      # i3list[Sxx] = current/actual split xx
+      i3list[S${tsn}]=${tsv}
+      sezzy "con_mark=i34${target}" resize set "$dir" "$tsv" px
+    }
+
+    # i3list[Mxx] = last/stored    split xx
+    # store split even if its not visible
+    mark_vars["i34M${tsn}"]=$tsv
+
+  done
+
+  # store last_layout for --layout redo
+  [[ ${_o[layout]} ]] && mark_vars["i34RED"]=$last_layout
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/CLEANUP_.sh
+================================================
+#!/bin/bash
+
+trap 'CLEANUP' EXIT INT HUP
+
+CLEANUP() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}()"
+
+  ((${#mark_vars[@]})) && varset
+
+  [[ -n $_msgstring ]] \
+    && >&2 i3-msg "$_qflag" "${_msgstring%;}"
+
+  ((${#new_size[@]})) && {
+    for k in "${!new_size[@]}"; do
+      _sizestring+="[$k] ${new_size[$k]};"
+    done
+    i3-msg >&2 "${qflag:-}" "${_sizestring%;}"
+  }
+
+  ((___t)) && >&2 echo "<<< $___cmd" "$(( (10#${EPOCHREALTIME//[!0-9]} - ___t) / 1000 ))ms" #bashbud
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/container_create.sh
+================================================
+#!/bin/bash
+
+container_create() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local target=$1
+
+  messy "[con_id=${i3list[TWC]}]"       \
+    floating disable,                   \
+    move --no-auto-back-and-forth to workspace "${i3list[WFN]}"
+  [[ ${i3list["X${ori[main]}"]} ]] && {
+    messy "[con_mark=i34X${ori[main]}]" \
+      split "${ori[charmain]}"
+    messy "[con_id=${i3list[TWC]}]" \
+      move to mark "i34X${ori[main]}"
+  }
+
+  messy "[con_id=${i3list[TWC]}]" \
+    split "${ori[charmain]}",       \
+    layout tabbed,                \
+    focus, focus parent
+
+  messy mark "i34$target"
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/container_hide.sh
+================================================
+#!/bin/bash
+
+container_hide(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local target=$1
+  local target_family sibling
+  declare -i split_main split_family
+
+  [[ ${#target} -gt 1 ]] && {
+    multi_hide "$target"
+    return
+  }
+
+  [[ ${ori[fam1]} =~ $target ]] \
+    && target_family=${ori[fam1]} \
+    || target_family=${ori[fam2]}
+
+
+  split_main=${i3list[S${ori[main]}]:=0}
+  split_family=${i3list[S$target_family]:=0}
+
+  sibling=${target_family/$target/}
+
+  messy "[con_mark=i34${target}]" move scratchpad
+  i3list[LVI]=${i3list[LVI]/$target/}
+  i3list[LHI]+="$target"
+
+  # if target is last of it's fam, note it.
+  # else focus sibling as the last operation (main())
+  if [[ ${i3list[LVI]} =~ $sibling ]]; then
+    i3list[SIBFOC]=$sibling
+    mark_vars["i34F${target_family}"]=${i3list[F${target_family}]/$target/}
+  else
+    mark_vars["i34F${target_family}"]=$target
+  fi
+
+  # note splits
+  ((split_main && split_main != ori[sizemain])) && {
+    mark_vars["i34M${ori[main]}"]=$split_main
+    i3list[M${main}]=$split_main
+    mark_vars["i34M${target_family}"]=$split_family
+    i3list[M${target_family}]=$split_family
+  }
+
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/container_show.sh
+================================================
+#!/bin/bash
+
+container_show() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local target=$1 target_family
+
+  [[ ${#target} -gt 1 ]] && {
+    multi_show "$target"
+    return
+  }
+
+  [[ ${ori[fam1]} =~ $target ]] \
+    && target_family=${ori[fam1]} \
+    || target_family=${ori[fam2]}
+
+  if [[ ${i3list[LVI]} =~ $target ]]; then
+    return
+  elif [[ ! ${i3list[LHI]} =~ $target ]]; then
+    container_create "$target"
+  elif [[ ${i3list["N$target_family"]} = "${i3list[WFN]}" ]]; then
+    messy "[con_mark=i34${target}]"       \
+      move --no-auto-back-and-forth to workspace "${i3list[WFN]}", \
+      floating disable
+  fi
+
+  family_show "$target_family" "$target"
+
+  i3list[LHI]=${i3list[LHI]/$target/}
+  i3list[LVI]+=$target
+  i3list[LEX]="${i3list[LHI]}${i3list[LVI]}"
+
+  [[ ${i3list["N${target_family}"]} = "${i3list[WFN]}" ]] && {
+    messy "[con_mark=i34$target]" \
+      move to mark "i34X$target_family"
+
+    [[ $target = "${target_family:0:1}" ]] && {
+      messy "[con_mark=i34$target]" \
+        swap mark "i34${target_family:1:1}"
+    }
+
+    tspl=${i3list[M${target_family}]}
+    tdim=${ori[sizefam]}
+
+    ((tspl  )) && {
+      i3list[S${target_family}]=$((tdim/2))
+      apply_splits "${target_family}=$tspl"
+    }
+  }
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/family_create.sh
+================================================
+#!/bin/bash
+
+family_create() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+
+  local target_family=$1 target_container=$2
+
+  if [[ ${i3list["X${ori[main]}"]} ]]; then
+    messy "[con_mark=i34X${ori[main]}]" \
+      split "${ori[charmain]}"
+    messy "[con_mark=i34$target_container]" \
+      move --no-auto-back-and-forth to workspace "${i3list[WFN]}", \
+      floating disable, \
+      move to mark "i34X${ori[main]}", split "${ori[charmain]}", \
+      layout "split${ori[charfam]}", \
+      focus, focus parent
+    messy mark "i34X$target_family"
+  else
+    messy "[con_mark=i34$target_container]" \
+      move --no-auto-back-and-forth to workspace "${i3list[WFN]}", \
+      floating disable, \
+      layout "split${ori[charfam]}", \
+      focus, focus parent
+    messy mark "i34X$target_family"
+    messy "[con_mark=i34X$target_family]" \
+      layout "split${ori[charmain]}", \
+      focus, focus parent
+    messy mark "i34X${ori[main]}"
+  fi
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/family_hide.sh
+================================================
+#!/bin/bash
+
+family_hide(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local family=$1
+  local child childs
+
+  declare -i famw famh famx famy split_size
+  declare -a visible_children
+
+  split_size=$(( ( _isvertical ? i3list[WFH] : i3list[WFW] ) - i3list["S${ori[main]}"] ))
+  ((split_size < 0)) && ((split_size *= -1))
+
+  famw=$((_isvertical ? i3list[WFW] : split_size ))
+  famh=$((_isvertical ? split_size : i3list[WFH]))
+  famx=$((_isvertical ? 0 : i3list["S${ori[main]}"]))
+  famy=$((_isvertical ? i3list["S${ori[main]}"] : 0))
+
+  for child in "${family:0:1}" "${family:1:1}"; do
+    [[ ${i3list[LVI]} =~ $child ]] \
+      && visible_children+=("$child")
+  done
+
+  if ((${#visible_children[@]} == 1)); then
+    child=${visible_children[0]}
+    messy "[con_mark=i34$child]" \
+      move scratchpad
+
+    i3list[LVI]=${i3list[LVI]/$child/}
+    i3list[LHI]+=$child
+
+    unset 'i3list[X$family]'
+    i3list[F$family]=$child
+    mark_vars["i34F${family}"]=$child
+  else
+    messy "[con_mark=i34X${family}]"                \
+      floating enable,                              \
+      resize set "$famw" "$famh",                   \
+      move absolute position "$famx" px "$famy" px, \
+      move scratchpad
+
+    for child in "${visible_children[@]}"; do
+      i3list[LVI]=${i3list[LVI]/$child/}
+      i3list[LHI]+=$child
+      childs+=$child
+    done
+
+    mark_vars["i34F${family}"]=$childs
+    mark_vars["i34M${family}"]=${i3list[S${family}]:=0}
+  fi
+
+  mark_vars["i34M${ori[main]}"]=${i3list[S${ori[main]}]:=0}
+
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/family_show.sh
+================================================
+#!/bin/bash
+
+family_show() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+
+  local target_family=$1 target_container=${2:-}
+  local other_family
+
+  [[ ${i3list["N${target_family}"]} = "${i3list[WFN]}" ]] \
+    && return
+
+  
+  if [[ -z ${i3list[X${target_family}]} ]]; then
+    # when family_hide and family contains only
+    # one container. The family is destroyed and
+    # the container is moved to the scratchpad
+    # but noted in [F$family]
+    last_in_fam=${i3list[F$target_family]:0:1}
+
+    if [[ ! $target_container ]]; then
+     [[ ${i3list[LEX]} =~ $last_in_fam ]] && {
+       family_create "$target_family" "$last_in_fam"
+     }
+    else
+      family_create "$target_family" "$target_container"
+    fi
+
+  elif [[ ${i3list["N${target_family}"]} != "${i3list[WFN]}" ]]; then
+
+    messy "[con_mark=i34X${target_family}]" \
+      move --no-auto-back-and-forth to workspace "${i3list[WFN]}", \
+      floating disable
+
+    if [[ ${i3list["X${ori[main]}"]} ]]; then
+
+      messy "[con_mark=i34X${ori[main]}]"     \
+        split "${ori[charmain]}"
+      messy "[con_mark=i34X${target_family}]" \
+        move to mark "i34X${ori[main]}"
+
+    else
+      messy "[con_mark=i34X${target_family}]" \
+        layout split"${ori[charmain]}", \
+        focus, focus parent
+      messy mark "i34X${ori[main]}"
+    fi
+  fi
+
+  # when target family is AC or AB, it is 
+  # the "first" family in the main container
+  # if the other family is visible, 
+  # we need to swap them
+  [[ $target_family =~ A ]] && {
+
+    [[ ${ori[fam1]} =~ A ]] \
+      && other_family=${ori[fam2]} \
+      || other_family=${ori[fam1]}
+
+    [[ ${i3list["N${other_family}"]} = "${i3list[WFN]}" ]] \
+      && messy "[con_mark=i34X${target_family}]"  \
+           swap mark "i34X${other_family}"
+  }
+
+  apply_splits "${ori[main]}=${i3list[M${ori[main]}]}"
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/float_toggle.sh
+================================================
+#!/bin/bash
+
+float_toggle(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}()"
+
+  local target
+
+  # AWF - 1 = floating; 0 = tiled
+  if ((i3list[AWF]==1)); then
+
+    # WSA != i3fyra && normal tiling
+    if [[ ${i3list[WAN]} != "${i3list[WFN]}" ]]; then
+      messy "[con_id=${i3list[AWC]}]" floating disable
+      return
+
+    # only on fyra WS, if i3king rule for window
+    # exist that doesn't do: "floating enable",
+    # execute that rule and return
+    elif [[ -f $I3_KING_PID_FILE ]]; then
+      mapfile -t king_commands <<< "$(i3king --conid "${i3list[TWC]}" --print-commands)"
+      for command in "${!king_commands[@]}"; do
+        if [[ ${king_commands[command]} =~ floating\ enable ]]
+          then unset 'king_commands[command]'
+          else messy "${king_commands[command]}"
+        fi
+      done
+
+      [[ ${king_commands[*]} ]] && return
+    fi
+    
+
+    if [[ ${i3list[LVI]} =~ $I3FYRA_MAIN_CONTAINER ]]; then
+      target=$I3FYRA_MAIN_CONTAINER
+    elif [[ ${i3list[LVI]} ]]; then
+      target=${i3list[LVI]:0:1}
+    elif [[ ${i3list[LHI]} ]]; then
+      target=${i3list[LHI]:0:1}
+    else
+      target=$I3FYRA_MAIN_CONTAINER
+    fi
+
+     if [[ ${i3list[LEX]} =~ $target ]]; then
+      container_show "$target"
+      messy "[con_id=${i3list[AWC]}]" floating disable, \
+        move to mark "i34${target}"
+    else
+      # if $target container doesn't exist, create it
+      container_show "$target"
+    fi
+  else
+    # AWF == 0 && make AWC floating
+    messy "[con_id=${i3list[AWC]}]" floating enable
+  fi
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/initialize_globals.sh
+================================================
+#!/bin/bash
+
+initialize_globals() {
+
+  declare -Ag i3list
+  declare -Ag mark_vars
+  declare -Ag new_size
+  declare -Ag ori
+
+  _marks_json=$(i3-msg -t get_marks)
+
+  [[ ! $_action =~ orintation|layout && ! $_marks_json =~ i3fyra_ws ]] && {
+    # the i3fyra_ws mark/var is read by i3list
+    # if it isn't present no info regarding i3fyra
+    # will be in the output of i3list
+    # we set the mark/var here
+
+    ((_o[verbose])) && ERM INIT FYRA_WS
+
+    [[ $I3FYRA_WS ]] || {
+      eval "$(i3list)"
+      I3FYRA_WS=${i3list[WAN]}
+    }
+
+    (( _o[float] && i3list[AWF]==0 )) \
+      || i3var set i3fyra_ws "$I3FYRA_WS"
+
+  }
+
+  [[ $_marks_json =~ i34ORI ]] || {
+
+    ((_o[verbose])) && ERM INIT FYRA_ORIENTATION
+
+    i3var set i34ORI "${_o[orientation]:-$I3FYRA_ORIENTATION}"
+  }
+
+  # _qflag is option added to i3-msg (cleanup())
+  ((_o[verbose])) || _qflag='-q'
+
+  : "${_o[array]:=$(i3list ${_o[conid]:+-n ${_o[conid]}})}"
+  eval "${_array:=${_o[array]}}"
+
+  declare -gi _isvertical
+
+  declare -i sw=${i3list[WFW]:-${i3list[WAW]}}
+  declare -i sh=${i3list[WFH]:-${i3list[WAH]}}
+  declare -i swh=$((sw/2))
+  declare -i shh=$((sh/2))
+
+  if [[ ${i3list[ORI]} = vertical ]]; then
+    _isvertical=1
+    ori=(
+
+      [main]=AC [fam1]=AB [fam2]=CD [fam3]=BD
+
+      [charmain]=v        [charfam]=h
+      [movemain]=down     [movefam]=right
+      [resizemain]=height [resizefam]=width
+      [sizemain]=$sh      [sizefam]=$sw 
+      [sizemainhalf]=$shh [sizefamhalf]=$swh
+
+    )
+  else
+    _isvertical=0
+    ori=(
+
+      [main]=AB [fam1]=AC [fam2]=BD [fam3]=CD
+
+      [charmain]=h        [charfam]=v
+      [movemain]=right    [movefam]=down
+      [resizemain]=width  [resizefam]=height
+      [sizemain]=$sw      [sizefam]=$sh
+      [sizemainhalf]=$swh [sizefamhalf]=$shh
+
+    )
+  fi
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/monocle.sh
+================================================
+#!/bin/bash
+
+# https://github.com/budlabs/i3ass/issues/225
+monocle_toggle() {
+
+  ((i3list[WSA] == i3list[WSF])) || {
+    ERM "mono operation only possible on with i3fyra workspace"
+    return
+  }
+
+  if ((${#i3list[LVI]} < 2)); then
+    # use family memory if it exist
+    last_seen="${i3list[F${ori[fam1]}]}${i3list[F${ori[fam2]}]}"
+    [[ $last_seen ]] \
+      && to_show=$last_seen \
+      || to_show=${i3list[LEX]}
+    
+    multi_show "$to_show"
+  else
+    multi_hide "${i3list[LVI]/${i3list[AWP]}/}"
+  fi
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/multi_hide.sh
+================================================
+#!/bin/bash
+
+multi_hide(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local arg=$1 trg trgs i f1=${ori[fam1]} f2=${ori[fam2]}
+
+  # only hide visible containers in arg
+  for (( i = 0; i < ${#arg}; i++ )); do
+    trg=${arg:$i:1}
+    [[ ${i3list[LVI]} =~ $trg ]] && trgs+=$trg
+  done
+
+  ((${#trgs})) || return
+  
+  # hide whole families if present in arg and visible
+  [[ $trgs =~ ${f1:0:1} && $trgs =~ ${f1:1:1} ]] \
+    && trgs=${trgs//[$f1]/} && family_hide "$f1"
+  
+  [[ $trgs =~ ${f2:0:1} && $trgs =~ ${f2:1:1} ]] \
+    && trgs=${trgs//[$f2]/} && family_hide "$f2"
+
+  # hide rest if any
+  ((${#trgs})) && for ((i=0;i<${#trgs};i++)); do
+    single=${trgs:$i:1}
+    container_hide "$single"
+
+    # setting the family memory to the single hidden
+    # container, let us restore with --mono
+    [[ $f1 =~ $single ]] \
+      && mark_vars["i34F${f1}"]=$single \
+      || mark_vars["i34F${f2}"]=$single
+  done
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/multi_show.sh
+================================================
+#!/bin/bash
+
+multi_show(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+  
+  local arg=$1 trg trgs i f1=${ori[fam1]} f2=${ori[fam2]}
+
+  # only show hidden containers in arg
+  for (( i = 0; i < ${#arg}; i++ )); do
+    trg=${arg:$i:1}
+    [[ ${i3list[LHI]} =~ $trg ]] \
+      && container_show "$trg"
+  done
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/orientation.sh
+================================================
+#!/bin/bash
+
+orientation() {
+
+  local new_orientation=$1 
+  local old_orientation=${i3list[ORI]}
+  local i container
+
+  [[ $new_orientation = toggle ]] && {
+    if [[ $old_orientation = vertical ]]
+      then new_orientation=horizontal
+      else new_orientation=vertical
+    fi
+  }
+
+  [[ $new_orientation = "$old_orientation" ]] && return
+
+  declare -A new_ori
+  declare -a in_the_wrong
+
+  [[ $new_orientation = vertical ]] \
+    && new_ori=(
+                  [main]=AC [fam1]=AB [fam2]=CD 
+                  [lo_main]=splitv [lo_fam]=splith 
+                  [C_to]=CD [B_to]=AB [C_from]=BD [B_from]=AC
+                ) \
+    || new_ori=(
+                  [main]=AB [fam1]=AC [fam2]=BD 
+                  [lo_main]=splith [lo_fam]=splitv 
+                  [C_to]=AC [B_to]=BD [C_from]=AB [B_from]=CD
+                )
+
+  # ori array is defined in initialize_globals
+  # and have the old orientation details
+  [[ ${i3list[N"${ori[main]}"]} ]] \
+    && messy "[con_mark=i34X${ori[main]}] mark i34MAIN"
+
+  [[ ${i3list[N"${ori[fam1]}"]} ]]         \
+    && messy "[con_mark=i34X${ori[fam1]}]" \
+       layout "${new_ori[lo_main]}",       \
+       mark "i34X${new_ori[fam1]}"
+
+  [[ ${i3list[N"${ori[fam2]}"]} ]]         \
+    && messy "[con_mark=i34X${ori[fam2]}]" \
+       layout "${new_ori[lo_main]}",       \
+       mark "i34X${new_ori[fam2]}"
+
+  [[ ${i3list[LEX]} =~ B ]] \
+    && [[ ${i3list[N${new_ori[B_from]}]} = "${i3list[CBN]}" ]] \
+    && in_the_wrong[i++]=B
+    
+  [[ ${i3list[LEX]} =~ C ]] \
+    && [[ ${i3list[N${new_ori[C_from]}]} = "${i3list[CCN]}" ]] \
+    && in_the_wrong[i]=C
+
+  if ((${#in_the_wrong[@]} == 2)); then
+    messy "[con_mark=i34B]" swap mark i34C
+  elif ((${#in_the_wrong[@]} == 1)); then
+    container=${in_the_wrong[0]}
+    messy "[con_mark=i34${container}]" \
+          "move to mark i34X${new_ori[${container}_to]}"
+  fi
+
+  [[ $new_orientation = vertical && ${in_the_wrong[*]} =~ C ]] \
+    && messy "[con_mark=i34C] swap mark i34${new_ori[C_to]/C}"
+
+  [[ $new_orientation = horizontal && ${in_the_wrong[*]} =~ B ]] \
+    && messy "[con_mark=i34B] swap mark i34${new_ori[B_to]/B}"
+
+  # test below is true if f.i orientation WAS h and only AC
+  # is visible. If BD is on the scratchpad, it
+  # will now be renamed (CD), but CD needs to be on this
+  # ws with C innit.
+  [[ ! ${in_the_wrong[*]} && ${i3list[LVI]} =~ ([BC]) ]] && {
+    container=${BASH_REMATCH[1]}
+    [[ ${i3list[N"${new_ori[${container}_from]}"]} ]] \
+      && messy "[con_mark=i34X${new_ori[${container}_to]}]" unmark
+    messy "[con_mark=i34${container}]"      \
+          "move to mark i34MAIN", split "${new_ori[lo_main]: -1}",  \
+          focus, focus parent
+    messy mark "i34X${new_ori[${container}_to]}"
+  }
+
+  for cont in A B C D; do
+    [[ ${i3list[LVI]} =~ $cont ]] || continue
+    messy "[con_mark=i34$cont] layout ${new_ori[lo_fam]}"
+  done
+  
+  messy "[con_mark=i34MAIN] mark i34X${new_ori[main]}"
+
+  i3var set i34ORI "$new_orientation"
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/sezzy.sh
+================================================
+#!/bin/bash
+
+sezzy() {
+  local criterion=$1 args
+  shift
+  args=$*
+  (( _o[verbose] )) && ERM "r [$criterion] $args"
+  (( _o[dryrun]  )) || new_size["$criterion"]=$args
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/swap_move.sh
+================================================
+#!/bin/bash
+
+swap_move(){
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+
+  local m1=$1 m2=$2
+  local c1 c2 i1 i2 v1 v2 tmrk k
+  declare -i tspl tdim
+
+  messy "[con_mark=${m1}]"  swap mark "${m2}", mark i34tmp
+  messy "[con_mark=${m2}]"  mark "${m1}"
+  messy "[con_mark=i34tmp]" mark "${m2}"
+
+  # ck_ -> character key
+  # ik_ -> integer key
+  declare -A ck_default
+  declare -A ck_target
+  declare -a ik_current
+
+  ck_default=([A]=0 [B]=1 [C]=2 [D]=3)
+  
+  # if: i3list[VPA]=2 ; i3list[VPC]=0 \
+  #       -> ik_current=([0]=C [1]=B [2]=A [3]=D)
+  for k in A B C D; do
+    current_val=${i3list[VP${k}]:=${ck_default[$k]}}
+    ik_current[current_val]=$k
+  done
+
+   ERM "${ik_current[*]} LLLLLLLL"
+
+  # family marks always contain 'X'
+  # when we swap families all virtual positions
+  # are swapped
+  if [[ $m1 =~ X ]]; then
+
+    ((_isvertical)) \
+      && ck_target=([A]=C [B]=D [C]=A [D]=B) \
+      || ck_target=([A]=B [B]=A [C]=D [D]=C)
+
+    tdim=${ori[sizemain]}
+    tmrk=${ori[main]}
+    tspl=${i3list[S$tmrk]}
+
+    mark_vars[i34M${ori[fam1]}]=${i3list[M${ori[fam2]}]}
+    mark_vars[i34M${ori[fam2]}]=${i3list[M${ori[fam1]}]}
+
+    ERM "VPA=${i3list[VPA]}; VPB=${i3list[VPB]}; VPC=${i3list[VPC]}; VPD=${i3list[VPD]}"
+    for k in A B C D; do
+
+      c1=${k}                     c2=${ck_target[$k]}
+      i1=${ck_default[$c1]}       i2=${ck_default[$c2]}
+      v1=${ik_current[$i1]:=$c1}  v2=${ik_current[$i2]:=$c2}
+
+      mark_vars[i34VP$v1]=$i2
+      mark_vars[i34VP$v2]=$i1
+
+      [[ ${i3list[LEX]} =~ $k ]] || continue
+      messy "[con_mark=i34$k]" mark "i34tmp$k"
+    done
+
+    for k in A B C D; do
+      [[ ${i3list[LEX]} =~ $k ]] || continue
+      messy "[con_mark=i34tmp$k]" mark "i34${ck_target[$k]}"
+    done
+
+    
+  else # swap within family
+
+    c1=${m1#i34}                c2=${m2#i34}
+    i1=${ck_default[$c1]}       i2=${ck_default[$c2]}
+    v1=${ik_current[$i1]:=$c1}  v2=${ik_current[$i2]:=$c2}
+
+    mark_vars[i34VP$v1]=$i2
+    mark_vars[i34VP$v2]=$i1
+
+    [[ ${ori[fam1]} =~ $c1 ]] \
+      && tmrk=${ori[fam1]} \
+      || tmrk=${ori[fam2]}
+
+    tspl="${i3list[S${tmrk}]}"
+    tdim=${ori[sizefam]}
+
+  fi
+
+  # invert split
+  ((tspl+tdim)) && apply_splits "$tmrk=$((tdim-tspl))"
+
+  messy "[con_id=${i3list[TWC]}]" focus
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/varset.sh
+================================================
+#!/bin/bash
+
+varset() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}(${mark_vars[*]})"
+
+  local key val re  current_value
+
+  for key in "${!mark_vars[@]}"; do
+    unset current_value
+    val=${mark_vars[$key]}
+
+    re="\"${key}=([^\"]*)\""
+
+    [[ $_marks_json =~ $re ]] && current_value=${BASH_REMATCH[1]}
+
+    [[ $current_value = "$val" ]] && continue
+
+    new_mark="${key}=$val"
+    old_mark="${key}=$current_value"
+
+    # this will remove the old mark
+    [[ $current_value ]] \
+      && messy "[con_id=${i3list[RID]}] mark --toggle --add $old_mark"
+
+    messy "[con_id=${i3list[RID]}] mark --add $new_mark"
+
+  done
+}
+
+
+
+================================================
+FILE: src/i3fyra/func/virtual_position.sh
+================================================
+#!/bin/bash
+
+# takes a string with one or more container names (ABCD)
+# returns virtual positions for the containers
+virtual_position() {
+
+  ((_o[verbose])) && ERM "f ${FUNCNAME[0]}($*)"
+
+  local target=$1
+  declare -i vpos k
+  declare -a q
+
+  # if target is A && i3list[VPA] == 2
+  # then target=@@2 -> target=C
+
+  [[ $target =~ ^[ABCD=[:space:]]+$ ]] && {
+    
+    q=([0]=A [1]=B [2]=C [3]=D)
+
+    for k in 0 1 2 3; do
+      vpos=${i3list[VP${q[$k]}]:=$k}
+      (( k != vpos )) && [[ $target =~ ${q[k]} ]] \
+        && target=${target//${q[$k]}/@@$vpos}
+    done
+
+    [[ $target =~ @@ ]] && for k in 0 1 2 3; do
+      target=${target//@@$k/${q[$k]}}
+    done
+
+  }
+
+  echo "$target"
+}
+
+
+
+================================================
+SYMLINK: src/i3fyra/func/ERR.sh -> ERR.sh
+================================================
+
+
+
+================================================
+SYMLINK: src/i3fyra/func/LOG.sh -> LOG.sh
+================================================
+
+
+
+================================================
+SYMLINK: src/i3fyra/func/MSG.sh -> MSG.sh
+================================================
+
+
+
+================================================
+SYMLINK: src/i3fyra/func/TIMER.sh -> TIMER.sh
+================================================
+
+
+
+================================================
+SYMLINK: src/i3fyra/GNUmakefile -> Makefile
+================================================
+
+
+
+================================================
+SYMLINK: src/i3fyra/share.mak -> share.mak
+================================================
+
+
+
+================================================
+FILE: src/i3fyra/tests/array
+================================================
+i3list[AWF]=0              	# Active Window floating
+i3list[ATW]=1520           	# Active Window tab width
+i3list[ATX]=0              	# Active Window tab x postion
+i3list[AWH]=220            	# Active Window height
+i3list[AWI]=8388888        	# Active Window id
+i3list[AWW]=1520           	# Active Window width
+i3list[AFO]=BD             	# Active Window relatives
+i3list[AWX]=0              	# Active Window x position
+i3list[AFC]=D              	# Active Window cousin
+i3list[AWY]=0              	# Active Window y position
+i3list[AFF]=AC             	# Active Window family
+i3list[AFS]=C              	# Active Window sibling
+i3list[AWB]=20             	# Active Window titlebar height
+i3list[AFT]=B              	# Active Window twin
+i3list[AWP]=A              	# Active Window parent
+i3list[AWC]=94622836163952 	# Active Window con_id
+i3list[TWB]=20             	# Target Window titlebar height
+i3list[TFS]=C              	# Target Window sibling
+i3list[TFF]=AC             	# Target Window family
+i3list[TWP]=A              	# Target Window Parent container
+i3list[TFT]=B              	# Target Window twin
+i3list[TWC]=94622836163952 	# Target Window con_id
+i3list[TWF]=0              	# Target Window Floating
+i3list[TTW]=1520           	# Target Window tab width
+i3list[TWH]=220            	# Target Window height
+i3list[TTX]=0              	# Target Window tab x postion
+i3list[TWI]=8388888        	# Target Window id
+i3list[TWW]=1520           	# Target Window width
+i3list[TWX]=0              	# Target Window x position
+i3list[TFO]=BD             	# Target Window relatives
+i3list[TWY]=0              	# Target Window y position
+i3list[TFC]=D              	# Target Window cousin
+i3list[CAF]=94622836163952 	# Container A Focused container id
+i3list[CBF]=94622834984992 	# Container B Focused container id
+i3list[CCF]=94622834928688 	# Container C Focused container id
+i3list[CDF]=94622835840096 	# Container D Focused container id
+i3list[CAW]=1              	# Container A Workspace
+i3list[CBW]=1              	# Container B Workspace
+i3list[CCW]=1              	# Container C Workspace
+i3list[CAL]=tabbed         	# Container A Layout
+i3list[CDW]=1              	# Container D Workspace
+i3list[CBL]=tabbed         	# Container B Layout
+i3list[CCL]=tabbed         	# Container C Layout
+i3list[CDL]=tabbed         	# Container D Layout
+i3list[SAB]=1520           	# Current split: AB
+i3list[MCD]=770            	# Stored split: CD
+i3list[SAC]=220            	# Current split: AC
+i3list[SBD]=252            	# Current split: BD
+i3list[SCD]=1520           	# Current split: CD
+i3list[MAB]=1520           	# Stored split: AB
+i3list[MAC]=220            	# Stored split: AC
+i3list[MBD]=252            	# Stored split: BD
+i3list[LEX]=DCBA           	# Existing containers (LVI+LHI)
+i3list[LHI]=               	# Hidden i3fyra containers
+i3list[LVI]=DCBA           	# Visible i3fyra containers
+i3list[FAC]=AC             	# Family AC memory
+i3list[FBD]=BD             	# Family BD memory
+i3list[LAL]=ACBD           	# All containers in family order
+i3list[WAH]=1080           	# Active Workspace height
+i3list[WAI]=94622835607392 	# Active Workspace con_id
+i3list[WAW]=1920           	# Active Workspace width
+i3list[WSF]=1              	# i3fyra Workspace Number
+i3list[WAX]=0              	# Active Workspace x position
+i3list[WST]=1              	# Target Workspace Number
+i3list[WAY]=0              	# Active Workspace y position
+i3list[WFH]=1080           	# i3fyra Workspace Height
+i3list[WTH]=1080           	# Target Workspace Height
+i3list[WFI]=94622835607392 	# i3fyra Workspace con_id
+i3list[WAN]='1'            	# Active Workspace name
+i3list[WTI]=94622835607392 	# Target Workspace con_id
+i3list[WFW]=1920           	# i3fyra Workspace Width
+i3list[WTW]=1920           	# Target Workspace Width
+i3list[WFX]=0              	# i3fyra Workspace X position
+i3list[WTX]=0              	# Target Workspace X poistion
+i3list[WFY]=0              	# i3fyra Workspace Y position
+i3list[WTY]=0              	# Target Workspace Y position
+i3list[WFN]='1'            	# i3fyra Workspace name
+i3list[WSA]=1              	# Active Workspace number
+i3list[WTN]='1'            	# Target Workspace name
+
+
+
+================================================
+FILE: src/i3fyra/tests/ref1
+================================================
+ 
+f windowmove(Up)
+f containerhide(C)
+m [con_mark=i34C] move scratchpad
+m [con_mark=i34A] focus child
+f varset(i34MAB 1520 i34MAC 220)
+m [con_mark=i34MAB] mark i34MAB=1520
+m [con_mark=i34MAC] mark i34MAC=220
+
+
+
+================================================
+FILE: src/i3fyra/tests/results
+================================================
+ 
+f windowmove(Up)
+f containerhide(C)
+m [con_mark=i34C] move scratchpad
+m [con_mark=i34A] focus child
+f cleanup()
+f varset(i34MAB 1520 i34MAC 220)
+m [con_mark=i34MAB] mark i34MAB=1520
+m [con_mark=i34MAC] mark i34MAC=220
+m [con_mark=i34GHOST] move scratchpad
+
+
