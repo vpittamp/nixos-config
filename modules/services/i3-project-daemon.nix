@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.4";  # Feature 062/063: Skip workspace assignment for scratchpad terminals
+    version = "1.7.6";  # Feature 062/063: Fix EventEntry scoping issue causing daemon crashes
     src = daemonSrc;
 
     installPhase = ''

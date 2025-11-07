@@ -1159,7 +1159,6 @@ async def on_window_new(
 
                     # Feature 053 Phase 6: Add workspace assignment to event buffer
                     if event_buffer:
-                        from .models import EventEntry
                         assignment_entry = EventEntry(
                             event_id=event_buffer.event_counter,
                             event_type="workspace::assignment",
@@ -1278,7 +1277,6 @@ async def on_window_new(
 
                 # Feature 053 Phase 6: Add workspace assignment failure to event buffer
                 if event_buffer:
-                    from .models import EventEntry
                     # Build error message from decision tree
                     failed_reasons = [f"P{d['priority']}:{d.get('reason', 'no_match')}" for d in decision_tree if not d.get('matched', False)]
                     error_summary = f"All priorities failed: {', '.join(failed_reasons)}"
@@ -1300,24 +1298,24 @@ async def on_window_new(
                 # Native Wayland apps (PWAs, native apps) may have empty app_id during window::new event
                 # Schedule delayed re-check after 100ms to allow properties to populate
                 app_id = getattr(container, 'app_id', None)
-            if not app_id or app_id == "" or app_id == "unknown":
-                logger.debug(
-                    f"Native Wayland window {window_id} ({window_class}) has no app_id, "
-                    f"scheduling 100ms delayed property re-check"
-                )
-
-                # Schedule async task for delayed re-check
-                asyncio.create_task(
-                    _delayed_property_recheck(
-                        conn=conn,
-                        window_id=window_id,
-                        original_class=window_class,
-                        application_registry=application_registry,
-                        workspace_tracker=workspace_tracker,
-                        window_env=window_env,
-                        matched_launch=matched_launch,
+                if not app_id or app_id == "" or app_id == "unknown":
+                    logger.debug(
+                        f"Native Wayland window {window_id} ({window_class}) has no app_id, "
+                        f"scheduling 100ms delayed property re-check"
                     )
-                )
+
+                    # Schedule async task for delayed re-check
+                    asyncio.create_task(
+                        _delayed_property_recheck(
+                            conn=conn,
+                            window_id=window_id,
+                            original_class=window_class,
+                            application_registry=application_registry,
+                            workspace_tracker=workspace_tracker,
+                            window_env=window_env,
+                            matched_launch=matched_launch,
+                        )
+                    )
 
         # Feature 024: Check if matched rule has structured actions
         if classification.matched_rule and hasattr(classification.matched_rule, 'actions') and classification.matched_rule.actions:
