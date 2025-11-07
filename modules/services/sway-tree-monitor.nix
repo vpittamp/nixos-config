@@ -65,6 +65,33 @@ let
 
     exec ${pythonEnv}/bin/python -m sway_tree_monitor.daemon
   '';
+
+  # CLI wrapper script for user access
+  cliWrapper = pkgs.writeShellScriptBin "sway-tree-monitor" ''
+    # Find user runtime directory
+    USER_ID=$(${pkgs.coreutils}/bin/id -u)
+    USER_RUNTIME_DIR="/run/user/$USER_ID"
+
+    # Find Sway IPC socket
+    SWAY_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+    if [ -n "$SWAY_SOCK" ]; then
+      export SWAYSOCK="$SWAY_SOCK"
+      export I3SOCK="$SWAY_SOCK"
+    fi
+
+    # Set WAYLAND_DISPLAY
+    WAYLAND_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+    if [ -n "$WAYLAND_SOCK" ]; then
+      WAYLAND_DISPLAY=$(${pkgs.coreutils}/bin/basename "$WAYLAND_SOCK")
+      export WAYLAND_DISPLAY
+      export XDG_RUNTIME_DIR="$USER_RUNTIME_DIR"
+    fi
+
+    # Set Python environment
+    export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python311.pythonVersion}/site-packages:$PYTHONPATH"
+
+    exec ${pythonEnv}/bin/python -m sway_tree_monitor "$@"
+  '';
 in
 {
   options.services.sway-tree-monitor = {
@@ -126,5 +153,8 @@ in
         SyslogIdentifier = "sway-tree-monitor";
       };
     };
+
+    # Make CLI wrapper available in PATH
+    environment.systemPackages = [ cliWrapper ];
   };
 }
