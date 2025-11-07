@@ -339,12 +339,12 @@ PY
             # Add to preview with prefix
             if [ "$msg_type" = "user" ]; then
                 if [ $msg_count -eq 0 ]; then
-                    preview="U: ${msg_content}"
+                    preview="U: ''${msg_content}"
                 else
-                    preview="${preview} → U: ${msg_content}"
+                    preview="''${preview} → U: ''${msg_content}"
                 fi
             else
-                preview="${preview} → A: ${msg_content}"
+                preview="''${preview} → A: ''${msg_content}"
             fi
 
             ((msg_count++))
@@ -879,6 +879,10 @@ in
     # Elephant Web Search Configuration
 
     [[engines]]
+    name = "Google AI"
+    url = "https://www.google.com/search?q=%s&udm=14"
+
+    [[engines]]
     name = "Google"
     url = "https://www.google.com/search?q=%s"
 
@@ -915,8 +919,8 @@ in
     name = "Rust Docs"
     url = "https://doc.rust-lang.org/std/?search=%s"
 
-    # Default search engine
-    default = "Google"
+    # Default search engine - uses Google AI mode with Gemini
+    default = "Google AI"
   '';
 
   # Providerlist configuration - native help menu
