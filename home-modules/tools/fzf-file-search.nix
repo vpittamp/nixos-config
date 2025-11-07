@@ -24,7 +24,7 @@ let
 
     # Launch in floating ghostty window with fzf
     # Uses fzf's built-in walker for fast file traversal
-    # --bind 'enter:become(nvim {})' directly opens file in nvim (fzf README pattern)
+    # --bind 'enter:execute(...)+abort' opens nvim and closes search window
     # Note: --title is used for Sway window rule matching (Ghostty's app_id is always com.mitchellh.ghostty)
     exec ${pkgs.ghostty}/bin/ghostty \
       --title="FZF File Search" \
@@ -38,7 +38,7 @@ let
         --info=inline \
         --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' \
         --preview-window=right:60%:wrap \
-        --bind 'enter:become(${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim {})'
+        --bind 'enter:execute(${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim {})+abort'
   '';
 in
 {

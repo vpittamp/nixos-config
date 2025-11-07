@@ -373,9 +373,10 @@ in
 
         # FZF file search - floating with preview
         # Note: Ghostty app_id is always com.mitchellh.ghostty, so we match by title
+        # Large size for comfortable preview pane
         {
           criteria = { app_id = "com.mitchellh.ghostty"; title = "^FZF File Search$"; };
-          command = "floating enable, border pixel 2, mark _file_search";
+          command = "floating enable, border pixel 2, mark _file_search, resize set width 1800 px height 1000 px, move position center";
         }
 
         # Blueman Bluetooth Manager - floating window
