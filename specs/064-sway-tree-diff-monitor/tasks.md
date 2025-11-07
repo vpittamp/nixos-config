@@ -57,24 +57,24 @@
 
 ### Performance Benchmarks for User Story 1
 
-- [ ] T016 [P] [US1] Create performance benchmark in tests/sway-tree-monitor/performance/benchmark_diff.py for 50/100/200 window trees
-- [ ] T017 [P] [US1] Create test fixtures in tests/sway-tree-monitor/fixtures/sample_trees.py with mock Sway trees (50/100/200 windows)
+- [X] T016 [P] [US1] Create performance benchmark in tests/sway-tree-monitor/performance/benchmark_diff.py for 50/100/200 window trees
+- [X] T017 [P] [US1] Create test fixtures in tests/sway-tree-monitor/fixtures/sample_trees.py with mock Sway trees (50/100/200 windows)
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Implement Sway event subscription in daemon.py: subscribe to window, workspace, binding events
-- [ ] T019 [US1] Implement tree snapshot capture in daemon.py using i3ipc.aio Connection().get_tree()
-- [ ] T020 [US1] Integrate diff computation in daemon.py: capture snapshot → compute hash → compare with previous → generate diff
-- [ ] T021 [US1] Add event storage to daemon.py: store TreeEvent (snapshot + diff) in TreeEventBuffer
-- [ ] T022 [US1] Implement RPC method "query_events" in rpc/server.py with filtering support
-- [ ] T023 [US1] Implement RPC method "ping" and "get_daemon_status" in rpc/server.py
-- [ ] T024 [US1] Create Textual app skeleton in home-modules/tools/sway-tree-monitor/ui/app.py with tabbed interface
-- [ ] T025 [US1] Implement live streaming view in home-modules/tools/sway-tree-monitor/ui/live_view.py using DataTable widget
-- [ ] T026 [US1] Add real-time event subscription worker in ui/live_view.py using @work decorator
-- [ ] T027 [US1] Implement CLI entry point in home-modules/tools/sway-tree-monitor/__main__.py with "live" mode
-- [ ] T028 [US1] Add keyboard navigation to live view: q=quit, f=filter, d=drill down
-- [ ] T029 [US1] Create systemd service unit in modules/services/sway-tree-monitor.nix with MemoryMax=50M, CPUQuota=5%
-- [ ] T030 [US1] Run performance benchmark: validate <10ms diff computation for 100 windows (p95)
+- [X] T018 [US1] Implement Sway event subscription in daemon.py: subscribe to window, workspace, binding events
+- [X] T019 [US1] Implement tree snapshot capture in daemon.py using i3ipc.aio Connection().get_tree()
+- [X] T020 [US1] Integrate diff computation in daemon.py: capture snapshot → compute hash → compare with previous → generate diff
+- [X] T021 [US1] Add event storage to daemon.py: store TreeEvent (snapshot + diff) in TreeEventBuffer
+- [X] T022 [US1] Implement RPC method "query_events" in rpc/server.py with filtering support
+- [X] T023 [US1] Implement RPC method "ping" and "get_daemon_status" in rpc/server.py
+- [X] T024 [US1] Create Textual app skeleton in home-modules/tools/sway-tree-monitor/ui/app.py with tabbed interface
+- [X] T025 [US1] Implement live streaming view in home-modules/tools/sway-tree-monitor/ui/live_view.py using DataTable widget
+- [X] T026 [US1] Add real-time event subscription worker in ui/live_view.py using @work decorator
+- [X] T027 [US1] Implement CLI entry point in home-modules/tools/sway-tree-monitor/__main__.py with "live" mode
+- [X] T028 [US1] Add keyboard navigation to live view: q=quit, f=filter, d=drill down
+- [X] T029 [US1] Create systemd service unit in modules/services/sway-tree-monitor.nix with MemoryMax=50M, CPUQuota=5%
+- [X] T030 [US1] Run performance benchmark: validate <10ms diff computation for 100 windows (p95)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - real-time monitoring with <10ms diffs, <100ms display
 
