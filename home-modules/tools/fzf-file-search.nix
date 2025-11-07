@@ -37,11 +37,21 @@ let
         --preview "${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}" \
         --preview-window=right:60%:wrap)
 
-      # If file was selected, launch nvim in new detached session
-      # setsid creates a new session, completely detaching from parent terminal
-      # This ensures nvim window persists after search terminal closes
+      # If file was selected, launch nvim using Sway exec (like app-launcher-wrapper does)
+      # This ensures proper environment propagation and window tracking
       if [[ -n "$SELECTED" ]]; then
-        ${pkgs.util-linux}/bin/setsid ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim "$SELECTED" > /dev/null 2>&1 &
+        # Build full command with environment - inherit I3PM_* vars from current shell
+        NVIM_CMD="export I3PM_APP_ID=nvim-editor-$$-$(date +%s); "
+        NVIM_CMD+="export I3PM_APP_NAME=neovim; "
+        NVIM_CMD+="export I3PM_PROJECT_NAME=\"''${I3PM_PROJECT_NAME:-}\"; "
+        NVIM_CMD+="export I3PM_PROJECT_DIR=\"''${I3PM_PROJECT_DIR:-}\"; "
+        NVIM_CMD+="export I3PM_SCOPE=scoped; "
+        NVIM_CMD+="export I3PM_EXPECTED_CLASS=com.mitchellh.ghostty; "
+        NVIM_CMD+="${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \"$SELECTED\""
+
+        # Launch via swaymsg exec (same pattern as app-launcher-wrapper)
+        ${pkgs.sway}/bin/swaymsg exec "bash -c '\''$NVIM_CMD'\''" > /dev/null 2>&1
+
         exit 0
       fi
     '
