@@ -18,6 +18,11 @@ const STATUS_ICONS = {
 } as const;
 
 /**
+ * Project icon cache
+ */
+const projectIconCache = new Map<string, string>();
+
+/**
  * Extract project name from window marks
  * Feature 061: Unified mark format - only "project:NAME:ID"
  */
@@ -37,6 +42,30 @@ function getProjectFromMarks(marks: string[]): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Get project icon from cache or load it
+ */
+async function getProjectIcon(projectName: string): Promise<string> {
+  if (projectIconCache.has(projectName)) {
+    return projectIconCache.get(projectName)!;
+  }
+
+  try {
+    const homeDir = Deno.env.get("HOME");
+    if (!homeDir) return "";
+
+    const projectPath = `${homeDir}/.config/i3/projects/${projectName}.json`;
+    const content = await Deno.readTextFile(projectPath);
+    const project = JSON.parse(content);
+    const icon = project.icon || "";
+    projectIconCache.set(projectName, icon);
+    return icon;
+  } catch {
+    projectIconCache.set(projectName, "");
+    return "";
+  }
 }
 
 /**
@@ -226,10 +255,10 @@ export function renderTree(
  * Render outputs as project-centric tree view
  * Groups windows by project instead of by output/workspace
  */
-export function renderTreeByProject(
+export async function renderTreeByProject(
   outputs: Output[],
   options: { showHidden?: boolean } = {},
-): string {
+): Promise<string> {
   const { showHidden = true } = options;
 
   if (outputs.length === 0) {
@@ -240,12 +269,21 @@ export function renderTreeByProject(
 
   // Collect all windows from all outputs/workspaces
   const allWindows: WindowState[] = [];
+  const scratchpadWindows: WindowState[] = [];
+
   for (const output of outputs) {
     for (const workspace of output.workspaces) {
       const windows = showHidden
         ? workspace.windows
         : workspace.windows.filter((w) => !w.hidden);
-      allWindows.push(...windows);
+
+      for (const window of windows) {
+        if (window.marks.some(m => m.startsWith("scratchpad:"))) {
+          scratchpadWindows.push(window);
+        } else {
+          allWindows.push(window);
+        }
+      }
     }
   }
 
@@ -266,8 +304,8 @@ export function renderTreeByProject(
   }
 
   // Count totals
-  let totalWindows = allWindows.length;
-  let visibleWindows = allWindows.filter((w) => !w.hidden).length;
+  let totalWindows = allWindows.length + scratchpadWindows.length;
+  let visibleWindows = [...allWindows, ...scratchpadWindows].filter((w) => !w.hidden).length;
 
   // Render project groups (sorted alphabetically)
   const sortedProjects = Array.from(projectGroups.keys()).sort();
@@ -281,12 +319,29 @@ export function renderTreeByProject(
       ? ` (${visibleCount} visible, ${hiddenCount} hidden)`
       : ` (${windows.length} windows)`;
 
-    lines.push(`📦 ${projectName}${countStr}`);
+    const icon = await getProjectIcon(projectName);
+    lines.push(`${icon || "📦"}${icon ? " " : ""}${projectName}${countStr}`);
 
     for (const window of windows) {
       lines.push(formatWindowByProject(window, "  "));
     }
     lines.push(""); // Blank line between projects
+  }
+
+  // Render scratchpad group
+  if (scratchpadWindows.length > 0) {
+    const visibleCount = scratchpadWindows.filter(w => !w.hidden).length;
+    const hiddenCount = scratchpadWindows.filter(w => w.hidden).length;
+
+    const countStr = hiddenCount > 0
+      ? ` (${visibleCount} visible, ${hiddenCount} hidden)`
+      : ` (${scratchpadWindows.length} windows)`;
+
+    lines.push(`📋 Scratchpad${countStr}`);
+    for (const window of scratchpadWindows) {
+      lines.push(formatWindowByProject(window, "  "));
+    }
+    lines.push("");
   }
 
   // Render global/unassigned windows

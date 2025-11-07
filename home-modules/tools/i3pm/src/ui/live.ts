@@ -248,9 +248,10 @@ export class LiveTUI {
     // Render content based on view mode
     const content = this.state.viewMode === "tree"
       ? renderTree(this.state.outputs, { showHidden: this.state.showHidden })
-      : renderTable(this.state.outputs, {
+      : await renderTable(this.state.outputs, {
           showHidden: this.state.showHidden,
-          changeTracker: this.changeTracker
+          changeTracker: this.changeTracker,
+          groupByProject: true
         });
 
     await this.writeToStdout(content);

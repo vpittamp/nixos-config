@@ -15,19 +15,19 @@ interface Column {
   header: string;
   width: number;
   align: "left" | "right";
+  flexible?: boolean; // Can shrink when terminal is narrow
 }
 
 const COLUMNS: Column[] = [
-  { header: "ID", width: 10, align: "right" },
+  { header: "ID", width: 6, align: "right" },
   { header: "PID", width: 7, align: "right" },
-  { header: "APP_ID", width: 20, align: "left" },
-  { header: "Class", width: 12, align: "left" },
-  { header: "Title", width: 25, align: "left" },
-  { header: "WS", width: 4, align: "left" },
-  { header: "Output", width: 10, align: "left" },
-  { header: "Project", width: 10, align: "left" },
+  { header: "App", width: 18, align: "left", flexible: true },
+  { header: "Title", width: 30, align: "left", flexible: true },
+  { header: "WS", width: 8, align: "left" },
+  { header: "Output", width: 11, align: "left" },
+  { header: "Project", width: 14, align: "left" },
   { header: "Status", width: 8, align: "left" },
-  { header: "Change", width: 6, align: "left" },
+  { header: "Δ", width: 4, align: "left" },
 ];
 
 /**
@@ -186,12 +186,20 @@ const CHANGE_INDICATORS = {
 const ANSI_RESET = "\x1b[0m";
 
 /**
- * Extract project name from window marks
+ * Project icon cache
+ */
+const projectIconCache = new Map<string, string>();
+
+/**
+ * Extract project name from window marks (just the name, no ID)
  */
 function getProjectFromMarks(marks: string[]): string | null {
   for (const mark of marks) {
     if (mark.startsWith("project:")) {
-      return mark.substring(8); // Remove "project:" prefix
+      // Extract just the project name from "project:name:id" format
+      const parts = mark.split(":");
+      const projectName = parts[1] || null;
+      return projectName === "none" ? null : projectName;
     }
     // Feature 062/063: Scratchpad terminals have marks like "scratchpad:projectname"
     if (mark.startsWith("scratchpad:")) {
@@ -200,6 +208,37 @@ function getProjectFromMarks(marks: string[]): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Get project icon from cache or load it
+ */
+async function getProjectIcon(projectName: string): Promise<string> {
+  if (projectIconCache.has(projectName)) {
+    return projectIconCache.get(projectName)!;
+  }
+
+  try {
+    const homeDir = Deno.env.get("HOME");
+    if (!homeDir) return "";
+
+    const projectPath = `${homeDir}/.config/i3/projects/${projectName}.json`;
+    const content = await Deno.readTextFile(projectPath);
+    const project = JSON.parse(content);
+    const icon = project.icon || "";
+    projectIconCache.set(projectName, icon);
+    return icon;
+  } catch {
+    projectIconCache.set(projectName, "");
+    return "";
+  }
+}
+
+/**
+ * Detect if window is a scratchpad
+ */
+function isScratchpadWindow(window: WindowState): boolean {
+  return window.marks.some(m => m.startsWith("scratchpad:"));
 }
 
 /**
@@ -291,24 +330,36 @@ function getChangeIndicator(change?: WindowChange): string {
 /**
  * Format window as table row
  */
-function formatRow(window: WindowState, change?: WindowChange): string {
-  const project = getProjectFromMarks(window.marks) || "-";
+async function formatRow(window: WindowState, change?: WindowChange): Promise<string> {
+  const projectName = getProjectFromMarks(window.marks);
+  const projectIcon = projectName ? await getProjectIcon(projectName) : "";
+  const projectDisplay = projectName
+    ? `${projectIcon}${projectIcon ? " " : ""}${projectName}`
+    : isScratchpadWindow(window) ? "📋 scratch" : "-";
+
   const status = getStatusIndicators(window);
   const changeIndicator = getChangeIndicator(change);
   const pid = window.pid ? window.pid.toString() : "-";
-  const appId = window.app_id || "-";
+  const app = window.app_id || window.class;
+
+  // Better workspace display: show full name or abbreviation
+  let ws = window.workspace;
+  if (ws.startsWith("__i3_scratch")) {
+    ws = "scratch";
+  } else if (ws.length > COLUMNS[4].width) {
+    ws = ws.substring(0, COLUMNS[4].width - 1) + "…";
+  }
 
   const cells = [
     padString(window.id.toString(), COLUMNS[0].width, COLUMNS[0].align),
     padString(pid, COLUMNS[1].width, COLUMNS[1].align),
-    padString(appId, COLUMNS[2].width, COLUMNS[2].align),
-    padString(window.class, COLUMNS[3].width, COLUMNS[3].align),
-    padString(window.title, COLUMNS[4].width, COLUMNS[4].align),
-    padString(window.workspace, COLUMNS[5].width, COLUMNS[5].align),
-    padString(window.output, COLUMNS[6].width, COLUMNS[6].align),
-    padString(project, COLUMNS[7].width, COLUMNS[7].align),
-    padString(status, COLUMNS[8].width, COLUMNS[8].align),
-    padString(changeIndicator, COLUMNS[9].width, COLUMNS[9].align),
+    padString(app, COLUMNS[2].width, COLUMNS[2].align),
+    padString(window.title, COLUMNS[3].width, COLUMNS[3].align),
+    padString(ws, COLUMNS[4].width, COLUMNS[4].align),
+    padString(window.output, COLUMNS[5].width, COLUMNS[5].align),
+    padString(projectDisplay, COLUMNS[6].width, COLUMNS[6].align),
+    padString(status, COLUMNS[7].width, COLUMNS[7].align),
+    padString(changeIndicator, COLUMNS[8].width, COLUMNS[8].align),
   ];
 
   return cells.join(" | ");
@@ -317,11 +368,11 @@ function formatRow(window: WindowState, change?: WindowChange): string {
 /**
  * Render outputs as table view
  */
-export function renderTable(
+export async function renderTable(
   outputs: Output[],
-  options: { showHidden?: boolean; changeTracker?: ChangeTracker } = {},
-): string {
-  const { showHidden = true, changeTracker } = options; // Changed default to true: always show all windows including scratchpad
+  options: { showHidden?: boolean; changeTracker?: ChangeTracker; groupByProject?: boolean } = {},
+): Promise<string> {
+  const { showHidden = true, changeTracker, groupByProject = true } = options;
 
   if (outputs.length === 0) {
     return "No windows found";
@@ -348,21 +399,85 @@ export function renderTable(
     return "No visible windows (use --hidden to show hidden windows)";
   }
 
-  // Sort windows by output, then workspace, then focus
-  allWindows.sort((a, b) => {
-    if (a.output !== b.output) return a.output.localeCompare(b.output);
-    if (a.workspace !== b.workspace) return a.workspace.localeCompare(b.workspace);
-    if (a.focused !== b.focused) return a.focused ? -1 : 1;
-    return 0;
-  });
-
   // Build table
   const lines: string[] = [];
-  lines.push(formatHeader());
 
-  for (const window of allWindows) {
-    const change = changeTracker?.getChange(window.id);
-    lines.push(formatRow(window, change));
+  if (groupByProject) {
+    // Group windows by project
+    const byProject = new Map<string, WindowState[]>();
+    const scratchpadWindows: WindowState[] = [];
+    const globalWindows: WindowState[] = [];
+
+    for (const window of allWindows) {
+      const projectName = getProjectFromMarks(window.marks);
+      if (isScratchpadWindow(window)) {
+        scratchpadWindows.push(window);
+      } else if (projectName) {
+        if (!byProject.has(projectName)) {
+          byProject.set(projectName, []);
+        }
+        byProject.get(projectName)!.push(window);
+      } else {
+        globalWindows.push(window);
+      }
+    }
+
+    // Sort projects alphabetically
+    const sortedProjects = Array.from(byProject.keys()).sort();
+
+    // Render each project group
+    for (const projectName of sortedProjects) {
+      const windows = byProject.get(projectName)!;
+      const icon = await getProjectIcon(projectName);
+
+      lines.push("");
+      lines.push(`\x1b[1m\x1b[36m${icon}${icon ? " " : ""}${projectName}\x1b[0m (${windows.length} windows)`);
+      lines.push(formatHeader());
+
+      for (const window of windows) {
+        const change = changeTracker?.getChange(window.id);
+        lines.push(await formatRow(window, change));
+      }
+    }
+
+    // Render scratchpad group
+    if (scratchpadWindows.length > 0) {
+      lines.push("");
+      lines.push(`\x1b[1m\x1b[35m📋 Scratchpad\x1b[0m (${scratchpadWindows.length} windows)`);
+      lines.push(formatHeader());
+
+      for (const window of scratchpadWindows) {
+        const change = changeTracker?.getChange(window.id);
+        lines.push(await formatRow(window, change));
+      }
+    }
+
+    // Render global windows
+    if (globalWindows.length > 0) {
+      lines.push("");
+      lines.push(`\x1b[1m\x1b[90mGlobal\x1b[0m (${globalWindows.length} windows)`);
+      lines.push(formatHeader());
+
+      for (const window of globalWindows) {
+        const change = changeTracker?.getChange(window.id);
+        lines.push(await formatRow(window, change));
+      }
+    }
+  } else {
+    // Single table, sorted by output/workspace
+    allWindows.sort((a, b) => {
+      if (a.output !== b.output) return a.output.localeCompare(b.output);
+      if (a.workspace !== b.workspace) return a.workspace.localeCompare(b.workspace);
+      if (a.focused !== b.focused) return a.focused ? -1 : 1;
+      return 0;
+    });
+
+    lines.push(formatHeader());
+
+    for (const window of allWindows) {
+      const change = changeTracker?.getChange(window.id);
+      lines.push(await formatRow(window, change));
+    }
   }
 
   // Add summary

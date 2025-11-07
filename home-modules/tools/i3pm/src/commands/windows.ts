@@ -799,11 +799,11 @@ export async function windowsCommand(
     } else if (isTable) {
       // Table mode (T020)
       // Don't pass showHidden - let default (true) handle it to show all windows including scratchpad
-      console.log(renderTable(filtered, {}));
+      console.log(await renderTable(filtered, { groupByProject: true }));
     } else {
       // Tree mode (T019) - default, now project-centric
       // Use project-centric view that groups windows by project instead of output/workspace
-      console.log(renderTreeByProject(filtered, {}));
+      console.log(await renderTreeByProject(filtered, {}));
     }
 
     await client.close();
