@@ -207,6 +207,9 @@ async function main(): Promise<void> {
 if (import.meta.main) {
   try {
     await main();
+    // Force exit to prevent hanging on pending operations
+    // (event loop cleanup issue with some Deno operations)
+    Deno.exit(0);
   } catch (err) {
     console.error("Fatal error:", err instanceof Error ? err.message : String(err));
     Deno.exit(1);

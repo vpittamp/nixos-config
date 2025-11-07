@@ -375,7 +375,7 @@ export class DaemonClient {
       this.pendingRequests.delete(id);
     }
 
-    // Close connection
+    // Close connection immediately to abort any pending reads
     if (this.conn) {
       try {
         this.conn.close();
@@ -385,10 +385,15 @@ export class DaemonClient {
       this.conn = null;
     }
 
-    // Wait for read loop to finish
+    // Wait for read loop to finish with a timeout
+    // For non-subscription commands, this should return immediately
     if (this.readLoopPromise) {
-      await this.readLoopPromise;
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, 100));
+      await Promise.race([this.readLoopPromise, timeout]);
     }
+
+    // Clear the read loop promise
+    this.readLoopPromise = null;
   }
 }
 
