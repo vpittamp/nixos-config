@@ -255,8 +255,10 @@ class ScratchpadManager:
                 await self.sway.command(f'[con_id={window.id}] mark {mark}')
                 # Move to scratchpad immediately (window rule already made it floating + centered)
                 await self.sway.command(f'[con_id={window.id}] move scratchpad')
-                await self.sway.command(f'[con_mark="{mark}"] scratchpad show')
-                self.logger.info(f"Marked and configured terminal window: ID={window.id}, Mark={mark}")
+                # Note: Do NOT show from scratchpad immediately after launch
+                # Showing would place the window on the current workspace
+                # User should explicitly toggle with i3pm scratchpad toggle to show when ready
+                self.logger.info(f"Marked and moved to scratchpad: ID={window.id}, Mark={mark}")
                 return window.id
 
         self.logger.error(

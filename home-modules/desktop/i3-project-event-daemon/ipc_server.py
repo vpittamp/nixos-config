@@ -5150,9 +5150,11 @@ class IPCServer:
         terminal = self.scratchpad_manager.get_terminal(project_name)
         
         if not terminal:
-            # Launch new terminal
+            # Launch new terminal (starts hidden in scratchpad)
             working_dir = await self._get_project_working_dir(project_name)
             terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            # Show the newly launched terminal immediately
+            await self.scratchpad_manager.toggle_terminal(project_name)
             return {
                 "status": "launched",
                 "project_name": project_name,
@@ -5163,9 +5165,11 @@ class IPCServer:
         
         # Validate existing terminal
         if not await self.scratchpad_manager.validate_terminal(project_name):
-            # Terminal invalid, relaunch
+            # Terminal invalid, relaunch (starts hidden in scratchpad)
             working_dir = await self._get_project_working_dir(project_name)
             terminal = await self.scratchpad_manager.launch_terminal(project_name, working_dir)
+            # Show the relaunched terminal immediately
+            await self.scratchpad_manager.toggle_terminal(project_name)
             return {
                 "status": "relaunched",
                 "project_name": project_name,
