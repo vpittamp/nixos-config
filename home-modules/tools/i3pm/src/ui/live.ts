@@ -12,7 +12,7 @@ import { renderTable, ChangeTracker, ChangeType } from "./table.ts";
 /**
  * View modes for live TUI
  */
-type ViewMode = "tree" | "table";
+type ViewMode = "tree" | "table" | "inspect";
 
 /**
  * Live TUI state
@@ -23,6 +23,8 @@ interface TUIState {
   outputs: Output[];
   running: boolean;
   lastRefresh: number;
+  inspectWindowId: number | null; // Window ID being inspected
+  inspectData: unknown | null; // Raw Sway tree data for inspected window
 }
 
 /**
@@ -58,6 +60,11 @@ const KEYS = {
   UPPER_H: "H",
   LOWER_Q: "q",
   UPPER_Q: "Q",
+  LOWER_I: "i",
+  UPPER_I: "I",
+  ESC: "\x1b",
+  LOWER_B: "b",
+  UPPER_B: "B",
 } as const;
 
 /**
@@ -83,6 +90,8 @@ export class LiveTUI {
       outputs: [],
       running: false,
       lastRefresh: 0,
+      inspectWindowId: null,
+      inspectData: null,
     };
   }
 
@@ -213,16 +222,40 @@ export class LiveTUI {
 
         switch (key) {
           case KEYS.TAB:
-            // Toggle view mode
-            this.state.viewMode = this.state.viewMode === "tree" ? "table" : "tree";
-            await this.refresh();
+            // Toggle view mode (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.state.viewMode = this.state.viewMode === "tree" ? "table" : "tree";
+              await this.refresh();
+            }
             break;
 
           case KEYS.LOWER_H:
           case KEYS.UPPER_H:
-            // Toggle hidden windows
-            this.state.showHidden = !this.state.showHidden;
-            await this.refresh();
+            // Toggle hidden windows (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.state.showHidden = !this.state.showHidden;
+              await this.refresh();
+            }
+            break;
+
+          case KEYS.LOWER_I:
+          case KEYS.UPPER_I:
+            // Enter inspect mode for focused window
+            if (this.state.viewMode !== "inspect") {
+              await this.enterInspectMode();
+            }
+            break;
+
+          case KEYS.ESC:
+          case KEYS.LOWER_B:
+          case KEYS.UPPER_B:
+            // Exit inspect mode back to previous view
+            if (this.state.viewMode === "inspect") {
+              this.state.viewMode = "table";
+              this.state.inspectWindowId = null;
+              this.state.inspectData = null;
+              await this.refresh();
+            }
             break;
 
           case KEYS.LOWER_Q:
@@ -235,7 +268,10 @@ export class LiveTUI {
             // Show hint for unrecognized keys
             if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) <= 126) {
               // Visible character - show hint
-              await this.showError(`Key '${key}' not recognized. Press Q to quit, Tab to switch view, H to toggle hidden.`);
+              const hint = this.state.viewMode === "inspect"
+                ? "Press B or Esc to go back, Q to quit."
+                : "Press I to inspect focused window, Tab to switch view, H to toggle hidden, Q to quit.";
+              await this.showError(`Key '${key}' not recognized. ${hint}`);
             }
             break;
         }
@@ -245,6 +281,46 @@ export class LiveTUI {
         }
         break;
       }
+    }
+  }
+
+  /**
+   * Enter inspect mode for the focused window
+   */
+  private async enterInspectMode(): Promise<void> {
+    try {
+      // Find the focused window
+      let focusedWindow = null;
+      for (const output of this.state.outputs) {
+        for (const workspace of output.workspaces) {
+          for (const window of workspace.windows) {
+            if (window.focused) {
+              focusedWindow = window;
+              break;
+            }
+          }
+          if (focusedWindow) break;
+        }
+        if (focusedWindow) break;
+      }
+
+      if (!focusedWindow) {
+        await this.showError("No focused window found. Focus a window first with your window manager.");
+        return;
+      }
+
+      // Fetch raw Sway tree data for this window
+      // Use swaymsg via daemon to get the full window details
+      this.state.inspectWindowId = focusedWindow.id;
+
+      // Get the window's full Sway node data
+      // For now, we'll just show what we have, but could enhance with actual swaymsg call
+      this.state.inspectData = focusedWindow;
+      this.state.viewMode = "inspect";
+
+      await this.render();
+    } catch (err) {
+      await this.showError(`Failed to enter inspect mode: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -280,19 +356,88 @@ export class LiveTUI {
     await this.writeToStdout(header);
 
     // Render content based on view mode
-    const content = this.state.viewMode === "tree"
-      ? renderTree(this.state.outputs, { showHidden: this.state.showHidden })
-      : await renderTable(this.state.outputs, {
-          showHidden: this.state.showHidden,
-          changeTracker: this.changeTracker,
-          groupByProject: true
-        });
+    let content: string;
+    if (this.state.viewMode === "inspect") {
+      content = this.renderInspect();
+    } else if (this.state.viewMode === "tree") {
+      content = renderTree(this.state.outputs, { showHidden: this.state.showHidden });
+    } else {
+      content = await renderTable(this.state.outputs, {
+        showHidden: this.state.showHidden,
+        changeTracker: this.changeTracker,
+        groupByProject: true
+      });
+    }
 
     await this.writeToStdout(content);
 
     // Render footer
     const footer = this.renderFooter();
     await this.writeToStdout(footer);
+  }
+
+  /**
+   * Render inspect view for detailed window information
+   */
+  private renderInspect(): string {
+    if (!this.state.inspectData) {
+      return "No window data available for inspection.";
+    }
+
+    const window = this.state.inspectData as any;
+    const lines: string[] = [];
+
+    // Title
+    lines.push(`${ANSI.BOLD}${ANSI.CYAN}Window Inspector${ANSI.RESET}`);
+    lines.push(`${ANSI.DIM}${"═".repeat(100)}${ANSI.RESET}\n`);
+
+    // Basic Information
+    lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Basic Information:${ANSI.RESET}`);
+    lines.push(`  ${ANSI.BOLD}Window ID:${ANSI.RESET}       ${window.id}`);
+    lines.push(`  ${ANSI.BOLD}PID:${ANSI.RESET}             ${window.pid || "N/A"}`);
+    lines.push(`  ${ANSI.BOLD}Title:${ANSI.RESET}           ${window.title}`);
+    lines.push(`  ${ANSI.BOLD}App ID:${ANSI.RESET}          ${window.app_id || "N/A"}`);
+    lines.push(`  ${ANSI.BOLD}Class:${ANSI.RESET}           ${window.class}`);
+    lines.push(`  ${ANSI.BOLD}Instance:${ANSI.RESET}        ${window.instance || "N/A"}`);
+    lines.push("");
+
+    // Location
+    lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Location:${ANSI.RESET}`);
+    lines.push(`  ${ANSI.BOLD}Workspace:${ANSI.RESET}       ${window.workspace}`);
+    lines.push(`  ${ANSI.BOLD}Output:${ANSI.RESET}          ${window.output}`);
+    lines.push(`  ${ANSI.BOLD}Geometry:${ANSI.RESET}        ${window.geometry?.x || 0}, ${window.geometry?.y || 0} @ ${window.geometry?.width || 0}x${window.geometry?.height || 0}`);
+    lines.push("");
+
+    // State
+    lines.push(`${ANSI.BOLD}${ANSI.YELLOW}State:${ANSI.RESET}`);
+    lines.push(`  ${ANSI.BOLD}Focused:${ANSI.RESET}         ${window.focused ? "✓ Yes" : "○ No"}`);
+    lines.push(`  ${ANSI.BOLD}Floating:${ANSI.RESET}        ${window.floating ? "✓ Yes" : "○ No"}`);
+    lines.push(`  ${ANSI.BOLD}Hidden:${ANSI.RESET}          ${window.hidden ? "✓ Yes" : "○ No"}`);
+    lines.push(`  ${ANSI.BOLD}Fullscreen:${ANSI.RESET}      ${window.fullscreen_mode !== 0 ? "✓ Yes" : "○ No"}`);
+    lines.push(`  ${ANSI.BOLD}Sticky:${ANSI.RESET}          ${window.sticky ? "✓ Yes" : "○ No"}`);
+    lines.push("");
+
+    // Marks
+    if (window.marks && window.marks.length > 0) {
+      lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Marks:${ANSI.RESET}`);
+      for (const mark of window.marks) {
+        lines.push(`  • ${mark}`);
+      }
+      lines.push("");
+    }
+
+    // Window Type
+    if (window.window_type) {
+      lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Window Type:${ANSI.RESET}`);
+      lines.push(`  ${window.window_type}`);
+      lines.push("");
+    }
+
+    // Raw JSON Data
+    lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Raw Window Data (JSON):${ANSI.RESET}`);
+    lines.push(`${ANSI.DIM}${JSON.stringify(window, null, 2)}${ANSI.RESET}`);
+
+    return lines.join("\n");
   }
 
   /**
@@ -346,11 +491,23 @@ export class LiveTUI {
       ? `  ${changeIndicators.join("  ")}  ${ANSI.DIM}(visible for 5s)${ANSI.RESET}`
       : "";
 
+    // Different keybindings based on view mode
+    let keybindings: string;
+    if (this.state.viewMode === "inspect") {
+      keybindings = `${ANSI.BOLD}Keybindings:${ANSI.RESET} ` +
+        `${ANSI.GREEN}[B]${ANSI.RESET} Back  ` +
+        `${ANSI.GREEN}[Esc]${ANSI.RESET} Back  ` +
+        `${ANSI.GREEN}[Q]${ANSI.RESET} Exit`;
+    } else {
+      keybindings = `${ANSI.BOLD}Keybindings:${ANSI.RESET} ` +
+        `${ANSI.GREEN}[Tab]${ANSI.RESET} Switch View  ` +
+        `${ANSI.GREEN}[I]${ANSI.RESET} Inspect Window  ` +
+        `${ANSI.GREEN}[H]${ANSI.RESET} Toggle Hidden  ` +
+        `${ANSI.GREEN}[Q]${ANSI.RESET} Exit`;
+    }
+
     return `\n${ANSI.DIM}${"─".repeat(100)}${ANSI.RESET}\n` +
-      `${ANSI.BOLD}Keybindings:${ANSI.RESET} ` +
-      `${ANSI.GREEN}[Tab]${ANSI.RESET} Switch View  ` +
-      `${ANSI.GREEN}[H]${ANSI.RESET} Toggle Hidden  ` +
-      `${ANSI.GREEN}[Q]${ANSI.RESET} Exit` +
+      keybindings +
       `${changeStatus}\n`;
   }
 
