@@ -101,7 +101,11 @@ function filterOutputs(
       workspaces: output.workspaces.map((ws) => ({
         ...ws,
         windows: ws.windows.filter((w) =>
-          w.marks.some((m) => m === `project:${filters.project}`)
+          w.marks.some((m) =>
+            m.startsWith(`project:${filters.project}:`) ||
+            m === `project:${filters.project}` ||
+            m === `scratchpad:${filters.project}`
+          )
         ),
       })),
     }));
@@ -663,6 +667,20 @@ export async function windowsCommand(
   args: string[],
   flags: Record<string, unknown>,
 ): Promise<number> {
+  // Parse command-specific flags from args
+  const parsed = parseArgs(args, {
+    boolean: ["help", "tree", "table", "json", "live", "hidden", "legend"],
+    string: ["project", "output"],
+    alias: { h: "help" },
+    stopEarly: false,
+  });
+
+  // Merge parsed flags with passed-in flags (verbose, debug)
+  flags = { ...flags, ...parsed };
+
+  // Remaining positional arguments after flag parsing
+  args = parsed._;
+
   // Check if first arg is a subcommand
   const firstArg = String(args[0] || "");
   const subcommands = ["hidden", "restore", "inspect", "show"];

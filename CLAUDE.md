@@ -591,8 +591,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 **Recent**: Feature 062 (scratchpad terminal), Hybrid config (keybindings→Nix, window rules→dynamic), Feature 058 (Python backend consolidation), 053 (100% workspace assignment)
 
 ## Active Technologies
-- Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation) (062-project-scratchpad-terminal)
-- In-memory daemon state (project → terminal PID/window ID mapping), Sway window marks for persistence (062-project-scratchpad-terminal)
+- Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models) (063-scratchpad-filtering)
+- In-memory daemon state (project → terminal PID/window ID mapping), Sway window marks for persistence (063-scratchpad-filtering)
 
 ## Recent Changes
-- 062-project-scratchpad-terminal: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation)
+- 063-scratchpad-filtering: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models)

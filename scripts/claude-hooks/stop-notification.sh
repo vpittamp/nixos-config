@@ -15,18 +15,27 @@ WORKING_DIR=$(echo "$INPUT" | jq -r '.cwd // ""')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // ""')
 
 # Find the terminal window running Claude Code
-# Strategy: Extract terminal PID from environment variables
+# Strategy: Extract terminal PID from environment variables or find focused window
 WINDOW_ID=""
 TERMINAL_PID=""
 
 # Alacritty: extract PID from ALACRITTY_SOCKET (e.g., /run/user/1000/Alacritty-wayland-1-813367.sock)
 if [ -n "${ALACRITTY_SOCKET:-}" ]; then
-    TERMINAL_PID=$(echo "$ALACRITTY_SOCKET" | grep -oP '\d+(?=\.)' | tail -1)
+    TERMINAL_PID=$(echo "$ALACRITTY_SOCKET" | grep -oP '\d+(?=\.)' | tail -1 || true)
 fi
 
-# Ghostty: extract from GHOSTTY_RESOURCES_DIR
+# Ghostty: Get PID via shell parent process
+# Current process (bash hook) -> parent (bash interactive) -> grandparent (ghostty)
 if [ -z "$TERMINAL_PID" ] && [ -n "${GHOSTTY_RESOURCES_DIR:-}" ]; then
-    TERMINAL_PID=$(echo "$GHOSTTY_RESOURCES_DIR" | grep -oP '\d+$')
+    # Get parent of parent process
+    SHELL_PPID=$(ps -o ppid= -p $PPID 2>/dev/null | tr -d ' ' || true)
+    if [ -n "$SHELL_PPID" ]; then
+        # Check if grandparent is ghostty
+        GRANDPARENT_CMD=$(ps -o comm= -p "$SHELL_PPID" 2>/dev/null || true)
+        if [[ "$GRANDPARENT_CMD" == *"ghostty"* ]]; then
+            TERMINAL_PID=$SHELL_PPID
+        fi
+    fi
 fi
 
 # Find Sway window by terminal PID

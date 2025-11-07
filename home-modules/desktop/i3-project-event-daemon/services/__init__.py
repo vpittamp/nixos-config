@@ -2,6 +2,7 @@
 Services module for i3 project event daemon
 Feature 035: Registry-Centric Project & Workspace Management
 Feature 039: Workspace Assignment Service (T027)
+Feature 051: Run-Raise-Hide Application Launching
 """
 
 from .window_filter import (
@@ -17,6 +18,7 @@ from .workspace_assigner import (
     WindowIdentifier,
     get_workspace_assigner,
 )
+from .run_raise_manager import RunRaiseManager
 
 __all__ = [
     "read_process_environ",
@@ -29,4 +31,5 @@ __all__ = [
     "WorkspaceAssignment",
     "WindowIdentifier",
     "get_workspace_assigner",
+    "RunRaiseManager",
 ]

@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.2";  # Feature 051: Fixed run_raise_manager imports
+    version = "1.7.3";  # Feature 051: Added window_state.py to models
     src = daemonSrc;
 
     installPhase = ''

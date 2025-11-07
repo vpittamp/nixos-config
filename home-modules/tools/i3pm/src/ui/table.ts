@@ -193,6 +193,11 @@ function getProjectFromMarks(marks: string[]): string | null {
     if (mark.startsWith("project:")) {
       return mark.substring(8); // Remove "project:" prefix
     }
+    // Feature 062/063: Scratchpad terminals have marks like "scratchpad:projectname"
+    if (mark.startsWith("scratchpad:")) {
+      const projectName = mark.substring(11); // Remove "scratchpad:" prefix
+      return projectName === "global" ? null : projectName;
+    }
   }
   return null;
 }
