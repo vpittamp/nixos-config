@@ -16,7 +16,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from i3ipc.aio import Connection, Event
+from i3ipc import aio
+from i3ipc import Event
 
 from .models import TreeSnapshot, WindowContext
 from .diff.differ import TreeDiffer
@@ -69,7 +70,7 @@ class SwayTreeMonitorDaemon:
             differ=self.differ
         )
 
-        self.connection: Optional[Connection] = None
+        self.connection: Optional[aio.Connection] = None
         self.previous_snapshot: Optional[TreeSnapshot] = None
         self._snapshot_counter = 0
         self._start_time = time.time()
@@ -88,7 +89,7 @@ class SwayTreeMonitorDaemon:
 
         try:
             # Connect to Sway
-            self.connection = await Connection(auto_reconnect=True).connect()
+            self.connection = await aio.Connection(auto_reconnect=True).connect()
             logger.info("Connected to Sway IPC")
 
             # Capture initial snapshot
@@ -151,12 +152,12 @@ class SwayTreeMonitorDaemon:
         # Binding events (for user action correlation - User Story 2)
         # self.connection.on(Event.BINDING, self._on_binding_event)  # TODO: Phase 4
 
-    async def _on_window_event(self, connection: Connection, event: Event):
+    async def _on_window_event(self, connection: aio.Connection, event: Event):
         """Handle window events"""
         event_type = f"window::{event.change}"
         await self._process_tree_change(event_type, event)
 
-    async def _on_workspace_event(self, connection: Connection, event: Event):
+    async def _on_workspace_event(self, connection: aio.Connection, event: Event):
         """Handle workspace events"""
         event_type = f"workspace::{event.change}"
         await self._process_tree_change(event_type, event)
