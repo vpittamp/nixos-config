@@ -37,11 +37,11 @@ let
         --preview "${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}" \
         --preview-window=right:60%:wrap)
 
-      # If file was selected, launch nvim in new window
+      # If file was selected, launch nvim in new detached session
+      # setsid creates a new session, completely detaching from parent terminal
+      # This ensures nvim window persists after search terminal closes
       if [[ -n "$SELECTED" ]]; then
-        ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim "$SELECTED" &
-        # Give ghostty time to spawn, then exit to close search window
-        sleep 0.2
+        ${pkgs.util-linux}/bin/setsid ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim "$SELECTED" > /dev/null 2>&1 &
         exit 0
       fi
     '
