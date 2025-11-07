@@ -371,6 +371,12 @@ in
           command = "floating enable, border pixel 0, move position center, mark _global_ui";
         }
 
+        # FZF file search - floating, fullscreen for preview
+        {
+          criteria = { app_id = "fzf-file-search"; };
+          command = "floating enable, border pixel 2";
+        }
+
         # Blueman Bluetooth Manager - floating window
         {
           criteria = { app_id = ".blueman-manager-wrapped"; };

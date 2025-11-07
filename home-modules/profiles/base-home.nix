@@ -62,6 +62,7 @@ in
     ../tools/bat.nix
     ../tools/direnv.nix
     ../tools/fzf.nix
+    ../tools/fzf-file-search.nix  # Floating fzf file search with nvim integration
     ../tools/htop.nix
     ../tools/btop.nix
     ../tools/chromium.nix # Enabled for Playwright MCP support
@@ -102,6 +103,7 @@ in
     packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
 
   modules.tools.yazi.enable = true;
+  modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
 
   # VSCode profile configuration

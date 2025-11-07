@@ -77,12 +77,12 @@ in
       keymap = {
         mgr = {
           prepend_keymap = [
+            # Recursive fuzzy file find (f key)
+            { on = ["f"]; run = "shell 'selected=$(${pkgs.fd}/bin/fd --type f . | ${pkgs.fzf}/bin/fzf --preview \"${pkgs.bat}/bin/bat --color=always {}\") && [ -n \"$selected\" ] && dir=$(${pkgs.coreutils}/bin/dirname \"$selected\") && file=$(${pkgs.coreutils}/bin/basename \"$selected\") && ya=$YAZI_ID && echo \"cd \\\"$dir\\\"\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya && echo \"arrow $file\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya' --block"; desc = "Fuzzy find files recursively"; }
+
             # FZF integration
             { on = ["<C-f>"]; run = "shell 'ya=$YAZI_ID; yazi_dir=$(find . -type d 2>/dev/null | fzf --preview \"ls -la {}\") && echo \"cd \\\"$yazi_dir\\\"\" | yazi-msg --id=$ya'"; desc = "Jump to directory with fzf"; }
-            { on = ["f" "f"]; run = "shell 'fzf --preview \"bat --color=always {}\" | xargs -r $EDITOR'"; desc = "Find and open file with fzf"; }
-            { on = ["f" "g"]; run = "shell 'rg --files-with-matches --no-messages \"\" | fzf --preview \"rg --color=always -n . {}\" | xargs -r $EDITOR'"; desc = "Grep files with fzf"; }
-            { on = ["f" "d"]; run = "shell 'fd . --type d | fzf --preview \"ls -la {}\" | xargs -r cd'"; desc = "Find directory with fd and fzf"; }
-            
+
             # Zoxide integration
             { on = ["z"]; run = "shell 'ya=$YAZI_ID; zoxide_dir=$(zoxide query -l | fzf --preview \"ls -la {2..-1}\") && echo \"cd \\\"$zoxide_dir\\\"\" | yazi-msg --id=$ya' --block"; desc = "Jump to frecent directory with zoxide"; }
             { on = ["Z"]; run = "shell 'ya=$YAZI_ID; read -p \"Jump to: \" query && zoxide_dir=$(zoxide query \"$query\") && echo \"cd \\\"$zoxide_dir\\\"\" | yazi-msg --id=$ya' --block"; desc = "Jump with zoxide query"; }

@@ -299,6 +299,23 @@ let
       fallback_behavior = "use_home";
       description = "Project-scoped floating scratchpad terminal with tmux session (scratchpad-{project})";
     })
+
+    # FZF File Search (floating)
+    # Global fuzzy file finder with bat preview that opens files in nvim
+    (mkApp {
+      name = "fzf-file-search";
+      display_name = "FZF File Search";
+      command = "fzf-file-search";
+      parameters = "";
+      scope = "global";
+      expected_class = "fzf-file-search";
+      preferred_workspace = 1;  # Floating, doesn't matter
+      icon = "system-search";
+      nix_package = "pkgs.fzf";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Floating fuzzy file finder with preview that opens files in nvim";
+    })
   ]
   # Auto-generate PWA entries from pwa-sites.nix (Feature 056)
   # All PWAs will have correct expected_class with declarative ULIDs

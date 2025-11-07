@@ -24,6 +24,7 @@ in
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
     "${modifier}+Shift+Return" = "exec ghostty";
     "${modifier}+d" = "exec walker";
+    "${modifier}+Shift+f" = "exec fzf-file-search";
 
     # Run-raise-hide launcher (Feature 051) - example keybindings
     # Uncomment and customize based on your most-used applications
@@ -93,6 +94,9 @@ in
     # ========== PROJECT MANAGEMENT (i3pm) ==========
     "${modifier}+p" = "exec i3-project-switch";
     "${modifier}+Shift+p" = "exec i3-project-clear";
+
+    # ========== APP SHORTCUTS (via i3pm app registry) ==========
+    "${modifier}+y" = "exec i3pm run yazi";
 
     # ========== NOTIFICATIONS (SwayNC) ==========
     "${modifier}+i" = "exec swaync-client -t -sw";  # Toggle notification center (i for info/inbox)
