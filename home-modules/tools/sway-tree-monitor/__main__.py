@@ -246,8 +246,83 @@ def cmd_diff(args):
 
 def cmd_stats(args):
     """Show performance statistics (Phase 6)"""
-    print("ERROR: 'stats' command not implemented yet (coming in Phase 6)")
-    sys.exit(1)
+    from .ui.stats_view import StatsView
+    from .rpc.client import RPCClient
+    import time
+
+    # Parse time filter
+    since_ms = None
+    if args.since:
+        # Parse relative time (e.g., "5m", "1h", "30s")
+        since_ms = _parse_relative_time(args.since)
+
+    # Connect to daemon
+    socket_path = Path(args.socket_path) if args.socket_path else None
+    rpc_client = RPCClient(socket_path=socket_path)
+
+    try:
+        # Test connection
+        ping_response = rpc_client.ping()
+        if not ping_response:
+            print("ERROR: Cannot connect to daemon. Is it running?")
+            print("Start with: systemctl --user start sway-tree-monitor")
+            sys.exit(1)
+
+        # Create Textual app with stats view
+        from textual.app import App, ComposeResult
+        from textual.widgets import Header, Footer
+
+        class StatsApp(App):
+            """Standalone stats display app"""
+
+            BINDINGS = [
+                ("q", "quit", "Quit"),
+                ("r", "refresh", "Refresh"),
+            ]
+
+            CSS = """
+            #stats-header {
+                height: 3;
+                background: $surface;
+                padding: 1;
+            }
+            #stats-title {
+                width: 1fr;
+            }
+            #stats-status {
+                height: 1;
+                background: $surface;
+                padding: 0 1;
+            }
+            #stats-panels {
+                height: 1fr;
+                overflow-y: auto;
+            }
+            """
+
+            def __init__(self, rpc_client: RPCClient, since_ms: Optional[int] = None):
+                super().__init__()
+                self.rpc_client = rpc_client
+                self.since_ms = since_ms
+
+            def compose(self) -> ComposeResult:
+                yield Header()
+                yield StatsView(self.rpc_client, self.since_ms)
+                yield Footer()
+
+            def action_refresh(self) -> None:
+                """Refresh stats"""
+                stats_view = self.query_one(StatsView)
+                self.call_later(stats_view._load_stats)
+
+        app = StatsApp(rpc_client=rpc_client, since_ms=since_ms)
+        app.run()
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def main():
@@ -333,7 +408,12 @@ For more information, see:
     # Stats command (Phase 6)
     parser_stats = subparsers.add_parser(
         'stats',
-        help='Performance statistics (Phase 6 - not implemented yet)'
+        help='Performance statistics and daemon health metrics'
+    )
+    parser_stats.add_argument(
+        '--since',
+        type=str,
+        help='Analyze events since relative time (e.g., "5m", "1h", "30s")'
     )
     parser_stats.set_defaults(func=cmd_stats)
 

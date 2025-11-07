@@ -134,16 +134,16 @@
 
 ### Implementation for User Story 4
 
-- [ ] T051 [P] [US4] Implement fast-path optimization in diff/differ.py: if root hash matches, return empty diff
-- [ ] T052 [P] [US4] Add configurable field exclusions in diff/hasher.py: skip timestamp fields during hash computation
-- [ ] T053 [US4] Implement hash cache cleanup in diff/cache.py: periodic TTL-based eviction every 60s
-- [ ] T054 [US4] Add geometry threshold filtering in diff/differ.py: ignore changes <5px (configurable)
-- [ ] T055 [US4] Implement memory monitoring in daemon.py: track buffer size, hash cache size, correlation tracker size
-- [ ] T056 [US4] Add CPU/memory metrics to "get_daemon_status" RPC response
-- [ ] T057 [US4] Implement event burst handling in daemon.py: buffer up to 50 events/second without data loss
-- [ ] T058 [US4] Create statistical summary view in home-modules/tools/sway-tree-monitor/ui/stats_view.py
-- [ ] T059 [US4] Implement RPC method "get_statistics" in rpc/server.py with performance metrics
-- [ ] T060 [US4] Add CLI "stats" mode to __main__.py with --since, --format options
+- [X] T051 [P] [US4] Implement fast-path optimization in diff/differ.py: if root hash matches, return empty diff
+- [X] T052 [P] [US4] Add configurable field exclusions in diff/hasher.py: skip timestamp fields during hash computation
+- [X] T053 [US4] Implement hash cache cleanup in diff/cache.py: periodic TTL-based eviction every 60s
+- [X] T054 [US4] Add geometry threshold filtering in diff/differ.py: ignore changes <5px (configurable)
+- [X] T055 [US4] Implement memory monitoring in daemon.py: track buffer size, hash cache size, correlation tracker size
+- [X] T056 [US4] Add CPU/memory metrics to "get_daemon_status" RPC response
+- [X] T057 [US4] Implement event burst handling in daemon.py: buffer up to 50 events/second without data loss
+- [X] T058 [US4] Create statistical summary view in home-modules/tools/sway-tree-monitor/ui/stats_view.py
+- [X] T059 [US4] Implement RPC method "get_statistics" in rpc/server.py with performance metrics
+- [X] T060 [US4] Add CLI "stats" mode to __main__.py with --since, --format options
 - [ ] T061 [US4] Run 8-hour continuous monitoring test: validate memory stays <25MB, CPU <2%
 
 **Checkpoint**: Performance targets validated - system is production-ready for continuous monitoring

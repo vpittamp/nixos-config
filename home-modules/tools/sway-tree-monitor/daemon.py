@@ -113,6 +113,11 @@ class SwayTreeMonitorDaemon:
             await self.rpc_server.start()
             logger.info(f"RPC server listening on {self.rpc_server.socket_path}")
 
+            # Start background tasks (Phase 6 - Performance)
+            asyncio.create_task(self._periodic_cache_cleanup())
+            asyncio.create_task(self._periodic_memory_monitor())
+            logger.info("Background tasks started (cache cleanup, memory monitoring)")
+
             # Mark as running
             self._running = True
             logger.info("Daemon started successfully")
@@ -503,14 +508,97 @@ class SwayTreeMonitorDaemon:
 
         return snapshot
 
+    async def _periodic_cache_cleanup(self):
+        """
+        Periodic cache cleanup task (Phase 6 - T053).
+
+        Runs every 60 seconds to evict expired hash cache entries.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(60)  # 60 second interval
+
+                if not self._running:
+                    break
+
+                # Clean up expired cache entries
+                expired_count = self.differ.cleanup_cache()
+
+                if expired_count > 0:
+                    logger.debug(f"Cache cleanup: removed {expired_count} expired entries")
+
+            except Exception as e:
+                logger.error(f"Error in cache cleanup task: {e}", exc_info=True)
+
+    async def _periodic_memory_monitor(self):
+        """
+        Periodic memory monitoring task (Phase 6 - T055).
+
+        Logs memory usage every 5 minutes for performance tracking.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(300)  # 5 minute interval
+
+                if not self._running:
+                    break
+
+                # Get memory usage
+                import os
+                import resource
+
+                # Process memory (RSS in KB)
+                rusage = resource.getrusage(resource.RUSAGE_SELF)
+                memory_kb = rusage.ru_maxrss
+
+                # Convert to MB
+                memory_mb = memory_kb / 1024
+
+                # Get component sizes
+                buffer_stats = self.buffer.stats()
+                differ_stats = self.differ.stats()
+                correlation_stats = self.correlation_tracker.stats()
+
+                logger.info(
+                    f"Memory usage: {memory_mb:.1f}MB | "
+                    f"Buffer: {buffer_stats['size']}/{buffer_stats['max_size']} | "
+                    f"Cache: {differ_stats['cache']['size']} entries | "
+                    f"Correlations: {correlation_stats['action_history_size']} actions"
+                )
+
+                # Warn if exceeding target
+                if memory_mb > 25:
+                    logger.warning(
+                        f"Memory usage ({memory_mb:.1f}MB) exceeds target (25MB)"
+                    )
+
+            except Exception as e:
+                logger.error(f"Error in memory monitor task: {e}", exc_info=True)
+
     def get_status(self) -> dict:
         """
-        Get daemon status.
+        Get daemon status with CPU/memory metrics (Phase 6 - T056).
 
         Returns:
-            Dictionary with daemon metrics
+            Dictionary with daemon metrics including performance data
         """
+        import os
+        import resource
+
         uptime = time.time() - self._start_time
+
+        # Get memory usage (RSS in KB)
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        memory_kb = rusage.ru_maxrss
+        memory_mb = memory_kb / 1024
+
+        # Get CPU times
+        user_time = rusage.ru_utime  # User CPU time
+        sys_time = rusage.ru_stime  # System CPU time
+        total_cpu_time = user_time + sys_time
+
+        # Calculate average CPU percentage
+        cpu_percent = (total_cpu_time / uptime * 100) if uptime > 0 else 0.0
 
         return {
             'version': '1.0.0',
@@ -521,6 +609,13 @@ class SwayTreeMonitorDaemon:
             'correlation_tracker': self.correlation_tracker.stats(),
             'cascade_tracker': self.cascade_tracker.stats(),
             'snapshots_captured': self._snapshot_counter,
+            'performance': {
+                'memory_mb': round(memory_mb, 2),
+                'memory_kb': memory_kb,
+                'cpu_percent': round(cpu_percent, 2),
+                'user_cpu_seconds': round(user_time, 2),
+                'system_cpu_seconds': round(sys_time, 2),
+            }
         }
 
 
