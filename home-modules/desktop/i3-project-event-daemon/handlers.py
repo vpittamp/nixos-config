@@ -947,6 +947,8 @@ async def on_window_new(
         assignment_source = None
         decision_tree = []  # Track assignment decision path for logging
 
+        logger.debug(f"[WORKSPACE DEBUG] Window {window_id}: is_scratchpad_terminal={is_scratchpad_terminal}")
+
         if is_scratchpad_terminal:
             # Skip workspace assignment for scratchpad terminals
             logger.info(

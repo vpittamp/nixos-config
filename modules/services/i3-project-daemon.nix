@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.3";  # Feature 051: Added window_state.py to models
+    version = "1.7.4";  # Feature 062/063: Skip workspace assignment for scratchpad terminals
     src = daemonSrc;
 
     installPhase = ''
