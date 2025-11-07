@@ -71,7 +71,7 @@ in
 
     # Window actions
     "${modifier}+x" = "kill";
-    "${modifier}+f" = "fullscreen toggle";
+    "F11" = "fullscreen toggle";  # F11 is standard, avoids VNC client Mod+F conflict
     "${modifier}+Shift+space" = "floating toggle";
     "${modifier}+space" = "focus mode_toggle";
 
