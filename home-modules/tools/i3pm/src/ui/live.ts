@@ -90,6 +90,15 @@ export class LiveTUI {
    * Run the live TUI
    */
   async run(): Promise<void> {
+    // Check if running in a terminal
+    if (!Deno.stdin.isTerminal()) {
+      throw new Error(
+        "Live mode requires a terminal (TTY).\n" +
+        "Cannot run with redirected input/output or in non-interactive mode.\n" +
+        "Run directly in a terminal without redirection."
+      );
+    }
+
     // Setup signal handlers
     this.setupSignalHandlers();
 
@@ -98,7 +107,15 @@ export class LiveTUI {
     await this.writeToStdout(ANSI.HIDE_CURSOR);
 
     // Set raw mode for keyboard input
-    Deno.stdin.setRaw(true);
+    try {
+      Deno.stdin.setRaw(true);
+    } catch (err) {
+      await this.cleanup();
+      throw new Error(
+        `Failed to enable raw terminal mode: ${err instanceof Error ? err.message : String(err)}\n` +
+        "Make sure you're running in a real terminal (not via SSH without PTY allocation)."
+      );
+    }
 
     this.state.running = true;
 

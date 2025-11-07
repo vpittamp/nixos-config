@@ -748,8 +748,15 @@ export async function windowsCommand(
       // Import and launch live TUI
       const { LiveTUI } = await import("../ui/live.ts");
       const tui = new LiveTUI(client);
+
+      // Run TUI and wait for it to complete (user presses 'q')
       await tui.run();
 
+      // Close client connection
+      await client.close();
+
+      // For live mode, let the process exit naturally without forced Deno.exit()
+      // This prevents cleanup issues with the TUI
       return 0;
     } catch (err) {
       spinner.stop();
@@ -765,6 +772,7 @@ export async function windowsCommand(
         console.error(formatter.error(String(err)));
       }
 
+      await client.close();
       return 1;
     }
   }
@@ -807,7 +815,10 @@ export async function windowsCommand(
     }
 
     await client.close();
-    return 0;
+
+    // Force exit to prevent hanging on pending file operations
+    // This is safe for non-live commands as all output is already complete
+    Deno.exit(0);
   } catch (err) {
     spinner.stop();
 
@@ -823,6 +834,6 @@ export async function windowsCommand(
     }
 
     await client.close();
-    return 1;
+    Deno.exit(1);
   }
 }
