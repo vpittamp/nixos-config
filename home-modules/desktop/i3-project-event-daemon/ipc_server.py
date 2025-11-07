@@ -3073,7 +3073,9 @@ class IPCServer:
                         )
 
                     # Check for project mark matching this project (Feature 061: Unified format)
+                    # Also check for scratchpad marks (Feature 062: Project-scoped scratchpads)
                     project_mark_prefix = f"project:{project_name}:"
+                    scratchpad_mark = f"scratchpad:{project_name}"
                     for mark in con.marks:
                         if mark.startswith(project_mark_prefix):
                             logger.info(
@@ -3082,6 +3084,13 @@ class IPCServer:
                             )
                             window_ids_to_hide.append(con.id)
                             break  # Found matching project mark
+                        elif mark == scratchpad_mark:
+                            logger.info(
+                                f"Will hide scratchpad terminal {con.id} "
+                                f"(mark: {mark}, project: {project_name})"
+                            )
+                            window_ids_to_hide.append(con.id)
+                            break  # Found matching scratchpad mark
 
                 for child in con.nodes:
                     await collect_project_windows(child)
@@ -3162,9 +3171,11 @@ class IPCServer:
 
             # Find windows matching project
             # Only restore windows marked with project (Feature 061: Unified format)
-            # Format: project:PROJECT:WINDOW_ID
+            # Also restore scratchpad terminals (Feature 062: Project-scoped scratchpads)
+            # Format: project:PROJECT:WINDOW_ID or scratchpad:PROJECT
             window_ids_to_restore = []
             project_mark_prefix = f"project:{project_name}:"
+            scratchpad_mark = f"scratchpad:{project_name}"
             for window in scratchpad_windows:
                 for mark in window.marks:
                     if mark.startswith(project_mark_prefix):
@@ -3174,6 +3185,13 @@ class IPCServer:
                             f"(mark: {mark}, project: {project_name})"
                         )
                         break  # Found matching project mark
+                    elif mark == scratchpad_mark:
+                        window_ids_to_restore.append(window.id)
+                        logger.debug(
+                            f"Will restore scratchpad terminal {window.id} "
+                            f"(mark: {mark}, project: {project_name})"
+                        )
+                        break  # Found matching scratchpad mark
 
             # Restore windows in batch
             restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(
