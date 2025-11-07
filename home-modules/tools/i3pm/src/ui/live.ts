@@ -176,6 +176,12 @@ export class LiveTUI {
           }
         }
       });
+
+      // Keep the promise alive while the TUI is running
+      // This ensures Promise.race doesn't exit immediately after subscription
+      while (this.state.running) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
     } catch (err) {
       if (this.state.running && err instanceof Error) {
         await this.showError(`Event subscription failed: ${err.message}`);
@@ -202,6 +208,9 @@ export class LiveTUI {
 
         const key = this.decoder.decode(buffer.slice(0, n));
 
+        // Debug: Log key presses to help troubleshoot
+        // (This will write to alternate screen, so won't interfere with output)
+
         switch (key) {
           case KEYS.TAB:
             // Toggle view mode
@@ -220,6 +229,14 @@ export class LiveTUI {
           case KEYS.UPPER_Q:
             // Exit
             this.state.running = false;
+            break;
+
+          default:
+            // Show hint for unrecognized keys
+            if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) <= 126) {
+              // Visible character - show hint
+              await this.showError(`Key '${key}' not recognized. Press Q to quit, Tab to switch view, H to toggle hidden.`);
+            }
             break;
         }
       } catch (err) {
