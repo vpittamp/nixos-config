@@ -124,5 +124,12 @@ in
 
     # System monitor
     "${modifier}+Shift+t" = "exec btop";
+
+    # ========== WORKSPACE MODE (Feature 042) ==========
+    # Platform-specific entry keybindings for workspace mode navigation
+    # Hetzner (VNC): Control+0 works through VNC, CapsLock doesn't
+    # M1 (Physical): CapsLock is handled via bindcode in sway.nix extraConfig
+    "Control+0" = "exec workspace-mode-visual start && swaymsg 'mode \"→ WS\"'";
+    "Control+Shift+0" = "exec workspace-mode-visual start && swaymsg 'mode \"⇒ WS\"'";
   };
 }

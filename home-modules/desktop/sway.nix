@@ -614,13 +614,10 @@ in
       }
 
       # Platform-conditional workspace mode keybindings
+      # NOTE: Control+0/Shift+0 moved to sway-keybindings.nix (works on all platforms)
+      # M1-specific CapsLock binding remains here (requires bindcode, not available in keybindings attr)
       ${if isHeadless then ''
-        # Hetzner (VNC): Use Control+0 since CapsLock doesn't work through VNC
-        # Sway will automatically send mode events to daemon when entering these modes
-        # Launch workspace-mode-visual helper (wshowkeys overlay replaced with notification backend on headless)
-        # Helper script auto-selects backend based on WORKSPACE_MODE_VISUAL_BACKEND
-        bindsym Control+0 exec "workspace-mode-visual start && swaymsg 'mode \"→ WS\"'"
-        bindsym Control+Shift+0 exec "workspace-mode-visual start && swaymsg 'mode \"⇒ WS\"'"
+        # Hetzner: Control+0 keybindings now in sway-keybindings.nix
       '' else ''
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
@@ -948,6 +945,31 @@ in
       BindsTo = [ "graphical-session.target" ];
       Wants = [ "graphical-session-pre.target" ];
       After = [ "graphical-session-pre.target" ];
+    };
+  };
+
+  # SwayNC (Sway Notification Center) systemd service
+  # Notification daemon for Sway (replaces Dunst which is used for i3)
+  systemd.user.services.swaync = {
+    Unit = {
+      Description = "Sway Notification Center";
+      Documentation = "https://github.com/ErikReider/SwayNotificationCenter";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+
+    Service = {
+      Type = "dbus";
+      BusName = "org.freedesktop.Notifications";
+      ExecStart = "${pkgs.swaynotificationcenter}/bin/swaync";
+      ExecReload = "${pkgs.coreutils}/bin/kill -SIGUSR2 $MAINPID";
+      Restart = "on-failure";
+      RestartSec = 1;
+      TimeoutStopSec = 10;
+    };
+
+    Install = {
+      WantedBy = [ "graphical-session.target" ];
     };
   };
 

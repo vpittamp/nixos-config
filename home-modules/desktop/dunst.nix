@@ -1,9 +1,10 @@
 # Dunst - Lightweight notification daemon for i3
+# Only enabled when NOT using Sway (Sway uses SwayNC instead)
 { config, pkgs, lib, ... }:
 
 {
   services.dunst = {
-    enable = true;
+    enable = !(config.wayland.windowManager.sway.enable or false);
 
     settings = {
       global = {
