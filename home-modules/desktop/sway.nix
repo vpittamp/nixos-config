@@ -374,7 +374,7 @@ in
         # FZF file search - floating, fullscreen for preview
         {
           criteria = { app_id = "fzf-file-search"; };
-          command = "floating enable, border pixel 2";
+          command = "floating enable, border pixel 2, mark _file_search";
         }
 
         # Blueman Bluetooth Manager - floating window

@@ -24,7 +24,7 @@ in
     "${modifier}+Return" = "exec i3pm scratchpad toggle";
     "${modifier}+Shift+Return" = "exec ghostty";
     "${modifier}+d" = "exec walker";
-    "${modifier}+Shift+f" = "exec fzf-file-search";
+    "${modifier}+Shift+f" = "exec i3pm run fzf-file-search --force";
 
     # Run-raise-hide launcher (Feature 051) - example keybindings
     # Uncomment and customize based on your most-used applications

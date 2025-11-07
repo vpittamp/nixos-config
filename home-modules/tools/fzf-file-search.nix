@@ -8,11 +8,12 @@ let
   # Uses --bind 'enter:become(nvim {})' to open selected file
   fzf-file-search = pkgs.writeShellScriptBin "fzf-file-search" ''
     # Search directories: current project dir (if set), $HOME, /etc/nixos
+    # I3PM_PROJECT_DIR is injected by app-launcher-wrapper.sh
     SEARCH_DIRS=()
 
-    # Add PROJECT_DIR if it exists and is a directory
-    if [[ -n "''${PROJECT_DIR:-}" ]] && [[ -d "$PROJECT_DIR" ]]; then
-      SEARCH_DIRS+=("$PROJECT_DIR")
+    # Add I3PM_PROJECT_DIR if it exists and is a directory
+    if [[ -n "''${I3PM_PROJECT_DIR:-}" ]] && [[ -d "$I3PM_PROJECT_DIR" ]]; then
+      SEARCH_DIRS+=("$I3PM_PROJECT_DIR")
     else
       # Default to common locations
       SEARCH_DIRS+=("$HOME" "/etc/nixos")

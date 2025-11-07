@@ -302,6 +302,7 @@ let
 
     # FZF File Search (floating)
     # Global fuzzy file finder with bat preview that opens files in nvim
+    # Always launches new instance (via --force flag in keybinding)
     (mkApp {
       name = "fzf-file-search";
       display_name = "FZF File Search";
@@ -312,7 +313,7 @@ let
       preferred_workspace = 1;  # Floating, doesn't matter
       icon = "system-search";
       nix_package = "pkgs.fzf";
-      multi_instance = false;
+      multi_instance = true;  # Allow multiple search windows
       fallback_behavior = "skip";
       description = "Floating fuzzy file finder with preview that opens files in nvim";
     })
