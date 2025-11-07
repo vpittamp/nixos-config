@@ -59,7 +59,7 @@ let
 in
 {
   options = {
-    modules.tools.fzf-file-search.enable = mkEnableOption "fzf file search with nvim integration";
+    modules.tools.fzf-file-search.enable = mkEnableOption "fzf file search and nvim integration";
   };
 
   config = mkIf config.modules.tools.fzf-file-search.enable {
