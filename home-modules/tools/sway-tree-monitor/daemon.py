@@ -132,7 +132,9 @@ class SwayTreeMonitorDaemon:
     async def _capture_initial_snapshot(self):
         """Capture initial tree state on startup"""
         tree = await self.connection.get_tree()
-        snapshot = await self._create_snapshot(tree, "daemon::startup")
+        # Convert Con object to dict
+        tree_dict = tree.ipc_data
+        snapshot = await self._create_snapshot(tree_dict, "daemon::startup")
         self.previous_snapshot = snapshot
         logger.info(f"Captured initial snapshot (ID: {snapshot.snapshot_id})")
 
@@ -181,9 +183,11 @@ class SwayTreeMonitorDaemon:
 
             # Get current tree
             tree = await self.connection.get_tree()
+            # Convert Con object to dict
+            tree_dict = tree.ipc_data
 
             # Create snapshot
-            snapshot = await self._create_snapshot(tree, event_type)
+            snapshot = await self._create_snapshot(tree_dict, event_type)
 
             # Compute diff
             if self.previous_snapshot:
