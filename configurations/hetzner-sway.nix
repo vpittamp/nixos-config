@@ -23,6 +23,7 @@
     ../modules/services/onepassword.nix
     ../modules/services/i3-project-daemon.nix  # Feature 037: System service for cross-namespace /proc access
     ../modules/services/keyd.nix  # Feature 050: CapsLock -> F9 for workspace mode
+    ../modules/services/sway-tree-monitor.nix  # Feature 064: Sway tree diff monitor
 
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
@@ -148,6 +149,13 @@
     enable = true;
     user = "vpittamp";
     logLevel = "DEBUG";  # Temporary for testing
+  };
+
+  # Sway Tree Diff Monitor (Feature 064) - Real-time window state monitoring
+  services.sway-tree-monitor = {
+    enable = true;
+    bufferSize = 500;  # Circular buffer size (default)
+    logLevel = "INFO";
   };
 
   # Firewall - open additional ports for services

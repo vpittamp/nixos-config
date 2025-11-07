@@ -4,6 +4,42 @@ with lib;
 
 let
   cfg = config.services.sway-tree-monitor;
+
+  # Python environment with all required dependencies
+  pythonEnv = pkgs.python311.withPackages (ps: with ps; [
+    i3ipc
+    xxhash
+    orjson
+    textual
+    pydantic
+    rich
+  ]);
+
+  # Daemon package
+  daemonSrc = ../../home-modules/tools/sway-tree-monitor;
+
+  daemonPackage = pkgs.stdenv.mkDerivation {
+    name = "sway-tree-monitor";
+    version = "1.0.0";
+    src = daemonSrc;
+
+    installPhase = ''
+      mkdir -p $out/lib/python${pkgs.python311.pythonVersion}/site-packages/sway_tree_monitor
+      cp -r $src/* $out/lib/python${pkgs.python311.pythonVersion}/site-packages/sway_tree_monitor/
+    '';
+  };
+
+  # Daemon wrapper with proper PYTHONPATH
+  daemonWrapper = pkgs.writeShellScript "sway-tree-monitor-daemon" ''
+    export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python311.pythonVersion}/site-packages:$PYTHONPATH"
+    export PYTHONUNBUFFERED=1
+    export LOG_LEVEL="${cfg.logLevel}"
+    ${optionalString (cfg.socketPath != null) ''export SOCKET_PATH="${cfg.socketPath}"''}
+    ${optionalString (cfg.persistenceDir != null) ''export PERSISTENCE_DIR="${cfg.persistenceDir}"''}
+    export BUFFER_SIZE="${toString cfg.bufferSize}"
+
+    exec ${pythonEnv}/bin/python -m sway_tree_monitor.daemon
+  '';
 in
 {
   options.services.sway-tree-monitor = {
@@ -36,17 +72,15 @@ in
 
   config = mkIf cfg.enable {
     systemd.user.services.sway-tree-monitor = {
-      Unit = {
-        Description = "Sway Tree Diff Monitor - Real-time window state monitoring";
-        Documentation = [ "file:///etc/nixos/specs/064-sway-tree-diff-monitor/quickstart.md" ];
-        After = [ "graphical-session.target" "sway-session.target" ];
-        PartOf = [ "graphical-session.target" ];
-        ConditionEnvironment = "WAYLAND_DISPLAY";
-      };
+      description = "Sway Tree Diff Monitor - Real-time window state monitoring";
+      documentation = [ "file:///etc/nixos/specs/064-sway-tree-diff-monitor/quickstart.md" ];
+      after = [ "graphical-session.target" "sway-session.target" ];
+      partOf = [ "graphical-session.target" ];
+      wantedBy = [ "sway-session.target" ];
 
-      Service = {
+      serviceConfig = {
         Type = "simple";
-        ExecStart = "${pkgs.python311}/bin/python -m sway_tree_monitor.daemon";
+        ExecStart = "${daemonWrapper}";
         Restart = "on-failure";
         RestartSec = "5s";
 
@@ -54,18 +88,6 @@ in
         MemoryMax = "50M";  # 2x target for safety margin
         MemoryHigh = "40M";
         CPUQuota = "5%";  # 2.5x target for bursts
-
-        # Environment
-        Environment = [
-          "PYTHONUNBUFFERED=1"
-          "LOG_LEVEL=${cfg.logLevel}"
-        ] ++ (optionals (cfg.socketPath != null) [
-          "SOCKET_PATH=${cfg.socketPath}"
-        ]) ++ (optionals (cfg.persistenceDir != null) [
-          "PERSISTENCE_DIR=${cfg.persistenceDir}"
-        ]) ++ [
-          "BUFFER_SIZE=${toString cfg.bufferSize}"
-        ];
 
         # Security hardening
         PrivateTmp = true;
@@ -87,22 +109,6 @@ in
         StandardError = "journal";
         SyslogIdentifier = "sway-tree-monitor";
       };
-
-      Install = {
-        WantedBy = [ "sway-session.target" ];
-      };
     };
-
-    # Add Python environment with required packages
-    home.packages = with pkgs; [
-      (python311.withPackages (ps: with ps; [
-        i3ipc
-        xxhash
-        orjson
-        textual
-        pydantic
-        rich
-      ]))
-    ];
   };
 }
