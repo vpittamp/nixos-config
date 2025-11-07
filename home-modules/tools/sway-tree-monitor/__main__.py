@@ -174,9 +174,74 @@ def _parse_relative_time(relative_str: str) -> int:
 
 def cmd_diff(args):
     """Inspect detailed diff (Phase 5)"""
-    print("ERROR: 'diff' command not implemented yet (coming in Phase 5)")
-    print("Use 'live' mode and press 'd' to drill down into events")
-    sys.exit(1)
+    from .ui.diff_view import DiffView
+    from .rpc.client import RPCClient
+
+    # Connect to daemon
+    socket_path = Path(args.socket_path) if args.socket_path else None
+    rpc_client = RPCClient(socket_path=socket_path)
+
+    try:
+        # Test connection
+        ping_response = rpc_client.ping()
+        if not ping_response:
+            print("ERROR: Cannot connect to daemon. Is it running?")
+            print("Start with: systemctl --user start sway-tree-monitor")
+            sys.exit(1)
+
+        # Create Textual app with diff view
+        from textual.app import App, ComposeResult
+        from textual.widgets import Header, Footer
+
+        class DiffApp(App):
+            """Standalone diff inspection app"""
+
+            BINDINGS = [
+                ("q", "quit", "Quit"),
+                ("escape", "back", "Back"),
+            ]
+
+            CSS = """
+            #diff-header {
+                height: 3;
+                background: $surface;
+                padding: 1;
+            }
+            #diff-title {
+                width: 1fr;
+            }
+            #diff-status {
+                height: 1;
+                background: $surface;
+                padding: 0 1;
+            }
+            #diff-content {
+                height: 1fr;
+            }
+            """
+
+            def __init__(self, rpc_client: RPCClient, event_id: int):
+                super().__init__()
+                self.rpc_client = rpc_client
+                self.event_id = event_id
+
+            def compose(self) -> ComposeResult:
+                yield Header()
+                yield DiffView(self.rpc_client, self.event_id)
+                yield Footer()
+
+            def action_back(self) -> None:
+                """Exit app"""
+                self.exit()
+
+        app = DiffApp(rpc_client=rpc_client, event_id=args.event_id)
+        app.run()
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 def cmd_stats(args):
@@ -256,7 +321,7 @@ For more information, see:
     # Diff command (Phase 5)
     parser_diff = subparsers.add_parser(
         'diff',
-        help='Inspect detailed diff (Phase 5 - not implemented yet)'
+        help='Inspect detailed diff with enriched context'
     )
     parser_diff.add_argument(
         'event_id',

@@ -111,16 +111,16 @@
 
 ### Implementation for User Story 3
 
-- [ ] T041 [P] [US3] Implement window environment reading in daemon.py: read /proc/<pid>/environ for I3PM_* variables
-- [ ] T042 [P] [US3] Implement project mark extraction in daemon.py: parse window marks for project:*, app:* patterns
-- [ ] T043 [US3] Create WindowContext enrichment logic in daemon.py: populate i3pm_app_id, i3pm_project_name, i3pm_scope
-- [ ] T044 [US3] Add enriched_data to TreeSnapshot: Dict[int, WindowContext] mapping window ID → context
-- [ ] T045 [US3] Implement RPC method "get_event" in rpc/server.py with detailed diff and enrichment
-- [ ] T046 [US3] Create detailed diff view in home-modules/tools/sway-tree-monitor/ui/diff_view.py using Rich Syntax widget for JSON
-- [ ] T047 [US3] Add tree path notation to diff output: "outputs[0].workspaces[2].nodes[5]"
-- [ ] T048 [US3] Add enrichment display section in diff view: show I3PM_* variables, project marks
-- [ ] T049 [US3] Implement CLI "diff" mode to __main__.py: sway-tree-monitor diff <EVENT_ID>
-- [ ] T050 [US3] Add syntax highlighting for JSON diffs in diff_view.py using Rich theme
+- [X] T041 [P] [US3] Implement window environment reading in daemon.py: read /proc/<pid>/environ for I3PM_* variables
+- [X] T042 [P] [US3] Implement project mark extraction in daemon.py: parse window marks for project:*, app:* patterns
+- [X] T043 [US3] Create WindowContext enrichment logic in daemon.py: populate i3pm_app_id, i3pm_project_name, i3pm_scope
+- [X] T044 [US3] Add enriched_data to TreeSnapshot: Dict[int, WindowContext] mapping window ID → context
+- [X] T045 [US3] Implement RPC method "get_event" in rpc/server.py with detailed diff and enrichment
+- [X] T046 [US3] Create detailed diff view in home-modules/tools/sway-tree-monitor/ui/diff_view.py using Rich Syntax widget for JSON
+- [X] T047 [US3] Add tree path notation to diff output: "outputs[0].workspaces[2].nodes[5]"
+- [X] T048 [US3] Add enrichment display section in diff view: show I3PM_* variables, project marks
+- [X] T049 [US3] Implement CLI "diff" mode to __main__.py: sway-tree-monitor diff <EVENT_ID>
+- [X] T050 [US3] Add syntax highlighting for JSON diffs in diff_view.py using Rich theme
 
 **Checkpoint**: All core user stories (US1, US2, US3) should now be independently functional - live, history, detailed inspection
 

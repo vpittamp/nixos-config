@@ -306,32 +306,137 @@ class RPCServer:
 
     async def handle_get_event(self, params: dict) -> dict:
         """
-        Handle 'get_event' method - get detailed event.
+        Handle 'get_event' method - get detailed event with diff and enrichment.
 
         Params:
             - event_id: Event ID to retrieve
-            - include_snapshots: Include full tree snapshots
-            - include_diff: Include detailed diff
+            - include_snapshots: Include full tree snapshots (default: False)
+            - include_enrichment: Include enriched context (default: True)
         """
         event_id = params.get('event_id')
         if event_id is None:
             raise ValueError("Missing required parameter: event_id")
 
+        include_snapshots = params.get('include_snapshots', False)
+        include_enrichment = params.get('include_enrichment', True)
+
         event = self.event_buffer.get_event_by_id(event_id)
         if not event:
             raise ValueError(f"Event not found: {event_id}")
 
-        # Simplified event details
-        # TODO: Implement full serialization with diff details
+        # Build detailed event response
         result = {
             'event_id': event.event_id,
             'timestamp_ms': event.timestamp_ms,
             'event_type': event.event_type,
             'sway_change': event.sway_change,
-            'container_id': event.container_id
+            'container_id': event.container_id,
         }
 
+        # Serialize diff with detailed field changes
+        if event.diff:
+            result['diff'] = {
+                'diff_id': event.diff.diff_id,
+                'before_snapshot_id': event.diff.before_snapshot_id,
+                'after_snapshot_id': event.diff.after_snapshot_id,
+                'total_changes': event.diff.total_changes,
+                'significance_score': event.diff.significance_score,
+                'significance_level': event.diff.significance_level,
+                'computation_time_ms': event.diff.computation_time_ms,
+                'node_changes': self._serialize_node_changes(event.diff.node_changes)
+            }
+
+        # Serialize correlations
+        correlations_list = []
+        for corr in event.correlations:
+            correlations_list.append({
+                'action': {
+                    'timestamp_ms': corr.action.timestamp_ms,
+                    'action_type': corr.action.action_type.name,
+                    'binding_command': corr.action.binding_command,
+                    'input_type': corr.action.input_type
+                },
+                'confidence': corr.confidence,
+                'confidence_level': corr.confidence_level.name if hasattr(corr, 'confidence_level') else 'unknown',
+                'time_delta_ms': corr.time_delta_ms,
+                'reasoning': corr.reasoning
+            })
+        result['correlations'] = correlations_list
+
+        # Include full snapshots if requested
+        if include_snapshots:
+            result['snapshots'] = {
+                'before': event.before_snapshot.tree_data if event.before_snapshot else None,
+                'after': event.after_snapshot.tree_data if event.after_snapshot else None
+            }
+
+        # Include enriched context (Phase 5 - User Story 3)
+        if include_enrichment and event.after_snapshot:
+            result['enrichment'] = self._serialize_enrichment(event.after_snapshot.enriched_data)
+
         return result
+
+    def _serialize_node_changes(self, node_changes: list) -> list:
+        """
+        Serialize NodeChange list with full field details.
+
+        Args:
+            node_changes: List of NodeChange objects
+
+        Returns:
+            List of serialized node changes
+        """
+        serialized = []
+
+        for node_change in node_changes:
+            # Serialize field changes
+            field_changes = []
+            for fc in node_change.field_changes:
+                field_changes.append({
+                    'field_path': fc.field_path,
+                    'old_value': fc.old_value,
+                    'new_value': fc.new_value,
+                    'change_type': fc.change_type.name,
+                    'significance_score': fc.significance_score
+                })
+
+            serialized.append({
+                'node_id': node_change.node_id,
+                'node_type': node_change.node_type,
+                'node_path': node_change.node_path,
+                'change_type': node_change.change_type.name,
+                'field_changes': field_changes
+            })
+
+        return serialized
+
+    def _serialize_enrichment(self, enriched_data: dict) -> dict:
+        """
+        Serialize enriched window contexts.
+
+        Args:
+            enriched_data: Dict[window_id, WindowContext]
+
+        Returns:
+            Serialized enrichment data
+        """
+        serialized = {}
+
+        for window_id, context in enriched_data.items():
+            serialized[str(window_id)] = {
+                'window_id': context.window_id,
+                'pid': context.pid,
+                'i3pm_app_id': context.i3pm_app_id,
+                'i3pm_app_name': context.i3pm_app_name,
+                'i3pm_project_name': context.i3pm_project_name,
+                'i3pm_scope': context.i3pm_scope,
+                'project_marks': context.project_marks,
+                'app_marks': context.app_marks,
+                'launch_timestamp_ms': context.launch_timestamp_ms,
+                'launch_action': context.launch_action
+            }
+
+        return serialized
 
     async def handle_get_statistics(self, params: dict) -> dict:
         """

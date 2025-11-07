@@ -354,9 +354,124 @@ class SwayTreeMonitorDaemon:
         except Exception as e:
             logger.error(f"Error processing tree change: {e}", exc_info=True)
 
+    def _enrich_window_contexts(self, tree_data: dict) -> dict:
+        """
+        Enrich window contexts with I3PM_* environment variables and marks.
+
+        Traverses the tree, extracts window PIDs, reads /proc/<pid>/environ,
+        and parses window marks for project associations.
+
+        Args:
+            tree_data: Raw Sway tree
+
+        Returns:
+            Dict[window_id, WindowContext] mapping
+        """
+        enriched_data = {}
+
+        def traverse(node: dict):
+            """Recursively traverse tree nodes"""
+            node_type = node.get('type')
+
+            # Process window nodes (con, floating_con)
+            if node_type in ('con', 'floating_con'):
+                window_id = node.get('id')
+                pid = node.get('pid')
+
+                if window_id and pid:
+                    # Read environment variables
+                    env_vars = self._read_window_environ(pid)
+
+                    # Extract project marks
+                    marks = node.get('marks', [])
+                    project_marks, app_marks = self._extract_marks(marks)
+
+                    # Create WindowContext
+                    context = WindowContext(
+                        window_id=window_id,
+                        pid=pid,
+                        i3pm_app_id=env_vars.get('I3PM_APP_ID'),
+                        i3pm_app_name=env_vars.get('I3PM_APP_NAME'),
+                        i3pm_project_name=env_vars.get('I3PM_PROJECT_NAME'),
+                        i3pm_scope=env_vars.get('I3PM_SCOPE'),
+                        project_marks=project_marks,
+                        app_marks=app_marks
+                    )
+
+                    enriched_data[window_id] = context
+
+            # Recurse into child nodes
+            for child in node.get('nodes', []):
+                traverse(child)
+            for child in node.get('floating_nodes', []):
+                traverse(child)
+
+        traverse(tree_data)
+        return enriched_data
+
+    def _read_window_environ(self, pid: int) -> dict:
+        """
+        Read I3PM_* environment variables from process.
+
+        Reads /proc/<pid>/environ and extracts I3PM_* variables.
+
+        Args:
+            pid: Process ID
+
+        Returns:
+            Dictionary of I3PM_* environment variables
+        """
+        env_vars = {}
+        environ_path = Path(f'/proc/{pid}/environ')
+
+        try:
+            if environ_path.exists():
+                # Read environ file (null-delimited)
+                environ_data = environ_path.read_bytes()
+                environ_str = environ_data.decode('utf-8', errors='ignore')
+
+                # Split by null bytes
+                for line in environ_str.split('\0'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        # Only store I3PM_* variables
+                        if key.startswith('I3PM_'):
+                            env_vars[key] = value
+
+        except (FileNotFoundError, PermissionError, Exception) as e:
+            # Process may have exited or no permissions
+            logger.debug(f"Could not read environ for PID {pid}: {e}")
+
+        return env_vars
+
+    def _extract_marks(self, marks: list) -> tuple:
+        """
+        Extract project and app marks from window marks.
+
+        Parses marks for patterns:
+        - project:* → project marks
+        - app:* → app marks
+
+        Args:
+            marks: List of window marks from Sway
+
+        Returns:
+            Tuple of (project_marks, app_marks)
+        """
+        project_marks = []
+        app_marks = []
+
+        for mark in marks:
+            if mark.startswith('project:'):
+                project_marks.append(mark)
+            elif mark.startswith('app:'):
+                app_marks.append(mark)
+
+        return project_marks, app_marks
+
     async def _create_snapshot(self, tree_data: dict, event_source: str) -> TreeSnapshot:
         """
-        Create TreeSnapshot from Sway tree.
+        Create TreeSnapshot from Sway tree with enriched context.
 
         Args:
             tree_data: Raw tree from i3ipc
@@ -373,13 +488,15 @@ class SwayTreeMonitorDaemon:
         # Compute root hash
         root_hash = compute_tree_hash(tree_data)
 
+        # Enrich window contexts (Phase 5 - User Story 3)
+        enriched_data = self._enrich_window_contexts(tree_data)
+
         # Create snapshot
-        # Note: Enrichment (I3PM_* env vars) will be added in Phase 5 (User Story 3)
         snapshot = TreeSnapshot(
             snapshot_id=self._snapshot_counter,
             timestamp_ms=int(time.time() * 1000),
             tree_data=tree_data,
-            enriched_data={},  # TODO: Phase 5
+            enriched_data=enriched_data,
             root_hash=root_hash,
             event_source=event_source
         )
