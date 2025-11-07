@@ -245,6 +245,11 @@ class RPCServer:
         min_significance = params.get('min_significance')
         user_initiated_only = params.get('user_initiated_only', False)
 
+        # Support single event_type parameter (convert to list for buffer)
+        event_type = params.get('event_type')
+        if event_type and not event_types:
+            event_types = [event_type]
+
         # Query buffer
         events = self.event_buffer.get_events(
             last=last,
@@ -258,26 +263,35 @@ class RPCServer:
         # Serialize events (simplified)
         event_summaries = []
         for event in events:
+            # Serialize correlations
+            correlations_list = []
+            for corr in event.correlations:
+                correlations_list.append({
+                    'action': {
+                        'timestamp_ms': corr.action.timestamp_ms,
+                        'action_type': corr.action.action_type.name,
+                        'binding_command': corr.action.binding_command,
+                        'input_type': corr.action.input_type
+                    },
+                    'confidence': corr.confidence,
+                    'time_delta_ms': corr.time_delta_ms,
+                    'reasoning': corr.reasoning
+                })
+
             summary = {
                 'event_id': event.event_id,
                 'timestamp_ms': event.timestamp_ms,
                 'event_type': event.event_type,
                 'sway_change': event.sway_change,
                 'container_id': event.container_id,
-                'summary': self._generate_event_summary(event),
-                'significance_score': event.diff.significance_score,
-                'change_count': event.diff.total_changes
+                'diff': {
+                    'total_changes': event.diff.total_changes,
+                    'significance_level': event.diff.significance_level,
+                    'significance_score': event.diff.significance_score,
+                    'computation_time_ms': event.diff.computation_time_ms
+                },
+                'correlations': correlations_list
             }
-
-            # Add correlation if present
-            best_corr = event.get_best_correlation()
-            if best_corr:
-                summary['correlation'] = {
-                    'action': best_corr.user_action.get_display_name(),
-                    'confidence': best_corr.confidence_score,
-                    'time_delta_ms': best_corr.time_delta_ms,
-                    'cascade_level': best_corr.cascade_level
-                }
 
             event_summaries.append(summary)
 

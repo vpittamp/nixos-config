@@ -37,9 +37,139 @@ def cmd_daemon(args):
 
 def cmd_history(args):
     """Query historical events (Phase 4)"""
-    print("ERROR: 'history' command not implemented yet (coming in Phase 4)")
-    print("Use 'live' mode for now to see events in real-time")
-    sys.exit(1)
+    from .ui.app import SwayTreeMonitorApp
+    from .ui.history_view import HistoryView
+    from .rpc.client import RPCClient
+    import time
+
+    # Parse time filters
+    since_ms = None
+    until_ms = None
+
+    if args.since:
+        # Parse relative time (e.g., "5m", "1h", "30s")
+        since_ms = _parse_relative_time(args.since)
+
+    # Connect to daemon
+    socket_path = Path(args.socket_path) if args.socket_path else None
+    rpc_client = RPCClient(socket_path=socket_path)
+
+    try:
+        # Test connection
+        ping_response = rpc_client.ping()
+        if not ping_response:
+            print("ERROR: Cannot connect to daemon. Is it running?")
+            print("Start with: systemctl --user start sway-tree-monitor")
+            sys.exit(1)
+
+        # Create Textual app with history view
+        from textual.app import App, ComposeResult
+        from textual.widgets import Header, Footer
+
+        class HistoryApp(App):
+            """Standalone history query app"""
+
+            BINDINGS = [
+                ("q", "quit", "Quit"),
+                ("r", "refresh", "Refresh"),
+            ]
+
+            CSS = """
+            #filter-bar {
+                height: 3;
+                padding: 1;
+                background: $surface;
+            }
+            #status-line {
+                height: 1;
+                background: $surface;
+                padding: 0 1;
+            }
+            #event-table {
+                height: 1fr;
+            }
+            #legend {
+                height: 3;
+                background: $surface;
+                padding: 1;
+            }
+            .label {
+                width: 8;
+            }
+            """
+
+            def __init__(self, rpc_client, since_ms, until_ms, last, event_filter):
+                super().__init__()
+                self.rpc_client = rpc_client
+                self.since_ms = since_ms
+                self.until_ms = until_ms
+                self.last = last
+                self.event_filter = event_filter
+
+            def compose(self) -> ComposeResult:
+                yield Header()
+                yield HistoryView(
+                    self.rpc_client,
+                    since_ms=self.since_ms,
+                    until_ms=self.until_ms,
+                    last=self.last,
+                    event_filter=self.event_filter
+                )
+                yield Footer()
+
+            def action_refresh(self):
+                """Refresh history view"""
+                history_view = self.query_one(HistoryView)
+                asyncio.create_task(history_view._load_events())
+
+        # Run app
+        app = HistoryApp(
+            rpc_client=rpc_client,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            last=args.last,
+            event_filter=args.filter
+        )
+        app.run()
+
+    except Exception as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+
+
+def _parse_relative_time(relative_str: str) -> int:
+    """
+    Parse relative time string to timestamp.
+
+    Examples:
+    - "5m" = 5 minutes ago
+    - "1h" = 1 hour ago
+    - "30s" = 30 seconds ago
+
+    Returns:
+        Timestamp in milliseconds
+    """
+    import time
+    import re
+
+    match = re.match(r'(\d+)([smhd])', relative_str)
+    if not match:
+        raise ValueError(f"Invalid time format: {relative_str}. Use format like '5m', '1h', '30s'")
+
+    value = int(match.group(1))
+    unit = match.group(2)
+
+    seconds_map = {
+        's': 1,
+        'm': 60,
+        'h': 3600,
+        'd': 86400
+    }
+
+    seconds_ago = value * seconds_map[unit]
+    timestamp_ms = int((time.time() - seconds_ago) * 1000)
+
+    return timestamp_ms
 
 
 def cmd_diff(args):
@@ -103,7 +233,7 @@ For more information, see:
     # History command (Phase 4)
     parser_history = subparsers.add_parser(
         'history',
-        help='Query historical events (Phase 4 - not implemented yet)'
+        help='Query historical events with correlation'
     )
     parser_history.add_argument(
         '--last',
@@ -114,7 +244,12 @@ For more information, see:
     parser_history.add_argument(
         '--since',
         type=str,
-        help='Show events since timestamp (ISO 8601 format)'
+        help='Show events since relative time (e.g., "5m", "1h", "30s")'
+    )
+    parser_history.add_argument(
+        '--filter',
+        type=str,
+        help='Filter by event type pattern (e.g., "window::new")'
     )
     parser_history.set_defaults(func=cmd_history)
 

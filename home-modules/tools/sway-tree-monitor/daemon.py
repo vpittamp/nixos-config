@@ -19,10 +19,13 @@ from typing import Optional
 from i3ipc import aio
 from i3ipc import Event
 
-from .models import TreeSnapshot, WindowContext
+from .models import TreeSnapshot, WindowContext, UserAction, ActionType
 from .diff.differ import TreeDiffer
 from .buffer.event_buffer import TreeEventBuffer
 from .rpc.server import RPCServer
+from .correlation.tracker import CorrelationTracker
+from .correlation.scoring import update_correlation_with_scoring
+from .correlation.cascade import CascadeTracker
 
 
 # Configure logging
@@ -64,6 +67,13 @@ class SwayTreeMonitorDaemon:
             persistence_dir=persistence_dir
         )
         self.differ = TreeDiffer()
+        self.correlation_tracker = CorrelationTracker(
+            correlation_window_ms=500,
+            retention_period_ms=5000
+        )
+        self.cascade_tracker = CascadeTracker(
+            cascade_window_ms=500
+        )
         self.rpc_server = RPCServer(
             socket_path=socket_path,
             event_buffer=self.buffer,
@@ -152,7 +162,7 @@ class SwayTreeMonitorDaemon:
         self.connection.on(Event.WORKSPACE_EMPTY, self._on_workspace_event)
 
         # Binding events (for user action correlation - User Story 2)
-        # self.connection.on(Event.BINDING, self._on_binding_event)  # TODO: Phase 4
+        self.connection.on(Event.BINDING, self._on_binding_event)
 
     async def _on_window_event(self, connection: aio.Connection, event: Event):
         """Handle window events"""
@@ -163,6 +173,82 @@ class SwayTreeMonitorDaemon:
         """Handle workspace events"""
         event_type = f"workspace::{event.change}"
         await self._process_tree_change(event_type, event)
+
+    async def _on_binding_event(self, connection: aio.Connection, event: Event):
+        """
+        Handle binding events (user keypresses).
+
+        This tracks user actions for correlation with tree changes.
+        The action is stored with timestamp and will be matched with
+        tree events that occur within 500ms.
+
+        Args:
+            connection: i3ipc connection
+            event: Binding event with command, input_type, etc.
+        """
+        try:
+            # Extract binding info
+            command = event.binding.command if hasattr(event, 'binding') else ""
+            input_type = event.binding.input_type if hasattr(event, 'binding') else "keyboard"
+            timestamp_ms = int(time.time() * 1000)
+
+            # Infer action type from command
+            action_type = self._infer_action_type(command)
+
+            # Create UserAction
+            action = UserAction(
+                timestamp_ms=timestamp_ms,
+                action_type=action_type,
+                binding_command=command,
+                input_type=input_type
+            )
+
+            # Track for correlation
+            self.correlation_tracker.track_action(action)
+
+            logger.debug(f"Tracked user action: {action_type.name} - {command}")
+
+        except Exception as e:
+            logger.error(f"Error handling binding event: {e}", exc_info=True)
+
+    def _infer_action_type(self, command: str) -> ActionType:
+        """
+        Infer ActionType from Sway binding command.
+
+        Examples:
+        - "exec alacritty" → WINDOW_OPEN
+        - "kill" → WINDOW_CLOSE
+        - "workspace 1" → WORKSPACE_SWITCH
+        - "move container to workspace 2" → WINDOW_MOVE
+        - "focus left" → WINDOW_FOCUS
+        - "floating toggle" → WINDOW_TOGGLE
+        - "layout tabbed" → LAYOUT_CHANGE
+
+        Args:
+            command: Sway binding command
+
+        Returns:
+            Inferred action type
+        """
+        cmd_lower = command.lower()
+
+        # Window management
+        if "exec" in cmd_lower or "launch" in cmd_lower:
+            return ActionType.WINDOW_OPEN
+        elif "kill" in cmd_lower or "close" in cmd_lower:
+            return ActionType.WINDOW_CLOSE
+        elif "move container to workspace" in cmd_lower or "move to workspace" in cmd_lower:
+            return ActionType.WINDOW_MOVE
+        elif "workspace" in cmd_lower:
+            return ActionType.WORKSPACE_SWITCH
+        elif "focus" in cmd_lower:
+            return ActionType.WINDOW_FOCUS
+        elif "floating" in cmd_lower or "fullscreen" in cmd_lower or "sticky" in cmd_lower:
+            return ActionType.WINDOW_TOGGLE
+        elif "layout" in cmd_lower or "split" in cmd_lower:
+            return ActionType.LAYOUT_CHANGE
+        else:
+            return ActionType.OTHER
 
     async def _process_tree_change(self, event_type: str, sway_event: Event):
         """
@@ -204,8 +290,40 @@ class SwayTreeMonitorDaemon:
                     computation_time_ms=0.0
                 )
 
-            # Create TreeEvent
-            # Note: Correlation will be added in Phase 4 (User Story 2)
+            # Correlate with user actions
+            # Find user actions that may have caused this event
+            correlations = self.correlation_tracker.correlate_event(
+                event_id=0,  # Will be assigned by buffer
+                event_type=event_type,
+                event_timestamp_ms=snapshot.timestamp_ms,
+                affected_window_ids=None  # TODO: Extract from diff in Phase 5
+            )
+
+            # Check if this event is part of a cascade chain
+            cascade_depth = self.cascade_tracker.add_to_cascade(
+                event_id=0,  # Will be assigned by buffer
+                event_timestamp_ms=snapshot.timestamp_ms
+            )
+            if cascade_depth is None:
+                cascade_depth = 0  # Primary effect
+
+            # Refine confidence scores using multi-factor scoring
+            refined_correlations = []
+            competing_actions = len(correlations) - 1  # Other correlations are competing
+            for correlation in correlations:
+                refined = update_correlation_with_scoring(
+                    correlation=correlation,
+                    event_type=event_type,
+                    competing_actions=competing_actions,
+                    cascade_depth=cascade_depth
+                )
+                refined_correlations.append(refined)
+
+            # If this event has a high-confidence correlation, start a cascade chain
+            if refined_correlations and refined_correlations[0].confidence >= 0.7:
+                self.cascade_tracker.start_cascade(primary_event_id=0)  # Will be assigned by buffer
+
+            # Create TreeEvent with correlations
             from .models import TreeEvent
             event = TreeEvent(
                 event_id=0,  # Will be assigned by buffer
@@ -213,7 +331,7 @@ class SwayTreeMonitorDaemon:
                 event_type=event_type,
                 snapshot=snapshot,
                 diff=diff,
-                correlations=[],  # TODO: Phase 4
+                correlations=refined_correlations,
                 sway_change=sway_event.change if hasattr(sway_event, 'change') else '',
                 container_id=sway_event.container.id if hasattr(sway_event, 'container') else None
             )
@@ -283,6 +401,8 @@ class SwayTreeMonitorDaemon:
             'running': self._running,
             'buffer': self.buffer.stats(),
             'differ': self.differ.stats(),
+            'correlation_tracker': self.correlation_tracker.stats(),
+            'cascade_tracker': self.cascade_tracker.stats(),
             'snapshots_captured': self._snapshot_counter,
         }
 

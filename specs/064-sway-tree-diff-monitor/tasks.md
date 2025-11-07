@@ -88,16 +88,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T031 [P] [US2] Implement CorrelationTracker in home-modules/tools/sway-tree-monitor/correlation/tracker.py with 500ms time window
-- [ ] T032 [P] [US2] Implement multi-factor confidence scoring in home-modules/tools/sway-tree-monitor/correlation/scoring.py (temporal 40%, semantic 30%, exclusivity 20%, cascade 10%)
-- [ ] T033 [US2] Add binding event listener to daemon.py for keypress detection
-- [ ] T034 [US2] Integrate CorrelationTracker into daemon.py: track user actions → correlate with tree changes
-- [ ] T035 [US2] Add cascade chain tracking to correlation logic: primary → secondary → tertiary effects
-- [ ] T036 [US2] Update TreeEvent storage to include EventCorrelation list with confidence scores
-- [ ] T037 [US2] Implement historical query view in home-modules/tools/sway-tree-monitor/ui/history_view.py using DataTable
-- [ ] T038 [US2] Add CLI "history" mode to __main__.py with --since, --last, --filter options
-- [ ] T039 [US2] Add correlation display to history view: show "Triggered By" column with confidence labels
-- [ ] T040 [US2] Add time filtering to query_events RPC method: since_ms, until_ms parameters
+- [X] T031 [P] [US2] Implement CorrelationTracker in home-modules/tools/sway-tree-monitor/correlation/tracker.py with 500ms time window
+- [X] T032 [P] [US2] Implement multi-factor confidence scoring in home-modules/tools/sway-tree-monitor/correlation/scoring.py (temporal 40%, semantic 30%, exclusivity 20%, cascade 10%)
+- [X] T033 [US2] Add binding event listener to daemon.py for keypress detection
+- [X] T034 [US2] Integrate CorrelationTracker into daemon.py: track user actions → correlate with tree changes
+- [X] T035 [US2] Add cascade chain tracking to correlation logic: primary → secondary → tertiary effects
+- [X] T036 [US2] Update TreeEvent storage to include EventCorrelation list with confidence scores
+- [X] T037 [US2] Implement historical query view in home-modules/tools/sway-tree-monitor/ui/history_view.py using DataTable
+- [X] T038 [US2] Add CLI "history" mode to __main__.py with --since, --last, --filter options
+- [X] T039 [US2] Add correlation display to history view: show "Triggered By" column with confidence labels
+- [X] T040 [US2] Add time filtering to query_events RPC method: since_ms, until_ms parameters
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - live monitoring + historical query with correlation
 
