@@ -540,29 +540,102 @@ export class LiveTUI {
    */
   private colorizeJson(json: string): string {
     // ANSI color codes for JSON elements
-    const colors = {
-      key: "\x1b[36m",      // Cyan for keys
-      string: "\x1b[32m",   // Green for string values
-      number: "\x1b[33m",   // Yellow for numbers
-      boolean: "\x1b[35m",  // Magenta for booleans
-      null: "\x1b[2m",      // Dim for null
-      bracket: "\x1b[90m",  // Dim gray for brackets/braces
-      reset: "\x1b[0m",
-    };
+    const CYAN = "\x1b[36m";      // Cyan for keys
+    const GREEN = "\x1b[32m";     // Green for string values
+    const YELLOW = "\x1b[33m";    // Yellow for numbers
+    const MAGENTA = "\x1b[35m";   // Magenta for booleans
+    const DIM = "\x1b[2m";        // Dim for null
+    const GRAY = "\x1b[90m";      // Gray for structural elements
+    const RESET = "\x1b[0m";
 
-    return json
-      // Colorize keys (strings before colons)
-      .replace(/"([^"]+)"(\s*:)/g, `${colors.key}"$1"${colors.reset}$2`)
-      // Colorize string values (strings after colons, not keys)
-      .replace(/:\s*"([^"]*)"/g, `: ${colors.string}"$1"${colors.reset}`)
-      // Colorize numbers
-      .replace(/:\s*(-?\d+\.?\d*)/g, `: ${colors.number}$1${colors.reset}`)
-      // Colorize booleans
-      .replace(/:\s*(true|false)/g, `: ${colors.boolean}$1${colors.reset}`)
-      // Colorize null
-      .replace(/:\s*(null)/g, `: ${colors.null}$1${colors.reset}`)
-      // Colorize brackets and braces
-      .replace(/([{}\[\],])/g, `${colors.bracket}$1${colors.reset}`);
+    const lines = json.split('\n');
+    const coloredLines: string[] = [];
+
+    for (const line of lines) {
+      let colored = '';
+      let i = 0;
+
+      while (i < line.length) {
+        const char = line[i];
+
+        // Handle strings (could be keys or values)
+        if (char === '"') {
+          const stringStart = i;
+          i++; // Skip opening quote
+
+          // Find closing quote (handle escaped quotes)
+          while (i < line.length) {
+            if (line[i] === '\\' && i + 1 < line.length) {
+              i += 2; // Skip escaped character
+            } else if (line[i] === '"') {
+              break;
+            } else {
+              i++;
+            }
+          }
+          i++; // Include closing quote
+
+          const stringContent = line.substring(stringStart, i);
+
+          // Check if this is a key (followed by colon) or value
+          let j = i;
+          while (j < line.length && /\s/.test(line[j])) j++;
+
+          if (j < line.length && line[j] === ':') {
+            // It's a key
+            colored += CYAN + stringContent + RESET;
+          } else {
+            // It's a string value
+            colored += GREEN + stringContent + RESET;
+          }
+          continue;
+        }
+
+        // Handle numbers
+        if (/[\d-]/.test(char) && (i === 0 || /[\s:,\[]/.test(line[i - 1]))) {
+          const numStart = i;
+          while (i < line.length && /[\d.\-eE+]/.test(line[i])) {
+            i++;
+          }
+          colored += YELLOW + line.substring(numStart, i) + RESET;
+          continue;
+        }
+
+        // Handle booleans
+        if (line.substring(i, i + 4) === 'true') {
+          colored += MAGENTA + 'true' + RESET;
+          i += 4;
+          continue;
+        }
+        if (line.substring(i, i + 5) === 'false') {
+          colored += MAGENTA + 'false' + RESET;
+          i += 5;
+          continue;
+        }
+
+        // Handle null
+        if (line.substring(i, i + 4) === 'null') {
+          colored += DIM + 'null' + RESET;
+          i += 4;
+          continue;
+        }
+
+        // Handle structural characters
+        if (/[{}\[\],:]/.test(char)) {
+          colored += GRAY + char + RESET;
+          i++;
+          continue;
+        }
+
+        // Regular character (whitespace, etc.)
+        colored += char;
+        i++;
+      }
+
+      coloredLines.push(colored);
+    }
+
+    return coloredLines.join('\n');
   }
 
   /**
