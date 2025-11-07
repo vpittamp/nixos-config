@@ -40,8 +40,13 @@ let
       # If file was selected, launch nvim using Sway exec (like app-launcher-wrapper does)
       # This ensures proper environment propagation and window tracking
       if [[ -n \"\$SELECTED\" ]]; then
+        # Convert to absolute path if relative (fzf may return relative paths)
+        if [[ \"\$SELECTED\" != /* ]]; then
+          SELECTED=\"\$(pwd)/\$SELECTED\"
+        fi
+
         # Launch via swaymsg exec with environment variables
-        # Pass file path directly to avoid quoting issues
+        # Pass absolute file path to avoid working directory issues
         ${pkgs.sway}/bin/swaymsg exec \"env I3PM_APP_ID=nvim-editor-\$\$-\$(date +%s) I3PM_APP_NAME=neovim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \\\"\$SELECTED\\\"\" > /dev/null 2>&1
 
         exit 0
