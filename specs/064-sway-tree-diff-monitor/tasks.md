@@ -158,14 +158,14 @@
 
 ### Implementation for User Story 5
 
-- [ ] T062 [P] [US5] Implement FilterCriteria matching logic in models.py: event type, time range, significance filters
-- [ ] T063 [P] [US5] Add window-specific filtering in FilterCriteria: window_class, window_title_pattern, project_name
-- [ ] T064 [US5] Integrate FilterCriteria into query_events RPC method: apply filters during buffer scan
-- [ ] T065 [US5] Add real-time filter UI in live_view.py: press 'f' to open filter dialog
-- [ ] T066 [US5] Add filter display in history_view.py: show active filters at top
-- [ ] T067 [US5] Implement --filter, --min-significance, --project CLI options for live and history modes
-- [ ] T068 [US5] Add tree_path_pattern filtering in FilterCriteria: regex pattern for tree paths
-- [ ] T069 [US5] Add user_initiated_only filter option: show only events with confidence >= 70%
+- [X] T062 [P] [US5] Implement FilterCriteria matching logic in models.py: event type, time range, significance filters
+- [X] T063 [P] [US5] Add window-specific filtering in FilterCriteria: window_class, window_title_pattern, project_name
+- [X] T064 [US5] Integrate FilterCriteria into query_events RPC method: apply filters during buffer scan
+- [X] T065 [US5] Add real-time filter UI in live_view.py: press 'f' to open filter dialog
+- [X] T066 [US5] Add filter display in history_view.py: show active filters at top
+- [X] T067 [US5] Implement --filter, --min-significance, --project CLI options for live and history modes
+- [X] T068 [US5] Add tree_path_pattern filtering in FilterCriteria: regex pattern for tree paths
+- [X] T069 [US5] Add user_initiated_only filter option: show only events with confidence >= 70%
 
 **Checkpoint**: User Story 5 complete - filtering reduces noise and improves signal-to-noise ratio for targeted debugging
 
@@ -198,17 +198,17 @@
 
 **Purpose**: Documentation, final validation, and quality improvements
 
-- [ ] T080 [P] Update CLAUDE.md with sway-tree-monitor commands and troubleshooting
-- [ ] T081 [P] Create README.md in home-modules/tools/sway-tree-monitor/ with developer documentation
-- [ ] T082 Add error handling for Sway IPC disconnection in daemon.py: auto-reconnect with exponential backoff
-- [ ] T083 Add graceful shutdown handling in daemon.py: flush buffer to disk, close socket
-- [ ] T084 Add input validation for all RPC methods: validate params, return -32602 for invalid
-- [ ] T085 Implement socket permissions in rpc/server.py: set to 0600 (owner read/write only)
-- [ ] T086 Add debug logging throughout daemon.py and ui/: use Python logging module
-- [ ] T087 [P] Validate quickstart.md examples work: test all commands from quickstart.md
-- [ ] T088 Run final performance validation: 50/100/200 window benchmarks, verify all targets met
-- [ ] T089 Test on M1 Mac: verify works with single eDP-1 display, no Hetzner-specific code
-- [ ] T090 Update flake.nix to include sway-tree-monitor in Hetzner and M1 configurations (conditionally enabled where Sway is present)
+- [X] T080 [P] Update CLAUDE.md with sway-tree-monitor commands and troubleshooting
+- [X] T081 [P] Create README.md in home-modules/tools/sway-tree-monitor/ with developer documentation
+- [X] T082 Add error handling for Sway IPC disconnection in daemon.py: auto-reconnect with exponential backoff
+- [X] T083 Add graceful shutdown handling in daemon.py: flush buffer to disk, close socket
+- [X] T084 Add input validation for all RPC methods: validate params, return -32602 for invalid
+- [X] T085 Implement socket permissions in rpc/server.py: set to 0600 (owner read/write only)
+- [X] T086 Add debug logging throughout daemon.py and ui/: use Python logging module
+- [X] T087 [P] Validate quickstart.md examples work: test all commands from quickstart.md
+- [X] T088 Run final performance validation: 50/100/200 window benchmarks, verify all targets met
+- [X] T089 Test on M1 Mac: verify works with single eDP-1 display, no Hetzner-specific code
+- [X] T090 Update flake.nix to include sway-tree-monitor in Hetzner and M1 configurations (conditionally enabled where Sway is present)
 
 ---
 
