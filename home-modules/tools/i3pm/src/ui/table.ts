@@ -27,7 +27,7 @@ const COLUMNS: Column[] = [
   { header: "Output", width: 11, align: "left" },
   { header: "Project", width: 14, align: "left" },
   { header: "Status", width: 8, align: "left" },
-  { header: "Δ", width: 4, align: "left" },
+  { header: "Change", width: 6, align: "left" },
 ];
 
 /**
@@ -171,12 +171,12 @@ const STATUS_ICONS = {
 } as const;
 
 /**
- * Change indicators with ANSI colors
+ * Change indicators with ANSI colors and bold
  */
 const CHANGE_INDICATORS = {
-  [ChangeType.New]: { symbol: "NEW", color: "\x1b[32m" },      // Green
-  [ChangeType.Modified]: { symbol: "MOD", color: "\x1b[33m" }, // Yellow
-  [ChangeType.Removed]: { symbol: "DEL", color: "\x1b[31m" },  // Red
+  [ChangeType.New]: { symbol: "+NEW", color: "\x1b[1m\x1b[32m" },      // Bold Green
+  [ChangeType.Modified]: { symbol: "~MOD", color: "\x1b[1m\x1b[33m" }, // Bold Yellow
+  [ChangeType.Removed]: { symbol: "✗DEL", color: "\x1b[1m\x1b[31m" },  // Bold Red
   [ChangeType.None]: { symbol: "", color: "" },
 } as const;
 

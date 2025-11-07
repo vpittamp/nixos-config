@@ -7,7 +7,7 @@
 import type { DaemonClient } from "../client.ts";
 import type { Output } from "../models.ts";
 import { renderTree } from "./tree.ts";
-import { renderTable, ChangeTracker } from "./table.ts";
+import { renderTable, ChangeTracker, ChangeType } from "./table.ts";
 
 /**
  * View modes for live TUI
@@ -75,10 +75,10 @@ export class LiveTUI {
     this.client = client;
     this.encoder = new TextEncoder();
     this.decoder = new TextDecoder();
-    this.changeTracker = new ChangeTracker(3000); // 3 second expiry
+    this.changeTracker = new ChangeTracker(5000); // 5 second expiry for change indicators
 
     this.state = {
-      viewMode: "tree",
+      viewMode: "table", // Default to table view for better readability
       showHidden: false,
       outputs: [],
       running: false,
@@ -299,23 +299,59 @@ export class LiveTUI {
    * Render header
    */
   private renderHeader(): string {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString();
     const viewMode = this.state.viewMode.toUpperCase();
-    const hiddenStatus = this.state.showHidden ? "SHOWING HIDDEN" : "HIDING HIDDEN";
+    const hiddenStatus = this.state.showHidden ? "✓ Show Hidden" : "○ Hide Hidden";
 
-    return `${ANSI.BOLD}${ANSI.CYAN}i3pm windows --live${ANSI.RESET} | ` +
-      `View: ${ANSI.BOLD}${viewMode}${ANSI.RESET} | ` +
-      `${hiddenStatus}\n` +
-      `${ANSI.DIM}${"=".repeat(80)}${ANSI.RESET}\n\n`;
+    // Build header with timestamp and status
+    const title = `${ANSI.BOLD}${ANSI.CYAN}╔═══ i3pm Live Window Monitor ═══╗${ANSI.RESET}`;
+    const timestamp = `${ANSI.DIM}Last update: ${timeStr}${ANSI.RESET}`;
+    const status = `View: ${ANSI.BOLD}${ANSI.YELLOW}${viewMode}${ANSI.RESET}  |  ${hiddenStatus}`;
+
+    return `${title}\n${timestamp}  |  ${status}\n${ANSI.DIM}${"─".repeat(100)}${ANSI.RESET}\n\n`;
   }
 
   /**
    * Render footer
    */
   private renderFooter(): string {
-    return `\n${ANSI.DIM}${"=".repeat(80)}${ANSI.RESET}\n` +
+    // Count windows with changes
+    let newCount = 0;
+    let modifiedCount = 0;
+
+    // Get all windows from outputs
+    for (const output of this.state.outputs) {
+      for (const workspace of output.workspaces) {
+        for (const window of workspace.windows) {
+          const change = this.changeTracker.getChange(window.id);
+          if (change) {
+            if (change.changeType === ChangeType.New) newCount++;
+            else if (change.changeType === ChangeType.Modified) modifiedCount++;
+          }
+        }
+      }
+    }
+
+    // Build change indicator line
+    const changeIndicators = [];
+    if (newCount > 0) {
+      changeIndicators.push(`${ANSI.GREEN}${ANSI.BOLD}+${newCount} NEW${ANSI.RESET}`);
+    }
+    if (modifiedCount > 0) {
+      changeIndicators.push(`${ANSI.YELLOW}${ANSI.BOLD}~${modifiedCount} CHANGED${ANSI.RESET}`);
+    }
+
+    const changeStatus = changeIndicators.length > 0
+      ? `  ${changeIndicators.join("  ")}  ${ANSI.DIM}(visible for 5s)${ANSI.RESET}`
+      : "";
+
+    return `\n${ANSI.DIM}${"─".repeat(100)}${ANSI.RESET}\n` +
+      `${ANSI.BOLD}Keybindings:${ANSI.RESET} ` +
       `${ANSI.GREEN}[Tab]${ANSI.RESET} Switch View  ` +
       `${ANSI.GREEN}[H]${ANSI.RESET} Toggle Hidden  ` +
-      `${ANSI.GREEN}[Q]${ANSI.RESET} or ${ANSI.GREEN}[Ctrl+C]${ANSI.RESET} Exit\n`;
+      `${ANSI.GREEN}[Q]${ANSI.RESET} Exit` +
+      `${changeStatus}\n`;
   }
 
   /**
