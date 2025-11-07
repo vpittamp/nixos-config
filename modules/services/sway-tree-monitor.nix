@@ -114,20 +114,11 @@ in
         MemoryHigh = "40M";
         CPUQuota = "5%";  # 2.5x target for bursts
 
-        # Security hardening
+        # Security hardening (relaxed for Sway IPC socket access)
         PrivateTmp = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        ReadWritePaths = [
-          "%t"  # XDG_RUNTIME_DIR for socket
-          "%h/.local/share/sway-tree-monitor"  # Persistence directory
-        ];
         NoNewPrivileges = true;
-        RestrictNamespaces = true;
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
-        LockPersonality = true;
-        PrivateDevices = true;
 
         # Logging
         StandardOutput = "journal";
