@@ -23,6 +23,7 @@ interface TUIState {
   outputs: Output[];
   running: boolean;
   lastRefresh: number;
+  selectedWindowId: number | null; // Window ID currently selected in table view
   inspectWindowId: number | null; // Window ID being inspected
   inspectData: unknown | null; // Raw Sway tree data for inspected window
 }
@@ -65,6 +66,13 @@ const KEYS = {
   ESC: "\x1b",
   LOWER_B: "b",
   UPPER_B: "B",
+  ENTER: "\r",
+  ARROW_UP: "\x1b[A",
+  ARROW_DOWN: "\x1b[B",
+  PAGE_UP: "\x1b[5~",
+  PAGE_DOWN: "\x1b[6~",
+  HOME: "\x1b[H",
+  END: "\x1b[F",
 } as const;
 
 /**
@@ -90,6 +98,7 @@ export class LiveTUI {
       outputs: [],
       running: false,
       lastRefresh: 0,
+      selectedWindowId: null,
       inspectWindowId: null,
       inspectData: null,
     };
@@ -199,6 +208,87 @@ export class LiveTUI {
   }
 
   /**
+   * Get all visible windows as a flat list
+   */
+  private getAllWindows(): Array<{ id: number; [key: string]: any }> {
+    const windows = [];
+    for (const output of this.state.outputs) {
+      for (const workspace of output.workspaces) {
+        for (const window of workspace.windows) {
+          if (this.state.showHidden || !window.hidden) {
+            windows.push(window);
+          }
+        }
+      }
+    }
+    return windows;
+  }
+
+  /**
+   * Select the next window in the list
+   */
+  private selectNextWindow(): void {
+    const windows = this.getAllWindows();
+    if (windows.length === 0) return;
+
+    if (this.state.selectedWindowId === null) {
+      // Select first window
+      this.state.selectedWindowId = windows[0].id;
+    } else {
+      // Find current selection and move to next
+      const currentIndex = windows.findIndex(w => w.id === this.state.selectedWindowId);
+      if (currentIndex === -1 || currentIndex === windows.length - 1) {
+        // Wrap to first
+        this.state.selectedWindowId = windows[0].id;
+      } else {
+        this.state.selectedWindowId = windows[currentIndex + 1].id;
+      }
+    }
+  }
+
+  /**
+   * Select the previous window in the list
+   */
+  private selectPreviousWindow(): void {
+    const windows = this.getAllWindows();
+    if (windows.length === 0) return;
+
+    if (this.state.selectedWindowId === null) {
+      // Select last window
+      this.state.selectedWindowId = windows[windows.length - 1].id;
+    } else {
+      // Find current selection and move to previous
+      const currentIndex = windows.findIndex(w => w.id === this.state.selectedWindowId);
+      if (currentIndex === -1 || currentIndex === 0) {
+        // Wrap to last
+        this.state.selectedWindowId = windows[windows.length - 1].id;
+      } else {
+        this.state.selectedWindowId = windows[currentIndex - 1].id;
+      }
+    }
+  }
+
+  /**
+   * Select first window in the list
+   */
+  private selectFirstWindow(): void {
+    const windows = this.getAllWindows();
+    if (windows.length > 0) {
+      this.state.selectedWindowId = windows[0].id;
+    }
+  }
+
+  /**
+   * Select last window in the list
+   */
+  private selectLastWindow(): void {
+    const windows = this.getAllWindows();
+    if (windows.length > 0) {
+      this.state.selectedWindowId = windows[windows.length - 1].id;
+    }
+  }
+
+  /**
    * Handle keyboard input
    */
   private async handleKeyboard(): Promise<void> {
@@ -238,9 +328,62 @@ export class LiveTUI {
             }
             break;
 
+          case KEYS.ARROW_DOWN:
+            // Navigate to next window in table (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.selectNextWindow();
+              await this.render();
+            }
+            break;
+
+          case KEYS.ARROW_UP:
+            // Navigate to previous window in table (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.selectPreviousWindow();
+              await this.render();
+            }
+            break;
+
+          case KEYS.PAGE_DOWN:
+            // Jump down 10 windows (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              for (let i = 0; i < 10; i++) {
+                this.selectNextWindow();
+              }
+              await this.render();
+            }
+            break;
+
+          case KEYS.PAGE_UP:
+            // Jump up 10 windows (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              for (let i = 0; i < 10; i++) {
+                this.selectPreviousWindow();
+              }
+              await this.render();
+            }
+            break;
+
+          case KEYS.HOME:
+            // Jump to first window (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.selectFirstWindow();
+              await this.render();
+            }
+            break;
+
+          case KEYS.END:
+            // Jump to last window (only when not in inspect mode)
+            if (this.state.viewMode !== "inspect") {
+              this.selectLastWindow();
+              await this.render();
+            }
+            break;
+
+          case KEYS.ENTER:
           case KEYS.LOWER_I:
           case KEYS.UPPER_I:
-            // Enter inspect mode for focused window
+            // Enter inspect mode for selected window (or focused if none selected)
             if (this.state.viewMode !== "inspect") {
               await this.enterInspectMode();
             }
@@ -285,37 +428,52 @@ export class LiveTUI {
   }
 
   /**
-   * Enter inspect mode for the focused window
+   * Enter inspect mode for the selected window
    */
   private async enterInspectMode(): Promise<void> {
     try {
-      // Find the focused window
-      let focusedWindow = null;
-      for (const output of this.state.outputs) {
-        for (const workspace of output.workspaces) {
-          for (const window of workspace.windows) {
-            if (window.focused) {
-              focusedWindow = window;
-              break;
+      const windows = this.getAllWindows();
+
+      // If no window is selected, try to select the focused one or the first one
+      if (this.state.selectedWindowId === null) {
+        // Try to find focused window
+        let focusedWindow = null;
+        for (const output of this.state.outputs) {
+          for (const workspace of output.workspaces) {
+            for (const window of workspace.windows) {
+              if (window.focused) {
+                focusedWindow = window;
+                break;
+              }
             }
+            if (focusedWindow) break;
           }
           if (focusedWindow) break;
         }
-        if (focusedWindow) break;
+
+        if (focusedWindow) {
+          this.state.selectedWindowId = focusedWindow.id;
+        } else if (windows.length > 0) {
+          // No focused window, select first visible window
+          this.state.selectedWindowId = windows[0].id;
+        } else {
+          await this.showError("No windows available to inspect. Open some windows first.");
+          return;
+        }
       }
 
-      if (!focusedWindow) {
-        await this.showError("No focused window found. Focus a window first with your window manager.");
+      // Find the selected window
+      const selectedWindow = windows.find(w => w.id === this.state.selectedWindowId);
+
+      if (!selectedWindow) {
+        await this.showError("Selected window not found. It may have been closed.");
+        this.state.selectedWindowId = null;
         return;
       }
 
-      // Fetch raw Sway tree data for this window
-      // Use swaymsg via daemon to get the full window details
-      this.state.inspectWindowId = focusedWindow.id;
-
-      // Get the window's full Sway node data
-      // For now, we'll just show what we have, but could enhance with actual swaymsg call
-      this.state.inspectData = focusedWindow;
+      // Enter inspect mode with the selected window
+      this.state.inspectWindowId = selectedWindow.id;
+      this.state.inspectData = selectedWindow;
       this.state.viewMode = "inspect";
 
       await this.render();
@@ -365,7 +523,8 @@ export class LiveTUI {
       content = await renderTable(this.state.outputs, {
         showHidden: this.state.showHidden,
         changeTracker: this.changeTracker,
-        groupByProject: true
+        groupByProject: true,
+        selectedWindowId: this.state.selectedWindowId,
       });
     }
 
@@ -374,6 +533,36 @@ export class LiveTUI {
     // Render footer
     const footer = this.renderFooter();
     await this.writeToStdout(footer);
+  }
+
+  /**
+   * Colorize JSON for better readability
+   */
+  private colorizeJson(json: string): string {
+    // ANSI color codes for JSON elements
+    const colors = {
+      key: "\x1b[36m",      // Cyan for keys
+      string: "\x1b[32m",   // Green for string values
+      number: "\x1b[33m",   // Yellow for numbers
+      boolean: "\x1b[35m",  // Magenta for booleans
+      null: "\x1b[2m",      // Dim for null
+      bracket: "\x1b[90m",  // Dim gray for brackets/braces
+      reset: "\x1b[0m",
+    };
+
+    return json
+      // Colorize keys (strings before colons)
+      .replace(/"([^"]+)"(\s*:)/g, `${colors.key}"$1"${colors.reset}$2`)
+      // Colorize string values (strings after colons, not keys)
+      .replace(/:\s*"([^"]*)"/g, `: ${colors.string}"$1"${colors.reset}`)
+      // Colorize numbers
+      .replace(/:\s*(-?\d+\.?\d*)/g, `: ${colors.number}$1${colors.reset}`)
+      // Colorize booleans
+      .replace(/:\s*(true|false)/g, `: ${colors.boolean}$1${colors.reset}`)
+      // Colorize null
+      .replace(/:\s*(null)/g, `: ${colors.null}$1${colors.reset}`)
+      // Colorize brackets and braces
+      .replace(/([{}\[\],])/g, `${colors.bracket}$1${colors.reset}`);
   }
 
   /**
@@ -435,7 +624,9 @@ export class LiveTUI {
 
     // Raw JSON Data
     lines.push(`${ANSI.BOLD}${ANSI.YELLOW}Raw Window Data (JSON):${ANSI.RESET}`);
-    lines.push(`${ANSI.DIM}${JSON.stringify(window, null, 2)}${ANSI.RESET}`);
+    const jsonStr = JSON.stringify(window, null, 2);
+    const colorizedJson = this.colorizeJson(jsonStr);
+    lines.push(colorizedJson);
 
     return lines.join("\n");
   }
@@ -500,9 +691,10 @@ export class LiveTUI {
         `${ANSI.GREEN}[Q]${ANSI.RESET} Exit`;
     } else {
       keybindings = `${ANSI.BOLD}Keybindings:${ANSI.RESET} ` +
-        `${ANSI.GREEN}[Tab]${ANSI.RESET} Switch View  ` +
-        `${ANSI.GREEN}[I]${ANSI.RESET} Inspect Window  ` +
-        `${ANSI.GREEN}[H]${ANSI.RESET} Toggle Hidden  ` +
+        `${ANSI.GREEN}[↑/↓]${ANSI.RESET} Navigate  ` +
+        `${ANSI.GREEN}[Enter/I]${ANSI.RESET} Inspect  ` +
+        `${ANSI.GREEN}[Tab]${ANSI.RESET} View  ` +
+        `${ANSI.GREEN}[H]${ANSI.RESET} Hidden  ` +
         `${ANSI.GREEN}[Q]${ANSI.RESET} Exit`;
     }
 

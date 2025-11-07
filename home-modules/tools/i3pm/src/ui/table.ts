@@ -330,7 +330,7 @@ function getChangeIndicator(change?: WindowChange): string {
 /**
  * Format window as table row
  */
-async function formatRow(window: WindowState, change?: WindowChange): Promise<string> {
+async function formatRow(window: WindowState, change?: WindowChange, selected: boolean = false): Promise<string> {
   const projectName = getProjectFromMarks(window.marks);
   const projectIcon = projectName ? await getProjectIcon(projectName) : "";
   const projectDisplay = projectName
@@ -362,7 +362,14 @@ async function formatRow(window: WindowState, change?: WindowChange): Promise<st
     padString(changeIndicator, COLUMNS[8].width, COLUMNS[8].align),
   ];
 
-  return cells.join(" | ");
+  const row = cells.join(" | ");
+
+  // Highlight selected row with background color and bold
+  if (selected) {
+    return `\x1b[7m\x1b[1m${row}\x1b[0m`; // Inverse video (highlighted) + bold
+  }
+
+  return row;
 }
 
 /**
@@ -370,9 +377,9 @@ async function formatRow(window: WindowState, change?: WindowChange): Promise<st
  */
 export async function renderTable(
   outputs: Output[],
-  options: { showHidden?: boolean; changeTracker?: ChangeTracker; groupByProject?: boolean } = {},
+  options: { showHidden?: boolean; changeTracker?: ChangeTracker; groupByProject?: boolean; selectedWindowId?: number | null } = {},
 ): Promise<string> {
-  const { showHidden = true, changeTracker, groupByProject = true } = options;
+  const { showHidden = true, changeTracker, groupByProject = true, selectedWindowId = null } = options;
 
   if (outputs.length === 0) {
     return "No windows found";
@@ -436,7 +443,8 @@ export async function renderTable(
 
       for (const window of windows) {
         const change = changeTracker?.getChange(window.id);
-        lines.push(await formatRow(window, change));
+        const isSelected = selectedWindowId !== null && window.id === selectedWindowId;
+        lines.push(await formatRow(window, change, isSelected));
       }
     }
 
@@ -448,7 +456,8 @@ export async function renderTable(
 
       for (const window of scratchpadWindows) {
         const change = changeTracker?.getChange(window.id);
-        lines.push(await formatRow(window, change));
+        const isSelected = selectedWindowId !== null && window.id === selectedWindowId;
+        lines.push(await formatRow(window, change, isSelected));
       }
     }
 
@@ -460,7 +469,8 @@ export async function renderTable(
 
       for (const window of globalWindows) {
         const change = changeTracker?.getChange(window.id);
-        lines.push(await formatRow(window, change));
+        const isSelected = selectedWindowId !== null && window.id === selectedWindowId;
+        lines.push(await formatRow(window, change, isSelected));
       }
     }
   } else {
@@ -476,7 +486,8 @@ export async function renderTable(
 
     for (const window of allWindows) {
       const change = changeTracker?.getChange(window.id);
-      lines.push(await formatRow(window, change));
+      const isSelected = selectedWindowId !== null && window.id === selectedWindowId;
+      lines.push(await formatRow(window, change, isSelected));
     }
   }
 
