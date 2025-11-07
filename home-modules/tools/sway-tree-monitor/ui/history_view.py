@@ -17,7 +17,6 @@ from datetime import datetime
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical, Horizontal
 from textual.widgets import DataTable, Static, Input, Button
-from textual.worker import work
 from textual import on
 
 from ..rpc.client import RPCClient
