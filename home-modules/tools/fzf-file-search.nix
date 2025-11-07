@@ -24,9 +24,9 @@ let
 
     # Launch Ghostty with inline bash script that handles file selection
     # This script runs inside Ghostty and closes the terminal after launching nvim
-    ${pkgs.ghostty}/bin/ghostty --title="FZF File Search" -e ${pkgs.bash}/bin/bash -c '
+    ${pkgs.ghostty}/bin/ghostty --title="FZF File Search" -e ${pkgs.bash}/bin/bash -c "
       # Run fzf and capture selected file
-      SELECTED=$(${pkgs.fzf}/bin/fzf \
+      SELECTED=\$(${pkgs.fzf}/bin/fzf \
         --walker file,follow,hidden \
         --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache \
         --scheme=path \
@@ -34,27 +34,27 @@ let
         --layout=reverse \
         --border=rounded \
         --info=inline \
-        --preview "${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}" \
+        --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' \
         --preview-window=right:60%:wrap)
 
       # If file was selected, launch nvim using Sway exec (like app-launcher-wrapper does)
       # This ensures proper environment propagation and window tracking
-      if [[ -n "$SELECTED" ]]; then
+      if [[ -n \"\$SELECTED\" ]]; then
         # Build full command with environment - inherit I3PM_* vars from current shell
-        NVIM_CMD="export I3PM_APP_ID=nvim-editor-$$-$(date +%s); "
-        NVIM_CMD+="export I3PM_APP_NAME=neovim; "
-        NVIM_CMD+="export I3PM_PROJECT_NAME=\"''${I3PM_PROJECT_NAME:-}\"; "
-        NVIM_CMD+="export I3PM_PROJECT_DIR=\"''${I3PM_PROJECT_DIR:-}\"; "
-        NVIM_CMD+="export I3PM_SCOPE=scoped; "
-        NVIM_CMD+="export I3PM_EXPECTED_CLASS=com.mitchellh.ghostty; "
-        NVIM_CMD+="${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \"$SELECTED\""
+        NVIM_CMD=\"export I3PM_APP_ID=nvim-editor-\$\$-\$(date +%s); \"
+        NVIM_CMD+=\"export I3PM_APP_NAME=neovim; \"
+        NVIM_CMD+=\\\"export I3PM_PROJECT_NAME=\\\\\\\"\''${I3PM_PROJECT_NAME:-}\\\\\\\"; \\\"
+        NVIM_CMD+=\\\"export I3PM_PROJECT_DIR=\\\\\\\"\''${I3PM_PROJECT_DIR:-}\\\\\\\"; \\\"
+        NVIM_CMD+=\"export I3PM_SCOPE=scoped; \"
+        NVIM_CMD+=\"export I3PM_EXPECTED_CLASS=com.mitchellh.ghostty; \"
+        NVIM_CMD+=\"${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \\\"\$SELECTED\\\"\"
 
         # Launch via swaymsg exec (same pattern as app-launcher-wrapper)
-        ${pkgs.sway}/bin/swaymsg exec "bash -c '\''$NVIM_CMD'\''" > /dev/null 2>&1
+        ${pkgs.sway}/bin/swaymsg exec \"bash -c '\$NVIM_CMD'\" > /dev/null 2>&1
 
         exit 0
       fi
-    '
+    "
   '';
 in
 {
