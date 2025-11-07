@@ -20,9 +20,9 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create directory structure home-modules/tools/sway-tree-monitor/ with subdirs: diff/, correlation/, buffer/, ui/, rpc/
-- [ ] T002 Create package __init__.py files in all subdirectories
-- [ ] T003 [P] Add Python dependencies to home-modules/desktop/python-environment.nix: xxhash, orjson, textual
+- [X] T001 Create directory structure home-modules/tools/sway-tree-monitor/ with subdirs: diff/, correlation/, buffer/, ui/, rpc/
+- [X] T002 Create package __init__.py files in all subdirectories
+- [X] T003 [P] Add Python dependencies to home-modules/desktop/python-environment.nix: xxhash, orjson, textual
 
 ---
 
@@ -32,18 +32,18 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeSnapshot, WindowContext
-- [ ] T005 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeDiff, FieldChange, NodeChange, ChangeType enum
-- [ ] T006 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeEvent, UserAction, EventCorrelation, ActionType enum
-- [ ] T007 [P] Create FilterCriteria model in home-modules/tools/sway-tree-monitor/models.py with matches() method
-- [ ] T008 Implement xxHash-based Merkle tree hasher in home-modules/tools/sway-tree-monitor/diff/hasher.py with compute_subtree_hash()
-- [ ] T009 Implement HashCache in home-modules/tools/sway-tree-monitor/diff/cache.py with TTL-based eviction (60s)
-- [ ] T010 Implement hash-based tree differ in home-modules/tools/sway-tree-monitor/diff/differ.py with incremental comparison
-- [ ] T011 Create TreeEventBuffer circular buffer in home-modules/tools/sway-tree-monitor/buffer/event_buffer.py using collections.deque(maxlen=500)
-- [ ] T012 [P] Implement significance scoring logic in home-modules/tools/sway-tree-monitor/diff/differ.py (geometry, focus, workspace changes)
-- [ ] T013 Create daemon main loop skeleton in home-modules/tools/sway-tree-monitor/daemon.py with Sway IPC connection
-- [ ] T014 Implement JSON-RPC 2.0 server in home-modules/tools/sway-tree-monitor/rpc/server.py over Unix socket
-- [ ] T015 Implement JSON-RPC 2.0 client in home-modules/tools/sway-tree-monitor/rpc/client.py with error handling
+- [X] T004 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeSnapshot, WindowContext
+- [X] T005 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeDiff, FieldChange, NodeChange, ChangeType enum
+- [X] T006 [P] Create Pydantic models in home-modules/tools/sway-tree-monitor/models.py: TreeEvent, UserAction, EventCorrelation, ActionType enum
+- [X] T007 [P] Create FilterCriteria model in home-modules/tools/sway-tree-monitor/models.py with matches() method
+- [X] T008 Implement xxHash-based Merkle tree hasher in home-modules/tools/sway-tree-monitor/diff/hasher.py with compute_subtree_hash()
+- [X] T009 Implement HashCache in home-modules/tools/sway-tree-monitor/diff/cache.py with TTL-based eviction (60s)
+- [X] T010 Implement hash-based tree differ in home-modules/tools/sway-tree-monitor/diff/differ.py with incremental comparison
+- [X] T011 Create TreeEventBuffer circular buffer in home-modules/tools/sway-tree-monitor/buffer/event_buffer.py using collections.deque(maxlen=500)
+- [X] T012 [P] Implement significance scoring logic in home-modules/tools/sway-tree-monitor/diff/differ.py (geometry, focus, workspace changes)
+- [X] T013 Create daemon main loop skeleton in home-modules/tools/sway-tree-monitor/daemon.py with Sway IPC connection
+- [X] T014 Implement JSON-RPC 2.0 server in home-modules/tools/sway-tree-monitor/rpc/server.py over Unix socket
+- [X] T015 Implement JSON-RPC 2.0 client in home-modules/tools/sway-tree-monitor/rpc/client.py with error handling
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
