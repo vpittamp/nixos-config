@@ -171,12 +171,12 @@ const STATUS_ICONS = {
 } as const;
 
 /**
- * Change indicators with ANSI colors and bold
+ * Change indicators with ANSI colors (no bold for better alignment)
  */
 const CHANGE_INDICATORS = {
-  [ChangeType.New]: { symbol: "+NEW", color: "\x1b[1m\x1b[32m" },      // Bold Green
-  [ChangeType.Modified]: { symbol: "~MOD", color: "\x1b[1m\x1b[33m" }, // Bold Yellow
-  [ChangeType.Removed]: { symbol: "✗DEL", color: "\x1b[1m\x1b[31m" },  // Bold Red
+  [ChangeType.New]: { symbol: "●NEW", color: "\x1b[32m" },      // Green circle
+  [ChangeType.Modified]: { symbol: "◆MOD", color: "\x1b[33m" }, // Yellow diamond
+  [ChangeType.Removed]: { symbol: "✗DEL", color: "\x1b[31m" },  // Red X
   [ChangeType.None]: { symbol: "", color: "" },
 } as const;
 
@@ -256,17 +256,27 @@ function getStatusIndicators(window: WindowState): string {
 }
 
 /**
- * Pad string to target width (accounting for Unicode width)
+ * Strip ANSI escape codes from a string
+ */
+function stripAnsi(text: string): string {
+  // Remove all ANSI escape sequences
+  return text.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Pad string to target width (accounting for Unicode width and ANSI codes)
  */
 function padString(
   text: string,
   width: number,
   align: "left" | "right",
 ): string {
-  const textWidth = unicodeWidth(text);
+  // Calculate visible width (without ANSI codes)
+  const visibleText = stripAnsi(text);
+  const textWidth = unicodeWidth(visibleText);
 
   if (textWidth >= width) {
-    // Truncate if too long
+    // Truncate if too long (preserve ANSI codes if possible)
     return truncateToWidth(text, width);
   }
 
@@ -275,14 +285,28 @@ function padString(
 }
 
 /**
- * Truncate string to target display width
+ * Truncate string to target display width (ANSI-aware)
  */
 function truncateToWidth(text: string, maxWidth: number): string {
-  if (unicodeWidth(text) <= maxWidth) {
+  const visibleText = stripAnsi(text);
+
+  if (unicodeWidth(visibleText) <= maxWidth) {
     return text;
   }
 
-  // Binary search for truncation point
+  // For ANSI-colored text, we need to be more careful
+  // For now, just truncate the visible portion and drop ANSI codes
+  // This is a simplified approach - a full implementation would preserve codes
+  if (text !== visibleText) {
+    // Has ANSI codes - truncate visible text only
+    let truncated = visibleText;
+    while (unicodeWidth(truncated) > maxWidth - 3) {
+      truncated = truncated.substring(0, truncated.length - 1);
+    }
+    return truncated + "...";
+  }
+
+  // Binary search for truncation point (no ANSI codes)
   let left = 0;
   let right = text.length;
 
@@ -364,9 +388,10 @@ async function formatRow(window: WindowState, change?: WindowChange, selected: b
 
   const row = cells.join(" | ");
 
-  // Highlight selected row with background color and bold
+  // Highlight selected row with background color
   if (selected) {
-    return `\x1b[7m\x1b[1m${row}\x1b[0m`; // Inverse video (highlighted) + bold
+    // Use cyan background instead of inverse video for better readability
+    return `\x1b[46m\x1b[30m${row}\x1b[0m`; // Cyan background + black text
   }
 
   return row;
@@ -522,5 +547,7 @@ Legend:
     ${CHANGE_INDICATORS[ChangeType.New].color}${CHANGE_INDICATORS[ChangeType.New].symbol}${ANSI_RESET} New window (recently opened)
     ${CHANGE_INDICATORS[ChangeType.Modified].color}${CHANGE_INDICATORS[ChangeType.Modified].symbol}${ANSI_RESET} Modified window (title/workspace/focus changed)
     ${CHANGE_INDICATORS[ChangeType.Removed].color}${CHANGE_INDICATORS[ChangeType.Removed].symbol}${ANSI_RESET} Removed window (recently closed)
+
+  Note: Change indicators are visible for 5 seconds after the change occurs.
 `;
 }

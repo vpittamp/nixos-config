@@ -745,10 +745,10 @@ export class LiveTUI {
     // Build change indicator line
     const changeIndicators = [];
     if (newCount > 0) {
-      changeIndicators.push(`${ANSI.GREEN}${ANSI.BOLD}+${newCount} NEW${ANSI.RESET}`);
+      changeIndicators.push(`${ANSI.GREEN}●${newCount} NEW${ANSI.RESET}`);
     }
     if (modifiedCount > 0) {
-      changeIndicators.push(`${ANSI.YELLOW}${ANSI.BOLD}~${modifiedCount} CHANGED${ANSI.RESET}`);
+      changeIndicators.push(`${ANSI.YELLOW}◆${modifiedCount} MOD${ANSI.RESET}`);
     }
 
     const changeStatus = changeIndicators.length > 0
