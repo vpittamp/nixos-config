@@ -371,9 +371,10 @@ in
           command = "floating enable, border pixel 0, move position center, mark _global_ui";
         }
 
-        # FZF file search - floating, fullscreen for preview
+        # FZF file search - floating with preview
+        # Note: Ghostty app_id is always com.mitchellh.ghostty, so we match by title
         {
-          criteria = { app_id = "fzf-file-search"; };
+          criteria = { app_id = "com.mitchellh.ghostty"; title = "^FZF File Search$"; };
           command = "floating enable, border pixel 2, mark _file_search";
         }
 

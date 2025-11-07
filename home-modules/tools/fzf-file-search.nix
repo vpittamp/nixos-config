@@ -25,8 +25,9 @@ let
     # Launch in floating ghostty window with fzf
     # Uses fzf's built-in walker for fast file traversal
     # --bind 'enter:become(nvim {})' directly opens file in nvim (fzf README pattern)
+    # Note: --title is used for Sway window rule matching (Ghostty's app_id is always com.mitchellh.ghostty)
     exec ${pkgs.ghostty}/bin/ghostty \
-      --class=fzf-file-search \
+      --title="FZF File Search" \
       -e ${pkgs.fzf}/bin/fzf \
         --walker file,follow,hidden \
         --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache \

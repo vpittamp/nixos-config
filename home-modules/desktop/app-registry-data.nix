@@ -303,13 +303,14 @@ let
     # FZF File Search (floating)
     # Global fuzzy file finder with bat preview that opens files in nvim
     # Always launches new instance (via --force flag in keybinding)
+    # Note: Runs in Ghostty with title "FZF File Search" for window rule matching
     (mkApp {
       name = "fzf-file-search";
       display_name = "FZF File Search";
       command = "fzf-file-search";
       parameters = "";
       scope = "global";
-      expected_class = "fzf-file-search";
+      expected_class = "com.mitchellh.ghostty";  # Ghostty's app_id, matched by title
       preferred_workspace = 1;  # Floating, doesn't matter
       icon = "system-search";
       nix_package = "pkgs.fzf";
