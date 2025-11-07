@@ -563,7 +563,7 @@ class SwayTreeMonitorDaemon:
                     f"Memory usage: {memory_mb:.1f}MB | "
                     f"Buffer: {buffer_stats['size']}/{buffer_stats['max_size']} | "
                     f"Cache: {differ_stats['cache']['size']} entries | "
-                    f"Correlations: {correlation_stats['action_history_size']} actions"
+                    f"Correlations: {correlation_stats['active_action_windows']} actions"
                 )
 
                 # Warn if exceeding target

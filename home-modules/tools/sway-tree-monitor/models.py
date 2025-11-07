@@ -242,6 +242,25 @@ class TreeDiff:
         """Check if diff contains significant changes (above threshold)"""
         return self.significance_score >= threshold
 
+    @property
+    def significance_level(self) -> str:
+        """
+        Categorize significance score into level.
+
+        Returns:
+            Level string: 'critical', 'high', 'medium', 'low', 'minimal'
+        """
+        if self.significance_score >= 1.0:
+            return 'critical'
+        elif self.significance_score >= 0.75:
+            return 'high'
+        elif self.significance_score >= 0.5:
+            return 'medium'
+        elif self.significance_score >= 0.25:
+            return 'low'
+        else:
+            return 'minimal'
+
 
 # =============================================================================
 # User Actions
