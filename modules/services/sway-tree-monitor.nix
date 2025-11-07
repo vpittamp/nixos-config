@@ -29,8 +29,33 @@ let
     '';
   };
 
-  # Daemon wrapper with proper PYTHONPATH
+  # Daemon wrapper with proper PYTHONPATH and Sway IPC socket discovery
   daemonWrapper = pkgs.writeShellScript "sway-tree-monitor-daemon" ''
+    # Find user runtime directory
+    USER_ID=$(${pkgs.coreutils}/bin/id -u)
+    USER_RUNTIME_DIR="/run/user/$USER_ID"
+
+    # Find Sway IPC socket (matches pattern: sway-ipc.*.sock)
+    SWAY_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+
+    if [ -n "$SWAY_SOCK" ]; then
+      export SWAYSOCK="$SWAY_SOCK"
+      export I3SOCK="$SWAY_SOCK"  # i3ipc library checks both
+      echo "Found Sway IPC socket: $SWAY_SOCK" >&2
+    else
+      echo "ERROR: No Sway IPC socket found in $USER_RUNTIME_DIR" >&2
+      exit 1
+    fi
+
+    # Set WAYLAND_DISPLAY
+    WAYLAND_SOCK=$(${pkgs.findutils}/bin/find "$USER_RUNTIME_DIR" -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null | ${pkgs.coreutils}/bin/head -n1)
+    if [ -n "$WAYLAND_SOCK" ]; then
+      WAYLAND_DISPLAY=$(${pkgs.coreutils}/bin/basename "$WAYLAND_SOCK")
+      export WAYLAND_DISPLAY
+      export XDG_RUNTIME_DIR="$USER_RUNTIME_DIR"
+    fi
+
+    # Set Python environment
     export PYTHONPATH="${daemonPackage}/lib/python${pkgs.python311.pythonVersion}/site-packages:$PYTHONPATH"
     export PYTHONUNBUFFERED=1
     export LOG_LEVEL="${cfg.logLevel}"
