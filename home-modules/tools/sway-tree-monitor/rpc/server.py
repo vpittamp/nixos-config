@@ -281,14 +281,14 @@ class RPCServer:
             for corr in event.correlations:
                 correlations_list.append({
                     'action': {
-                        'timestamp_ms': corr.action.timestamp_ms,
-                        'action_type': corr.action.action_type.name,
-                        'binding_command': corr.action.binding_command,
-                        'input_type': corr.action.input_type
+                        'timestamp_ms': corr.user_action.timestamp_ms,
+                        'action_type': corr.user_action.action_type.name,
+                        'binding_command': corr.user_action.binding_command,
+                        'input_type': corr.user_action.input_type
                     },
-                    'confidence': corr.confidence,
+                    'confidence': corr.confidence_score,
                     'time_delta_ms': corr.time_delta_ms,
-                    'reasoning': corr.reasoning
+                    'reasoning': corr.get_confidence_label()
                 })
 
             summary = {
@@ -370,15 +370,15 @@ class RPCServer:
         for corr in event.correlations:
             correlations_list.append({
                 'action': {
-                    'timestamp_ms': corr.action.timestamp_ms,
-                    'action_type': corr.action.action_type.name,
-                    'binding_command': corr.action.binding_command,
-                    'input_type': corr.action.input_type
+                    'timestamp_ms': corr.user_action.timestamp_ms,
+                    'action_type': corr.user_action.action_type.name,
+                    'binding_command': corr.user_action.binding_command,
+                    'input_type': corr.user_action.input_type
                 },
-                'confidence': corr.confidence,
-                'confidence_level': corr.confidence_level.name if hasattr(corr, 'confidence_level') else 'unknown',
+                'confidence': corr.confidence_score,
+                'confidence_level': corr.get_confidence_label(),
                 'time_delta_ms': corr.time_delta_ms,
-                'reasoning': corr.reasoning
+                'reasoning': f"Correlation factors: temporal={corr.confidence_factors.get('temporal', 0):.1f}, semantic={corr.confidence_factors.get('semantic', 0):.1f}, exclusivity={corr.confidence_factors.get('exclusivity', 0):.1f}, cascade={corr.confidence_factors.get('cascade', 0):.1f}"
             })
         result['correlations'] = correlations_list
 

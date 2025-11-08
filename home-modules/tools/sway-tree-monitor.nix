@@ -4,7 +4,7 @@ let
   # Build sway-tree-monitor Python package from local source
   sway-tree-monitor = pkgs.python3Packages.buildPythonPackage {
     pname = "sway-tree-monitor";
-    version = "1.1.0";  # Bumped to force rebuild with get_event fix
+    version = "1.1.5";  # Fixed ActionType enum mismatch - simplified semantic relevance scoring to work with actual BINDING/KEYPRESS/MOUSE_CLICK/IPC_COMMAND values
 
     src = ./sway-tree-monitor;
 
@@ -14,6 +14,10 @@ let
       i3ipc
       orjson
       psutil
+      pydantic
+      xxhash
+      textual
+      rich
     ];
 
     installPhase = ''
@@ -26,6 +30,11 @@ let
       license = licenses.mit;
     };
   };
+
+  # Python environment with all dependencies
+  python-env = pkgs.python3.withPackages (ps: [
+    sway-tree-monitor
+  ]);
 
   # Wrapper script for the daemon
   sway-tree-monitor-daemon = pkgs.writeShellScriptBin "sway-tree-monitor-daemon" ''
@@ -54,12 +63,11 @@ let
     fi
 
     # Set Python environment
-    export PYTHONPATH="${sway-tree-monitor}/lib/python${pkgs.python3.pythonVersion}/site-packages:$PYTHONPATH"
     export PYTHONUNBUFFERED=1
     export LOG_LEVEL="INFO"
     export BUFFER_SIZE="500"
 
-    exec ${pkgs.python3}/bin/python -m sway_tree_monitor.daemon
+    exec ${python-env}/bin/python -m sway_tree_monitor.daemon
   '';
 
 in

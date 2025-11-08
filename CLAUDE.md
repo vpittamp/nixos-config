@@ -593,6 +593,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 ## Active Technologies
 - Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models) (063-scratchpad-filtering)
 - In-memory daemon state (project → terminal PID/window ID mapping), Sway window marks for persistence (063-scratchpad-filtering)
+- Python 3.11+ (matching existing sway-tree-monitor daemon) + i3ipc (Sway IPC), orjson (JSON serialization), psutil (process info) (066-inspect-daemon-fix)
+- In-memory circular buffer (500 events), no persistent storage (066-inspect-daemon-fix)
 
 ## Recent Changes
 - 063-scratchpad-filtering: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models)

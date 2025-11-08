@@ -120,14 +120,9 @@ def _score_semantic_relevance(action_type: ActionType, event_type: str) -> float
     """
     Score based on whether action type matches event type.
 
-    Examples:
-    - Mod+Enter (WINDOW_OPEN) → "window::new" = 1.0 (perfect match)
-    - Mod+Shift+Q (WINDOW_CLOSE) → "window::close" = 1.0 (perfect match)
-    - Mod+1 (WORKSPACE_SWITCH) → "workspace::focus" = 1.0 (perfect match)
-    - Mod+F (WINDOW_TOGGLE) → "window::floating" = 0.9 (very likely)
-    - Mod+J (WINDOW_FOCUS) → "window::focus" = 0.9 (very likely)
-    - Mod+Shift+1 (WINDOW_MOVE) → "window::move" = 1.0 (perfect match)
-    - Mod+Shift+1 (WINDOW_MOVE) → "workspace::focus" = 0.5 (indirect effect)
+    Since all Sway binding events use ActionType.BINDING, we provide
+    moderate relevance for all matches (the specific binding command
+    would need to be parsed for more granular matching).
 
     Args:
         action_type: Type of user action
@@ -136,34 +131,31 @@ def _score_semantic_relevance(action_type: ActionType, event_type: str) -> float
     Returns:
         Score [0.0, 1.0]
     """
-    # Direct matches (action explicitly causes this event type)
-    direct_matches = {
-        (ActionType.WINDOW_OPEN, "window::new"): 1.0,
-        (ActionType.WINDOW_CLOSE, "window::close"): 1.0,
-        (ActionType.WORKSPACE_SWITCH, "workspace::focus"): 1.0,
-        (ActionType.WORKSPACE_SWITCH, "window::focus"): 0.7,  # Indirect: switching focuses window
-        (ActionType.WINDOW_MOVE, "window::move"): 1.0,
-        (ActionType.WINDOW_MOVE, "workspace::focus"): 0.5,  # Indirect: moving may change workspace
-        (ActionType.WINDOW_FOCUS, "window::focus"): 0.9,
-        (ActionType.WINDOW_TOGGLE, "window::floating"): 0.9,
-        (ActionType.WINDOW_TOGGLE, "window::fullscreen"): 0.9,
-        (ActionType.LAYOUT_CHANGE, "workspace::layout"): 0.9,
-    }
+    # For BINDING type (which is what Sway uses for all key bindings),
+    # we give moderate relevance since we don't parse the binding_command
+    # to determine specific semantic matches
+    if action_type == ActionType.BINDING:
+        # Binding could cause any window/workspace event
+        if event_type.startswith('window::') or event_type.startswith('workspace::'):
+            return 0.6  # Moderate relevance
+        return 0.3  # Lower relevance for other events
 
-    # Check for exact match
-    key = (action_type, event_type)
-    if key in direct_matches:
-        return direct_matches[key]
+    # For IPC commands
+    if action_type == ActionType.IPC_COMMAND:
+        return 0.7  # IPC commands are likely intentional
 
-    # Partial matches (action category matches event category)
-    action_category = action_type.name.split('_')[0]  # e.g., "WINDOW" from "WINDOW_OPEN"
-    event_category = event_type.split('::')[0]  # e.g., "window" from "window::new"
+    # For keypresses and mouse clicks
+    if action_type == ActionType.KEYPRESS:
+        return 0.5  # Keypresses could cause various events
 
-    if action_category.lower() == event_category:
-        return 0.6  # Same category, moderate relevance
+    if action_type == ActionType.MOUSE_CLICK:
+        # Mouse clicks are likely to cause focus/move events
+        if 'focus' in event_type or 'move' in event_type:
+            return 0.7
+        return 0.4
 
-    # No match
-    return 0.2  # Low relevance, but not impossible (cascade effects)
+    # Default: low relevance but not impossible
+    return 0.2
 
 
 def _score_exclusivity(competing_actions: int) -> float:
@@ -307,17 +299,31 @@ def update_correlation_with_scoring(
         Updated correlation with refined confidence score
     """
     new_confidence, confidence_level, reasoning = calculate_confidence(
-        action=correlation.action,
+        action=correlation.user_action,
         event_type=event_type,
         time_delta_ms=correlation.time_delta_ms,
         competing_actions=competing_actions,
         cascade_depth=cascade_depth
     )
 
-    # Create new correlation with updated values
+    # Calculate individual factor scores for confidence_factors dict
+    temporal_score = _score_temporal_proximity(correlation.time_delta_ms)
+    semantic_score = _score_semantic_relevance(correlation.user_action.action_type, event_type)
+    exclusivity_score = _score_exclusivity(competing_actions)
+    cascade_score = _score_cascade_position(cascade_depth)
+
+    # Create new correlation with updated values, preserving all required fields
     return EventCorrelation(
-        action=correlation.action,
-        confidence=new_confidence,
+        correlation_id=correlation.correlation_id,
+        user_action=correlation.user_action,
+        tree_event_id=correlation.tree_event_id,
         time_delta_ms=correlation.time_delta_ms,
-        reasoning=reasoning
+        confidence_score=new_confidence,
+        confidence_factors={
+            'temporal': temporal_score * 100,
+            'semantic': semantic_score * 100,
+            'exclusivity': exclusivity_score * 100,
+            'cascade': cascade_score * 100
+        },
+        cascade_level=cascade_depth
     )
