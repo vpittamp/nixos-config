@@ -1,0 +1,181 @@
+{
+  "name": "Rapid Window Creation with Synchronization",
+  "description": "Stress test launching 10 windows rapidly with sync markers for 0% flakiness. Demonstrates I3_SYNC-style deterministic synchronization.",
+  "tags": ["stress", "synchronization", "windows", "await_sync"],
+  "priority": "P3",
+  "timeout": 60000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 50
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "timeout": 5000
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "visible": true,
+        "windows": [
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"}
+        ]
+      }
+    ]
+  }
+}

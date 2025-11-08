@@ -1,0 +1,43 @@
+{
+  "name": "Workspace Move with Event Correlation",
+  "description": "Integration test demonstrating tree-monitor event capture during workspace switch",
+  "tags": ["integration", "workspace", "tree-monitor", "events"],
+  "priority": "P1",
+  "timeout": 5000,
+  "actions": [],
+  "expectedState": {
+    "state": {
+      "id": 1,
+      "name": "root",
+      "type": "root",
+      "orientation": "horizontal",
+      "nodes": [
+        {
+          "id": 2,
+          "name": "__i3",
+          "type": "output",
+          "nodes": []
+        },
+        {
+          "type": "output",
+          "name": "HEADLESS-3",
+          "active": true,
+          "nodes": [
+            {
+              "type": "workspace",
+              "num": 8,
+              "name": "8",
+              "focused": false,
+              "visible": true,
+              "nodes": [],
+              "floating_nodes": []
+            }
+          ]
+        }
+      ],
+      "floating_nodes": []
+    },
+    "mode": "exact",
+    "description": "Workspace 8 on HEADLESS-3 output after workspace switch"
+  }
+}

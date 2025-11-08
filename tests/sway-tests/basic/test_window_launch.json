@@ -1,0 +1,45 @@
+{
+  "name": "Window Launch Test",
+  "description": "Test that launching Alacritty creates a window in the current workspace",
+  "tags": ["basic", "window", "launch"],
+  "priority": "P1",
+  "timeout": 5000,
+  "actions": [],
+  "expectedState": {
+    "state": {
+      "id": 1,
+      "name": "root",
+      "type": "root",
+      "orientation": "horizontal",
+      "nodes": [
+        {
+          "id": 2,
+          "name": "__i3",
+          "type": "output",
+          "nodes": []
+        },
+        {
+          "id": 3,
+          "name": "HEADLESS-1",
+          "type": "output",
+          "active": true,
+          "current_workspace": "1",
+          "nodes": [
+            {
+              "num": 1,
+              "name": "1",
+              "type": "workspace",
+              "focused": true,
+              "visible": true,
+              "nodes": [],
+              "floating_nodes": []
+            }
+          ]
+        }
+      ],
+      "floating_nodes": []
+    },
+    "mode": "exact",
+    "description": "Empty workspace with no windows"
+  }
+}
