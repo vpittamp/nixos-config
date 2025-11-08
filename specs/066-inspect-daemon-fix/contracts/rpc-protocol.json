@@ -1,0 +1,516 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sway Tree Monitor RPC Protocol",
+  "description": "JSON-RPC 2.0 contract for daemon communication",
+  "version": "1.0.0",
+  "type": "object",
+  "definitions": {
+    "jsonrpc_version": {
+      "type": "string",
+      "enum": ["2.0"],
+      "description": "JSON-RPC version"
+    },
+    "request_id": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "null" }
+      ],
+      "description": "Unique request identifier (omitted for notifications)"
+    },
+    "rpc_error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Error code (see error codes table)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Error message"
+        },
+        "data": {
+          "description": "Additional error data (optional)"
+        }
+      },
+      "required": ["code", "message"]
+    },
+    "change_type": {
+      "type": "string",
+      "enum": ["added", "removed", "modified"],
+      "description": "Type of tree change"
+    },
+    "significance_level": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "minimal"],
+      "description": "Significance category based on score"
+    },
+    "field_change": {
+      "type": "object",
+      "properties": {
+        "field_path": {
+          "type": "string",
+          "description": "JSONPath to changed field (e.g., 'rect.x', 'focused')"
+        },
+        "old_value": {
+          "description": "Previous value (null for ADDED changes)"
+        },
+        "new_value": {
+          "description": "New value (null for REMOVED changes)"
+        },
+        "change_type": {
+          "$ref": "#/definitions/change_type"
+        },
+        "significance_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Significance of this change (0.0=minimal, 1.0=critical)"
+        }
+      },
+      "required": ["field_path", "change_type", "significance_score"]
+    },
+    "node_change": {
+      "type": "object",
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "description": "Unique node identifier (window ID, workspace name, etc.)"
+        },
+        "node_type": {
+          "type": "string",
+          "enum": ["con", "workspace", "output", "floating_con"],
+          "description": "Type of tree node"
+        },
+        "node_path": {
+          "type": "string",
+          "description": "Tree path to node (e.g., 'outputs[0].workspaces[2].nodes[5]')"
+        },
+        "change_type": {
+          "$ref": "#/definitions/change_type"
+        },
+        "field_changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/field_change"
+          },
+          "description": "List of field-level changes within this node"
+        }
+      },
+      "required": ["node_id", "node_type", "change_type", "field_changes"]
+    },
+    "tree_diff": {
+      "type": "object",
+      "properties": {
+        "diff_id": {
+          "type": "integer",
+          "description": "Unique ID for this diff"
+        },
+        "before_snapshot_id": {
+          "type": "integer",
+          "description": "ID of before snapshot"
+        },
+        "after_snapshot_id": {
+          "type": "integer",
+          "description": "ID of after snapshot"
+        },
+        "total_changes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of field-level changes"
+        },
+        "significance_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Overall significance (max of field changes)"
+        },
+        "significance_level": {
+          "$ref": "#/definitions/significance_level"
+        },
+        "computation_time_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time to compute diff (milliseconds)"
+        },
+        "node_changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/node_change"
+          },
+          "description": "List of all changed nodes"
+        }
+      },
+      "required": ["diff_id", "before_snapshot_id", "after_snapshot_id", "total_changes", "significance_score", "significance_level", "computation_time_ms", "node_changes"]
+    },
+    "user_action": {
+      "type": "object",
+      "properties": {
+        "timestamp_ms": {
+          "type": "integer",
+          "description": "Unix timestamp in milliseconds"
+        },
+        "action_type": {
+          "type": "string",
+          "enum": ["binding", "ipc_command", "keypress", "mouse_click"],
+          "description": "Type of user action"
+        },
+        "binding_command": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Sway command executed (for binding type)"
+        },
+        "input_type": {
+          "type": "string",
+          "description": "Input event type"
+        }
+      },
+      "required": ["timestamp_ms", "action_type", "input_type"]
+    },
+    "event_correlation": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/user_action",
+          "description": "The user action (potential cause)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence that action caused tree change"
+        },
+        "confidence_level": {
+          "type": "string",
+          "description": "Human-readable confidence label"
+        },
+        "time_delta_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Milliseconds between action and tree change"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Explanation of confidence calculation"
+        }
+      },
+      "required": ["action", "confidence", "time_delta_ms", "reasoning"]
+    },
+    "window_context": {
+      "type": "object",
+      "properties": {
+        "window_id": {
+          "type": "integer",
+          "description": "Sway window ID"
+        },
+        "pid": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "null" }
+          ],
+          "description": "Process ID"
+        },
+        "i3pm_app_id": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "I3PM_APP_ID from process environment"
+        },
+        "i3pm_app_name": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Human-readable app name"
+        },
+        "i3pm_project_name": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Associated project name"
+        },
+        "i3pm_scope": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Scope type (scoped or global)"
+        },
+        "project_marks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Window marks starting with 'project:'"
+        },
+        "app_marks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Window marks starting with 'app:'"
+        },
+        "launch_timestamp_ms": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "null" }
+          ],
+          "description": "When window was launched"
+        },
+        "launch_action": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "User action that triggered launch"
+        }
+      },
+      "required": ["window_id", "project_marks", "app_marks"]
+    }
+  },
+  "methods": {
+    "get_event": {
+      "summary": "Get detailed event with diff and enrichment",
+      "description": "Retrieve a single event from the circular buffer with optional detailed information (diff, enrichment, snapshots)",
+      "params": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "integer" }
+            ],
+            "description": "Event ID to retrieve. Accepts both string (e.g., '15') and integer (e.g., 15). Type conversion happens server-side."
+          },
+          "include_snapshots": {
+            "type": "boolean",
+            "description": "Include full tree snapshots (before/after states). Default: false.",
+            "default": false
+          },
+          "include_enrichment": {
+            "type": "boolean",
+            "description": "Include I3PM enriched context (environment vars, project marks, PID). Default: true.",
+            "default": true
+          }
+        },
+        "required": ["event_id"]
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "description": "Unique monotonic event ID"
+          },
+          "timestamp_ms": {
+            "type": "integer",
+            "description": "Unix timestamp in milliseconds"
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Sway event type (e.g., 'window::new', 'workspace::focus')"
+          },
+          "sway_change": {
+            "type": "string",
+            "description": "Sway event 'change' field value"
+          },
+          "container_id": {
+            "oneOf": [
+              { "type": "integer" },
+              { "type": "null" }
+            ],
+            "description": "Sway container ID (window ID or workspace ID)"
+          },
+          "diff": {
+            "$ref": "#/definitions/tree_diff",
+            "description": "Tree diff with field-level changes"
+          },
+          "correlations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/event_correlation"
+            },
+            "description": "User actions correlated with this tree change"
+          },
+          "snapshots": {
+            "type": "object",
+            "properties": {
+              "before": {
+                "oneOf": [
+                  { "type": "object" },
+                  { "type": "null" }
+                ],
+                "description": "Before-state tree snapshot (null - stored differently)"
+              },
+              "after": {
+                "oneOf": [
+                  { "type": "object" },
+                  { "type": "null" }
+                ],
+                "description": "After-state tree snapshot (full Sway tree JSON)"
+              }
+            },
+            "description": "Full tree snapshots (only if include_snapshots: true)"
+          },
+          "enrichment": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/window_context"
+            },
+            "description": "I3PM enriched context keyed by window ID (only if include_enrichment: true)"
+          }
+        },
+        "required": ["event_id", "timestamp_ms", "event_type", "sway_change", "diff", "correlations"]
+      },
+      "errors": [
+        {
+          "code": -32600,
+          "message": "Invalid Request",
+          "description": "Missing event_id parameter or invalid parameter type"
+        },
+        {
+          "code": -32000,
+          "message": "Event not found",
+          "description": "Event ID does not exist in circular buffer"
+        },
+        {
+          "code": -32603,
+          "message": "Internal error",
+          "description": "Unexpected daemon error during lookup or serialization"
+        }
+      ],
+      "examples": [
+        {
+          "name": "Get event with defaults",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "get_event",
+            "params": {
+              "event_id": "15"
+            },
+            "id": 1
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "event_id": 15,
+              "timestamp_ms": 1699441234567,
+              "event_type": "window::new",
+              "sway_change": "new",
+              "container_id": 6442450944,
+              "diff": {
+                "diff_id": 14,
+                "before_snapshot_id": 13,
+                "after_snapshot_id": 15,
+                "total_changes": 3,
+                "significance_score": 0.85,
+                "significance_level": "high",
+                "computation_time_ms": 2.34,
+                "node_changes": []
+              },
+              "correlations": [
+                {
+                  "action": {
+                    "timestamp_ms": 1699441234500,
+                    "action_type": "binding",
+                    "binding_command": "exec --no-startup-id alacritty",
+                    "input_type": "keybinding"
+                  },
+                  "confidence": 0.95,
+                  "confidence_level": "VeryLikely",
+                  "time_delta_ms": 67,
+                  "reasoning": "Temporal proximity (67ms) + semantic match"
+                }
+              ],
+              "enrichment": {
+                "6442450944": {
+                  "window_id": 6442450944,
+                  "pid": 12345,
+                  "i3pm_app_id": "alacritty",
+                  "i3pm_app_name": "Terminal",
+                  "i3pm_project_name": "nixos",
+                  "i3pm_scope": "scoped",
+                  "project_marks": ["project:nixos"],
+                  "app_marks": ["app:alacritty"],
+                  "launch_timestamp_ms": 1699441234400,
+                  "launch_action": "Key: Mod4+Return"
+                }
+              }
+            },
+            "id": 1
+          }
+        },
+        {
+          "name": "Event not found error",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "get_event",
+            "params": {
+              "event_id": 999
+            },
+            "id": 2
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "error": {
+              "code": -32000,
+              "message": "Event not found",
+              "data": "Event ID 999 does not exist in buffer"
+            },
+            "id": 2
+          }
+        },
+        {
+          "name": "Invalid event_id type error",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "get_event",
+            "params": {
+              "event_id": "not_a_number"
+            },
+            "id": 3
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "error": {
+              "code": -32600,
+              "message": "Invalid Request",
+              "data": "Invalid event_id: must be an integer or numeric string, got 'not_a_number'"
+            },
+            "id": 3
+          }
+        }
+      ]
+    }
+  },
+  "error_codes": {
+    "-32700": {
+      "message": "Parse error",
+      "description": "Invalid JSON was received by the server"
+    },
+    "-32600": {
+      "message": "Invalid Request",
+      "description": "The JSON sent is not a valid Request object"
+    },
+    "-32601": {
+      "message": "Method not found",
+      "description": "The method does not exist / is not available"
+    },
+    "-32603": {
+      "message": "Internal error",
+      "description": "Internal JSON-RPC error"
+    },
+    "-32000": {
+      "message": "Event not found",
+      "description": "Event ID does not exist in circular buffer"
+    }
+  },
+  "notes": [
+    "All timestamps are Unix time in milliseconds",
+    "Significance scores range from 0.0 (minimal) to 1.0 (critical)",
+    "Type conversion: event_id accepts both string and integer; daemon converts to int before lookup",
+    "Large payloads: include_snapshots adds ~5-10 KB per response",
+    "Performance target: <5ms round-trip for complete request/response",
+    "Circular buffer: max 500 events, oldest events are overwritten when buffer is full"
+  ]
+}

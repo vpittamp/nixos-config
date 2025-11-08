@@ -43,6 +43,7 @@ COMMANDS:
   scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
   daemon           Daemon status and event monitoring
+  tree-monitor     Real-time window state event monitoring (Feature 065)
   layout           Workspace layout persistence (save/restore)
   rules            Window classification rules
   monitors         Workspace-to-monitor mapping configuration
@@ -153,6 +154,13 @@ async function main(): Promise<void> {
       {
         const { daemonCommand } = await import("./commands/daemon.ts");
         await daemonCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "tree-monitor":
+      {
+        const { treeMonitorCommand } = await import("./commands/tree-monitor.ts");
+        await treeMonitorCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
