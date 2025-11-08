@@ -32,21 +32,57 @@ export class DiffRenderer {
   }
 
   /**
-   * Render diff to string
+   * Render diff to string (Feature 068: T027-T028)
    */
   render(diff: StateDiff): string {
     if (diff.matches) {
-      return this.color("✓ States match exactly", "green");
+      const modeLabel = diff.mode ? ` (${diff.mode} mode)` : "";
+      return this.color(`✓ States match exactly${modeLabel}`, "green");
     }
 
     const lines: string[] = [];
 
-    // Header
-    lines.push(this.color("✗ States differ:", "red"));
+    // Header with comparison mode (T027)
+    const modeIndicator = diff.mode ? ` [${diff.mode.toUpperCase()} mode]` : "";
+    lines.push(this.color(`✗ States differ:${modeIndicator}`, "red"));
     lines.push("");
 
-    // Summary
+    // Summary with field tracking (T028)
     lines.push(this.renderSummary(diff));
+
+    // Add field tracking summary for partial mode (T028)
+    if (diff.mode === "partial" && (diff.comparedFields || diff.ignoredFields)) {
+      lines.push("");
+      const comparedCount = diff.comparedFields?.length || 0;
+      const ignoredCount = diff.ignoredFields?.length || 0;
+      lines.push(
+        this.color(
+          `Comparing ${comparedCount} field(s), ignoring ${ignoredCount} field(s)`,
+          "cyan"
+        )
+      );
+
+      // Show which fields were compared (T031: visual distinction)
+      if (diff.comparedFields && diff.comparedFields.length > 0) {
+        lines.push(
+          this.color(
+            `  Compared: ${diff.comparedFields.join(", ")}`,
+            "blue"
+          )
+        );
+      }
+
+      // Show which fields were ignored (T031: color coding)
+      if (diff.ignoredFields && diff.ignoredFields.length > 0) {
+        lines.push(
+          this.color(
+            `  Ignored: ${diff.ignoredFields.join(", ")}`,
+            "gray"
+          )
+        );
+      }
+    }
+
     lines.push("");
 
     // Detailed differences
@@ -80,7 +116,7 @@ export class DiffRenderer {
   }
 
   /**
-   * Render individual diff entry
+   * Render individual diff entry (Feature 068: T029-T030)
    */
   private renderDiffEntry(entry: DiffEntry): string {
     const path = this.color(entry.path, "cyan");
@@ -97,6 +133,13 @@ export class DiffRenderer {
         } ${this.formatValue(entry.expected)}`;
 
       case "modified":
+        // T030: Add contextual messages for simple types (Expected X, got Y format)
+        const contextualMessage = this.generateContextualMessage(entry);
+        if (contextualMessage) {
+          return `  ${this.color("~", "yellow")} ${path}\n    ${contextualMessage}`;
+        }
+
+        // Fallback to default format for complex types
         return `  ${this.color("~", "yellow")} ${path}\n    ${
           this.color("Expected:", "gray")
         } ${this.formatValue(entry.expected)}\n    ${
@@ -106,6 +149,31 @@ export class DiffRenderer {
       default:
         return `  ${path}: ${entry.type}`;
     }
+  }
+
+  /**
+   * Generate contextual message for simple type differences (Feature 068: T030)
+   *
+   * For simple types (string, number, boolean, null), generate readable messages
+   * in "Expected X, got Y" format instead of generic diff output.
+   */
+  private generateContextualMessage(entry: DiffEntry): string | null {
+    const isSimpleType = (value: unknown) =>
+      value === null ||
+      value === undefined ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean";
+
+    // Only generate contextual messages for simple type mismatches
+    if (!isSimpleType(entry.expected) || !isSimpleType(entry.actual)) {
+      return null;
+    }
+
+    const expected = this.formatValue(entry.expected);
+    const actual = this.formatValue(entry.actual);
+
+    return `${this.color("Expected", "gray")} ${expected}${this.color(", got", "gray")} ${actual}`;
   }
 
   /**

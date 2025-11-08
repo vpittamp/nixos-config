@@ -7,6 +7,7 @@
 import { SwayClient } from "../services/sway-client.ts";
 import { TreeMonitorClient } from "../services/tree-monitor-client.ts";
 import { StateComparator } from "../services/state-comparator.ts";
+import { StateExtractor, detectComparisonMode } from "../services/state-extractor.ts";
 import { ActionExecutor } from "../services/action-executor.ts";
 import { DiffRenderer } from "../ui/diff-renderer.ts";
 import { Reporter } from "../ui/reporter.ts";
@@ -14,7 +15,7 @@ import { TapReporter } from "../ui/tap-reporter.ts";
 import { JunitReporter } from "../ui/junit-reporter.ts";
 import { FixtureManager } from "../fixtures/fixture-manager.ts";
 import type { TestCase } from "../models/test-case.ts";
-import type { TestResult, TestStatus } from "../models/test-result.ts";
+import type { TestResult, TestStatus, DiffEntry } from "../models/test-result.ts";
 import type { StateSnapshot } from "../models/state-snapshot.ts";
 import type { Fixture } from "../fixtures/types.ts";
 import { TIMEOUTS, PROGRESS_INTERVALS, HEADLESS_CONFIG, TREE_MONITOR } from "../constants.ts";
@@ -48,6 +49,7 @@ export class TestRunner {
   private swayClient: SwayClient;
   private treeMonitorClient: TreeMonitorClient;
   private comparator: StateComparator;
+  private extractor: StateExtractor;
   private actionExecutor: ActionExecutor;
   private diffRenderer: DiffRenderer;
   private reporter: Reporter;
@@ -58,6 +60,7 @@ export class TestRunner {
     this.swayClient = new SwayClient();
     this.treeMonitorClient = new TreeMonitorClient();
     this.comparator = new StateComparator();
+    this.extractor = new StateExtractor();
     this.actionExecutor = new ActionExecutor({ swayClient: this.swayClient });
     this.diffRenderer = new DiffRenderer(!options.noColor);
     this.reporter = new Reporter(!options.noColor);
@@ -465,11 +468,61 @@ export class TestRunner {
       throw new DOMException("Aborted", "AbortError");
     }
 
-    // Compare with expected state
-    // Use tree field from expectedState (old format compatibility)
-    const expectedState = (testCase.expectedState as { state?: StateSnapshot; tree?: StateSnapshot }).state ||
-      (testCase.expectedState as { state?: StateSnapshot; tree?: StateSnapshot }).tree as StateSnapshot;
-    const diff = this.comparator.compare(expectedState, actualState, "exact");
+    // Compare with expected state (Feature 068: Multi-mode dispatch)
+    // Detect comparison mode based on expectedState fields
+    const mode = detectComparisonMode(testCase.expectedState);
+
+    let diff;
+
+    switch (mode) {
+      case "exact":
+        // Full tree comparison - use tree field
+        diff = this.comparator.compare(
+          testCase.expectedState.tree as StateSnapshot,
+          actualState,
+          "exact"
+        );
+        break;
+
+      case "partial":
+        // Partial field-based matching - extract and compare
+        const extractedState = this.extractor.extract(testCase.expectedState, actualState);
+        // Use comparePartialState for the actual comparison with detailed tracking (T019-T021)
+        const partialResult = this.comparePartialStateDetailed(testCase.expectedState, extractedState as Record<string, unknown>);
+        diff = {
+          matches: partialResult.matches,
+          differences: partialResult.differences,
+          summary: {
+            added: 0,
+            removed: 0,
+            modified: partialResult.differences.filter(d => d.type === "modified").length,
+          },
+          mode: "partial" as const,
+          comparedFields: partialResult.comparedFields,
+          ignoredFields: partialResult.ignoredFields,
+        };
+        break;
+
+      case "assertions":
+        // Assertion-based matching - evaluate queries
+        diff = this.comparator.compare(
+          testCase.expectedState.assertions || [],
+          actualState,
+          "partial"
+        );
+        diff.mode = "assertions";
+        break;
+
+      case "empty":
+        // Empty expected state - always match (validates action execution only)
+        diff = {
+          matches: true,
+          differences: [],
+          summary: { added: 0, removed: 0, modified: 0 },
+          mode: "empty" as const,
+        };
+        break;
+    }
 
     // Determine pass/fail
     const passed = diff.matches;
@@ -477,7 +530,6 @@ export class TestRunner {
     // Build diagnostics context if test failed
     const diagnostics = !passed && this.treeMonitorAvailable ? {
       treeMonitorEvents: capturedEvents,
-      initialState: expectedState as StateSnapshot,
       failureState: actualState,
     } : undefined;
 
@@ -495,10 +547,246 @@ export class TestRunner {
       status: (passed ? "passed" : "failed") as TestStatus,
       passed,
       message: passed ? "Test passed" : "State comparison failed",
-      expectedState,
+      expectedState: testCase.expectedState,
       actualState,
       diff,
       diagnostics,
+    };
+  }
+
+  /**
+   * Compare partial state with detailed tracking (Feature 068: T019-T021)
+   *
+   * Compares expected partial state fields against extracted actual state and tracks:
+   * - Which fields were compared
+   * - Which fields were ignored (not in expected)
+   * - Detailed differences for each mismatch
+   *
+   * Semantics:
+   * - undefined in expected = "don't check" (field ignored)
+   * - null in expected = must match null exactly (field compared)
+   * - missing property in expected = field ignored in actual
+   */
+  private comparePartialStateDetailed(
+    expected: TestCase["expectedState"],
+    actual: Record<string, unknown>
+  ): {
+    matches: boolean;
+    differences: DiffEntry[];
+    comparedFields: string[];
+    ignoredFields: string[];
+  } {
+    const differences: DiffEntry[] = [];
+    const comparedFields: string[] = [];
+    const ignoredFields: string[] = [];
+
+    // Check focusedWorkspace if specified
+    if ("focusedWorkspace" in expected && expected.focusedWorkspace !== undefined) {
+      comparedFields.push("focusedWorkspace");
+      if (expected.focusedWorkspace !== actual.focusedWorkspace) {
+        differences.push({
+          path: "$.focusedWorkspace",
+          type: "modified",
+          expected: expected.focusedWorkspace,
+          actual: actual.focusedWorkspace,
+        });
+      }
+    } else if ("focusedWorkspace" in actual) {
+      ignoredFields.push("focusedWorkspace");
+    }
+
+    // Check windowCount if specified
+    if ("windowCount" in expected && expected.windowCount !== undefined) {
+      comparedFields.push("windowCount");
+      if (expected.windowCount !== actual.windowCount) {
+        differences.push({
+          path: "$.windowCount",
+          type: "modified",
+          expected: expected.windowCount,
+          actual: actual.windowCount,
+        });
+      }
+    } else if ("windowCount" in actual) {
+      ignoredFields.push("windowCount");
+    }
+
+    // Check workspaces if specified
+    if ("workspaces" in expected && expected.workspaces && Array.isArray(expected.workspaces)) {
+      comparedFields.push("workspaces");
+      const actualWorkspaces = actual.workspaces as Array<Record<string, unknown>> | undefined;
+
+      if (!actualWorkspaces || !Array.isArray(actualWorkspaces)) {
+        differences.push({
+          path: "$.workspaces",
+          type: "modified",
+          expected: expected.workspaces,
+          actual: actualWorkspaces,
+        });
+      } else {
+        // Compare each workspace
+        for (let i = 0; i < expected.workspaces.length; i++) {
+          const expectedWs = expected.workspaces[i];
+          const actualWs = actualWorkspaces[i];
+
+          if (!actualWs) {
+            differences.push({
+              path: `$.workspaces[${i}]`,
+              type: "removed",
+              expected: expectedWs,
+            });
+            continue;
+          }
+
+          // Check workspace fields
+          if ("num" in expectedWs && expectedWs.num !== undefined) {
+            comparedFields.push(`workspaces[${i}].num`);
+            if (expectedWs.num !== actualWs.num) {
+              differences.push({
+                path: `$.workspaces[${i}].num`,
+                type: "modified",
+                expected: expectedWs.num,
+                actual: actualWs.num,
+              });
+            }
+          }
+
+          if ("name" in expectedWs && expectedWs.name !== undefined) {
+            comparedFields.push(`workspaces[${i}].name`);
+            if (expectedWs.name !== actualWs.name) {
+              differences.push({
+                path: `$.workspaces[${i}].name`,
+                type: "modified",
+                expected: expectedWs.name,
+                actual: actualWs.name,
+              });
+            }
+          }
+
+          if ("focused" in expectedWs && expectedWs.focused !== undefined) {
+            comparedFields.push(`workspaces[${i}].focused`);
+            if (expectedWs.focused !== actualWs.focused) {
+              differences.push({
+                path: `$.workspaces[${i}].focused`,
+                type: "modified",
+                expected: expectedWs.focused,
+                actual: actualWs.focused,
+              });
+            }
+          }
+
+          if ("visible" in expectedWs && expectedWs.visible !== undefined) {
+            comparedFields.push(`workspaces[${i}].visible`);
+            if (expectedWs.visible !== actualWs.visible) {
+              differences.push({
+                path: `$.workspaces[${i}].visible`,
+                type: "modified",
+                expected: expectedWs.visible,
+                actual: actualWs.visible,
+              });
+            }
+          }
+
+          // Check windows if specified
+          if ("windows" in expectedWs && expectedWs.windows && Array.isArray(expectedWs.windows)) {
+            comparedFields.push(`workspaces[${i}].windows`);
+            const actualWindows = actualWs.windows as Array<Record<string, unknown>> | undefined;
+
+            if (!actualWindows || !Array.isArray(actualWindows)) {
+              differences.push({
+                path: `$.workspaces[${i}].windows`,
+                type: "modified",
+                expected: expectedWs.windows,
+                actual: actualWindows,
+              });
+            } else {
+              // Compare each window
+              for (let j = 0; j < expectedWs.windows.length; j++) {
+                const expectedWin = expectedWs.windows[j];
+                const actualWin = actualWindows[j];
+
+                if (!actualWin) {
+                  differences.push({
+                    path: `$.workspaces[${i}].windows[${j}]`,
+                    type: "removed",
+                    expected: expectedWin,
+                  });
+                  continue;
+                }
+
+                // Check window fields (T022: null must match null, T023: undefined = ignored)
+                if ("app_id" in expectedWin && expectedWin.app_id !== undefined) {
+                  comparedFields.push(`workspaces[${i}].windows[${j}].app_id`);
+                  if (expectedWin.app_id !== actualWin.app_id) {
+                    differences.push({
+                      path: `$.workspaces[${i}].windows[${j}].app_id`,
+                      type: "modified",
+                      expected: expectedWin.app_id,
+                      actual: actualWin.app_id,
+                    });
+                  }
+                }
+
+                if ("class" in expectedWin && expectedWin.class !== undefined) {
+                  comparedFields.push(`workspaces[${i}].windows[${j}].class`);
+                  if (expectedWin.class !== actualWin.class) {
+                    differences.push({
+                      path: `$.workspaces[${i}].windows[${j}].class`,
+                      type: "modified",
+                      expected: expectedWin.class,
+                      actual: actualWin.class,
+                    });
+                  }
+                }
+
+                if ("title" in expectedWin && expectedWin.title !== undefined) {
+                  comparedFields.push(`workspaces[${i}].windows[${j}].title`);
+                  if (expectedWin.title !== actualWin.title) {
+                    differences.push({
+                      path: `$.workspaces[${i}].windows[${j}].title`,
+                      type: "modified",
+                      expected: expectedWin.title,
+                      actual: actualWin.title,
+                    });
+                  }
+                }
+
+                if ("focused" in expectedWin && expectedWin.focused !== undefined) {
+                  comparedFields.push(`workspaces[${i}].windows[${j}].focused`);
+                  if (expectedWin.focused !== actualWin.focused) {
+                    differences.push({
+                      path: `$.workspaces[${i}].windows[${j}].focused`,
+                      type: "modified",
+                      expected: expectedWin.focused,
+                      actual: actualWin.focused,
+                    });
+                  }
+                }
+
+                if ("floating" in expectedWin && expectedWin.floating !== undefined) {
+                  comparedFields.push(`workspaces[${i}].windows[${j}].floating`);
+                  if (expectedWin.floating !== actualWin.floating) {
+                    differences.push({
+                      path: `$.workspaces[${i}].windows[${j}].floating`,
+                      type: "modified",
+                      expected: expectedWin.floating,
+                      actual: actualWin.floating,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } else if ("workspaces" in actual) {
+      ignoredFields.push("workspaces");
+    }
+
+    return {
+      matches: differences.length === 0,
+      differences,
+      comparedFields,
+      ignoredFields,
     };
   }
 
