@@ -69,6 +69,7 @@ export class StateComparator {
       matches: differences.length === 0,
       differences,
       summary: this.summarizeDifferences(differences),
+      mode: "exact", // Feature 068: Add mode tracking
     };
   }
 
@@ -98,11 +99,17 @@ export class StateComparator {
       matches: differences.length === 0,
       differences,
       summary: this.summarizeDifferences(differences),
+      mode: "partial", // Feature 068: Add mode tracking
     };
   }
 
   /**
    * Recursively compare two objects and collect differences
+   *
+   * Feature 068 Semantics (T043):
+   * - undefined in expected = "don't check" (field is ignored, NOT compared)
+   * - null in expected = must match null exactly (field IS compared)
+   * - missing property in expected = field is ignored in actual (NOT compared)
    */
   private compareObjects(
     expected: unknown,
@@ -110,8 +117,15 @@ export class StateComparator {
     path: string,
     differences: DiffEntry[],
   ): void {
-    // Handle null/undefined
-    if (expected === null || expected === undefined) {
+    // Feature 068: Treat undefined in expected as "don't check this field"
+    // This allows partial state matching where only specified fields are verified.
+    // Example: {focusedWorkspace: 1} checks ONLY focusedWorkspace, ignoring all other fields.
+    if (expected === undefined) {
+      return; // Skip comparison for undefined expected values
+    }
+
+    // Handle null
+    if (expected === null) {
       if (actual !== expected) {
         differences.push({
           path,

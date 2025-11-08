@@ -42,6 +42,21 @@ export interface StateDiff {
     removed: number;
     modified: number;
   };
+
+  /**
+   * Comparison mode used (Feature 068)
+   */
+  mode?: "exact" | "partial" | "assertions" | "empty";
+
+  /**
+   * Fields that were compared (partial mode only, Feature 068)
+   */
+  comparedFields?: string[];
+
+  /**
+   * Fields that were ignored in comparison (partial mode only, Feature 068)
+   */
+  ignoredFields?: string[];
 }
 
 /**
