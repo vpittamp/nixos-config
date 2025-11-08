@@ -106,11 +106,14 @@ class SwayTreeMonitorDaemon:
             await self._capture_initial_snapshot()
 
             # Subscribe to Sway events
-            # NOTE: connection.on() automatically subscribes to base events
-            # when handlers are registered (verified by i3pm daemon pattern).
-            # Calling subscribe() manually can cause conflicts.
+            # Register event handlers with .on()
             self._subscribe_to_events()
-            logger.info("Event handlers registered (auto-subscribed via .on())")
+            # NOTE: Even though conn.on() may call ensure_future(subscribe()),
+            # those are async tasks that may not execute before main() starts.
+            # Explicitly subscribing ensures we're subscribed before the event
+            # loop starts processing events. (Pattern from i3pm daemon line 465-469)
+            await self.connection.subscribe(['window', 'workspace', 'binding'])
+            logger.info("Event handlers registered and explicitly subscribed")
 
             # Start RPC server
             await self.rpc_server.start()
