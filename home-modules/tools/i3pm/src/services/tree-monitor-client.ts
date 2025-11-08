@@ -165,9 +165,9 @@ export class TreeMonitorClient {
   // deno-lint-ignore no-explicit-any
   private transformEvent(daemonEvent: any): Event {
     return {
-      id: String(daemonEvent.event_id || daemonEvent.id),
-      timestamp: daemonEvent.timestamp_ms || daemonEvent.timestamp,
-      type: daemonEvent.event_type || daemonEvent.type,
+      id: String(daemonEvent.event_id ?? daemonEvent.id ?? "unknown"),
+      timestamp: daemonEvent.timestamp_ms ?? daemonEvent.timestamp ?? 0,
+      type: daemonEvent.event_type ?? daemonEvent.type ?? "unknown",
       change_count: daemonEvent.diff?.total_changes ?? daemonEvent.change_count ?? 0,
       significance: daemonEvent.diff?.significance_score ?? daemonEvent.significance ?? 0,
       correlation: daemonEvent.correlations?.[0] ? {
