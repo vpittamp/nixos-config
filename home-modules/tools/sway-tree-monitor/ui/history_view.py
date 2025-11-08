@@ -122,6 +122,18 @@ class HistoryView(Container):
         """Refresh event data"""
         await self._load_events()
 
+    def action_drill_down(self) -> None:
+        """Drill down into selected event - opens detailed diff view"""
+        table = self.query_one("#event-table", DataTable)
+        if table.cursor_row is not None:
+            # Get event ID from first column
+            row_data = table.get_row_at(table.cursor_row)
+            event_id = int(row_data[0])  # First column is event ID
+
+            # Push DiffView screen
+            from .diff_view import DiffView
+            self.app.push_screen(DiffView(self.rpc_client, event_id))
+
     async def _load_events(self) -> None:
         """Load events from daemon via RPC"""
         status = self.query_one("#status-line", Static)

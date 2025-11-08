@@ -13,6 +13,7 @@ import json
 from typing import Optional
 
 from textual.app import ComposeResult
+from textual.screen import Screen
 from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
 from textual.widgets import Static, Button
 from textual import on
@@ -24,7 +25,7 @@ from rich.text import Text
 from ..rpc.client import RPCClient
 
 
-class DiffView(Container):
+class DiffView(Screen):
     """
     Detailed diff inspection view.
 

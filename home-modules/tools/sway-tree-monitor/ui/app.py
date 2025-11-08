@@ -101,13 +101,20 @@ class SwayTreeMonitorApp(App):
                         id="error_message"
                     )
 
-            # Placeholder tabs for future phases
+            # History tab
             with TabPane("History", id="tab_history"):
-                from textual.widgets import Static
-                yield Static(
-                    "[dim]Historical query view coming in Phase 4 (User Story 2)[/dim]",
-                    id="placeholder_history"
-                )
+                if self.daemon_connected:
+                    from .history_view import HistoryView
+                    yield HistoryView(
+                        rpc_client=self.rpc_client,
+                        last=100  # Show last 100 events by default
+                    )
+                else:
+                    from textual.widgets import Static
+                    yield Static(
+                        "[red]ERROR: Cannot connect to daemon[/red]",
+                        id="error_history"
+                    )
 
             with TabPane("Stats", id="tab_stats"):
                 from textual.widgets import Static
@@ -137,6 +144,14 @@ class SwayTreeMonitorApp(App):
         if active_pane == "tab_live":
             live_view = self.query_one(LiveEventView)
             live_view.action_drill_down()
+        elif active_pane == "tab_history":
+            try:
+                from .history_view import HistoryView
+                history_view = self.query_one(HistoryView)
+                history_view.action_drill_down()
+            except Exception:
+                # History view not initialized yet
+                self.notify("History view not available", severity="warning")
 
     def on_mount(self) -> None:
         """Show connection status on mount"""

@@ -155,11 +155,16 @@ class LiveEventView(Container):
         self.app.notify("Filtering coming in Phase 5 (User Story 5)", severity="information")
 
     def action_drill_down(self) -> None:
-        """Drill down into selected event (TODO: Phase 5)"""
+        """Drill down into selected event - opens detailed diff view"""
         table = self.query_one(DataTable)
         if table.cursor_row is not None:
+            # Get event ID from first column
             row_key = table.get_row_at(table.cursor_row)[0]  # Get event ID
-            self.app.notify(f"Event drill-down for ID {row_key} coming in Phase 5", severity="information")
+            event_id = int(row_key)
+
+            # Push DiffView screen
+            from .diff_view import DiffView
+            self.app.push_screen(DiffView(self.rpc_client, event_id))
 
     def on_unmount(self) -> None:
         """Cleanup when unmounting"""
