@@ -177,7 +177,7 @@ export class TreeMonitorClient {
         confidence: daemonEvent.correlations[0].confidence,
         reasoning: daemonEvent.correlations[0].reasoning,
       } : undefined,
-      diff: daemonEvent.diff?.changes || undefined,
+      diff: daemonEvent.diff?.node_changes || undefined,
       enrichment: daemonEvent.enrichment || undefined,
     };
   }
