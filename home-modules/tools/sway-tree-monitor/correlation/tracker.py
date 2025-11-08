@@ -80,6 +80,7 @@ class CorrelationTracker:
         # Stats
         self._total_actions = 0
         self._total_correlations = 0
+        self._correlation_id_counter = 0
         self._last_cleanup_ms = int(time.time() * 1000)
 
     def track_action(self, action: UserAction) -> None:
@@ -142,11 +143,20 @@ class CorrelationTracker:
             confidence = self._calculate_temporal_confidence(time_delta_ms)
 
             # Create correlation
+            self._correlation_id_counter += 1
             correlation = EventCorrelation(
-                action=window.action,
-                confidence=confidence,
+                correlation_id=self._correlation_id_counter,
+                user_action=window.action,
+                tree_event_id=event_id,
                 time_delta_ms=time_delta_ms,
-                reasoning=f"Action occurred {time_delta_ms}ms before event"
+                confidence_score=confidence,
+                confidence_factors={
+                    'temporal': confidence * 100,
+                    'semantic': 0.0,  # Not yet implemented
+                    'exclusivity': 0.0,  # Not yet implemented
+                    'cascade': 0.0  # Not yet implemented
+                },
+                cascade_level=0
             )
 
             correlations.append(correlation)
@@ -154,7 +164,7 @@ class CorrelationTracker:
             self._total_correlations += 1
 
         # Sort by confidence (highest first)
-        correlations.sort(key=lambda c: c.confidence, reverse=True)
+        correlations.sort(key=lambda c: c.confidence_score, reverse=True)
 
         return correlations
 
