@@ -1,0 +1,45 @@
+{
+  "name": "Application workspace launch test",
+  "description": "Test that launching Firefox on workspace 2 creates a window on the expected workspace",
+  "tags": ["basic", "app-launch", "workspace"],
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "switch_workspace",
+      "params": {
+        "workspace": 2
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "firefox",
+        "command": "firefox",
+        "args": ["--new-window"]
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window::new",
+        "timeout_ms": 8000
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 2,
+    "workspaces": [
+      {
+        "num": 2,
+        "focused": true,
+        "visible": true
+      }
+    ],
+    "windows": [
+      {
+        "app_id": "firefox",
+        "workspace": 2
+      }
+    ]
+  }
+}

@@ -1,0 +1,240 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sway Test Framework - Test Actions Schema",
+  "description": "JSON schema for test action definitions including enhanced launch_app and wait_event",
+  "definitions": {
+    "LaunchAppAction": {
+      "type": "object",
+      "required": ["type", "params"],
+      "properties": {
+        "type": {
+          "const": "launch_app",
+          "description": "Launch an application via app-launcher-wrapper.sh (ALWAYS uses wrapper)"
+        },
+        "params": {
+          "type": "object",
+          "required": ["app_name"],
+          "properties": {
+            "app_name": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z0-9-]+$",
+              "description": "App name from application registry (e.g., 'firefox', 'vscode')"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Additional command-line arguments passed to the app"
+            },
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Project context (sets I3PM_PROJECT_NAME)"
+            },
+            "workspace": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 70,
+              "description": "Workspace override (sets I3PM_TARGET_WORKSPACE)"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "examples": [
+        {
+          "type": "launch_app",
+          "params": {
+            "app_name": "firefox"
+          }
+        },
+        {
+          "type": "launch_app",
+          "params": {
+            "app_name": "vscode",
+            "args": ["--folder-uri", "/etc/nixos"],
+            "project": "nixos"
+          }
+        },
+        {
+          "type": "launch_app",
+          "params": {
+            "app_name": "thunar",
+            "workspace": 6
+          }
+        }
+      ]
+    },
+    "WaitEventAction": {
+      "type": "object",
+      "required": ["type", "params"],
+      "properties": {
+        "type": {
+          "const": "wait_event",
+          "description": "Wait for a Sway IPC event with timeout"
+        },
+        "params": {
+          "type": "object",
+          "required": ["event_type"],
+          "properties": {
+            "event_type": {
+              "type": "string",
+              "enum": ["window", "workspace", "binding", "shutdown", "tick"],
+              "description": "Sway IPC event type to wait for"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 60000,
+              "default": 10000,
+              "description": "Timeout in milliseconds (max 60 seconds)"
+            },
+            "criteria": {
+              "type": "object",
+              "properties": {
+                "change": {
+                  "type": "string",
+                  "description": "Event change type (e.g., 'new', 'close', 'focus')"
+                },
+                "app_id": {
+                  "type": "string",
+                  "description": "Filter by Wayland app_id (exact or partial match)"
+                },
+                "window_class": {
+                  "type": "string",
+                  "description": "Filter by X11 window class (exact or partial match)"
+                },
+                "workspace": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 70,
+                  "description": "Filter by workspace number"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Optional filtering criteria for events"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "type": "wait_event",
+          "params": {
+            "event_type": "window",
+            "timeout": 8000,
+            "criteria": {
+              "change": "new",
+              "app_id": "firefox"
+            }
+          }
+        },
+        {
+          "type": "wait_event",
+          "params": {
+            "event_type": "workspace",
+            "timeout": 5000,
+            "criteria": {
+              "change": "focus"
+            }
+          }
+        }
+      ]
+    },
+    "ValidateWorkspaceAssignmentAction": {
+      "type": "object",
+      "required": ["type", "params"],
+      "properties": {
+        "type": {
+          "const": "validate_workspace_assignment",
+          "description": "Validate that an app window exists on expected workspace"
+        },
+        "params": {
+          "type": "object",
+          "required": ["app_name", "expected_workspace"],
+          "properties": {
+            "app_name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "App name from registry (matched via I3PM_APP_NAME)"
+            },
+            "expected_workspace": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 70,
+              "description": "Expected workspace number"
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "type": "validate_workspace_assignment",
+          "params": {
+            "app_name": "firefox",
+            "expected_workspace": 3
+          }
+        }
+      ]
+    },
+    "ValidateEnvironmentAction": {
+      "type": "object",
+      "required": ["type", "params"],
+      "properties": {
+        "type": {
+          "const": "validate_environment",
+          "description": "Validate I3PM environment variables in a window's process"
+        },
+        "params": {
+          "type": "object",
+          "required": ["app_name", "expected_vars"],
+          "properties": {
+            "app_name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "App name from registry (used to find window and extract PID)"
+            },
+            "expected_vars": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Expected environment variables (key-value pairs). Supports wildcard matching with '*'."
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "type": "validate_environment",
+          "params": {
+            "app_name": "firefox",
+            "expected_vars": {
+              "I3PM_APP_NAME": "firefox",
+              "I3PM_TARGET_WORKSPACE": "3",
+              "I3PM_PROJECT_NAME": "nixos"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["type", "params"],
+  "oneOf": [
+    {
+      "$ref": "#/definitions/LaunchAppAction"
+    },
+    {
+      "$ref": "#/definitions/WaitEventAction"
+    },
+    {
+      "$ref": "#/definitions/ValidateWorkspaceAssignmentAction"
+    },
+    {
+      "$ref": "#/definitions/ValidateEnvironmentAction"
+    }
+  ]
+}

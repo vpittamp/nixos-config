@@ -36,6 +36,8 @@ interface RPCResponse {
 export class TreeMonitorClient {
   private socketPath: string;
   private requestId = 0;
+  private availableMethods: Set<string> | null = null;
+  private introspectionWarningShown = false;
 
   constructor(socketPath = "/run/user/1000/sway-tree-monitor.sock") {
     this.socketPath = socketPath;
@@ -82,6 +84,66 @@ export class TreeMonitorClient {
       return response.result;
     } finally {
       conn.close();
+    }
+  }
+
+  /**
+   * Check if an RPC method is available on tree-monitor daemon
+   *
+   * Uses system.listMethods introspection with session-level caching.
+   *
+   * @param methodName - Method name to check (e.g., "sendSyncMarker")
+   * @returns true if method available, false otherwise
+   */
+  async checkMethodAvailability(methodName: string): Promise<boolean> {
+    // Lazy load available methods on first call
+    if (this.availableMethods === null) {
+      try {
+        const methods = await this.sendRequest("system.listMethods", {}) as string[];
+        this.availableMethods = new Set(methods);
+      } catch (error) {
+        // Log warning once on first introspection failure
+        if (!this.introspectionWarningShown) {
+          console.warn(
+            "RPC introspection unavailable, disabling auto-sync features.\n" +
+            `Error: ${error.message}`
+          );
+          this.introspectionWarningShown = true;
+        }
+        this.availableMethods = new Set(); // Empty set = no methods available
+      }
+    }
+
+    return this.availableMethods.has(methodName);
+  }
+
+  /**
+   * Send sync marker to daemon with graceful fallback
+   *
+   * Checks method availability first. If unavailable, returns null
+   * and caller should fall back to timeout-based synchronization.
+   *
+   * @returns Sync marker ID if successful, null if method unavailable
+   */
+  async sendSyncMarkerSafe(): Promise<string | null> {
+    // Check if method available
+    if (!(await this.checkMethodAvailability("sendSyncMarker"))) {
+      // Log warning once
+      if (!this.introspectionWarningShown) {
+        console.warn(
+          "Auto-sync unavailable (daemon not running or method missing), " +
+          "using timeout-based synchronization"
+        );
+        this.introspectionWarningShown = true;
+      }
+      return null;
+    }
+
+    try {
+      return await this.sendSyncMarker();
+    } catch (error) {
+      console.warn(`send Sync marker failed: ${error.message}, falling back to timeout`);
+      return null;
     }
   }
 

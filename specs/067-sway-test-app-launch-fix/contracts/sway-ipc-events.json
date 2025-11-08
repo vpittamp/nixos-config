@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sway IPC Events Schema",
+  "description": "JSON schema for Sway IPC event payloads (from swaymsg -t subscribe)",
+  "definitions": {
+    "WindowEvent": {
+      "type": "object",
+      "required": ["change", "container"],
+      "properties": {
+        "change": {
+          "type": "string",
+          "enum": ["new", "close", "focus", "title", "fullscreen_mode", "move", "floating", "urgent", "mark"],
+          "description": "Type of window change"
+        },
+        "container": {
+          "$ref": "#/definitions/Container"
+        }
+      }
+    },
+    "WorkspaceEvent": {
+      "type": "object",
+      "required": ["change"],
+      "properties": {
+        "change": {
+          "type": "string",
+          "enum": ["init", "empty", "focus", "move", "rename", "urgent", "reload"],
+          "description": "Type of workspace change"
+        },
+        "current": {
+          "$ref": "#/definitions/Workspace",
+          "description": "Current workspace state (for most events)"
+        },
+        "old": {
+          "$ref": "#/definitions/Workspace",
+          "description": "Previous workspace state (for focus events)"
+        }
+      }
+    },
+    "Container": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Unique container ID"
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Process ID (may be null for containers without processes)"
+        },
+        "app_id": {
+          "type": ["string", "null"],
+          "description": "Wayland application ID (e.g., 'firefox', 'Alacritty')"
+        },
+        "window_properties": {
+          "type": "object",
+          "properties": {
+            "class": {
+              "type": "string",
+              "description": "X11 window class"
+            },
+            "instance": {
+              "type": "string",
+              "description": "X11 window instance"
+            },
+            "title": {
+              "type": "string",
+              "description": "X11 window title"
+            }
+          },
+          "description": "X11-specific window properties (null for Wayland windows)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Window title"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["root", "output", "workspace", "con", "floating_con"],
+          "description": "Container type"
+        },
+        "workspace": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Workspace number (if container is on a workspace)"
+        },
+        "focused": {
+          "type": "boolean",
+          "description": "Whether container has focus"
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "Focus stack (container IDs in focus order)"
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Marks applied to container"
+        }
+      }
+    },
+    "Workspace": {
+      "type": "object",
+      "required": ["num", "name", "focused", "output"],
+      "properties": {
+        "num": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Workspace number"
+        },
+        "name": {
+          "type": "string",
+          "description": "Workspace name"
+        },
+        "focused": {
+          "type": "boolean",
+          "description": "Whether workspace is focused"
+        },
+        "output": {
+          "type": "string",
+          "description": "Output name (e.g., 'HEADLESS-1', 'eDP-1')"
+        },
+        "visible": {
+          "type": "boolean",
+          "description": "Whether workspace is visible on any output"
+        },
+        "urgent": {
+          "type": "boolean",
+          "description": "Whether workspace has urgent hint"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/WindowEvent"
+    },
+    {
+      "$ref": "#/definitions/WorkspaceEvent"
+    }
+  ],
+  "examples": [
+    {
+      "change": "new",
+      "container": {
+        "id": 12345,
+        "pid": 67890,
+        "app_id": "firefox",
+        "name": "Mozilla Firefox",
+        "type": "con",
+        "workspace": 3,
+        "focused": true,
+        "marks": []
+      }
+    },
+    {
+      "change": "focus",
+      "current": {
+        "num": 2,
+        "name": "2",
+        "focused": true,
+        "output": "HEADLESS-1",
+        "visible": true,
+        "urgent": false
+      },
+      "old": {
+        "num": 1,
+        "name": "1",
+        "focused": false,
+        "output": "HEADLESS-1",
+        "visible": false,
+        "urgent": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+Quickstart.md
+docs/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+tests/
+coverage/
+
+# Nix
+default.nix
+result

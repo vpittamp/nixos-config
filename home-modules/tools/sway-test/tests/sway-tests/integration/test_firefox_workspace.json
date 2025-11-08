@@ -1,0 +1,30 @@
+{
+  "name": "Firefox launches on workspace 3",
+  "description": "Validates that Firefox launches via wrapper and appears on its configured workspace 3 (not random workspace)",
+  "tags": ["integration", "wrapper", "workspace-assignment", "firefox"],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "firefox",
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 10000,
+        "criteria": {
+          "change": "new",
+          "app_id": "firefox"
+        }
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3
+  }
+}

@@ -14,22 +14,26 @@ export type ActionType =
   | "focus_window"
   | "wait_event"
   | "debug_pause"
-  | "await_sync";
+  | "await_sync"
+  | "validate_workspace_assignment"
+  | "validate_environment";
 
 /**
  * Action parameters based on action type
  */
 export interface ActionParams {
-  // launch_app params
-  command?: string;
+  // launch_app params (BREAKING CHANGE: app_name required, command deprecated)
+  app_name?: string;       // REQUIRED: App name from registry
+  command?: string;        // DEPRECATED: Use app_name instead
   args?: string[];
   env?: Record<string, string>;
+  project?: string;        // Optional project context (sets I3PM_PROJECT_NAME)
 
   // send_ipc params
   ipc_command?: string;
 
-  // switch_workspace params
-  workspace?: number | string;
+  // switch_workspace and launch_app params
+  workspace?: number | string; // Workspace number or name (sets I3PM_TARGET_WORKSPACE for launch_app)
 
   // focus_window params
   window_criteria?: {
@@ -38,12 +42,26 @@ export interface ActionParams {
     title?: string;
   };
 
-  // wait_event params
+  // wait_event params (enhanced with event criteria)
   event_type?: string;
   timeout?: number;
+  criteria?: {
+    app_id?: string;
+    window_class?: string;
+    change?: string;
+    workspace?: number;
+    name?: string;
+    payload?: string;
+  };
 
   // await_sync params
   marker?: string;
+
+  // validate_workspace_assignment params
+  expected_workspace?: number;
+
+  // validate_environment params
+  expected_vars?: Record<string, string>;
 
   // Common params
   sync?: boolean; // Auto-sync after action

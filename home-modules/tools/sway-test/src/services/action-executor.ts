@@ -12,6 +12,10 @@ import { DebugRepl, type ReplContext } from "./debug-repl.ts";
 import { StateComparator } from "./state-comparator.ts";
 import type { StateSnapshot } from "../models/state-snapshot.ts";
 import { TIMEOUTS } from "../constants.ts";
+import { lookupApp } from "./app-registry-reader.ts";
+import { expandPath } from "../helpers/path-utils.ts";
+import { waitForEvent } from "./event-subscriber.ts";
+import { readWindowEnvironment, validateI3pmEnvironment, EnvironmentValidationError } from "../helpers/environment-validator.ts";
 
 /**
  * Action execution result
@@ -183,31 +187,78 @@ export class ActionExecutor {
         await this.executeDebugPause(action);
         break;
 
+      case "validate_workspace_assignment":
+        await this.executeValidateWorkspaceAssignment(action);
+        break;
+
+      case "validate_environment":
+        await this.executeValidateEnvironment(action);
+        break;
+
       default:
         throw new Error(`Unknown action type: ${action.type}`);
     }
   }
 
   /**
-   * Execute launch_app action (T033)
-   * Launches application using Deno.Command with optional environment variables
+   * Execute launch_app action (T011-T013)
+   * Launches application ALWAYS using app-launcher-wrapper.sh
+   *
+   * BREAKING CHANGE: app_name parameter required, direct command execution removed
    */
   private async executeLaunchApp(action: Action): Promise<void> {
-    const { command, args = [], env = {} } = action.params;
+    const { app_name, args = [], project, workspace } = action.params;
 
-    if (!command) {
-      throw new Error("launch_app requires 'command' parameter");
+    if (!app_name) {
+      throw new Error(
+        "launch_app requires 'app_name' parameter (from application registry).\n" +
+        "Direct command execution is no longer supported.\n" +
+        "Add the app to ~/.config/i3/application-registry.json first."
+      );
     }
 
-    // Build environment (inherit current + custom vars)
-    const environment = {
+    // Validate app exists in registry
+    const app = await lookupApp(app_name);
+
+    // Build wrapper script path
+    const wrapperPath = expandPath("~/.local/bin/app-launcher-wrapper.sh");
+
+    // Verify wrapper exists
+    try {
+      await Deno.stat(wrapperPath);
+    } catch {
+      throw new Error(
+        `app-launcher-wrapper.sh not found at: ${wrapperPath}\n` +
+        `Ensure wrapper script is installed.`
+      );
+    }
+
+    // Build wrapper command arguments
+    const wrapperArgs = [app_name];
+
+    // Add additional arguments if provided
+    if (args.length > 0) {
+      wrapperArgs.push("--", ...args);
+    }
+
+    // Build environment variables for wrapper
+    const environment: Record<string, string> = {
       ...Deno.env.toObject(),
-      ...env,
     };
 
-    // Launch subprocess
-    const cmd = new Deno.Command(command, {
-      args,
+    // Inject project context if provided
+    if (project) {
+      environment.I3PM_PROJECT_NAME = project;
+    }
+
+    // Inject workspace override if provided
+    if (workspace) {
+      environment.I3PM_TARGET_WORKSPACE = workspace.toString();
+    }
+
+    // Launch via wrapper
+    const cmd = new Deno.Command(wrapperPath, {
+      args: wrapperArgs,
       env: environment,
       stdout: "piped",
       stderr: "piped",
@@ -215,14 +266,14 @@ export class ActionExecutor {
 
     const child = cmd.spawn();
 
-    // Don't wait for process to complete (detached application)
-    // Just verify it launched successfully by checking if PID exists
+    // Don't wait for process to complete (wrapper spawns detached app)
+    // Just verify wrapper started successfully
     if (!child.pid) {
       await child.status; // Wait for status to verify failure
-      const stderr = new TextDecoder().decode(
-        (await child.stderr.getReader().read()).value,
-      );
-      throw new Error(`Failed to launch ${command}: ${stderr}`);
+      const stderrReader = child.stderr.getReader();
+      const stderrChunk = await stderrReader.read();
+      const stderr = stderrChunk.value ? new TextDecoder().decode(stderrChunk.value) : "";
+      throw new Error(`Failed to launch ${app_name} via wrapper: ${stderr}`);
     }
 
     // Give app time to initialize (small delay for window creation)
@@ -327,23 +378,51 @@ export class ActionExecutor {
   }
 
   /**
-   * Execute wait_event action (T037)
-   * Waits for specific Sway event with timeout
+   * Execute wait_event action (T021 - T024)
+   * Waits for specific Sway event with timeout using event subscription
+   *
+   * BREAKING CHANGE: Properly implemented with event subscription (replaces 1s sleep placeholder)
    */
   private async executeWaitEvent(action: Action): Promise<void> {
-    const { event_type, timeout = TIMEOUTS.WAIT_EVENT_DEFAULT } = action.params;
+    const {
+      event_type,
+      timeout = TIMEOUTS.WAIT_EVENT_DEFAULT,
+      criteria,
+    } = action.params;
 
     if (!event_type) {
       throw new Error("wait_event requires 'event_type' parameter");
     }
 
-    // TODO: Implement event waiting using swaymsg -t subscribe
-    // For now, just add a delay as placeholder
-    // This will be enhanced when tree-monitor integration is complete
-    await this.delay(Math.min(timeout, 1000));
+    // Validate event type
+    const validTypes = ["window", "workspace", "binding", "shutdown", "tick"];
+    if (!validTypes.includes(event_type)) {
+      throw new Error(
+        `Invalid event_type: ${event_type}. ` +
+        `Valid types: ${validTypes.join(", ")}`
+      );
+    }
 
-    // Placeholder - actual implementation would subscribe to events
-    console.warn(`wait_event for ${event_type} not fully implemented yet`);
+    // Wait for event using event subscriber
+    try {
+      await waitForEvent(
+        event_type as "window" | "workspace" | "binding" | "shutdown" | "tick",
+        criteria,
+        timeout
+      );
+    } catch (error) {
+      // Re-throw with additional context
+      if (error.name === "WaitEventTimeoutError") {
+        // Get current tree state for diagnostics
+        const tree = await this.swayClient.getTree();
+        throw new Error(
+          `${error.message}\n\n` +
+          `Last tree state captured at ${tree.capturedAt}\n` +
+          `Use debug_pause action to inspect state interactively.`
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -418,8 +497,172 @@ export class ActionExecutor {
   }
 
   /**
-   * Automatic synchronization after window-modifying actions (T055)
+   * Execute validate_workspace_assignment action (T031)
+   * Validates that app window appears on expected workspace
+   */
+  private async executeValidateWorkspaceAssignment(action: Action): Promise<void> {
+    const { app_name, expected_workspace } = action.params;
+
+    if (!app_name) {
+      throw new Error("validate_workspace_assignment requires 'app_name' parameter");
+    }
+
+    if (expected_workspace === undefined) {
+      throw new Error("validate_workspace_assignment requires 'expected_workspace' parameter");
+    }
+
+    // Find window with matching app_name (via I3PM_APP_NAME env var)
+    // This is a simplified check - would need to enhance to read /proc/<pid>/environ
+    // For now, check by app_id matching
+    const foundWindow = await this.findWindowByAppId(app_name);
+
+    if (!foundWindow) {
+      throw new Error(
+        `Window for app "${app_name}" not found in tree.\n` +
+        `Expected workspace: ${expected_workspace}`
+      );
+    }
+
+    if (foundWindow.workspace !== expected_workspace) {
+      throw new Error(
+        `Workspace assignment validation failed for "${app_name}":\n` +
+        `  Expected: workspace ${expected_workspace}\n` +
+        `  Actual: workspace ${foundWindow.workspace}`
+      );
+    }
+  }
+
+  /**
+   * Execute validate_environment action (T032)
+   * Validates that window has correct I3PM_* environment variables
+   */
+  private async executeValidateEnvironment(action: Action): Promise<void> {
+    const { app_name, expected_vars = {} } = action.params;
+
+    if (!app_name) {
+      throw new Error("validate_environment requires 'app_name' parameter");
+    }
+
+    // Find window by app_id
+    const foundWindow = await this.findWindowByAppId(app_name);
+
+    if (!foundWindow) {
+      throw new Error(`Window for app "${app_name}" not found in tree`);
+    }
+
+    if (!foundWindow.pid) {
+      throw new Error(`Window for app "${app_name}" has no PID - cannot read environment`);
+    }
+
+    // Read environment variables from /proc/<pid>/environ
+    const env = await readWindowEnvironment(foundWindow.pid);
+
+    // Validate expected variables
+    const missingVars: string[] = [];
+    const mismatchVars: Array<{ key: string; expected: string; actual: string | undefined }> = [];
+
+    for (const [key, expectedValue] of Object.entries(expected_vars)) {
+      const actualValue = env[key];
+
+      if (actualValue === undefined) {
+        missingVars.push(key);
+      } else if (expectedValue.includes("*")) {
+        // Wildcard matching (e.g., "firefox-*" matches "firefox-global-123")
+        const pattern = new RegExp("^" + expectedValue.replace(/\*/g, ".*") + "$");
+        if (!pattern.test(actualValue)) {
+          mismatchVars.push({ key, expected: expectedValue, actual: actualValue });
+        }
+      } else if (actualValue !== expectedValue) {
+        mismatchVars.push({ key, expected: expectedValue, actual: actualValue });
+      }
+    }
+
+    if (missingVars.length > 0 || mismatchVars.length > 0) {
+      let errorMsg = `Environment validation failed for "${app_name}" (PID ${foundWindow.pid}):\n`;
+
+      if (missingVars.length > 0) {
+        errorMsg += `  Missing variables: ${missingVars.join(", ")}\n`;
+      }
+
+      if (mismatchVars.length > 0) {
+        errorMsg += "  Mismatched variables:\n";
+        for (const { key, expected, actual } of mismatchVars) {
+          errorMsg += `    ${key}: expected "${expected}", got "${actual}"\n`;
+        }
+      }
+
+      throw new EnvironmentValidationError(foundWindow.pid, missingVars, env);
+    }
+  }
+
+  /**
+   * Helper: Find window by app_id and extract workspace number (T033)
+   *
+   * Uses SwayClient.findWindow() to locate window in tree and extract workspace.
+   * Walks up the tree hierarchy to find parent workspace container.
+   */
+  private async findWindowByAppId(appId: string): Promise<{ pid?: number; workspace?: number } | null> {
+    // Use SwayClient helper to find window
+    const windowNode = await this.swayClient.findWindow({ app_id: appId });
+
+    if (!windowNode) {
+      return null;
+    }
+
+    // Extract PID
+    const pid = windowNode.pid;
+
+    // Walk up tree to find workspace number
+    // Note: In actual implementation, we'd need parent references or tree walking
+    // For now, we can get full tree and search for workspace containing this window
+    const tree = await this.swayClient.getTree();
+    const workspace = this.findWorkspaceForWindow(tree, windowNode.id);
+
+    return { pid, workspace };
+  }
+
+  /**
+   * Helper: Find workspace number containing a window with given window ID
+   */
+  private findWorkspaceForWindow(tree: any, windowId: number): number | undefined {
+    const findWorkspace = (node: any, currentWorkspace?: number): number | undefined => {
+      // Track current workspace as we descend
+      const workspaceNum = node.type === "workspace" && node.num !== undefined
+        ? node.num
+        : currentWorkspace;
+
+      // Check if this is the window we're looking for
+      if (node.id === windowId) {
+        return workspaceNum;
+      }
+
+      // Search children
+      if (node.nodes && Array.isArray(node.nodes)) {
+        for (const child of node.nodes) {
+          const found = findWorkspace(child, workspaceNum);
+          if (found !== undefined) return found;
+        }
+      }
+
+      // Search floating_nodes
+      if (node.floating_nodes && Array.isArray(node.floating_nodes)) {
+        for (const child of node.floating_nodes) {
+          const found = findWorkspace(child, workspaceNum);
+          if (found !== undefined) return found;
+        }
+      }
+
+      return undefined;
+    };
+
+    return findWorkspace(tree);
+  }
+
+  /**
+   * Automatic synchronization after window-modifying actions (T028 - User Story 3)
    * Performs I3_SYNC-style synchronization if autoSync is enabled
+   *
+   * Uses sendSyncMarkerSafe() for graceful degradation when daemon unavailable
    */
   private async performAutoSync(timeout: number = TIMEOUTS.SYNC_DEFAULT): Promise<void> {
     if (!this.autoSync) {
@@ -427,8 +670,14 @@ export class ActionExecutor {
     }
 
     try {
-      // Send sync marker
-      const markerId = await this.treeMonitorClient.sendSyncMarker();
+      // Send sync marker with graceful fallback (T028)
+      const markerId = await this.treeMonitorClient.sendSyncMarkerSafe();
+
+      if (markerId === null) {
+        // Method unavailable - fall back to timeout-based delay
+        await this.delay(500);
+        return;
+      }
 
       // Wait for sync marker tick event
       const success = await this.treeMonitorClient.awaitSyncMarker(

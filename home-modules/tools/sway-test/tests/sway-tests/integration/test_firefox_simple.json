@@ -1,0 +1,28 @@
+{
+  "name": "Firefox launches via wrapper (demo)",
+  "description": "Demonstrates app launch via app-launcher-wrapper.sh with event waiting",
+  "tags": ["demo", "wrapper", "firefox"],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "firefox",
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 10000,
+        "criteria": {
+          "change": "new",
+          "app_id": "firefox"
+        }
+      }
+    }
+  ],
+  "expectedState": {}
+}
