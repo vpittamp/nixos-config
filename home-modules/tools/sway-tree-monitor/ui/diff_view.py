@@ -87,10 +87,10 @@ class DiffView(Screen):
         try:
             status.update("Loading event details...")
 
-            # Get event with detailed diff and enrichment
+            # Get event with detailed diff (enrichment is included by default)
             response = self.rpc_client.get_event(
                 event_id=self.event_id,
-                include_enrichment=True
+                include_diff=True
             )
             self.event_data = response
 
