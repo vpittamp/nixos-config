@@ -260,19 +260,80 @@ async function handleInput(state: LiveState): Promise<void> {
       }
     }
 
-    // Enter - inspect (TODO: implement in Phase 5)
+    // Enter - inspect
     if (key[0] === 13) {
-      // Placeholder: will implement event inspection in Phase 5
-      state.error = "Event inspection not yet implemented (Phase 5)";
-      render(state);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      state.error = undefined;
-      render(state);
+      if (state.selectedIndex >= 0 && state.selectedIndex < state.events.length) {
+        const event = state.events[state.selectedIndex];
+
+        try {
+          // Show detail view (blocking)
+          await showEventDetail(client, event.id);
+        } catch (err) {
+          // If detail view fails, show error briefly
+          state.error = err instanceof Error ? err.message : String(err);
+          render(state);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          state.error = undefined;
+        }
+
+        // Resume live view
+        render(state);
+      }
     }
   }
 
   // Restore stdin to normal mode
   Deno.stdin.setRaw(false);
+}
+
+/**
+ * Show event detail view
+ */
+async function showEventDetail(
+  client: TreeMonitorClient,
+  eventId: string,
+): Promise<void> {
+  // Import detail view renderer
+  const { renderEventDetail } = await import("./tree-monitor-detail.ts");
+
+  // Fetch event details
+  const event = await client.getEvent(eventId);
+
+  // Clear screen and render detail view
+  clearScreen();
+  Deno.stdout.writeSync(new TextEncoder().encode(renderEventDetail(event)));
+  Deno.stdout.writeSync(new TextEncoder().encode("\n\nPress 'b' to return to live view, 'q' to quit...\n"));
+
+  // Wait for 'b' or 'q' key
+  await waitForExitKey();
+}
+
+/**
+ * Wait for exit key ('b' or 'q')
+ */
+function waitForExitKey(): Promise<void> {
+  return new Promise((resolve) => {
+    const buf = new Uint8Array(8);
+
+    const readKey = async () => {
+      const n = await Deno.stdin.read(buf);
+      if (n === null) {
+        resolve();
+        return;
+      }
+
+      const key = buf.subarray(0, n);
+      // 'b' or 'q' key
+      if (key[0] === 98 || key[0] === 113) {
+        resolve();
+      } else {
+        // Continue waiting for valid key
+        readKey();
+      }
+    };
+
+    readKey();
+  });
 }
 
 /**
