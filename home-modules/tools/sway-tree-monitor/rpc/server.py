@@ -25,15 +25,6 @@ from ..diff.differ import TreeDiffer
 logger = logging.getLogger(__name__)
 
 
-class RPCError(Exception):
-    """Custom exception for RPC errors with error codes"""
-    def __init__(self, code: int, message: str, data: Any = None):
-        self.code = code
-        self.message = message
-        self.data = data
-        super().__init__(message)
-
-
 class RPCServer:
     """
     JSON-RPC 2.0 server for daemon API.
@@ -181,10 +172,6 @@ class RPCServer:
             handler = self._methods[method]
             result = await handler(params)
             return self._success_response(request_id, result)
-        except RPCError as e:
-            # Custom RPC error with specific error code
-            logger.warning(f"RPC error in method '{method}': {e.message}")
-            return self._error_response(request_id, e.code, e.message, e.data)
         except Exception as e:
             logger.error(f"Error in method '{method}': {e}", exc_info=True)
             return self._error_response(request_id, -32603, "Internal error", str(e))
@@ -281,14 +268,14 @@ class RPCServer:
             for corr in event.correlations:
                 correlations_list.append({
                     'action': {
-                        'timestamp_ms': corr.user_action.timestamp_ms,
-                        'action_type': corr.user_action.action_type.name,
-                        'binding_command': corr.user_action.binding_command,
-                        'input_type': corr.user_action.input_type
+                        'timestamp_ms': corr.action.timestamp_ms,
+                        'action_type': corr.action.action_type.name,
+                        'binding_command': corr.action.binding_command,
+                        'input_type': corr.action.input_type
                     },
-                    'confidence': corr.confidence_score,
+                    'confidence': corr.confidence,
                     'time_delta_ms': corr.time_delta_ms,
-                    'reasoning': corr.get_confidence_label()
+                    'reasoning': corr.reasoning
                 })
 
             summary = {
@@ -330,18 +317,12 @@ class RPCServer:
         if event_id is None:
             raise ValueError("Missing required parameter: event_id")
 
-        # Convert event_id to int (accept both string and int from RPC client)
-        try:
-            event_id = int(event_id)
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid event_id: must be an integer or numeric string, got {event_id!r}")
-
         include_snapshots = params.get('include_snapshots', False)
         include_enrichment = params.get('include_enrichment', True)
 
         event = self.event_buffer.get_event_by_id(event_id)
         if not event:
-            raise RPCError(-32000, "Event not found", f"Event ID {event_id} does not exist in buffer")
+            raise ValueError(f"Event not found: {event_id}")
 
         # Build detailed event response
         result = {
@@ -370,15 +351,15 @@ class RPCServer:
         for corr in event.correlations:
             correlations_list.append({
                 'action': {
-                    'timestamp_ms': corr.user_action.timestamp_ms,
-                    'action_type': corr.user_action.action_type.name,
-                    'binding_command': corr.user_action.binding_command,
-                    'input_type': corr.user_action.input_type
+                    'timestamp_ms': corr.action.timestamp_ms,
+                    'action_type': corr.action.action_type.name,
+                    'binding_command': corr.action.binding_command,
+                    'input_type': corr.action.input_type
                 },
-                'confidence': corr.confidence_score,
-                'confidence_level': corr.get_confidence_label(),
+                'confidence': corr.confidence,
+                'confidence_level': corr.confidence_level.name if hasattr(corr, 'confidence_level') else 'unknown',
                 'time_delta_ms': corr.time_delta_ms,
-                'reasoning': f"Correlation factors: temporal={corr.confidence_factors.get('temporal', 0):.1f}, semantic={corr.confidence_factors.get('semantic', 0):.1f}, exclusivity={corr.confidence_factors.get('exclusivity', 0):.1f}, cascade={corr.confidence_factors.get('cascade', 0):.1f}"
+                'reasoning': corr.reasoning
             })
         result['correlations'] = correlations_list
 

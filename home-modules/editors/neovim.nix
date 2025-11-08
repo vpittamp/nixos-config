@@ -55,7 +55,12 @@
     vim.opt.colorcolumn = "80"
     vim.opt.scrolloff = 8
     vim.opt.updatetime = 50
-    vim.opt.mouse = "a"
+    vim.opt.mouse = ""  -- Disable mouse to prevent escape sequence leakage
+
+    -- Disable focus event tracking to prevent escape sequence leakage
+    vim.cmd('set t_fe=')  -- Disable focus gained sequence
+    vim.cmd('set t_fd=')  -- Disable focus lost sequence
+
     vim.opt.ignorecase = true
     vim.opt.smartcase = true
     vim.opt.incsearch = true

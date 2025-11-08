@@ -495,6 +495,82 @@ window-env <pid|class|title> [--pid|--filter PATTERN|--all|--json]
 
 **Features**: Fuzzy match, colored I3PM_* output, PID validation, helpful errors
 
+## 📊 Sway Tree Diff Monitor (Feature 064)
+
+Real-time window state change monitoring with <10ms diff computation, user action correlation, and enriched context.
+
+### Quick Commands
+
+```bash
+# Live monitoring (real-time event stream)
+sway-tree-monitor live
+
+# Historical query (past events with correlation)
+sway-tree-monitor history --last 50
+sway-tree-monitor history --since 5m --filter window::new
+
+# Detailed diff inspection (field-level changes + I3PM context)
+sway-tree-monitor diff <EVENT_ID>
+
+# Performance statistics (CPU, memory, event distribution)
+sway-tree-monitor stats [--since 1h]
+
+# Daemon management
+systemctl --user {status|start|stop|restart} sway-tree-monitor
+journalctl --user -u sway-tree-monitor -f
+```
+
+### Key Features
+
+- **Real-Time Monitoring**: Live stream of window/workspace changes with <100ms latency
+- **User Action Correlation**: Matches keypresses to tree changes (500ms window, 90% accuracy)
+- **Enriched Context**: Reads I3PM_* env vars and project marks from windows
+- **Performance Optimized**: <2% CPU, <25MB memory, <10ms diff computation
+- **Multiple Views**: Live, history, detailed diff, performance stats
+- **Filtering**: By event type, significance, time range, project, user-initiated
+
+### Use Cases
+
+```bash
+# Debug window management issues
+sway-tree-monitor live  # Watch real-time changes
+
+# Find what caused a window to close
+sway-tree-monitor history --filter window::close --last 10
+
+# Inspect specific event with full context
+sway-tree-monitor diff 42  # Shows field changes + I3PM_PROJECT_NAME, etc.
+
+# Monitor performance over time
+sway-tree-monitor stats --since 1h  # Memory, CPU, diff times
+```
+
+### Architecture
+
+- **Hash-Based Diffing**: Merkle tree hashing skips unchanged subtrees (2-8ms for 100 windows)
+- **Circular Buffer**: 500-event buffer with automatic eviction (FIFO)
+- **Correlation Engine**: Multi-factor confidence scoring (temporal, semantic, exclusivity, cascade)
+- **JSON-RPC API**: Unix socket for CLI ↔ daemon communication
+
+### Troubleshooting
+
+```bash
+# Daemon not running?
+systemctl --user status sway-tree-monitor
+systemctl --user start sway-tree-monitor
+
+# High memory usage?
+sway-tree-monitor stats  # Check buffer size, cache size
+
+# Missing correlations?
+journalctl --user -u sway-tree-monitor | grep "Captured binding"
+
+# No enrichment data?
+sway-tree-monitor diff <ID> | grep -A 5 "I3PM"  # Check environment vars
+```
+
+**Docs**: `/etc/nixos/specs/064-sway-tree-diff-monitor/quickstart.md`
+
 ## 🐍 Python Testing & Development
 
 **Monitor**: `i3-project-monitor [--mode=events|history|tree|diagnose]`
