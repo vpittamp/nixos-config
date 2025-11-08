@@ -11,7 +11,7 @@
 
 **Last Updated**: 2025-11-08
 
-**Progress**: 57/60 tasks (95%) - TypeScript client 100% complete ✅
+**Progress**: 56/60 tasks (93%) - TypeScript client nearly complete, live TUI inspect integration pending
 
 | Phase | Status | Tasks | Description |
 |-------|--------|-------|-------------|
@@ -19,7 +19,7 @@
 | Phase 2: Foundational | ✅ COMPLETE | 7/7 | Models, RPC client, utilities, schema transformations |
 | Phase 3: US1 - Live Streaming | ✅ COMPLETE | 9/9 | Real-time event TUI (MVP) - TESTED & WORKING |
 | Phase 4: US2 - Historical Query | ✅ COMPLETE | 8/8 | Query filters, table view - TESTED & WORKING |
-| Phase 5: US3 - Event Inspection | ✅ COMPLETE | 10/10 | Detail view, RPC client method - CLIENT-SIDE COMPLETE |
+| Phase 5: US3 - Event Inspection | ⏳ IN PROGRESS | 9/10 | Detail view, RPC client method - Live TUI integration pending |
 | Phase 6: US4 - Performance Stats | ✅ COMPLETE | 10/10 | Daemon metrics display - TESTED & WORKING |
 | Phase 7: Polish | ✅ COMPLETE | 10/10 | Error handling, docs, packaging |
 | Phase 8: Python Backend | ⏳ IN PROGRESS | 0/3 | get_event RPC handler (daemon-side work) |
@@ -168,7 +168,19 @@ Based on plan.md project structure:
 - [X] T034 [US3] Add keyboard navigation in `src/ui/tree-monitor-detail.ts` (b back to previous view, q quit)
 - [X] T035 [US3] Add JSON output mode for inspect in `src/commands/tree-monitor.ts` (--json flag outputs raw event JSON)
 - [X] T036 [US3] Wire up inspect command in `src/commands/tree-monitor.ts` (parse event-id argument, --json option)
-- [X] T037 [US3] Add "Enter to inspect" integration in `src/ui/tree-monitor-live.ts` and `src/ui/tree-monitor-table.ts` (navigate to detail view)
+- [ ] T037 [US3] Add "Enter to inspect" integration in `src/ui/tree-monitor-live.ts` (navigate to detail view from live TUI)
+  - **Status**: NOT IMPLEMENTED - Currently shows placeholder: "Event inspection not yet implemented (Phase 5)"
+  - **File**: `/etc/nixos/home-modules/tools/i3pm/src/ui/tree-monitor-live.ts` lines 263-271
+  - **Implementation**: See `/etc/nixos/specs/065-i3pm-tree-monitor/live-inspect-integration.md` for detailed plan
+  - **Steps**:
+    1. Import detail view rendering from `tree-monitor-detail.ts`
+    2. Replace placeholder Enter key handler
+    3. Extract selected event ID: `state.events[state.selectedIndex].id`
+    4. Call detail view with RPC client and event ID
+    5. Handle detail view exit and restore live view state
+    6. Add error handling for RPC failures
+  - **Estimated Effort**: 30 minutes
+  - **Note**: Table view integration (original scope) is not needed - history command uses static table, not interactive TUI
 
 **Checkpoint**: All primary user stories complete - users can monitor live, query history, and inspect individual events
 
