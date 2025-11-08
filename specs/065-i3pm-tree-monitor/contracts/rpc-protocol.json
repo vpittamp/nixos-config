@@ -1,0 +1,454 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sway Tree Monitor RPC Protocol",
+  "description": "JSON-RPC 2.0 protocol specification for sway-tree-monitor daemon",
+  "definitions": {
+    "rpcRequest": {
+      "type": "object",
+      "required": ["jsonrpc", "method", "id"],
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "method": {
+          "type": "string",
+          "enum": ["ping", "query_events", "get_event", "get_statistics", "get_daemon_status"]
+        },
+        "params": {
+          "type": "object"
+        },
+        "id": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" }
+          ]
+        }
+      }
+    },
+    "rpcSuccessResponse": {
+      "type": "object",
+      "required": ["jsonrpc", "result", "id"],
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "result": {
+          "type": "object"
+        },
+        "id": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" }
+          ]
+        }
+      }
+    },
+    "rpcErrorResponse": {
+      "type": "object",
+      "required": ["jsonrpc", "error"],
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "description": "Additional error context"
+            }
+          }
+        },
+        "id": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  },
+  "methods": {
+    "ping": {
+      "description": "Health check - verify daemon is responsive",
+      "params": {
+        "type": "null"
+      },
+      "result": {
+        "type": "object",
+        "required": ["status", "timestamp"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          },
+          "timestamp": {
+            "type": "number",
+            "description": "Unix timestamp (milliseconds) when ping was processed"
+          }
+        }
+      },
+      "errors": [],
+      "performance_target": "<1ms"
+    },
+    "query_events": {
+      "description": "Query historical events with optional filters",
+      "params": {
+        "type": "object",
+        "properties": {
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Return last N events"
+          },
+          "since": {
+            "type": "string",
+            "description": "Return events since timestamp (ISO 8601 or human format like '5m')"
+          },
+          "until": {
+            "type": "string",
+            "description": "Return events until timestamp (ISO 8601)"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter by event type (exact match or prefix)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "required": ["events"],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/eventTypes/event"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid params",
+          "condition": "last > 500 or invalid time format"
+        }
+      ],
+      "performance_target": "<2ms for 50 events"
+    },
+    "get_event": {
+      "description": "Get detailed event information including diff and correlation",
+      "params": {
+        "type": "object",
+        "required": ["event_id"],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Event ID to retrieve"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "required": ["event"],
+        "properties": {
+          "event": {
+            "$ref": "#/eventTypes/eventDetailed"
+          }
+        }
+      },
+      "errors": [
+        {
+          "code": -32000,
+          "message": "Event not found",
+          "condition": "Event ID does not exist in buffer"
+        }
+      ],
+      "performance_target": "<5ms including diff computation"
+    },
+    "get_statistics": {
+      "description": "Get daemon performance metrics and health statistics",
+      "params": {
+        "type": "null"
+      },
+      "result": {
+        "type": "object",
+        "required": ["stats"],
+        "properties": {
+          "stats": {
+            "$ref": "#/eventTypes/stats"
+          }
+        }
+      },
+      "errors": [],
+      "performance_target": "<2ms"
+    },
+    "get_daemon_status": {
+      "description": "Get daemon health and buffer state",
+      "params": {
+        "type": "null"
+      },
+      "result": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "object",
+            "required": ["running", "buffer_size", "uptime_seconds"],
+            "properties": {
+              "running": {
+                "type": "boolean"
+              },
+              "buffer_size": {
+                "type": "integer"
+              },
+              "uptime_seconds": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "errors": [],
+      "performance_target": "<1ms"
+    }
+  },
+  "eventTypes": {
+    "event": {
+      "type": "object",
+      "required": ["id", "timestamp", "type", "change_count", "significance"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "window::new",
+            "window::close",
+            "window::focus",
+            "window::title",
+            "window::move",
+            "workspace::focus",
+            "workspace::init",
+            "workspace::empty"
+          ]
+        },
+        "change_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "significance": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "correlation": {
+          "$ref": "#/eventTypes/correlation"
+        }
+      }
+    },
+    "eventDetailed": {
+      "allOf": [
+        { "$ref": "#/eventTypes/event" },
+        {
+          "properties": {
+            "diff": {
+              "type": "array",
+              "items": {
+                "$ref": "#/eventTypes/diff"
+              }
+            },
+            "enrichment": {
+              "$ref": "#/eventTypes/enrichment"
+            }
+          }
+        }
+      ]
+    },
+    "correlation": {
+      "type": "object",
+      "required": ["action_type", "time_delta_ms", "confidence", "reasoning"],
+      "properties": {
+        "action_type": {
+          "type": "string",
+          "enum": ["binding", "mouse_click", "external_command"]
+        },
+        "binding_command": {
+          "type": "string"
+        },
+        "time_delta_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "reasoning": {
+          "type": "string"
+        }
+      }
+    },
+    "diff": {
+      "type": "object",
+      "required": ["path", "change_type", "significance"],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "change_type": {
+          "type": "string",
+          "enum": ["modified", "added", "removed"]
+        },
+        "old_value": {},
+        "new_value": {},
+        "significance": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "enrichment": {
+      "type": "object",
+      "required": ["pid"],
+      "properties": {
+        "pid": {
+          "type": "integer"
+        },
+        "i3pm_vars": {
+          "type": "object",
+          "properties": {
+            "APP_ID": { "type": "string" },
+            "APP_NAME": { "type": "string" },
+            "PROJECT_NAME": { "type": "string" },
+            "SCOPE": { "type": "string", "enum": ["scoped", "global"] },
+            "LAUNCH_CONTEXT": { "type": "string", "enum": ["daemon", "manual"] }
+          }
+        },
+        "marks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "launch_context": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string" },
+            "timestamp": { "type": "number" }
+          }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "memory_mb",
+        "cpu_percent",
+        "buffer",
+        "event_distribution",
+        "diff_stats",
+        "uptime_seconds",
+        "timestamp"
+      ],
+      "properties": {
+        "memory_mb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cpu_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "buffer": {
+          "type": "object",
+          "required": ["current_size", "max_size", "utilization"],
+          "properties": {
+            "current_size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_size": {
+              "type": "integer",
+              "const": 500
+            },
+            "utilization": {
+              "type": "number",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          }
+        },
+        "event_distribution": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "diff_stats": {
+          "type": "object",
+          "required": [
+            "avg_compute_time_ms",
+            "max_compute_time_ms",
+            "total_diffs_computed"
+          ],
+          "properties": {
+            "avg_compute_time_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max_compute_time_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total_diffs_computed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "uptime_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timestamp": {
+          "type": "number"
+        }
+      }
+    }
+  },
+  "transport": {
+    "protocol": "Unix domain socket (SOCK_STREAM)",
+    "message_format": "Newline-delimited JSON",
+    "socket_path": "$XDG_RUNTIME_DIR/sway-tree-monitor.sock",
+    "permissions": "0600 (owner read/write only)"
+  },
+  "error_codes": {
+    "-32700": "Parse error - Invalid JSON",
+    "-32600": "Invalid Request - Not valid JSON-RPC 2.0",
+    "-32601": "Method not found",
+    "-32602": "Invalid params",
+    "-32603": "Internal error",
+    "-32000": "Server error - Event not found"
+  }
+}
