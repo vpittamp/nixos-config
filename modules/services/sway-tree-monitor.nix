@@ -20,7 +20,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "sway-tree-monitor";
-    version = "1.0.0";
+    version = "1.0.1";  # Incremented to force rebuild after RPC server fix
     src = daemonSrc;
 
     installPhase = ''

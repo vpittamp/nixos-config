@@ -366,13 +366,13 @@ class RPCServer:
         # Include full snapshots if requested
         if include_snapshots:
             result['snapshots'] = {
-                'before': event.before_snapshot.tree_data if event.before_snapshot else None,
-                'after': event.after_snapshot.tree_data if event.after_snapshot else None
+                'before': None,  # TreeEvent doesn't store before snapshot (only diff)
+                'after': event.snapshot.tree_data if event.snapshot else None
             }
 
         # Include enriched context (Phase 5 - User Story 3)
-        if include_enrichment and event.after_snapshot:
-            result['enrichment'] = self._serialize_enrichment(event.after_snapshot.enriched_data)
+        if include_enrichment and event.snapshot:
+            result['enrichment'] = self._serialize_enrichment(event.snapshot.enriched_data)
 
         return result
 
