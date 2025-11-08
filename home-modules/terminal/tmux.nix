@@ -190,11 +190,11 @@ in
       bind -T copy-mode-vi v send-keys -X begin-selection
       bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
 
-      # 'y' key copies to KDE clipboard and exits copy mode
-      bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
+      # 'y' key copies to KDE clipboard and stays in copy mode (for multiple selections)
+      bind -T copy-mode-vi y send-keys -X copy-pipe "/etc/nixos/scripts/clipboard-sync.sh"
 
-      # 'Y' copies to clipboard but stays in copy mode (for multiple selections)
-      bind -T copy-mode-vi Y send-keys -X copy-pipe "/etc/nixos/scripts/clipboard-sync.sh"
+      # 'Y' copies to clipboard and exits copy mode
+      bind -T copy-mode-vi Y send-keys -X copy-pipe-and-cancel "/etc/nixos/scripts/clipboard-sync.sh"
 
       bind -T copy-mode-vi Escape send-keys -X cancel
       bind -T copy-mode-vi H send-keys -X start-of-line
