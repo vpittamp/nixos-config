@@ -1,0 +1,112 @@
+{
+  "name": "Multiple apps launch on different workspaces",
+  "description": "Validates that 3 different apps launch via wrapper and each appears on its configured preferred_workspace (Firefox→WS3, VS Code→WS2, Thunar→WS6)",
+  "tags": ["integration", "workspace-assignment", "multi-app"],
+  "priority": "P2",
+  "timeout": 30000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "firefox",
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 10000,
+        "criteria": {
+          "change": "new",
+          "app_id": "firefox"
+        }
+      }
+    },
+    {
+      "type": "validate_workspace_assignment",
+      "params": {
+        "app_name": "firefox",
+        "expected_workspace": 3
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "vscode",
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 15000,
+        "criteria": {
+          "change": "new",
+          "window_class": "Code"
+        }
+      }
+    },
+    {
+      "type": "validate_workspace_assignment",
+      "params": {
+        "app_name": "vscode",
+        "expected_workspace": 2
+      }
+    },
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "thunar",
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 8000,
+        "criteria": {
+          "change": "new",
+          "app_id": "thunar"
+        }
+      }
+    },
+    {
+      "type": "validate_workspace_assignment",
+      "params": {
+        "app_name": "thunar",
+        "expected_workspace": 6
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [
+      {
+        "num": 2,
+        "windows": [
+          {
+            "class": "Code"
+          }
+        ]
+      },
+      {
+        "num": 3,
+        "windows": [
+          {
+            "app_id": "firefox"
+          }
+        ]
+      },
+      {
+        "num": 6,
+        "windows": [
+          {
+            "app_id": "thunar"
+          }
+        ]
+      }
+    ]
+  }
+}

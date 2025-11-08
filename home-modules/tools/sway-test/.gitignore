@@ -1,0 +1,40 @@
+# Deno
+.deno/
+deno.lock
+
+# Build outputs
+dist/
+build/
+out/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.bak
+*.cache

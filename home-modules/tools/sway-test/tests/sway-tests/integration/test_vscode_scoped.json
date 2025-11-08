@@ -1,0 +1,59 @@
+{
+  "name": "VS Code launches with project context",
+  "description": "Validates that VS Code launches via wrapper with I3PM_PROJECT_NAME environment variable set, enabling project-scoped behavior",
+  "tags": ["integration", "wrapper", "project-context", "vscode"],
+  "priority": "P1",
+  "timeout": 20000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "vscode",
+        "project": "nixos",
+        "workspace": 2,
+        "sync": true
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window",
+        "timeout": 15000,
+        "criteria": {
+          "change": "new",
+          "window_class": "Code"
+        }
+      }
+    },
+    {
+      "type": "await_sync",
+      "params": {
+        "marker": "vscode_window_ready"
+      }
+    },
+    {
+      "type": "validate_environment",
+      "params": {
+        "expected_vars": {
+          "I3PM_PROJECT_NAME": "nixos",
+          "I3PM_TARGET_WORKSPACE": "2",
+          "I3PM_APP_NAME": "vscode"
+        }
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [
+      {
+        "num": 2,
+        "windows": [
+          {
+            "class": "Code",
+            "focused": true
+          }
+        ]
+      }
+    ],
+    "focusedWorkspace": 2
+  }
+}
