@@ -109,6 +109,7 @@ in
   # Import keybindings from separate module (moved from dynamic config to static Nix)
   imports = [
     ./sway-keybindings.nix
+    ../tools/sway-tree-monitor.nix
   ];
   # Sway window manager configuration via home-manager
   wayland.windowManager.sway = {
