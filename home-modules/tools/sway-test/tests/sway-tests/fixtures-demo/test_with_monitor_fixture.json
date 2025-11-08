@@ -1,0 +1,29 @@
+{
+  "name": "Multi-monitor fixture usage example (T065)",
+  "description": "Demonstrates using the threeMonitorLayout fixture to test multi-monitor workspace distribution",
+  "tags": ["fixture", "multi-monitor", "example"],
+  "fixtures": ["threeMonitorLayout"],
+  "actions": [
+    {
+      "type": "send_ipc",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    },
+    {
+      "type": "send_ipc",
+      "params": {
+        "ipc_command": "focus output HEADLESS-1"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true
+      }
+    ]
+  }
+}

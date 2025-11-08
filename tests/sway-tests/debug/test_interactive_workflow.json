@@ -1,0 +1,62 @@
+{
+  "name": "Interactive Workflow Debugging Example",
+  "description": "Demonstrates debug_pause action with interactive REPL, file watching, and hot-reload capabilities",
+  "tags": ["debug", "interactive", "repl", "hot-reload"],
+  "priority": "P3",
+  "timeout": 60000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "command": "alacritty",
+        "args": [],
+        "env": {},
+        "delay": 500
+      }
+    },
+    {
+      "type": "debug_pause",
+      "params": {
+        "message": "Breakpoint: After launching Alacritty"
+      }
+    },
+    {
+      "type": "switch_workspace",
+      "params": {
+        "workspace": 3,
+        "delay": 200
+      }
+    },
+    {
+      "type": "debug_pause",
+      "params": {
+        "message": "Breakpoint: After workspace switch"
+      }
+    },
+    {
+      "type": "focus_window",
+      "params": {
+        "window_criteria": {
+          "app_id": "Alacritty"
+        },
+        "delay": 100
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3,
+    "workspaces": [
+      {
+        "num": 3,
+        "focused": true,
+        "visible": true,
+        "windows": [
+          {
+            "app_id": "Alacritty",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  }
+}

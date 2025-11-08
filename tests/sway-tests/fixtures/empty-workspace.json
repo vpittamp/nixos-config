@@ -1,0 +1,41 @@
+{
+  "id": 1,
+  "name": "root",
+  "type": "root",
+  "orientation": "horizontal",
+  "nodes": [
+    {
+      "id": 2,
+      "name": "__i3",
+      "type": "output",
+      "rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+      "nodes": [],
+      "focus": []
+    },
+    {
+      "id": 3,
+      "name": "HEADLESS-1",
+      "type": "output",
+      "active": true,
+      "current_workspace": "1",
+      "rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+      "nodes": [
+        {
+          "id": 4,
+          "num": 1,
+          "name": "1",
+          "type": "workspace",
+          "orientation": "horizontal",
+          "focused": true,
+          "visible": true,
+          "nodes": [],
+          "floating_nodes": [],
+          "focus": []
+        }
+      ],
+      "focus": [4]
+    }
+  ],
+  "floating_nodes": [],
+  "focus": [3]
+}

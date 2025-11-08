@@ -1,0 +1,24 @@
+{
+  "name": "Basic workspace state test (US1)",
+  "description": "MVP test - verify workspace switching and state capture works correctly",
+  "tags": ["basic", "mvp", "us1"],
+  "timeout": 5000,
+  "actions": [
+    {
+      "type": "send_ipc",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "visible": true
+      }
+    ]
+  }
+}
