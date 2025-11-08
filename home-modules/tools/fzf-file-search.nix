@@ -5,7 +5,7 @@ with lib;
 let
   # FZF file search script with bat preview and nvim integration
   # Based on fzf README best practices: https://github.com/junegunn/fzf
-  # Uses --bind 'enter:become(nvim {})' to open selected file
+  # Opens selected file in nvim and closes search window
   fzf-file-search = pkgs.writeShellScriptBin "fzf-file-search" ''
     # Search directories: current project dir (if set), $HOME, /etc/nixos
     # I3PM_PROJECT_DIR is injected by app-launcher-wrapper.sh
@@ -22,13 +22,11 @@ let
     # Change to first search directory for relative paths
     cd "''${SEARCH_DIRS[0]}" || exit 1
 
-    # Launch in floating ghostty window with fzf
-    # Uses fzf's built-in walker for fast file traversal
-    # --bind 'enter:execute(...)+abort' opens nvim and closes search window
-    # Note: --title is used for Sway window rule matching (Ghostty's app_id is always com.mitchellh.ghostty)
-    exec ${pkgs.ghostty}/bin/ghostty \
-      --title="FZF File Search" \
-      -e ${pkgs.fzf}/bin/fzf \
+    # Launch Ghostty with inline bash script that handles file selection
+    # This script runs inside Ghostty and closes the terminal after launching nvim
+    ${pkgs.ghostty}/bin/ghostty --title="FZF File Search" -e ${pkgs.bash}/bin/bash -c "
+      # Run fzf and capture selected file
+      SELECTED=\$(${pkgs.fzf}/bin/fzf \
         --walker file,follow,hidden \
         --walker-skip .git,node_modules,target,.direnv,.cache,vendor,dist,build,.next,.venv,__pycache__,.pytest_cache,.mypy_cache \
         --scheme=path \
@@ -37,13 +35,28 @@ let
         --border=rounded \
         --info=inline \
         --preview '${pkgs.bat}/bin/bat --color=always --style=numbers,changes {}' \
-        --preview-window=right:60%:wrap \
-        --bind 'enter:execute(${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim {})+abort'
+        --preview-window=right:60%:wrap)
+
+      # If file was selected, launch nvim using Sway exec (like app-launcher-wrapper does)
+      # This ensures proper environment propagation and window tracking
+      if [[ -n \"\$SELECTED\" ]]; then
+        # Convert to absolute path if relative (fzf may return relative paths)
+        if [[ \"\$SELECTED\" != /* ]]; then
+          SELECTED=\"\$(pwd)/\$SELECTED\"
+        fi
+
+        # Launch via swaymsg exec with environment variables
+        # Pass absolute file path to avoid working directory issues
+        ${pkgs.sway}/bin/swaymsg exec \"env I3PM_APP_ID=nvim-editor-\$\$-\$(date +%s) I3PM_APP_NAME=neovim I3PM_PROJECT_NAME=\''${I3PM_PROJECT_NAME:-} I3PM_PROJECT_DIR=\''${I3PM_PROJECT_DIR:-} I3PM_SCOPE=scoped I3PM_EXPECTED_CLASS=com.mitchellh.ghostty ${pkgs.ghostty}/bin/ghostty -e ${pkgs.neovim}/bin/nvim \\\"\$SELECTED\\\"\" > /dev/null 2>&1
+
+        exit 0
+      fi
+    "
   '';
 in
 {
   options = {
-    modules.tools.fzf-file-search.enable = mkEnableOption "fzf file search with nvim integration";
+    modules.tools.fzf-file-search.enable = mkEnableOption "fzf file search and nvim integration";
   };
 
   config = mkIf config.modules.tools.fzf-file-search.enable {
