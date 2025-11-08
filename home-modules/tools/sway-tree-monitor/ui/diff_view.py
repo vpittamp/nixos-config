@@ -7,6 +7,8 @@ Features:
 - Enriched context (I3PM_* variables, project marks)
 - Syntax highlighting with Rich
 - Drilldown from live/history views
+
+Updated: Fixed include_enrichment parameter error
 """
 
 import json
