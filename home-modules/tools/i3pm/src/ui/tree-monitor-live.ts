@@ -221,7 +221,7 @@ function render(state: LiveState): void {
 /**
  * Handle keyboard input
  */
-async function handleInput(state: LiveState): Promise<void> {
+async function handleInput(client: TreeMonitorClient, state: LiveState): Promise<void> {
   const buf = new Uint8Array(8);
 
   // Set stdin to raw mode
@@ -430,7 +430,7 @@ export async function runLiveTUI(socketPath: string): Promise<void> {
 
     // Start input handler and event stream
     await Promise.race([
-      handleInput(state),
+      handleInput(client, state),
       streamEvents(client, state),
     ]);
   } catch (err) {
