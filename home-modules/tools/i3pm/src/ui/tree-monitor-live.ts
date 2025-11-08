@@ -27,7 +27,9 @@ interface LiveState {
   selectedIndex: number;
   scrollOffset: number;
   running: boolean;
+  inspecting: boolean;
   error?: string;
+  lastRenderTime: number;
 }
 
 /**
@@ -203,9 +205,16 @@ function renderFooter(state: LiveState): string {
 }
 
 /**
- * Render full UI
+ * Render full UI (only if enough time has passed)
  */
-function render(state: LiveState): void {
+function render(state: LiveState, force = false): void {
+  // Throttle rendering to 10 FPS (100ms) unless forced
+  const now = Date.now();
+  if (!force && now - state.lastRenderTime < 100) {
+    return;
+  }
+  state.lastRenderTime = now;
+
   const size = getTerminalSize();
 
   clearScreen();
@@ -221,7 +230,7 @@ function render(state: LiveState): void {
 /**
  * Handle keyboard input
  */
-async function handleInput(state: LiveState): Promise<void> {
+async function handleInput(client: TreeMonitorClient, state: LiveState): Promise<void> {
   const buf = new Uint8Array(8);
 
   // Set stdin to raw mode
@@ -241,14 +250,14 @@ async function handleInput(state: LiveState): Promise<void> {
 
     // r - refresh
     if (key[0] === 114) {
-      render(state);
+      render(state, true);
     }
 
     // Arrow up
     if (key[0] === 27 && key[1] === 91 && key[2] === 65) {
       if (state.selectedIndex > 0) {
         state.selectedIndex--;
-        render(state);
+        render(state, true);
       }
     }
 
@@ -256,23 +265,103 @@ async function handleInput(state: LiveState): Promise<void> {
     if (key[0] === 27 && key[1] === 91 && key[2] === 66) {
       if (state.selectedIndex < state.events.length - 1) {
         state.selectedIndex++;
-        render(state);
+        render(state, true);
       }
     }
 
-    // Enter - inspect (TODO: implement in Phase 5)
+    // Enter - inspect
     if (key[0] === 13) {
-      // Placeholder: will implement event inspection in Phase 5
-      state.error = "Event inspection not yet implemented (Phase 5)";
-      render(state);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      state.error = undefined;
-      render(state);
+      if (state.selectedIndex >= 0 && state.selectedIndex < state.events.length) {
+        const event = state.events[state.selectedIndex];
+
+        try {
+          // Pause event streaming
+          state.inspecting = true;
+
+          // Restore terminal to normal mode before showing detail
+          Deno.stdin.setRaw(false);
+
+          // Show detail view (blocking)
+          await showEventDetail(client, event.id);
+
+          // Resume raw mode
+          Deno.stdin.setRaw(true);
+
+          // Resume event streaming
+          state.inspecting = false;
+        } catch (err) {
+          // If detail view fails, show error briefly
+          state.error = err instanceof Error ? err.message : String(err);
+          render(state, true);
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          state.error = undefined;
+
+          // Make sure raw mode is restored
+          Deno.stdin.setRaw(true);
+          state.inspecting = false;
+        }
+
+        // Resume live view
+        render(state, true);
+      }
     }
   }
 
   // Restore stdin to normal mode
   Deno.stdin.setRaw(false);
+}
+
+/**
+ * Show event detail view
+ */
+async function showEventDetail(
+  client: TreeMonitorClient,
+  eventId: string,
+): Promise<void> {
+  // Import detail view renderer
+  const { renderEventDetail } = await import("./tree-monitor-detail.ts");
+
+  // Fetch event details
+  const event = await client.getEvent(eventId);
+
+  // Clear screen and render detail view
+  clearScreen();
+  Deno.stdout.writeSync(new TextEncoder().encode(renderEventDetail(event)));
+  Deno.stdout.writeSync(new TextEncoder().encode("\n\nPress 'b' to return to live view, 'q' to quit...\n"));
+
+  // Wait for 'b' or 'q' key
+  await waitForExitKey();
+}
+
+/**
+ * Wait for exit key ('b' or 'q')
+ */
+function waitForExitKey(): Promise<void> {
+  return new Promise((resolve) => {
+    const buf = new Uint8Array(8);
+
+    // Set stdin to raw mode for key capture
+    Deno.stdin.setRaw(true);
+
+    const readKey = async () => {
+      const n = await Deno.stdin.read(buf);
+      if (n === null) {
+        resolve();
+        return;
+      }
+
+      const key = buf.subarray(0, n);
+      // 'b' or 'q' key
+      if (key[0] === 98 || key[0] === 113) {
+        resolve();
+      } else {
+        // Continue waiting for valid key
+        await readKey();
+      }
+    };
+
+    readKey();
+  });
 }
 
 /**
@@ -282,40 +371,62 @@ async function streamEvents(
   client: TreeMonitorClient,
   state: LiveState,
 ): Promise<void> {
-  let lastEventId: string | undefined;
+  const seenEventIds = new Set<string>();
+  let initialLoad = true;
 
   while (state.running) {
-    try {
-      // Query new events since last ID
-      const params: Record<string, string | number> = { last: 100 };
-      if (lastEventId) {
-        params.since_id = lastEventId;
-      }
+    // Skip polling if in inspect view
+    if (state.inspecting) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      continue;
+    }
 
-      const response = await client.queryEvents(params);
+    try {
+      // Query recent events
+      const response = await client.queryEvents({ last: 100 });
 
       if (response && response.length > 0) {
-        // Add new events
+        let hasNewEvents = false;
+
+        // Add only new events
         for (const event of response) {
-          state.events.push(event);
-          lastEventId = event.id;
+          if (!seenEventIds.has(event.id)) {
+            seenEventIds.add(event.id);
+            state.events.unshift(event); // Add to front (newest first)
+            hasNewEvents = true;
+          }
         }
 
         // Limit buffer to 500 events (match daemon buffer size)
         if (state.events.length > 500) {
-          state.events = state.events.slice(-500);
+          const removed = state.events.slice(500);
+          state.events = state.events.slice(0, 500);
+
+          // Remove old event IDs from seen set
+          for (const event of removed) {
+            seenEventIds.delete(event.id);
+          }
+
           // Adjust selection if needed
           if (state.selectedIndex >= state.events.length) {
             state.selectedIndex = state.events.length - 1;
           }
         }
 
-        // Re-render with new events
-        render(state);
+        // Auto-select first event on initial load
+        if (initialLoad && state.events.length > 0) {
+          state.selectedIndex = 0;
+          initialLoad = false;
+        }
+
+        // Only render if we got new events (force to bypass throttle)
+        if (hasNewEvents) {
+          render(state, true);
+        }
       }
     } catch (err) {
       state.error = err instanceof Error ? err.message : String(err);
-      render(state);
+      render(state, true);
     }
 
     // Poll every 100ms for <100ms latency requirement
@@ -335,6 +446,8 @@ export async function runLiveTUI(socketPath: string): Promise<void> {
     selectedIndex: 0,
     scrollOffset: 0,
     running: true,
+    inspecting: false,
+    lastRenderTime: 0,
   };
 
   // Setup terminal
@@ -365,11 +478,11 @@ export async function runLiveTUI(socketPath: string): Promise<void> {
     await client.ping();
 
     // Initial render
-    render(state);
+    render(state, true);
 
     // Start input handler and event stream
     await Promise.race([
-      handleInput(state),
+      handleInput(client, state),
       streamEvents(client, state),
     ]);
   } catch (err) {

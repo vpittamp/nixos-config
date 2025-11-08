@@ -79,38 +79,46 @@ function renderDiff(event: Event): string {
 
   let output = renderSectionHeader("Field-Level Changes (Diff)");
 
-  // Group diffs by change type
-  const modified = event.diff.filter((d) => d.change_type === "modified");
-  const added = event.diff.filter((d) => d.change_type === "added");
-  const removed = event.diff.filter((d) => d.change_type === "removed");
+  // Flatten field_changes from all node_changes and group by change type
+  const allFieldChanges = event.diff.flatMap((node: any) =>
+    node.field_changes.map((fc: any) => ({
+      ...fc,
+      node_path: node.node_path,
+      node_type: node.node_type
+    }))
+  );
+
+  const modified = allFieldChanges.filter((d: any) => d.change_type === "MODIFIED" || d.change_type === "modified");
+  const added = allFieldChanges.filter((d: any) => d.change_type === "ADDED" || d.change_type === "added");
+  const removed = allFieldChanges.filter((d: any) => d.change_type === "REMOVED" || d.change_type === "removed");
 
   // Render modified fields
   if (modified.length > 0) {
     output += `\n\nModified Fields (${modified.length}):`;
-    for (const diff of modified) {
-      output += `\n  ${diff.path}:`;
-      output += `\n    ${formatDiffChange(diff.old_value, diff.new_value, diff.change_type)}`;
-      output += `\n    Significance: ${diff.significance.toFixed(2)}`;
+    for (const fc of modified) {
+      output += `\n  ${fc.field_path}:`;
+      output += `\n    ${formatDiffChange(fc.old_value, fc.new_value, fc.change_type)}`;
+      output += `\n    Significance: ${fc.significance_score.toFixed(2)}`;
     }
   }
 
   // Render added fields
   if (added.length > 0) {
     output += `\n\nAdded Fields (${added.length}):`;
-    for (const diff of added) {
-      output += `\n  ${diff.path}:`;
-      output += `\n    ${formatDiffChange(diff.old_value, diff.new_value, diff.change_type)}`;
-      output += `\n    Significance: ${diff.significance.toFixed(2)}`;
+    for (const fc of added) {
+      output += `\n  ${fc.field_path}:`;
+      output += `\n    ${formatDiffChange(fc.old_value, fc.new_value, fc.change_type)}`;
+      output += `\n    Significance: ${fc.significance_score.toFixed(2)}`;
     }
   }
 
   // Render removed fields
   if (removed.length > 0) {
     output += `\n\nRemoved Fields (${removed.length}):`;
-    for (const diff of removed) {
-      output += `\n  ${diff.path}:`;
-      output += `\n    ${formatDiffChange(diff.old_value, diff.new_value, diff.change_type)}`;
-      output += `\n    Significance: ${diff.significance.toFixed(2)}`;
+    for (const fc of removed) {
+      output += `\n  ${fc.field_path}:`;
+      output += `\n    ${formatDiffChange(fc.old_value, fc.new_value, fc.change_type)}`;
+      output += `\n    Significance: ${fc.significance_score.toFixed(2)}`;
     }
   }
 
