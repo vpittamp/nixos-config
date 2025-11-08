@@ -107,6 +107,8 @@ class SwayTreeMonitorDaemon:
 
             # Subscribe to Sway events
             self._subscribe_to_events()
+            # Explicitly subscribe to ensure it completes before main loop
+            await self.connection.subscribe(['window', 'workspace', 'binding'])
             logger.info("Subscribed to Sway events")
 
             # Start RPC server
@@ -172,11 +174,13 @@ class SwayTreeMonitorDaemon:
     async def _on_window_event(self, connection: aio.Connection, event: Event):
         """Handle window events"""
         event_type = f"window::{event.change}"
+        logger.info(f"Window event received: {event_type}")
         await self._process_tree_change(event_type, event)
 
     async def _on_workspace_event(self, connection: aio.Connection, event: Event):
         """Handle workspace events"""
         event_type = f"workspace::{event.change}"
+        logger.info(f"Workspace event received: {event_type}")
         await self._process_tree_change(event_type, event)
 
     async def _on_binding_event(self, connection: aio.Connection, event: Event):
@@ -191,27 +195,32 @@ class SwayTreeMonitorDaemon:
             connection: i3ipc connection
             event: Binding event with command, input_type, etc.
         """
+        logger.info(f"Binding event received")
         try:
             # Extract binding info
             command = event.binding.command if hasattr(event, 'binding') else ""
-            input_type = event.binding.input_type if hasattr(event, 'binding') else "keyboard"
+            symbol = event.binding.symbol if hasattr(event, 'binding') else ""
             timestamp_ms = int(time.time() * 1000)
 
             # Infer action type from command
             action_type = self._infer_action_type(command)
 
+            # Generate unique action ID (monotonic counter would be better, but this works)
+            action_id = int(timestamp_ms * 1000)  # Microsecond precision
+
             # Create UserAction
             action = UserAction(
+                action_id=action_id,
                 timestamp_ms=timestamp_ms,
                 action_type=action_type,
-                binding_command=command,
-                input_type=input_type
+                binding_symbol=symbol,
+                binding_command=command
             )
 
             # Track for correlation
             self.correlation_tracker.track_action(action)
 
-            logger.debug(f"Tracked user action: {action_type.name} - {command}")
+            logger.debug(f"Tracked user action: {action_type.name} - {symbol} → {command}")
 
         except Exception as e:
             logger.error(f"Error handling binding event: {e}", exc_info=True)
@@ -220,40 +229,18 @@ class SwayTreeMonitorDaemon:
         """
         Infer ActionType from Sway binding command.
 
-        Examples:
-        - "exec alacritty" → WINDOW_OPEN
-        - "kill" → WINDOW_CLOSE
-        - "workspace 1" → WORKSPACE_SWITCH
-        - "move container to workspace 2" → WINDOW_MOVE
-        - "focus left" → WINDOW_FOCUS
-        - "floating toggle" → WINDOW_TOGGLE
-        - "layout tabbed" → LAYOUT_CHANGE
+        All Sway binding events return ActionType.BINDING.
+        The specific command details are stored in the binding_command field.
 
         Args:
             command: Sway binding command
 
         Returns:
-            Inferred action type
+            ActionType.BINDING for all binding events
         """
-        cmd_lower = command.lower()
-
-        # Window management
-        if "exec" in cmd_lower or "launch" in cmd_lower:
-            return ActionType.WINDOW_OPEN
-        elif "kill" in cmd_lower or "close" in cmd_lower:
-            return ActionType.WINDOW_CLOSE
-        elif "move container to workspace" in cmd_lower or "move to workspace" in cmd_lower:
-            return ActionType.WINDOW_MOVE
-        elif "workspace" in cmd_lower:
-            return ActionType.WORKSPACE_SWITCH
-        elif "focus" in cmd_lower:
-            return ActionType.WINDOW_FOCUS
-        elif "floating" in cmd_lower or "fullscreen" in cmd_lower or "sticky" in cmd_lower:
-            return ActionType.WINDOW_TOGGLE
-        elif "layout" in cmd_lower or "split" in cmd_lower:
-            return ActionType.LAYOUT_CHANGE
-        else:
-            return ActionType.OTHER
+        # All binding events use BINDING type
+        # Command details are preserved in the UserAction.binding_command field
+        return ActionType.BINDING
 
     async def _process_tree_change(self, event_type: str, sway_event: Event):
         """
@@ -269,6 +256,7 @@ class SwayTreeMonitorDaemon:
             event_type: Formatted event type (e.g., "window::new")
             sway_event: Raw Sway event
         """
+        logger.info(f"Processing tree change: {event_type}")
         try:
             start_time = time.time()
 
