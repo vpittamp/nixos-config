@@ -176,8 +176,16 @@ async def _delayed_property_recheck(
                     assignment_source = f"registry[{app_name}] via class-match ({match_type}, delayed)"
 
             if preferred_ws:
-                current_workspace = fresh_container.workspace()
-                if not current_workspace or current_workspace.num != preferred_ws:
+                # BUGFIX T070: Check if window is actually on target workspace
+                # workspace() method returns focused workspace, not window's actual workspace
+                # Solution: Check if window's parent is the target workspace
+                is_on_target_workspace = (
+                    fresh_container.parent and
+                    fresh_container.parent.type == "workspace" and
+                    fresh_container.parent.num == preferred_ws
+                )
+
+                if not is_on_target_workspace:
                     # Move window to preferred workspace
                     await conn.command(
                         f'[con_id="{window_id}"] move to workspace number {preferred_ws}'
@@ -1171,9 +1179,13 @@ async def on_window_new(
                         )
                         await event_buffer.add_event(assignment_entry)
 
-                    # BUGFIX 039 T066: Re-fetch container from tree to get current workspace
-                    # container.workspace() returns None during window::new event (timing issue)
-                    # Solution: Query fresh container from tree
+                    # BUGFIX 039 T066 + T070: Check if window is actually on target workspace
+                    # Issue: workspace() method returns FOCUSED workspace, not window's actual workspace
+                    # When window is created but not yet assigned (workspace: null in Sway tree),
+                    # workspace() returns the focused workspace, causing false "already on workspace" detection
+                    #
+                    # Solution: Check if window's parent is the target workspace
+                    # This correctly identifies unassigned windows (parent != target workspace)
                     #
                     # NOTE: Feature 039 architectural change - ALL workspace assignment now in daemon
                     # Previously GLOBAL apps used i3 for_window rules, SCOPED apps used daemon
@@ -1181,10 +1193,18 @@ async def on_window_new(
                     try:
                         tree = await conn.get_tree()
                         fresh_container = tree.find_by_id(container.id)
-                        current_workspace = fresh_container.workspace() if fresh_container else None
 
-                        # T028: Check if window is already on preferred workspace
-                        if not current_workspace or current_workspace.num != preferred_ws:
+                        # Check if window's parent is the target workspace
+                        # If parent is not a workspace or parent's num != target, window needs to be moved
+                        is_on_target_workspace = (
+                            fresh_container and
+                            fresh_container.parent and
+                            fresh_container.parent.type == "workspace" and
+                            fresh_container.parent.num == preferred_ws
+                        )
+
+                        # T028: Move window if not already on preferred workspace
+                        if not is_on_target_workspace:
                             # Move window to preferred workspace and focus it
                             # The focus command ensures Sway switches to the target workspace
                             # to show the newly launched window (respects focus_on_window_activation)
@@ -1199,15 +1219,26 @@ async def on_window_new(
 
                             validation_tree = await conn.get_tree()
                             validated_container = validation_tree.find_by_id(container.id)
-                            validated_workspace = validated_container.workspace() if validated_container else None
 
-                            if not validated_workspace or validated_workspace.num != preferred_ws:
+                            # Check if window's parent is the target workspace (consistent with T070 fix)
+                            is_validated = (
+                                validated_container and
+                                validated_container.parent and
+                                validated_container.parent.type == "workspace" and
+                                validated_container.parent.num == preferred_ws
+                            )
+
+                            if not is_validated:
                                 # Move failed - window still not on target workspace
                                 # Retry once after another delay
+                                current_ws_for_log = (
+                                    validated_container.parent.num
+                                    if validated_container and validated_container.parent and validated_container.parent.type == "workspace"
+                                    else "none"
+                                )
                                 logger.warning(
                                     f"⚠ Workspace assignment validation failed: Window {window_id} not on "
-                                    f"workspace {preferred_ws} after move (currently on "
-                                    f"{validated_workspace.num if validated_workspace else 'none'}). Retrying..."
+                                    f"workspace {preferred_ws} after move (currently on {current_ws_for_log}). Retrying..."
                                 )
                                 await asyncio.sleep(0.1)  # Another 100ms delay
                                 await conn.command(
@@ -1218,13 +1249,24 @@ async def on_window_new(
                                 await asyncio.sleep(0.05)  # Short delay before final check
                                 final_tree = await conn.get_tree()
                                 final_container = final_tree.find_by_id(container.id)
-                                final_workspace = final_container.workspace() if final_container else None
 
-                                if not final_workspace or final_workspace.num != preferred_ws:
+                                # Check if window's parent is the target workspace (T070)
+                                is_finally_validated = (
+                                    final_container and
+                                    final_container.parent and
+                                    final_container.parent.type == "workspace" and
+                                    final_container.parent.num == preferred_ws
+                                )
+
+                                if not is_finally_validated:
+                                    final_ws_for_log = (
+                                        final_container.parent.num
+                                        if final_container and final_container.parent and final_container.parent.type == "workspace"
+                                        else "none"
+                                    )
                                     logger.error(
                                         f"✗ Workspace assignment FAILED after retry: Window {window_id} "
-                                        f"still not on workspace {preferred_ws} (currently on "
-                                        f"{final_workspace.num if final_workspace else 'none'})"
+                                        f"still not on workspace {preferred_ws} (currently on {final_ws_for_log})"
                                     )
                                 else:
                                     logger.info(
@@ -1247,10 +1289,15 @@ async def on_window_new(
                                 await workspace_tracker.save()
 
                             # T029 + T064: Log workspace assignment with source (Feature 039)
-                            current_ws_num = current_workspace.num if current_workspace else "unknown"
+                            # Get original workspace from parent before move
+                            original_ws = (
+                                fresh_container.parent.num
+                                if fresh_container and fresh_container.parent and fresh_container.parent.type == "workspace"
+                                else "none"
+                            )
                             logger.info(
                                 f"Moved window {window_id} ({window_class}) from workspace "
-                                f"{current_ws_num} to preferred workspace {preferred_ws} "
+                                f"{original_ws} to preferred workspace {preferred_ws} "
                                 f"(source: {assignment_source})"
                             )
                         else:
