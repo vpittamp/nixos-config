@@ -1,0 +1,49 @@
+{
+  "name": "windowCountAfter() helper - window count validation",
+  "description": "Validates that the windowCountAfter() helper simplifies window count verification by combining command execution, sync, and window counting in a single operation. Useful for testing window creation and destruction.",
+  "tags": ["integration", "helper", "us3", "window-count", "boilerplate-reduction"],
+  "priority": "P2",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    },
+    {
+      "type": "use_helper",
+      "params": {
+        "helper": "windowCountAfter",
+        "command": "nop",
+        "expected_count": 1,
+        "workspace": null
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    },
+    {
+      "type": "use_helper",
+      "params": {
+        "helper": "windowCountAfter",
+        "command": "nop",
+        "expected_count": 2,
+        "workspace": null
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "count": 2,
+      "partial": [
+        {
+          "app_id": "ghostty"
+        }
+      ]
+    }
+  }
+}

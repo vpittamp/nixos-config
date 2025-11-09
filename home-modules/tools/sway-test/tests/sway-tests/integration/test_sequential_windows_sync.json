@@ -1,0 +1,42 @@
+{
+  "name": "Sequential window creation with sync",
+  "description": "Validates that multiple windows can be created sequentially and verified immediately using sync. Tests that sync eliminates race conditions when creating multiple windows in quick succession.",
+  "tags": ["integration", "sync", "multi-window", "sequential", "us1"],
+  "priority": "P1",
+  "timeout": 25000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "walker"
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "partial": [
+        {
+          "app_id": "firefox"
+        },
+        {
+          "app_id": "Alacritty"
+        },
+        {
+          "app_id": "walker"
+        }
+      ]
+    }
+  }
+}

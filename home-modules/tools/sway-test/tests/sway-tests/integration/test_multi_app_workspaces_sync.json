@@ -1,26 +1,21 @@
 {
   "name": "Multiple apps launch on different workspaces",
-  "description": "Validates that 3 different apps launch via wrapper and each appears on its configured preferred_workspace (Firefox→WS3, VS Code→WS2, Thunar→WS6)",
-  "tags": ["integration", "workspace-assignment", "multi-app"],
+  "description": "Validates that 3 different apps launch via wrapper and each appears on its configured preferred_workspace (Firefox→WS3, VS Code→WS2, Thunar→WS6) (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "integration",
+    "workspace-assignment",
+    "multi-app",
+    "sync",
+    "migrated"
+  ],
   "priority": "P2",
   "timeout": 30000,
   "actions": [
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "firefox",
         "sync": true
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window",
-        "timeout": 10000,
-        "criteria": {
-          "change": "new",
-          "app_id": "firefox"
-        }
       }
     },
     {
@@ -31,21 +26,10 @@
       }
     },
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "vscode",
         "sync": true
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window",
-        "timeout": 15000,
-        "criteria": {
-          "change": "new",
-          "window_class": "Code"
-        }
       }
     },
     {
@@ -56,21 +40,10 @@
       }
     },
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "thunar",
         "sync": true
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window",
-        "timeout": 8000,
-        "criteria": {
-          "change": "new",
-          "app_id": "thunar"
-        }
       }
     },
     {

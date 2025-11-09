@@ -1,0 +1,26 @@
+{
+  "name": "Firefox launches on workspace 3 with sync",
+  "description": "Validates that Firefox launches and appears on workspace 3, using sync to eliminate race conditions. This test demonstrates the sync pattern - launch app, sync state, then immediately check workspace without arbitrary waits.",
+  "tags": ["integration", "sync", "workspace-assignment", "firefox", "us1"],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3,
+    "windows": {
+      "partial": [
+        {
+          "app_id": "firefox",
+          "workspace": 3
+        }
+      ]
+    }
+  }
+}

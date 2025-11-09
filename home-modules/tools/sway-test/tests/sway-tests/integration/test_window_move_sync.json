@@ -1,0 +1,40 @@
+{
+  "name": "Window move between workspaces with sync",
+  "description": "Validates that moving a window between workspaces can be immediately verified using sync. Demonstrates that sync eliminates race conditions when moving windows and checking new workspace assignment.",
+  "tags": [
+    "integration",
+    "sync",
+    "workspace",
+    "window-move",
+    "us1",
+    "migrated"
+  ],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty",
+        "sync": true
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "move container to workspace 5"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 5,
+    "windows": {
+      "partial": [
+        {
+          "app_id": "Alacritty",
+          "workspace": 5
+        }
+      ]
+    }
+  }
+}

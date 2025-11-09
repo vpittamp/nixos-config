@@ -1,0 +1,31 @@
+{
+  "name": "launch_app_sync action validation",
+  "description": "Validates that the launch_app_sync action launches an app and automatically synchronizes before returning. This test verifies that the app appears in the window tree without requiring explicit sync or wait_event actions. The sync happens transparently within the action executor.",
+  "tags": [
+    "integration",
+    "sync",
+    "launch_app_sync",
+    "us2",
+    "action-validation",
+    "migrated"
+  ],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "partial": [
+        {
+          "app_id": "ghostty"
+        }
+      ]
+    }
+  }
+}

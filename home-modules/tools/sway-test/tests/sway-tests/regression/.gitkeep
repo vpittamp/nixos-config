@@ -1,0 +1,9 @@
+# Regression Tests
+
+Tests for specific bug fixes and regressions.
+
+Naming convention: test_<feature>_regression.json
+
+Examples:
+- test_firefox_workspace_race_regression.json - Fix for race condition in workspace assignment
+- test_sync_timeout_regression.json - Fix for timeout handling in sync operations

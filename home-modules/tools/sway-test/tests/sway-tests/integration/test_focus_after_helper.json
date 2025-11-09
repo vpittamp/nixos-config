@@ -1,0 +1,36 @@
+{
+  "name": "focusAfter() helper - concise focus testing",
+  "description": "Validates that the focusAfter() helper reduces test boilerplate. This test demonstrates how helpers make tests more readable and maintainable by eliminating manual sync and state query operations.",
+  "tags": ["integration", "helper", "us3", "focus", "boilerplate-reduction"],
+  "priority": "P2",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    },
+    {
+      "type": "use_helper",
+      "params": {
+        "helper": "focusAfter",
+        "command": "focus left",
+        "expected_focus": {
+          "type": "con",
+          "app_id": "ghostty"
+        }
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "partial": [
+        {
+          "app_id": "ghostty",
+          "focused": true
+        }
+      ]
+    }
+  }
+}

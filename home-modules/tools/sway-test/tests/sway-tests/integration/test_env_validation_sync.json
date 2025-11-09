@@ -1,28 +1,23 @@
 {
   "name": "I3PM environment variables validation",
-  "description": "Validates that apps launched via wrapper have correct I3PM_* environment variables set (I3PM_APP_NAME, I3PM_TARGET_WORKSPACE, I3PM_PROJECT_NAME)",
-  "tags": ["integration", "environment", "i3pm"],
+  "description": "Validates that apps launched via wrapper have correct I3PM_* environment variables set (I3PM_APP_NAME, I3PM_TARGET_WORKSPACE, I3PM_PROJECT_NAME) (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "integration",
+    "environment",
+    "i3pm",
+    "sync",
+    "migrated"
+  ],
   "priority": "P2",
   "timeout": 20000,
   "actions": [
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "alacritty",
         "project": "sway-test",
         "workspace": 7,
         "sync": true
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window",
-        "timeout": 8000,
-        "criteria": {
-          "change": "new",
-          "app_id": "Alacritty"
-        }
       }
     },
     {

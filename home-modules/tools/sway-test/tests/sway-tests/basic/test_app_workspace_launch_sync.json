@@ -1,7 +1,13 @@
 {
   "name": "Application workspace launch test",
-  "description": "Test that launching Firefox on workspace 2 creates a window on the expected workspace",
-  "tags": ["basic", "app-launch", "workspace"],
+  "description": "Test that launching Firefox on workspace 2 creates a window on the expected workspace (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "basic",
+    "app-launch",
+    "workspace",
+    "sync",
+    "migrated"
+  ],
   "timeout": 10000,
   "actions": [
     {
@@ -11,18 +17,13 @@
       }
     },
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "firefox",
         "command": "firefox",
-        "args": ["--new-window"]
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window::new",
-        "timeout_ms": 8000
+        "args": [
+          "--new-window"
+        ]
       }
     }
   ],

@@ -1,31 +1,30 @@
 <!--
 Sync Impact Report:
-- Version: 1.5.0 → 1.6.0 (MINOR - New principle added for Test-Driven Development & Autonomous Testing)
+- Version: 1.6.0 → 1.7.0 (MINOR - New principle added for Sway Test Framework)
 - Modified principles:
-  * None - existing principles remain unchanged
+  * Principle XIV: "Test-Driven Development & Autonomous Testing" - Updated Sway IPC state verification examples to reference sway-test framework
 - New principles created:
-  * Principle XIV: "Test-Driven Development & Autonomous Testing" (NEW)
-    - Mandates test-first development approach for all new features
-    - Requires comprehensive test pyramid (unit, integration, end-to-end, user flow)
-    - Specifies automated user flow testing via MCP tools (Playwright, Chrome DevTools) and Wayland input simulation
-    - Requires state verification via Sway IPC tree queries when UI simulation not possible
-    - Mandates autonomous test execution and iteration without user intervention
-    - Establishes test-driven iteration: spec → plan → tasks → implementation → tests → fix → repeat until passing
+  * Principle XV: "Sway Test Framework Standards" (NEW)
+    - Mandates TypeScript/Deno-based test framework for Sway/Wayland window manager testing
+    - Defines multi-mode state comparison: exact, partial, assertions, empty
+    - Establishes undefined semantics for partial state matching (undefined = "don't check")
+    - Requires declarative JSON test definitions with autonomous execution
+    - Specifies test result reporting with detailed diffs and mode indicators
+    - Mandates Sway IPC as authoritative state source for window manager testing
 - New sections added:
   * None - principle added to existing Core Principles section
 - Updated sections:
   * None - existing sections remain compatible
 - Templates requiring updates:
-  ✅ .specify/templates/spec-template.md - Already includes test scenarios in user stories
-  ✅ .specify/templates/plan-template.md - Already includes testing framework selection
-  ✅ .specify/templates/tasks-template.md - Compatible with test-driven task ordering
-  ⚠️ .specify/templates/commands/ - May benefit from test execution workflow examples
+  ✅ .specify/templates/spec-template.md - Already includes testing requirements in user stories
+  ✅ .specify/templates/plan-template.md - Already includes test framework selection and Constitution Check
+  ✅ .specify/templates/tasks-template.md - Compatible with test task ordering
+  ⚠️ .specify/templates/commands/ - May benefit from sway-test workflow examples
 - Follow-up TODOs:
-  * Document Wayland input simulation tools (ydotool, wtype, or wl-clipboard for testing)
-  * Create MCP server integration examples for Playwright browser automation
-  * Add example test workflows using Sway IPC state verification
-  * Update CLAUDE.md with test-driven development workflow guidance
-  * Create test template files for common testing patterns (unit, integration, e2e, user flow)
+  * Document sway-test framework installation and setup in CLAUDE.md
+  * Create example test templates for common Sway testing patterns
+  * Add CI/CD integration examples for automated sway-test execution
+  * Document best practices for Sway IPC state assertions vs UI simulation
 -->
 
 # NixOS Modular Configuration Constitution
@@ -459,6 +458,7 @@ All feature development MUST follow test-driven development principles with comp
 - Browser-based features MUST use MCP server tools (Playwright, Chrome DevTools) for automated UI testing
 - Wayland/Sway UI interactions MUST be tested programmatically via input simulation tools (ydotool, wtype, wl-clipboard)
 - When UI simulation is not feasible, state verification MUST be performed via Sway IPC tree queries and daemon state inspection
+- For window manager testing, sway-test framework MUST be used (see Principle XV)
 - Test execution MUST be autonomous - no manual user intervention except when technically impossible
 - Test failures MUST trigger iterative refinement: spec → plan → tasks → implementation → tests → fix → repeat until all tests pass
 - Test suites MUST be executable in headless CI/CD environments without human interaction
@@ -527,7 +527,7 @@ async def test_workspace_mode_navigation():
 
 **Sway IPC State Verification** (when UI simulation not possible):
 ```python
-# Example: Verify window environment variable injection
+# Example: Verify window environment variable injection (using sway-test framework for structured testing)
 async def test_environment_variable_injection():
     """Test that launched applications have I3PM_* environment variables."""
     # Launch application programmatically (not via UI)
@@ -596,7 +596,7 @@ async def test_window_environment_parsing():
     assert window_env.is_scoped is True
 ```
 
-**Deno (Deno.test)**:
+**Deno (Deno.test)** - See Principle XV for sway-test framework examples:
 ```typescript
 // tests/window_matcher_test.ts
 import { assertEquals } from "@std/assert";
@@ -629,33 +629,232 @@ Deno.test("matchWindow: matches by I3PM_APP_NAME", async () => {
 - **Chrome DevTools MCP**: Chrome/Chromium browser control (if available)
 - Fallback: Direct Playwright/Puppeteer library usage if MCP servers not available
 
-**State Verification via Sway IPC**:
-```python
-# Verify window properties after action
-async with i3ipc.aio.Connection() as sway:
-    tree = await sway.get_tree()
-
-    # Check window exists
-    windows = find_windows_by_criteria(tree, class_name="Code")
-    assert len(windows) > 0, "Expected VS Code window not found"
-
-    # Check workspace assignment
-    window = windows[0]
-    assert window.workspace().num == 2, \
-        f"Window on workspace {window.workspace().num}, expected 2"
-
-    # Check window marks
-    assert "project:nixos" in window.marks, \
-        f"Window marks: {window.marks}, expected 'project:nixos'"
-```
-
 **Test Execution Patterns**:
 - Tests MUST be executable via `pytest tests/` or `deno test` with zero configuration
 - CI/CD integration MUST run full test suite on every commit
 - Test duration MUST be reasonable (<2 minutes for full suite)
 - Flaky tests MUST be fixed or disabled (never tolerate intermittent failures)
 
-**Rationale**: Test-driven development ensures features work correctly before deployment, reduces debugging time, and provides confidence during refactoring. Autonomous testing via UI automation (Playwright, ydotool) and state verification (Sway IPC) enables comprehensive validation without manual intervention. This approach scales to CI/CD environments and ensures consistent quality. The test-driven iteration loop (spec → plan → test → implement → fix → repeat) produces robust, well-tested code that meets requirements. MCP server integration (when available) provides standardized browser automation, while Wayland input simulation tools enable desktop UI testing. State verification via Sway IPC provides fallback validation when UI simulation is not feasible.
+**Rationale**: Test-driven development ensures features work correctly before deployment, reduces debugging time, and provides confidence during refactoring. Autonomous testing via UI automation (Playwright, ydotool) and state verification (Sway IPC) enables comprehensive validation without manual intervention. This approach scales to CI/CD environments and ensures consistent quality. The test-driven iteration loop (spec → plan → test → implement → fix → repeat) produces robust, well-tested code that meets requirements. MCP server integration (when available) provides standardized browser automation, while Wayland input simulation tools enable desktop UI testing. The sway-test framework (Principle XV) provides structured window manager testing with declarative test definitions.
+
+### XV. Sway Test Framework Standards
+
+All Sway/Wayland window manager testing MUST use the declarative TypeScript/Deno-based sway-test framework for structured, autonomous state verification.
+
+**Rules**:
+- Window manager tests MUST be defined in JSON test files using the sway-test schema
+- Test definitions MUST be declarative - specifying expected state, not implementation details
+- Test execution MUST be autonomous via `sway-test run <test.json>` with no manual intervention
+- Multi-mode state comparison MUST be supported: exact (full tree), partial (field-based), assertions (JSONPath), empty (action-only)
+- Partial mode MUST be the default for most tests - checking specific properties like focusedWorkspace, windowCount, workspace structure
+- Undefined semantics MUST apply: `undefined` in expected state = "don't check" (field ignored), `null` in expected = must match null exactly
+- Test results MUST provide detailed diffs with mode indicators, compared/ignored field lists, and contextual "Expected X, got Y" messages
+- Sway IPC MUST be the authoritative source of truth for window manager state (GET_TREE, GET_WORKSPACES, GET_OUTPUTS)
+- Test framework MUST be implemented in TypeScript with Deno runtime (matching Principle XIII standards)
+- Test failures MUST block commits - all window manager tests must pass before merging
+
+**Multi-Mode State Comparison**:
+
+1. **Partial Mode (Recommended - 90% of tests)**:
+   - Check specific properties: `focusedWorkspace`, `windowCount`, `workspaces`
+   - Ignore unchecked fields automatically (undefined = "don't check")
+   - Fast, focused assertions on relevant state
+   - Example: `{ "focusedWorkspace": 3, "windowCount": 1 }`
+
+2. **Exact Mode (Full tree validation)**:
+   - Compare complete Sway tree structure
+   - Triggered by `tree` field in expectedState
+   - Use for comprehensive state validation
+   - Example: `{ "tree": { "type": "root", "nodes": [...] } }`
+
+3. **Assertions Mode (Advanced JSONPath queries)**:
+   - Query-based assertions on nested properties
+   - Triggered by `assertions` field in expectedState
+   - Use for complex state queries
+   - Example: `{ "assertions": [{ "path": "$.nodes[0].focused", "expected": true }] }`
+
+4. **Empty Mode (Action-only validation)**:
+   - Validate actions execute without errors
+   - No state comparison performed
+   - Triggered by empty expectedState object `{}`
+   - Use for testing action execution only
+
+**Test Definition Schema**:
+```typescript
+interface TestCase {
+  name: string;                    // Test description
+  description?: string;            // Detailed explanation
+  tags?: string[];                 // Test categorization
+  timeout?: number;                // Max execution time (ms)
+  actions: Action[];               // Test actions to execute
+  expectedState: ExpectedState;    // State assertions
+}
+
+interface ExpectedState {
+  // Partial mode (recommended)
+  focusedWorkspace?: number;       // Which workspace is focused
+  windowCount?: number;            // Total window count
+  workspaces?: Array<{             // Workspace-specific assertions
+    num?: number;                  // Workspace number
+    focused?: boolean;             // Focus state
+    visible?: boolean;             // Visibility state
+    windows?: Array<{              // Window assertions
+      app_id?: string;             // Application ID
+      class?: string;              // Window class
+      title?: string;              // Window title
+      focused?: boolean;           // Focus state
+      floating?: boolean;          // Floating state
+    }>;
+  }>;
+
+  // Exact mode
+  tree?: SwayTreeStructure;        // Full tree comparison
+
+  // Assertions mode
+  assertions?: PartialMatch[];     // JSONPath queries
+}
+```
+
+**Example Test - Partial Mode** (Feature 068):
+```json
+{
+  "name": "Firefox launches on workspace 3",
+  "description": "Validate PWA workspace assignment",
+  "tags": ["workspace-assignment", "firefox", "pwa"],
+  "timeout": 5000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "firefox",
+        "workspace": 3,
+        "sync": true
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3,
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 3,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "firefox",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Test Execution**:
+```bash
+# Run single test
+sway-test run tests/test_firefox_workspace.json
+
+# Run test directory
+sway-test run tests/workspace-assignment/
+
+# Run with verbose output
+sway-test run --verbose tests/test_firefox_workspace.json
+
+# Validate test syntax without execution
+sway-test validate tests/*.json
+```
+
+**Enhanced Error Messages** (Feature 068):
+```
+✗ States differ: [PARTIAL mode]
+
+Summary: ~2 modified
+
+Comparing 4 field(s), ignoring 15 field(s)
+  Compared: focusedWorkspace, windowCount, workspaces[0].num, workspaces[0].focused
+
+Differences:
+  ~ $.focusedWorkspace
+    Expected 3, got 1
+  ~ $.workspaces[0].focused
+    Expected true, got false
+```
+
+**State Extraction & Comparison Architecture** (Feature 068):
+
+**StateExtractor Service**:
+- Pure functional design - no side effects
+- Extracts only requested fields from Sway tree
+- Supports nested structures (workspaces → windows)
+- Uses Sway IPC GET_TREE as authoritative source
+
+**StateComparator Service**:
+- Multi-mode dispatch based on expectedState fields
+- Undefined semantics: `undefined` = skip comparison (field ignored)
+- Null semantics: `null` = must match null exactly (field compared)
+- Tracks compared vs ignored fields for enhanced error messages
+
+**Test Framework File Structure**:
+```
+home-modules/tools/sway-test/
+├── deno.json                          # Deno configuration
+├── main.ts                            # CLI entry point
+├── src/
+│   ├── commands/
+│   │   ├── run.ts                     # Test runner (multi-mode dispatch)
+│   │   └── validate.ts                # Test validation
+│   ├── services/
+│   │   ├── state-extractor.ts         # Feature 068: Partial state extraction
+│   │   ├── state-comparator.ts        # Multi-mode comparison
+│   │   ├── sway-client.ts             # Sway IPC client
+│   │   └── action-executor.ts         # Test action execution
+│   ├── models/
+│   │   ├── test-case.ts               # Test definition schema
+│   │   ├── test-result.ts             # Test result types
+│   │   └── state-snapshot.ts          # Sway state types
+│   └── ui/
+│       ├── diff-renderer.ts           # Feature 068: Enhanced error messages
+│       └── reporter.ts                # Test result reporting
+└── tests/
+    └── sway-tests/                    # Example test cases
+```
+
+**Integration with Test-Driven Development**:
+- Write sway-test JSON definitions BEFORE implementing window manager features
+- Run tests during development to validate behavior
+- Tests serve as executable documentation of expected window manager behavior
+- Automated CI/CD execution via `sway-test run tests/**/*.json`
+
+**Undefined Semantics - Critical Design Principle** (Feature 068):
+```json
+// This test checks ONLY focusedWorkspace and workspaces[0].num
+// All other fields (windowCount, workspace.visible, workspace.name, etc.) are IGNORED
+{
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      { "num": 1 }
+    ]
+  }
+}
+```
+
+**Field Tracking for Debugging** (Feature 068):
+```
+Comparing 2 field(s), ignoring 0 field(s)
+  Compared: focusedWorkspace, workspaces[0].num
+  Ignored: (no fields ignored)
+```
+
+**When to Use Each Mode**:
+- **Partial mode**: Default for most tests - validate specific properties (focusedWorkspace, window count, workspace structure)
+- **Exact mode**: Comprehensive validation of complete Sway tree (use sparingly, fragile to irrelevant changes)
+- **Assertions mode**: Complex queries on nested properties (advanced use cases)
+- **Empty mode**: Validate action execution without state checks (setup/teardown, error testing)
+
+**Rationale**: Feature 068 fixed critical bugs in state comparison and established the sway-test framework as the standard for declarative window manager testing. The multi-mode comparison system provides flexibility: partial mode for focused assertions (90% of tests), exact mode for comprehensive validation, assertions mode for complex queries, and empty mode for action-only testing. Undefined semantics (`undefined` = "don't check") enable precise control over which fields matter in each test. Enhanced error messages with mode indicators, field tracking, and contextual diffs dramatically improve debugging speed. The framework follows Principle XIII (Deno/TypeScript standards) and Principle XI (Sway IPC authority), ensuring consistency with project architecture. Declarative JSON test definitions enable autonomous execution, version control, and clear documentation of expected window manager behavior.
 
 ## Platform Support Standards
 
@@ -940,6 +1139,7 @@ All pull requests and configuration rebuilds MUST verify compliance with:
 - ✅ i3 IPC alignment - state queries via native IPC, event-driven architecture
 - ✅ Forward-only development - optimal solutions without legacy compatibility preservation
 - ✅ Test-driven development - tests written before implementation, autonomous test execution
+- ✅ Sway test framework - declarative JSON tests for window manager validation
 
 ### Complexity Justification
 
@@ -948,4 +1148,4 @@ Any violation of simplicity principles (e.g., adding a 5th platform target, crea
 - **Simpler Alternative Rejected**: Why simpler approaches were insufficient
 - **Long-term Maintenance**: How the complexity will be managed and documented
 
-**Version**: 1.6.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-11-03
+**Version**: 1.7.0 | **Ratified**: 2025-10-14 | **Last Amended**: 2025-11-08

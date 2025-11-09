@@ -9,11 +9,19 @@ export type { TestCase, ActionSequence, ExpectedState } from "./src/models/test-
 export type { StateSnapshot } from "./src/models/state-snapshot.ts";
 export type { TestResult, TestStatus, StateDiff, DiffEntry } from "./src/models/test-result.ts";
 
+// Re-export sync models (Feature 069)
+export type { SyncMarker, SyncResult, SyncConfig, SyncStats } from "./src/models/sync-marker.ts";
+export { generateSyncMarker, validateSyncMarker, validateSyncConfig, DEFAULT_SYNC_CONFIG } from "./src/models/sync-marker.ts";
+
 // Re-export services
 export { SwayClient } from "./src/services/sway-client.ts";
 export { TreeMonitorClient } from "./src/services/tree-monitor-client.ts";
 export { StateComparator } from "./src/services/state-comparator.ts";
 export type { ComparisonMode, PartialMatch } from "./src/services/state-comparator.ts";
+
+// Re-export test helpers (User Story 3 - Feature 069)
+export { focusAfter, focusedWorkspaceAfter, windowCountAfter } from "./src/services/test-helpers.ts";
+export type { FocusedNode } from "./src/services/test-helpers.ts";
 
 // Re-export UI components
 export { DiffRenderer } from "./src/ui/diff-renderer.ts";

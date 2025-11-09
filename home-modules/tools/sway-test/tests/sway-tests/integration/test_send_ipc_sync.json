@@ -1,0 +1,31 @@
+{
+  "name": "send_ipc_sync action validation",
+  "description": "Validates that the send_ipc_sync action sends an IPC command and automatically synchronizes before returning. This test launches a terminal first to ensure a window exists, then uses send_ipc_sync to move it. The sync happens transparently within the action executor.",
+  "tags": ["integration", "sync", "send_ipc_sync", "us2", "action-validation"],
+  "priority": "P1",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "move container to workspace 5"
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "partial": [
+        {
+          "app_id": "ghostty",
+          "workspace": 5
+        }
+      ]
+    }
+  }
+}

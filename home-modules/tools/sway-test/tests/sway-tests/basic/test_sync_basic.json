@@ -1,0 +1,24 @@
+{
+  "name": "Basic sync action",
+  "description": "Demonstrates the launch_app_sync action which automatically synchronizes after launching an app. This ensures the window is fully created and visible before state verification, eliminating race conditions. The sync happens automatically - no explicit sync action needed.",
+  "tags": ["basic", "sync", "us1", "example"],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "terminal"
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": {
+      "partial": [
+        {
+          "app_id": "ghostty"
+        }
+      ]
+    }
+  }
+}

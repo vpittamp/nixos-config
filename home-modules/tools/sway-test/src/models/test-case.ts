@@ -16,7 +16,11 @@ export type ActionType =
   | "debug_pause"
   | "await_sync"
   | "validate_workspace_assignment"
-  | "validate_environment";
+  | "validate_environment"
+  // Feature 069: Synchronization-Based Test Framework
+  | "sync"               // Explicit synchronization point
+  | "launch_app_sync"    // Launch app + auto-sync
+  | "send_ipc_sync";     // IPC command + auto-sync
 
 /**
  * Action parameters based on action type
@@ -66,6 +70,9 @@ export interface ActionParams {
   // Common params
   sync?: boolean; // Auto-sync after action
   delay?: number; // Delay in ms before next action
+
+  // Feature 069: Sync action params
+  logLatency?: boolean; // Whether to log sync latency for performance monitoring
 }
 
 /**

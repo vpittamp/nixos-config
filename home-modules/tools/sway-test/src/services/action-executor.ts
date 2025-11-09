@@ -195,6 +195,19 @@ export class ActionExecutor {
         await this.executeValidateEnvironment(action);
         break;
 
+      // Feature 069: Synchronization-Based Test Framework
+      case "sync":
+        await this.executeSync(action);
+        break;
+
+      case "launch_app_sync":
+        await this.executeLaunchAppSync(action);
+        break;
+
+      case "send_ipc_sync":
+        await this.executeSendIpcSync(action);
+        break;
+
       default:
         throw new Error(`Unknown action type: ${action.type}`);
     }
@@ -701,5 +714,67 @@ export class ActionExecutor {
    */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Execute sync action (T035)
+   * Feature 069: Synchronization-Based Test Framework
+   *
+   * Explicit synchronization point - guarantees all prior Sway IPC commands
+   * have been processed by X11 before continuing.
+   */
+  private async executeSync(action: Action): Promise<void> {
+    const { timeout = 5000, logLatency = false } = action.params;
+
+    const result = await this.swayClient.sync(timeout);
+
+    if (!result.success) {
+      throw new Error(
+        `Sync failed: ${result.error} (latency: ${result.latencyMs}ms)`,
+      );
+    }
+
+    if (logLatency || result.latencyMs > 10) {
+      console.log(
+        `Sync completed in ${result.latencyMs}ms (marker: ${result.marker.marker})`,
+      );
+    }
+  }
+
+  /**
+   * Execute launch_app_sync action (Phase 4: User Story 2)
+   * Feature 069: Synchronization-Based Test Framework
+   *
+   * Launches application and automatically synchronizes before continuing.
+   */
+  private async executeLaunchAppSync(action: Action): Promise<void> {
+    // Execute existing launch_app logic
+    await this.executeLaunchApp(action);
+
+    // Automatically sync
+    await this.swayClient.sync(action.params.timeout);
+  }
+
+  /**
+   * Execute send_ipc_sync action (Phase 4: User Story 2)
+   * Feature 069: Synchronization-Based Test Framework
+   *
+   * Sends Sway IPC command and automatically synchronizes.
+   */
+  private async executeSendIpcSync(action: Action): Promise<void> {
+    const { ipc_command, timeout = 5000 } = action.params;
+
+    if (!ipc_command) {
+      throw new Error("send_ipc_sync requires 'ipc_command' parameter");
+    }
+
+    // Send IPC command
+    const result = await this.swayClient.sendCommand(ipc_command);
+    if (!result.success) {
+      throw new Error(`IPC command failed: ${result.error}`);
+    }
+
+    // Automatically sync
+    await this.swayClient.sync(timeout);
   }
 }

@@ -5,11 +5,19 @@
  */
 
 import type { StateSnapshot } from "../models/state-snapshot.ts";
+import { SyncManager } from "./sync-manager.ts";
+import type { SyncResult, SyncStats, SyncConfig } from "../models/sync-marker.ts";
 
 /**
  * Sway IPC client for test framework
  */
 export class SwayClient {
+  private syncManager: SyncManager;
+
+  constructor(syncConfig?: Partial<SyncConfig>) {
+    this.syncManager = new SyncManager(syncConfig);
+  }
+
   /**
    * Get complete window tree state from Sway
    */
@@ -258,5 +266,90 @@ export class SwayClient {
     };
 
     return findWindowNode(tree);
+  }
+
+  /**
+   * Synchronize with Sway IPC state.
+   * Guarantees all prior IPC commands have been processed by X11.
+   *
+   * @param timeout - Optional timeout in milliseconds (default: 5000)
+   * @param testId - Optional test ID for marker correlation
+   * @returns SyncResult with latency metrics
+   * @throws Error if sync times out
+   *
+   * @example
+   * await swayClient.sendCommand("workspace 3");
+   * await swayClient.sync(); // Wait for workspace switch to complete
+   * const tree = await swayClient.getTree(); // Tree reflects workspace 3
+   */
+  async sync(timeout?: number, testId?: string): Promise<SyncResult> {
+    return await this.syncManager.sync(
+      (cmd) => this.sendCommand(cmd),
+      timeout,
+      testId,
+    );
+  }
+
+  /**
+   * Get tree with automatic sync before capture.
+   * Convenience method for common pattern.
+   *
+   * @returns StateSnapshot with guaranteed fresh state
+   *
+   * @example
+   * const tree = await swayClient.getTreeSynced();
+   * // tree reflects latest Sway state (no race condition)
+   */
+  async getTreeSynced(): Promise<StateSnapshot> {
+    const syncResult = await this.sync();
+    if (!syncResult.success) {
+      throw new Error(`Sync failed: ${syncResult.error}`);
+    }
+    return await this.getTree();
+  }
+
+  /**
+   * Send command and sync automatically.
+   * Convenience method for common pattern.
+   *
+   * @param command - Sway IPC command string
+   * @returns Result with sync completion
+   *
+   * @example
+   * await swayClient.sendCommandSync("workspace 5");
+   * // Workspace switch is complete (X11 processed)
+   */
+  async sendCommandSync(
+    command: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const result = await this.sendCommand(command);
+    if (!result.success) {
+      return result;
+    }
+
+    const syncResult = await this.sync();
+    if (!syncResult.success) {
+      return { success: false, error: syncResult.error };
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Get current sync statistics.
+   * For performance monitoring and diagnostics.
+   *
+   * @returns SyncStats or null if tracking disabled
+   */
+  getSyncStats(): SyncStats | null {
+    return this.syncManager.getSyncStats();
+  }
+
+  /**
+   * Reset sync statistics.
+   * Useful for per-test benchmarking.
+   */
+  resetSyncStats(): void {
+    this.syncManager.resetSyncStats();
   }
 }

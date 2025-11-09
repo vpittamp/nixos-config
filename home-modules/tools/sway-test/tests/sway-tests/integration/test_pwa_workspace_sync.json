@@ -1,25 +1,21 @@
 {
   "name": "PWA launches on configured workspace",
-  "description": "Validates that a PWA with custom app_id (e.g., FFPWA-01J5M6WBDDJQFCPBSAM7RRQ2BE) launches on its configured workspace 52",
-  "tags": ["integration", "workspace-assignment", "pwa"],
+  "description": "Validates that a PWA with custom app_id (e.g., FFPWA-01J5M6WBDDJQFCPBSAM7RRQ2BE) launches on its configured workspace 52 (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "integration",
+    "workspace-assignment",
+    "pwa",
+    "sync",
+    "migrated"
+  ],
   "priority": "P2",
   "timeout": 20000,
   "actions": [
     {
-      "type": "launch_app",
+      "type": "launch_app_sync",
       "params": {
         "app_name": "youtube-music",
         "sync": true
-      }
-    },
-    {
-      "type": "wait_event",
-      "params": {
-        "event_type": "window",
-        "timeout": 15000,
-        "criteria": {
-          "change": "new"
-        }
       }
     },
     {

@@ -1,0 +1,40 @@
+{
+  "name": "Focus command with immediate state query",
+  "description": "Validates that focus commands can be immediately verified using sync. Demonstrates the explicit sync action - send IPC command, sync, then verify focus state without race conditions.",
+  "tags": [
+    "integration",
+    "sync",
+    "focus",
+    "us1",
+    "migrated"
+  ],
+  "priority": "P1",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox",
+        "sync": true
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty",
+        "sync": true
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] focus"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWindow": {
+      "app_id": "firefox"
+    }
+  }
+}

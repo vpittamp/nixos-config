@@ -1,0 +1,27 @@
+{
+  "name": "focusedWorkspaceAfter() helper - workspace focus validation",
+  "description": "Validates that the focusedWorkspaceAfter() helper simplifies workspace focus tests by combining command execution, sync, and workspace query in a single operation.",
+  "tags": ["integration", "helper", "us3", "workspace", "boilerplate-reduction"],
+  "priority": "P2",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "use_helper",
+      "params": {
+        "helper": "focusedWorkspaceAfter",
+        "command": "workspace 7",
+        "expected_workspace": 7
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": {
+      "partial": [
+        {
+          "num": 7,
+          "focused": true
+        }
+      ]
+    }
+  }
+}

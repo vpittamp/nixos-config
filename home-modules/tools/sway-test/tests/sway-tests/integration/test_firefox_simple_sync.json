@@ -1,0 +1,23 @@
+{
+  "name": "Firefox launches via wrapper (demo)",
+  "description": "Demonstrates app launch via app-launcher-wrapper.sh with event waiting (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "demo",
+    "wrapper",
+    "firefox",
+    "sync",
+    "migrated"
+  ],
+  "priority": "P1",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox",
+        "sync": true
+      }
+    }
+  ],
+  "expectedState": {}
+}

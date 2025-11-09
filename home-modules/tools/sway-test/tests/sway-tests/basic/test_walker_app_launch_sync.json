@@ -1,0 +1,28 @@
+{
+  "name": "Production application launch test",
+  "description": "Launch Firefox via app-launcher-wrapper and verify it appears on workspace 3 (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "tags": [
+    "app-launch",
+    "workspace",
+    "i3pm",
+    "sync",
+    "migrated"
+  ],
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    }
+  ],
+  "expectedState": {
+    "windows": [
+      {
+        "app_id": "firefox",
+        "workspace": 3
+      }
+    ]
+  }
+}
