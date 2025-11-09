@@ -38,3 +38,4 @@ coverage/
 # Temporary files
 *.bak
 *.cache
+sway-test
