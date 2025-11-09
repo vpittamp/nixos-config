@@ -203,9 +203,9 @@ let
       name = "btop";
       display_name = "btop";
       command = "ghostty";
-      parameters = "--class=btop -e btop";
+      parameters = "-e btop";
       scope = "global";
-      expected_class = "btop";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.btop";
@@ -218,9 +218,9 @@ let
       name = "htop";
       display_name = "htop";
       command = "ghostty";
-      parameters = "--class=htop -e htop";
+      parameters = "-e htop";
       scope = "global";
-      expected_class = "htop";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 7;
       icon = "utilities-system-monitor";
       nix_package = "pkgs.htop";
@@ -250,9 +250,9 @@ let
       name = "k9s";
       display_name = "K9s";
       command = "ghostty";
-      parameters = "--class=k9s -e k9s";
+      parameters = "-e k9s";
       scope = "global";
-      expected_class = "k9s";
+      expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 9;
       icon = "kubernetes";
       nix_package = "pkgs.k9s";

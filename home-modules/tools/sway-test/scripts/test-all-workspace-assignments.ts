@@ -101,7 +101,7 @@ async function launchApp(appName: string, timeout: number): Promise<{
 }
 
 async function checkWorkspaceAssignment(
-  expectedClass: string,
+  appName: string,
   expectedWorkspace: number
 ): Promise<{
   success: boolean;
@@ -123,16 +123,37 @@ async function checkWorkspaceAssignment(
 
   const tree = JSON.parse(new TextDecoder().decode(stdout));
 
-  // Find workspace with the app
+  // Find workspace with the app by reading environment variables
   let foundWorkspace: number | undefined;
+  let matchedPid: number | undefined;
 
   function findInTree(node: any): void {
     if (node.type === "workspace" && node.num && node.nodes) {
       for (const child of node.nodes) {
-        // Case-insensitive match for app_id
-        if (child.app_id && child.app_id.toLowerCase() === expectedClass.toLowerCase()) {
-          foundWorkspace = node.num;
-          return;
+        if (child.pid) {
+          // Read environment variables from /proc/<pid>/environ
+          try {
+            const envContent = Deno.readTextFileSync(`/proc/${child.pid}/environ`);
+            const envVars = new Map<string, string>();
+
+            // Parse null-separated environment variables
+            envContent.split('\0').forEach(line => {
+              const [key, ...valueParts] = line.split('=');
+              if (key && valueParts.length > 0) {
+                envVars.set(key, valueParts.join('='));
+              }
+            });
+
+            // Check if I3PM_APP_NAME matches
+            const i3pmAppName = envVars.get('I3PM_APP_NAME');
+            if (i3pmAppName === appName) {
+              foundWorkspace = node.num;
+              matchedPid = child.pid;
+              return;
+            }
+          } catch (_e) {
+            // /proc/<pid>/environ may not be readable, skip
+          }
         }
       }
     }
@@ -155,7 +176,7 @@ async function checkWorkspaceAssignment(
   if (foundWorkspace === undefined) {
     return {
       success: false,
-      error: `Window with app_id="${expectedClass}" not found in Sway tree`,
+      error: `Window with I3PM_APP_NAME="${appName}" not found in Sway tree`,
     };
   }
 
@@ -163,7 +184,7 @@ async function checkWorkspaceAssignment(
     return {
       success: false,
       actualWorkspace: foundWorkspace,
-      error: `Expected workspace ${expectedWorkspace}, found on workspace ${foundWorkspace}`,
+      error: `Expected workspace ${expectedWorkspace}, found on workspace ${foundWorkspace} (PID: ${matchedPid})`,
     };
   }
 
@@ -194,7 +215,7 @@ async function testApp(app: AppDefinition): Promise<TestResult> {
     // 3. Check workspace assignment
     console.log(`  🔍 Checking workspace assignment...`);
     const checkResult = await checkWorkspaceAssignment(
-      app.expected_class,
+      app.name,
       app.preferred_workspace
     );
 
