@@ -36,7 +36,8 @@ class RPCServer:
         self,
         socket_path: Optional[Path],
         event_buffer: TreeEventBuffer,
-        differ: TreeDiffer
+        differ: TreeDiffer,
+        daemon=None
     ):
         """
         Initialize RPC server.
@@ -45,6 +46,7 @@ class RPCServer:
             socket_path: Unix socket path (default: XDG_RUNTIME_DIR/sway-tree-monitor.sock)
             event_buffer: Event buffer to query
             differ: Tree differ for statistics
+            daemon: Daemon instance (for sync marker tracking)
         """
         import os
         if socket_path is None:
@@ -54,6 +56,7 @@ class RPCServer:
         self.socket_path = socket_path
         self.event_buffer = event_buffer
         self.differ = differ
+        self.daemon = daemon
         self.server: Optional[asyncio.Server] = None
         self._methods: Dict[str, Callable] = {}
 
@@ -62,11 +65,19 @@ class RPCServer:
 
     def _register_methods(self):
         """Register all RPC methods"""
+        # Standard JSON-RPC introspection
+        self._methods['system.listMethods'] = self.handle_list_methods
+
+        # Core daemon methods
         self._methods['ping'] = self.handle_ping
         self._methods['query_events'] = self.handle_query_events
         self._methods['get_event'] = self.handle_get_event
         self._methods['get_statistics'] = self.handle_get_statistics
         self._methods['get_daemon_status'] = self.handle_get_daemon_status
+
+        # Sync marker methods (Feature 069 - Test Framework Integration)
+        self._methods['send_sync_marker'] = self.handle_send_sync_marker
+        self._methods['await_sync_marker'] = self.handle_await_sync_marker
 
     async def start(self):
         """Start RPC server listening on Unix socket"""
@@ -202,6 +213,18 @@ class RPCServer:
     # =========================================================================
     # RPC Method Handlers
     # =========================================================================
+
+    async def handle_list_methods(self, params: dict) -> list:
+        """
+        Handle 'system.listMethods' - JSON-RPC 2.0 introspection.
+
+        Returns list of available RPC methods.
+        Standard introspection method for clients to discover available methods.
+
+        Returns:
+            List of method names
+        """
+        return sorted(list(self._methods.keys()))
 
     async def handle_ping(self, params: dict) -> dict:
         """
@@ -521,6 +544,100 @@ class RPCServer:
                 'cache_size': differ_stats['cache']['size'],
                 'cache_memory_kb': differ_stats['cache']['memory_kb']
             }
+        }
+
+    async def handle_send_sync_marker(self, params: dict) -> dict:
+        """
+        Handle 'send_sync_marker' method - send sync marker to Sway.
+
+        This implements synchronization using Sway's sequential IPC processing.
+        Since Sway processes IPC commands in order, sending a `nop` command
+        and waiting for its response guarantees that all previous IPC commands
+        (workspace moves, focus changes, etc.) have been processed.
+
+        This is the Sway equivalent of i3's I3_SYNC protocol, but simpler since
+        we don't need to wait for events - IPC responses are synchronous.
+
+        Params:
+            - marker_id: Optional marker ID (will be generated if not provided)
+
+        Returns:
+            - marker_id: The marker ID that was sent
+            - success: Whether the marker was successfully sent
+            - sync_latency_ms: Time taken for sync operation
+        """
+        import time
+        import uuid
+
+        # Get or generate marker ID
+        marker_id = params.get('marker_id')
+        if not marker_id:
+            marker_id = f"sync_{int(time.time() * 1000)}_{uuid.uuid4().hex[:7]}"
+
+        # Validate marker format (prevent injection)
+        if not marker_id.replace('_', '').replace('-', '').isalnum():
+            raise ValueError(f"Invalid marker_id format: {marker_id}")
+
+        if not self.daemon or not self.daemon.connection:
+            raise RuntimeError("Daemon connection not available for sync")
+
+        try:
+            start_time = time.time()
+
+            # Send nop command via IPC connection
+            # Since IPC commands are processed sequentially, when this returns,
+            # all previous commands (including workspace moves) have been processed
+            result = await self.daemon.connection.command(f'nop sync:{marker_id}')
+
+            # Check if command succeeded
+            if result and len(result) > 0:
+                if not result[0].success:
+                    raise RuntimeError(f"Sway nop command failed: {result[0].error}")
+
+            sync_latency_ms = (time.time() - start_time) * 1000
+
+            logger.debug(f"Sync marker completed: {marker_id} ({sync_latency_ms:.2f}ms)")
+
+            return {
+                'marker_id': marker_id,
+                'success': True,
+                'sync_latency_ms': round(sync_latency_ms, 2)
+            }
+
+        except Exception as e:
+            logger.error(f"Error sending sync marker: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to send sync marker: {str(e)}")
+
+    async def handle_await_sync_marker(self, params: dict) -> dict:
+        """
+        Handle 'await_sync_marker' method - wait for sync marker completion.
+
+        With Sway's synchronous IPC model, the sync is actually complete when
+        send_sync_marker() returns. This method exists for API compatibility
+        with the test framework and returns immediately with success.
+
+        In Sway, IPC commands (including `nop`) block until Sway processes them.
+        When send_sync_marker's `nop` command returns, all previous IPC commands
+        (workspace moves, focus changes) have been processed. No async waiting needed.
+
+        Params:
+            - marker_id: Marker ID to check (informational only)
+            - timeout_ms: Not used (kept for API compatibility)
+
+        Returns:
+            - success: Always true (sync was already complete)
+            - latency_ms: Always 0 (no additional wait needed)
+            - marker_id: The marker that was checked
+        """
+        marker_id = params.get('marker_id', 'unknown')
+
+        logger.debug(f"Sync marker check (already complete): {marker_id}")
+
+        return {
+            'success': True,
+            'latency_ms': 0.0,
+            'marker_id': marker_id,
+            'note': 'Sync complete when send_sync_marker returns (Sway IPC is synchronous)'
         }
 
     def _generate_event_summary(self, event) -> str:

@@ -4,7 +4,7 @@ let
   # Build sway-tree-monitor Python package from local source
   sway-tree-monitor = pkgs.python3Packages.buildPythonPackage {
     pname = "sway-tree-monitor";
-    version = "1.1.5";  # Fixed ActionType enum mismatch - simplified semantic relevance scoring to work with actual BINDING/KEYPRESS/MOUSE_CLICK/IPC_COMMAND values
+    version = "1.2.1";  # Implemented synchronous IPC-based sync protocol for reliable test synchronization (Feature 069)
 
     src = ./sway-tree-monitor;
 

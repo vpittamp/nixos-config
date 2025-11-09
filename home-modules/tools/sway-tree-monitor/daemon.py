@@ -14,7 +14,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 from i3ipc import aio
 from i3ipc import Event
@@ -77,7 +77,8 @@ class SwayTreeMonitorDaemon:
         self.rpc_server = RPCServer(
             socket_path=socket_path,
             event_buffer=self.buffer,
-            differ=self.differ
+            differ=self.differ,
+            daemon=self  # Pass daemon reference for sync marker access
         )
 
         self.connection: Optional[aio.Connection] = None
@@ -85,6 +86,10 @@ class SwayTreeMonitorDaemon:
         self._snapshot_counter = 0
         self._start_time = time.time()
         self._running = False
+
+        # Sync marker tracking (Feature 069 - tick-event-based sync)
+        self._pending_sync_markers: Dict[str, asyncio.Event] = {}
+        self._sync_marker_lock = asyncio.Lock()
 
     async def start(self):
         """
@@ -112,7 +117,7 @@ class SwayTreeMonitorDaemon:
             # those are async tasks that may not execute before main() starts.
             # Explicitly subscribing ensures we're subscribed before the event
             # loop starts processing events. (Pattern from i3pm daemon line 465-469)
-            await self.connection.subscribe(['window', 'workspace', 'binding'])
+            await self.connection.subscribe(['window', 'workspace', 'binding', 'tick'])
             logger.info("Event handlers registered and explicitly subscribed")
 
             # Start RPC server
@@ -174,6 +179,9 @@ class SwayTreeMonitorDaemon:
 
         # Binding events (for user action correlation - User Story 2)
         self.connection.on(Event.BINDING, self._on_binding_event)
+
+        # Tick events (for sync marker support - Feature 069)
+        self.connection.on(Event.TICK, self._on_tick_event)
 
     async def _on_window_event(self, connection: aio.Connection, event: Event):
         """Handle window events"""
@@ -245,6 +253,44 @@ class SwayTreeMonitorDaemon:
         # All binding events use BINDING type
         # Command details are preserved in the UserAction.binding_command field
         return ActionType.BINDING
+
+    async def _on_tick_event(self, connection: aio.Connection, event: Event):
+        """
+        Handle tick events (Feature 069 - sync marker support).
+
+        Tick events are used for synchronization - when a sync marker is sent
+        via `swaymsg -- tick <marker_id>`, Sway processes all pending commands
+        and then sends this tick event with the marker_id as payload.
+
+        This allows tests to wait for workspace assignments and other IPC
+        commands to complete before checking state.
+
+        Args:
+            connection: i3ipc connection
+            event: Tick event with payload containing marker ID
+        """
+        try:
+            # Extract payload (marker ID)
+            payload = event.payload if hasattr(event, 'payload') else ''
+
+            if not payload:
+                logger.debug("Received tick event with empty payload")
+                return
+
+            logger.debug(f"Tick event received: payload={payload}")
+
+            # Check if this is a pending sync marker
+            async with self._sync_marker_lock:
+                if payload in self._pending_sync_markers:
+                    # Signal the waiting task
+                    event_obj = self._pending_sync_markers[payload]
+                    event_obj.set()
+                    logger.debug(f"Sync marker completed: {payload}")
+                else:
+                    logger.debug(f"Tick event payload not a pending sync marker: {payload}")
+
+        except Exception as e:
+            logger.error(f"Error handling tick event: {e}", exc_info=True)
 
     async def _process_tree_change(self, event_type: str, sway_event: Event):
         """

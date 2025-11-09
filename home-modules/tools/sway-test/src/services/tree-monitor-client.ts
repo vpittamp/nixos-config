@@ -126,8 +126,8 @@ export class TreeMonitorClient {
    * @returns Sync marker ID if successful, null if method unavailable
    */
   async sendSyncMarkerSafe(): Promise<string | null> {
-    // Check if method available
-    if (!(await this.checkMethodAvailability("sendSyncMarker"))) {
+    // Check if method available (use snake_case to match actual RPC method name)
+    if (!(await this.checkMethodAvailability("send_sync_marker"))) {
       // Log warning once
       if (!this.introspectionWarningShown) {
         console.warn(
