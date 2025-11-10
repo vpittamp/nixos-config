@@ -170,8 +170,8 @@ class MonitorStateV2(BaseModel):
     Migration from v1.0: See migrate_v1_to_v2() helper function.
     """
 
-    version: str = Field(
-        "2.0", const=True, description="State file format version"
+    version: Literal["2.0"] = Field(
+        "2.0", description="State file format version"
     )
     monitor_roles: Dict[str, str] = Field(
         ..., description="Role→output mapping (role names as keys)"

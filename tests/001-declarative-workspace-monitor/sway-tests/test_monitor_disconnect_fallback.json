@@ -1,0 +1,93 @@
+{
+  "name": "Monitor disconnect fallback (tertiary → secondary)",
+  "description": "Test that workspaces on tertiary monitor (WS 6+) automatically reassign to secondary monitor when tertiary disconnects",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"com.mitchellh.ghostty\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"Thunar\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "thunar",
+        "comment": "Launch Thunar on WS 6 (tertiary monitor - HEADLESS-3)"
+      }
+    },
+    {
+      "type": "verify_state",
+      "params": {
+        "description": "Verify Thunar is on WS 6, output HEADLESS-3",
+        "expectedState": {
+          "workspaces": [
+            {
+              "num": 6,
+              "output": "HEADLESS-3",
+              "windows": [
+                {
+                  "app_id": "Thunar"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "message": "TODO: Add output::mode event trigger to simulate monitor disconnect"
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "message": "NOTE: This test requires Sway IPC output events which are not yet implemented in sway-test framework"
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "message": "WORKAROUND: Use Python integration tests (test_monitor_fallback.py) for fallback logic validation"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 6,
+    "workspaces": [
+      {
+        "num": 6,
+        "output": "HEADLESS-3",
+        "windows": [
+          {
+            "app_id": "Thunar",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "This test currently only validates initial workspace assignment (Thunar on WS 6 → HEADLESS-3)",
+    "Full monitor disconnect/reconnect testing requires:",
+    "  1. Sway output event simulation in sway-test framework",
+    "  2. Output removal/addition via Sway IPC commands",
+    "  3. Daemon output event handler implementation (T032-T034)",
+    "Once output events are implemented, this test should be extended to:",
+    "  1. Verify initial assignment (Thunar on HEADLESS-3)",
+    "  2. Simulate HEADLESS-3 disconnect (output::mode event)",
+    "  3. Wait for daemon to process event and reassign workspaces",
+    "  4. Verify Thunar moved to HEADLESS-2 (secondary fallback)",
+    "  5. Simulate HEADLESS-3 reconnect",
+    "  6. Verify Thunar restored to HEADLESS-3 (preferred role)",
+    "For now, use test_monitor_fallback.py for complete fallback logic testing"
+  ]
+}
