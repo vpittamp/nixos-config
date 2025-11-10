@@ -7,6 +7,18 @@
     ripgrep           # For telescope
     fd                # For telescope file finder
     nodejs            # For various language servers
+    (writeShellScriptBin "nvim-telescope-picker" ''
+      set -euo pipefail
+      if [ "$#" -gt 0 ] && [ -d "$1" ]; then
+        export NVIM_STARTUP_PICKER_CWD="$1"
+        cd "$1"
+        shift
+      fi
+      if [ -z "''${NVIM_STARTUP_PICKER_CWD:-}" ]; then
+        export NVIM_STARTUP_PICKER_CWD="$PWD"
+      fi
+      NVIM_STARTUP_PICKER="find_files" exec ${neovim-unwrapped}/bin/nvim "$@"
+    '')
   ];
   
   # Set up Neovim as default editor
@@ -85,18 +97,48 @@
       {
         "nvim-telescope/telescope.nvim",
         branch = "0.1.x",
-        dependencies = { "nvim-lua/plenary.nvim" },
+        cmd = "Telescope",
+        dependencies = {
+          "nvim-lua/plenary.nvim",
+          {
+            "nvim-telescope/telescope-fzf-native.nvim",
+            build = "make",
+          },
+        },
         config = function()
-          require("telescope").setup({
+          local telescope = require("telescope")
+          local actions = require("telescope.actions")
+          telescope.setup({
             defaults = {
+              layout_strategy = "horizontal",
+              layout_config = {
+                width = 0.97,
+                height = 0.95,
+                preview_cutoff = 1,
+                horizontal = {
+                  preview_width = 0.66,
+                  results_width = 0.34,
+                },
+              },
+              initial_mode = "normal",
               mappings = {
                 i = {
                   ["<C-u>"] = false,
                   ["<C-d>"] = false,
+                  ["<C-j>"] = actions.move_selection_next,
+                  ["<C-k>"] = actions.move_selection_previous,
+                  ["<C-q>"] = actions.smart_send_to_qflist,
+                },
+                n = {
+                  ["j"] = actions.move_selection_next,
+                  ["k"] = actions.move_selection_previous,
+                  ["q"] = actions.close,
+                  ["<Esc>"] = actions.close,
                 },
               },
             },
           })
+          pcall(telescope.load_extension, "fzf")
         end,
         keys = {
           { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "Find Files" },
@@ -436,5 +478,45 @@
     vim.keymap.set("n", "<C-j>", "<C-w>j", { desc = "Move to lower window" })
     vim.keymap.set("n", "<C-k>", "<C-w>k", { desc = "Move to upper window" })
     vim.keymap.set("n", "<C-l>", "<C-w>l", { desc = "Move to right window" })
+
+    -- Launch Telescope picker automatically when wrapper sets NVIM_STARTUP_PICKER
+    vim.api.nvim_create_autocmd("VimEnter", {
+      once = true,
+      callback = function()
+        local picker = vim.env.NVIM_STARTUP_PICKER
+        if not picker or picker == "" then
+          return
+        end
+
+        vim.env.NVIM_STARTUP_PICKER = nil
+        local cwd_hint = vim.env.NVIM_STARTUP_PICKER_CWD
+        vim.env.NVIM_STARTUP_PICKER_CWD = nil
+        if cwd_hint == nil or cwd_hint == "" then
+          cwd_hint = vim.env.I3PM_PROJECT_DIR
+        end
+        if cwd_hint == "" then
+          cwd_hint = nil
+        end
+
+        local lazy_ok, lazy = pcall(require, "lazy")
+        if lazy_ok then
+          lazy.load({ plugins = { "telescope.nvim" } })
+        end
+
+        local ok, builtin = pcall(require, "telescope.builtin")
+        if not ok or type(builtin[picker]) ~= "function" then
+          vim.notify("Invalid Telescope picker: " .. picker, vim.log.levels.WARN)
+          return
+        end
+
+        vim.schedule(function()
+          local opts = {}
+          if cwd_hint and vim.fn.isdirectory(cwd_hint) == 1 then
+            opts.cwd = cwd_hint
+          end
+          builtin[picker](opts)
+        end)
+      end,
+    })
   '';
 }

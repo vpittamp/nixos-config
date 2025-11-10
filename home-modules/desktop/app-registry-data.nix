@@ -122,8 +122,7 @@ let
       name = "nvim";
       display_name = "Neovim";
       command = "ghostty";
-      # parameters = "-e nvim $PROJECT_DIR";
-      parameters = "-e nvim /etc/nixos/home-vpittamp.nix";
+      parameters = "-e nvim-telescope-picker $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
