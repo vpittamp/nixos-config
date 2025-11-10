@@ -8,6 +8,10 @@ let
   # Import centralized PWA site definitions
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
   pwas = pwaSitesConfig.pwaSites;
+  ensureFileUrl = path:
+    if lib.hasPrefix "file://" path then path
+    else if lib.hasPrefix "/" path then "file://${path}"
+    else throw "PWA icon path must be absolute or file:// URL: ${path}";
 
   inherit (lib.hm.dag) entryAfter;
 
@@ -228,7 +232,10 @@ PY
 
   # generateManifest: Generate Web App Manifest JSON from PWA definition
   # Spec: https://www.w3.org/TR/appmanifest/
-  generateManifest = pwa: {
+  generateManifest = pwa:
+    let
+      iconUrl = ensureFileUrl pwa.icon;
+    in {
     name = pwa.name;
     short_name = pwa.name;
     start_url = "${pwa.url}/";  # Trailing slash
@@ -243,7 +250,7 @@ PY
     shortcuts = [];
     icons = [
       {
-        src = pwa.icon;
+        src = iconUrl;
         sizes = "512x512";
         type = "image/png";
         purpose = "any";
@@ -275,16 +282,19 @@ PY
       }) pwaList);
 
       # Convert PWA list to sites attrset keyed by ULID
-      sitesAttrset = builtins.listToAttrs (builtins.map (pwa: {
-        name = pwa.ulid;
-        value = {
-          ulid = pwa.ulid;
-          profile = pwa.ulid;  # Each site uses its own profile
-          config = {
+      sitesAttrset = builtins.listToAttrs (builtins.map (pwa:
+        let
+          iconUrl = ensureFileUrl pwa.icon;
+        in {
+          name = pwa.ulid;
+          value = {
+            ulid = pwa.ulid;
+            profile = pwa.ulid;  # Each site uses its own profile
+            config = {
             name = pwa.name;
             description = pwa.description;
             start_url = "${pwa.url}/";  # Must match document_url with trailing slash
-            icon_url = pwa.icon;
+            icon_url = iconUrl;
             document_url = "${pwa.url}/";  # Trailing slash is important!
             manifest_url = "${pwa.url}/";  # Point to document_url
             categories = if (pwa ? categories)
@@ -399,7 +409,7 @@ in
           Name=${pwa.name}
           Comment=${pwa.description}
           Exec=${config.home.homeDirectory}/.local/bin/app-launcher-wrapper.sh ${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa
-          Icon=FFPWA-${pwa.ulid}
+          Icon=${pwa.icon}
           Terminal=false
           Categories=${categoriesStr}
           MimeType=x-scheme-handler/http;x-scheme-handler/https;
