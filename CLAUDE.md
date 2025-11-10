@@ -818,6 +818,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - In-memory circular buffer (500 events), no persistent storage (066-inspect-daemon-fix)
 - TypeScript/Deno 1.40+ (sway-test framework) + Deno standard library (@std/cli, @std/fs, @std/path, @std/json), Zod 3.22+ (validation), Sway IPC mark/unmark (sync protocol) (068-fix-state-comparator, 069-sync-test-framework)
 - N/A (test framework operates in-memory with JSON test files, zero legacy timeout code) (068-fix-state-comparator, 069-sync-test-framework)
+- Python 3.11+ (matching existing i3pm daemon), Nix configuration language + i3ipc.aio (async Sway IPC), Pydantic (data validation), Nix expression evaluation (001-declarative-workspace-monitor)
+- JSON state files (`~/.config/sway/monitor-state.json` extended from Feature 049), Nix configuration files (`app-registry-data.nix`, `pwa-sites.nix`) (001-declarative-workspace-monitor)
 
 ## Recent Changes
 - 069-sync-test-framework: Enhanced sway-test with synchronization primitives (sync, launch_app_sync, send_ipc_sync), migrated 100% of tests from timeout-based to sync-based (zero legacy code remains), achieved 5-6x test speedup and <1% flakiness rate

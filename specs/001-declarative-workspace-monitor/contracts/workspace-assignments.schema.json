@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/workspace-assignments.json",
+  "title": "Workspace Assignments Dynamic Config Schema",
+  "description": "JSON schema for runtime workspace-to-monitor assignments (Feature 047 integration)",
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Config file format version"
+    },
+    "assignments": {
+      "type": "array",
+      "description": "Workspace assignment rules",
+      "items": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "integer",
+            "description": "Workspace number",
+            "minimum": 1,
+            "maximum": 70
+          },
+          "app_name": {
+            "type": "string",
+            "description": "Application identifier",
+            "minLength": 1
+          },
+          "monitor_role": {
+            "type": "string",
+            "enum": ["primary", "secondary", "tertiary"],
+            "description": "Monitor role for workspace"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["app-registry", "pwa-sites", "manual"],
+            "description": "Assignment source"
+          }
+        },
+        "required": ["workspace", "app_name", "monitor_role", "source"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["version", "assignments"],
+  "additionalProperties": false
+}
