@@ -39,7 +39,7 @@ export const PWADefinitionSchema = z.object({
     message: "ULID must be 26 characters using base32 alphabet (0-9, A-Z excluding I, L, O, U)",
   }),
   preferred_workspace: z.number().int().positive().optional(),
-  preferred_monitor_role: z.enum(["primary", "secondary", "tertiary"]).optional(),
+  preferred_monitor_role: z.enum(["primary", "secondary", "tertiary"]).nullable().optional(),
 });
 
 /**

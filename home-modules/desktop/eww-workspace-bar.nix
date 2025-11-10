@@ -113,13 +113,15 @@ ${windowBlocks}
 '';
 
   ewwScss = ''
-$bg: #1e1e2e;
-$bg-soft: #313244;
-$fg: #cdd6f4;
-$accent: #89b4fa;
-$urgent: #f38ba8;
-$border: rgba(137, 180, 250, 0.35);
-$inactive: rgba(205, 214, 244, 0.45);
+$bg: #010409;
+$bg-soft: #0b1220;
+$fg: #dce6ff;
+$accent: #60a5fa;
+$accent-muted: rgba(96, 165, 250, 0.45);
+$accent-strong: rgba(96, 165, 250, 0.85);
+$urgent: #fb7185;
+$border: rgba(96, 165, 250, 0.25);
+$inactive: rgba(173, 188, 216, 0.35);
 
 * {
   font-family: "FiraCode Nerd Font", "Font Awesome 6 Free", sans-serif;
@@ -128,16 +130,19 @@ $inactive: rgba(205, 214, 244, 0.45);
 }
 
 .workspace-bar {
-  background-color: rgba(30, 30, 46, 0.90);
+  background: rgba(1, 4, 9, 0.96);
   border: 1px solid $border;
   border-radius: 14px;
+  box-shadow: 0 18px 30px rgba(2, 4, 9, 0.65);
   padding: 6px 14px;
   margin: 8px 20px;
 }
 
 .workspace-output {
-  font-size: 0.70rem;
-  color: $inactive;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .workspace-strip {
@@ -145,33 +150,37 @@ $inactive: rgba(205, 214, 244, 0.45);
 }
 
 .workspace-button {
-  background-color: $bg-soft;
-  padding: 4px 10px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  background: linear-gradient(180deg, rgba(11, 18, 32, 0.95), rgba(5, 9, 16, 0.95));
+  padding: 6px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
 }
 
 .workspace-button:hover {
-  border-color: $accent;
+  border-color: $accent-strong;
+  transform: translateY(-1px);
 }
 
 .workspace-button.focused {
-  background-color: $accent;
-  color: #1e1e2e;
+  background: radial-gradient(circle at top left, rgba(96, 165, 250, 0.95), rgba(37, 99, 235, 0.9));
+  border-color: rgba(147, 197, 253, 0.8);
+  color: #010409;
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.35);
 }
 
 .workspace-button.focused .workspace-number {
-  color: #1e1e2e;
+  color: #010409;
 }
 
 .workspace-button.visible:not(.focused) {
-  border-color: rgba(137, 180, 250, 0.6);
+  border-color: $accent-muted;
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.25);
 }
 
 .workspace-button.urgent {
   background-color: $urgent;
-  color: #1e1e2e;
+  color: #050505;
 }
 
 .workspace-button.empty {
@@ -183,9 +192,14 @@ $inactive: rgba(205, 214, 244, 0.45);
 }
 
 .workspace-icon-stack {
-  width: 20px;
-  height: 20px;
-  text-align: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.02);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.02);
 }
 
 .workspace-icon-image {
@@ -236,7 +250,7 @@ in
       };
       Service = {
         Type = "simple";
-        ExecStart = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon'';
+        ExecStart = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} daemon --no-daemonize'';
         ExecStartPost = openCommand;
         ExecStopPost = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all'';
         Restart = "on-failure";

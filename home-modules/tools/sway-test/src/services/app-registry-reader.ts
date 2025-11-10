@@ -9,7 +9,7 @@
  */
 
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
-import { expandPath } from "../helpers/path-utils.ts";
+import { expandPath } from "../utils/path-utils.ts";
 import { PWADefinition, PWADefinitionSchema } from "../models/pwa-definition.ts";
 import { StructuredError, ErrorType } from "../models/structured-error.ts";
 
@@ -495,20 +495,3 @@ export function isValidULID(ulid: string): boolean {
   return /^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}$/.test(ulid);
 }
 
-/**
- * Clear registry cache for test isolation
- *
- * Feature 070 - User Story 2: Graceful Cleanup Commands
- * Task: T025
- *
- * This function clears the in-memory registry cache, forcing fresh registry
- * loads on the next access. Useful for:
- * - Test isolation (ensuring each test gets fresh registry data)
- * - Testing registry modifications
- * - Cleanup after test failures
- */
-export function clearRegistryCache(): void {
-  registryCache = null;
-  pwaRegistryCache = null;
-  pwaRegistryByULID = null;
-}
