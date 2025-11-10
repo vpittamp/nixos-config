@@ -71,12 +71,12 @@ Based on plan.md Project Structure:
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Add `preferred_monitor_role` field to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix` with validation
-- [ ] T019 [US1] Add Nix validation function for monitor role enum in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
-- [ ] T020 [US1] Create MonitorRoleResolver class with resolve_role() method in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/monitor_role_resolver.py`
-- [ ] T021 [US1] Implement connection order-based role assignment logic in MonitorRoleResolver.resolve_role()
-- [ ] T022 [US1] Implement workspace-to-role inference logic (WS 1-2→primary, 3-5→secondary, 6+→tertiary) in MonitorRoleResolver
-- [ ] T023 [US1] Add logging for monitor role assignments at INFO level in MonitorRoleResolver
+- [X] T018 [US1] Add `preferred_monitor_role` field to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix` with validation
+- [X] T019 [US1] Add Nix validation function for monitor role enum in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
+- [X] T020 [US1] Create MonitorRoleResolver class with resolve_role() method in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/monitor_role_resolver.py`
+- [X] T021 [US1] Implement connection order-based role assignment logic in MonitorRoleResolver.resolve_role()
+- [X] T022 [US1] Implement workspace-to-role inference logic (WS 1-2→primary, 3-5→secondary, 6+→tertiary) in MonitorRoleResolver
+- [X] T023 [US1] Add logging for monitor role assignments at INFO level in MonitorRoleResolver
 - [ ] T024 [US1] Create workspace-assignments.json generation script that reads from app-registry-data.nix in `/etc/nixos/home-modules/desktop/sway.nix`
 - [ ] T025 [US1] Integrate MonitorRoleResolver with Feature 049's workspace_assignment_manager.py to use monitor roles for output resolution
 
