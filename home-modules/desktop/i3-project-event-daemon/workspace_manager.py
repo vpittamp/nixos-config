@@ -2,14 +2,24 @@
 
 Feature 033: Refactored to use declarative configuration from workspace-monitor-mapping.json
 instead of hardcoded distribution rules.
+
+Feature 001: Added monitor role-based workspace assignment using workspace-assignments.json
+generated from app-registry-data.nix.
 """
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
+import json
 import logging
+from pathlib import Path
 
 from .monitor_config_manager import MonitorConfigManager
 from .models import MonitorRole
+from .monitor_role_resolver import MonitorRoleResolver
+from .models.monitor_config import (
+    OutputInfo as OutputInfoV2,
+    MonitorRoleConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +216,245 @@ async def assign_workspaces_to_monitors(
                 output_name = role_map[preferred_role]
                 logger.debug(f"Applying runtime preference: workspace {ws_num} → {output_name} ({preferred_role})")
                 await i3.command(f"workspace number {ws_num} output {output_name}")
+
+
+async def assign_workspaces_with_monitor_roles(
+    i3,
+    config_path: Optional[Path] = None
+) -> None:
+    """Assign workspaces to monitors using Feature 001 monitor role system.
+
+    Feature 001: This function uses workspace-assignments.json (generated from
+    app-registry-data.nix) to determine workspace→monitor assignments based on
+    app preferences with monitor roles (primary/secondary/tertiary).
+
+    This is the primary assignment mechanism for Feature 001 and operates
+    independently from the legacy Feature 049 workspace-monitor-mapping.json.
+
+    Args:
+        i3: i3ipc.aio.Connection instance
+        config_path: Optional path to workspace-assignments.json (defaults to ~/.config/sway/workspace-assignments.json)
+
+    Raises:
+        FileNotFoundError: workspace-assignments.json doesn't exist
+        json.JSONDecodeError: Invalid JSON syntax
+        ValueError: Invalid configuration data
+
+    Examples:
+        >>> async with i3ipc.aio.Connection() as i3:
+        ...     await assign_workspaces_with_monitor_roles(i3)
+    """
+    # Load workspace-assignments.json (Feature 001)
+    if config_path is None:
+        config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
+
+    if not config_path.exists():
+        logger.warning(
+            f"Feature 001 workspace assignments not found: {config_path}\n"
+            f"Run 'sudo nixos-rebuild switch' to generate from app-registry-data.nix"
+        )
+        return
+
+    logger.info(f"[Feature 001] Loading workspace assignments from {config_path}")
+
+    with open(config_path) as f:
+        data = json.load(f)
+
+    # Validate version
+    version = data.get("version")
+    if version != "1.0":
+        raise ValueError(f"Unsupported workspace-assignments.json version: {version} (expected 1.0)")
+
+    # Parse assignments
+    assignments_data = data.get("assignments", [])
+    if not assignments_data:
+        logger.warning("[Feature 001] No workspace assignments found in configuration")
+        return
+
+    # Convert to MonitorRoleConfig models
+    configs = []
+    for item in assignments_data:
+        try:
+            config = MonitorRoleConfig(
+                app_name=item["app_name"],
+                preferred_workspace=item["workspace"],
+                preferred_monitor_role=item.get("monitor_role"),  # May be None (inferred)
+                source=item["source"]
+            )
+            configs.append(config)
+        except Exception as e:
+            logger.error(f"[Feature 001] Failed to parse assignment for {item.get('app_name')}: {e}")
+            continue
+
+    logger.info(f"[Feature 001] Loaded {len(configs)} workspace assignments")
+
+    # Get active outputs from Sway IPC
+    outputs_raw = await i3.get_outputs()
+    active_outputs_raw = [o for o in outputs_raw if o.active]
+
+    if not active_outputs_raw:
+        logger.error("[Feature 001] No active outputs found - cannot assign workspaces")
+        return
+
+    # Convert to Feature 001 OutputInfo models
+    outputs = [
+        OutputInfoV2(
+            name=o.name,
+            active=o.active,
+            width=o.rect.width,
+            height=o.rect.height,
+            scale=getattr(o, 'scale', 1.0)
+        )
+        for o in active_outputs_raw
+    ]
+
+    logger.info(
+        f"[Feature 001] Found {len(outputs)} active output(s): "
+        f"{', '.join([o.name for o in outputs])}"
+    )
+
+    # Initialize MonitorRoleResolver
+    resolver = MonitorRoleResolver()
+
+    # Resolve monitor roles to physical outputs
+    role_assignments = resolver.resolve_role(configs, outputs)
+
+    if not role_assignments:
+        logger.error("[Feature 001] Failed to resolve monitor role assignments")
+        return
+
+    # Group assignments by workspace number with conflict detection (Feature 001 US3: T042-T043)
+    workspace_to_config: Dict[int, MonitorRoleConfig] = {}
+    for config in configs:
+        ws_num = config.preferred_workspace
+
+        # Feature 001 T043: Detect and log duplicate workspace assignments
+        if ws_num in workspace_to_config:
+            existing = workspace_to_config[ws_num]
+            logger.warning(
+                f"[Feature 001] Workspace {ws_num} conflict detected: "
+                f"'{existing.app_name}' (source: {existing.source}) "
+                f"→ OVERRIDDEN BY '{config.app_name}' (source: {config.source})"
+            )
+
+            # Feature 001 T042: PWA preference priority (PWA > app)
+            # PWAs from pwa-sites.nix override apps from app-registry-data.nix
+            if config.source == "pwa-sites" and existing.source == "app-registry":
+                logger.info(
+                    f"[Feature 001] PWA preference applied: '{config.app_name}' "
+                    f"overrides '{existing.app_name}' on workspace {ws_num}"
+                )
+
+        # Last one wins (PWAs override apps since they're processed after)
+        workspace_to_config[ws_num] = config
+
+    # Apply workspace→output assignments via Sway IPC
+    assignments_applied = 0
+    for ws_num, config in sorted(workspace_to_config.items()):
+        output_name = resolver.get_output_for_workspace(
+            workspace_num=ws_num,
+            role_assignments=role_assignments,
+            config=config
+        )
+
+        if output_name:
+            try:
+                await i3.command(f"workspace number {ws_num} output {output_name}")
+                assignments_applied += 1
+                logger.debug(
+                    f"[Feature 001] Assigned workspace {ws_num} → {output_name} "
+                    f"(app: {config.app_name}, source: {config.source})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[Feature 001] Failed to assign workspace {ws_num} to {output_name}: {e}"
+                )
+        else:
+            logger.warning(
+                f"[Feature 001] No output available for workspace {ws_num} "
+                f"(app: {config.app_name})"
+            )
+
+    logger.info(
+        f"[Feature 001] Applied {assignments_applied}/{len(workspace_to_config)} "
+        f"workspace assignments successfully"
+    )
+
+    # Feature 001 T036: Persist MonitorStateV2
+    await persist_monitor_state_v2(
+        role_assignments=role_assignments,
+        workspace_assignments=workspace_to_config,
+        resolver=resolver
+    )
+
+
+async def persist_monitor_state_v2(
+    role_assignments: Dict,
+    workspace_assignments: Dict[int, MonitorRoleConfig],
+    resolver: MonitorRoleResolver,
+) -> None:
+    """Persist MonitorStateV2 with fallback metadata (Feature 001: T036).
+
+    Writes current monitor role assignments and workspace assignments to
+    ~/.config/sway/monitor-state.json for state recovery and debugging.
+
+    Args:
+        role_assignments: Dict[MonitorRole, MonitorRoleAssignment] from resolver
+        workspace_assignments: Dict[int, MonitorRoleConfig] mapping workspace → config
+        resolver: MonitorRoleResolver instance for output resolution
+    """
+    try:
+        from .models.monitor_config import MonitorStateV2, WorkspaceAssignment
+
+        # Build monitor_roles dict (role name → output name)
+        monitor_roles_dict = {
+            role.value: assignment.output
+            for role, assignment in role_assignments.items()
+        }
+
+        # Build workspaces dict (workspace num → WorkspaceAssignment)
+        workspaces_dict = {}
+        for ws_num, config in workspace_assignments.items():
+            output = resolver.get_output_for_workspace(
+                workspace_num=ws_num,
+                role_assignments=role_assignments,
+                config=config
+            )
+
+            if output:
+                # Determine monitor role (explicit or inferred)
+                monitor_role = config.preferred_monitor_role
+                if monitor_role is None:
+                    monitor_role = resolver.infer_monitor_role_from_workspace(ws_num)
+
+                workspaces_dict[ws_num] = WorkspaceAssignment(
+                    workspace_num=ws_num,
+                    output=output,
+                    monitor_role=monitor_role,
+                    app_name=config.app_name,
+                    source=config.source
+                )
+
+        # Create MonitorStateV2 model
+        state = MonitorStateV2(
+            monitor_roles=monitor_roles_dict,
+            workspaces=workspaces_dict
+        )
+
+        # Write to ~/.config/sway/monitor-state.json
+        state_path = Path.home() / ".config" / "sway" / "monitor-state.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(state_path, "w") as f:
+            f.write(state.json(indent=2))
+
+        logger.info(
+            f"[Feature 001] Persisted MonitorStateV2 to {state_path} "
+            f"({len(monitor_roles_dict)} roles, {len(workspaces_dict)} workspaces)"
+        )
+
+    except Exception as e:
+        logger.error(f"[Feature 001] Failed to persist MonitorStateV2: {e}")
 
 
 async def validate_target_workspace(

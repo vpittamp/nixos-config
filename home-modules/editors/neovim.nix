@@ -7,8 +7,16 @@
     ripgrep           # For telescope
     fd                # For telescope file finder
     nodejs            # For various language servers
+    nodePackages_latest.typescript-language-server  # LSP: TypeScript/JavaScript
+    nodePackages_latest.typescript                  # Provides tsserver runtime
+    pyright                                          # LSP: Python
+    nil                                              # LSP: Nix
+    lua-language-server                              # LSP: Lua
+    nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''
       set -euo pipefail
+
+      # Optional working directory override (first argument)
       if [ "$#" -gt 0 ] && [ -d "$1" ]; then
         export NVIM_STARTUP_PICKER_CWD="$1"
         cd "$1"
@@ -17,7 +25,26 @@
       if [ -z "''${NVIM_STARTUP_PICKER_CWD:-}" ]; then
         export NVIM_STARTUP_PICKER_CWD="$PWD"
       fi
-      NVIM_STARTUP_PICKER="find_files" exec ${neovim-unwrapped}/bin/nvim "$@"
+
+      SOCKET_DIR="''${XDG_RUNTIME_DIR:-/tmp}"
+      SOCKET_USER="''${USER:-''${LOGNAME:-nvim}}"
+      SOCKET_SAFE=$(printf '%s' "$SOCKET_USER" | tr -c '[:alnum:]_.-' '_')
+      SOCKET_PATH="$SOCKET_DIR/nvim-$SOCKET_SAFE.sock"
+
+      server_is_alive() {
+        [ -S "$SOCKET_PATH" ] && ${neovim-unwrapped}/bin/nvim --server "$SOCKET_PATH" --remote-expr "1" >/dev/null 2>&1
+      }
+
+      if ! server_is_alive; then
+        # Clean up stale sockets
+        rm -f "$SOCKET_PATH"
+        export NVIM_LISTEN_ADDRESS="$SOCKET_PATH"
+        export NVIM_STARTUP_PICKER="find_files"
+        exec ${neovim-unwrapped}/bin/nvim --listen "$SOCKET_PATH" "$@"
+      else
+        # Attach terminal UI to existing server
+        exec ${neovim-unwrapped}/bin/nvim --server "$SOCKET_PATH" --remote-ui
+      fi
     '')
   ];
   
@@ -72,6 +99,9 @@
     -- Disable focus event tracking to prevent escape sequence leakage
     vim.cmd('set t_fe=')  -- Disable focus gained sequence
     vim.cmd('set t_fd=')  -- Disable focus lost sequence
+
+    -- System clipboard integration (uses wl-clipboard on Wayland)
+    vim.opt.clipboard = "unnamedplus"  -- Use system clipboard for all operations
 
     vim.opt.ignorecase = true
     vim.opt.smartcase = true
@@ -165,20 +195,17 @@
       -- LSP Configuration
       {
         "neovim/nvim-lspconfig",
-        dependencies = {
-          "williamboman/mason.nvim",
-          "williamboman/mason-lspconfig.nvim",
-        },
         config = function()
-          require("mason").setup()
-          require("mason-lspconfig").setup({
-            ensure_installed = { "lua_ls", "nil_ls", "pyright", "tsserver" },
-          })
-          
-          local lspconfig = require("lspconfig")
-          
-          -- Lua
-          lspconfig.lua_ls.setup({
+          local capabilities = vim.lsp.protocol.make_client_capabilities()
+
+          local function setup(server, opts)
+            opts = opts or {}
+            opts.capabilities = vim.tbl_deep_extend("force", {}, capabilities, opts.capabilities or {})
+            vim.lsp.config(server, opts)
+            vim.lsp.enable(server)
+          end
+
+          setup("lua_ls", {
             settings = {
               Lua = {
                 telemetry = { enable = false },
@@ -186,15 +213,32 @@
               },
             },
           })
-          
-          -- Nix
-          lspconfig.nil_ls.setup({})
-          
-          -- Python
-          lspconfig.pyright.setup({})
-          
-          -- TypeScript/JavaScript
-          lspconfig.tsserver.setup({})
+
+          setup("nil_ls", {
+            settings = {
+              ["nil"] = {
+                formatting = { command = { "nixpkgs-fmt" } },
+              },
+            },
+          })
+
+          setup("pyright")
+
+          setup("ts_ls", {
+            settings = {
+              typescript = {
+                inlayHints = {
+                  includeInlayParameterNameHints = "all",
+                  includeInlayParameterNameHintsWhenArgumentMatchesName = false,
+                  includeInlayFunctionParameterTypeHints = true,
+                  includeInlayVariableTypeHints = true,
+                  includeInlayPropertyDeclarationTypeHints = true,
+                  includeInlayFunctionLikeReturnTypeHints = true,
+                  includeInlayEnumMemberValueHints = true,
+                },
+              },
+            },
+          })
         end,
       },
       
@@ -319,6 +363,7 @@
       -- Claude Code Integration
       {
         "greggh/claude-code.nvim",
+        version = "v0.4.3",
         dependencies = { "nvim-lua/plenary.nvim" },
         config = function()
           require('claude-code').setup({
@@ -327,6 +372,8 @@
               split_ratio = 0.4,  -- 40% of screen for Claude
               position = "botright",  -- bottom right split
               enter_insert = true,  -- auto enter insert mode
+              hide_numbers = true,
+              hide_signcolumn = true,
             },
             -- Claude Code command path (already in PATH from Nix)
             command = "claude",
@@ -350,6 +397,7 @@
       -- GitHub Copilot AI Code Completion
       {
         "zbirenbaum/copilot.lua",
+        commit = "5bde2cfe01f049f522eeb8b52c5c723407db8bdf",
         cmd = "Copilot",
         event = "InsertEnter",
         config = function()
@@ -402,14 +450,16 @@
       -- GitHub Copilot Chat
       {
         "CopilotC-Nvim/CopilotChat.nvim",
-        branch = "canary",
+        version = "v4.7.4",
         dependencies = {
           { "zbirenbaum/copilot.lua" },
           { "nvim-lua/plenary.nvim" },
+          { "nvim-treesitter/nvim-treesitter" },
         },
+        build = "make tiktoken",
         opts = {
           debug = true,
-          model = "claude-3.5-sonnet", -- Can use gpt-4o or claude-3.5-sonnet
+          model = "claude-3.7-sonnet", -- Can use gpt-4o or claude family on GitHub Models
           temperature = 0.1,
           window = {
             layout = "vertical", -- 'vertical', 'horizontal', 'float', 'replace'

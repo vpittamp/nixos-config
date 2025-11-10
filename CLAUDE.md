@@ -412,9 +412,155 @@ systemctl --user {status|restart} i3-project-event-listener
 # Diagnostics (Feature 039)
 i3pm diagnose {health|window <id>|validate|events}
 
-# Monitors (auto-adapts: 1mon=all primary, 2mon=1-2 primary/3-70 sec, 3mon=1-2 pri/3-5 sec/6-70 ter)
+# Monitors (Feature 001: Declarative workspace-to-monitor assignment)
 i3pm monitors {status|reassign|config}
 ```
+
+### Declarative Workspace-to-Monitor Assignment (Feature 001)
+
+Assign workspaces to specific monitor roles (primary/secondary/tertiary) declaratively in Nix configuration. Supports automatic fallback when monitors disconnect, PWA-specific preferences, floating window sizing, and output preferences.
+
+**Quick Keys**: None (configured in app-registry-data.nix and pwa-sites.nix)
+
+**Monitor Roles**:
+- **Primary**: Main display (WS 1-2 by default)
+- **Secondary**: Second display (WS 3-5 by default)
+- **Tertiary**: Third display (WS 6+ by default)
+
+**Key Features**:
+- **Declarative Configuration**: Specify `preferred_monitor_role` in app definitions
+- **Automatic Fallback**: Workspaces reassign when monitors disconnect (tertiary→secondary→primary)
+- **PWA Support**: PWAs can override monitor role preferences in pwa-sites.nix
+- **Floating Windows**: Declare floating behavior with size presets (scratchpad/small/medium/large)
+- **Output Preferences**: Optionally prefer specific physical outputs (e.g., HDMI-A-1 always primary)
+- **Hot-Reload**: Changes apply on next daemon event (<1s reassignment time)
+
+#### CLI Commands
+
+```bash
+# Show current monitor assignments
+i3pm monitors status
+
+# Force workspace reassignment (after monitor connect/disconnect)
+i3pm monitors reassign
+
+# Show monitor role configuration and workspace assignments
+i3pm monitors config
+```
+
+#### Configuration Examples
+
+**App with Monitor Role** (`app-registry-data.nix`):
+```nix
+(mkApp {
+  name = "code";
+  display_name = "VS Code";
+  command = "code";
+  preferred_workspace = 2;
+  preferred_monitor_role = "primary";  # Always on primary monitor
+  # ... other fields
+})
+```
+
+**PWA with Monitor Role** (`pwa-sites.nix`):
+```nix
+{
+  name = "YouTube";
+  url = "https://youtube.com";
+  preferred_workspace = 50;
+  preferred_monitor_role = "tertiary";  # PWA preference overrides app-registry
+  # ... other fields
+}
+```
+
+**Floating Window** (`app-registry-data.nix`):
+```nix
+(mkApp {
+  name = "btop";
+  display_name = "btop";
+  command = "ghostty";
+  parameters = "-e btop";
+  preferred_workspace = 7;
+  floating = true;
+  floating_size = "medium";  # 1200×800, centered
+  scope = "global";  # Visible across all projects
+  # ... other fields
+})
+```
+
+**Size Presets**:
+- `scratchpad`: 1200×600 (Feature 062 terminal size)
+- `small`: 800×500 (lightweight tools)
+- `medium`: 1200×800 (default)
+- `large`: 1600×1000 (full-featured apps)
+- `null`: Natural size (application decides)
+
+#### Monitor Role Inference
+
+If `preferred_monitor_role` not specified, inferred from workspace number:
+- **WS 1-2** → primary
+- **WS 3-5** → secondary
+- **WS 6+** → tertiary
+
+#### Fallback Logic
+
+When monitors disconnect, workspaces automatically reassign:
+- **Tertiary unavailable** → use secondary
+- **Secondary unavailable** → use primary
+- **Primary unavailable** → error (no fallback)
+
+#### Multi-Monitor Configurations
+
+**1 Monitor** (M1 Mac): All workspaces on eDP-1 (primary role)
+
+**2 Monitors** (Hetzner typical):
+- Primary (HEADLESS-1): WS 1-2
+- Secondary (HEADLESS-2): WS 3-70
+
+**3 Monitors** (Hetzner full):
+- Primary (HEADLESS-1): WS 1-2
+- Secondary (HEADLESS-2): WS 3-5
+- Tertiary (HEADLESS-3): WS 6-70
+
+#### Output Preferences (Optional)
+
+Prefer specific physical outputs for monitor roles (ignores connection order):
+
+```nix
+# In daemon config (future enhancement - US5)
+output_preferences = {
+  primary = ["HDMI-A-1", "DP-1"];      # Prefer HDMI-A-1, fallback to DP-1
+  secondary = ["HDMI-A-2"];
+  tertiary = ["DP-2"];
+};
+```
+
+#### Troubleshooting
+
+```bash
+# Check current assignments
+i3pm monitors status
+
+# Show configuration
+i3pm monitors config
+
+# Force reassignment
+i3pm monitors reassign
+
+# Check daemon logs
+journalctl --user -u i3-project-event-listener -f | grep -i monitor
+
+# Verify workspace-assignments.json
+cat ~/.config/sway/workspace-assignments.json | jq '.version'  # Should be "1.0"
+```
+
+**Common Issues**:
+- **Workspace on wrong monitor**: Check `preferred_monitor_role` in app definition
+- **PWA not respecting role**: PWA preference in pwa-sites.nix overrides app-registry
+- **Floating window wrong size**: Verify `floating_size` preset (scratchpad/small/medium/large)
+- **Monitor reassignment slow**: Should be <1s; check daemon status
+
+**Docs**: See `/etc/nixos/specs/001-declarative-workspace-monitor/quickstart.md`
 
 ### Window Filtering & State Preservation (Features 037, 038)
 
@@ -818,7 +964,11 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - In-memory circular buffer (500 events), no persistent storage (066-inspect-daemon-fix)
 - TypeScript/Deno 1.40+ (sway-test framework) + Deno standard library (@std/cli, @std/fs, @std/path, @std/json), Zod 3.22+ (validation), Sway IPC mark/unmark (sync protocol) (068-fix-state-comparator, 069-sync-test-framework)
 - N/A (test framework operates in-memory with JSON test files, zero legacy timeout code) (068-fix-state-comparator, 069-sync-test-framework)
+- Python 3.11+ (matching existing i3pm daemon), Nix configuration language + i3ipc.aio (async Sway IPC), Pydantic (data validation), Nix expression evaluation (001-declarative-workspace-monitor)
+- JSON state files (`~/.config/sway/monitor-state.json` extended from Feature 049), Nix configuration files (`app-registry-data.nix`, `pwa-sites.nix`) (001-declarative-workspace-monitor)
+- TypeScript with Deno 1.40+ runtime (matches Constitution Principle XIII) (070-sway-test-improvements)
 
 ## Recent Changes
+- **001-declarative-workspace-monitor** (2025-11): Declarative workspace-to-monitor assignment with 5 user stories: monitor role configuration (primary/secondary/tertiary), automatic fallback on disconnect, PWA-specific preferences, floating window sizing (scratchpad/small/medium/large), and optional output preferences. CLI commands: `i3pm monitors {status|reassign|config}`. See `/etc/nixos/specs/001-declarative-workspace-monitor/`
 - 069-sync-test-framework: Enhanced sway-test with synchronization primitives (sync, launch_app_sync, send_ipc_sync), migrated 100% of tests from timeout-based to sync-based (zero legacy code remains), achieved 5-6x test speedup and <1% flakiness rate
 - 063-scratchpad-filtering: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models)

@@ -51,18 +51,55 @@ let
   isTerminalApp = command:
     builtins.elem command ["alacritty" "ghostty" "kitty" "wezterm"];
 
+  # Feature 001: Validate monitor role enum (primary/secondary/tertiary)
+  validateMonitorRole = role:
+    let
+      normalizedRole = lib.toLower role;
+      validRoles = ["primary" "secondary" "tertiary"];
+    in
+    if !builtins.elem normalizedRole validRoles then
+      throw "Invalid monitor role '${role}': must be one of ${lib.concatStringsSep ", " validRoles}"
+    else
+      normalizedRole;
+
+  # Feature 001 US4: Validate floating size preset (scratchpad/small/medium/large)
+  validateFloatingSize = size:
+    let
+      normalizedSize = lib.toLower size;
+      validSizes = ["scratchpad" "small" "medium" "large"];
+    in
+    if !builtins.elem normalizedSize validSizes then
+      throw "Invalid floating size '${size}': must be one of ${lib.concatStringsSep ", " validSizes}"
+    else
+      normalizedSize;
+
   # Helper to create validated application entry
   mkApp = attrs:
     let
       params = if attrs ? parameters then validateParameters attrs.parameters else "";
+      # Feature 001: Validate and normalize monitor role if present
+      monitorRole =
+        if attrs ? preferred_monitor_role && attrs.preferred_monitor_role != null
+        then validateMonitorRole attrs.preferred_monitor_role
+        else null;
+      # Feature 001 US4: Validate and normalize floating size if present
+      floatingSize =
+        if attrs ? floating_size && attrs.floating_size != null
+        then validateFloatingSize attrs.floating_size
+        else null;
     in
     attrs // {
       parameters = splitParameters params;
       terminal = isTerminalApp attrs.command;
+      # Feature 001: Add normalized monitor role
+      preferred_monitor_role = monitorRole;
+      # Feature 001 US4: Add normalized floating size (T049, T050)
+      floating = if attrs ? floating then attrs.floating else false;
+      floating_size = floatingSize;
     };
 
   # Helper to convert PWA site definition → app registry entry (Feature 056)
-  mkPWAApp = pwa: mkApp {
+  mkPWAApp = pwa: mkApp ({
     name = "${lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name)}-pwa";
     display_name = pwa.name;
     command = "launch-pwa-by-name";
@@ -75,7 +112,10 @@ let
     multi_instance = false;
     fallback_behavior = "use_home";
     description = pwa.description;
-  };
+  } // lib.optionalAttrs (pwa ? preferred_monitor_role) {
+    # Feature 001: Pass through PWA monitor role preference
+    preferred_monitor_role = pwa.preferred_monitor_role;
+  });
 
   applications = [
     # TERMINAL APPLICATIONS OVERVIEW:
@@ -95,6 +135,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
+      preferred_monitor_role = "primary";
       icon = "com.mitchellh.ghostty";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
@@ -111,6 +152,7 @@ let
       scope = "scoped";
       expected_class = "Code";
       preferred_workspace = 2;
+      preferred_monitor_role = "secondary";
       icon = "vscode";
       nix_package = "pkgs.vscode";
       multi_instance = true;
@@ -126,6 +168,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
+      preferred_monitor_role = "secondary";
       icon = "nvim";
       nix_package = "pkgs.neovim";
       multi_instance = true;
@@ -143,6 +186,7 @@ let
       scope = "global";
       expected_class = "firefox";
       preferred_workspace = 3;
+      preferred_monitor_role = "tertiary";
       icon = "firefox";
       nix_package = "pkgs.firefox";
       multi_instance = false;
@@ -174,6 +218,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
+      preferred_monitor_role = "tertiary";
       icon = "git";
       nix_package = "pkgs.lazygit";
       multi_instance = true;

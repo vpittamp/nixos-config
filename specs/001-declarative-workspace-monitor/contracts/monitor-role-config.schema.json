@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/monitor-role-config.json",
+  "title": "Monitor Role Configuration Schema",
+  "description": "JSON schema for workspace-to-monitor assignment configuration",
+  "version": "2.0",
+  "definitions": {
+    "monitorRole": {
+      "type": "string",
+      "enum": ["primary", "secondary", "tertiary"],
+      "description": "Logical monitor role identifier"
+    },
+    "floatingSize": {
+      "type": "string",
+      "enum": ["scratchpad", "small", "medium", "large"],
+      "description": "Floating window size preset"
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["scoped", "global"],
+      "description": "Project filtering scope"
+    },
+    "monitorRoleConfig": {
+      "type": "object",
+      "description": "Application monitor role preference",
+      "properties": {
+        "app_name": {
+          "type": "string",
+          "description": "Application identifier",
+          "minLength": 1
+        },
+        "preferred_workspace": {
+          "type": "integer",
+          "description": "Workspace number",
+          "minimum": 1,
+          "maximum": 70
+        },
+        "preferred_monitor_role": {
+          "oneOf": [
+            {"$ref": "#/definitions/monitorRole"},
+            {"type": "null"}
+          ],
+          "description": "Desired monitor role (nullable)"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["app-registry", "pwa-sites"],
+          "description": "Configuration source"
+        }
+      },
+      "required": ["app_name", "preferred_workspace", "source"],
+      "additionalProperties": false
+    },
+    "outputInfo": {
+      "type": "object",
+      "description": "Physical monitor/output information",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Output identifier (HDMI-A-1, eDP-1, etc.)",
+          "minLength": 1
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether output is currently active"
+        },
+        "width": {
+          "type": "integer",
+          "description": "Output width in pixels",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "description": "Output height in pixels",
+          "minimum": 1
+        },
+        "scale": {
+          "type": "number",
+          "description": "DPI scale factor",
+          "minimum": 0.1,
+          "default": 1.0
+        }
+      },
+      "required": ["name", "active", "width", "height"],
+      "additionalProperties": false
+    },
+    "monitorRoleAssignment": {
+      "type": "object",
+      "description": "Resolved monitor role to output mapping",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/monitorRole"
+        },
+        "output": {
+          "type": "string",
+          "description": "Physical output name",
+          "minLength": 1
+        },
+        "fallback_applied": {
+          "type": "boolean",
+          "description": "Whether fallback logic was used"
+        },
+        "preferred_output": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ],
+          "description": "User-configured preferred output"
+        }
+      },
+      "required": ["role", "output", "fallback_applied"],
+      "additionalProperties": false
+    },
+    "workspaceAssignment": {
+      "type": "object",
+      "description": "Complete workspace-to-output assignment",
+      "properties": {
+        "workspace_num": {
+          "type": "integer",
+          "description": "Workspace number",
+          "minimum": 1,
+          "maximum": 70
+        },
+        "output": {
+          "type": "string",
+          "description": "Assigned output name",
+          "minLength": 1
+        },
+        "monitor_role": {
+          "$ref": "#/definitions/monitorRole"
+        },
+        "app_name": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ],
+          "description": "Application owning workspace"
+        },
+        "source": {
+          "type": "string",
+          "description": "Assignment source",
+          "minLength": 1
+        }
+      },
+      "required": ["workspace_num", "output", "monitor_role", "source"],
+      "additionalProperties": false
+    },
+    "floatingWindowConfig": {
+      "type": "object",
+      "description": "Floating window configuration",
+      "properties": {
+        "app_name": {
+          "type": "string",
+          "description": "Application identifier",
+          "minLength": 1
+        },
+        "floating": {
+          "type": "boolean",
+          "description": "Enable floating mode"
+        },
+        "floating_size": {
+          "oneOf": [
+            {"$ref": "#/definitions/floatingSize"},
+            {"type": "null"}
+          ],
+          "description": "Size preset (null = natural size)"
+        },
+        "scope": {
+          "$ref": "#/definitions/scope"
+        }
+      },
+      "required": ["app_name", "floating", "scope"],
+      "additionalProperties": false
+    },
+    "monitorStateV2": {
+      "type": "object",
+      "description": "Extended state file for monitor role assignments",
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "2.0",
+          "description": "State file format version"
+        },
+        "monitor_roles": {
+          "type": "object",
+          "description": "Role to output mapping",
+          "properties": {
+            "primary": {"type": "string"},
+            "secondary": {"type": "string"},
+            "tertiary": {"type": "string"}
+          },
+          "additionalProperties": false
+        },
+        "workspaces": {
+          "type": "object",
+          "description": "Workspace assignments (keyed by workspace number)",
+          "patternProperties": {
+            "^[1-9][0-9]?$|^70$": {
+              "$ref": "#/definitions/workspaceAssignment"
+            }
+          },
+          "additionalProperties": false
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of last update"
+        }
+      },
+      "required": ["version", "monitor_roles", "workspaces", "last_updated"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "MonitorRoleConfig",
+      "$ref": "#/definitions/monitorRoleConfig"
+    },
+    {
+      "title": "MonitorStateV2",
+      "$ref": "#/definitions/monitorStateV2"
+    },
+    {
+      "title": "FloatingWindowConfig",
+      "$ref": "#/definitions/floatingWindowConfig"
+    }
+  ]
+}

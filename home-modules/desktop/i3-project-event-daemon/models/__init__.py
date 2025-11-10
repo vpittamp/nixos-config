@@ -5,12 +5,34 @@ Feature 058: Python Backend Consolidation
 - Added Pydantic models for Layout and Project (replacing old dataclasses)
 - Legacy models re-exported from legacy.py for backward compatibility
 
-Version: 1.0.1 - Force rebuild with legacy.py inclusion
+Feature 001: Declarative Workspace-to-Monitor Assignment
+- Added monitor role configuration models (monitor_config.py)
+- Added floating window configuration models (floating_config.py)
+- New models will replace legacy Feature 049 models in Phase 8 (T070)
+
+Version: 1.1.0 - Added Feature 001 models
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
 from .layout import WindowSnapshot, Layout
 from .project import Project, ActiveProjectState
+
+# Feature 001: Declarative workspace-to-monitor assignment
+from .monitor_config import (
+    MonitorRole as MonitorRoleV2,
+    OutputInfo as OutputInfoV2,
+    MonitorRoleConfig,
+    MonitorRoleAssignment,
+    WorkspaceAssignment as WorkspaceAssignmentV2,
+    MonitorStateV2,
+)
+from .floating_config import (
+    FloatingSize,
+    Scope,
+    FloatingWindowConfig,
+    FLOATING_SIZE_DIMENSIONS,
+    get_floating_dimensions,
+)
 
 # Legacy models - import everything EXCEPT the ones we're replacing
 from .legacy import (
@@ -60,7 +82,19 @@ __all__ = [
     "Layout",
     "Project",
     "ActiveProjectState",
-    # Legacy models
+    # Feature 001: Monitor role and floating window models
+    "MonitorRoleV2",
+    "OutputInfoV2",
+    "MonitorRoleConfig",
+    "MonitorRoleAssignment",
+    "WorkspaceAssignmentV2",
+    "MonitorStateV2",
+    "FloatingSize",
+    "Scope",
+    "FloatingWindowConfig",
+    "FLOATING_SIZE_DIMENSIONS",
+    "get_floating_dimensions",
+    # Legacy models (Feature 049 - to be replaced in Phase 8)
     "WindowInfo",
     "ApplicationClassification",
     "IdentificationRule",
@@ -69,13 +103,13 @@ __all__ = [
     "EventEntry",
     "EventCorrelation",
     "DaemonState",
-    "MonitorRole",
+    "MonitorRole",  # Legacy - use MonitorRoleV2 for Feature 001
     "MonitorDistribution",
     "DistributionRules",
     "WorkspaceMonitorConfig",
     "OutputRect",
     "MonitorConfig",
-    "WorkspaceAssignment",
+    "WorkspaceAssignment",  # Legacy - use WorkspaceAssignmentV2 for Feature 001
     "MonitorSystemState",
     "ValidationIssue",
     "ConfigValidationResult",
@@ -86,7 +120,7 @@ __all__ = [
     "WindowEvent",
     "StateMismatch",
     "StateValidation",
-    "OutputInfo",
+    "OutputInfo",  # Legacy - use OutputInfoV2 for Feature 001
     "I3IPCState",
     "DiagnosticReport",
     "PendingLaunch",

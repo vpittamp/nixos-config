@@ -1,0 +1,66 @@
+{
+  "name": "YouTube PWA on secondary monitor (WS 50)",
+  "description": "Test that YouTube PWA launches on workspace 50 (secondary monitor - HEADLESS-2) based on pwa-sites.nix configuration",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"pwas.youtube.com\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefoxpwa site launch 01JBK4H0GD3AQYGH2G08F8W4N6",
+        "comment": "Launch YouTube PWA (configured for WS 50, secondary monitor)"
+      }
+    },
+    {
+      "type": "verify_state",
+      "params": {
+        "description": "Verify YouTube PWA is on WS 50, output HEADLESS-2",
+        "expectedState": {
+          "workspaces": [
+            {
+              "num": 50,
+              "output": "HEADLESS-2",
+              "windows": [
+                {
+                  "app_id": "pwas.youtube.com"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 50,
+    "workspaces": [
+      {
+        "num": 50,
+        "output": "HEADLESS-2",
+        "windows": [
+          {
+            "app_id": "pwas.youtube.com",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "This test validates User Story 3: PWA-specific monitor preferences",
+    "Requires YouTube PWA to be configured in pwa-sites.nix with:",
+    "  - preferred_workspace = 50",
+    "  - preferred_monitor_role = \"secondary\" (or inferred from workspace)",
+    "The test verifies that PWA declarations in pwa-sites.nix are correctly",
+    "parsed and included in workspace-assignments.json generation",
+    "Expected behavior:",
+    "  - PWA launches on workspace 50",
+    "  - Workspace 50 is assigned to secondary monitor (HEADLESS-2)",
+    "  - PWA source is marked as 'pwa-sites' in assignment metadata"
+  ]
+}

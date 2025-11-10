@@ -104,6 +104,50 @@ let
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
+
+  # Feature 001: Import validated application definitions with monitor role preferences
+  appRegistryData = import ./app-registry-data.nix { inherit lib; };
+
+  # Feature 001 US3: Import PWA site definitions with monitor role preferences
+  pwaSitesData = import ../../shared/pwa-sites.nix { inherit lib; };
+
+  # Feature 001: Generate workspace-to-monitor assignments from app registry
+  # This creates the declarative workspace-assignments.json that the daemon reads
+  # to determine which monitor role (primary/secondary/tertiary) each workspace should use
+  workspaceAssignments = {
+    version = "1.0";
+    assignments =
+      # App registry assignments
+      (map (app: {
+        workspace = app.preferred_workspace;
+        app_name = app.name;
+        monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
+                       then app.preferred_monitor_role
+                       else (
+                         # Infer monitor role from workspace number (Feature 001 US1)
+                         # WS 1-2: primary, WS 3-5: secondary, WS 6+: tertiary
+                         if app.preferred_workspace <= 2 then "primary"
+                         else if app.preferred_workspace <= 5 then "secondary"
+                         else "tertiary"
+                       );
+        source = "app-registry";
+      }) appRegistryData)
+      ++
+      # PWA site assignments (Feature 001 US3: PWA-specific monitor preferences)
+      (map (pwa: {
+        workspace = pwa.preferred_workspace;
+        app_name = "${pwa.name}-pwa";  # Append -pwa for identification
+        monitor_role = if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
+                       then pwa.preferred_monitor_role
+                       else (
+                         # Infer monitor role from workspace number
+                         if pwa.preferred_workspace <= 2 then "primary"
+                         else if pwa.preferred_workspace <= 5 then "secondary"
+                         else "tertiary"
+                       );
+        source = "pwa-sites";
+      }) pwaSitesData.pwaSites);
+  };
 in
 {
   # Import keybindings from separate module (moved from dynamic config to static Nix)
@@ -203,26 +247,33 @@ in
         };
       };
 
-      # Workspace definitions with Font Awesome icons (parallel to i3 config)
-      workspaceOutputAssign = if isHeadless then [
-        # Headless mode: Three displays with i3pm-compatible distribution (Feature 048)
-        # Primary display (HEADLESS-1): Workspaces 1-2
-        { workspace = "1"; output = "HEADLESS-1"; }
-        { workspace = "2"; output = "HEADLESS-1"; }
-        # Secondary display (HEADLESS-2): Workspaces 3-5
-        { workspace = "3"; output = "HEADLESS-2"; }
-        { workspace = "4"; output = "HEADLESS-2"; }
-        { workspace = "5"; output = "HEADLESS-2"; }
-        # Tertiary display (HEADLESS-3): Workspaces 6-9
-        { workspace = "6"; output = "HEADLESS-3"; }
-        { workspace = "7"; output = "HEADLESS-3"; }
-        { workspace = "8"; output = "HEADLESS-3"; }
-        { workspace = "9"; output = "HEADLESS-3"; }
-      ] else [
-        # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
+      # Feature 001: Declarative workspace-to-monitor assignments
+      # Generate workspace assignments from app registry and PWA data
+      # Replaces Feature 049's hardcoded assignments (workspaces 1-9 only)
+      # with complete declarative system for all workspaces (1-70)
+      workspaceOutputAssign = if isHeadless then
+        let
+          # Map monitor roles to physical outputs
+          roleToOutput = role:
+            if role == "primary" then "HEADLESS-1"
+            else if role == "secondary" then "HEADLESS-2"
+            else if role == "tertiary" then "HEADLESS-3"
+            else "HEADLESS-1";  # Fallback to primary
+
+          # Generate workspace assignment from app/PWA data
+          assignmentToOutput = assignment: {
+            workspace = toString assignment.workspace;
+            output = roleToOutput assignment.monitor_role;
+          };
+        in
+          # Convert all workspace assignments to Sway output assignments
+          map assignmentToOutput workspaceAssignments.assignments
+      else [
+        # M1 MacBook Pro: Single display (eDP-1) for all workspaces
+        # All workspace assignments use primary role → eDP-1
         { workspace = "1"; output = "eDP-1"; }
         { workspace = "2"; output = "eDP-1"; }
-        { workspace = "3"; output = "HDMI-A-1"; }
+        { workspace = "3"; output = "eDP-1"; }
       ];
 
       # ═══════════════════════════════════════════════════════════════════════════
@@ -457,11 +508,11 @@ in
       # always = focus follows mouse even for unfocused outputs
       focus_follows_mouse no
 
-      # Mouse warping - don't move cursor when switching focus via keyboard
+      # Mouse warping - move cursor when switching focus via keyboard
       # none = cursor stays where it is (natural keyboard navigation)
-      # output = cursor moves to center of output when switching focus
+      # output = cursor moves to center of output when switching focus (BEST for multi-monitor)
       # container = cursor moves to center of container when switching focus
-      mouse_warping none
+      mouse_warping output
 
       # Workspace names - numbers only for clean display
       set $ws1 "1"
@@ -843,6 +894,12 @@ in
       enable_auth=false
     '';
   };
+
+  # Feature 001: Workspace-to-monitor assignments (declarative configuration)
+  # This file is read by workspace_assignment_manager.py on daemon startup
+  # to determine which monitor role each workspace should use based on app preferences
+  # Format: workspace-assignments.schema.json (v1.0)
+  xdg.configFile."sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
 
   # wayvnc systemd services for headless mode (Feature 048)
   # Three independent VNC instances for three virtual displays

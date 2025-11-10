@@ -447,6 +447,14 @@ class IPCServer:
             elif method == "scratchpad.cleanup":
                 result = await self._scratchpad_cleanup(params)
 
+            # Feature 001: Declarative workspace-to-monitor assignment
+            elif method == "monitors.status":
+                result = await self._monitors_status(params)
+            elif method == "monitors.reassign":
+                result = await self._monitors_reassign(params)
+            elif method == "monitors.config":
+                result = await self._monitors_config(params)
+
             # Feature 051: Run-raise-hide application launching
             elif method == "app.run":
                 result = await self._app_run(params)
@@ -5365,6 +5373,228 @@ class IPCServer:
             "projects_cleaned": projects_cleaned,
             "message": f"Cleaned up {cleaned_count} invalid terminal(s), {remaining} terminal(s) remaining"
         }
+
+    # Feature 001: Declarative workspace-to-monitor assignment
+
+    async def _monitors_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get current monitor role assignments and workspace distribution.
+
+        Feature 001: T066 (monitors.status RPC handler)
+
+        Returns:
+            {
+                "monitor_count": int,
+                "active_monitors": [
+                    {
+                        "name": str,           # Output name (e.g., "HEADLESS-1")
+                        "role": str,           # Monitor role (primary/secondary/tertiary)
+                        "workspaces": [int]    # Workspace numbers on this monitor
+                    }
+                ],
+                "last_reassignment": str | null,  # ISO timestamp or null
+                "reassignment_count": int
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            # Get active outputs from Sway IPC
+            outputs = await self.i3_connection.conn.get_outputs()
+            active_outputs = [o for o in outputs if o.active and not o.name.startswith("__")]
+
+            # Sort by name to get consistent connection order
+            # For HEADLESS-1, HEADLESS-2, HEADLESS-3, this gives correct numerical order
+            active_outputs.sort(key=lambda o: o.name)
+
+            # Get workspaces from Sway IPC
+            workspaces = await self.i3_connection.conn.get_workspaces()
+
+            # Build monitor status with workspace distribution
+            active_monitors = []
+            for idx, output in enumerate(active_outputs):
+                # Infer role from connection order (Feature 001 US1)
+                if idx == 0:
+                    role = "primary"
+                elif idx == 1:
+                    role = "secondary"
+                else:
+                    role = "tertiary"
+
+                # Find workspaces on this output
+                output_workspaces = [
+                    ws.num for ws in workspaces
+                    if ws.output == output.name
+                ]
+                output_workspaces.sort()
+
+                active_monitors.append({
+                    "name": output.name,
+                    "role": role,
+                    "workspaces": output_workspaces
+                })
+
+            # TODO: Load reassignment history from state file
+            # For now, return placeholder values
+            result = {
+                "monitor_count": len(active_monitors),
+                "active_monitors": active_monitors,
+                "last_reassignment": None,
+                "reassignment_count": 0
+            }
+
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting monitor status: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::monitors_status",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _monitors_reassign(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Force workspace reassignment to monitors based on declared preferences.
+
+        Feature 001: T067 (monitors.reassign RPC handler)
+
+        Returns:
+            {
+                "workspaces_moved": int,
+                "duration_ms": float,
+                "monitor_assignments": {
+                    "primary": str,    # Output name
+                    "secondary": str,
+                    "tertiary": str
+                }
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            # Get active outputs from Sway IPC
+            outputs = await self.i3_connection.conn.get_outputs()
+            active_outputs = [o for o in outputs if o.active and not o.name.startswith("__")]
+
+            # Sort by name to get consistent connection order
+            active_outputs.sort(key=lambda o: o.name)
+
+            # Build role assignments (connection order for now)
+            monitor_assignments = {}
+            if len(active_outputs) >= 1:
+                monitor_assignments["primary"] = active_outputs[0].name
+            if len(active_outputs) >= 2:
+                monitor_assignments["secondary"] = active_outputs[1].name
+            if len(active_outputs) >= 3:
+                monitor_assignments["tertiary"] = active_outputs[2].name
+
+            # Get workspaces
+            workspaces = await self.i3_connection.conn.get_workspaces()
+            workspaces_moved = 0
+
+            # TODO: Implement actual workspace reassignment logic
+            # For now, return success with 0 moves
+            # This requires integrating MonitorRoleResolver and loading workspace-assignments.json
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            result = {
+                "workspaces_moved": workspaces_moved,
+                "duration_ms": duration_ms,
+                "monitor_assignments": monitor_assignments
+            }
+
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error reassigning workspaces: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="command::monitors_reassign",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _monitors_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get monitor role configuration and workspace assignments.
+
+        Feature 001: T068 (monitors.config RPC handler)
+
+        Returns:
+            {
+                "output_preferences": {
+                    "primary": [str],    # Preferred output names in priority order
+                    "secondary": [str],
+                    "tertiary": [str]
+                },
+                "workspace_assignments": [
+                    {
+                        "preferred_workspace": int,
+                        "app_name": str,
+                        "preferred_monitor_role": str,  # primary/secondary/tertiary
+                        "source": str                    # "app-registry" | "pwa-sites" | "inferred"
+                    }
+                ]
+            }
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            import json
+            from pathlib import Path
+
+            # Load workspace-assignments.json (generated by Feature 001)
+            config_path = Path.home() / ".config/sway/workspace-assignments.json"
+
+            if not config_path.exists():
+                logger.warning(f"workspace-assignments.json not found at {config_path}")
+                return {
+                    "output_preferences": {},
+                    "workspace_assignments": []
+                }
+
+            with open(config_path) as f:
+                config_data = json.load(f)
+
+            # Extract workspace assignments
+            workspace_assignments = []
+            for assignment in config_data.get("assignments", []):
+                # Note: JSON uses "monitor_role" field name
+                monitor_role = assignment.get("monitor_role")
+                workspace_assignments.append({
+                    "preferred_workspace": assignment.get("workspace"),
+                    "app_name": assignment.get("app_name", "unknown"),
+                    "preferred_monitor_role": monitor_role if monitor_role else "inferred",
+                    "source": assignment.get("source", "unknown")
+                })
+
+            result = {
+                "output_preferences": config_data.get("output_preferences", {}),
+                "workspace_assignments": workspace_assignments
+            }
+
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error getting monitor config: {e}")
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="query::monitors_config",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
 
     # Feature 051: Run-raise-hide application launching
 
