@@ -90,11 +90,12 @@ class FloatingWindowConfig(BaseModel):
     """
 
     app_name: str = Field(..., description="Application identifier")
+    app_id: str = Field(..., description="Sway app_id for window matching")
     floating: bool = Field(..., description="Enable floating mode")
     floating_size: Optional[FloatingSize] = Field(
         None, description="Size preset (null = natural size)"
     )
-    scope: Scope = Field(..., description="Project filtering scope")
+    scope: Scope = Field(Scope.SCOPED, description="Project filtering scope (default: scoped)")
 
     @validator("app_name")
     def validate_app_name(cls, v):
@@ -103,11 +104,11 @@ class FloatingWindowConfig(BaseModel):
             raise ValueError("app_name cannot be empty")
         return v
 
-    @validator("floating_size")
-    def validate_floating_size(cls, v, values):
-        """Validate floating_size only used when floating=true."""
-        if v is not None and not values.get("floating", False):
-            raise ValueError("floating_size requires floating=true")
+    @validator("app_id")
+    def validate_app_id(cls, v):
+        """Validate app_id is non-empty."""
+        if not v or v.strip() == "":
+            raise ValueError("app_id cannot be empty")
         return v
 
 

@@ -62,6 +62,17 @@ let
     else
       normalizedRole;
 
+  # Feature 001 US4: Validate floating size preset (scratchpad/small/medium/large)
+  validateFloatingSize = size:
+    let
+      normalizedSize = lib.toLower size;
+      validSizes = ["scratchpad" "small" "medium" "large"];
+    in
+    if !builtins.elem normalizedSize validSizes then
+      throw "Invalid floating size '${size}': must be one of ${lib.concatStringsSep ", " validSizes}"
+    else
+      normalizedSize;
+
   # Helper to create validated application entry
   mkApp = attrs:
     let
@@ -71,12 +82,20 @@ let
         if attrs ? preferred_monitor_role && attrs.preferred_monitor_role != null
         then validateMonitorRole attrs.preferred_monitor_role
         else null;
+      # Feature 001 US4: Validate and normalize floating size if present
+      floatingSize =
+        if attrs ? floating_size && attrs.floating_size != null
+        then validateFloatingSize attrs.floating_size
+        else null;
     in
     attrs // {
       parameters = splitParameters params;
       terminal = isTerminalApp attrs.command;
       # Feature 001: Add normalized monitor role
       preferred_monitor_role = monitorRole;
+      # Feature 001 US4: Add normalized floating size (T049, T050)
+      floating = if attrs ? floating then attrs.floating else false;
+      floating_size = floatingSize;
     };
 
   # Helper to convert PWA site definition → app registry entry (Feature 056)

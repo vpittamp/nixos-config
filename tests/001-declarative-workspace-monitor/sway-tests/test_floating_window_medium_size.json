@@ -1,0 +1,44 @@
+{
+  "name": "Feature 001 US4: Floating window with medium size preset",
+  "description": "Test that btop launches as floating 1200×800 centered window on workspace 7",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"btop\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 7"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "btop",
+        "timeout": 3000
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 7,
+    "workspaces": [
+      {
+        "num": 7,
+        "windows": [
+          {
+            "app_id": "btop",
+            "focused": true,
+            "floating": "user_on",
+            "rect": {
+              "width": 1200,
+              "height": 800
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

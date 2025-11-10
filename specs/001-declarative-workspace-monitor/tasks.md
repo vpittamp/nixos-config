@@ -142,16 +142,16 @@ Based on plan.md Project Structure:
 
 ### Tests for User Story 4
 
-- [ ] T044 [P] [US4] Create pytest unit test for FloatingWindowConfig validation in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_floating_window_config.py`
-- [ ] T045 [P] [US4] Create pytest unit test for floating size preset dimensions in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_floating_size_presets.py`
-- [ ] T046 [P] [US4] Create sway-test JSON for floating window size and positioning in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_floating_window_medium_size.json`
-- [ ] T047 [P] [US4] Create pytest integration test for scoped floating window hiding on project switch in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_floating_window_project_filtering.py`
-- [ ] T048 [P] [US4] Create pytest integration test for global floating window persistence across projects in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_floating_window_project_filtering.py`
+- [X] T044 [P] [US4] Create pytest unit test for FloatingWindowConfig validation in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_floating_window_config.py`
+- [X] T045 [P] [US4] Create pytest unit test for floating size preset dimensions in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_floating_size_presets.py`
+- [X] T046 [P] [US4] Create sway-test JSON for floating window size and positioning in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_floating_window_medium_size.json`
+- [X] T047 [P] [US4] Create pytest integration test for scoped floating window hiding on project switch in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_floating_window_project_filtering.py`
+- [X] T048 [P] [US4] Create pytest integration test for global floating window persistence across projects in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_floating_window_project_filtering.py`
 
 ### Implementation for User Story 4
 
-- [ ] T049 [P] [US4] Add `floating` boolean field to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
-- [ ] T050 [P] [US4] Add `floating_size` field with preset validation to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
+- [X] T049 [P] [US4] Add `floating` boolean field to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
+- [X] T050 [P] [US4] Add `floating_size` field with preset validation to mkApp function in `/etc/nixos/home-modules/desktop/app-registry-data.nix`
 - [ ] T051 [US4] Create FloatingWindowManager class in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/floating_window_manager.py`
 - [ ] T052 [US4] Implement Sway for_window rule generation for floating windows in FloatingWindowManager
 - [ ] T053 [US4] Add floating window size mapping logic (preset → dimensions) in FloatingWindowManager
