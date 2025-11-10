@@ -1,0 +1,35 @@
+{
+  "name": "Feature 070: PWA not found error handling",
+  "description": "Test StructuredError format when PWA name not found (US1: Clear Error Diagnostics). Validates that error message includes remediation steps and available PWAs list.",
+  "tags": [
+    "integration",
+    "feature-070",
+    "us1-error-diagnostics",
+    "error-handling",
+    "negative-test"
+  ],
+  "priority": "P1",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "launch_pwa_sync",
+      "params": {
+        "pwa_name": "nonexistent-pwa-12345"
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [],
+    "windowCount": 0
+  },
+  "config": {
+    "expectFailure": true,
+    "expectedErrorType": "PWA_NOT_FOUND",
+    "expectedErrorComponent": "App Registry Reader",
+    "expectedRemediationKeywords": [
+      "Did you mean",
+      "Run: sway-test list-pwas",
+      "pwa-sites.nix"
+    ]
+  }
+}

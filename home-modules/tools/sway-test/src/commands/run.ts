@@ -14,6 +14,7 @@ import { Reporter } from "../ui/reporter.ts";
 import { TapReporter } from "../ui/tap-reporter.ts";
 import { JunitReporter } from "../ui/junit-reporter.ts";
 import { FixtureManager } from "../fixtures/fixture-manager.ts";
+import { getCleanupManager } from "../services/cleanup-manager.ts";
 import type { TestCase } from "../models/test-case.ts";
 import type { TestResult, TestStatus, DiffEntry } from "../models/test-result.ts";
 import type { StateSnapshot } from "../models/state-snapshot.ts";
@@ -540,6 +541,20 @@ export class TestRunner {
       } catch (error) {
         // Log warning but don't fail the test
         console.warn(`Warning: Fixture teardown failed: ${(error as Error).message}`);
+      }
+    }
+
+    // T021: Automatic cleanup of test-spawned resources
+    // Cleanup tracked processes and windows after test completion
+    const cleanupManager = getCleanupManager();
+    const state = cleanupManager.getState();
+
+    if (state.processes > 0 || state.windows > 0) {
+      try {
+        await cleanupManager.cleanup();
+      } catch (error) {
+        // Log warning but don't fail the test
+        console.warn(`Warning: Cleanup failed: ${(error as Error).message}`);
       }
     }
 

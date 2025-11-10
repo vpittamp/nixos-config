@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/yourusername/nixos-config/specs/070/error-format.schema.json",
+  "title": "StructuredError Format",
+  "description": "Error message format for sway-test framework with diagnostic context and remediation steps (FR-001, FR-002, FR-003, FR-004, FR-005)",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "APP_NOT_FOUND",
+        "PWA_NOT_FOUND",
+        "INVALID_ULID",
+        "LAUNCH_FAILED",
+        "TIMEOUT",
+        "MALFORMED_TEST",
+        "REGISTRY_ERROR",
+        "CLEANUP_FAILED"
+      ],
+      "description": "Error category for filtering and automated handling"
+    },
+    "component": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Component that raised the error (e.g., 'PWA Launch', 'Registry Reader', 'Cleanup Manager')"
+    },
+    "cause": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Root cause description"
+    },
+    "remediation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "description": "Ordered list of actionable remediation steps"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Additional diagnostic context (PIDs, ULIDs, file paths, exit codes, etc.)"
+    }
+  },
+  "required": ["type", "component", "cause", "remediation"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "type": "PWA_NOT_FOUND",
+      "component": "PWA Launcher",
+      "cause": "PWA \"youtube\" not found in registry",
+      "remediation": [
+        "Check PWA name spelling (case-sensitive)",
+        "List available PWAs: sway-test list-pwas",
+        "Verify registry file: cat ~/.config/i3/pwa-registry.json"
+      ],
+      "context": {
+        "pwa_name": "youtube",
+        "registry_path": "~/.config/i3/pwa-registry.json",
+        "available_pwas": ["claude", "github", "youtube-music"]
+      }
+    },
+    {
+      "type": "INVALID_ULID",
+      "component": "PWA Launcher",
+      "cause": "Invalid ULID format: \"01K666N2V6BQMDSBMX3AY74TY7-INVALID\"",
+      "remediation": [
+        "ULID must be exactly 26 characters",
+        "Valid characters: 0-9, A-Z (excluding I, L, O, U)",
+        "Example valid ULID: 01K666N2V6BQMDSBMX3AY74TY7"
+      ],
+      "context": {
+        "provided_ulid": "01K666N2V6BQMDSBMX3AY74TY7-INVALID",
+        "ulid_length": 33,
+        "expected_length": 26
+      }
+    },
+    {
+      "type": "TIMEOUT",
+      "component": "Action Executor",
+      "cause": "Window wait exceeded timeout (5000ms)",
+      "remediation": [
+        "Increase timeout in test params",
+        "Check if application launched: ps aux | grep firefox",
+        "Verify Sway IPC connection: swaymsg -t get_tree"
+      ],
+      "context": {
+        "timeout_ms": 5000,
+        "action_type": "launch_pwa_sync",
+        "pwa_name": "youtube",
+        "current_windows": ["firefox", "alacritty"],
+        "focused_workspace": 1
+      }
+    }
+  ]
+}

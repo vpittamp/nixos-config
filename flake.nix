@@ -193,27 +193,29 @@
             }
 
             # Home Manager integration with Sway-specific config
-            home-manager.nixosModules.home-manager
-            {
-              home-manager = {
-                backupFileExtension = "backup";
-                useGlobalPkgs = true;
-                useUserPackages = true;
-                extraSpecialArgs = {
-                  inherit inputs self;
-                  pkgs-unstable = import nixpkgs-bleeding {
-                    system = "x86_64-linux";
-                    config.allowUnfree = true;
+            ({ config, ... }:
+              {
+                imports = [ home-manager.nixosModules.home-manager ];
+                home-manager = {
+                  backupFileExtension = "backup";
+                  useGlobalPkgs = true;
+                  useUserPackages = true;
+                  extraSpecialArgs = {
+                    inherit inputs self;
+                    osConfig = config;
+                    pkgs-unstable = import nixpkgs-bleeding {
+                      system = "x86_64-linux";
+                      config.allowUnfree = true;
+                    };
+                  };
+                  users.vpittamp = {
+                    imports = [
+                      ./home-modules/hetzner-sway.nix
+                    ];
+                    home.enableNixpkgsReleaseCheck = false;
                   };
                 };
-                users.vpittamp = {
-                  imports = [
-                    ./home-modules/hetzner-sway.nix
-                  ];
-                  home.enableNixpkgsReleaseCheck = false;
-                };
-              };
-            }
+              })
           ];
         };
 

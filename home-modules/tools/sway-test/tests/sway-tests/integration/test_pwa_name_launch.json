@@ -1,0 +1,47 @@
+{
+  "name": "Feature 070: PWA launch by name",
+  "description": "Test PWA launch using pwa_name parameter (US3: PWA Application Support). Validates that friendly name resolution works correctly and PWA appears on expected workspace.",
+  "tags": [
+    "integration",
+    "feature-070",
+    "us3-pwa-support",
+    "pwa",
+    "sync"
+  ],
+  "priority": "P2",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"FFPWA-*\"] kill"
+      }
+    },
+    {
+      "type": "launch_pwa_sync",
+      "params": {
+        "pwa_name": "youtube"
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [
+      {
+        "num": 50,
+        "windows": [
+          {
+            "app_id": "FFPWA-01K666N2V6BQMDSBMX3AY74TY7"
+          }
+        ]
+      }
+    ],
+    "focusedWorkspace": 50,
+    "assertions": [
+      {
+        "path": "workspaces[?num==50].windows[0].app_id",
+        "expected": "FFPWA-*",
+        "operator": "matches"
+      }
+    ]
+  }
+}

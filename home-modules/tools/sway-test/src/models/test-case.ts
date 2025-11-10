@@ -20,18 +20,28 @@ export type ActionType =
   // Feature 069: Synchronization-Based Test Framework
   | "sync"               // Explicit synchronization point
   | "launch_app_sync"    // Launch app + auto-sync
-  | "send_ipc_sync";     // IPC command + auto-sync
+  | "send_ipc_sync"      // IPC command + auto-sync
+  // Feature 070: PWA Support
+  | "launch_pwa_sync";   // Launch PWA + auto-sync
 
 /**
  * Action parameters based on action type
  */
 export interface ActionParams {
-  // launch_app params (BREAKING CHANGE: app_name required, command deprecated)
-  app_name?: string;       // REQUIRED: App name from registry
-  command?: string;        // DEPRECATED: Use app_name instead
-  args?: string[];
+  // launch_app / launch_app_sync params
+  // Feature 070: User Story 4 - App Registry Integration (T046)
+  // BREAKING CHANGE: app_name required, command deprecated
+  app_name?: string;       // App name from registry (e.g., "firefox", "code", "alacritty")
+                          // Resolves: command, expected_class, workspace, monitor_role, scope, floating
+  command?: string;        // DEPRECATED: Direct command execution no longer supported. Use app_name instead.
+  args?: string[];         // Optional args (overrides registry parameters field if provided)
   env?: Record<string, string>;
   project?: string;        // Optional project context (sets I3PM_PROJECT_NAME)
+
+  // launch_pwa_sync params (Feature 070)
+  pwa_name?: string;       // PWA name from registry (e.g., "youtube", "claude")
+  pwa_ulid?: string;       // Alternative: PWA ULID identifier (26-char base32)
+  allow_failure?: boolean; // If true, continue test even if PWA launch fails
 
   // send_ipc params
   ipc_command?: string;
