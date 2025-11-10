@@ -7,6 +7,8 @@
   # App Registry Fields:
   #   - app_scope: "scoped" (project-specific) or "global" (shared across projects)
   #   - preferred_workspace: workspace number (50-70 for PWAs to avoid conflicts with standard apps on 1-9)
+  #   - preferred_monitor_role: (optional) "primary", "secondary", or "tertiary" - Feature 001: User Story 3
+  #       If omitted, role is inferred from workspace number (WS 1-2→primary, 3-5→secondary, 6+→tertiary)
   pwaSites = [
     # YouTube
     {
@@ -22,6 +24,7 @@
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 50;
+      preferred_monitor_role = "tertiary";  # Feature 001: Explicit tertiary assignment
     }
 
     # Google AI (AI Mode Search)
@@ -54,6 +57,7 @@
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 52;
+      preferred_monitor_role = "secondary";  # Feature 001: Explicit secondary assignment (dev tools on center monitor)
     }
 
     # ChatGPT

@@ -14,6 +14,8 @@
     nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''
       set -euo pipefail
+
+      # Optional working directory override (first argument)
       if [ "$#" -gt 0 ] && [ -d "$1" ]; then
         export NVIM_STARTUP_PICKER_CWD="$1"
         cd "$1"
@@ -22,7 +24,24 @@
       if [ -z "''${NVIM_STARTUP_PICKER_CWD:-}" ]; then
         export NVIM_STARTUP_PICKER_CWD="$PWD"
       fi
-      NVIM_STARTUP_PICKER="find_files" exec ${neovim-unwrapped}/bin/nvim "$@"
+
+      SOCKET_DIR="''${XDG_RUNTIME_DIR:-/tmp}"
+      SOCKET_PATH="$SOCKET_DIR/nvim-${USER:-$LOGNAME}.sock"
+
+      server_is_alive() {
+        [ -S "$SOCKET_PATH" ] && ${neovim-unwrapped}/bin/nvim --server "$SOCKET_PATH" --remote-expr "1" >/dev/null 2>&1
+      }
+
+      if ! server_is_alive; then
+        # Clean up stale sockets
+        rm -f "$SOCKET_PATH"
+        export NVIM_LISTEN_ADDRESS="$SOCKET_PATH"
+        export NVIM_STARTUP_PICKER="find_files"
+        exec ${neovim-unwrapped}/bin/nvim --listen "$SOCKET_PATH" "$@"
+      else
+        # Attach terminal UI to existing server
+        exec ${neovim-unwrapped}/bin/nvim --server "$SOCKET_PATH" --remote-ui
+      fi
     '')
   ];
   

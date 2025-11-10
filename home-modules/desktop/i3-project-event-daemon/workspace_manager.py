@@ -323,11 +323,30 @@ async def assign_workspaces_with_monitor_roles(
         logger.error("[Feature 001] Failed to resolve monitor role assignments")
         return
 
-    # Group assignments by workspace number
+    # Group assignments by workspace number with conflict detection (Feature 001 US3: T042-T043)
     workspace_to_config: Dict[int, MonitorRoleConfig] = {}
     for config in configs:
-        # If multiple apps target same workspace, last one wins (PWAs override apps typically)
-        workspace_to_config[config.preferred_workspace] = config
+        ws_num = config.preferred_workspace
+
+        # Feature 001 T043: Detect and log duplicate workspace assignments
+        if ws_num in workspace_to_config:
+            existing = workspace_to_config[ws_num]
+            logger.warning(
+                f"[Feature 001] Workspace {ws_num} conflict detected: "
+                f"'{existing.app_name}' (source: {existing.source}) "
+                f"→ OVERRIDDEN BY '{config.app_name}' (source: {config.source})"
+            )
+
+            # Feature 001 T042: PWA preference priority (PWA > app)
+            # PWAs from pwa-sites.nix override apps from app-registry-data.nix
+            if config.source == "pwa-sites" and existing.source == "app-registry":
+                logger.info(
+                    f"[Feature 001] PWA preference applied: '{config.app_name}' "
+                    f"overrides '{existing.app_name}' on workspace {ws_num}"
+                )
+
+        # Last one wins (PWAs override apps since they're processed after)
+        workspace_to_config[ws_num] = config
 
     # Apply workspace→output assignments via Sway IPC
     assignments_applied = 0

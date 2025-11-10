@@ -108,25 +108,45 @@ let
   # Feature 001: Import validated application definitions with monitor role preferences
   appRegistryData = import ./app-registry-data.nix { inherit lib; };
 
+  # Feature 001 US3: Import PWA site definitions with monitor role preferences
+  pwaSitesData = import ../../shared/pwa-sites.nix { inherit lib; };
+
   # Feature 001: Generate workspace-to-monitor assignments from app registry
   # This creates the declarative workspace-assignments.json that the daemon reads
   # to determine which monitor role (primary/secondary/tertiary) each workspace should use
   workspaceAssignments = {
     version = "1.0";
-    assignments = map (app: {
-      workspace = app.preferred_workspace;
-      app_name = app.name;
-      monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
-                     then app.preferred_monitor_role
-                     else (
-                       # Infer monitor role from workspace number (Feature 001 US1)
-                       # WS 1-2: primary, WS 3-5: secondary, WS 6+: tertiary
-                       if app.preferred_workspace <= 2 then "primary"
-                       else if app.preferred_workspace <= 5 then "secondary"
-                       else "tertiary"
-                     );
-      source = if lib.hasSuffix "-pwa" app.name then "pwa-sites" else "app-registry";
-    }) appRegistryData;
+    assignments =
+      # App registry assignments
+      (map (app: {
+        workspace = app.preferred_workspace;
+        app_name = app.name;
+        monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
+                       then app.preferred_monitor_role
+                       else (
+                         # Infer monitor role from workspace number (Feature 001 US1)
+                         # WS 1-2: primary, WS 3-5: secondary, WS 6+: tertiary
+                         if app.preferred_workspace <= 2 then "primary"
+                         else if app.preferred_workspace <= 5 then "secondary"
+                         else "tertiary"
+                       );
+        source = "app-registry";
+      }) appRegistryData)
+      ++
+      # PWA site assignments (Feature 001 US3: PWA-specific monitor preferences)
+      (map (pwa: {
+        workspace = pwa.preferred_workspace;
+        app_name = "${pwa.name}-pwa";  # Append -pwa for identification
+        monitor_role = if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
+                       then pwa.preferred_monitor_role
+                       else (
+                         # Infer monitor role from workspace number
+                         if pwa.preferred_workspace <= 2 then "primary"
+                         else if pwa.preferred_workspace <= 5 then "secondary"
+                         else "tertiary"
+                       );
+        source = "pwa-sites";
+      }) pwaSitesData.pwaSites);
   };
 in
 {

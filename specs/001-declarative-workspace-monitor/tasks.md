@@ -119,16 +119,16 @@ Based on plan.md Project Structure:
 
 ### Tests for User Story 3
 
-- [ ] T037 [P] [US3] Create pytest unit test for PWA monitor role parsing in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_pwa_monitor_role.py`
-- [ ] T038 [P] [US3] Create sway-test JSON for PWA on secondary monitor in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_youtube_pwa_secondary_monitor.json`
-- [ ] T039 [P] [US3] Create pytest integration test for PWA preference override (PWA wins over app) in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_pwa_preference_override.py`
+- [X] T037 [P] [US3] Create pytest unit test for PWA monitor role parsing in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_pwa_monitor_role.py`
+- [X] T038 [P] [US3] Create sway-test JSON for PWA on secondary monitor in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_youtube_pwa_secondary_monitor.json`
+- [X] T039 [P] [US3] Create pytest integration test for PWA preference override (PWA wins over app) in `/etc/nixos/tests/001-declarative-workspace-monitor/integration/test_pwa_preference_override.py`
 
 ### Implementation for User Story 3
 
-- [ ] T040 [P] [US3] Add `preferred_monitor_role` field to PWA definition schema in `/etc/nixos/shared/pwa-sites.nix`
-- [ ] T041 [US3] Extend workspace-assignments.json generation to include PWA definitions with source="pwa-sites" in `/etc/nixos/home-modules/desktop/sway.nix`
-- [ ] T042 [US3] Implement PWA preference priority (PWA > app) in MonitorRoleResolver conflict resolution in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/monitor_role_resolver.py`
-- [ ] T043 [US3] Add conflict detection logging for duplicate workspace assignments in MonitorRoleResolver
+- [X] T040 [P] [US3] Add `preferred_monitor_role` field to PWA definition schema in `/etc/nixos/shared/pwa-sites.nix`
+- [X] T041 [US3] Extend workspace-assignments.json generation to include PWA definitions with source="pwa-sites" in `/etc/nixos/home-modules/desktop/sway.nix`
+- [X] T042 [US3] Implement PWA preference priority (PWA > app) in MonitorRoleResolver conflict resolution in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/monitor_role_resolver.py`
+- [X] T043 [US3] Add conflict detection logging for duplicate workspace assignments in MonitorRoleResolver
 
 **Checkpoint**: All workspace assignment sources (apps + PWAs) now support declarative monitor roles
 
