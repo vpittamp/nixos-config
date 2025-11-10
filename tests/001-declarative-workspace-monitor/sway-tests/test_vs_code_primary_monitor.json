@@ -1,0 +1,34 @@
+{
+  "name": "VS Code workspace assignment to primary monitor",
+  "description": "Test that VS Code with preferred_monitor_role='primary' appears on primary monitor (HEADLESS-1) workspace 2",
+  "timeout": 5000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"code\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "code"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 2,
+    "workspaces": [
+      {
+        "num": 2,
+        "output": "HEADLESS-1",
+        "windows": [
+          {
+            "app_id": "code",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -64,10 +64,10 @@ Based on plan.md Project Structure:
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T014 [P] [US1] Create pytest unit test for MonitorRoleConfig parsing from Nix in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_monitor_role_config.py`
-- [ ] T015 [P] [US1] Create pytest unit test for monitor role validation (primary/secondary/tertiary) in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_monitor_role_validation.py`
-- [ ] T016 [P] [US1] Create sway-test JSON for VS Code on primary monitor in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_vs_code_primary_monitor.json`
-- [ ] T017 [P] [US1] Create sway-test JSON for multiple apps with same monitor role in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_multiple_apps_same_role.json`
+- [X] T014 [P] [US1] Create pytest unit test for MonitorRoleConfig parsing from Nix in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_monitor_role_config.py`
+- [X] T015 [P] [US1] Create pytest unit test for monitor role validation (primary/secondary/tertiary) in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_monitor_role_validation.py`
+- [X] T016 [P] [US1] Create sway-test JSON for VS Code on primary monitor in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_vs_code_primary_monitor.json`
+- [X] T017 [P] [US1] Create sway-test JSON for multiple apps with same monitor role in `/etc/nixos/tests/001-declarative-workspace-monitor/sway-tests/test_multiple_apps_same_role.json`
 
 ### Implementation for User Story 1
 
