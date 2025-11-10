@@ -78,7 +78,7 @@ Based on plan.md Project Structure:
 - [X] T022 [US1] Implement workspace-to-role inference logic (WS 1-2→primary, 3-5→secondary, 6+→tertiary) in MonitorRoleResolver
 - [X] T023 [US1] Add logging for monitor role assignments at INFO level in MonitorRoleResolver
 - [X] T024 [US1] Create workspace-assignments.json generation script that reads from app-registry-data.nix in `/etc/nixos/home-modules/desktop/sway.nix`
-- [ ] T025 [US1] Integrate MonitorRoleResolver with Feature 049's workspace_assignment_manager.py to use monitor roles for output resolution
+- [X] T025 [US1] Integrate MonitorRoleResolver with Feature 049's workspace_assignment_manager.py to use monitor roles for output resolution
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - apps can declare monitor roles in Nix config
 
