@@ -142,4 +142,10 @@ tests/001-declarative-workspace-monitor/
 
 **Constitution Re-Check**: ✅ PASSED (no changes from initial check)
 
-**Next Step**: Run `/speckit.tasks` to generate task breakdown for implementation
+**Task Generation**: ✅ Complete
+- `tasks.md`: 75 tasks organized by user story (5 user stories)
+- MVP scope: Phase 1+2+3+4 (36 tasks - US1 + US2)
+- Parallel opportunities: 26 tasks marked [P]
+- Test tasks: 34 tasks (pytest unit/integration + sway-test JSON)
+
+**Next Step**: Run `/speckit.implement` to begin implementation (start with MVP: US1 + US2)
