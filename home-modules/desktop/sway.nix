@@ -104,6 +104,30 @@ let
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
+
+  # Feature 001: Import validated application definitions with monitor role preferences
+  appRegistryData = import ./app-registry-data.nix { inherit lib; };
+
+  # Feature 001: Generate workspace-to-monitor assignments from app registry
+  # This creates the declarative workspace-assignments.json that the daemon reads
+  # to determine which monitor role (primary/secondary/tertiary) each workspace should use
+  workspaceAssignments = {
+    version = "1.0";
+    assignments = map (app: {
+      workspace = app.preferred_workspace;
+      app_name = app.name;
+      monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
+                     then app.preferred_monitor_role
+                     else (
+                       # Infer monitor role from workspace number (Feature 001 US1)
+                       # WS 1-2: primary, WS 3-5: secondary, WS 6+: tertiary
+                       if app.preferred_workspace <= 2 then "primary"
+                       else if app.preferred_workspace <= 5 then "secondary"
+                       else "tertiary"
+                     );
+      source = if lib.hasSuffix "-pwa" app.name then "pwa-sites" else "app-registry";
+    }) appRegistryData;
+  };
 in
 {
   # Import keybindings from separate module (moved from dynamic config to static Nix)
@@ -843,6 +867,12 @@ in
       enable_auth=false
     '';
   };
+
+  # Feature 001: Workspace-to-monitor assignments (declarative configuration)
+  # This file is read by workspace_assignment_manager.py on daemon startup
+  # to determine which monitor role each workspace should use based on app preferences
+  # Format: workspace-assignments.schema.json (v1.0)
+  xdg.configFile."sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
 
   # wayvnc systemd services for headless mode (Feature 048)
   # Three independent VNC instances for three virtual displays

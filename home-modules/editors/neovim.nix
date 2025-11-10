@@ -7,6 +7,11 @@
     ripgrep           # For telescope
     fd                # For telescope file finder
     nodejs            # For various language servers
+    nodePackages_latest.typescript-language-server  # LSP: TypeScript/JavaScript
+    nodePackages_latest.typescript                  # Provides tsserver runtime
+    pyright                                          # LSP: Python
+    nil                                              # LSP: Nix
+    nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''
       set -euo pipefail
       if [ "$#" -gt 0 ] && [ -d "$1" ]; then
@@ -319,6 +324,7 @@
       -- Claude Code Integration
       {
         "greggh/claude-code.nvim",
+        version = "v0.4.3",
         dependencies = { "nvim-lua/plenary.nvim" },
         config = function()
           require('claude-code').setup({
@@ -327,6 +333,8 @@
               split_ratio = 0.4,  -- 40% of screen for Claude
               position = "botright",  -- bottom right split
               enter_insert = true,  -- auto enter insert mode
+              hide_numbers = true,
+              hide_signcolumn = true,
             },
             -- Claude Code command path (already in PATH from Nix)
             command = "claude",
@@ -350,6 +358,7 @@
       -- GitHub Copilot AI Code Completion
       {
         "zbirenbaum/copilot.lua",
+        commit = "5bde2cfe01f049f522eeb8b52c5c723407db8bdf",
         cmd = "Copilot",
         event = "InsertEnter",
         config = function()
@@ -402,14 +411,16 @@
       -- GitHub Copilot Chat
       {
         "CopilotC-Nvim/CopilotChat.nvim",
-        branch = "canary",
+        version = "v4.7.4",
         dependencies = {
           { "zbirenbaum/copilot.lua" },
           { "nvim-lua/plenary.nvim" },
+          { "nvim-treesitter/nvim-treesitter" },
         },
+        build = "make tiktoken",
         opts = {
           debug = true,
-          model = "claude-3.5-sonnet", -- Can use gpt-4o or claude-3.5-sonnet
+          model = "claude-3.7-sonnet", -- Can use gpt-4o or claude family on GitHub Models
           temperature = 0.1,
           window = {
             layout = "vertical", -- 'vertical', 'horizontal', 'float', 'replace'
