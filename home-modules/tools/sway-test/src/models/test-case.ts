@@ -20,7 +20,9 @@ export type ActionType =
   // Feature 069: Synchronization-Based Test Framework
   | "sync"               // Explicit synchronization point
   | "launch_app_sync"    // Launch app + auto-sync
-  | "send_ipc_sync";     // IPC command + auto-sync
+  | "send_ipc_sync"      // IPC command + auto-sync
+  // Feature 070: PWA Support
+  | "launch_pwa_sync";   // Launch PWA + auto-sync
 
 /**
  * Action parameters based on action type
@@ -32,6 +34,11 @@ export interface ActionParams {
   args?: string[];
   env?: Record<string, string>;
   project?: string;        // Optional project context (sets I3PM_PROJECT_NAME)
+
+  // launch_pwa_sync params (Feature 070)
+  pwa_name?: string;       // PWA name from registry (e.g., "youtube", "claude")
+  pwa_ulid?: string;       // Alternative: PWA ULID identifier (26-char base32)
+  allow_failure?: boolean; // If true, continue test even if PWA launch fails
 
   // send_ipc params
   ipc_command?: string;

@@ -12,6 +12,19 @@ let
   # Import validated application definitions from shared data file
   validated = import ./app-registry-data.nix { inherit lib; };
 
+  # Import PWA sites configuration
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+
+  # Transform PWA sites to simplified PWA registry format
+  # Only include fields needed by sway-test framework
+  pwaDefinitions = map (pwa: {
+    name = lib.toLower pwa.name;  # Normalize to lowercase for consistency
+    url = pwa.url;
+    ulid = pwa.ulid;
+    preferred_workspace = if pwa ? preferred_workspace then pwa.preferred_workspace else null;
+    preferred_monitor_role = if pwa ? preferred_monitor_role then pwa.preferred_monitor_role else null;
+  }) pwaSitesConfig.pwaSites;
+
   # Helper to generate .desktop file content manually
   # This avoids xdg.desktopEntries schema issues with newer home-manager
   mkDesktopFile = app:
@@ -53,6 +66,12 @@ in
     ".config/i3/application-registry.json".text = builtins.toJSON {
       version = "1.0.0";
       applications = validated;
+    };
+
+    # Generate PWA registry for sway-test framework (Feature 070)
+    ".config/i3/pwa-registry.json".text = builtins.toJSON {
+      version = "1.0.0";
+      pwas = pwaDefinitions;
     };
   } // desktopFileEntries;  # T040: Generate .desktop files manually
 }
