@@ -195,6 +195,7 @@ test_app "youtube-pwa" "firefoxpwa" "site launch 01K666N2V6BQMDSBMX3AY74TY7" "FF
 test_app "google-ai-pwa" "firefoxpwa" "site launch 01K665SPD8EPMP3JTW02JM1M0Z" "FFPWA-01K665SPD8EPMP3JTW02JM1M0Z" "global"
 test_app "chatgpt-pwa" "firefoxpwa" "site launch 01K772ZBM45JD68HXYNM193CVW" "FFPWA-01K772ZBM45JD68HXYNM193CVW" "global"
 test_app "github-codespaces-pwa" "firefoxpwa" "site launch 01K772Z7AY5J36Q3NXHH9RYGC0" "FFPWA-01K772Z7AY5J36Q3NXHH9RYGC0" "global"
+test_app "linkedin-learning-pwa" "firefoxpwa" "site launch 01K9QA9TKKTYPZ4CTKQVVATD7W" "FFPWA-01K9QA9TKKTYPZ4CTKQVVATD7W" "global"
 
 # Print summary
 echo "========================================" | tee -a "$LOG_FILE"

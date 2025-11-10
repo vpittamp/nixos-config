@@ -101,11 +101,11 @@ Based on plan.md Project Structure:
 
 - [X] T030 [US2] Implement fallback chain logic in MonitorRoleResolver.apply_fallback() method in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/monitor_role_resolver.py`
 - [X] T031 [US2] Add fallback_applied boolean tracking to MonitorRoleAssignment model usage in MonitorRoleResolver
-- [ ] T032 [US2] Subscribe to Sway output events (connect/disconnect) in i3pm daemon main loop in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/main.py`
-- [ ] T033 [US2] Implement event debouncing (500ms) for rapid output events in output event handler
-- [ ] T034 [US2] Trigger workspace reassignment on output event with automatic fallback in output event handler
+- [X] T032 [US2] Subscribe to Sway output events (connect/disconnect) in i3pm daemon main loop in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/main.py`
+- [X] T033 [US2] Implement event debouncing (500ms) for rapid output events in output event handler
+- [X] T034 [US2] Trigger workspace reassignment on output event with automatic fallback in output event handler
 - [X] T035 [US2] Add logging for fallback applications at WARNING level in MonitorRoleResolver.apply_fallback()
-- [ ] T036 [US2] Update MonitorStateV2 persistence with fallback metadata after each reassignment in workspace_assignment_manager.py
+- [X] T036 [US2] Update MonitorStateV2 persistence with fallback metadata after each reassignment in workspace_assignment_manager.py
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - apps declare roles AND system handles monitor changes
 
