@@ -1,0 +1,74 @@
+{
+  "name": "Feature 070: Cleanup validation test",
+  "description": "Test automatic cleanup of test-spawned processes and windows (US2: Graceful Cleanup Commands). Launches 5 apps then validates zero orphaned processes after test completion.",
+  "tags": [
+    "integration",
+    "feature-070",
+    "us2-cleanup",
+    "cleanup-manager",
+    "sync"
+  ],
+  "priority": "P1",
+  "timeout": 30000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "ghostty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "launch_pwa_sync",
+      "params": {
+        "pwa_name": "youtube"
+      }
+    },
+    {
+      "type": "launch_pwa_sync",
+      "params": {
+        "pwa_name": "youtube-music"
+      }
+    }
+  ],
+  "expectedState": {
+    "windowCount": 5,
+    "assertions": [
+      {
+        "path": "workspaces[*].windows[*].app_id",
+        "expected": 5,
+        "operator": "count"
+      }
+    ]
+  },
+  "teardown": [
+    {
+      "type": "validate_cleanup",
+      "params": {
+        "expected_orphaned_processes": 0,
+        "expected_orphaned_windows": 0,
+        "cleanup_timeout": 2000
+      }
+    }
+  ],
+  "config": {
+    "validateCleanup": true
+  }
+}

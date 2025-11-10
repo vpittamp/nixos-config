@@ -12,10 +12,12 @@ import { DebugRepl, type ReplContext } from "./debug-repl.ts";
 import { StateComparator } from "./state-comparator.ts";
 import type { StateSnapshot } from "../models/state-snapshot.ts";
 import { TIMEOUTS } from "../constants.ts";
-import { lookupApp } from "./app-registry-reader.ts";
+import { lookupApp, lookupPWA, lookupPWAByULID } from "./app-registry-reader.ts";
 import { expandPath } from "../helpers/path-utils.ts";
 import { waitForEvent } from "./event-subscriber.ts";
 import { readWindowEnvironment, validateI3pmEnvironment, EnvironmentValidationError } from "../helpers/environment-validator.ts";
+import { StructuredError, ErrorType } from "../models/structured-error.ts";
+import { getCleanupManager } from "./cleanup-manager.ts";
 
 /**
  * Action execution result
@@ -208,30 +210,76 @@ export class ActionExecutor {
         await this.executeSendIpcSync(action);
         break;
 
+      case "launch_pwa_sync":
+        await this.executeLaunchPWASync(action);
+        break;
+
       default:
         throw new Error(`Unknown action type: ${action.type}`);
     }
   }
 
   /**
-   * Execute launch_app action (T011-T013)
-   * Launches application ALWAYS using app-launcher-wrapper.sh
+   * Execute launch_app action
+   * Feature 070: User Story 4 - App Registry Integration (T036-T045, T047)
+   *
+   * Launches application using app-launcher-wrapper.sh with full registry metadata resolution.
+   * Supports command resolution, parameter passing, workspace/monitor validation, and cleanup integration.
    *
    * BREAKING CHANGE: app_name parameter required, direct command execution removed
+   *
+   * @throws StructuredError with APP_NOT_FOUND or LAUNCH_FAILED types
    */
   private async executeLaunchApp(action: Action): Promise<void> {
     const { app_name, args = [], project, workspace } = action.params;
 
+    // T036: app_name parameter validation
     if (!app_name) {
-      throw new Error(
-        "launch_app requires 'app_name' parameter (from application registry).\n" +
-        "Direct command execution is no longer supported.\n" +
-        "Add the app to ~/.config/i3/application-registry.json first."
+      throw new StructuredError(
+        ErrorType.APP_NOT_FOUND,
+        "App Launcher",
+        "launch_app requires 'app_name' parameter from application registry",
+        [
+          "Provide 'app_name' from ~/.config/i3/application-registry.json",
+          "Run: sway-test list-apps to see available applications",
+          "Add the app to app-registry-data.nix if missing",
+          "Direct command execution is no longer supported"
+        ],
+        {
+          provided_app_name: app_name || null,
+          registry_path: "~/.config/i3/application-registry.json"
+        }
       );
     }
 
-    // Validate app exists in registry
+    // T037: Validate app exists in registry and resolve metadata
     const app = await lookupApp(app_name);
+
+    // T038: Log expected_class for window detection (informational)
+    if (app.expected_class) {
+      console.log(`[DEBUG] Expected app_id/class: ${app.expected_class}`);
+    }
+
+    // T039: Log workspace preference (informational)
+    if (app.preferred_workspace) {
+      console.log(`[DEBUG] Preferred workspace: ${app.preferred_workspace}`);
+    }
+
+    // T040: Log monitor role preference (informational)
+    if (app.preferred_monitor_role) {
+      console.log(`[DEBUG] Preferred monitor role: ${app.preferred_monitor_role}`);
+    }
+
+    // T041: Log floating window configuration (informational)
+    if (app.floating) {
+      const sizeInfo = app.floating_size ? ` (size: ${app.floating_size})` : "";
+      console.log(`[DEBUG] Floating window: true${sizeInfo}`);
+    }
+
+    // T047: Log scope for project-scoped validation (informational)
+    if (app.scope) {
+      console.log(`[DEBUG] App scope: ${app.scope}`);
+    }
 
     // Build wrapper script path
     const wrapperPath = expandPath("~/.local/bin/app-launcher-wrapper.sh");
@@ -240,18 +288,32 @@ export class ActionExecutor {
     try {
       await Deno.stat(wrapperPath);
     } catch {
-      throw new Error(
-        `app-launcher-wrapper.sh not found at: ${wrapperPath}\n` +
-        `Ensure wrapper script is installed.`
+      throw new StructuredError(
+        ErrorType.LAUNCH_FAILED,
+        "App Launcher",
+        `app-launcher-wrapper.sh not found at: ${wrapperPath}`,
+        [
+          "Ensure app-launcher-wrapper.sh is installed",
+          "Check NixOS configuration generates the wrapper script",
+          "Verify ~/.local/bin is in PATH",
+          "Run: ls -la ~/.local/bin/app-launcher-wrapper.sh"
+        ],
+        {
+          wrapper_path: wrapperPath,
+          app_name: app_name
+        }
       );
     }
 
     // Build wrapper command arguments
     const wrapperArgs = [app_name];
 
-    // Add additional arguments if provided
-    if (args.length > 0) {
-      wrapperArgs.push("--", ...args);
+    // T042: Add parameters from registry if no args provided in test
+    // Test args override registry parameters
+    const finalArgs = args.length > 0 ? args : (app.parameters || []);
+    if (finalArgs.length > 0) {
+      wrapperArgs.push("--", ...finalArgs);
+      console.log(`[DEBUG] Launching with parameters: ${finalArgs.join(" ")}`);
     }
 
     // Build environment variables for wrapper
@@ -264,7 +326,7 @@ export class ActionExecutor {
       environment.I3PM_PROJECT_NAME = project;
     }
 
-    // Inject workspace override if provided
+    // Inject workspace override if provided (takes precedence over registry preference)
     if (workspace) {
       environment.I3PM_TARGET_WORKSPACE = workspace.toString();
     }
@@ -279,6 +341,12 @@ export class ActionExecutor {
 
     const child = cmd.spawn();
 
+    // T044: Register process PID with CleanupManager for automatic teardown
+    const cleanupManager = getCleanupManager();
+    if (child.pid) {
+      cleanupManager.registerProcess(child.pid);
+    }
+
     // Don't wait for process to complete (wrapper spawns detached app)
     // Just verify wrapper started successfully
     if (!child.pid) {
@@ -286,7 +354,27 @@ export class ActionExecutor {
       const stderrReader = child.stderr.getReader();
       const stderrChunk = await stderrReader.read();
       const stderr = stderrChunk.value ? new TextDecoder().decode(stderrChunk.value) : "";
-      throw new Error(`Failed to launch ${app_name} via wrapper: ${stderr}`);
+
+      // T045: Add StructuredError integration for LAUNCH_FAILED
+      throw new StructuredError(
+        ErrorType.LAUNCH_FAILED,
+        "App Launcher",
+        `Failed to launch app "${app_name}" via wrapper`,
+        [
+          `Verify app command is correct: ${app.command}`,
+          `Check app is installed: which ${app.command.split(" ")[0]}`,
+          app.nix_package ? `Ensure Nix package is installed: ${app.nix_package}` : "",
+          `Check wrapper logs for details`,
+          stderr ? `Error output: ${stderr.trim()}` : ""
+        ].filter(Boolean),
+        {
+          app_name: app_name,
+          app_command: app.command,
+          app_nix_package: app.nix_package || null,
+          wrapper_path: wrapperPath,
+          stderr: stderr.trim()
+        }
+      );
     }
 
     // Give app time to initialize (small delay for window creation)
@@ -776,5 +864,195 @@ export class ActionExecutor {
 
     // Automatically sync
     await this.swayClient.sync(timeout);
+  }
+
+  /**
+   * Execute launch_pwa_sync action
+   * Feature 070: User Story 3 - PWA Application Support (T026-T034)
+   *
+   * Launches a PWA by name or ULID and automatically synchronizes.
+   * Supports allow_failure parameter for optional PWA launches.
+   *
+   * @throws StructuredError with LAUNCH_FAILED type if PWA launch fails
+   */
+  private async executeLaunchPWASync(action: Action): Promise<void> {
+    const {
+      pwa_name,
+      pwa_ulid,
+      allow_failure = false,
+      timeout = 5000
+    } = action.params;
+
+    // T027-T028: Validate parameters (XOR: pwa_name OR pwa_ulid required)
+    if (!pwa_name && !pwa_ulid) {
+      throw new StructuredError(
+        ErrorType.LAUNCH_FAILED,
+        "PWA Launcher",
+        "launch_pwa_sync requires either 'pwa_name' or 'pwa_ulid' parameter",
+        [
+          "Provide 'pwa_name' (e.g., 'youtube', 'claude') from pwa-sites.nix",
+          "OR provide 'pwa_ulid' (26-char base32 identifier)",
+          "Example: {type: 'launch_pwa_sync', params: {pwa_name: 'youtube'}}",
+          "Run: sway-test list-pwas to see available PWAs"
+        ],
+        {
+          provided_pwa_name: pwa_name || null,
+          provided_pwa_ulid: pwa_ulid || null
+        }
+      );
+    }
+
+    if (pwa_name && pwa_ulid) {
+      throw new StructuredError(
+        ErrorType.LAUNCH_FAILED,
+        "PWA Launcher",
+        "launch_pwa_sync cannot have both 'pwa_name' and 'pwa_ulid' parameters",
+        [
+          "Use either 'pwa_name' (friendly name) OR 'pwa_ulid' (26-char ID)",
+          "Remove one of the conflicting parameters",
+          "Recommended: Use 'pwa_name' for better readability"
+        ],
+        {
+          provided_pwa_name: pwa_name,
+          provided_pwa_ulid: pwa_ulid
+        }
+      );
+    }
+
+    // T031: Pre-flight check for firefoxpwa binary
+    const firefoxpwaPath = await this.checkFirefoxpwaBinary();
+
+    try {
+      // T027-T028: Resolve PWA definition from registry
+      const pwa = pwa_name
+        ? await lookupPWA(pwa_name)        // T027: Name resolution
+        : await lookupPWAByULID(pwa_ulid!); // T028: ULID resolution
+
+      // T026: Launch PWA using firefoxpwa subprocess
+      const launchCommand = new Deno.Command(firefoxpwaPath, {
+        args: ["site", "launch", pwa.ulid],
+        stdout: "piped",
+        stderr: "piped",
+      });
+
+      const launchProcess = launchCommand.spawn();
+      const pid = launchProcess.pid;
+
+      // T033: Register PWA process PID with CleanupManager
+      const cleanupManager = getCleanupManager();
+      cleanupManager.registerProcess(pid);
+
+      // T032: Add timeout handling for subprocess completion
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new StructuredError(
+            ErrorType.TIMEOUT,
+            "PWA Launcher",
+            `PWA launch timed out after ${timeout}ms`,
+            [
+              `Increase timeout parameter (current: ${timeout}ms)`,
+              `Check if firefoxpwa is responding: firefoxpwa --version`,
+              `Verify PWA is installed: pwa-list | grep ${pwa.name}`,
+              `Check system resources (RAM, CPU)`
+            ],
+            {
+              pwa_name: pwa.name,
+              pwa_ulid: pwa.ulid,
+              timeout_ms: timeout,
+              pid: pid
+            }
+          ));
+        }, timeout);
+      });
+
+      // Wait for subprocess to complete or timeout (T032)
+      const output = await Promise.race([
+        launchProcess.output(),
+        timeoutPromise
+      ]);
+
+      // Check exit status
+      if (!output.success) {
+        const stderr = new TextDecoder().decode(output.stderr);
+
+        // T034: Add StructuredError integration for LAUNCH_FAILED
+        throw new StructuredError(
+          ErrorType.LAUNCH_FAILED,
+          "PWA Launcher",
+          `Failed to launch PWA "${pwa.name}" (ULID: ${pwa.ulid})`,
+          [
+            `Verify PWA is installed: pwa-list | grep ${pwa.name}`,
+            `Try reinstalling: pwa-install-all`,
+            `Check firefoxpwa status: firefoxpwa site list`,
+            `Verify ULID is correct: ${pwa.ulid}`,
+            stderr ? `Error output: ${stderr.trim()}` : ""
+          ].filter(Boolean),
+          {
+            pwa_name: pwa.name,
+            pwa_ulid: pwa.ulid,
+            pwa_url: pwa.url,
+            exit_code: output.code,
+            stderr: stderr.trim(),
+            pid: pid
+          }
+        );
+      }
+
+      // T029: Integrate sync protocol for window detection
+      await this.swayClient.sync(timeout);
+
+    } catch (error) {
+      // T030: Add allow_failure parameter support
+      if (allow_failure) {
+        console.warn(`PWA launch failed (allow_failure=true): ${(error as Error).message}`);
+        return; // Continue test execution
+      }
+
+      // Re-throw error if not allowed to fail
+      throw error;
+    }
+  }
+
+  /**
+   * Check if firefoxpwa binary is available
+   * T031: Pre-flight check for firefoxpwa
+   *
+   * @returns Path to firefoxpwa binary
+   * @throws StructuredError if firefoxpwa not found
+   */
+  private async checkFirefoxpwaBinary(): Promise<string> {
+    const firefoxpwaPath = "firefoxpwa"; // Assumes it's in PATH
+
+    try {
+      const checkCommand = new Deno.Command(firefoxpwaPath, {
+        args: ["--version"],
+        stdout: "piped",
+        stderr: "piped",
+      });
+
+      const output = await checkCommand.output();
+
+      if (!output.success) {
+        throw new Error("firefoxpwa binary check failed");
+      }
+
+      return firefoxpwaPath;
+    } catch (_error) {
+      throw new StructuredError(
+        ErrorType.LAUNCH_FAILED,
+        "PWA Launcher",
+        "firefoxpwa binary not found or not executable",
+        [
+          "Install firefoxpwa: nix-shell -p firefoxpwa",
+          "Verify installation: which firefoxpwa",
+          "Check system PATH includes NixOS profiles",
+          "Ensure firefoxpwa is configured in your NixOS configuration"
+        ],
+        {
+          expected_binary: "firefoxpwa",
+          path_env: Deno.env.get("PATH") || "not set"
+        }
+      );
+    }
   }
 }

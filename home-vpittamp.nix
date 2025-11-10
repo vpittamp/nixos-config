@@ -9,6 +9,7 @@
     # Sway (Wayland) for M1 MacBook Pro (Feature 045)
     ./home-modules/desktop/sway.nix  # Sway window manager configuration
     ./home-modules/desktop/swaybar.nix  # Swaybar with event-driven status
+    ./home-modules/desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
     ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
 
@@ -72,4 +73,6 @@
     enableFileWatcher = true;  # Auto-reload on file changes
     debounceMs = 500;  # Wait 500ms after last change before reloading
   };
+
+  programs.eww-workspace-bar.enable = true;
 }

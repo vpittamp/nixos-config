@@ -1,0 +1,47 @@
+{
+  "name": "Feature 070: App launch by registry name",
+  "description": "Test app launch using app_name parameter (US4: App Registry Integration). Validates that registry metadata resolution works correctly (command, workspace, monitor role, scope).",
+  "tags": [
+    "integration",
+    "feature-070",
+    "us4-registry-integration",
+    "app-registry",
+    "sync"
+  ],
+  "priority": "P2",
+  "timeout": 15000,
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"Alacritty\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": [
+          {
+            "app_id": "Alacritty"
+          }
+        ]
+      }
+    ],
+    "focusedWorkspace": 1,
+    "assertions": [
+      {
+        "path": "workspaces[?num==1].windows[0].app_id",
+        "expected": "Alacritty",
+        "operator": "equals"
+      }
+    ]
+  }
+}

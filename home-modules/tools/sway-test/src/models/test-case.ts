@@ -28,10 +28,13 @@ export type ActionType =
  * Action parameters based on action type
  */
 export interface ActionParams {
-  // launch_app params (BREAKING CHANGE: app_name required, command deprecated)
-  app_name?: string;       // REQUIRED: App name from registry
-  command?: string;        // DEPRECATED: Use app_name instead
-  args?: string[];
+  // launch_app / launch_app_sync params
+  // Feature 070: User Story 4 - App Registry Integration (T046)
+  // BREAKING CHANGE: app_name required, command deprecated
+  app_name?: string;       // App name from registry (e.g., "firefox", "code", "alacritty")
+                          // Resolves: command, expected_class, workspace, monitor_role, scope, floating
+  command?: string;        // DEPRECATED: Direct command execution no longer supported. Use app_name instead.
+  args?: string[];         // Optional args (overrides registry parameters field if provided)
   env?: Record<string, string>;
   project?: string;        // Optional project context (sets I3PM_PROJECT_NAME)
 

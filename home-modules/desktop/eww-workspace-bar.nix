@@ -19,16 +19,17 @@ let
       lib.replaceStrings [" " ":" "/" "_" "-"] ["-" "-" "-" "-" "-"] name
     );
 
+  sanitizeVar = name:
+    lib.toLower (
+      lib.replaceStrings [" " ":" "/" "-" "."] ["_" "_" "_" "_" "_"] name
+    );
+
   pythonEnv = pkgs.python311.withPackages (ps: with ps; [ i3ipc pyxdg ]);
 
   workspacePanelScript = ../tools/sway-workspace-panel/workspace_panel.py;
 
-  panelArgs =
-    if workspaceOutputs == [] then ""
-    else lib.escapeShellArgs (["--outputs"] ++ map (output: output.name) workspaceOutputs);
-
   workspacePanelBin = pkgs.writeShellScriptBin "sway-workspace-panel" ''
-    exec ${pythonEnv}/bin/python -u ${workspacePanelScript} ${panelArgs} "$@"
+    exec ${pythonEnv}/bin/python -u ${workspacePanelScript} "$@"
   '';
 
   workspacePanelCommand = "${workspacePanelBin}/bin/sway-workspace-panel";
@@ -36,9 +37,21 @@ let
   ewwConfigDir = "eww-workspace-bar";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
 
+  markupVar = output: "workspace_rows_" + sanitizeVar output.name;
+
+  workspaceMarkupDefs = lib.concatStringsSep "\n\n" (map (output:
+    let
+      varName = markupVar output;
+    in
+      ''
+(deflisten ${varName} :initial "" "${workspacePanelCommand} --format yuck --output ${output.name}")
+      ''
+  ) workspaceOutputs);
+
   windowBlocks = lib.concatStringsSep "\n\n" (map (output:
     let
       windowId = "workspace-bar-" + sanitize output.name;
+      varName = markupVar output;
     in
       ''
 (defwindow ${windowId}
@@ -52,50 +65,49 @@ let
                         :width "100%"
                         :height "44px")
   :reserve (struts :side "bottom" :distance "48px")
-  (workspace-strip :output_key "${output.name}" :output_label "${output.label}")
+  (workspace-strip :output_label "${output.label}" :markup_var ${varName})
 )
       ''
   ) workspaceOutputs);
 
   ewwYuck = ''
-(deflisten workspace_state :initial "{\"workspaces\":{}}" "${workspacePanelCommand}")
+${workspaceMarkupDefs}
 
-(defwidget workspace-button [ws]
+(defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent empty]
   (button
     :class {
       "workspace-button "
-      + (ws.focused ? "focused " : "")
-      + ((ws.visible && !ws.focused) ? "visible " : "")
-      + (ws.urgent ? "urgent " : "")
-      + (ws.iconPath != "" ? "has-icon " : "no-icon ")
-      + (ws.isEmpty ? "empty" : "populated")
+      + (focused ? "focused " : "")
+      + ((visible && !focused) ? "visible " : "")
+      + (urgent ? "urgent " : "")
+      + ((icon_path != "") ? "has-icon " : "no-icon ")
+      + (empty ? "empty" : "populated")
     }
     :cursor "pointer"
-    :tooltip { ws.appName != "" ? (ws.numberLabel + " · " + ws.appName) : ws.name }
+    :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
     :onclick {
       "swaymsg workspace \""
-      + replace(ws.name, "\"", "\\\"")
+      + replace(workspace_name, "\"", "\\\"")
       + "\""
     }
     (box :class "workspace-pill"
       (box :class "workspace-icon-stack"
         (image :class "workspace-icon-image"
-               :path ws.iconPath
+               :path icon_path
                :image-width "20px"
                :image-height "20px")
-        (label :class "workspace-icon-fallback" :text ws.iconFallback))
-      (label :class "workspace-number" :text ws.numberLabel)))
+        (label :class "workspace-icon-fallback" :text icon_fallback))
+      (label :class "workspace-number" :text number_label)))
 )
 
-(defwidget workspace-strip [output_key output_label]
+(defwidget workspace-strip [output_label markup_var]
   (box :class "workspace-bar"
     (label :class "workspace-output" :text output_label)
     (box :class "workspace-strip"
          :orientation "h"
          :halign "center"
           :spacing 6
-      (for ws in (workspace_state.workspaces[output_key] ?: [])
-        (workspace-button :ws ws)))))
+      (literal :content markup_var))))
 
 ${windowBlocks}
 '';
@@ -121,21 +133,15 @@ $inactive: rgba(205, 214, 244, 0.45);
   border-radius: 14px;
   padding: 6px 14px;
   margin: 8px 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
 }
 
 .workspace-output {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   font-size: 0.70rem;
   color: $inactive;
 }
 
 .workspace-strip {
-  display: flex;
-  gap: 8px;
+  margin-left: 4px;
 }
 
 .workspace-button {
@@ -173,18 +179,13 @@ $inactive: rgba(205, 214, 244, 0.45);
 }
 
 .workspace-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin-right: 8px;
 }
 
 .workspace-icon-stack {
-  position: relative;
   width: 20px;
   height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  text-align: center;
 }
 
 .workspace-icon-image {
@@ -192,11 +193,11 @@ $inactive: rgba(205, 214, 244, 0.45);
 }
 
 .workspace-button.no-icon .workspace-icon-image {
-  display: none;
+  opacity: 0;
 }
 
 .workspace-button.has-icon .workspace-icon-fallback {
-  display: none;
+  opacity: 0;
 }
 
 .workspace-icon-fallback {

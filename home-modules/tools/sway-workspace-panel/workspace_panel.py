@@ -140,8 +140,10 @@ def build_workspace_payload(
         fallback_symbol_source = app_name or (leaf.name if leaf else "") or reply.name
         fallback_symbol = (fallback_symbol_source or "·").strip()[:1].upper() or "·"
 
+        workspace_id = workspace_nodes.get(reply.name).id if reply.name in workspace_nodes else None
+
         workspace_data = {
-            "id": reply.id,
+            "id": workspace_id,
             "name": reply.name,
             "num": reply.num,
             "numberLabel": str(reply.num) if reply.num >= 0 else reply.name,
@@ -172,19 +174,73 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         "--outputs",
         nargs="*",
         default=None,
-        help="Optional ordered list of outputs to include, even when empty",
+        help="Explicit list of outputs to include in JSON payload (default: discover from Sway)",
+    )
+    parser.add_argument(
+        "--output",
+        dest="single_output",
+        help="Render a single output (used with --format=yuck)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["json", "yuck"],
+        default="json",
+        help="Output format (json emits structured data, yuck streams widget snippets)",
     )
     args = parser.parse_args(argv)
 
+    if args.single_output and args.outputs:
+        parser.error("--output and --outputs cannot be combined")
+
+    if args.format == "yuck" and not args.single_output:
+        parser.error("--format=yuck requires --output")
+
     icon_index = DesktopIconIndex()
     conn = i3ipc.Connection()
+
+    managed_outputs: Optional[List[str]]
+    if args.single_output is not None:
+        managed_outputs = [args.single_output]
+    else:
+        managed_outputs = args.outputs
 
     last_payload = ""
 
     def emit(_: Any = None) -> None:
         nonlocal last_payload
-        payload = build_workspace_payload(conn, icon_index, managed_outputs=args.outputs)
-        serialized = json.dumps(payload, separators=(",", ":"))
+        payload = build_workspace_payload(conn, icon_index, managed_outputs=managed_outputs)
+        if args.format == "json":
+            serialized = json.dumps(payload, separators=(",", ":"))
+        else:
+            output_key = args.single_output  # validated earlier
+            rows = payload["workspaces"].get(output_key, [])
+
+            def format_value(value: Any) -> str:
+                if isinstance(value, bool):
+                    return "true" if value else "false"
+                return json.dumps(value, separators=(",", ":"))
+
+            parts = []
+            for row in rows:
+                attrs = [
+                    ("number_label", format_value(row["numberLabel"])),
+                    ("workspace_name", format_value(row["name"])),
+                    ("app_name", format_value(row["appName"])),
+                    ("icon_path", format_value(row["iconPath"])),
+                    ("icon_fallback", format_value(row["iconFallback"])),
+                    ("workspace_id", format_value(row["id"] or 0)),
+                    ("focused", format_value(row["focused"])),
+                    ("visible", format_value(row["visible"])),
+                    ("urgent", format_value(row["urgent"])),
+                    ("empty", format_value(row["isEmpty"])),
+                ]
+                attr_string = " ".join(
+                    f":{key} {value}"
+                    for key, value in attrs
+                )
+                parts.append(f"(workspace-button {attr_string})")
+
+            serialized = "".join(parts)
         if serialized != last_payload:
             print(serialized, flush=True)
             last_payload = serialized

@@ -1,0 +1,36 @@
+{
+  "name": "Feature 070: Invalid ULID format validation",
+  "description": "Test StructuredError format when ULID format is invalid (US1: Clear Error Diagnostics). Validates that error message explains ULID requirements (26 chars, base32 alphabet).",
+  "tags": [
+    "integration",
+    "feature-070",
+    "us1-error-diagnostics",
+    "error-handling",
+    "validation",
+    "negative-test"
+  ],
+  "priority": "P1",
+  "timeout": 10000,
+  "actions": [
+    {
+      "type": "launch_pwa_sync",
+      "params": {
+        "pwa_ulid": "INVALID-ULID-TOO-SHORT"
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [],
+    "windowCount": 0
+  },
+  "config": {
+    "expectFailure": true,
+    "expectedErrorType": "INVALID_ULID",
+    "expectedErrorComponent": "App Registry Reader",
+    "expectedRemediationKeywords": [
+      "26 characters",
+      "base32 alphabet",
+      "0-9, A-Z excluding I, L, O, U"
+    ]
+  }
+}

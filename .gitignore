@@ -1,58 +1,120 @@
-# NixOS Configuration Repository
+# NixOS Configuration Repository - Git Ignore Patterns
+# Feature 070 Implementation
 
-# Build outputs
+# =============================================================================
+# Nix Build Artifacts
+# =============================================================================
 result
 result-*
+*.drv
+/nix/store
 
-# Editor temporary files
+# =============================================================================
+# TypeScript/JavaScript/Deno (sway-test framework)
+# =============================================================================
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+*.lcov
+.cache/
+.parcel-cache/
+
+# Deno specific
+.deno/
+deno.lock
+
+# =============================================================================
+# Python (i3pm daemon, monitoring tools)
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =============================================================================
+# Editor & IDE
+# =============================================================================
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
-.*.swp
-.*.swo
-
-# IDE directories
-.vscode/
-.idea/
-*.code-workspace
-
-# OS-specific files
 .DS_Store
 Thumbs.db
 
-# Temporary files
+# =============================================================================
+# Runtime & Temporary Files
+# =============================================================================
 *.tmp
-*.bak
-.#*
+*.temp
+*.pid
+*.sock
+*.lock
+!flake.lock
 
-# Python caches (for i3pm daemon)
-__pycache__/
-*.pyc
-*.pyo
-*.py[cod]
-.pytest_cache/
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Compiled binaries and build artifacts
-dist/
-*.egg-info/
-build/
-*.o
-*.so
-*.a
-*.dylib
+# =============================================================================
+# Test Coverage & Reports
+# =============================================================================
+coverage/
+.nyc_output/
+*.lcov
+htmlcov/
+.coverage
+.coverage.*
 
-# Local development/testing
-.dev/
-.test/
-*.local
+# =============================================================================
+# Documentation Build
+# =============================================================================
+docs/_build/
+docs/.doctrees/
+site/
 
-# Secrets and sensitive data
-*.key
+# =============================================================================
+# Secrets & Credentials
+# =============================================================================
 *.pem
+*.key
+*.crt
+*.p12
+credentials.json
 secrets/
-.env
-.env.*
+.secrets/
+*.secret.*
 
-# Nix specific
-.direnv/
-.envrc
+# =============================================================================
+# Project Specific
+# =============================================================================
+# Rebuild logs (user-generated)
+/tmp/rebuild*.log
+
+# Local configuration overrides
+local.nix
+*-local.nix

@@ -15,6 +15,7 @@
     # sway-easyfocus now provided by home-manager upstream
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
+    ./desktop/eww-workspace-bar.nix  # SVG workspace bar replacing bottom swaybar
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
@@ -81,6 +82,8 @@
     enable = true;
     # Uses default Catppuccin Mocha theme and standard update intervals
   };
+
+  programs.eww-workspace-bar.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

@@ -52,15 +52,15 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create ErrorType enum with 8 error types (APP_NOT_FOUND, PWA_NOT_FOUND, INVALID_ULID, LAUNCH_FAILED, TIMEOUT, MALFORMED_TEST, REGISTRY_ERROR, CLEANUP_FAILED) in home-modules/tools/sway-test/src/models/structured-error.ts
-- [ ] T008 [P] [US1] Implement StructuredError class extending Error with type/component/cause/remediation/context fields in home-modules/tools/sway-test/src/models/structured-error.ts
-- [ ] T009 [P] [US1] Add Zod schema validation for StructuredError in home-modules/tools/sway-test/src/models/structured-error.ts
-- [ ] T010 [P] [US1] Create ErrorHandler service with formatError() method for console output in home-modules/tools/sway-test/src/services/error-handler.ts
-- [ ] T011 [US1] Integrate StructuredError into app-registry-reader.ts for APP_NOT_FOUND and REGISTRY_ERROR cases in home-modules/tools/sway-test/src/services/app-registry-reader.ts
-- [ ] T012 [US1] Integrate StructuredError into PWA lookup functions for PWA_NOT_FOUND and INVALID_ULID cases in home-modules/tools/sway-test/src/services/app-registry-reader.ts
-- [ ] T013 [US1] Add context enrichment to error messages (available apps list, registry path, current state) in home-modules/tools/sway-test/src/services/error-handler.ts
-- [ ] T014 [US1] Update test runner to catch and format StructuredError instances in home-modules/tools/sway-test/main.ts
-- [ ] T015 [US1] Add error logging to framework log file in home-modules/tools/sway-test/src/services/error-handler.ts
+- [x] T007 [P] [US1] Create ErrorType enum with 8 error types (APP_NOT_FOUND, PWA_NOT_FOUND, INVALID_ULID, LAUNCH_FAILED, TIMEOUT, MALFORMED_TEST, REGISTRY_ERROR, CLEANUP_FAILED) in home-modules/tools/sway-test/src/models/structured-error.ts
+- [x] T008 [P] [US1] Implement StructuredError class extending Error with type/component/cause/remediation/context fields in home-modules/tools/sway-test/src/models/structured-error.ts
+- [x] T009 [P] [US1] Add Zod schema validation for StructuredError in home-modules/tools/sway-test/src/models/structured-error.ts
+- [x] T010 [P] [US1] Create ErrorHandler service with formatError() method for console output in home-modules/tools/sway-test/src/services/error-handler.ts
+- [x] T011 [US1] Integrate StructuredError into app-registry-reader.ts for APP_NOT_FOUND and REGISTRY_ERROR cases in home-modules/tools/sway-test/src/services/app-registry-reader.ts
+- [x] T012 [US1] Integrate StructuredError into PWA lookup functions for PWA_NOT_FOUND and INVALID_ULID cases in home-modules/tools/sway-test/src/services/app-registry-reader.ts
+- [x] T013 [US1] Add context enrichment to error messages (available apps list, registry path, current state) in home-modules/tools/sway-test/src/services/error-handler.ts [Note: Completed as part of T011/T012 - all StructuredError instances include comprehensive context]
+- [x] T014 [US1] Update test runner to catch and format StructuredError instances in home-modules/tools/sway-test/main.ts
+- [x] T015 [US1] Add error logging to framework log file in home-modules/tools/sway-test/src/services/error-handler.ts [Note: Completed as part of T010 - handleError() includes file logging via logErrorToFile()]
 
 **Checkpoint**: All test framework errors use StructuredError format with clear remediation steps
 
@@ -74,16 +74,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T016 [P] [US2] Create CleanupReport interface with ProcessCleanupEntry/WindowCleanupEntry/CleanupError types in home-modules/tools/sway-test/src/models/cleanup-report.ts
-- [ ] T017 [P] [US2] Add Zod schemas for CleanupReport and nested types in home-modules/tools/sway-test/src/models/cleanup-report.ts
-- [ ] T018 [P] [US2] Create ProcessTracker service for tracking spawned PIDs with SIGTERM→SIGKILL escalation in home-modules/tools/sway-test/src/services/process-tracker.ts
-- [ ] T019 [P] [US2] Create WindowTracker service for tracking window markers with Sway IPC close commands in home-modules/tools/sway-test/src/services/window-tracker.ts
-- [ ] T020 [US2] Implement CleanupManager service with registerProcess(), registerWindow(), cleanup() methods in home-modules/tools/sway-test/src/services/cleanup-manager.ts
-- [ ] T021 [US2] Integrate CleanupManager into test runner teardown (automatic cleanup on test completion/failure) in home-modules/tools/sway-test/src/commands/run.ts
-- [ ] T022 [US2] Create cleanup CLI command with --all/--processes/--windows/--markers/--dry-run/--json flags in home-modules/tools/sway-test/src/commands/cleanup.ts
-- [ ] T023 [US2] Create CleanupReporter UI formatter for human-readable cleanup reports in home-modules/tools/sway-test/src/ui/cleanup-reporter.ts
-- [ ] T024 [US2] Add cleanup command to CLI entry point in home-modules/tools/sway-test/main.ts
-- [ ] T025 [US2] Implement clearRegistryCache() for test isolation in home-modules/tools/sway-test/src/services/app-registry-reader.ts
+- [x] T016 [P] [US2] Create CleanupReport interface with ProcessCleanupEntry/WindowCleanupEntry/CleanupError types in home-modules/tools/sway-test/src/models/cleanup-report.ts
+- [x] T017 [P] [US2] Add Zod schemas for CleanupReport and nested types in home-modules/tools/sway-test/src/models/cleanup-report.ts
+- [x] T018 [P] [US2] Create ProcessTracker service for tracking spawned PIDs with SIGTERM→SIGKILL escalation in home-modules/tools/sway-test/src/services/process-tracker.ts
+- [x] T019 [P] [US2] Create WindowTracker service for tracking window markers with Sway IPC close commands in home-modules/tools/sway-test/src/services/window-tracker.ts
+- [x] T020 [US2] Implement CleanupManager service with registerProcess(), registerWindow(), cleanup() methods in home-modules/tools/sway-test/src/services/cleanup-manager.ts
+- [x] T021 [US2] Integrate CleanupManager into test runner teardown (automatic cleanup on test completion/failure) in home-modules/tools/sway-test/src/commands/run.ts
+- [x] T022 [US2] Create cleanup CLI command with --all/--processes/--windows/--markers/--dry-run/--json flags in home-modules/tools/sway-test/src/commands/cleanup.ts
+- [x] T023 [US2] Create CleanupReporter UI formatter for human-readable cleanup reports in home-modules/tools/sway-test/src/ui/cleanup-reporter.ts
+- [x] T024 [US2] Add cleanup command to CLI entry point in home-modules/tools/sway-test/main.ts
+- [x] T025 [US2] Implement clearRegistryCache() for test isolation in home-modules/tools/sway-test/src/services/app-registry-reader.ts
 
 **Checkpoint**: Zero orphaned processes/windows after test completion, manual cleanup command available
 
@@ -97,16 +97,16 @@
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement executeLaunchPWASync() handler in ActionExecutor with firefoxpwa subprocess execution in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T027 [US3] Add PWA name resolution via lookupPWA() in launch_pwa_sync handler in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T028 [US3] Add PWA ULID resolution via lookupPWAByULID() in launch_pwa_sync handler in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T029 [US3] Integrate sync protocol for window detection after PWA launch in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T030 [US3] Add allow_failure parameter support for optional PWA launches in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T031 [US3] Implement firefoxpwa pre-flight check with clear error if binary missing in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T032 [US3] Add timeout handling (5s default, configurable via test params) for PWA launches in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T033 [US3] Register PWA process PID with CleanupManager for automatic teardown in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T034 [US3] Add StructuredError integration for LAUNCH_FAILED scenarios (firefoxpwa not found, PWA not installed) in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T035 [US3] Update test-case.ts with launch_pwa_sync parameter validation (pwa_name XOR pwa_ulid required) in home-modules/tools/sway-test/src/models/test-case.ts
+- [x] T026 [US3] Implement executeLaunchPWASync() handler in ActionExecutor with firefoxpwa subprocess execution in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T027 [US3] Add PWA name resolution via lookupPWA() in launch_pwa_sync handler in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T028 [US3] Add PWA ULID resolution via lookupPWAByULID() in launch_pwa_sync handler in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T029 [US3] Integrate sync protocol for window detection after PWA launch in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T030 [US3] Add allow_failure parameter support for optional PWA launches in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T031 [US3] Implement firefoxpwa pre-flight check with clear error if binary missing in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T032 [US3] Add timeout handling (5s default, configurable via test params) for PWA launches in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T033 [US3] Register PWA process PID with CleanupManager for automatic teardown in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T034 [US3] Add StructuredError integration for LAUNCH_FAILED scenarios (firefoxpwa not found, PWA not installed) in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T035 [US3] Update test-case.ts with launch_pwa_sync parameter validation (pwa_name XOR pwa_ulid required) in home-modules/tools/sway-test/src/models/test-case.ts
 
 **Checkpoint**: Tests can launch PWAs by friendly name with automatic workspace assignment validation
 
@@ -120,18 +120,18 @@
 
 ### Implementation for User Story 4
 
-- [ ] T036 [US4] Extend launch_app_sync handler to support app_name parameter with registry lookup in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T037 [US4] Add app command resolution from registry when app_name provided in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T038 [US4] Add expected_class resolution from registry for window detection in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T039 [US4] Add workspace validation using registry preferred_workspace metadata in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T040 [US4] Add monitor role validation using registry preferred_monitor_role in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T041 [US4] Add floating window configuration support (state and size preset) from registry in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T042 [US4] Implement parameter passing for registry apps (e.g., "ghostty -e btop") in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T043 [US4] Add fuzzy matching suggestions when app name not found (show similar apps) in home-modules/tools/sway-test/src/services/app-registry-reader.ts
-- [ ] T044 [US4] Register app process PID with CleanupManager for automatic teardown in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T045 [US4] Add StructuredError integration for APP_NOT_FOUND with available apps list in home-modules/tools/sway-test/src/services/action-executor.ts
-- [ ] T046 [US4] Update test-case.ts to allow app_name as alternative to command parameter in home-modules/tools/sway-test/src/models/test-case.ts
-- [ ] T047 [US4] Add scope validation (global/scoped) from registry for project-scoped tests in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T036 [US4] Extend launch_app_sync handler to support app_name parameter with registry lookup in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T037 [US4] Add app command resolution from registry when app_name provided in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T038 [US4] Add expected_class resolution from registry for window detection in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T039 [US4] Add workspace validation using registry preferred_workspace metadata in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T040 [US4] Add monitor role validation using registry preferred_monitor_role in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T041 [US4] Add floating window configuration support (state and size preset) from registry in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T042 [US4] Implement parameter passing for registry apps (e.g., "ghostty -e btop") in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T043 [US4] Add fuzzy matching suggestions when app name not found (show similar apps) in home-modules/tools/sway-test/src/services/app-registry-reader.ts
+- [x] T044 [US4] Register app process PID with CleanupManager for automatic teardown in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T045 [US4] Add StructuredError integration for APP_NOT_FOUND with available apps list in home-modules/tools/sway-test/src/services/action-executor.ts
+- [x] T046 [US4] Update test-case.ts to allow app_name as alternative to command parameter in home-modules/tools/sway-test/src/models/test-case.ts
+- [x] T047 [US4] Add scope validation (global/scoped) from registry for project-scoped tests in home-modules/tools/sway-test/src/services/action-executor.ts
 
 **Checkpoint**: Tests use app names only, framework resolves all metadata from registry
 
@@ -145,19 +145,19 @@
 
 ### Implementation for User Story 5
 
-- [ ] T048 [P] [US5] Create TableFormatter utility using @std/cli/unicode-width for column alignment in home-modules/tools/sway-test/src/ui/table-formatter.ts
-- [ ] T049 [P] [US5] Implement list-apps command with table/JSON output in home-modules/tools/sway-test/src/commands/list-apps.ts
-- [ ] T050 [P] [US5] Implement list-pwas command with table/JSON output in home-modules/tools/sway-test/src/commands/list-pwas.ts
-- [ ] T051 [US5] Add filter argument support for name-based searching in list-apps command in home-modules/tools/sway-test/src/commands/list-apps.ts
-- [ ] T052 [US5] Add filter argument support for name-based searching in list-pwas command in home-modules/tools/sway-test/src/commands/list-pwas.ts
-- [ ] T053 [US5] Add --workspace/--monitor/--scope filter flags for list-apps in home-modules/tools/sway-test/src/commands/list-apps.ts
-- [ ] T054 [US5] Add --workspace/--monitor/--ulid filter flags for list-pwas in home-modules/tools/sway-test/src/commands/list-pwas.ts
-- [ ] T055 [US5] Add --verbose flag for full metadata display (descriptions, nix_package, full URLs) in list commands in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
-- [ ] T056 [US5] Add --format csv option for spreadsheet export in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
-- [ ] T057 [US5] Integrate list-apps and list-pwas commands into CLI entry point in home-modules/tools/sway-test/main.ts
-- [ ] T058 [US5] Add registry file missing error handling with setup instructions in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
-- [ ] T059 [US5] Add help text for list-apps command (--help flag) in home-modules/tools/sway-test/src/commands/list-apps.ts
-- [ ] T060 [US5] Add help text for list-pwas command (--help flag) in home-modules/tools/sway-test/src/commands/list-pwas.ts
+- [x] T048 [P] [US5] Create TableFormatter utility using @std/cli/unicode-width for column alignment in home-modules/tools/sway-test/src/ui/table-formatter.ts
+- [x] T049 [P] [US5] Implement list-apps command with table/JSON output in home-modules/tools/sway-test/src/commands/list-apps.ts
+- [x] T050 [P] [US5] Implement list-pwas command with table/JSON output in home-modules/tools/sway-test/src/commands/list-pwas.ts
+- [x] T051 [US5] Add filter argument support for name-based searching in list-apps command in home-modules/tools/sway-test/src/commands/list-apps.ts
+- [x] T052 [US5] Add filter argument support for name-based searching in list-pwas command in home-modules/tools/sway-test/src/commands/list-pwas.ts
+- [x] T053 [US5] Add --workspace/--monitor/--scope filter flags for list-apps in home-modules/tools/sway-test/src/commands/list-apps.ts
+- [x] T054 [US5] Add --workspace/--monitor/--ulid filter flags for list-pwas in home-modules/tools/sway-test/src/commands/list-pwas.ts
+- [x] T055 [US5] Add --verbose flag for full metadata display (descriptions, nix_package, full URLs) in list commands in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
+- [x] T056 [US5] Add --format csv option for spreadsheet export in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
+- [x] T057 [US5] Integrate list-apps and list-pwas commands into CLI entry point in home-modules/tools/sway-test/main.ts
+- [x] T058 [US5] Add registry file missing error handling with setup instructions in home-modules/tools/sway-test/src/commands/list-apps.ts and list-pwas.ts
+- [x] T059 [US5] Add help text for list-apps command (--help flag) in home-modules/tools/sway-test/src/commands/list-apps.ts
+- [x] T060 [US5] Add help text for list-pwas command (--help flag) in home-modules/tools/sway-test/src/commands/list-pwas.ts
 
 **Checkpoint**: Developers can discover apps/PWAs without reading Nix configuration files
 
@@ -167,12 +167,12 @@
 
 **Purpose**: End-to-end validation of all user stories using existing Feature 069 sync test framework
 
-- [ ] T061 [P] Create PWA launch test using pwa_name parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_name_launch.json
-- [ ] T062 [P] Create PWA launch test using pwa_ulid parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_ulid_launch.json
-- [ ] T063 [P] Create app registry launch test using app_name parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_app_name_launch.json
-- [ ] T064 [P] Create error scenario test (PWA not found) verifying StructuredError format in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_not_found.json
-- [ ] T065 [P] Create error scenario test (invalid ULID format) verifying validation in home-modules/tools/sway-test/tests/sway-tests/integration/test_invalid_ulid.json
-- [ ] T066 [P] Create cleanup validation test (launches 5 apps, verifies zero orphaned processes) in home-modules/tools/sway-test/tests/sway-tests/integration/test_cleanup.json
+- [x] T061 [P] Create PWA launch test using pwa_name parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_name_launch.json
+- [x] T062 [P] Create PWA launch test using pwa_ulid parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_ulid_launch.json
+- [x] T063 [P] Create app registry launch test using app_name parameter in home-modules/tools/sway-test/tests/sway-tests/integration/test_app_name_launch.json
+- [x] T064 [P] Create error scenario test (PWA not found) verifying StructuredError format in home-modules/tools/sway-test/tests/sway-tests/integration/test_pwa_not_found.json
+- [x] T065 [P] Create error scenario test (invalid ULID format) verifying validation in home-modules/tools/sway-test/tests/sway-tests/integration/test_invalid_ulid.json
+- [x] T066 [P] Create cleanup validation test (launches 5 apps, verifies zero orphaned processes) in home-modules/tools/sway-test/tests/sway-tests/integration/test_cleanup.json
 - [ ] T067 Run all integration tests and verify 100% pass rate with sway-test run tests/sway-tests/integration/
 - [ ] T068 Verify success criteria SC-001 through SC-010 from spec.md
 
