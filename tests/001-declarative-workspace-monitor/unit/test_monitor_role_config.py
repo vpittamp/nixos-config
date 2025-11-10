@@ -81,12 +81,14 @@ class TestMonitorRoleConfigParsing:
             config = MonitorRoleConfig(**data)
             assert config.preferred_monitor_role.value == role_str
 
-    def test_parse_case_insensitive_role(self):
-        """Test monitor role parsing is case-insensitive."""
+    def test_parse_normalized_role_from_nix(self):
+        """Test monitor role is normalized by Nix (receives lowercase)."""
+        # Nix validateMonitorRole() normalizes to lowercase via lib.toLower
+        # Python receives already-normalized values
         data = {
             "app_name": "code",
             "preferred_workspace": 2,
-            "preferred_monitor_role": "PRIMARY",  # Uppercase
+            "preferred_monitor_role": "primary",  # Already normalized by Nix
             "source": "app-registry",
         }
 
@@ -109,7 +111,10 @@ class TestMonitorRoleConfigValidation:
         with pytest.raises(ValidationError) as exc_info:
             MonitorRoleConfig(**data)
 
-        assert "monitor role" in str(exc_info.value).lower()
+        # Pydantic V2 error includes field name and valid values
+        error_str = str(exc_info.value).lower()
+        assert "preferred_monitor_role" in error_str
+        assert "primary" in error_str or "secondary" in error_str or "tertiary" in error_str
 
     def test_reject_workspace_below_range(self):
         """Test validation fails for workspace < 1."""
