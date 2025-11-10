@@ -6,8 +6,15 @@
 
 /**
  * Framework version (single source of truth)
+ *
+ * Version 1.1.0 includes Feature 070 improvements:
+ * - Clear error diagnostics with structured errors
+ * - Graceful cleanup commands for processes/windows
+ * - First-class PWA support (launch_pwa_sync)
+ * - Registry integration (app_name resolution)
+ * - CLI discovery commands (list-apps, list-pwas)
  */
-export const VERSION = "1.0.0";
+export const VERSION = "1.1.0";
 
 /**
  * Default timeouts (milliseconds)

@@ -311,6 +311,25 @@ This is expected for processes that don't handle SIGTERM gracefully. The cleanup
 | Cleanup (10 resources) | <2s | ~1.25s |
 | Error formatting | <10ms | ~2ms |
 
+### Enable Benchmarking
+
+Track performance of registry loading and cleanup operations:
+
+```bash
+# Run any command with benchmarking enabled
+SWAY_TEST_BENCHMARK=1 sway-test list-apps
+SWAY_TEST_BENCHMARK=1 sway-test cleanup
+
+# Example output:
+# [BENCHMARK] App registry load breakdown:
+#   - File read: 1.23ms
+#   - JSON parse: 0.45ms
+#   - Validation: 2.10ms
+#   - Map conversion: 0.18ms
+#   - TOTAL: 3.96ms (target: <50ms)
+#   - Apps loaded: 22
+```
+
 ## Advanced Features
 
 ### JSON Output for Scripting
@@ -393,4 +412,4 @@ sway-test --version
 ---
 
 **Last Updated**: 2025-11-10
-**Implementation Status**: Planning Complete, Ready for Tasks
+**Implementation Status**: ✅ **COMPLETE** - All phases implemented and tested

@@ -39,21 +39,36 @@ export class CleanupManager {
 
   /**
    * Perform cleanup of all tracked resources
+   *
+   * Performance Target: <2s for 10 resources (processes + windows)
+   *
    * @returns Cleanup report with detailed results
    */
   async cleanup(): Promise<CleanupReport> {
     const startTime = new Date().toISOString();
-    const startMs = Date.now();
+    const startMs = performance.now();
     const errors: CleanupError[] = [];
+
+    // Track resource counts before cleanup
+    const initialState = this.getState();
+    const totalResources = initialState.processes + initialState.windows;
 
     // Cleanup processes and windows concurrently
     let processEntries, windowEntries;
+    let processTime = 0;
+    let windowTime = 0;
 
     try {
+      const processStart = performance.now();
+      const windowStart = performance.now();
+
       [processEntries, windowEntries] = await Promise.all([
         this.processTracker.terminateAll(),
         this.windowTracker.closeAll(),
       ]);
+
+      processTime = performance.now() - processStart;
+      windowTime = performance.now() - windowStart;
     } catch (error) {
       errors.push({
         component: "CleanupManager",
@@ -61,18 +76,23 @@ export class CleanupManager {
         context: { error_type: error instanceof Error ? error.name : typeof error },
       });
 
-      // Fallback to sequential cleanup
+      // Fallback to sequential cleanup with timing
+      const fallbackProcessStart = performance.now();
       processEntries = await this.processTracker.terminateAll().catch(() => []);
+      processTime = performance.now() - fallbackProcessStart;
+
+      const fallbackWindowStart = performance.now();
       windowEntries = await this.windowTracker.closeAll().catch(() => []);
+      windowTime = performance.now() - fallbackWindowStart;
     }
 
     const endTime = new Date().toISOString();
-    const totalDurationMs = Date.now() - startMs;
+    const totalDurationMs = performance.now() - startMs;
 
     const report: CleanupReport = {
       started_at: startTime,
       completed_at: endTime,
-      total_duration_ms: totalDurationMs,
+      total_duration_ms: Math.round(totalDurationMs),
       processes_terminated: processEntries,
       windows_closed: windowEntries,
       errors,
@@ -80,6 +100,27 @@ export class CleanupManager {
     };
 
     report.summary = createCleanupSummary(report);
+
+    // Log benchmark if enabled
+    if (Deno.env.get("SWAY_TEST_BENCHMARK") === "1") {
+      console.error(`[BENCHMARK] Cleanup operation breakdown:`);
+      console.error(`  - Processes terminated: ${processEntries.length} (${processTime.toFixed(2)}ms)`);
+      console.error(`  - Windows closed: ${windowEntries.length} (${windowTime.toFixed(2)}ms)`);
+      console.error(`  - Errors encountered: ${errors.length}`);
+      console.error(`  - TOTAL: ${totalDurationMs.toFixed(2)}ms (target: <2000ms for 10 resources)`);
+
+      // Performance warning for heavy cleanups
+      if (totalResources >= 10 && totalDurationMs > 2000) {
+        console.error(`  ⚠️  WARNING: Cleanup time ${totalDurationMs.toFixed(2)}ms exceeds 2000ms target for ${totalResources} resources`);
+      }
+
+      // Calculate per-resource average
+      if (totalResources > 0) {
+        const avgPerResource = totalDurationMs / totalResources;
+        console.error(`  - Average per resource: ${avgPerResource.toFixed(2)}ms`);
+      }
+    }
+
     return report;
   }
 

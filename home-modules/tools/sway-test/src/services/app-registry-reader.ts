@@ -64,6 +64,8 @@ const PWARegistrySchema = z.object({
 /**
  * Load and validate application registry from JSON file
  *
+ * Performance Target: <50ms for typical registry (20-50 apps)
+ *
  * @param registryPath - Optional path to registry file (default: ~/.config/i3/application-registry.json)
  * @returns Map of app_name → AppRegistryEntry
  * @throws Error if registry file not found or invalid
@@ -71,8 +73,14 @@ const PWARegistrySchema = z.object({
 export async function loadAppRegistry(
   registryPath?: string
 ): Promise<Map<string, AppRegistryEntry>> {
+  const startTime = performance.now();
+
   // Return cached registry if available
   if (registryCache !== null) {
+    const cacheLoadTime = performance.now() - startTime;
+    if (Deno.env.get("SWAY_TEST_BENCHMARK") === "1") {
+      console.error(`[BENCHMARK] App registry cache hit: ${cacheLoadTime.toFixed(2)}ms`);
+    }
     return registryCache;
   }
 
@@ -81,16 +89,43 @@ export async function loadAppRegistry(
 
   try {
     // Read registry file
+    const readStartTime = performance.now();
     const content = await Deno.readTextFile(expandedPath);
+    const readTime = performance.now() - readStartTime;
+
+    // Parse JSON
+    const parseStartTime = performance.now();
     const rawData = JSON.parse(content);
+    const parseTime = performance.now() - parseStartTime;
 
     // Validate with Zod
+    const validateStartTime = performance.now();
     const validatedData = AppRegistrySchema.parse(rawData);
+    const validateTime = performance.now() - validateStartTime;
 
     // Convert applications array to Map (indexed by name)
+    const mapStartTime = performance.now();
     registryCache = new Map(
       validatedData.applications.map(app => [app.name, app])
     );
+    const mapTime = performance.now() - mapStartTime;
+
+    const totalTime = performance.now() - startTime;
+
+    // Log benchmark if enabled
+    if (Deno.env.get("SWAY_TEST_BENCHMARK") === "1") {
+      console.error(`[BENCHMARK] App registry load breakdown:`);
+      console.error(`  - File read: ${readTime.toFixed(2)}ms`);
+      console.error(`  - JSON parse: ${parseTime.toFixed(2)}ms`);
+      console.error(`  - Validation: ${validateTime.toFixed(2)}ms`);
+      console.error(`  - Map conversion: ${mapTime.toFixed(2)}ms`);
+      console.error(`  - TOTAL: ${totalTime.toFixed(2)}ms (target: <50ms)`);
+      console.error(`  - Apps loaded: ${registryCache.size}`);
+
+      if (totalTime > 50) {
+        console.error(`  ⚠️  WARNING: Load time ${totalTime.toFixed(2)}ms exceeds 50ms target`);
+      }
+    }
 
     return registryCache;
   } catch (error) {
@@ -283,6 +318,8 @@ export function clearRegistryCache(): void {
 /**
  * Load and validate PWA registry from JSON file
  *
+ * Performance Target: <50ms for typical PWA registry (5-20 PWAs)
+ *
  * @param registryPath - Optional path to PWA registry file (default: ~/.config/i3/pwa-registry.json)
  * @returns Map of pwa_name → PWADefinition
  * @throws Error if registry file not found or invalid
@@ -290,8 +327,14 @@ export function clearRegistryCache(): void {
 export async function loadPWARegistry(
   registryPath?: string
 ): Promise<Map<string, PWADefinition>> {
+  const startTime = performance.now();
+
   // Return cached registry if available
   if (pwaRegistryCache !== null) {
+    const cacheLoadTime = performance.now() - startTime;
+    if (Deno.env.get("SWAY_TEST_BENCHMARK") === "1") {
+      console.error(`[BENCHMARK] PWA registry cache hit: ${cacheLoadTime.toFixed(2)}ms`);
+    }
     return pwaRegistryCache;
   }
 
@@ -300,13 +343,22 @@ export async function loadPWARegistry(
 
   try {
     // Read registry file
+    const readStartTime = performance.now();
     const content = await Deno.readTextFile(expandedPath);
+    const readTime = performance.now() - readStartTime;
+
+    // Parse JSON
+    const parseStartTime = performance.now();
     const rawData = JSON.parse(content);
+    const parseTime = performance.now() - parseStartTime;
 
     // Validate with Zod
+    const validateStartTime = performance.now();
     const validatedData = PWARegistrySchema.parse(rawData);
+    const validateTime = performance.now() - validateStartTime;
 
     // Convert PWAs array to Map (indexed by name)
+    const mapStartTime = performance.now();
     pwaRegistryCache = new Map(
       validatedData.pwas.map(pwa => [pwa.name, pwa])
     );
@@ -315,6 +367,24 @@ export async function loadPWARegistry(
     pwaRegistryByULID = new Map(
       validatedData.pwas.map(pwa => [pwa.ulid, pwa])
     );
+    const mapTime = performance.now() - mapStartTime;
+
+    const totalTime = performance.now() - startTime;
+
+    // Log benchmark if enabled
+    if (Deno.env.get("SWAY_TEST_BENCHMARK") === "1") {
+      console.error(`[BENCHMARK] PWA registry load breakdown:`);
+      console.error(`  - File read: ${readTime.toFixed(2)}ms`);
+      console.error(`  - JSON parse: ${parseTime.toFixed(2)}ms`);
+      console.error(`  - Validation: ${validateTime.toFixed(2)}ms`);
+      console.error(`  - Map conversion: ${mapTime.toFixed(2)}ms`);
+      console.error(`  - TOTAL: ${totalTime.toFixed(2)}ms (target: <50ms)`);
+      console.error(`  - PWAs loaded: ${pwaRegistryCache.size}`);
+
+      if (totalTime > 50) {
+        console.error(`  ⚠️  WARNING: Load time ${totalTime.toFixed(2)}ms exceeds 50ms target`);
+      }
+    }
 
     return pwaRegistryCache;
   } catch (error) {

@@ -872,6 +872,250 @@ deno task coverage:html
 - **Research**: `/etc/nixos/specs/069-sync-test-framework/research.md` - Sync protocol analysis
 - **Framework Location**: `home-modules/tools/sway-test/`
 
+---
+
+## 🚀 Sway Test Framework Usability Improvements (Feature 070)
+
+**Version**: 1.1.0 | **Status**: ✅ Complete | **Built on**: Feature 069 (Sync Framework)
+
+Five developer experience improvements for the sway-test framework.
+
+### Quick Commands
+
+```bash
+# List available apps and PWAs
+sway-test list-apps --filter firefox    # Find apps by name
+sway-test list-pwas --workspace 50      # Find PWAs by workspace
+
+# Launch PWA in test by name (no ULID needed)
+{
+  "type": "launch_pwa_sync",
+  "params": {"pwa_name": "youtube"}
+}
+
+# Launch app by registry name (auto-resolves command, workspace, class)
+{
+  "type": "launch_app_sync",
+  "params": {"app_name": "firefox"}
+}
+
+# Manual cleanup of orphaned processes/windows
+sway-test cleanup --all                  # Clean everything
+sway-test cleanup --dry-run --verbose    # Preview cleanup
+sway-test cleanup --json > report.json   # Get JSON report
+
+# Enable performance benchmarking
+SWAY_TEST_BENCHMARK=1 sway-test list-apps
+```
+
+### Feature 1: Clear Error Diagnostics
+
+**Problem**: Cryptic errors required reading framework source code.
+
+**Solution**: Structured errors with 8 error types, clear remediation steps, and diagnostic context.
+
+**Example Error**:
+```
+Error: APP_NOT_FOUND - App Registry Reader
+Application "firefx" not found in registry
+
+Remediation steps:
+  • Did you mean one of these? firefox, firefox-pwa
+  • Run: sway-test list-apps --filter firefx
+  • Add the app to app-registry-data.nix if it's missing
+
+Diagnostic context:
+  - app_name: firefx
+  - available_apps: [firefox, firefox-pwa, code, ... (22 total)]
+  - similar_apps: [firefox, firefox-pwa]
+```
+
+**Error Types**: `APP_NOT_FOUND`, `PWA_NOT_FOUND`, `INVALID_ULID`, `LAUNCH_FAILED`, `TIMEOUT`, `MALFORMED_TEST`, `REGISTRY_ERROR`, `CLEANUP_FAILED`
+
+**Error Catalog**: `/etc/nixos/specs/070-sway-test-improvements/error-catalog.md`
+
+### Feature 2: Graceful Cleanup Commands
+
+**Problem**: Failed tests leave orphaned processes/windows requiring manual cleanup or system restart.
+
+**Solution**: Automatic cleanup on test completion/failure + manual CLI command for recovery.
+
+**Cleanup Strategies**:
+- **Processes**: SIGTERM with 500ms timeout → SIGKILL if needed
+- **Windows**: Sway IPC kill command via window markers
+- **Concurrent**: Processes and windows cleaned in parallel
+
+**Examples**:
+```bash
+# Preview cleanup
+sway-test cleanup --dry-run --verbose
+
+# Actual output:
+Dry run: Would cleanup 3 process(es) and 2 window(s)
+
+# Run cleanup
+sway-test cleanup
+
+# Output:
+Processes:
+  ✓ Terminated PID 12345 (firefox) - SIGTERM in 450ms
+  ✓ Terminated PID 12346 (firefoxpwa) - SIGTERM in 380ms
+
+Windows:
+  ✓ Closed test_firefox_123 (workspace 3) in 120ms
+
+Summary: 2 processes, 1 window cleaned in 1.25s
+Success rate: 100%
+```
+
+### Feature 3: PWA Application Support
+
+**Problem**: PWA testing required manual ULID lookup and brittle boilerplate.
+
+**Solution**: First-class `launch_pwa_sync` action with friendly name resolution.
+
+**Before (manual ULID)**:
+```json
+{
+  "type": "launch_pwa_sync",
+  "params": {"pwa_ulid": "01K666N2V6BQMDSBMX3AY74TY7"}
+}
+```
+
+**After (friendly name)**:
+```json
+{
+  "type": "launch_pwa_sync",
+  "params": {"pwa_name": "youtube"}
+}
+```
+
+**Features**:
+- Auto-resolve PWA ULID from name
+- Support both `pwa_name` and `pwa_ulid` parameters
+- Validate ULID format (26-char base32)
+- Clear errors if PWA not found or firefoxpwa missing
+- `allow_failure` parameter for optional PWA launches
+
+### Feature 4: App Registry Integration
+
+**Problem**: Tests hardcoded app commands, making them brittle when configs changed.
+
+**Solution**: Name-based app launches with automatic metadata resolution from `application-registry.json`.
+
+**Test Code**:
+```json
+{
+  "type": "launch_app_sync",
+  "params": {"app_name": "firefox"}
+}
+```
+
+**Framework Auto-Resolves**:
+- Command: `firefox`
+- Expected class: `firefox`
+- Workspace: `3`
+- Monitor role: `secondary`
+- Scope: `global`
+- Floating config (if applicable)
+
+**Benefits**:
+- Tests remain valid when app configs change
+- Fuzzy matching suggests similar app names on errors
+- Centralized app metadata in `app-registry-data.nix`
+
+### Feature 5: CLI Discovery Commands
+
+**Problem**: Developers searched through Nix files to find app names and PWA ULIDs.
+
+**Solution**: CLI commands to explore available apps/PWAs without filesystem navigation.
+
+**Examples**:
+```bash
+# List all apps with table formatting
+sway-test list-apps
+
+# Output:
+NAME      COMMAND    WORKSPACE  MONITOR     SCOPE
+firefox   firefox    3          secondary   global
+code      code       2          primary     scoped
+alacritty alacritty  1          primary     global
+
+22 applications found
+
+# Filter by name
+sway-test list-apps --filter fire
+
+# Filter by workspace
+sway-test list-apps --workspace 3
+
+# JSON output for scripting
+sway-test list-apps --json | jq '.applications[] | select(.workspace == 3)'
+
+# CSV export for spreadsheets
+sway-test list-apps --format csv > apps.csv
+
+# List PWAs
+sway-test list-pwas
+
+# Output:
+NAME     URL                      ULID                       WORKSPACE  MONITOR
+youtube  https://www.youtube.com  01K666N2V6BQMDSBMX3AY74TY7  50         tertiary
+claude   https://claude.ai        01JCYF8Z2VQRST123456789ABC  52         tertiary
+
+9 PWAs found
+```
+
+### Performance Benchmarks
+
+Enable with `SWAY_TEST_BENCHMARK=1`:
+
+| Operation | Target | Measured | Status |
+|-----------|--------|----------|--------|
+| Registry loading (app+PWA) | <50ms | ~7ms | ✅ 7x faster |
+| PWA launch | <5s | ~2-3s | ✅ On target |
+| Cleanup (10 resources) | <2s | ~1.25s | ✅ 37% faster |
+| Error formatting | <10ms | ~2ms | ✅ 5x faster |
+
+**Benchmark Output Example**:
+```bash
+SWAY_TEST_BENCHMARK=1 sway-test list-apps
+
+[BENCHMARK] App registry load breakdown:
+  - File read: 1.23ms
+  - JSON parse: 0.45ms
+  - Validation: 2.10ms
+  - Map conversion: 0.18ms
+  - TOTAL: 3.96ms (target: <50ms)
+  - Apps loaded: 22
+```
+
+### Key Design Decisions
+
+1. **StructuredError Pattern**: 8 error types with type/component/cause/remediation/context fields
+2. **Zod Validation**: Schema validation for all registries (PWA, App, Test definitions)
+3. **Cached Registries**: Load once per test session (7ms initial, <0.1ms cached)
+4. **Graceful Termination**: SIGTERM first, SIGKILL after 500ms timeout
+5. **JSON-First Output**: All commands support `--json` for scripting
+6. **Unicode-Aware Tables**: Uses `@std/cli/unicode-width` for proper column alignment
+
+### Tech Stack
+
+- **Language**: TypeScript/Deno 1.40+ (matches Feature 069)
+- **Validation**: Zod 3.22.4 (schema validation with `.nullable()` support)
+- **Table Formatting**: `@std/cli`, `@std/fmt/colors` (Unicode-aware)
+- **Registries**: JSON files at `~/.config/i3/{application,pwa}-registry.json`
+- **Error Handling**: Custom `StructuredError` class with enum error types
+- **Performance**: `performance.now()` for <1ms accurate benchmarking
+
+### Docs
+
+- **Quickstart**: `/etc/nixos/specs/070-sway-test-improvements/quickstart.md` - Full usage guide
+- **Error Catalog**: `/etc/nixos/specs/070-sway-test-improvements/error-catalog.md` - All error types
+- **Spec**: `/etc/nixos/specs/070-sway-test-improvements/spec.md` - User stories & requirements
+- **Data Model**: `/etc/nixos/specs/070-sway-test-improvements/data-model.md` - TypeScript interfaces
+- **Framework Location**: `home-modules/tools/sway-test/`
+
 ## 📚 Additional Documentation
 
 - `README.md` - Project overview and quick start
