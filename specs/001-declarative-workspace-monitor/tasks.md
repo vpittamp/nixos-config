@@ -27,9 +27,9 @@ Based on plan.md Project Structure:
 
 **Purpose**: Project initialization and test structure
 
-- [ ] T001 Create test directory structure at `/etc/nixos/tests/001-declarative-workspace-monitor/` with subdirectories: `unit/`, `integration/`, `sway-tests/`
-- [ ] T002 [P] Configure pytest fixtures for async i3ipc in `/etc/nixos/tests/001-declarative-workspace-monitor/conftest.py`
-- [ ] T003 [P] Create JSON schema validation helper for testing in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_schema_validation.py`
+- [X] T001 Create test directory structure at `/etc/nixos/tests/001-declarative-workspace-monitor/` with subdirectories: `unit/`, `integration/`, `sway-tests/`
+- [X] T002 [P] Configure pytest fixtures for async i3ipc in `/etc/nixos/tests/001-declarative-workspace-monitor/conftest.py`
+- [X] T003 [P] Create JSON schema validation helper for testing in `/etc/nixos/tests/001-declarative-workspace-monitor/unit/test_schema_validation.py`
 
 ---
 
@@ -39,16 +39,16 @@ Based on plan.md Project Structure:
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create MonitorRole enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T005 [P] Create FloatingSize enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
-- [ ] T006 [P] Create Scope enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
-- [ ] T007 Create OutputInfo Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T008 [P] Create MonitorRoleConfig Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T009 [P] Create MonitorRoleAssignment Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T010 [P] Create WorkspaceAssignment Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T011 [P] Create FloatingWindowConfig Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
-- [ ] T012 Create MonitorStateV2 Pydantic model with migration logic from v1.0 in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
-- [ ] T013 Create floating size preset mapping constant (FLOATING_SIZE_DIMENSIONS) in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
+- [X] T004 Create MonitorRole enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T005 [P] Create FloatingSize enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
+- [X] T006 [P] Create Scope enum in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
+- [X] T007 Create OutputInfo Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T008 [P] Create MonitorRoleConfig Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T009 [P] Create MonitorRoleAssignment Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T010 [P] Create WorkspaceAssignment Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T011 [P] Create FloatingWindowConfig Pydantic model in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
+- [X] T012 Create MonitorStateV2 Pydantic model with migration logic from v1.0 in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/monitor_config.py`
+- [X] T013 Create floating size preset mapping constant (FLOATING_SIZE_DIMENSIONS) in `/etc/nixos/home-modules/desktop/i3-project-event-daemon/models/floating_config.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
