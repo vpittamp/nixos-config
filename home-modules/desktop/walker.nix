@@ -1072,13 +1072,16 @@ in
       Restart = "on-failure";
       RestartSec = 1;
       # Fix: Add PATH for program launching (GitHub issue #69)
-      # Feature 034/035 (Feature 050): XDG_DATA_DIRS now includes BOTH custom and default directories
+      # Feature 034/035 (Feature 050): XDG_DATA_DIRS set to ONLY curated apps (no system duplicates)
       # NOTE: XDG_DATA_HOME must NOT be overridden - apps like Firefox PWA need default location
       # IMPORTANT: Include ~/.local/bin in PATH so Elephant can find app-launcher-wrapper.sh
       Environment = [
         "PATH=${config.home.homeDirectory}/.local/bin:${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
-        # Feature 050: Prepend i3pm-applications directory to XDG_DATA_DIRS (doesn't suppress defaults)
-        # This allows Walker to find both our custom apps AND system defaults (for bookmarks, etc.)
+        # CURATED PRIORITY: Curated apps first, then user profile, then system
+        # Directory 1: i3pmAppsDir = ~/.local/share/i3pm-applications (curated registry apps - PRIORITY)
+        # Directory 2: ~/.local/share (PWAs + user apps)
+        # Directory 3: Per-user Nix profile (icon themes: Papirus, Breeze, etc.)
+        # Directory 4: System share (fallback icon themes)
         "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         "XDG_RUNTIME_DIR=%t"
       ];
@@ -1097,10 +1100,10 @@ in
   # Walker service disabled - using direct invocation
   # No service override needed since runAsService = false
 
-  # Feature 034/035 (Feature 050): Add i3pm apps directory to session XDG_DATA_DIRS
-  # This ensures Walker (when invoked directly, not as service) can find our apps
-  # Prepends custom directory to existing defaults (doesn't suppress bookmarks)
+  # Feature 034/035 (Feature 050): Set session XDG_DATA_DIRS with curated apps priority
+  # This ensures Walker (when invoked directly, not as service) prioritizes curated apps
+  # CURATED PRIORITY: Curated apps first, then per-user profile (icon themes), then system
   home.sessionVariables = {
-    XDG_DATA_DIRS = "${i3pmAppsDir}:$XDG_DATA_DIRS";
+    XDG_DATA_DIRS = "${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share";
   };
 }

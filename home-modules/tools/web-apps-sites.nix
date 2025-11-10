@@ -14,7 +14,7 @@
         name = "Google AI";
         url = "https://www.google.com/search?udm=50";
         wmClass = "webapp-google-ai";
-        icon = ../../assets/pwa-icons/google.png;
+        icon = ../../assets/pwa-icons/google-ai.png;
         workspace = "2";
         lifecycle = "persistent";
         keywords = [ "search" "web" "ai" "google" ];

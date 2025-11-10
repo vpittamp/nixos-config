@@ -17,15 +17,12 @@ let
   mkDesktopFile = app:
     let
       comment = if app ? description then app.description else "Launch ${app.display_name}";
-      wsInfo = "WS${toString app.preferred_workspace}";
       categories = if app.scope == "scoped" then "Development;ProjectScoped;" else "Application;Global;";
-      # Add workspace number to display name for Walker visibility
-      displayNameWithWS = "${app.display_name} [${wsInfo}]";
     in
     ''
       [Desktop Entry]
       Type=Application
-      Name=${displayNameWithWS}
+      Name=${app.display_name}
       Comment=${comment}
       Exec=${config.home.homeDirectory}/.local/bin/app-launcher-wrapper.sh ${app.name}
       Icon=${if app ? icon then app.icon else "application-x-executable"}

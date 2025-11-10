@@ -169,7 +169,7 @@
   #      name = "Claude";
   #      url = "https://claude.ai";
   #      manifest = "https://claude.ai/manifest.json";
-  #      icon = ../assets/icons/pwas/claude.png;
+  #      icon = ../assets/icons/pwas/claude-symbol.png;
   #      description = "Claude AI Assistant by Anthropic";
   #      categories = "Utility;Science;";
   #      keywords = "ai,assistant,anthropic";
@@ -179,7 +179,7 @@
   #      name = "GitHub";
   #      url = "https://github.com";
   #      manifest = "https://github.com/manifest.json";
-  #      icon = ../assets/icons/pwas/github.png;
+  #      icon = ../assets/icons/pwas/github-mark.png;
   #      description = "Code hosting and collaboration platform";
   #      categories = "Development;";
   #      keywords = "git,code,repository,version control";

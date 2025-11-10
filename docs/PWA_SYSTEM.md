@@ -48,7 +48,7 @@ This document describes the declarative PWA management system for NixOS with KDE
 │   └── fix-pwa-icons.sh                  # Icon processing script
 ├── assets/
 │   └── pwa-icons/                        # Custom PWA icons (512x512 PNG)
-│       ├── google.png
+│       ├── google-ai.png
 │       ├── youtube.png
 │       ├── gitea.png
 │       ├── backstage.png
@@ -111,15 +111,15 @@ vim /etc/nixos/home-modules/tools/firefox-pwas-declarative.nix
 {
   name = "Claude";
   url = "https://claude.ai";
-  icon = "file:///etc/nixos/assets/pwa-icons/claude.png";
+  icon = "file:///etc/nixos/assets/pwa-icons/claude-symbol.png";
   description = "AI Assistant";
   categories = "Network;Office;";
   keywords = "ai;chat;";
 }
 
 # Step 2: Add icon (if using custom)
-wget https://claude.ai/icon.png -O /etc/nixos/assets/pwa-icons/claude.png
-convert /etc/nixos/assets/pwa-icons/claude.png -resize 512x512 /etc/nixos/assets/pwa-icons/claude.png
+wget https://commons.wikimedia.org/wiki/Special:FilePath/Claude_AI_symbol.svg -O /tmp/claude.svg
+convert /tmp/claude.svg -resize 512x512 /etc/nixos/assets/pwa-icons/claude-symbol.png
 
 # Step 3: Rebuild configuration
 sudo nixos-rebuild switch --flake .#hetzner

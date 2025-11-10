@@ -24,15 +24,15 @@ After thorough research and testing, Chromium PWAs **cannot be installed program
 {
   name = "Claude";
   url = "https://claude.ai";
-  icon = "file:///etc/nixos/assets/pwa-icons/claude.png";
+  icon = "file:///etc/nixos/assets/pwa-icons/claude-symbol.png";
   description = "AI Assistant";
   categories = "Network;Office;";
   keywords = "ai;chat;";
 }
 
 # 2. Download and prepare icon
-wget https://claude.ai/icon.png -O /etc/nixos/assets/pwa-icons/claude.png
-convert /etc/nixos/assets/pwa-icons/claude.png -resize 512x512 /etc/nixos/assets/pwa-icons/claude.png
+wget https://commons.wikimedia.org/wiki/Special:FilePath/Claude_AI_symbol.svg -O /tmp/claude.svg
+convert /tmp/claude.svg -resize 512x512 /etc/nixos/assets/pwa-icons/claude-symbol.png
 
 # 3. Rebuild
 sudo nixos-rebuild switch --flake .#hetzner

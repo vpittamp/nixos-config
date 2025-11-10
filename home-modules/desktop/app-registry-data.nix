@@ -95,16 +95,16 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
-      icon = "terminal";
+      icon = "com.mitchellh.ghostty";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
       description = "Regular terminal with sesh session management for project directory";
     })
 
-    # WS2: Editors (Primary: vscode)
+    # WS2: Editors (Primary: code)
     (mkApp {
-      name = "vscode";
+      name = "code";
       display_name = "VS Code";
       command = "code";
       parameters = "--disable-gpu --disable-software-rasterizer --new-window $PROJECT_DIR";
@@ -119,7 +119,7 @@ let
     })
 
     (mkApp {
-      name = "neovim";
+      name = "nvim";
       display_name = "Neovim";
       command = "ghostty";
       # parameters = "-e nvim $PROJECT_DIR";
@@ -152,14 +152,14 @@ let
     })
 
     (mkApp {
-      name = "chromium";
+      name = "chromium-browser";
       display_name = "Chromium";
       command = "chromium";
       parameters = "";
       scope = "global";
       expected_class = "Chromium-browser";
       preferred_workspace = 3;
-      icon = "chromium";
+      icon = "chromium-browser";
       nix_package = "pkgs.chromium";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -207,7 +207,7 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 7;
-      icon = "utilities-system-monitor";
+      icon = "btop";
       nix_package = "pkgs.btop";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -222,7 +222,7 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 7;
-      icon = "utilities-system-monitor";
+      icon = "htop";
       nix_package = "pkgs.htop";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -238,7 +238,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
-      icon = "folder";
+      icon = "system-file-manager";
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -254,30 +254,13 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 9;
-      icon = "kubernetes";
+      icon = "/etc/nixos/assets/pwa-icons/k9s.png";
       nix_package = "pkgs.k9s";
       multi_instance = false;
       fallback_behavior = "skip";
       description = "Kubernetes cluster management";
     })
 
-    # WS12: Ghostty Terminal (regular terminal with sesh on WS12)
-    (mkApp {
-      name = "ghostty";
-      display_name = "Ghostty Terminal";
-      command = "ghostty";
-      # Use sesh connect to attach/create tmux session in project directory
-      # sesh will use PROJECT_DIR as session directory context
-      parameters = "-e sesh connect $PROJECT_DIR";
-      scope = "scoped";
-      expected_class = "com.mitchellh.ghostty";
-      preferred_workspace = 12;
-      icon = "terminal";
-      nix_package = "pkgs.ghostty";
-      multi_instance = true;
-      fallback_behavior = "use_home";
-      description = "Regular terminal with sesh session management for project directory";
-    })
 
     # Scratchpad Terminal (Feature 062)
     # Special floating terminal for quick project access
@@ -293,7 +276,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;  # Default to workspace 1, but managed dynamically
-      icon = "terminal";
+      icon = "com.mitchellh.ghostty";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -335,9 +318,10 @@ let
     app ? preferred_workspace && (app.preferred_workspace < 1 || app.preferred_workspace > 70)
   ) applications;
 
-  # Additional validation: check name format (kebab-case)
+  # Additional validation: check name format (kebab-case or reverse-domain notation)
+  # Allows: kebab-case (foo-bar) and reverse-domain (com.example.app)
   invalidNames = lib.filter (app:
-    builtins.match "[a-z0-9-]+" app.name == null
+    builtins.match "[a-z0-9.-]+" app.name == null
   ) applications;
 
   # Perform all validations
@@ -347,7 +331,7 @@ let
     else if invalidWorkspaces != [] then
       throw "Invalid workspace numbers (must be 1-20): ${builtins.concatStringsSep ", " (map (app: app.name) invalidWorkspaces)}"
     else if invalidNames != [] then
-      throw "Invalid application names (must be kebab-case): ${builtins.concatStringsSep ", " (map (app: app.name) invalidNames)}"
+      throw "Invalid application names (must be kebab-case or reverse-domain): ${builtins.concatStringsSep ", " (map (app: app.name) invalidNames)}"
     else
       applications;
 

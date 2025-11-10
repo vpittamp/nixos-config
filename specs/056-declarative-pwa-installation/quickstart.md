@@ -129,7 +129,7 @@ pwaSites = [
     name = "Google AI";
     url = "https://www.google.com/search?udm=50";
     domain = "google.com";
-    icon = "file:///etc/nixos/assets/pwa-icons/google.png";
+    icon = "file:///etc/nixos/assets/pwa-icons/google-ai.png";
     description = "Google AI Search";
     categories = "Network;WebBrowser;";
     keywords = "search;web;ai;";
