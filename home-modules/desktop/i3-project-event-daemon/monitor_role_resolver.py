@@ -6,7 +6,7 @@ physical output names based on connection order and configuration preferences.
 
 import logging
 from typing import List, Dict, Optional
-from models.monitor_config import (
+from .models.monitor_config import (
     MonitorRole,
     OutputInfo,
     MonitorRoleConfig,
@@ -81,7 +81,12 @@ class MonitorRoleResolver:
         self,
         outputs: List[OutputInfo],
     ) -> Dict[MonitorRole, MonitorRoleAssignment]:
-        """Assign monitor roles based on connection order.
+        """Assign monitor roles based on connection order and output preferences.
+
+        Assignment priority:
+        1. Check output_preferences for role-specific output name preferences
+        2. Try each preferred output in order (fallback chain within preferences)
+        3. If no preferences match, fall back to connection order
 
         First output = primary, second = secondary, third = tertiary.
         If fewer than 3 outputs, some roles won't be assigned (fallback applies).
@@ -93,22 +98,65 @@ class MonitorRoleResolver:
             Dict mapping roles to outputs
         """
         assignments = {}
+        assigned_outputs = set()  # Track which outputs have been assigned
 
-        # Assign roles in order
+        # Role order for assignment
         role_order = [MonitorRole.PRIMARY, MonitorRole.SECONDARY, MonitorRole.TERTIARY]
 
+        # Phase 1: Assign preferred outputs (Feature US5)
+        if self.output_preferences:
+            for role in role_order:
+                if role in self.output_preferences:
+                    preferred_outputs = self.output_preferences[role]
+
+                    # Try each preferred output in order
+                    for preferred_name in preferred_outputs:
+                        # Check if this output is connected and not already assigned
+                        matching_output = next(
+                            (o for o in outputs if o.name == preferred_name and o.name not in assigned_outputs),
+                            None
+                        )
+
+                        if matching_output:
+                            assignments[role] = MonitorRoleAssignment(
+                                role=role,
+                                output=matching_output.name,
+                                fallback_applied=False,
+                                preferred_output=True,
+                            )
+                            assigned_outputs.add(matching_output.name)
+                            logger.info(
+                                f"Assigned {role.value} → {matching_output.name} "
+                                f"(preferred output, {matching_output.width}×{matching_output.height})"
+                            )
+                            break
+                    else:
+                        # No preferred output available
+                        logger.warning(
+                            f"Preferred outputs for {role.value} not available: "
+                            f"{', '.join(preferred_outputs)}"
+                        )
+
+        # Phase 2: Assign remaining roles by connection order
+        connection_order_outputs = [o for o in outputs if o.name not in assigned_outputs]
+
         for idx, role in enumerate(role_order):
-            if idx < len(outputs):
-                output = outputs[idx]
+            # Skip if already assigned via preferences
+            if role in assignments:
+                continue
+
+            if idx < len(connection_order_outputs):
+                output = connection_order_outputs[idx]
                 assignments[role] = MonitorRoleAssignment(
                     role=role,
                     output=output.name,
                     fallback_applied=False,
-                    preferred_output=None,
+                    preferred_output=False,
                 )
+                assigned_outputs.add(output.name)
                 logger.info(
                     f"Assigned {role.value} → {output.name} "
-                    f"({output.width}×{output.height}, scale={output.scale})"
+                    f"(connection order, {output.width}×{output.height})"
                 )
 
         return assignments
