@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/yourusername/nixos-config/specs/070/cleanup-report.schema.json",
+  "title": "Cleanup Report",
+  "description": "Result of cleanup operation for test teardown and manual cleanup commands (FR-006, FR-007, FR-008, FR-009, FR-010)",
+  "type": "object",
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of cleanup start"
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Duration of cleanup operation in milliseconds"
+    },
+    "processes_terminated": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ProcessCleanupEntry"
+      },
+      "description": "List of processes successfully terminated"
+    },
+    "windows_closed": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/WindowCleanupEntry"
+      },
+      "description": "List of windows successfully closed"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CleanupError"
+      },
+      "description": "List of cleanup errors encountered"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total_processes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of processes targeted for cleanup"
+        },
+        "total_windows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of windows targeted for cleanup"
+        },
+        "success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Success rate as decimal (0.0 to 1.0)"
+        }
+      },
+      "required": ["total_processes", "total_windows", "success_rate"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["timestamp", "duration_ms", "processes_terminated", "windows_closed", "errors", "summary"],
+  "additionalProperties": false,
+  "definitions": {
+    "ProcessCleanupEntry": {
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Process ID"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Process command name"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["SIGTERM", "SIGKILL"],
+          "description": "Termination signal used"
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time taken to terminate in milliseconds"
+        }
+      },
+      "required": ["pid", "command", "signal", "duration_ms"],
+      "additionalProperties": false
+    },
+    "WindowCleanupEntry": {
+      "type": "object",
+      "properties": {
+        "marker": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Window marker (e.g., 'test_firefox_123')"
+        },
+        "window_class": {
+          "type": "string",
+          "description": "Window app_id or class"
+        },
+        "workspace": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Workspace number"
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time taken to close in milliseconds"
+        }
+      },
+      "required": ["marker", "duration_ms"],
+      "additionalProperties": false
+    },
+    "CleanupError": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["process", "window"],
+          "description": "Resource type that failed to clean"
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PID or window marker"
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Error message"
+        },
+        "critical": {
+          "type": "boolean",
+          "description": "Whether error is critical (blocks cleanup)"
+        }
+      },
+      "required": ["type", "identifier", "error", "critical"],
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "timestamp": "2025-11-10T14:30:00.000Z",
+      "duration_ms": 1250,
+      "processes_terminated": [
+        {
+          "pid": 12345,
+          "command": "firefox",
+          "signal": "SIGTERM",
+          "duration_ms": 450
+        },
+        {
+          "pid": 12346,
+          "command": "firefoxpwa",
+          "signal": "SIGTERM",
+          "duration_ms": 380
+        }
+      ],
+      "windows_closed": [
+        {
+          "marker": "test_firefox_123",
+          "window_class": "firefox",
+          "workspace": 3,
+          "duration_ms": 120
+        }
+      ],
+      "errors": [],
+      "summary": {
+        "total_processes": 2,
+        "total_windows": 1,
+        "success_rate": 1.0
+      }
+    },
+    {
+      "timestamp": "2025-11-10T14:35:00.000Z",
+      "duration_ms": 1800,
+      "processes_terminated": [
+        {
+          "pid": 23456,
+          "command": "alacritty",
+          "signal": "SIGKILL",
+          "duration_ms": 550
+        }
+      ],
+      "windows_closed": [],
+      "errors": [
+        {
+          "type": "process",
+          "identifier": "23456",
+          "error": "Process did not respond to SIGTERM within 500ms timeout, force-killed",
+          "critical": false
+        }
+      ],
+      "summary": {
+        "total_processes": 1,
+        "total_windows": 0,
+        "success_rate": 0.5
+      }
+    }
+  ]
+}
