@@ -11,6 +11,7 @@
     nodePackages_latest.typescript                  # Provides tsserver runtime
     pyright                                          # LSP: Python
     nil                                              # LSP: Nix
+    lua-language-server                              # LSP: Lua
     nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''
       set -euo pipefail
@@ -26,7 +27,9 @@
       fi
 
       SOCKET_DIR="''${XDG_RUNTIME_DIR:-/tmp}"
-      SOCKET_PATH="$SOCKET_DIR/nvim-${USER:-$LOGNAME}.sock"
+      SOCKET_USER="''${USER:-''${LOGNAME:-nvim}}"
+      SOCKET_SAFE=$(printf '%s' "$SOCKET_USER" | tr -c '[:alnum:]_.-' '_')
+      SOCKET_PATH="$SOCKET_DIR/nvim-$SOCKET_SAFE.sock"
 
       server_is_alive() {
         [ -S "$SOCKET_PATH" ] && ${neovim-unwrapped}/bin/nvim --server "$SOCKET_PATH" --remote-expr "1" >/dev/null 2>&1
@@ -96,6 +99,9 @@
     -- Disable focus event tracking to prevent escape sequence leakage
     vim.cmd('set t_fe=')  -- Disable focus gained sequence
     vim.cmd('set t_fd=')  -- Disable focus lost sequence
+
+    -- System clipboard integration (uses wl-clipboard on Wayland)
+    vim.opt.clipboard = "unnamedplus"  -- Use system clipboard for all operations
 
     vim.opt.ignorecase = true
     vim.opt.smartcase = true
@@ -189,20 +195,17 @@
       -- LSP Configuration
       {
         "neovim/nvim-lspconfig",
-        dependencies = {
-          "williamboman/mason.nvim",
-          "williamboman/mason-lspconfig.nvim",
-        },
         config = function()
-          require("mason").setup()
-          require("mason-lspconfig").setup({
-            ensure_installed = { "lua_ls", "nil_ls", "pyright", "tsserver" },
-          })
-          
-          local lspconfig = require("lspconfig")
-          
-          -- Lua
-          lspconfig.lua_ls.setup({
+          local capabilities = vim.lsp.protocol.make_client_capabilities()
+
+          local function setup(server, opts)
+            opts = opts or {}
+            opts.capabilities = vim.tbl_deep_extend("force", {}, capabilities, opts.capabilities or {})
+            vim.lsp.config(server, opts)
+            vim.lsp.enable(server)
+          end
+
+          setup("lua_ls", {
             settings = {
               Lua = {
                 telemetry = { enable = false },
@@ -210,15 +213,32 @@
               },
             },
           })
-          
-          -- Nix
-          lspconfig.nil_ls.setup({})
-          
-          -- Python
-          lspconfig.pyright.setup({})
-          
-          -- TypeScript/JavaScript
-          lspconfig.tsserver.setup({})
+
+          setup("nil_ls", {
+            settings = {
+              ["nil"] = {
+                formatting = { command = { "nixpkgs-fmt" } },
+              },
+            },
+          })
+
+          setup("pyright")
+
+          setup("ts_ls", {
+            settings = {
+              typescript = {
+                inlayHints = {
+                  includeInlayParameterNameHints = "all",
+                  includeInlayParameterNameHintsWhenArgumentMatchesName = false,
+                  includeInlayFunctionParameterTypeHints = true,
+                  includeInlayVariableTypeHints = true,
+                  includeInlayPropertyDeclarationTypeHints = true,
+                  includeInlayFunctionLikeReturnTypeHints = true,
+                  includeInlayEnumMemberValueHints = true,
+                },
+              },
+            },
+          })
         end,
       },
       

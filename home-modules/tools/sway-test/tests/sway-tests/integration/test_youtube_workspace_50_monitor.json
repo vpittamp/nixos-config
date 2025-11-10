@@ -1,0 +1,34 @@
+{
+  "name": "YouTube PWA launches on workspace 50 on HEADLESS-3 (tertiary monitor)",
+  "description": "Validates that YouTube PWA with workspace 50 and tertiary monitor role appears on HEADLESS-3. This test verifies Feature 001 declarative workspace-to-monitor assignment for high workspace numbers (50+) that were not covered by Feature 049's hardcoded assignments (1-9 only).",
+  "tags": ["integration", "sync", "workspace-assignment", "pwa", "youtube", "feature-001", "us1"],
+  "priority": "P1",
+  "timeout": 20000,
+  "actions": [
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "youtube"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 50,
+    "windows": {
+      "partial": [
+        {
+          "app_id": "youtube.com-01K666N2V6BQMDSBMX3AY74TY7",
+          "workspace": 50
+        }
+      ]
+    },
+    "workspaces": {
+      "partial": [
+        {
+          "num": 50,
+          "output": "HEADLESS-3"
+        }
+      ]
+    }
+  }
+}

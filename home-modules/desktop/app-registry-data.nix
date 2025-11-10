@@ -135,6 +135,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
+      preferred_monitor_role = "primary";
       icon = "com.mitchellh.ghostty";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
@@ -151,6 +152,7 @@ let
       scope = "scoped";
       expected_class = "Code";
       preferred_workspace = 2;
+      preferred_monitor_role = "secondary";
       icon = "vscode";
       nix_package = "pkgs.vscode";
       multi_instance = true;
@@ -166,6 +168,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
+      preferred_monitor_role = "secondary";
       icon = "nvim";
       nix_package = "pkgs.neovim";
       multi_instance = true;
@@ -183,6 +186,7 @@ let
       scope = "global";
       expected_class = "firefox";
       preferred_workspace = 3;
+      preferred_monitor_role = "tertiary";
       icon = "firefox";
       nix_package = "pkgs.firefox";
       multi_instance = false;
@@ -214,6 +218,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
+      preferred_monitor_role = "tertiary";
       icon = "git";
       nix_package = "pkgs.lazygit";
       multi_instance = true;

@@ -247,26 +247,33 @@ in
         };
       };
 
-      # Workspace definitions with Font Awesome icons (parallel to i3 config)
-      workspaceOutputAssign = if isHeadless then [
-        # Headless mode: Three displays with i3pm-compatible distribution (Feature 048)
-        # Primary display (HEADLESS-1): Workspaces 1-2
-        { workspace = "1"; output = "HEADLESS-1"; }
-        { workspace = "2"; output = "HEADLESS-1"; }
-        # Secondary display (HEADLESS-2): Workspaces 3-5
-        { workspace = "3"; output = "HEADLESS-2"; }
-        { workspace = "4"; output = "HEADLESS-2"; }
-        { workspace = "5"; output = "HEADLESS-2"; }
-        # Tertiary display (HEADLESS-3): Workspaces 6-9
-        { workspace = "6"; output = "HEADLESS-3"; }
-        { workspace = "7"; output = "HEADLESS-3"; }
-        { workspace = "8"; output = "HEADLESS-3"; }
-        { workspace = "9"; output = "HEADLESS-3"; }
-      ] else [
-        # M1 MacBook Pro: default assignments (overridden by i3pm monitors reassign)
+      # Feature 001: Declarative workspace-to-monitor assignments
+      # Generate workspace assignments from app registry and PWA data
+      # Replaces Feature 049's hardcoded assignments (workspaces 1-9 only)
+      # with complete declarative system for all workspaces (1-70)
+      workspaceOutputAssign = if isHeadless then
+        let
+          # Map monitor roles to physical outputs
+          roleToOutput = role:
+            if role == "primary" then "HEADLESS-1"
+            else if role == "secondary" then "HEADLESS-2"
+            else if role == "tertiary" then "HEADLESS-3"
+            else "HEADLESS-1";  # Fallback to primary
+
+          # Generate workspace assignment from app/PWA data
+          assignmentToOutput = assignment: {
+            workspace = toString assignment.workspace;
+            output = roleToOutput assignment.monitor_role;
+          };
+        in
+          # Convert all workspace assignments to Sway output assignments
+          map assignmentToOutput workspaceAssignments.assignments
+      else [
+        # M1 MacBook Pro: Single display (eDP-1) for all workspaces
+        # All workspace assignments use primary role → eDP-1
         { workspace = "1"; output = "eDP-1"; }
         { workspace = "2"; output = "eDP-1"; }
-        { workspace = "3"; output = "HDMI-A-1"; }
+        { workspace = "3"; output = "eDP-1"; }
       ];
 
       # ═══════════════════════════════════════════════════════════════════════════
@@ -501,11 +508,11 @@ in
       # always = focus follows mouse even for unfocused outputs
       focus_follows_mouse no
 
-      # Mouse warping - don't move cursor when switching focus via keyboard
+      # Mouse warping - move cursor when switching focus via keyboard
       # none = cursor stays where it is (natural keyboard navigation)
-      # output = cursor moves to center of output when switching focus
+      # output = cursor moves to center of output when switching focus (BEST for multi-monitor)
       # container = cursor moves to center of container when switching focus
-      mouse_warping none
+      mouse_warping output
 
       # Workspace names - numbers only for clean display
       set $ws1 "1"

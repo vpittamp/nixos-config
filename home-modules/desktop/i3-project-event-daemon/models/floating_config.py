@@ -130,7 +130,24 @@ def get_floating_dimensions(size_preset: Optional[FloatingSize]) -> Optional[Tup
 
     Returns:
         Tuple[int, int]: (width, height) in pixels, or None for natural size
+
+    Note:
+        If size_preset is missing from FLOATING_SIZE_DIMENSIONS, falls back to MEDIUM (1200×800).
+        This provides graceful degradation for configuration errors.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if size_preset is None:
         return None
-    return FLOATING_SIZE_DIMENSIONS.get(size_preset)
+
+    dimensions = FLOATING_SIZE_DIMENSIONS.get(size_preset)
+    if dimensions is None:
+        # T073: Fallback to medium size if preset is missing
+        logger.warning(
+            f"Floating size preset '{size_preset.value}' not found in FLOATING_SIZE_DIMENSIONS, "
+            f"falling back to MEDIUM (1200×800)"
+        )
+        dimensions = FLOATING_SIZE_DIMENSIONS[FloatingSize.MEDIUM]
+
+    return dimensions

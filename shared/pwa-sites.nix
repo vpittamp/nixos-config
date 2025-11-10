@@ -143,13 +143,13 @@
     # LinkedIn Learning
     {
       name = "LinkedIn Learning";
-      url = "https://www.linkedin.com/learning/";
-      domain = "www.linkedin.com";
+      url = "https://www.linkedin.com/learning";
+      domain = "linkedin.com";
       icon = "/etc/nixos/assets/pwa-icons/linkedin-learning.png";
       description = "LinkedIn Learning video courses and skills training";
       categories = "Education;Network;";
       keywords = "learning;courses;linkedin;skills;training;";
-      scope = "https://www.linkedin.com/learning/";
+      scope = "https://www.linkedin.com/learning";
       ulid = "01K9QA9TKKTYPZ4CTKQVVATD7W";  # Generated 2025-11-10
       # App registry metadata
       app_scope = "global";

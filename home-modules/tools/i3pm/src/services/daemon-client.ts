@@ -140,6 +140,14 @@ export class DaemonClient {
   }
 
   /**
+   * Send JSON-RPC request (alias for request)
+   * Used by monitors.ts and other commands for compatibility
+   */
+  async sendRequest<T = unknown>(method: string, params?: unknown): Promise<T> {
+    return await this.request<T>(method, params);
+  }
+
+  /**
    * Get daemon status
    */
   async getStatus(): Promise<{
