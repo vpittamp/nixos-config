@@ -107,7 +107,7 @@ let
     scope = pwa.app_scope;
     expected_class = "FFPWA-${pwa.ulid}";  # NOW CORRECT with declarative ULIDs!
     preferred_workspace = pwa.preferred_workspace;
-    icon = lib.toLower (lib.replaceStrings [" "] ["-"] pwa.name);
+    icon = pwa.icon;  # Use icon from PWA definition (absolute path)
     nix_package = "pkgs.firefoxpwa";
     multi_instance = false;
     fallback_behavior = "use_home";
