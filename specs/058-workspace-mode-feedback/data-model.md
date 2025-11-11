@@ -21,9 +21,13 @@ WorkspaceModeManager (Feature 042)
 sway-workspace-panel
     ├─> consumes WorkspaceModeEvent via IPC subscription
     └─> emits WorkspaceButtonYuck (NEW - extended with pending field)
+        └─> includes urgent field (EXISTING - from Sway workspace state)
 
 Eww workspace bar
-    └─> renders workspace-button widget with CSS class "pending"
+    └─> renders workspace-button widget with overlay structure:
+        ├─> base button with CSS class "pending" (pending highlight)
+        └─> NotificationBadge overlay (NEW - urgent indicator)
+            └─> visible when urgent=true, 8px red circle
 ```
 
 ## Core Entities
@@ -292,6 +296,125 @@ await i3_connection.command(f'exec swaymsg -t send_tick workspace_mode:{json.dum
 .workspace-button.pending.focused {
   background: rgba(249, 226, 175, 0.25);  /* Pending takes priority */
 }
+```
+
+---
+
+### 4. NotificationBadge (Eww Overlay Widget)
+
+**Purpose**: Apple-style circular notification badge overlaid on workspace buttons to indicate urgent windows, using Eww's native overlay widget for clean layering.
+
+**Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `visible` | `bool` | Badge visibility tied to workspace `urgent` state |
+| `workspace_number` | `int` | Workspace this badge is associated with (1-70) |
+
+**Validation Rules**:
+- `visible` is `True` when workspace has at least one urgent window
+- Badge renders on top of workspace button via Eww `overlay` widget
+- Badge coexists with pending highlight (both can be visible simultaneously)
+- No count indicator in MVP (single dot regardless of number of urgent windows)
+
+**Visual Specifications**:
+
+| Property | Value | Rationale |
+|----------|-------|-----------|
+| Diameter | 8px | Small enough to not obscure button content, large enough to be visible |
+| Background | `#f38ba8` (Catppuccin Mocha Red) | Matches urgent state color, high visibility |
+| Border | 2px solid white | Contrast against button background |
+| Border Radius | 50% | Perfect circle |
+| Position | Top-right corner | Standard notification badge position (Apple, Android) |
+| Fade-out | 200ms opacity transition | Smooth disappearance when urgent clears |
+
+**State Transitions**:
+
+```
+[hidden: urgent=false, badge visible=false]
+    ↓ urgent window appears on workspace
+[visible: urgent=true, badge visible=true]
+    ↓ urgent window closes or urgent state clears
+[fading: urgent=false, badge opacity 1.0 → 0.0 over 200ms]
+    ↓ animation complete
+[hidden: urgent=false, badge visible=false]
+```
+
+**Eww Yuck Structure**:
+
+```lisp
+(defwidget workspace-button [number_label workspace_name app_name icon_path workspace_id focused visible urgent pending empty]
+  (overlay
+    ; Base button (first child determines overlay size)
+    (button
+      :class "workspace-button..."
+      :onclick "swaymsg workspace..."
+      (box :class "workspace-pill" ...))
+
+    ; Notification badge (overlaid on top-right corner)
+    (box
+      :class "notification-badge-container"
+      :valign "start"
+      :halign "end"
+      :visible urgent  ; Badge visibility tied to urgent state
+      (label :class "notification-badge" :text ""))))  ; Styled as circular dot
+```
+
+**CSS Implementation**:
+
+```scss
+.notification-badge-container {
+  margin: 2px 2px 0 0;  /* Position in top-right corner with slight offset */
+}
+
+.notification-badge {
+  min-width: 8px;
+  min-height: 8px;
+  background: #f38ba8;  /* Catppuccin Mocha Red */
+  border: 2px solid white;
+  border-radius: 50%;  /* Perfect circle */
+  opacity: 1;
+  transition: opacity 0.2s;  /* Smooth fade-out when urgent clears */
+}
+```
+
+**Layering with Pending Highlight**:
+
+- Badge renders **on top** of button background (via overlay widget)
+- Pending highlight affects **button background** (yellow background + border)
+- Both indicators can be visible simultaneously:
+  - Example: Workspace 5 has urgent window + user types "5" in workspace mode
+  - Result: Yellow pending highlight + red badge dot in top-right corner
+
+**Example Scenarios**:
+
+```python
+# Scenario 1: Normal urgent workspace (no pending)
+WorkspaceButtonYuck(
+    workspace_number=5,
+    urgent=True,    # Badge visible
+    pending=False,  # No pending highlight
+    # ... other fields
+)
+# Visual: Normal button background + red badge in top-right
+
+# Scenario 2: Urgent workspace that is also pending navigation target
+WorkspaceButtonYuck(
+    workspace_number=5,
+    urgent=True,    # Badge visible
+    pending=True,   # Pending highlight active
+    # ... other fields
+)
+# Visual: Yellow pending background + red badge in top-right (both visible)
+
+# Scenario 3: Badge disappears when urgent clears
+WorkspaceButtonYuck(
+    workspace_number=5,
+    urgent=False,   # Badge fades out over 200ms
+    pending=False,
+    # ... other fields
+)
+# Visual: Normal button background, badge fades out smoothly
 ```
 
 ---
