@@ -155,6 +155,22 @@
       app_scope = "global";
       preferred_workspace = 58;
     }
+
+    # Boston Dog Butlers
+    {
+      name = "Boston Dog Butlers";
+      url = "https://bostondogbutlers.com";
+      domain = "bostondogbutlers.com";
+      icon = "/etc/nixos/assets/icons/boston-dog-butlers.svg";
+      description = "Boston Dog Butlers concierge dog walking and care services";
+      categories = "Utility;Network;";
+      keywords = "dog;pet-care;walking;boston;concierge;";
+      scope = "https://bostondogbutlers.com/";
+      ulid = "01MD0GBTR2QN6XZ7P8Q9RS3T5V";  # Generated 2025-11-14
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 59;
+    }
   ];
 
   # ULID validation function

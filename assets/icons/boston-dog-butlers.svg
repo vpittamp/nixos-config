@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Boston Dog Butlers Emblem</title>
+  <desc id="desc">Logo depicting a dignified butler dog carrying a service tray in Boston colors.</desc>
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14375C" />
+      <stop offset="100%" stop-color="#0A1D33" />
+    </linearGradient>
+    <linearGradient id="furGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F5D7A1" />
+      <stop offset="100%" stop-color="#D7A15C" />
+    </linearGradient>
+    <linearGradient id="jacketGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1F2734" />
+      <stop offset="100%" stop-color="#050A11" />
+    </linearGradient>
+    <linearGradient id="trayGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C0D6E8" />
+      <stop offset="100%" stop-color="#8FA6BA" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="36" fill="url(#bgGradient)" />
+  <g transform="translate(256 128)">
+    <path d="M-120 -36 C-140 -100 -88 -150 -60 -120 L-24 -64" fill="#3A2C1B" opacity="0.9" />
+    <path d="M120 -36 C140 -100 88 -150 60 -120 L24 -64" fill="#3A2C1B" opacity="0.9" />
+    <ellipse cx="0" cy="0" rx="136" ry="118" fill="url(#furGradient)" />
+    <path d="M-96 -12 C-96 -42 -64 -64 -32 -64 C-12 -64 -12 -30 -32 -20 C-60 -6 -72 8 -72 24 C-92 14 -96 4 -96 -12 Z" fill="#F0C27A" />
+    <path d="M96 -12 C96 -42 64 -64 32 -64 C12 -64 12 -30 32 -20 C60 -6 72 8 72 24 C92 14 96 4 96 -12 Z" fill="#F0C27A" />
+    <ellipse cx="-48" cy="-12" rx="18" ry="24" fill="#1C1B1A" />
+    <ellipse cx="48" cy="-12" rx="18" ry="24" fill="#1C1B1A" />
+    <circle cx="-52" cy="-18" r="6" fill="#FFFFFF" opacity="0.85" />
+    <circle cx="44" cy="-18" r="6" fill="#FFFFFF" opacity="0.85" />
+    <path d="M-18 24 Q0 42 18 24" stroke="#1C1B1A" stroke-width="12" stroke-linecap="round" fill="none" />
+    <path d="M-28 36 L0 60 L28 36" fill="#7A1F2B" />
+    <circle cx="0" cy="58" r="12" fill="#C33245" />
+  </g>
+  <g transform="translate(256 328)" filter="url(#shadow)">
+    <path d="M-132 -24 C-108 -108 -56 -160 0 -160 C56 -160 108 -108 132 -24 L132 132 L-132 132 Z" fill="url(#jacketGradient)" />
+    <path d="M-28 -156 L0 -92 L28 -156" stroke="#F5F7FA" stroke-width="12" stroke-linecap="round" fill="none" />
+    <path d="M-64 20 Q0 64 64 20" stroke="#F5F7FA" stroke-width="10" stroke-linecap="round" fill="none" />
+    <path d="M-28 20 L0 56 L28 20" fill="#C33245" />
+    <circle cx="0" cy="58" r="10" fill="#F5F7FA" />
+  </g>
+  <g transform="translate(360 192)" filter="url(#shadow)">
+    <path d="M-48 0 H136 C154 0 168 14 168 32 C168 50 154 64 136 64 H-48 C-66 64 -80 50 -80 32 C-80 14 -66 0 -48 0 Z" fill="url(#trayGradient)" />
+    <rect x="20" y="-36" width="28" height="36" rx="6" fill="#F5F7FA" />
+    <path d="M34 -36 L34 -68" stroke="#F5F7FA" stroke-width="10" stroke-linecap="round" />
+    <circle cx="34" cy="-92" r="26" fill="#FFD166" />
+    <path d="M12 -108 L56 -76" stroke="#E29537" stroke-width="6" stroke-linecap="round" />
+  </g>
+  <text x="256" y="468" text-anchor="middle" font-family="'Montserrat', 'Avenir', sans-serif" font-size="48" font-weight="700" fill="#F5F7FA" letter-spacing="4">DOG BUTLERS</text>
+  <text x="256" y="420" text-anchor="middle" font-family="'Montserrat', 'Avenir', sans-serif" font-size="28" fill="#88A4C3" letter-spacing="6">BOSTON</text>
+</svg>

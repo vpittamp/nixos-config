@@ -44,8 +44,9 @@ Location: `/etc/nixos/assets/pwa-icons/`
 | Gmail | gmail.svg | 419 bytes | SVG | Wikimedia Commons |
 | Google Calendar | google-calendar.svg | 2.4K | SVG | Wikimedia Commons |
 | LinkedIn Learning | linkedin-learning.svg | 34K | SVG | SVG Repo |
+| Boston Dog Butlers | boston-dog-butlers.svg | 3.7K | SVG | Custom (in-house) |
 
-**Total PWA Icons**: 9 files
+**Total PWA Icons**: 10 files
 
 ## Icon Sources
 
