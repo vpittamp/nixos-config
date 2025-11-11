@@ -1068,6 +1068,19 @@ in
       # Feature 034/035: Elephant with isolated XDG environment
       # Set XDG_DATA_DIRS to ONLY i3pm-applications directory
       # This ensures Elephant/Walker only see our curated 21 apps
+      # Wait for SWAYSOCK to be available before starting (fixes boot race condition)
+      ExecStartPre = pkgs.writeShellScript "wait-for-swaysock" ''
+        timeout=10
+        while [ $timeout -gt 0 ]; do
+          if systemctl --user show-environment | grep -q "^SWAYSOCK="; then
+            exit 0
+          fi
+          sleep 0.5
+          timeout=$((timeout - 1))
+        done
+        echo "Timeout waiting for SWAYSOCK environment variable" >&2
+        exit 1
+      '';
       ExecStart = "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant";
       Restart = "on-failure";
       RestartSec = 1;

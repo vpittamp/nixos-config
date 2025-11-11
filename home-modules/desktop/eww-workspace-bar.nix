@@ -31,7 +31,8 @@ let
     exec ${pythonEnv}/bin/python -u ${workspacePanelScript} "$@"
   '';
 
-  workspacePanelCommand = "${workspacePanelBin}/bin/sway-workspace-panel";
+  # Use PATH instead of hardcoded Nix store path to avoid stale config after rebuilds
+  workspacePanelCommand = "sway-workspace-panel";
 
   ewwConfigDir = "eww-workspace-bar";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
