@@ -177,26 +177,28 @@ in {
       "buttons-grid"
     ];
 
-    # Button grid for quick actions
-    "buttons-grid" = {
-      actions = [
-        {
-          label = "  System Monitor";
-          command = "ghostty -e btop";
-        }
-        {
-          label = "  Network";
-          command = "nm-connection-editor";
-        }
-        {
-          label = "  Bluetooth";
-          command = "blueman-manager";
-        }
-        {
-          label = "  Volume";
-          command = "pavucontrol";
-        }
-      ];
+    # Widget configuration for buttons-grid and other widgets
+    widget-config = {
+      buttons-grid = {
+        actions = [
+          {
+            label = "  System Monitor";
+            command = "ghostty -e btop";
+          }
+          {
+            label = "  Network";
+            command = "nm-connection-editor";
+          }
+          {
+            label = "  Bluetooth";
+            command = "blueman-manager";
+          }
+          {
+            label = "  Volume";
+            command = "pavucontrol";
+          }
+        ];
+      };
     };
 
     # Feature 057: T031 - Configure widget polling intervals (2 seconds for gauges)
