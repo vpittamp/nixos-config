@@ -48,10 +48,11 @@ let
       ''
   ) workspaceOutputs);
 
-  windowBlocks = lib.concatStringsSep "\n\n" (map (output:
+  windowBlocks = lib.concatStringsSep "\n\n" (lib.imap0 (index: output:
     let
       windowId = "workspace-bar-" + sanitize output.name;
       varName = markupVar output;
+      showSwayNC = if index == 0 then "true" else "false";  # Only show on first monitor
     in
       ''
 (defwindow ${windowId}
@@ -65,7 +66,7 @@ let
                         :width "100%"
                         :height "32px")
   :reserve (struts :side "bottom" :distance "36px")
-  (workspace-strip :output_label "${output.label}" :markup_var ${varName})
+  (workspace-strip :output_label "${output.label}" :markup_var ${varName} :show_swaync ${showSwayNC})
 )
       ''
   ) workspaceOutputs);
@@ -134,10 +135,10 @@ ${workspaceMarkupDefs}
     :onclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw"
     :onrightclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw"
     (box :class "swaync-pill" :orientation "h" :space-evenly false :spacing 3
-      (label :class "swaync-icon" :text {swaync_dnd == "true" ? "🔕" : "🔔"})
+      (label :class "swaync-icon" :text {swaync_dnd == "true" ? "󰂛" : "󰂚"})
       (label :class "swaync-count" :text {swaync_count > 0 ? swaync_count : ""}))))
 
-(defwidget workspace-strip [output_label markup_var]
+(defwidget workspace-strip [output_label markup_var show_swaync]
   (box :class "workspace-bar"
     (label :class "workspace-output" :text output_label)
     (box :class "workspace-strip"
@@ -145,7 +146,8 @@ ${workspaceMarkupDefs}
          :halign "center"
           :spacing 3
       (literal :content markup_var))
-    (swaync-indicator)))
+    (box :visible show_swaync
+      (swaync-indicator))))
 
 ${windowBlocks}
 '';
@@ -351,6 +353,8 @@ button {
   border-radius: 4px;
   border: 1px solid rgba(108, 112, 134, 0.3);
   transition: all 0.2s;
+  min-width: 0;  /* Allow button to shrink */
+  max-width: 60px;  /* Constrain maximum width */
 }
 
 .swaync-button:hover {
@@ -371,17 +375,20 @@ button {
 .swaync-pill {
   margin: 0;
   padding: 0;
+  min-width: 0;  /* Allow shrinking */
 }
 
 .swaync-icon {
   font-size: 11pt;
+  min-width: 0;  /* Icon takes natural width */
 }
 
 .swaync-count {
   font-size: 9pt;
   font-weight: 600;
   color: $blue;
-  min-width: 12px;
+  min-width: 0;  /* Only show when count > 0 */
+  padding-left: 2px;
 }
 
 .swaync-button.dnd-active .swaync-count {
