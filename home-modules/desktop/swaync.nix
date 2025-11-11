@@ -152,36 +152,23 @@ in {
 
       # Feature 057: T027-T030 - System metrics widgets (named labels)
       "label#metrics-header"
-      "label#cpu"
-      "label#memory"
-      "label#network"
-      "label#disk"
+      "label#metrics-info"
 
       "buttons-grid"
     ];
 
     # Widget configuration for all widgets
     widget-config = {
-      # T027-T030: System metrics labels
+      # Feature 057: US5 - System Metrics Section
+      # Top bar: persistent info (time, project, battery, network/volume status)
+      # Notification center: access detailed metrics via buttons below
       "label#metrics-header" = {
         text = "━━━ System Metrics ━━━";
         max-lines = 1;
       };
-      "label#cpu" = {
-        text = "CPU: Run 'btop' for details";
-        max-lines = 1;
-      };
-      "label#memory" = {
-        text = "Memory: Run 'btop' for details";
-        max-lines = 1;
-      };
-      "label#network" = {
-        text = "Network: Check top bar for WiFi status";
-        max-lines = 1;
-      };
-      "label#disk" = {
-        text = "Disk: Run 'df -h /' for details";
-        max-lines = 1;
+      "label#metrics-info" = {
+        text = "Click buttons below to view detailed system stats";
+        max-lines = 2;
       };
 
       # Quick action buttons
