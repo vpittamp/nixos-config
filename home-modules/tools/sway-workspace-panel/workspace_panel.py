@@ -253,16 +253,20 @@ def build_workspace_payload(
             if _pending_workspace_state:
                 pending_num = _pending_workspace_state.get("workspace_number")
                 pending_output = _pending_workspace_state.get("target_output")
-                ws_num_match = pending_num == reply.num
+
+                # Ensure both are integers for exact match (prevent string/type coercion issues)
+                if pending_num is not None and reply.num is not None:
+                    try:
+                        pending_num_int = int(pending_num)
+                        reply_num_int = int(reply.num)
+                        ws_num_match = pending_num_int == reply_num_int
+                    except (ValueError, TypeError):
+                        ws_num_match = False
+                else:
+                    ws_num_match = False
+
                 output_match = pending_output == output
                 is_pending = ws_num_match and output_match
-                # Debug: Always log when checking workspace 5
-                if reply.num == 5:
-                    print(f"DEBUG BUILD WS5: pending_num={pending_num}, reply.num={reply.num}, match={ws_num_match}", file=sys.stderr, flush=True)
-                    print(f"DEBUG BUILD WS5: pending_output={pending_output}, output={output}, match={output_match}", file=sys.stderr, flush=True)
-                    print(f"DEBUG BUILD WS5: is_pending={is_pending}", file=sys.stderr, flush=True)
-                if is_pending:
-                    print(f"DEBUG BUILD: WS {reply.num} IS PENDING (output={output})", file=sys.stderr, flush=True)
 
         workspace_data = {
             "id": workspace_id,
