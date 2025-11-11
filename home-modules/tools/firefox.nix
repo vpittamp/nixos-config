@@ -174,6 +174,16 @@ in
           # This prevents the "grant access" prompt for GitHub Codespaces and development tools
           "permissions.default.clipboard-read" = 1;  # 1=allow, 2=deny, 0=always ask
 
+          # Web Notifications API - Enable for PWAs and web apps (Feature 058)
+          # Per Firefox documentation: https://support.mozilla.org/en-US/kb/web-push-notifications-firefox
+          "dom.webnotifications.enabled" = true;  # Enable Web Notifications API
+          "dom.webnotifications.serviceworker.enabled" = true;  # Enable Service Worker notifications
+          "dom.push.enabled" = true;  # Enable Web Push API (background notifications)
+          "dom.push.serverURL" = "wss://push.services.mozilla.com/";  # Mozilla push service
+          "permissions.default.desktop-notification" = 0;  # 0=always ask, 1=allow, 2=deny
+          # Note: Specific sites still need explicit user permission per Firefox security model
+          # PWAs will trigger xdg_activation_v1 protocol when notifications fire, setting Sway urgent state
+
           # Privacy settings optimized for OAuth compatibility
           "browser.send_pings" = false;
           "browser.urlbar.speculativeConnect.enabled" = false;
