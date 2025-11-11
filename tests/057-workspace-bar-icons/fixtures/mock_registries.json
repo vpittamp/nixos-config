@@ -1,0 +1,91 @@
+{
+  "app_registry": {
+    "version": "1.0",
+    "applications": [
+      {
+        "name": "firefox",
+        "display_name": "Firefox",
+        "command": "firefox",
+        "expected_class": "firefox",
+        "expected_instance": null,
+        "icon": "firefox",
+        "scope": "global",
+        "preferred_workspace": 3,
+        "preferred_monitor_role": "secondary"
+      },
+      {
+        "name": "code",
+        "display_name": "VS Code",
+        "command": "code",
+        "expected_class": "Code",
+        "expected_instance": null,
+        "icon": "code",
+        "scope": "scoped",
+        "preferred_workspace": 2,
+        "preferred_monitor_role": "primary"
+      },
+      {
+        "name": "lazygit",
+        "display_name": "lazygit",
+        "command": "ghostty -e lazygit",
+        "expected_class": "ghostty",
+        "expected_instance": "lazygit",
+        "icon": "lazygit",
+        "scope": "scoped",
+        "preferred_workspace": 7,
+        "preferred_monitor_role": null
+      },
+      {
+        "name": "yazi",
+        "display_name": "Yazi",
+        "command": "ghostty -e yazi",
+        "expected_class": "ghostty",
+        "expected_instance": "yazi",
+        "icon": "yazi",
+        "scope": "scoped",
+        "preferred_workspace": 8,
+        "preferred_monitor_role": null
+      },
+      {
+        "name": "btop",
+        "display_name": "btop",
+        "command": "ghostty -e btop",
+        "expected_class": "ghostty",
+        "expected_instance": "btop",
+        "icon": "btop",
+        "scope": "global",
+        "preferred_workspace": 7,
+        "preferred_monitor_role": null
+      }
+    ]
+  },
+  "pwa_registry": {
+    "version": "1.0",
+    "pwas": [
+      {
+        "name": "Claude",
+        "url": "https://claude.ai",
+        "ulid": "01JCYF8Z2VQRSTUVWXYZ123456",
+        "icon": "/etc/nixos/assets/pwa-icons/claude.png",
+        "preferred_workspace": 52,
+        "preferred_monitor_role": "tertiary"
+      },
+      {
+        "name": "YouTube",
+        "url": "https://www.youtube.com",
+        "ulid": "01K666N2V6BQMDSBMX3AY74TY7",
+        "icon": "/etc/nixos/assets/pwa-icons/youtube.png",
+        "preferred_workspace": 50,
+        "preferred_monitor_role": "tertiary"
+      },
+      {
+        "name": "ChatGPT",
+        "url": "https://chat.openai.com",
+        "ulid": "01JCZE7890ABCDEFGHIJKLMNOP",
+        "icon": "/etc/nixos/assets/pwa-icons/chatgpt.png",
+        "preferred_workspace": 51,
+        "preferred_monitor_role": "tertiary"
+      }
+    ]
+  }
+}

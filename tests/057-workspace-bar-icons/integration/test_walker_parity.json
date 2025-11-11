@@ -1,0 +1,39 @@
+{
+  "name": "Firefox icon matches between Walker and workspace bar (T012)",
+  "description": "Launch Firefox and verify workspace bar shows same icon that Walker would show",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3,
+    "workspaces": [
+      {
+        "num": 3,
+        "windows": [
+          {
+            "app_id": "firefox",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "This test verifies User Story 1: Icon consistency between Walker and workspace bar",
+    "Firefox should appear on workspace 3 (configured in application-registry.json)",
+    "Icon path should be resolved from app registry (same as Walker)",
+    "To manually verify icon: Launch Walker (Meta+D), type 'firefox', note the icon",
+    "Then check workspace bar - icon should be identical"
+  ]
+}

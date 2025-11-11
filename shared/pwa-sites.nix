@@ -15,7 +15,7 @@
       name = "YouTube";
       url = "https://www.youtube.com";
       domain = "youtube.com";
-      icon = "/etc/nixos/assets/pwa-icons/youtube.png";
+      icon = "/etc/nixos/assets/pwa-icons/youtube.svg";
       description = "YouTube video platform";
       categories = "AudioVideo;Video;";
       keywords = "video;streaming;youtube;";
@@ -48,7 +48,7 @@
       name = "Claude";
       url = "https://claude.ai/code";
       domain = "claude.ai";
-      icon = "/etc/nixos/assets/pwa-icons/claude-symbol.png";
+      icon = "/etc/nixos/assets/pwa-icons/claude.svg";
       description = "Claude AI Assistant by Anthropic";
       categories = "Network;Development;";
       keywords = "ai;claude;anthropic;assistant;";
@@ -65,7 +65,7 @@
       name = "ChatGPT";
       url = "https://chatgpt.com";
       domain = "chatgpt.com";
-      icon = "/etc/nixos/assets/pwa-icons/chatgpt-codex.png";
+      icon = "/etc/nixos/assets/pwa-icons/chatgpt.svg";
       description = "ChatGPT AI assistant";
       categories = "Network;Development;";
       keywords = "ai;chatgpt;openai;assistant;";

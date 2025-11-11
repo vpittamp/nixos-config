@@ -1,0 +1,47 @@
+{
+  "name": "Terminal app lazygit shows lazygit icon (not ghostty icon) (T025)",
+  "description": "Launch lazygit via ghostty and verify workspace bar shows lazygit icon",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[window_instance=\"lazygit\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec ghostty -e lazygit"
+      }
+    },
+    {
+      "type": "wait_event",
+      "params": {
+        "event_type": "window::new",
+        "timeout": 3000
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 7,
+    "workspaces": [
+      {
+        "num": 7,
+        "windows": [
+          {
+            "window_class": "ghostty",
+            "window_instance": "lazygit",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "This test verifies User Story 2: Terminal application icon support",
+    "Lazygit launched via Ghostty should show lazygit icon (not generic Ghostty terminal icon)",
+    "Window should have window_instance='lazygit' for detection",
+    "Workspace bar should query icon via window_instance field",
+    "To manually verify: Launch 'ghostty -e lazygit', check workspace bar shows lazygit icon"
+  ]
+}
