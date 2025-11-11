@@ -4,6 +4,17 @@ let
   cfg = config.programs.eww-workspace-bar;
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
 
+  # Feature 057: Import unified theme colors from unified-bar-theme.nix
+  themeColors = config.programs.sway.config.colors or {
+    background = "#1e1e2e";
+    focused.background = "#313244";
+    focused.text = "#cdd6f4";
+    focused.border = "#89b4fa";
+    focusedInactive.background = "#181825";
+    focusedInactive.text = "#a6adc8";
+    urgent.border = "#f38ba8";
+  };
+
   workspaceOutputs =
     if isHeadless then [
       { name = "HEADLESS-1"; label = "Headless 1"; }
@@ -111,19 +122,20 @@ ${windowBlocks}
 '';
 
   ewwScss = ''
+/* Feature 057: Unified theme colors from unified-bar-theme.nix */
 /* Catppuccin Mocha color palette */
-$base: #1e1e2e;
-$mantle: #181825;
-$surface0: #313244;
-$surface1: #45475a;
-$overlay0: #6c7086;
-$text: #cdd6f4;
-$subtext0: #a6adc8;
-$mauve: #cba6f7;
-$blue: #89b4fa;
-$teal: #94e2d5;
-$red: #f38ba8;
-$yellow: #f9e2af;  /* Feature 058: Pending workspace state */
+$base: ${themeColors.background};
+$mantle: ${themeColors.focusedInactive.background};
+$surface0: ${themeColors.focused.background};
+$surface1: #45475a;  /* Currently not exposed in theme */
+$overlay0: #6c7086;  /* Currently not exposed in theme */
+$text: ${themeColors.focused.text};
+$subtext0: ${themeColors.focusedInactive.text};
+$mauve: #cba6f7;  /* Currently not exposed in theme */
+$blue: ${themeColors.focused.border};
+$teal: #94e2d5;  /* Currently not exposed in theme */
+$red: ${themeColors.urgent.border};
+$yellow: #f9e2af;  /* Feature 058: Pending workspace state - not yet in theme */
 
 * {
   font-family: sans-serif;

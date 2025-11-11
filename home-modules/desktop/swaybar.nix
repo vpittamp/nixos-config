@@ -1,9 +1,21 @@
 # Swaybar Configuration with Event-Driven Status Updates
 # Dual bars: Top bar for system monitoring, bottom bar for project context
 # Parallel to i3bar.nix - adapted for Sway on M1 MacBook Pro
+# Feature 057: Unified Bar System - Reads colors from unified-bar-theme.nix
 { config, lib, pkgs, osConfig ? null, sharedPythonEnv, ... }:
 
 let
+  # Import unified theme colors (Feature 057: User Story 1)
+  # Theme is defined in unified-bar-theme.nix and exposed via programs.sway.config.colors
+  themeColors = config.programs.sway.config.colors or {
+    background = "#1e1e2e";
+    focused.text = "#cdd6f4";
+    focused.background = "#313244";
+    focused.border = "#89b4fa";
+    urgent.border = "#f38ba8";
+    focusedInactive.text = "#a6adc8";
+  };
+
   # Detect headless Sway configuration (Feature 046)
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
 
@@ -46,14 +58,15 @@ in
           };
           trayOutput = trayOutput;
           workspaceButtons = false;
+          # Feature 057: Unified theme colors from unified-bar-theme.nix
           colors = {
-            background = "#1e1e2e";
-            statusline = "#cdd6f4";
-            separator = "#6c7086";
+            background = themeColors.background;
+            statusline = themeColors.focused.text;
+            separator = themeColors.focusedInactive.text;
             bindingMode = {
-              background = "#313244";  # surface0
-              border = "#a6e3a1";      # green
-              text = "#cdd6f4";        # text
+              background = themeColors.focused.background;
+              border = themeColors.urgent.border;
+              text = themeColors.focused.text;
             };
           };
           extraConfig = ''
