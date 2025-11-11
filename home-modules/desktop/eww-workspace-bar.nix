@@ -140,31 +140,37 @@ ${workspacePreviewDefs}
          :orientation "v"
          :space-evenly false
          :halign "center"
-      ;; Primary: Large mode symbol + accumulated digits
+      ;; Primary: Large mode symbol + accumulated digits (or placeholder if instructional)
       (label :class "preview-mode-digits"
              :halign "center"
-             :text {(workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
-                    (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
-      ;; Secondary: Descriptive subtitle
+             :text {workspace_preview_data.instructional == true
+                    ? (workspace_preview_data.mode == "move" ? "⇒ __" : "→ __")
+                    : (workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
+                      (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
+      ;; Secondary: Descriptive subtitle (or instructional text)
       (label :class "preview-subtitle"
              :halign "center"
-             :text {workspace_preview_data.mode == "move"
-                    ? "Move to Workspace " + workspace_preview_data.workspace_num
-                    : "Navigate to Workspace " + workspace_preview_data.workspace_num}))
+             :text {workspace_preview_data.instructional == true
+                    ? (workspace_preview_data.mode == "move"
+                       ? "Type workspace number to move window..."
+                       : "Type workspace number...")
+                    : (workspace_preview_data.mode == "move"
+                       ? "Move to Workspace " + workspace_preview_data.workspace_num
+                       : "Navigate to Workspace " + workspace_preview_data.workspace_num)}))
 
-    ;; Empty workspace indicator
+    ;; Empty workspace indicator (hidden in instructional mode)
     (box :class "preview-body"
          :orientation "v"
-         :visible {workspace_preview_data.empty == true}
+         :visible {workspace_preview_data.empty == true && workspace_preview_data.instructional != true}
       (label :class "preview-empty"
              :text "Empty workspace"))
 
-    ;; App list (when not empty)
+    ;; App list (when not empty, hidden in instructional mode)
     (box :class "preview-apps"
          :orientation "v"
          :space-evenly false
          :spacing 4
-         :visible {workspace_preview_data.empty == false}
+         :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
       (for app in {workspace_preview_data.apps ?: []}
         (box :class {"preview-app" + (app.focused ? " focused" : "")}
              :orientation "h"
@@ -179,9 +185,9 @@ ${workspacePreviewDefs}
                  :limit-width 30
                  :truncate true))))
 
-    ;; Footer: Window count
+    ;; Footer: Window count (hidden in instructional mode)
     (box :class "preview-footer"
-         :visible {workspace_preview_data.empty == false}
+         :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
       (label :class "preview-count"
              :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")}))))
 

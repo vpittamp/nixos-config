@@ -53,6 +53,25 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
         print("Error: workspace_num is None but visible=True", file=sys.stderr)
         return
 
+    # Special case: workspace_num=0 means instructional state (mode entered, no digits yet)
+    if workspace_num == 0:
+        output = {
+            "visible": True,
+            "monitor": monitor_output,
+            "workspace_num": 0,
+            "workspace_name": None,
+            "mode": mode,
+            "accumulated_digits": "",
+            "apps": [],
+            "window_count": 0,
+            "empty": True,
+            "invalid": False,
+            "instructional": True,
+            "icon_path": None,
+        }
+        print(json.dumps(output), flush=True)
+        return
+
     # Validate workspace number range
     if workspace_num < 1 or workspace_num > 70:
         # Invalid workspace - show error card
@@ -67,6 +86,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
             "window_count": 0,
             "empty": True,
             "invalid": True,
+            "instructional": False,
             "icon_path": None,
         }
         print(json.dumps(output), flush=True)
@@ -100,6 +120,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
         "window_count": preview.window_count,
         "empty": preview.empty,
         "invalid": False,
+        "instructional": False,
         "icon_path": preview.apps[0].icon if preview.apps else None,
     }
 
@@ -167,9 +188,26 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
                         print(f"DEBUG: Received workspace_mode event: type={event_type}, pending={pending}", file=sys.stderr, flush=True)
 
-                        if event_type == "cancel" or event_type == "execute" or pending is None:
+                        if event_type == "cancel" or event_type == "execute":
                             # Hide preview card
                             emit_preview(visible=False)
+                        elif event_type == "enter":
+                            # Mode entered but no digits yet - show instructional preview
+                            # Get mode from pending workspace if available
+                            mode = "goto"
+                            monitor_output = "eDP-1"
+                            if pending is not None:
+                                mode = pending.get("mode_type", "goto")
+                                monitor_output = pending.get("target_output") or "eDP-1"
+
+                            emit_preview(
+                                visible=True,
+                                renderer=renderer,
+                                workspace_num=0,  # Special case: 0 means "instructional state"
+                                monitor_output=monitor_output,
+                                mode=mode,
+                                accumulated_digits="",
+                            )
                         elif event_type == "digit" and pending is not None:
                             # Show/update preview card
                             emit_preview(
@@ -180,8 +218,8 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                 mode=pending.get("mode_type", "goto"),
                                 accumulated_digits=pending.get("accumulated_digits", ""),
                             )
-                        elif event_type == "enter":
-                            # Mode entered but no digits yet - hide preview
+                        elif pending is None:
+                            # No pending state - hide preview
                             emit_preview(visible=False)
 
                 except json.JSONDecodeError as e:
