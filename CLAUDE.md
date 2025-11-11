@@ -1269,6 +1269,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - Python 3.11+ (matching existing workspace_panel.py daemon) (057-workspace-bar-icons)
 - Python 3.11+ (matching existing i3pm daemon and sway-workspace-panel) + i3ipc.aio (async Sway IPC), Pydantic (data models), orjson (JSON serialization) (058-workspace-mode-feedback)
 - In-memory state in `WorkspaceModeManager`, no persistent storage required (058-workspace-mode-feedback)
+- Python 3.11+ (existing workspace_panel.py daemon), Nix configuration language, GTK3 CSS for SwayNC theming + i3ipc.aio (async Sway IPC), Eww 0.4+ (ElKowar's Wacky Widgets with Yuck DSL), SwayNC 0.10+ (notification center), pyxdg (desktop entry resolution), orjson (fast JSON serialization) (057-unified-bar-system)
+- JSON configuration files (~/.config/sway/appearance.json for unified theme, ~/.config/swaync/config.json for notification center layout, ~/.config/eww/workspace-mode-preview.json for preview card config) (057-unified-bar-system)
 
 ## Recent Changes
 - **001-declarative-workspace-monitor** (2025-11): Declarative workspace-to-monitor assignment with 5 user stories: monitor role configuration (primary/secondary/tertiary), automatic fallback on disconnect, PWA-specific preferences, floating window sizing (scratchpad/small/medium/large), and optional output preferences. CLI commands: `i3pm monitors {status|reassign|config}`. See `/etc/nixos/specs/001-declarative-workspace-monitor/`

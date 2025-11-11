@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workspace Preview Output Schema",
+  "description": "JSON output by workspace-preview-daemon to Eww deflisten (stdout line-delimited)",
+  "type": "object",
+  "properties": {
+    "visible": {
+      "type": "boolean",
+      "description": "True if preview card should be shown"
+    },
+    "monitor": {
+      "type": "string",
+      "description": "Monitor output name where preview should appear",
+      "examples": ["HEADLESS-1", "HEADLESS-2", "HEADLESS-3", "eDP-1"]
+    },
+    "workspace_num": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 70,
+      "description": "Target workspace number"
+    },
+    "workspace_name": {
+      "type": ["string", "null"],
+      "description": "Workspace name if named workspace (via i3wsr or manual naming)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["goto", "move"],
+      "description": "Navigation mode: goto or move"
+    },
+    "apps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/WorkspaceApp"
+      },
+      "maxItems": 50,
+      "description": "Applications currently in workspace"
+    },
+    "window_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total window count in workspace"
+    },
+    "empty": {
+      "type": "boolean",
+      "description": "True if workspace has no windows"
+    },
+    "invalid": {
+      "type": "boolean",
+      "description": "True if workspace number is out of range (>70 or <=0)"
+    },
+    "icon_path": {
+      "type": ["string", "null"],
+      "description": "Primary workspace icon (typically from first app)"
+    }
+  },
+  "required": ["visible"],
+  "definitions": {
+    "WorkspaceApp": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name of application"
+        },
+        "icon_path": {
+          "type": "string",
+          "description": "Absolute path to icon file (SVG or PNG)"
+        },
+        "app_id": {
+          "type": ["string", "null"],
+          "description": "Wayland app_id (for native Wayland apps)"
+        },
+        "window_class": {
+          "type": ["string", "null"],
+          "description": "X11 window class (for X apps via XWayland)"
+        },
+        "focused": {
+          "type": "boolean",
+          "description": "True if this window has focus in the workspace"
+        }
+      },
+      "required": ["name", "icon_path", "focused"]
+    }
+  },
+  "examples": [
+    {
+      "visible": true,
+      "monitor": "HEADLESS-2",
+      "workspace_num": 23,
+      "workspace_name": null,
+      "mode": "goto",
+      "apps": [
+        {
+          "name": "Firefox",
+          "icon_path": "/nix/store/abc123-firefox.svg",
+          "app_id": "firefox",
+          "window_class": null,
+          "focused": true
+        },
+        {
+          "name": "VS Code",
+          "icon_path": "/nix/store/def456-vscode.svg",
+          "app_id": null,
+          "window_class": "Code",
+          "focused": false
+        }
+      ],
+      "window_count": 2,
+      "empty": false,
+      "invalid": false,
+      "icon_path": "/nix/store/abc123-firefox.svg"
+    },
+    {
+      "visible": false
+    }
+  ]
+}

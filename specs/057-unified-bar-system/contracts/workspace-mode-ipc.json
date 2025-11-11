@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workspace Mode IPC Event Schema",
+  "description": "JSON-RPC 2.0 event broadcast by i3pm daemon for workspace mode state changes",
+  "type": "object",
+  "properties": {
+    "jsonrpc": {
+      "type": "string",
+      "enum": ["2.0"]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["event"]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["workspace_mode"]
+        },
+        "payload": {
+          "$ref": "#/definitions/WorkspaceModeState"
+        }
+      },
+      "required": ["type", "payload"]
+    }
+  },
+  "required": ["jsonrpc", "method", "params"],
+  "definitions": {
+    "WorkspaceModeState": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean",
+          "description": "True if workspace mode is currently active"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["goto", "move"],
+          "description": "Navigation mode: goto (CapsLock) or move (CapsLock+Shift)"
+        },
+        "digits_entered": {
+          "type": "string",
+          "pattern": "^[0-9]{0,2}$",
+          "description": "Digits typed so far (0-2 digits for workspace 1-70)"
+        },
+        "pending_workspace": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 70,
+          "description": "Target workspace number (null if invalid or not yet determined)"
+        },
+        "pending_output": {
+          "type": ["string", "null"],
+          "description": "Target monitor output name (e.g., 'HEADLESS-1', 'eDP-1')"
+        },
+        "valid": {
+          "type": "boolean",
+          "description": "True if pending_workspace is valid (1-70 range)"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Unix timestamp of state change"
+        }
+      },
+      "required": ["active", "mode", "digits_entered", "valid", "timestamp"]
+    }
+  },
+  "examples": [
+    {
+      "jsonrpc": "2.0",
+      "method": "event",
+      "params": {
+        "type": "workspace_mode",
+        "payload": {
+          "active": true,
+          "mode": "goto",
+          "digits_entered": "23",
+          "pending_workspace": 23,
+          "pending_output": "HEADLESS-2",
+          "valid": true,
+          "timestamp": 1699876543.123
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "event",
+      "params": {
+        "type": "workspace_mode",
+        "payload": {
+          "active": false,
+          "mode": "goto",
+          "digits_entered": "",
+          "pending_workspace": null,
+          "pending_output": null,
+          "valid": true,
+          "timestamp": 1699876545.456
+        }
+      }
+    }
+  ]
+}
