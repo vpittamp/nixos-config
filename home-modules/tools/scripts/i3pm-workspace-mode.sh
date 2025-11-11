@@ -15,7 +15,7 @@ case "$1" in
     fi
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.digit\",\"params\":{\"digit\":\"${digit_value}\"},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
-    "${workspace_visual}" append "${digit_value}"
+    # Visual feedback now handled by eww-workspace-bar (Feature 058)
     ;;
   char)
     char_value="${2:-}"
@@ -25,17 +25,17 @@ case "$1" in
     fi
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.char\",\"params\":{\"char\":\"${char_value}\"},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
-    "${workspace_visual}" append "${char_value}"
+    # Visual feedback now handled by eww-workspace-bar (Feature 058)
     ;;
   execute)
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.execute\",\"params\":{},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
-    "${workspace_visual}" stop
+    # Visual feedback now handled by eww-workspace-bar (Feature 058)
     ;;
   cancel)
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.cancel\",\"params\":{},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
-    "${workspace_visual}" stop
+    # Visual feedback now handled by eww-workspace-bar (Feature 058)
     ;;
   state)
     if [ "${2:-}" = "--json" ]; then

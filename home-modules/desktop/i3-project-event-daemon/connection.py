@@ -136,10 +136,11 @@ class ResilientI3Connection:
                 Event.WINDOW,      # Dispatches to window::new, window::title, window::focus, etc.
                 Event.WORKSPACE,   # Dispatches to workspace::init, workspace::empty, etc.
                 Event.OUTPUT,      # Dispatches to output::(added|removed|changed) - Feature 033
+                Event.MODE,        # Dispatches to mode::change - Feature 042/058: Workspace mode visual feedback
                 Event.SHUTDOWN,
             ])
 
-            logger.info("Subscribed to i3 IPC event stream (tick, window, workspace, output, shutdown)")
+            logger.info("Subscribed to i3 IPC event stream (tick, window, workspace, output, mode, shutdown)")
 
             # Feature 039: FR-008 - Validate event subscriptions on daemon startup
             await self.validate_event_subscriptions()
@@ -168,7 +169,7 @@ class ResilientI3Connection:
 
         try:
             # Required event types for full daemon functionality
-            required_subscriptions = ["tick", "window", "workspace", "output"]
+            required_subscriptions = ["tick", "window", "workspace", "output", "mode"]
 
             # Track validation status
             all_active = True

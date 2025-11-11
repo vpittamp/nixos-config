@@ -228,19 +228,21 @@ in
         # Resolution: 1920x1200 to match TigerVNC's preferred aspect ratio (16:10)
         # This prevents letterboxing/whitespace when viewing via VNC
         # Layout: Horizontal arrangement (left to right) - RESTORED DEFAULT
-        "HEADLESS-1" = {
+        # Physical arrangement (left→right): HEADLESS-2, HEADLESS-1, HEADLESS-3
+        # Matches the operator's monitor order (secondary ➜ primary ➜ tertiary)
+        "HEADLESS-2" = {
           resolution = "1920x1200@60Hz";
           position = "0,0";
           scale = "1.0";
         };
-        "HEADLESS-2" = {
-          resolution = "1920x1200@60Hz";  # Restored from 2560x1440 test
-          position = "1920,0";  # Right of HEADLESS-1
+        "HEADLESS-1" = {
+          resolution = "1920x1200@60Hz";
+          position = "1920,0";  # Center display
           scale = "1.0";
         };
         "HEADLESS-3" = {
           resolution = "1920x1200@60Hz";
-          position = "3840,0";  # Right of HEADLESS-2 - horizontal layout restored
+          position = "3840,0";  # Right-most display
           scale = "1.0";
         };
       } else {
@@ -260,7 +262,8 @@ in
       };
 
       # Input configuration (FR-006)
-      input = {
+      input =
+        {
         # Touchpad configuration for M1 MacBook Pro
         "type:touchpad" = {
           natural_scroll = "enabled";   # Natural scrolling
@@ -278,6 +281,13 @@ in
           xkb_options = "caps:none";
           repeat_delay = "300";
           repeat_rate = "50";
+        };
+      }
+      // lib.optionalAttrs isHeadless {
+        # Slow down virtual pointer events injected via WayVNC for finer control
+        "type:pointer" = {
+          accel_profile = "adaptive";
+          pointer_accel = "-0.4";
         };
       };
 
@@ -654,10 +664,10 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel (stop workspace-mode-visual overlay on exit)
-          bindsym Return exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
-          bindsym Escape exec "i3pm-workspace-mode cancel; workspace-mode-visual stop"
+          # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
+          bindsym Return exec "i3pm-workspace-mode execute"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute"
+          bindsym Escape exec "i3pm-workspace-mode cancel"
       }
 
       mode "⇒ WS" {
@@ -701,10 +711,10 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
-          # Execute/cancel (stop workspace-mode-visual overlay on exit)
-          bindsym Return exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
-          bindsym KP_Enter exec "i3pm-workspace-mode execute; workspace-mode-visual stop"
-          bindsym Escape exec "i3pm-workspace-mode cancel; workspace-mode-visual stop"
+          # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
+          bindsym Return exec "i3pm-workspace-mode execute"
+          bindsym KP_Enter exec "i3pm-workspace-mode execute"
+          bindsym Escape exec "i3pm-workspace-mode cancel"
       }
 
       # Platform-conditional workspace mode keybindings

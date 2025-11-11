@@ -173,7 +173,7 @@ class WorkspaceModeManager:
     async def _execute_workspace_switch(self) -> Dict[str, any]:
         """Execute workspace switch with accumulated digits."""
         workspace = int(self._state.accumulated_digits)
-        output = self._get_output_for_workspace(workspace)
+        output = await self._get_output_for_workspace(workspace)
 
         logger.info(f"Executing workspace switch: ws={workspace}, output={output}, mode={self._state.mode_type}")
 
@@ -364,6 +364,9 @@ class WorkspaceModeManager:
         try:
             outputs = await self._i3.get_outputs()
             active_outputs = [o for o in outputs if o.active]
+            # Sort outputs by name to ensure consistent PRIMARY/SECONDARY/TERTIARY assignment
+            # (HEADLESS-1, HEADLESS-2, HEADLESS-3 instead of random order)
+            active_outputs.sort(key=lambda o: o.name)
 
             if len(active_outputs) == 0:
                 logger.warning("No active outputs detected, using fallback (eDP-1)")
@@ -405,7 +408,7 @@ class WorkspaceModeManager:
                 "TERTIARY": "eDP-1"
             }
 
-    def _calculate_pending_workspace(self) -> Optional[PendingWorkspaceState]:
+    async def _calculate_pending_workspace(self) -> Optional[PendingWorkspaceState]:
         """Calculate pending workspace state from accumulated digits.
 
         Feature 058: Workspace Mode Visual Feedback
@@ -430,8 +433,8 @@ class WorkspaceModeManager:
             logger.debug(f"Workspace number out of range: {workspace_number} (valid: 1-70)")
             return None
 
-        # Determine target output
-        target_output = self._get_output_for_workspace(workspace_number)
+        # Determine target output (query Sway for actual location)
+        target_output = await self._get_output_for_workspace(workspace_number)
 
         # Create pending workspace state
         return PendingWorkspaceState(
@@ -441,10 +444,11 @@ class WorkspaceModeManager:
             target_output=target_output
         )
 
-    def _get_output_for_workspace(self, workspace: int) -> str:
+    async def _get_output_for_workspace(self, workspace: int) -> str:
         """Get output name for workspace number.
 
-        Distribution rules:
+        First checks if workspace exists in Sway and returns its actual output.
+        Falls back to distribution rules if workspace doesn't exist yet:
         - Workspaces 1-2: PRIMARY
         - Workspaces 3-5: SECONDARY
         - Workspaces 6+: TERTIARY
@@ -455,6 +459,17 @@ class WorkspaceModeManager:
         Returns:
             Output name (e.g., "eDP-1", "HEADLESS-1")
         """
+        try:
+            # Query Sway for actual workspace location
+            workspaces = await self._i3.get_workspaces()
+            for ws in workspaces:
+                if ws.num == workspace:
+                    # Workspace exists, return its actual output
+                    return ws.output
+        except Exception as e:
+            logger.warning(f"Failed to query workspace location: {e}")
+
+        # Workspace doesn't exist yet, use static distribution rules
         if workspace in (1, 2):
             return self._state.output_cache.get("PRIMARY", "eDP-1")
         elif workspace in (3, 4, 5):
@@ -475,8 +490,8 @@ class WorkspaceModeManager:
             logger.debug("IPC server not available, skipping event emission")
             return
 
-        # Calculate pending workspace state
-        pending_workspace = self._calculate_pending_workspace()
+        # Calculate pending workspace state (queries Sway for actual workspace location)
+        pending_workspace = await self._calculate_pending_workspace()
 
         # Create event payload (Feature 058: format for workspace panel)
         event_payload = {

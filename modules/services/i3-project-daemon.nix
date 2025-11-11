@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.7";  # T070: Fix workspace detection bug - workspace() returns focused WS instead of actual WS
+    version = "1.7.8";  # Feature 058: Add Event.MODE subscription for workspace mode visual feedback
     src = daemonSrc;
 
     installPhase = ''

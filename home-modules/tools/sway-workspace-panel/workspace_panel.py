@@ -251,10 +251,18 @@ def build_workspace_payload(
         is_pending = False
         with _pending_workspace_lock:
             if _pending_workspace_state:
-                is_pending = (
-                    _pending_workspace_state.get("workspace_number") == reply.num and
-                    _pending_workspace_state.get("target_output") == output
-                )
+                pending_num = _pending_workspace_state.get("workspace_number")
+                pending_output = _pending_workspace_state.get("target_output")
+                ws_num_match = pending_num == reply.num
+                output_match = pending_output == output
+                is_pending = ws_num_match and output_match
+                # Debug: Always log when checking workspace 5
+                if reply.num == 5:
+                    print(f"DEBUG BUILD WS5: pending_num={pending_num}, reply.num={reply.num}, match={ws_num_match}", file=sys.stderr, flush=True)
+                    print(f"DEBUG BUILD WS5: pending_output={pending_output}, output={output}, match={output_match}", file=sys.stderr, flush=True)
+                    print(f"DEBUG BUILD WS5: is_pending={is_pending}", file=sys.stderr, flush=True)
+                if is_pending:
+                    print(f"DEBUG BUILD: WS {reply.num} IS PENDING (output={output})", file=sys.stderr, flush=True)
 
         workspace_data = {
             "id": workspace_id,
@@ -333,9 +341,12 @@ def subscribe_to_workspace_mode_events(emit_callback: Callable[[], None], manage
 
                 # Check if this is a workspace_mode event
                 if event.get("method") == "event" and event.get("params", {}).get("type") == "workspace_mode":
-                    payload = event["params"]["payload"]
-                    event_type = payload.get("event_type")
-                    pending_workspace = payload.get("pending_workspace")
+                    # Event structure: event["params"]["payload"] contains event_type and pending_workspace
+                    event_payload = event["params"].get("payload", {})
+                    event_type = event_payload.get("event_type")
+                    pending_workspace = event_payload.get("pending_workspace")
+
+                    print(f"DEBUG: Received workspace_mode event: type={event_type}, pending_ws={pending_workspace}, output={managed_output}", file=sys.stderr, flush=True)
 
                     # Update global pending workspace state (thread-safe)
                     with _pending_workspace_lock:
@@ -343,12 +354,15 @@ def subscribe_to_workspace_mode_events(emit_callback: Callable[[], None], manage
                             # Filter by output if specified
                             if managed_output and pending_workspace.get("target_output") != managed_output:
                                 # Pending workspace is for different output, clear our state
+                                print(f"DEBUG: Clearing pending (different output): target={pending_workspace.get('target_output')}, managed={managed_output}", file=sys.stderr, flush=True)
                                 _pending_workspace_state = None
                             else:
                                 # Update pending workspace state
+                                print(f"DEBUG: Setting pending workspace: {pending_workspace}", file=sys.stderr, flush=True)
                                 _pending_workspace_state = pending_workspace
                         else:
                             # Clear pending state (cancel, enter, or invalid workspace)
+                            print(f"DEBUG: Clearing pending (event type: {event_type})", file=sys.stderr, flush=True)
                             _pending_workspace_state = None
 
                     # Trigger UI update
