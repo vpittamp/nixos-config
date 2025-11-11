@@ -222,6 +222,59 @@ Navigate to workspace 1-70 by typing digits. <20ms latency via event-driven Pyth
 
 **Docs**: `/etc/nixos/specs/042-event-driven-workspace-mode/quickstart.md`
 
+### Workspace Mode Visual Feedback (Feature 058)
+
+Real-time visual feedback showing which workspace you'll navigate to before pressing Enter. Eliminates "blind navigation" by highlighting the target workspace button in the Eww workspace bar.
+
+**Visual Feedback**: Workspace button lights up in YELLOW when you type its number in workspace mode
+
+**How It Works**:
+- Enter workspace mode (CapsLock on M1, Ctrl+0 on Hetzner)
+- Type digits (e.g., "2" then "3")
+- See workspace 23 button highlight in yellow ✨
+- Press Enter → Navigate to workspace 23 (highlight clears, button turns blue)
+- Press Escape → Cancel (highlight clears, stay on current workspace)
+
+**Multi-Monitor Aware**: Pending highlight appears only on the monitor where the workspace will open (based on Feature 001 workspace-to-monitor assignment)
+
+**Performance**: <50ms latency from keystroke to visual feedback (typical: ~20ms)
+
+**Button States**:
+- **Yellow/Pending**: Where you will navigate when you press Enter (Feature 058)
+- **Blue/Focused**: Currently active workspace
+- **Light Blue/Visible**: Workspace visible on another monitor
+- **Red/Urgent**: Workspace has urgent window
+- **Dimmed/Empty**: No windows on workspace
+
+**Edge Cases**:
+- Invalid workspace (>70): No highlight
+- Leading zeros ("05"): Ignored, highlights workspace 5
+- Already on target: Pending (yellow) overrides focused (blue)
+- Rapid typing (>10 digits/sec): Handled smoothly
+
+**Architecture**:
+- i3pm daemon emits IPC events with pending workspace state
+- sway-workspace-panel subscribes to events via background thread
+- Eww workspace bar applies `.workspace-button.pending` CSS class
+- GTK renders yellow highlight with smooth 0.2s transitions
+
+**Troubleshooting**:
+```bash
+# Check daemons running
+systemctl --user status i3-project-event-listener
+systemctl --user status sway-workspace-panel
+
+# Monitor events in real-time
+i3pm daemon events --type=workspace_mode
+
+# Restart workspace panel if highlight stuck
+systemctl --user restart sway-workspace-panel
+```
+
+**Customization**: Edit `/etc/nixos/home-modules/desktop/eww-workspace-bar.nix` to change pending highlight color or transition speed, then rebuild.
+
+**Docs**: `/etc/nixos/specs/058-workspace-mode-feedback/quickstart.md`
+
 ## 🌐 PWA Management
 
 ### Installing PWAs

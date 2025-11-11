@@ -5,14 +5,24 @@ from __future__ import annotations
 import argparse
 import json
 import signal
+import socket
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import i3ipc
 from xdg.DesktopEntry import DesktopEntry
 from xdg.IconTheme import getIconPath
+
+# Feature 058: Import workspace mode models for event handling
+try:
+    from models import WorkspaceModeEvent, PendingWorkspaceState
+except ImportError:
+    # Fallback if models not available (shouldn't happen in production)
+    WorkspaceModeEvent = None
+    PendingWorkspaceState = None
 
 ICON_SEARCH_DIRS = [
     Path.home() / ".local/share/icons",
@@ -28,6 +38,12 @@ DESKTOP_DIRS = [
 ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
+
+# Feature 058: Global pending workspace state (thread-safe)
+_pending_workspace_lock = threading.Lock()
+_pending_workspace_state: Optional[Dict[str, Any]] = None
+# Socket path matches systemd socket unit configuration
+_daemon_ipc_socket = Path("/run/i3-project-daemon/ipc.sock")
 
 
 class DesktopIconIndex:
@@ -231,6 +247,15 @@ def build_workspace_payload(
 
         workspace_id = workspace_nodes.get(reply.name).id if reply.name in workspace_nodes else None
 
+        # Feature 058: Check if this workspace is pending navigation target
+        is_pending = False
+        with _pending_workspace_lock:
+            if _pending_workspace_state:
+                is_pending = (
+                    _pending_workspace_state.get("workspace_number") == reply.num and
+                    _pending_workspace_state.get("target_output") == output
+                )
+
         workspace_data = {
             "id": workspace_id,
             "name": reply.name,
@@ -240,6 +265,7 @@ def build_workspace_payload(
             "focused": reply.focused,
             "visible": reply.visible,
             "urgent": reply.urgent,
+            "pending": is_pending,  # Feature 058: Pending highlight state
             "appName": app_name,
             "appId": app_id or window_class or "",
             "iconPath": icon_path,
@@ -255,6 +281,92 @@ def build_workspace_payload(
         "workspaces": outputs_payload,
         "generatedAt": time.time(),
     }
+
+
+def subscribe_to_workspace_mode_events(emit_callback: Callable[[], None], managed_output: Optional[str] = None) -> None:
+    """Subscribe to workspace mode events from i3pm daemon (Feature 058: T010-T011).
+
+    Runs in background thread, updates global pending workspace state.
+
+    Args:
+        emit_callback: Function to call when pending state changes (triggers UI update)
+        managed_output: Output name to filter events (only update if pending workspace targets this output)
+    """
+    global _pending_workspace_state
+
+    if not _daemon_ipc_socket.exists():
+        print(f"Warning: Daemon IPC socket not found at {_daemon_ipc_socket}, workspace mode events disabled", file=sys.stderr)
+        return
+
+    try:
+        # Connect to daemon IPC socket
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(str(_daemon_ipc_socket))
+        sock_file = sock.makefile('rw')
+
+        # Subscribe to workspace_mode events
+        subscribe_request = {
+            "jsonrpc": "2.0",
+            "method": "subscribe",
+            "params": {"event_types": ["workspace_mode"]},
+            "id": 1
+        }
+        sock_file.write(json.dumps(subscribe_request) + "\n")
+        sock_file.flush()
+
+        # Read subscription response
+        response_line = sock_file.readline()
+        if response_line:
+            response = json.loads(response_line)
+            if response.get("result") != "subscribed":
+                print(f"Warning: Failed to subscribe to workspace_mode events: {response}", file=sys.stderr)
+                return
+
+        # Event loop: read incoming workspace_mode events
+        while True:
+            line = sock_file.readline()
+            if not line:
+                break
+
+            try:
+                event = json.loads(line)
+
+                # Check if this is a workspace_mode event
+                if event.get("method") == "event" and event.get("params", {}).get("type") == "workspace_mode":
+                    payload = event["params"]["payload"]
+                    event_type = payload.get("event_type")
+                    pending_workspace = payload.get("pending_workspace")
+
+                    # Update global pending workspace state (thread-safe)
+                    with _pending_workspace_lock:
+                        if pending_workspace:
+                            # Filter by output if specified
+                            if managed_output and pending_workspace.get("target_output") != managed_output:
+                                # Pending workspace is for different output, clear our state
+                                _pending_workspace_state = None
+                            else:
+                                # Update pending workspace state
+                                _pending_workspace_state = pending_workspace
+                        else:
+                            # Clear pending state (cancel, enter, or invalid workspace)
+                            _pending_workspace_state = None
+
+                    # Trigger UI update
+                    emit_callback()
+
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Failed to parse workspace_mode event: {e}", file=sys.stderr)
+                continue
+
+    except (ConnectionRefusedError, FileNotFoundError) as e:
+        print(f"Warning: Could not connect to daemon IPC socket: {e}, workspace mode events disabled", file=sys.stderr)
+    except Exception as e:
+        print(f"Error in workspace_mode event subscription: {e}", file=sys.stderr)
+    finally:
+        try:
+            sock.close()
+        except:
+            pass
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
@@ -321,6 +433,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     ("focused", format_value(row["focused"])),
                     ("visible", format_value(row["visible"])),
                     ("urgent", format_value(row["urgent"])),
+                    ("pending", format_value(row["pending"])),  # Feature 058: Pending highlight
                     ("empty", format_value(row["isEmpty"])),
                 ]
                 attr_string = " ".join(
@@ -338,6 +451,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     conn.on("workspace", lambda *_: emit())
     conn.on("window", lambda *_: emit())
     conn.on("binding", lambda *_: emit())
+
+    # Feature 058: Start workspace mode event subscription thread
+    ipc_thread = threading.Thread(
+        target=subscribe_to_workspace_mode_events,
+        args=(emit, args.single_output),
+        daemon=True,  # Daemon thread will exit when main thread exits
+        name="workspace-mode-ipc"
+    )
+    ipc_thread.start()
 
     signal.signal(signal.SIGINT, lambda *_args: sys.exit(0))
     signal.signal(signal.SIGTERM, lambda *_args: sys.exit(0))

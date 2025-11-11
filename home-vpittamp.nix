@@ -19,7 +19,7 @@
     # ./home-modules/desktop/i3bar.nix  # Event-driven i3bar with instant project updates
 
     # Project management (works with both i3 and Sway)
-    ./home-modules/desktop/i3-project-daemon.nix   # Feature 015: Event-driven daemon
+    # Feature 015: Event-driven daemon - now managed by system service (Feature 037)
     ./home-modules/tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./home-modules/tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
 
@@ -36,11 +36,7 @@
   # programs.i3pm.enable = true;  # Old Python version - replaced by Deno rewrite
 
   # Feature 015: i3 project event listener daemon
-  # NOTE: Disabled in favor of system service (Feature 037 - cross-namespace /proc access)
-  # System service configured in configurations/hetzner.nix: services.i3ProjectDaemon.enable
-  services.i3ProjectEventListener = {
-    enable = false;  # Disabled - using system service instead
-  };
+  # Managed by system service (Feature 037) - see configurations/m1.nix: services.i3ProjectDaemon.enable
 
   # Auto-clean home-manager backup conflicts before activation
   home.activation.cleanBackupConflicts = ''
