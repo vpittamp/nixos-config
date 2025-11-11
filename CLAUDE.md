@@ -1214,6 +1214,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - TypeScript with Deno 1.40+ runtime + Zod 3.22.4 (validation), @std/cli (argument parsing, Unicode width), Sway IPC (window management) (070-sway-test-improvements)
 - JSON registries (~/.config/i3/application-registry.json, ~/.config/i3/pwa-registry.json), In-memory cleanup state (070-sway-test-improvements)
 - Python 3.11+ (matching existing workspace_panel.py daemon) (057-workspace-bar-icons)
+- Python 3.11+ (matching existing i3pm daemon and sway-workspace-panel) + i3ipc.aio (async Sway IPC), Pydantic (data models), orjson (JSON serialization) (058-workspace-mode-feedback)
+- In-memory state in `WorkspaceModeManager`, no persistent storage required (058-workspace-mode-feedback)
 
 ## Recent Changes
 - **001-declarative-workspace-monitor** (2025-11): Declarative workspace-to-monitor assignment with 5 user stories: monitor role configuration (primary/secondary/tertiary), automatic fallback on disconnect, PWA-specific preferences, floating window sizing (scratchpad/small/medium/large), and optional output preferences. CLI commands: `i3pm monitors {status|reassign|config}`. See `/etc/nixos/specs/001-declarative-workspace-monitor/`
