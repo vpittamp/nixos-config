@@ -1085,10 +1085,11 @@ in
         "XDG_DATA_DIRS=${i3pmAppsDir}:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         "XDG_RUNTIME_DIR=%t"
       ];
-      # CRITICAL: Pass compositor environment variables
+      # CRITICAL: Pass compositor environment variables for launched apps
       # X11/i3: DISPLAY
-      # Wayland/Sway: WAYLAND_DISPLAY (Feature 046)
-      PassEnvironment = if isWaylandMode then [ "WAYLAND_DISPLAY" ] else [ "DISPLAY" ];
+      # Wayland/Sway: WAYLAND_DISPLAY, SWAYSOCK (Feature 046)
+      # Note: Also passing SWAYSOCK for proper Sway IPC communication
+      PassEnvironment = if isWaylandMode then [ "WAYLAND_DISPLAY" "SWAYSOCK" ] else [ "DISPLAY" ];
     };
     Install = {
       # Wayland/Sway: sway-session.target (Feature 046)
