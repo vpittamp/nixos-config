@@ -16,11 +16,12 @@ let
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
 
   # Transform PWA sites to simplified PWA registry format
-  # Only include fields needed by sway-test framework
+  # Only include fields needed by sway-test framework and workspace panel
   pwaDefinitions = map (pwa: {
     name = lib.toLower pwa.name;  # Normalize to lowercase for consistency
     url = pwa.url;
     ulid = pwa.ulid;
+    icon = pwa.icon;  # Include icon for workspace panel
     preferred_workspace = if pwa ? preferred_workspace then pwa.preferred_workspace else null;
     preferred_monitor_role = if pwa ? preferred_monitor_role then pwa.preferred_monitor_role else null;
   }) pwaSitesConfig.pwaSites;

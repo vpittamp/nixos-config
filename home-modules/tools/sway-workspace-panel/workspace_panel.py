@@ -21,22 +21,69 @@ ICON_SEARCH_DIRS = [
     Path("/usr/share/pixmaps"),
 ]
 DESKTOP_DIRS = [
-    Path.home() / ".local/share/applications",
-    Path("/usr/share/applications"),
+    Path.home() / ".local/share/i3pm-applications/applications",  # Our app registry desktop files (primary)
+    Path.home() / ".local/share/applications",  # PWA desktop files
+    Path("/usr/share/applications"),  # System desktop files
 ]
 ICON_EXTENSIONS = (".svg", ".png", ".xpm")
+APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
+PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 
 
 class DesktopIconIndex:
-    """Index .desktop entries so we can map windows to themed icons."""
+    """Index .desktop entries and app registry so we can map windows to themed icons."""
 
     def __init__(self) -> None:
         self._by_desktop_id: Dict[str, Dict[str, str]] = {}
         self._by_startup_wm: Dict[str, Dict[str, str]] = {}
+        self._by_app_id: Dict[str, Dict[str, str]] = {}
         self._icon_cache: Dict[str, str] = {}
-        self._load()
+        self._load_app_registry()
+        self._load_pwa_registry()
+        self._load_desktop_entries()
 
-    def _load(self) -> None:
+    def _load_app_registry(self) -> None:
+        """Load icons from application-registry.json (primary source)."""
+        if not APP_REGISTRY_PATH.exists():
+            return
+        try:
+            with open(APP_REGISTRY_PATH) as f:
+                data = json.load(f)
+                for app in data.get("applications", []):
+                    icon_path = self._resolve_icon(app.get("icon", ""))
+                    payload = {
+                        "icon": icon_path or "",
+                        "name": app.get("display_name", app.get("name", "")),
+                    }
+                    # Index by name only (NOT expected_class - multiple apps share same class)
+                    app_name = app.get("name", "").lower()
+                    if app_name:
+                        self._by_app_id[app_name] = payload
+        except Exception:
+            pass
+
+    def _load_pwa_registry(self) -> None:
+        """Load icons from pwa-registry.json (for PWAs)."""
+        if not PWA_REGISTRY_PATH.exists():
+            return
+        try:
+            with open(PWA_REGISTRY_PATH) as f:
+                data = json.load(f)
+                for pwa in data.get("pwas", []):
+                    icon_path = self._resolve_icon(pwa.get("icon", ""))
+                    payload = {
+                        "icon": icon_path or "",
+                        "name": pwa.get("name", ""),
+                    }
+                    # Index by ULID-based app_id (e.g., "FFPWA-01JCYF8Z2M")
+                    pwa_id = f"ffpwa-{pwa.get('ulid', '')}".lower()
+                    if pwa_id:
+                        self._by_app_id[pwa_id] = payload
+        except Exception:
+            pass
+
+    def _load_desktop_entries(self) -> None:
+        """Load icons from .desktop files (fallback)."""
         for directory in DESKTOP_DIRS:
             if not directory.exists():
                 continue
@@ -92,9 +139,15 @@ class DesktopIconIndex:
 
     def lookup(self, *, app_id: Optional[str], window_class: Optional[str], window_instance: Optional[str]) -> Dict[str, str]:
         keys = [value.lower() for value in [app_id, window_class, window_instance] if value]
+        # First priority: app registry (same icons as walker/launcher)
+        for key in keys:
+            if key in self._by_app_id:
+                return self._by_app_id[key]
+        # Second priority: desktop file by ID
         for key in keys:
             if key in self._by_desktop_id:
                 return self._by_desktop_id[key]
+        # Third priority: desktop file by StartupWMClass
         for key in keys:
             if key in self._by_startup_wm:
                 return self._by_startup_wm[key]
@@ -240,7 +293,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 )
                 parts.append(f"(workspace-button {attr_string})")
 
-            serialized = "".join(parts)
+            # Wrap in a box container so eww's (literal :content) gets a single element
+            serialized = f"(box :orientation \"h\" :spacing 3 {''.join(parts)})"
         if serialized != last_payload:
             print(serialized, flush=True)
             last_payload = serialized

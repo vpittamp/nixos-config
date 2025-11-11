@@ -15,6 +15,7 @@
     # sway-easyfocus now provided by home-manager upstream
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
+    ./desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
@@ -68,6 +69,9 @@
   programs.firefoxpwa-declarative = {
     enable = true;
   };
+
+  # eww workspace bar with SVG icons
+  programs.eww-workspace-bar.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

@@ -11,7 +11,6 @@ let
       { name = "HEADLESS-3"; label = "Headless 3"; }
     ] else [
       { name = "eDP-1"; label = "Built-in"; }
-      { name = "HDMI-A-1"; label = "External"; }
     ];
 
   sanitize = name:
@@ -63,8 +62,8 @@ let
                         :x "0px"
                         :y "0px"
                         :width "100%"
-                        :height "44px")
-  :reserve (struts :side "bottom" :distance "48px")
+                        :height "32px")
+  :reserve (struts :side "bottom" :distance "36px")
   (workspace-strip :output_label "${output.label}" :markup_var ${varName})
 )
       ''
@@ -83,7 +82,6 @@ ${workspaceMarkupDefs}
       + ((icon_path != "") ? "has-icon " : "no-icon ")
       + (empty ? "empty" : "populated")
     }
-    :cursor "pointer"
     :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
     :onclick {
       "swaymsg workspace \""
@@ -94,10 +92,9 @@ ${workspaceMarkupDefs}
       (box :class "workspace-icon-stack"
         (image :class "workspace-icon-image"
                :path icon_path
-               :image-width "20px"
-               :image-height "20px")
-        (label :class "workspace-icon-fallback" :text icon_fallback))
-      (label :class "workspace-number" :text number_label)))
+               :image-width 20
+               :image-height 20)
+        (label :class "workspace-icon-fallback" :text icon_fallback))))
 )
 
 (defwidget workspace-strip [output_label markup_var]
@@ -106,104 +103,93 @@ ${workspaceMarkupDefs}
     (box :class "workspace-strip"
          :orientation "h"
          :halign "center"
-          :spacing 6
+          :spacing 3
       (literal :content markup_var))))
 
 ${windowBlocks}
 '';
 
   ewwScss = ''
-$bg: #010409;
-$bg-soft: #0b1220;
-$fg: #dce6ff;
-$accent: #60a5fa;
-$accent-muted: rgba(96, 165, 250, 0.45);
-$accent-strong: rgba(96, 165, 250, 0.85);
-$urgent: #fb7185;
-$border: rgba(96, 165, 250, 0.25);
-$inactive: rgba(173, 188, 216, 0.35);
+/* Catppuccin Mocha color palette */
+$base: #1e1e2e;
+$mantle: #181825;
+$surface0: #313244;
+$surface1: #45475a;
+$text: #cdd6f4;
+$subtext0: #a6adc8;
+$mauve: #cba6f7;
+$blue: #89b4fa;
+$red: #f38ba8;
 
 * {
-  font-family: "FiraCode Nerd Font", "Font Awesome 6 Free", sans-serif;
-  font-size: 0.95rem;
-  color: $fg;
+  font-family: sans-serif;
+  font-size: 11pt;
+  color: $text;
 }
 
 .workspace-bar {
-  background: rgba(1, 4, 9, 0.96);
-  border: 1px solid $border;
-  border-radius: 14px;
-  box-shadow: 0 18px 30px rgba(2, 4, 9, 0.65);
-  padding: 6px 14px;
-  margin: 8px 20px;
+  background: $base;
+  padding: 6px;
+  margin: 8px;
+  border-radius: 8px;
 }
 
 .workspace-output {
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.workspace-strip {
-  margin-left: 4px;
-}
-
-.workspace-button {
-  background: linear-gradient(180deg, rgba(11, 18, 32, 0.95), rgba(5, 9, 16, 0.95));
-  padding: 6px 18px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
-}
-
-.workspace-button:hover {
-  border-color: $accent-strong;
-  transform: translateY(-1px);
-}
-
-.workspace-button.focused {
-  background: radial-gradient(circle at top left, rgba(96, 165, 250, 0.95), rgba(37, 99, 235, 0.9));
-  border-color: rgba(147, 197, 253, 0.8);
-  color: #010409;
-  box-shadow: 0 0 12px rgba(96, 165, 250, 0.35);
-}
-
-.workspace-button.focused .workspace-number {
-  color: #010409;
-}
-
-.workspace-button.visible:not(.focused) {
-  border-color: $accent-muted;
-  box-shadow: 0 0 8px rgba(96, 165, 250, 0.25);
-}
-
-.workspace-button.urgent {
-  background-color: $urgent;
-  color: #050505;
-}
-
-.workspace-button.empty {
-  opacity: 0.45;
-}
-
-.workspace-pill {
+  font-size: 9pt;
+  color: $subtext0;
   margin-right: 8px;
 }
 
+.workspace-strip {
+  margin-left: 0px;
+}
+
+.workspace-button {
+  background: $surface0;
+  padding: 6px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  min-width: 0;
+  transition: all 0.2s ease;
+}
+
+.workspace-button:hover {
+  background: $surface1;
+  border-color: $blue;
+}
+
+.workspace-button.focused {
+  background: $mauve;
+  border-color: $mauve;
+}
+
+.workspace-button.visible:not(.focused) {
+  border-color: $blue;
+}
+
+.workspace-button.urgent {
+  background: $red;
+  border-color: $red;
+}
+
+.workspace-button.empty {
+  opacity: 0.4;
+}
+
+.workspace-pill {
+  margin: 0;
+  padding: 0;
+}
+
 .workspace-icon-stack {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.02);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.02);
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0px;
+  margin: 0px;
 }
 
 .workspace-icon-image {
-  opacity: 0.9;
+  opacity: 1.0;
 }
 
 .workspace-button.no-icon .workspace-icon-image {
@@ -216,12 +202,12 @@ $inactive: rgba(173, 188, 216, 0.35);
 
 .workspace-icon-fallback {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 12pt;
+  color: $text;
 }
 
-.workspace-number {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+.workspace-button.focused .workspace-icon-fallback {
+  color: $base;
 }
 '';
 
@@ -255,6 +241,11 @@ in
         ExecStopPost = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all'';
         Restart = "on-failure";
         RestartSec = 2;
+        # Match Walker's XDG_DATA_DIRS for icon theme access (Papirus, Breeze, etc.)
+        # Priority: curated apps → user apps → icon themes → system fallback
+        Environment = [
+          "XDG_DATA_DIRS=${config.home.homeDirectory}/.local/share/i3pm-applications:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
+        ];
       };
       Install = {
         WantedBy = [ "sway-session.target" ];
