@@ -1,0 +1,63 @@
+;; Eww Yuck Widget Contract: workspace-button
+;; Feature 058: Workspace Mode Visual Feedback
+;; Extended workspace button widget with pending highlight state
+
+(defwidget workspace-button [
+  ;; EXISTING FIELDS (Feature 057)
+  number_label        ; string - Workspace number displayed on button (e.g., "23")
+  workspace_name      ; string - Full workspace name from Sway (e.g., "23")
+  app_name           ; string - Primary application name or "" if empty
+  icon_path          ; string - Absolute path to icon SVG/PNG or ""
+  icon_fallback      ; string - Fallback icon name for icon theme
+  workspace_id       ; string - Workspace ID for Sway IPC commands
+  focused            ; boolean - Workspace is currently focused
+  visible            ; boolean - Workspace visible on another monitor
+  urgent             ; boolean - Workspace has urgent window
+  empty              ; boolean - Workspace has no windows
+
+  ;; NEW FIELD (Feature 058)
+  pending            ; boolean - Workspace is pending navigation target
+]
+  (button
+    :class {
+      "workspace-button "
+      + (focused ? "focused " : "")
+      + ((visible && !focused) ? "visible " : "")
+      + (urgent ? "urgent " : "")
+      + (pending ? "pending " : "")  ;; NEW: Pending state class
+      + ((icon_path != "") ? "has-icon " : "no-icon ")
+      + (empty ? "empty" : "populated")
+    }
+    :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
+    :onclick {
+      "swaymsg workspace \""
+      + replace(workspace_name, "\"", "\\\"")
+      + "\""
+    }
+    (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
+      (image :class "workspace-icon-image"
+             :path icon_path
+             :image-width 16
+             :image-height 16)
+      (label :class "workspace-number" :text number_label))))
+
+;; CSS Class Mapping (for reference - actual CSS in eww-workspace-bar.nix)
+;; .workspace-button.pending {
+;;   background: rgba(249, 226, 175, 0.25);  /* Catppuccin Mocha Yellow */
+;;   border: 1px solid rgba(249, 226, 175, 0.7);
+;;   transition: all 0.2s;
+;; }
+
+;; Example usage with pending=true:
+;; (workspace-button
+;;   :number_label "23"
+;;   :workspace_name "23"
+;;   :app_name "Firefox"
+;;   :icon_path "/etc/nixos/assets/pwa-icons/firefox.svg"
+;;   :icon_fallback "firefox"
+;;   :workspace_id "23"
+;;   :focused false
+;;   :visible false
+;;   :urgent false
+;;   :pending true    ; PENDING HIGHLIGHT - button appears yellow/peach
+;;   :empty false)

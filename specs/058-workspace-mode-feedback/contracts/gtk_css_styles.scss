@@ -1,0 +1,123 @@
+// GTK CSS Contract: Workspace Button Pending State
+// Feature 058: Workspace Mode Visual Feedback
+// Catppuccin Mocha color palette with pending highlight
+
+/* Catppuccin Mocha color palette */
+$base: #1e1e2e;
+$surface0: #313244;
+$overlay0: #6c7086;
+$text: #cdd6f4;
+$subtext0: #a6adc8;
+$yellow: #f9e2af;   /* NEW: Pending state color */
+$blue: #89b4fa;     /* Focused state */
+$mauve: #cba6f7;    /* Visible state */
+$red: #f38ba8;      /* Urgent state */
+
+// EXISTING STATES (Feature 057 baseline)
+
+/* Normal state: Flat dark background with subtle border */
+.workspace-button {
+  background: rgba(30, 30, 46, 0.3);
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(108, 112, 134, 0.3);
+  box-shadow: none;
+  min-width: 0;
+  transition: all 0.2s;
+}
+
+.workspace-button:hover {
+  background: rgba(137, 180, 250, 0.15);
+  border: 1px solid rgba(137, 180, 250, 0.4);
+}
+
+/* Focused: Blue accent (user is currently on this workspace) */
+.workspace-button.focused {
+  background: rgba(137, 180, 250, 0.3);
+  border: 1px solid rgba(137, 180, 250, 0.6);
+}
+
+/* Visible on other monitor: Lighter blue */
+.workspace-button.visible:not(.focused) {
+  background: rgba(137, 180, 250, 0.12);
+  border: 1px solid rgba(137, 180, 250, 0.35);
+}
+
+/* Urgent: Red accent (window demands attention) */
+.workspace-button.urgent {
+  background: rgba(243, 139, 168, 0.25);
+  border: 1px solid rgba(243, 139, 168, 0.5);
+}
+
+/* Empty: Dimmed appearance */
+.workspace-button.empty {
+  opacity: 0.3;
+}
+
+.workspace-button.empty:hover {
+  opacity: 0.6;
+}
+
+// NEW STATE (Feature 058)
+
+/* Pending: Yellow/peach accent (user will navigate here when pressing Enter) */
+.workspace-button.pending {
+  background: rgba(249, 226, 175, 0.25);  /* Catppuccin Mocha Yellow */
+  border: 1px solid rgba(249, 226, 175, 0.7);
+  transition: all 0.2s;  /* Smooth transitions */
+
+  // Icon glow for additional visual emphasis
+  .workspace-icon-image {
+    -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);
+  }
+
+  // Number label emphasis
+  .workspace-number {
+    color: $yellow;
+    font-weight: 600;
+  }
+}
+
+// MUTUAL EXCLUSION: Pending overrides focused
+// (Edge case: User types digits while already on that workspace)
+.workspace-button.pending.focused {
+  background: rgba(249, 226, 175, 0.25);  /* Pending takes visual priority */
+  border: 1px solid rgba(249, 226, 175, 0.7);
+
+  .workspace-icon-image {
+    -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);  /* Pending icon glow */
+  }
+
+  .workspace-number {
+    color: $yellow;  /* Pending color overrides blue focused color */
+    font-weight: 600;
+  }
+}
+
+// PENDING + URGENT: Both states can coexist (rare edge case)
+// Pending takes border priority, urgent adds urgency indicator
+.workspace-button.pending.urgent {
+  background: rgba(249, 226, 175, 0.25);  /* Pending background */
+  border: 2px solid rgba(249, 226, 175, 0.7);  /* Thicker pending border */
+  box-shadow: 0 0 4px rgba(243, 139, 168, 0.5);  /* Red urgent glow */
+}
+
+// ACCESSIBILITY: Ensure sufficient contrast ratio
+// WCAG AA minimum 4.5:1 contrast ratio for text
+// Yellow (#f9e2af) on dark base (#1e1e2e) = ~11:1 contrast ratio ✅
+
+// PERFORMANCE: GTK CSS transition on opacity/background
+// Expected frame time: <16ms (60fps)
+// Tested on: GTK 3.24+, Eww 0.4.0+
+
+// CONSTRAINTS (Feature 057 learnings):
+// ❌ NO transform properties (GTK limitation)
+// ❌ NO filter properties (GTK limitation)
+// ❌ NO backdrop-filter (GTK limitation)
+// ❌ NO @keyframes animations (GTK limitation)
+// ❌ NO display: flex (use box in Yuck instead)
+// ✅ YES opacity transitions (supported)
+// ✅ YES background/border transitions (supported)
+// ✅ YES box-shadow (supported with performance cost)
+// ✅ YES -gtk-icon-shadow (GTK-specific property)
+
