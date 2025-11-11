@@ -154,6 +154,23 @@ class DesktopIconIndex:
         return {}
 
 
+def read_i3pm_app_name(pid: Optional[int]) -> Optional[str]:
+    """Read I3PM_APP_NAME from process environment (Feature 057 window matching)."""
+    if pid is None or pid <= 0:
+        return None
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as f:
+            environ_bytes = f.read()
+            environ_vars = environ_bytes.split(b'\0')
+            for var in environ_vars:
+                if var.startswith(b'I3PM_APP_NAME='):
+                    app_name = var.split(b'=', 1)[1].decode('utf-8', errors='ignore')
+                    return app_name.strip() if app_name else None
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+    return None
+
+
 def pick_leaf(workspace_node: Optional[i3ipc.con.Con]) -> Optional[i3ipc.con.Con]:
     if workspace_node is None:
         return None
@@ -187,7 +204,19 @@ def build_workspace_payload(
         app_id = leaf.app_id if leaf else None
         window_class = leaf.window_class if leaf else None
         window_instance = getattr(leaf, "window_instance", None) if leaf else None
-        icon_info = icon_index.lookup(app_id=app_id, window_class=window_class, window_instance=window_instance)
+
+        # Feature 057: Read I3PM_APP_NAME from process environment for accurate window matching
+        # This handles terminal apps (lazygit, yazi, btop launched via ghostty) and all other apps
+        i3pm_app_name = None
+        if leaf and hasattr(leaf, 'pid'):
+            i3pm_app_name = read_i3pm_app_name(leaf.pid)
+
+        # Priority: I3PM_APP_NAME > app_id > window_class > window_instance
+        # I3PM_APP_NAME provides accurate app identification for all launcher-launched apps
+        if i3pm_app_name:
+            icon_info = icon_index.lookup(app_id=i3pm_app_name, window_class=None, window_instance=None)
+        else:
+            icon_info = icon_index.lookup(app_id=app_id, window_class=window_class, window_instance=window_instance)
         app_name = icon_info.get("name", "") if icon_info else (leaf.name if leaf else "")
         icon_path = icon_info.get("icon", "") if icon_info else ""
         fallback_symbol_source = app_name or (leaf.name if leaf else "") or reply.name
