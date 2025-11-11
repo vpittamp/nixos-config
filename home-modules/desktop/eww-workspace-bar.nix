@@ -139,14 +139,14 @@ ${workspaceMarkupDefs}
       (label :class "swaync-count" :text {swaync_count > 0 ? swaync_count : ""}))))
 
 (defwidget workspace-strip [output_label markup_var show_swaync]
-  (box :class "workspace-bar"
+  (box :class "workspace-bar" :space-evenly false
     (label :class "workspace-output" :text output_label)
     (box :class "workspace-strip"
          :orientation "h"
          :halign "center"
           :spacing 3
       (literal :content markup_var))
-    (box :visible show_swaync
+    (box :visible show_swaync :halign "end" :hexpand false
       (swaync-indicator))))
 
 ${windowBlocks}
