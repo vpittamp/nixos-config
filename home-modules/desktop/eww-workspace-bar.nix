@@ -139,12 +139,15 @@ ${workspacePreviewDefs}
     (box :class "preview-header"
          :orientation "v"
          :space-evenly false
+         :halign "center"
       ;; Primary: Large mode symbol + accumulated digits
       (label :class "preview-mode-digits"
+             :halign "center"
              :text {(workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
                     (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
       ;; Secondary: Descriptive subtitle
       (label :class "preview-subtitle"
+             :halign "center"
              :text {workspace_preview_data.mode == "move"
                     ? "Move to Workspace " + workspace_preview_data.workspace_num
                     : "Navigate to Workspace " + workspace_preview_data.workspace_num}))
@@ -424,7 +427,6 @@ button {
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
-  text-align: center;
 }
 
 /* Enhanced header: Prominent mode + digits display (Option 1 UX) */
