@@ -150,35 +150,41 @@ in {
       "notifications"
       "mpris"
 
-      # Feature 057: T027-T030 - System metrics widgets
-      # NOTE: These are static labels initially - real-time updates require external script
-      # Future enhancement: Poll via SwayNC script hooks or external daemon
-      {
-        type = "label";
-        text = "System Metrics";
-      }
-      {
-        type = "label";
-        text = "CPU: Run 'btop' for details";  # T027: CPU gauge placeholder
-      }
-      {
-        type = "label";
-        text = "Memory: Run 'btop' for details";  # T028: Memory gauge placeholder
-      }
-      {
-        type = "label";
-        text = "Network: Check top bar for WiFi status";  # T029: Network stats placeholder
-      }
-      {
-        type = "label";
-        text = "Disk: Run 'df -h /' for details";  # T030: Disk usage placeholder
-      }
+      # Feature 057: T027-T030 - System metrics widgets (named labels)
+      "label#metrics-header"
+      "label#cpu"
+      "label#memory"
+      "label#network"
+      "label#disk"
 
       "buttons-grid"
     ];
 
-    # Widget configuration for buttons-grid and other widgets
+    # Widget configuration for all widgets
     widget-config = {
+      # T027-T030: System metrics labels
+      "label#metrics-header" = {
+        text = "━━━ System Metrics ━━━";
+        max-lines = 1;
+      };
+      "label#cpu" = {
+        text = "CPU: Run 'btop' for details";
+        max-lines = 1;
+      };
+      "label#memory" = {
+        text = "Memory: Run 'btop' for details";
+        max-lines = 1;
+      };
+      "label#network" = {
+        text = "Network: Check top bar for WiFi status";
+        max-lines = 1;
+      };
+      "label#disk" = {
+        text = "Disk: Run 'df -h /' for details";
+        max-lines = 1;
+      };
+
+      # Quick action buttons
       buttons-grid = {
         actions = [
           {
