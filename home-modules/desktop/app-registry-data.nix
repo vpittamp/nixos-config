@@ -219,7 +219,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       preferred_monitor_role = "tertiary";
-      icon = "lazygit";  # Icon theme will resolve to SVG symlink
+      icon = "/etc/nixos/assets/icons/lazygit.svg";
       nix_package = "pkgs.lazygit";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -282,7 +282,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
-      icon = "yazi";  # Icon theme will resolve to SVG symlink
+      icon = "/etc/nixos/assets/icons/yazi.svg";
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";
