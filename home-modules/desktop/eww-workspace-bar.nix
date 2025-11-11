@@ -5,7 +5,7 @@ let
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
 
   # Feature 057: Import unified theme colors from unified-bar-theme.nix
-  themeColors = config.programs.sway.config.colors or {
+  themeColors = config.wayland.windowManager.sway.config.colors or {
     background = "#1e1e2e";
     focused.background = "#313244";
     focused.text = "#cdd6f4";

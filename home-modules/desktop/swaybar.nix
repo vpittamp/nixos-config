@@ -6,8 +6,8 @@
 
 let
   # Import unified theme colors (Feature 057: User Story 1)
-  # Theme is defined in unified-bar-theme.nix and exposed via programs.sway.config.colors
-  themeColors = config.programs.sway.config.colors or {
+  # Theme is defined in unified-bar-theme.nix and exposed via wayland.windowManager.sway.config.colors
+  themeColors = config.wayland.windowManager.sway.config.colors or {
     background = "#1e1e2e";
     focused.text = "#cdd6f4";
     focused.background = "#313244";

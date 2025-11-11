@@ -81,8 +81,8 @@ in {
     '';
 
     # Export theme colors for use by other modules
-    # Other bar modules can access these via config.programs.sway.config.colors
-    programs.sway.config = lib.mkIf config.wayland.windowManager.sway.enable {
+    # Other bar modules can access these via config.wayland.windowManager.sway.config.colors
+    wayland.windowManager.sway.config = lib.mkIf config.wayland.windowManager.sway.enable {
       colors = {
         background = mocha.base;
         focused = {
