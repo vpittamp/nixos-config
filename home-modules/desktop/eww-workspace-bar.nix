@@ -134,7 +134,7 @@ ${workspaceMarkupDefs}
     }
     :onclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw"
     :onrightclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw"
-    (box :class "swaync-pill" :orientation "h" :space-evenly false :spacing 3
+    (box :class "swaync-pill" :orientation "h" :space-evenly false :spacing 1
       (label :class "swaync-icon" :text {swaync_dnd == "true" ? "󰂛" : "󰂚"})
       (label :class "swaync-count" :text {swaync_count > 0 ? swaync_count : ""}))))
 
@@ -348,13 +348,12 @@ button {
 /* Feature 058: SwayNC notification indicator (enhancement) */
 .swaync-button {
   background: rgba(30, 30, 46, 0.3);
-  padding: 3px 8px;
+  padding: 2px 4px;  /* Reduced from 3px 8px for compactness */
   margin-left: 8px;
   border-radius: 4px;
   border: 1px solid rgba(108, 112, 134, 0.3);
   transition: all 0.2s;
-  min-width: 0;  /* Allow button to shrink */
-  max-width: 60px;  /* Constrain maximum width */
+  min-width: 0;
 }
 
 .swaync-button:hover {
@@ -375,20 +374,20 @@ button {
 .swaync-pill {
   margin: 0;
   padding: 0;
-  min-width: 0;  /* Allow shrinking */
+  min-width: 0;
 }
 
 .swaync-icon {
-  font-size: 11pt;
-  min-width: 0;  /* Icon takes natural width */
+  font-size: 10pt;  /* Reduced from 11pt for compactness */
+  min-width: 0;
 }
 
 .swaync-count {
-  font-size: 9pt;
+  font-size: 8pt;  /* Reduced from 9pt for compactness */
   font-weight: 600;
   color: $blue;
-  min-width: 0;  /* Only show when count > 0 */
-  padding-left: 2px;
+  min-width: 0;
+  padding-left: 1px;  /* Reduced from 2px */
 }
 
 .swaync-button.dnd-active .swaync-count {
