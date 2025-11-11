@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WorkspaceModeEvent",
+  "description": "IPC event schema for workspace mode visual feedback (Feature 058)",
+  "type": "object",
+  "required": ["event_type", "timestamp"],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "enum": ["enter", "digit", "cancel", "execute"],
+      "description": "Type of workspace mode event"
+    },
+    "pending_workspace": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/PendingWorkspaceState" }
+      ],
+      "description": "Current pending workspace state (null when mode inactive or invalid input)"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Unix timestamp when event was emitted (seconds since epoch)"
+    }
+  },
+  "definitions": {
+    "PendingWorkspaceState": {
+      "type": "object",
+      "required": ["workspace_number", "accumulated_digits", "mode_type"],
+      "properties": {
+        "workspace_number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 70,
+          "description": "Target workspace number (1-70)"
+        },
+        "accumulated_digits": {
+          "type": "string",
+          "pattern": "^[0-9]{1,2}$",
+          "description": "Raw digit string (e.g., '23', '5')"
+        },
+        "mode_type": {
+          "type": "string",
+          "enum": ["goto", "move"],
+          "description": "Navigation mode: goto (focus) or move (move window + follow)"
+        },
+        "target_output": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "description": "Monitor where workspace will appear (e.g., 'eDP-1', 'HEADLESS-2')"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "event_type": "enter",
+      "pending_workspace": null,
+      "timestamp": 1699727480.1234
+    },
+    {
+      "event_type": "digit",
+      "pending_workspace": {
+        "workspace_number": 2,
+        "accumulated_digits": "2",
+        "mode_type": "goto",
+        "target_output": "eDP-1"
+      },
+      "timestamp": 1699727480.5432
+    },
+    {
+      "event_type": "digit",
+      "pending_workspace": {
+        "workspace_number": 23,
+        "accumulated_digits": "23",
+        "mode_type": "goto",
+        "target_output": "HEADLESS-2"
+      },
+      "timestamp": 1699727480.8765
+    },
+    {
+      "event_type": "execute",
+      "pending_workspace": {
+        "workspace_number": 23,
+        "accumulated_digits": "23",
+        "mode_type": "goto",
+        "target_output": "HEADLESS-2"
+      },
+      "timestamp": 1699727481.2345
+    }
+  ]
+}

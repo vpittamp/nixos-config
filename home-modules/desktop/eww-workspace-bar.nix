@@ -73,10 +73,11 @@ let
   ewwYuck = ''
 ${workspaceMarkupDefs}
 
-(defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent empty]
+(defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]
   (button
     :class {
       "workspace-button "
+      + (pending ? "pending " : "")
       + (focused ? "focused " : "")
       + ((visible && !focused) ? "visible " : "")
       + (urgent ? "urgent " : "")
@@ -122,6 +123,7 @@ $mauve: #cba6f7;
 $blue: #89b4fa;
 $teal: #94e2d5;
 $red: #f38ba8;
+$yellow: #f9e2af;  /* Feature 058: Pending workspace state */
 
 * {
   font-family: sans-serif;
@@ -199,6 +201,37 @@ button {
 
 .workspace-button.empty:hover {
   opacity: 0.6;
+}
+
+/* Feature 058: Pending workspace highlight (User Story 1) */
+.workspace-button.pending {
+  background: rgba(249, 226, 175, 0.25);  /* Catppuccin Mocha Yellow */
+  border: 1px solid rgba(249, 226, 175, 0.7);
+  transition: all 0.2s;  /* Smooth transitions (T018) */
+}
+
+.workspace-button.pending .workspace-icon-image {
+  -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);  /* Icon glow */
+}
+
+.workspace-button.pending .workspace-number {
+  color: $yellow;
+  font-weight: 600;
+}
+
+/* T019: Pending overrides focused (mutual exclusion) */
+.workspace-button.pending.focused {
+  background: rgba(249, 226, 175, 0.25);  /* Pending takes priority */
+  border: 1px solid rgba(249, 226, 175, 0.7);
+}
+
+.workspace-button.pending.focused .workspace-icon-image {
+  -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);  /* Pending icon glow */
+}
+
+.workspace-button.pending.focused .workspace-number {
+  color: $yellow;  /* Pending color overrides blue focused color */
+  font-weight: 600;
 }
 
 .workspace-pill {

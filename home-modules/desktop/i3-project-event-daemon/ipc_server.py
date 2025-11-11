@@ -283,6 +283,8 @@ class IPCServer:
                 result = await self._list_monitors()
             elif method == "subscribe_events":
                 result = await self._subscribe_events(params, writer)
+            elif method == "subscribe":  # Feature 058: Workspace mode event subscription
+                result = await self._subscribe_events(params, writer)
             elif method == "reload_config":
                 result = await self._reload_config()
             elif method == "get_diagnostic_state":
@@ -1318,12 +1320,11 @@ class IPCServer:
             self.subscribed_clients.discard(writer)
             logger.info(f"Client unsubscribed from events (total subscribers: {len(self.subscribed_clients)})")
 
-        return {
-            "success": True,
-            "subscribed": subscribe,
-            "message": f"Event subscription {'enabled' if subscribe else 'disabled'}",
-            "subscriber_count": len(self.subscribed_clients)
-        }
+        # Feature 058: Return simple "subscribed" result for workspace mode events
+        if subscribe:
+            return "subscribed"
+        else:
+            return "unsubscribed"
 
     async def broadcast_event(self, event_data: Dict[str, Any]) -> None:
         """Broadcast event notification to all subscribed clients (Feature 017).
@@ -1337,9 +1338,10 @@ class IPCServer:
 
         logger.debug(f"Broadcasting event to {len(self.subscribed_clients)} clients: {event_data}")
 
+        # Feature 058: Use "event" method for workspace panel compatibility
         notification = {
             "jsonrpc": "2.0",
-            "method": "event_notification",
+            "method": "event",
             "params": event_data
         }
         message = json.dumps(notification).encode() + b"\n"

@@ -44,7 +44,7 @@ in
     # Desktop configurations
     ../desktop/dunst.nix       # Notification daemon for i3
     ../desktop/i3-window-rules.nix  # Auto-generate i3 window rules from app-registry (Feature 035)
-    ../desktop/i3-project-daemon.nix  # Event-driven daemon for project-scoped window management
+    # Event-driven daemon now managed by system service (Feature 037) - see configurations/m1.nix
     ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
     ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)
     ../tools/window-env.nix          # Helper to query window PIDs and environment variables

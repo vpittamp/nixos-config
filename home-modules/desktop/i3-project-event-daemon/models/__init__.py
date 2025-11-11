@@ -34,6 +34,11 @@ from .floating_config import (
     get_floating_dimensions,
 )
 
+# Feature 058: Workspace Mode Visual Feedback
+from .workspace_mode_feedback import (
+    PendingWorkspaceState,
+)
+
 # Legacy models - import everything EXCEPT the ones we're replacing
 from .legacy import (
     WindowInfo,
@@ -82,6 +87,8 @@ __all__ = [
     "Layout",
     "Project",
     "ActiveProjectState",
+    # Feature 058: Workspace Mode Visual Feedback
+    "PendingWorkspaceState",
     # Feature 001: Monitor role and floating window models
     "MonitorRoleV2",
     "OutputInfoV2",

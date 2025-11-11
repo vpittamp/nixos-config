@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, TYPE_CHECKING
 
 # Import Pydantic models from existing models module
-from .models import WorkspaceModeState, WorkspaceSwitch, WorkspaceModeEvent
+from .models import WorkspaceModeState, WorkspaceSwitch, WorkspaceModeEvent, PendingWorkspaceState
 
 if TYPE_CHECKING:
     from i3ipc.aio import Connection
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class WorkspaceModeManager:
     """Manages workspace mode state in-memory."""
 
-    def __init__(self, i3_connection: "Connection", config_dir=None, state_manager=None, workspace_tracker=None):
+    def __init__(self, i3_connection: "Connection", config_dir=None, state_manager=None, workspace_tracker=None, ipc_server=None):
         """Initialize workspace mode manager.
 
         Args:
@@ -31,11 +31,13 @@ class WorkspaceModeManager:
             config_dir: Path to i3 config directory (for ProjectService lazy-loading)
             state_manager: StateManager instance (for ProjectService lazy-loading)
             workspace_tracker: WorkspaceTracker for window filtering (Feature 037)
+            ipc_server: IPCServer instance for broadcasting workspace mode events (Feature 058)
         """
         self._i3 = i3_connection
         self._config_dir = config_dir
         self._state_manager = state_manager
         self._workspace_tracker = workspace_tracker
+        self._ipc_server = ipc_server  # Feature 058: IPC event broadcasting
         self._project_service = None  # Lazy-loaded on first use
         self._state = WorkspaceModeState()
         self._history: List[WorkspaceSwitch] = []  # Circular buffer, max 100
@@ -72,6 +74,9 @@ class WorkspaceModeManager:
         # Refresh output cache from i3 IPC
         await self._refresh_output_cache()
 
+        # Feature 058: Emit enter event (pending_workspace will be None since no digits yet)
+        await self._emit_workspace_mode_event("enter")
+
         logger.debug(f"Workspace mode entered: state={self._state}")
 
     async def add_digit(self, digit: str) -> str:
@@ -102,6 +107,9 @@ class WorkspaceModeManager:
 
         self._state.accumulated_digits += digit
         self._state.input_type = "workspace"  # NEW: Mark as workspace navigation
+
+        # Feature 058: Emit workspace mode event with pending workspace state
+        await self._emit_workspace_mode_event("digit")
 
         elapsed_ms = (time.time() - start_time) * 1000
         logger.debug(f"Digit added: {digit}, accumulated: {self._state.accumulated_digits} (took {elapsed_ms:.2f}ms)")
@@ -192,6 +200,9 @@ class WorkspaceModeManager:
             # Reset state
             mode_type = self._state.mode_type  # Save for return value
             self._state.reset()
+
+            # Feature 058: Emit execute event AFTER reset (clears pending workspace highlight)
+            await self._emit_workspace_mode_event("execute")
 
             return {
                 "type": "workspace",
@@ -327,6 +338,9 @@ class WorkspaceModeManager:
         # Reset all state fields
         self._state.reset()
 
+        # Feature 058: Emit cancel event AFTER reset (clears pending workspace highlight)
+        await self._emit_workspace_mode_event("cancel")
+
     def get_history(self, limit: Optional[int] = None) -> List[WorkspaceSwitch]:
         """Get workspace switch history.
 
@@ -391,6 +405,42 @@ class WorkspaceModeManager:
                 "TERTIARY": "eDP-1"
             }
 
+    def _calculate_pending_workspace(self) -> Optional[PendingWorkspaceState]:
+        """Calculate pending workspace state from accumulated digits.
+
+        Feature 058: Workspace Mode Visual Feedback
+        Derives PendingWorkspaceState from current accumulated_digits.
+
+        Returns:
+            PendingWorkspaceState if valid workspace (1-70), None otherwise
+        """
+        # No digits accumulated yet
+        if not self._state.accumulated_digits:
+            return None
+
+        # Parse workspace number
+        try:
+            workspace_number = int(self._state.accumulated_digits)
+        except ValueError:
+            logger.warning(f"Invalid accumulated_digits: {self._state.accumulated_digits}")
+            return None
+
+        # Validate workspace range (1-70)
+        if workspace_number < 1 or workspace_number > 70:
+            logger.debug(f"Workspace number out of range: {workspace_number} (valid: 1-70)")
+            return None
+
+        # Determine target output
+        target_output = self._get_output_for_workspace(workspace_number)
+
+        # Create pending workspace state
+        return PendingWorkspaceState(
+            workspace_number=workspace_number,
+            accumulated_digits=self._state.accumulated_digits,
+            mode_type=self._state.mode_type or "goto",  # Default to "goto" if not set
+            target_output=target_output
+        )
+
     def _get_output_for_workspace(self, workspace: int) -> str:
         """Get output name for workspace number.
 
@@ -411,6 +461,41 @@ class WorkspaceModeManager:
             return self._state.output_cache.get("SECONDARY", "eDP-1")
         else:
             return self._state.output_cache.get("TERTIARY", "eDP-1")
+
+    async def _emit_workspace_mode_event(self, event_type: str) -> None:
+        """Emit workspace mode event via IPC with pending workspace state.
+
+        Feature 058: Workspace Mode Visual Feedback
+        Broadcasts events to sway-workspace-panel for real-time UI updates.
+
+        Args:
+            event_type: Type of event ("enter", "digit", "cancel", "execute")
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping event emission")
+            return
+
+        # Calculate pending workspace state
+        pending_workspace = self._calculate_pending_workspace()
+
+        # Create event payload (Feature 058: format for workspace panel)
+        event_payload = {
+            "type": "workspace_mode",
+            "payload": {
+                "event_type": event_type,
+                "pending_workspace": pending_workspace.model_dump() if pending_workspace else None,
+                "timestamp": time.time()
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted workspace_mode event: type={event_type}, pending_ws={pending_workspace.workspace_number if pending_workspace else None}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast workspace_mode event: {e}")
 
     async def _record_switch(self, workspace: int, output: str, mode_type: str) -> None:
         """Record workspace switch in history.

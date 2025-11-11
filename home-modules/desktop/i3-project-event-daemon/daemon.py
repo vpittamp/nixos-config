@@ -274,7 +274,8 @@ class I3ProjectDaemon:
             self.connection.conn,
             config_dir=self.config_dir,
             state_manager=self.state_manager,
-            workspace_tracker=self.workspace_tracker
+            workspace_tracker=self.workspace_tracker,
+            ipc_server=self.ipc_server  # Feature 058: IPC event broadcasting
         )
         self.state_manager.workspace_mode_manager = self.workspace_mode_manager
         logger.info("Workspace mode manager initialized")
