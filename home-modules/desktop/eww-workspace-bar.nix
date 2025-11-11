@@ -43,9 +43,24 @@ let
 
   pythonEnv = pkgs.python311.withPackages (ps: with ps; [ i3ipc pyxdg pydantic ]);
 
-  workspacePanelScript = ../tools/sway-workspace-panel/workspace_panel.py;
+  # Feature 057: Shared module directory for icon_resolver.py, models.py
+  # Copy all Python modules from source directory
+  workspacePanelDir = pkgs.stdenv.mkDerivation {
+    name = "sway-workspace-panel";
+    src = ../tools/sway-workspace-panel;
+    installPhase = ''
+      mkdir -p $out
+      cp *.py $out/
+      cp workspace-preview-daemon $out/
+      chmod +x $out/workspace_panel.py
+      chmod +x $out/workspace-preview-daemon
+    '';
+  };
+
+  workspacePanelScript = "${workspacePanelDir}/workspace_panel.py";
 
   workspacePanelBin = pkgs.writeShellScriptBin "sway-workspace-panel" ''
+    export PYTHONPATH="${workspacePanelDir}:$PYTHONPATH"
     exec ${pythonEnv}/bin/python -u ${workspacePanelScript} "$@"
   '';
 
@@ -53,8 +68,7 @@ let
   workspacePanelCommand = "sway-workspace-panel";
 
   # Feature 057: User Story 2 - Workspace Preview Daemon
-  workspacePreviewDaemonScript = ../tools/sway-workspace-panel/workspace-preview-daemon;
-  workspacePanelDir = ../tools/sway-workspace-panel;
+  workspacePreviewDaemonScript = "${workspacePanelDir}/workspace-preview-daemon";
 
   workspacePreviewDaemonBin = pkgs.writeShellScriptBin "workspace-preview-daemon" ''
     export PYTHONPATH="${workspacePanelDir}:$PYTHONPATH"

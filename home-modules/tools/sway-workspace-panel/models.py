@@ -221,3 +221,83 @@ class WorkspacePreview(BaseModel):
                 }
             ]
         }
+
+
+# ============================================================================
+# Feature 057: User Story 4 - App-Aware Notification Icons
+# T021: NotificationIcon and AppIconMapping Pydantic models
+# ============================================================================
+
+
+class AppIconMapping(BaseModel):
+    """Mapping from app identifier to icon path.
+
+    Used for resolving notification icons from application registry.
+    """
+
+    app_id: str = Field(..., description="Application identifier (app_id, window_class, or I3PM_APP_NAME)")
+    icon_path: str = Field(..., description="Absolute path to icon file")
+    icon_name: Optional[str] = Field(default=None, description="Icon name for XDG theme lookup")
+    display_name: str = Field(..., description="Human-readable application name")
+    desktop_id: Optional[str] = Field(default=None, description="Desktop entry ID (e.g., 'firefox.desktop')")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "app_id": "com.mitchellh.ghostty",
+                    "icon_path": "/etc/profiles/per-user/vpittamp/share/icons/hicolor/128x128/apps/com.mitchellh.ghostty.png",
+                    "icon_name": "com.mitchellh.ghostty",
+                    "display_name": "Ghostty",
+                    "desktop_id": "com.mitchellh.ghostty.desktop"
+                },
+                {
+                    "app_id": "code",
+                    "icon_path": "/etc/nixos/assets/icons/apps/code.svg",
+                    "icon_name": "vscode",
+                    "display_name": "VS Code",
+                    "desktop_id": "code.desktop"
+                }
+            ]
+        }
+
+
+class NotificationIcon(BaseModel):
+    """Notification icon metadata resolved from application registry.
+
+    Represents the icon to be used for a notification based on the app that sent it.
+    """
+
+    source_app: str = Field(..., description="Source application identifier (from notification hint or window tracking)")
+    resolved_icon: str = Field(..., description="Resolved icon path (absolute path or XDG icon name)")
+    fallback_icon: Optional[str] = Field(default="dialog-information", description="Fallback icon if resolution fails")
+    resolution_method: Literal["registry", "desktop_entry", "xdg_theme", "fallback"] = Field(
+        default="fallback",
+        description="How the icon was resolved"
+    )
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "source_app": "code",
+                    "resolved_icon": "/etc/nixos/assets/icons/apps/code.svg",
+                    "fallback_icon": "dialog-information",
+                    "resolution_method": "registry"
+                },
+                {
+                    "source_app": "ffpwa-01JCYF8Z2M",
+                    "resolved_icon": "/etc/nixos/assets/icons/claude.svg",
+                    "fallback_icon": "dialog-information",
+                    "resolution_method": "registry"
+                },
+                {
+                    "source_app": "unknown-app",
+                    "resolved_icon": "dialog-information",
+                    "fallback_icon": "dialog-information",
+                    "resolution_method": "fallback"
+                }
+            ]
+        }

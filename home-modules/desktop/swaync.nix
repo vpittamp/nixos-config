@@ -228,5 +228,82 @@ in {
   #   };
   # };
 
-  # T024: Future enhancement - Generate GTK icon theme symlinks from application-registry.json
+  # Feature 057: T023 - Generate GTK icon theme symlinks from application-registry.json
+  # This allows SwayNC to resolve notification icons via GTK icon theme lookup
+  #
+  # Architecture: SwayNC uses gtk_icon_theme_load_icon() to find notification icons.
+  # By creating symlinks in ~/.local/share/icons/hicolor/scalable/apps/, we map
+  # app_ids (com.mitchellh.ghostty, code, ffpwa-01JCYF8Z2M) to actual icon paths
+  # from our application registry, so SwayNC automatically shows the correct icons.
+
+  # Load application registry for icon mappings
+  xdg.dataFile = let
+    # Read application-registry.json
+    appRegistryPath = "${config.home.homeDirectory}/.config/i3/application-registry.json";
+    pwaRegistryPath = "${config.home.homeDirectory}/.config/i3/pwa-registry.json";
+
+    # Helper to create icon symlink entry
+    mkIconSymlink = appId: iconPath: {
+      name = "icons/hicolor/scalable/apps/${appId}.svg";
+      value = {
+        source = iconPath;
+      };
+    };
+
+  in
+    # App registry icons will be generated at build time
+    # For now, create a placeholder structure that will be populated by activation script
+    {
+      # Note: The symlinks will be created by an activation script since we need runtime access
+      # to the application-registry.json (which may change without NixOS rebuild)
+      "icons/hicolor/scalable/apps/.placeholder".text = "# Placeholder for app icon symlinks";
+    };
+
+  # Activation script to generate icon symlinks at runtime
+  # This runs after home-manager activation and populates the icon directory
+  home.activation.generateNotificationIcons = lib.hm.dag.entryAfter ["writeBoundary"] ''
+    # Feature 057: T023 - Generate GTK icon theme symlinks from application-registry.json
+
+    ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+    APP_REGISTRY="$HOME/.config/i3/application-registry.json"
+    PWA_REGISTRY="$HOME/.config/i3/pwa-registry.json"
+
+    # Create icon directory if it doesn't exist
+    mkdir -p "$ICON_DIR"
+
+    # Remove old symlinks (cleanup)
+    find "$ICON_DIR" -type l -delete
+
+    # Generate symlinks from application registry
+    # Only symlink absolute paths - icon names (like "com.mitchellh.ghostty") will be
+    # resolved by GTK icon theme automatically, so we don't need symlinks for those.
+    if [ -f "$APP_REGISTRY" ]; then
+      ${pkgs.jq}/bin/jq -r '.applications[] | select(.icon != null and .icon != "") | "\(.name)|\(.icon)"' "$APP_REGISTRY" | while IFS='|' read -r app_name icon_path; do
+        # Create symlink only for absolute paths (custom icons)
+        # Icon names like "com.mitchellh.ghostty" will be resolved by GTK theme
+        if [ -f "$icon_path" ]; then
+          ln -sf "$icon_path" "$ICON_DIR/$app_name.svg" 2>/dev/null || true
+        fi
+      done
+    fi
+
+    # Generate symlinks from PWA registry
+    if [ -f "$PWA_REGISTRY" ]; then
+      ${pkgs.jq}/bin/jq -r '.pwas[] | select(.icon != null and .icon != "") | "ffpwa-\(.ulid)|\(.icon)"' "$PWA_REGISTRY" | while IFS='|' read -r pwa_id icon_path; do
+        # Create symlink using PWA app_id (ffpwa-ULID format)
+        # Example: ffpwa-01JCYF8Z2M -> /path/to/claude.svg
+        pwa_id_lower=$(echo "$pwa_id" | tr '[:upper:]' '[:lower:]')
+        if [ -f "$icon_path" ]; then
+          ln -sf "$icon_path" "$ICON_DIR/$pwa_id_lower.svg" 2>/dev/null || true
+        fi
+      done
+    fi
+
+    # Update GTK icon cache
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+      ${pkgs.gtk3}/bin/gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+    fi
+
+    echo "Generated notification icon symlinks in $ICON_DIR"
+  '';
 }
