@@ -89,13 +89,12 @@ ${workspaceMarkupDefs}
       + replace(workspace_name, "\"", "\\\"")
       + "\""
     }
-    (box :class "workspace-pill"
-      (box :class "workspace-icon-stack"
-        (image :class "workspace-icon-image"
-               :path icon_path
-               :image-width 20
-               :image-height 20)
-        (label :class "workspace-icon-fallback" :text icon_fallback))))
+    (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
+      (image :class "workspace-icon-image"
+             :path icon_path
+             :image-width 16
+             :image-height 16)
+      (label :class "workspace-number" :text number_label)))
 )
 
 (defwidget workspace-strip [output_label markup_var]
@@ -116,65 +115,90 @@ $base: #1e1e2e;
 $mantle: #181825;
 $surface0: #313244;
 $surface1: #45475a;
+$overlay0: #6c7086;
 $text: #cdd6f4;
 $subtext0: #a6adc8;
 $mauve: #cba6f7;
 $blue: #89b4fa;
+$teal: #94e2d5;
 $red: #f38ba8;
 
 * {
   font-family: sans-serif;
   font-size: 11pt;
   color: $text;
+  background-color: transparent;
+}
+
+window {
+  background-color: transparent;
 }
 
 .workspace-bar {
-  background: $base;
-  padding: 6px;
-  margin: 8px;
-  border-radius: 8px;
+  background: rgba(30, 30, 46, 0.85);
+  padding: 4px 8px;
+  margin: 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(203, 166, 247, 0.25);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 .workspace-output {
-  font-size: 9pt;
+  font-size: 8pt;
   color: $subtext0;
   margin-right: 8px;
+  opacity: 0.5;
 }
 
 .workspace-strip {
   margin-left: 0px;
 }
 
+/* Flat buttons with subtle borders */
 .workspace-button {
-  background: $surface0;
-  padding: 6px;
-  border-radius: 8px;
-  border: 2px solid transparent;
+  background: rgba(30, 30, 46, 0.3);
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(108, 112, 134, 0.3);
+  box-shadow: none;
   min-width: 0;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
+}
+
+button {
+  box-shadow: none;
+  background-image: none;
+  outline: none;
 }
 
 .workspace-button:hover {
-  background: $surface1;
-  border-color: $blue;
+  background: rgba(137, 180, 250, 0.15);
+  border: 1px solid rgba(137, 180, 250, 0.4);
 }
 
+/* Focused: Flat blue accent */
 .workspace-button.focused {
-  background: $mauve;
-  border-color: $mauve;
+  background: rgba(137, 180, 250, 0.3);
+  border: 1px solid rgba(137, 180, 250, 0.6);
 }
 
+/* Visible on other monitor */
 .workspace-button.visible:not(.focused) {
-  border-color: $blue;
+  background: rgba(137, 180, 250, 0.12);
+  border: 1px solid rgba(137, 180, 250, 0.35);
 }
 
 .workspace-button.urgent {
-  background: $red;
-  border-color: $red;
+  background: rgba(243, 139, 168, 0.25);
+  border: 1px solid rgba(243, 139, 168, 0.5);
 }
 
 .workspace-button.empty {
-  opacity: 0.4;
+  opacity: 0.3;
+}
+
+.workspace-button.empty:hover {
+  opacity: 0.6;
 }
 
 .workspace-pill {
@@ -182,33 +206,45 @@ $red: #f38ba8;
   padding: 0;
 }
 
-.workspace-icon-stack {
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0px;
-  margin: 0px;
-}
-
 .workspace-icon-image {
   opacity: 1.0;
+  min-width: 16px;
+  min-height: 16px;
 }
 
+.workspace-button.focused .workspace-icon-image {
+  -gtk-icon-shadow: 0 0 8px rgba(137, 180, 250, 0.8);
+}
+
+.workspace-button.urgent .workspace-icon-image {
+  -gtk-icon-shadow: 0 0 6px rgba(243, 139, 168, 0.5);
+}
+
+/* Hide icon when no icon path */
 .workspace-button.no-icon .workspace-icon-image {
   opacity: 0;
 }
 
-.workspace-button.has-icon .workspace-icon-fallback {
-  opacity: 0;
+/* Workspace number always visible */
+.workspace-number {
+  font-size: 9pt;
+  font-weight: 500;
+  color: $subtext0;
+  min-width: 12px;
 }
 
-.workspace-icon-fallback {
+.workspace-button.focused .workspace-number {
+  color: $blue;
   font-weight: 600;
-  font-size: 12pt;
-  color: $text;
 }
 
-.workspace-button.focused .workspace-icon-fallback {
-  color: $base;
+.workspace-button.urgent .workspace-number {
+  color: $red;
+  font-weight: 600;
+}
+
+.workspace-button.empty .workspace-number {
+  color: $overlay0;
 }
 '';
 
