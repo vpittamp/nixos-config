@@ -219,7 +219,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       preferred_monitor_role = "tertiary";
-      icon = "git";
+      icon = "/etc/nixos/assets/pwa-icons/lazygit.png";  # Official lazygit logo (red diamond with 3 white dots)
       nix_package = "pkgs.lazygit";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -282,7 +282,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
-      icon = "system-file-manager";
+      icon = "/etc/nixos/assets/pwa-icons/yazi.png";  # Use absolute path (system-file-manager too generic)
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";

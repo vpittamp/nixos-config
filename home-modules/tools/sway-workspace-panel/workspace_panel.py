@@ -208,15 +208,22 @@ def build_workspace_payload(
         # Feature 057: Read I3PM_APP_NAME from process environment for accurate window matching
         # This handles terminal apps (lazygit, yazi, btop launched via ghostty) and all other apps
         i3pm_app_name = None
-        if leaf and hasattr(leaf, 'pid'):
+        if leaf and hasattr(leaf, 'pid') and leaf.pid:
             i3pm_app_name = read_i3pm_app_name(leaf.pid)
+            if i3pm_app_name:
+                import sys
+                print(f"DEBUG: WS {reply.num} PID {leaf.pid} -> I3PM_APP_NAME={i3pm_app_name}", file=sys.stderr, flush=True)
 
         # Priority: I3PM_APP_NAME > app_id > window_class > window_instance
         # I3PM_APP_NAME provides accurate app identification for all launcher-launched apps
         if i3pm_app_name:
             icon_info = icon_index.lookup(app_id=i3pm_app_name, window_class=None, window_instance=None)
+            if icon_info:
+                print(f"DEBUG: I3PM match - {i3pm_app_name} -> icon={icon_info.get('icon')}", file=sys.stderr, flush=True)
         else:
             icon_info = icon_index.lookup(app_id=app_id, window_class=window_class, window_instance=window_instance)
+            if icon_info:
+                print(f"DEBUG: Fallback match - app_id={app_id} -> icon={icon_info.get('icon')}", file=sys.stderr, flush=True)
         app_name = icon_info.get("name", "") if icon_info else (leaf.name if leaf else "")
         icon_path = icon_info.get("icon", "") if icon_info else ""
         fallback_symbol_source = app_name or (leaf.name if leaf else "") or reply.name
