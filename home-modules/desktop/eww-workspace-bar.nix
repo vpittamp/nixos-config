@@ -73,6 +73,13 @@ let
   ewwYuck = ''
 ${workspaceMarkupDefs}
 
+; SwayNC notification indicator (Feature 058 enhancement)
+(defpoll swaync_count :interval "2s"
+  "${pkgs.swaynotificationcenter}/bin/swaync-client -c")
+
+(defpoll swaync_dnd :interval "2s"
+  "${pkgs.swaynotificationcenter}/bin/swaync-client -D")
+
 (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]
   (overlay
     ; Base button (first child determines overlay size)
@@ -112,6 +119,24 @@ ${workspaceMarkupDefs}
       (label :class "notification-badge" :text "")))
 )
 
+(defwidget swaync-indicator []
+  (button
+    :class {
+      "swaync-button "
+      + (swaync_dnd == "true" ? "dnd-active " : "")
+      + (swaync_count > 0 ? "has-notifications" : "no-notifications")
+    }
+    :tooltip {
+      swaync_dnd == "true"
+        ? "Do Not Disturb (" + swaync_count + " notifications)"
+        : (swaync_count > 0 ? swaync_count + " notification(s)" : "No notifications")
+    }
+    :onclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw"
+    :onrightclick "sleep 0.1 && ${pkgs.swaynotificationcenter}/bin/swaync-client -d -sw"
+    (box :class "swaync-pill" :orientation "h" :space-evenly false :spacing 3
+      (label :class "swaync-icon" :text {swaync_dnd == "true" ? "🔕" : "🔔"})
+      (label :class "swaync-count" :text {swaync_count > 0 ? swaync_count : ""}))))
+
 (defwidget workspace-strip [output_label markup_var]
   (box :class "workspace-bar"
     (label :class "workspace-output" :text output_label)
@@ -119,7 +144,8 @@ ${workspaceMarkupDefs}
          :orientation "h"
          :halign "center"
           :spacing 3
-      (literal :content markup_var))))
+      (literal :content markup_var))
+    (swaync-indicator)))
 
 ${windowBlocks}
 '';
@@ -315,6 +341,51 @@ button {
 .workspace-button.pending .notification-badge {
   /* No style override needed - badge renders on top via overlay widget */
   /* Pending affects button background, badge is independent overlay */
+}
+
+/* Feature 058: SwayNC notification indicator (enhancement) */
+.swaync-button {
+  background: rgba(30, 30, 46, 0.3);
+  padding: 3px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(108, 112, 134, 0.3);
+  transition: all 0.2s;
+}
+
+.swaync-button:hover {
+  background: rgba(137, 180, 250, 0.15);
+  border: 1px solid rgba(137, 180, 250, 0.4);
+}
+
+.swaync-button.has-notifications {
+  background: rgba(137, 180, 250, 0.25);
+  border: 1px solid rgba(137, 180, 250, 0.5);
+}
+
+.swaync-button.dnd-active {
+  background: rgba(249, 226, 175, 0.25);  /* Yellow for DND */
+  border: 1px solid rgba(249, 226, 175, 0.6);
+}
+
+.swaync-pill {
+  margin: 0;
+  padding: 0;
+}
+
+.swaync-icon {
+  font-size: 11pt;
+}
+
+.swaync-count {
+  font-size: 9pt;
+  font-weight: 600;
+  color: $blue;
+  min-width: 12px;
+}
+
+.swaync-button.dnd-active .swaync-count {
+  color: $yellow;
 }
 '';
 
