@@ -91,6 +91,7 @@
           export QT_QPA_PLATFORM=wayland
           export GDK_BACKEND=wayland
           export GSK_RENDERER=cairo
+          export WLR_NO_HARDWARE_CURSORS=1
           exec ${pkgs.sway}/bin/sway
         ''}";
         user = "vpittamp";
@@ -113,6 +114,9 @@
 
     # Use pixman software rendering (no GPU acceleration in cloud VMs)
     WLR_RENDERER = "pixman";
+
+    # Force software cursor composition so remote viewers always see the true pointer
+    WLR_NO_HARDWARE_CURSORS = "1";
 
     # Wayland-specific environment variables
     XDG_SESSION_TYPE = "wayland";

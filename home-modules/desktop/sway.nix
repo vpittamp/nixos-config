@@ -104,6 +104,40 @@ let
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
+  mkWayvncWrapper = output: port: socket:
+    pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
+      set -euo pipefail
+
+      has_transient=0
+      wayland_display="$(${pkgs.coreutils}/bin/printenv WAYLAND_DISPLAY 2>/dev/null || true)"
+      if [ -n "$wayland_display" ]; then
+        if ${pkgs.coreutils}/bin/timeout 2 \
+             ${pkgs.wayland-utils}/bin/wayland-info --display "$wayland_display" 2>/dev/null \
+             | ${pkgs.gnugrep}/bin/grep -q 'ext_transient_seat_v1'; then
+          has_transient=1
+        fi
+      fi
+
+      if [ "$has_transient" -eq 1 ]; then
+        exec ${pkgs.wayvnc}/bin/wayvnc \
+          -o ${output} \
+          -S ${socket} \
+          -R \
+          -Ldebug \
+          -r \
+          --transient-seat \
+          0.0.0.0 ${toString port}
+      fi
+
+      echo "wayvnc ${output}: ext_transient_seat_v1 not detected; continuing without dedicated seat" >&2
+      exec ${pkgs.wayvnc}/bin/wayvnc \
+        -o ${output} \
+        -S ${socket} \
+        -R \
+        -Ldebug \
+        -r \
+        0.0.0.0 ${toString port}
+    '';
 
   # Feature 001: Import validated application definitions with monitor role preferences
   appRegistryData = import ./app-registry-data.nix { inherit lib; };
@@ -916,7 +950,7 @@ in
 
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-1 -S /run/user/1000/wayvnc-headless-1.sock -R -Ldebug 0.0.0.0 5900";
+      ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 "/run/user/1000/wayvnc-headless-1.sock";
       Restart = "on-failure";
       RestartSec = "1";
     };
@@ -938,7 +972,7 @@ in
 
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-2 -S /run/user/1000/wayvnc-headless-2.sock -R -Ldebug 0.0.0.0 5901";
+      ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 "/run/user/1000/wayvnc-headless-2.sock";
       Restart = "on-failure";
       RestartSec = "1";
     };
@@ -960,7 +994,7 @@ in
 
     Service = {
       Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HEADLESS-3 -S /run/user/1000/wayvnc-headless-3.sock -R -Ldebug 0.0.0.0 5902";
+      ExecStart = mkWayvncWrapper "HEADLESS-3" 5902 "/run/user/1000/wayvnc-headless-3.sock";
       Restart = "on-failure";
       RestartSec = "1";
     };
