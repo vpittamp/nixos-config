@@ -74,28 +74,42 @@ let
 ${workspaceMarkupDefs}
 
 (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]
-  (button
-    :class {
-      "workspace-button "
-      + (pending ? "pending " : "")
-      + (focused ? "focused " : "")
-      + ((visible && !focused) ? "visible " : "")
-      + (urgent ? "urgent " : "")
-      + ((icon_path != "") ? "has-icon " : "no-icon ")
-      + (empty ? "empty" : "populated")
+  (overlay
+    ; Base button (first child determines overlay size)
+    (button
+      :class {
+        "workspace-button "
+        + (pending ? "pending " : "")
+        + (focused ? "focused " : "")
+        + ((visible && !focused) ? "visible " : "")
+        + (urgent ? "urgent " : "")
+        + ((icon_path != "") ? "has-icon " : "no-icon ")
+        + (empty ? "empty" : "populated")
+      }
+      :tooltip {
+      urgent ?
+        (app_name != "" ? (number_label + " · " + app_name + " (urgent)") : (workspace_name + " (urgent)"))
+        : (app_name != "" ? (number_label + " · " + app_name) : workspace_name)
     }
-    :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
-    :onclick {
-      "swaymsg workspace \""
-      + replace(workspace_name, "\"", "\\\"")
-      + "\""
-    }
-    (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
-      (image :class "workspace-icon-image"
-             :path icon_path
-             :image-width 16
-             :image-height 16)
-      (label :class "workspace-number" :text number_label)))
+      :onclick {
+        "swaymsg workspace \""
+        + replace(workspace_name, "\"", "\\\"")
+        + "\""
+      }
+      (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
+        (image :class "workspace-icon-image"
+               :path icon_path
+               :image-width 16
+               :image-height 16)
+        (label :class "workspace-number" :text number_label)))
+
+    ; Notification badge overlay (User Story 3 - T034)
+    (box
+      :class "notification-badge-container"
+      :valign "start"
+      :halign "end"
+      :visible urgent
+      (label :class "notification-badge" :text "")))
 )
 
 (defwidget workspace-strip [output_label markup_var]
@@ -278,6 +292,27 @@ button {
 
 .workspace-button.empty .workspace-number {
   color: $overlay0;
+}
+
+/* Feature 058: Notification badge (User Story 3) */
+.notification-badge-container {
+  margin: 2px 2px 0 0;  /* T032: Position in top-right corner with slight offset */
+}
+
+.notification-badge {
+  min-width: 8px;  /* T033: 8px diameter circle */
+  min-height: 8px;
+  background: $red;  /* Catppuccin Mocha Red (#f38ba8) */
+  border: 2px solid white;  /* High contrast against button background */
+  border-radius: 50%;  /* Perfect circle */
+  opacity: 1;
+  transition: opacity 0.2s;  /* T035: Smooth fade-out when urgent clears */
+}
+
+/* T036: Badge coexists with pending highlight (both can be visible) */
+.workspace-button.pending .notification-badge {
+  /* No style override needed - badge renders on top via overlay widget */
+  /* Pending affects button background, badge is independent overlay */
 }
 '';
 

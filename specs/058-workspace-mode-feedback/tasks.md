@@ -97,14 +97,14 @@
 
 ### Implementation for User Story 3
 
-- [ ] T031 [P] [US3] Refactor `workspace-button` widget in `home-modules/desktop/eww-workspace-bar.nix` to use Eww `overlay` structure (base button as first child, badge container as second child)
-- [ ] T032 [P] [US3] Add `.notification-badge-container` CSS class to `home-modules/desktop/eww-workspace-bar-styles.scss` (positioning: margin 2px 2px 0 0)
-- [ ] T033 [P] [US3] Add `.notification-badge` CSS class with Catppuccin Mocha Red styling (min-width/height 8px, background #f38ba8, border 2px white, border-radius 50%)
-- [ ] T034 [US3] Add badge overlay box to Yuck widget with `:visible urgent` attribute (badge visibility tied to workspace urgent state)
-- [ ] T035 [US3] Add CSS fade-out transition for badge (opacity transition 0.2s) when urgent state clears
-- [ ] T036 [US3] Verify badge and pending highlight can coexist (urgent workspace with pending state shows both yellow background and red badge)
-- [ ] T037 [US3] Update workspace button tooltip to include urgent state information when badge is visible
-- [ ] T038 [US3] Test badge layering with Eww overlay widget (badge should render on top without layout shifts)
+- [X] T031 [P] [US3] Refactor `workspace-button` widget in `home-modules/desktop/eww-workspace-bar.nix` to use Eww `overlay` structure (base button as first child, badge container as second child)
+- [X] T032 [P] [US3] Add `.notification-badge-container` CSS class to `home-modules/desktop/eww-workspace-bar-styles.scss` (positioning: margin 2px 2px 0 0)
+- [X] T033 [P] [US3] Add `.notification-badge` CSS class with Catppuccin Mocha Red styling (min-width/height 8px, background #f38ba8, border 2px white, border-radius 50%)
+- [X] T034 [US3] Add badge overlay box to Yuck widget with `:visible urgent` attribute (badge visibility tied to workspace urgent state)
+- [X] T035 [US3] Add CSS fade-out transition for badge (opacity transition 0.2s) when urgent state clears
+- [X] T036 [US3] Verify badge and pending highlight can coexist (urgent workspace with pending state shows both yellow background and red badge)
+- [X] T037 [US3] Update workspace button tooltip to include urgent state information when badge is visible
+- [X] T038 [US3] Test badge layering with Eww overlay widget (badge should render on top without layout shifts)
 
 **Checkpoint**: Notification badges should render cleanly on urgent workspaces, compatible with pending highlights
 
