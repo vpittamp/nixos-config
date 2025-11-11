@@ -76,8 +76,9 @@ in
           '';
         };
 
+      # Feature 057: Binding mode indicator disabled (Option 1 UX - workspace mode feedback in preview dialog)
       headlessBars = [
-        { output = "HEADLESS-1"; trayOutput = "HEADLESS-1"; bindingModeIndicator = true; }
+        { output = "HEADLESS-1"; trayOutput = "HEADLESS-1"; bindingModeIndicator = false; }
         { output = "HEADLESS-2"; }
         { output = "HEADLESS-3"; }
       ];

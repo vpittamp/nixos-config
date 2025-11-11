@@ -129,17 +129,25 @@ ${workspaceMarkupDefs}
 ${workspacePreviewDefs}
 
 ;; Feature 057: User Story 2 - Workspace Preview Card Widget (T041)
+;; Enhanced with prominent mode + digits display (Option 1 UX)
 (defwidget workspace-preview-card []
   (box :class "preview-card"
        :orientation "v"
        :space-evenly false
        :visible {workspace_preview_data.visible == true}
-    ;; Header: "Workspace X" or "Move to Workspace X"
+    ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
     (box :class "preview-header"
-      (label :class "preview-title"
+         :orientation "v"
+         :space-evenly false
+      ;; Primary: Large mode symbol + accumulated digits
+      (label :class "preview-mode-digits"
+             :text {(workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
+                    (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
+      ;; Secondary: Descriptive subtitle
+      (label :class "preview-subtitle"
              :text {workspace_preview_data.mode == "move"
                     ? "Move to Workspace " + workspace_preview_data.workspace_num
-                    : "Workspace " + workspace_preview_data.workspace_num}))
+                    : "Navigate to Workspace " + workspace_preview_data.workspace_num}))
 
     ;; Empty workspace indicator
     (box :class "preview-body"
@@ -414,14 +422,26 @@ button {
 
 .preview-header {
   margin-bottom: 12px;
-  padding-bottom: 8px;
+  padding-bottom: 12px;
   border-bottom: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
+  text-align: center;
 }
 
-.preview-title {
-  font-size: 12pt;
-  font-weight: 600;
-  color: $blue;  /* Accent color for header */
+/* Enhanced header: Prominent mode + digits display (Option 1 UX) */
+.preview-mode-digits {
+  font-size: 28pt;
+  font-weight: 700;
+  color: $yellow;  /* Catppuccin yellow for pending state */
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px rgba(249, 226, 175, 0.4);  /* Subtle glow */
+}
+
+.preview-subtitle {
+  font-size: 10pt;
+  font-weight: 400;
+  color: $subtext0;
+  opacity: 0.8;
 }
 
 .preview-body {

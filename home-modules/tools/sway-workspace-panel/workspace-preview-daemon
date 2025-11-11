@@ -31,7 +31,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     Args:
         visible: Whether preview card should be shown
         renderer: PreviewRenderer instance for querying workspace contents
-        **kwargs: Additional fields (workspace_num, monitor, mode, etc.)
+        **kwargs: Additional fields (workspace_num, monitor, mode, accumulated_digits, etc.)
     """
     if not visible:
         # Hide preview card
@@ -47,6 +47,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     workspace_num = kwargs.get("workspace_num")
     monitor_output = kwargs.get("monitor_output", "HEADLESS-1")
     mode = kwargs.get("mode", "goto")
+    accumulated_digits = kwargs.get("accumulated_digits", "")
 
     if workspace_num is None:
         print("Error: workspace_num is None but visible=True", file=sys.stderr)
@@ -61,6 +62,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
             "workspace_num": workspace_num,
             "workspace_name": None,
             "mode": mode,
+            "accumulated_digits": accumulated_digits,
             "apps": [],
             "window_count": 0,
             "empty": True,
@@ -84,6 +86,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
         "workspace_num": preview.workspace_num,
         "workspace_name": preview.workspace_name,
         "mode": preview.mode,
+        "accumulated_digits": accumulated_digits,
         "apps": [
             {
                 "name": app.name,
@@ -175,6 +178,7 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                 workspace_num=pending.get("workspace_number"),
                                 monitor_output=pending.get("target_output") or "eDP-1",
                                 mode=pending.get("mode_type", "goto"),
+                                accumulated_digits=pending.get("accumulated_digits", ""),
                             )
                         elif event_type == "enter":
                             # Mode entered but no digits yet - hide preview
