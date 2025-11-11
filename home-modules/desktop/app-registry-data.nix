@@ -235,7 +235,7 @@ let
       scope = "scoped";
       expected_class = "Thunar";
       preferred_workspace = 6;
-      icon = "thunar";
+      icon = "/etc/nixos/assets/pwa-icons/thunar.png";  # Use Walker icon
       nix_package = "pkgs.xfce.thunar";
       multi_instance = true;
       fallback_behavior = "use_home";
