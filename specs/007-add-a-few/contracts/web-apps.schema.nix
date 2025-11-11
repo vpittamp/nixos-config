@@ -53,7 +53,7 @@
             type = lib.types.nullOr lib.types.path;
             default = null;
             description = "Path to custom icon file (PNG, SVG)";
-            example = ./assets/webapp-icons/gmail.png;
+            example = ./assets/icons/gmail.png;
           };
 
           workspace = lib.mkOption {
@@ -105,7 +105,7 @@
             name = "Gmail";
             url = "https://mail.google.com";
             wmClass = "webapp-gmail";
-            icon = ./assets/webapp-icons/gmail.png;
+            icon = ./assets/icons/gmail.png;
             workspace = "2";
             keywords = [ "email" "mail" "google" ];
           };

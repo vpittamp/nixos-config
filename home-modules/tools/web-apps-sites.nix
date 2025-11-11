@@ -14,7 +14,7 @@
         name = "Google AI";
         url = "https://www.google.com/search?udm=50";
         wmClass = "webapp-google-ai";
-        icon = ../../assets/pwa-icons/google-ai.png;
+        icon = ../../assets/icons/google-ai.png;
         workspace = "2";
         lifecycle = "persistent";
         keywords = [ "search" "web" "ai" "google" ];
@@ -26,7 +26,7 @@
         name = "YouTube";
         url = "https://www.youtube.com";
         wmClass = "webapp-youtube";
-        icon = ../../assets/pwa-icons/youtube.png;
+        icon = ../../assets/icons/youtube.png;
         workspace = "3";
         lifecycle = "persistent";
         keywords = [ "video" "streaming" "media" ];
@@ -38,7 +38,7 @@
         name = "Gitea";
         url = "https://gitea.cnoe.localtest.me:8443";
         wmClass = "webapp-gitea";
-        icon = ../../assets/pwa-icons/gitea.png;
+        icon = ../../assets/icons/gitea.png;
         workspace = "4";
         lifecycle = "persistent";
         keywords = [ "git" "code" "repository" ];
@@ -49,7 +49,7 @@
         name = "Backstage";
         url = "https://cnoe.localtest.me:8443";
         wmClass = "webapp-backstage";
-        icon = ../../assets/pwa-icons/backstage.png;
+        icon = ../../assets/icons/backstage.png;
         workspace = "5";
         lifecycle = "persistent";
         keywords = [ "portal" "platform" "developer" ];
@@ -60,7 +60,7 @@
         name = "Kargo";
         url = "https://kargo.cnoe.localtest.me:8443";
         wmClass = "webapp-kargo";
-        icon = ../../assets/pwa-icons/kargo.png;
+        icon = ../../assets/icons/kargo.png;
         workspace = "6";
         lifecycle = "persistent";
         keywords = [ "gitops" "deployment" "kubernetes" ];
@@ -71,7 +71,7 @@
         name = "ArgoCD";
         url = "https://argocd.cnoe.localtest.me:8443";
         wmClass = "webapp-argocd";
-        icon = ../../assets/pwa-icons/argocd.png;
+        icon = ../../assets/icons/argocd.png;
         workspace = "7";
         lifecycle = "persistent";
         keywords = [ "gitops" "cd" "kubernetes" "deployment" ];
@@ -82,7 +82,7 @@
         name = "GitHub Codespaces";
         url = "https://github.com/codespaces";
         wmClass = "webapp-github-codespaces";
-        icon = ../../assets/pwa-icons/github-codespaces.png;
+        icon = ../../assets/icons/github-codespaces.png;
         workspace = "8";
         lifecycle = "persistent";
         keywords = [ "github" "codespaces" "cloud" "ide" ];
@@ -93,7 +93,7 @@
         name = "ChatGPT Codex";
         url = "https://chatgpt.com/codex";
         wmClass = "webapp-chatgpt-codex";
-        icon = ../../assets/pwa-icons/chatgpt-codex.png;
+        icon = ../../assets/icons/chatgpt-codex.png;
         workspace = "9";
         lifecycle = "persistent";
         keywords = [ "ai" "chatgpt" "codex" "coding" "assistant" ];
@@ -105,7 +105,7 @@
         name = "Home Assistant";
         url = "http://localhost:8123";
         wmClass = "webapp-home-assistant";
-        icon = ../../assets/pwa-icons/home-assistant.png;
+        icon = ../../assets/icons/home-assistant.png;
         workspace = null;  # No auto workspace assignment
         lifecycle = "persistent";
         keywords = [ "home" "automation" "smart" "iot" "assistant" ];
@@ -116,7 +116,7 @@
         name = "Azure Portal";
         url = "https://portal.azure.com";
         wmClass = "webapp-azure-portal";
-        icon = ../../assets/pwa-icons/azure.png;
+        icon = ../../assets/icons/azure.png;
         workspace = null;
         lifecycle = "persistent";
         keywords = [ "azure" "cloud" "microsoft" "portal" ];
@@ -127,7 +127,7 @@
         name = "Hetzner Cloud";
         url = "https://console.hetzner.cloud";
         wmClass = "webapp-hetzner-cloud";
-        icon = ../../assets/pwa-icons/hetzner.png;
+        icon = ../../assets/icons/hetzner.png;
         workspace = null;
         lifecycle = "persistent";
         keywords = [ "hetzner" "cloud" "vps" "server" ];
@@ -138,7 +138,7 @@
         name = "Tailscale";
         url = "https://login.tailscale.com/admin/machines";
         wmClass = "webapp-tailscale";
-        icon = ../../assets/pwa-icons/tailscale.png;
+        icon = ../../assets/icons/tailscale.png;
         workspace = null;
         lifecycle = "persistent";
         keywords = [ "vpn" "tailscale" "network" "admin" ];
@@ -150,7 +150,7 @@
         name = "Uber Eats";
         url = "https://www.ubereats.com";
         wmClass = "webapp-uber-eats";
-        icon = ../../assets/pwa-icons/uber-eats.png;
+        icon = ../../assets/icons/uber-eats.png;
         workspace = null;
         lifecycle = "persistent";
         keywords = [ "food" "delivery" "restaurant" "uber" ];

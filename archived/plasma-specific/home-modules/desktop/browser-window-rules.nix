@@ -63,7 +63,7 @@ in {
       wmclassmatch = 1;  # Substring match
       title = "K9s";
       titlematch = 2;  # Exact match
-      icon = "/etc/nixos/assets/pwa-icons/k9s.png";
+      icon = "/etc/nixos/assets/icons/k9s.png";
       iconrule = 2;  # Force
     };
 

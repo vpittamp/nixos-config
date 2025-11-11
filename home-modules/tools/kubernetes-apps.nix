@@ -8,7 +8,7 @@
     name = "K9s";
     comment = "Kubernetes CLI to manage your clusters in style";
     exec = "${pkgs.kdePackages.konsole}/bin/konsole --qwindowtitle K9s -e ${pkgs.k9s}/bin/k9s";
-    icon = "/etc/nixos/assets/pwa-icons/k9s.png";  # Custom k9s icon
+    icon = "/etc/nixos/assets/icons/k9s.png";  # Custom k9s icon
     terminal = false;  # We're launching konsole explicitly
     type = "Application";
     categories = [ "Development" "System" "Utility" ];

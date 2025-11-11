@@ -112,7 +112,7 @@
     name = "YouTube";
     url = "https://www.youtube.com";
     domain = "youtube.com";
-    icon = "file:///etc/nixos/assets/pwa-icons/youtube.png";
+    icon = "file:///etc/nixos/assets/icons/youtube.png";
     description = "YouTube Video Platform";
     categories = "AudioVideo;Video;";
     keywords = "video;streaming;youtube;";
@@ -125,7 +125,7 @@
     name = "Google AI";
     url = "https://gemini.google.com/app";
     domain = "gemini.google.com";
-    icon = "file:///etc/nixos/assets/pwa-icons/google-ai.png";
+    icon = "file:///etc/nixos/assets/icons/google-ai.png";
     description = "Google Gemini AI Assistant";
     categories = "Network;Development;";
     keywords = "ai;gemini;google;assistant;";

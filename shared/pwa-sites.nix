@@ -15,7 +15,7 @@
       name = "YouTube";
       url = "https://www.youtube.com";
       domain = "youtube.com";
-      icon = "/etc/nixos/assets/pwa-icons/youtube.svg";
+      icon = "/etc/nixos/assets/icons/youtube.svg";
       description = "YouTube video platform";
       categories = "AudioVideo;Video;";
       keywords = "video;streaming;youtube;";
@@ -32,7 +32,7 @@
       name = "Google AI";
       url = "https://google.com/ai";
       domain = "google.com";
-      icon = "/etc/nixos/assets/pwa-icons/google-ai.png";
+      icon = "/etc/nixos/assets/icons/google-ai.png";
       description = "Google AI Mode - Advanced AI search with Gemini 2.5";
       categories = "Network;Development;";
       keywords = "ai;gemini;google;search;assistant;";
@@ -48,7 +48,7 @@
       name = "Claude";
       url = "https://claude.ai/code";
       domain = "claude.ai";
-      icon = "/etc/nixos/assets/pwa-icons/claude.svg";
+      icon = "/etc/nixos/assets/icons/claude.svg";
       description = "Claude AI Assistant by Anthropic";
       categories = "Network;Development;";
       keywords = "ai;claude;anthropic;assistant;";
@@ -65,7 +65,7 @@
       name = "ChatGPT";
       url = "https://chatgpt.com";
       domain = "chatgpt.com";
-      icon = "/etc/nixos/assets/pwa-icons/chatgpt.svg";
+      icon = "/etc/nixos/assets/icons/chatgpt.svg";
       description = "ChatGPT AI assistant";
       categories = "Network;Development;";
       keywords = "ai;chatgpt;openai;assistant;";
@@ -81,7 +81,7 @@
       name = "GitHub";
       url = "https://github.com";
       domain = "github.com";
-      icon = "/etc/nixos/assets/pwa-icons/github-mark.png";
+      icon = "/etc/nixos/assets/icons/github-mark.png";
       description = "GitHub Code Hosting Platform";
       categories = "Development;Network;";
       keywords = "git;github;code;development;";
@@ -97,7 +97,7 @@
       name = "GitHub Codespaces";
       url = "https://github.dev";
       domain = "github.dev";
-      icon = "/etc/nixos/assets/pwa-icons/github-codespaces.png";
+      icon = "/etc/nixos/assets/icons/github-codespaces.svg";
       description = "GitHub cloud development environment";
       categories = "Development;Network;";
       keywords = "github;codespaces;cloud;ide;development;";
@@ -113,7 +113,7 @@
       name = "Gmail";
       url = "https://mail.google.com";
       domain = "mail.google.com";
-      icon = "/etc/nixos/assets/pwa-icons/gmail-2020.png";
+      icon = "/etc/nixos/assets/icons/gmail.svg";
       description = "Google Gmail Email Client";
       categories = "Network;Email;";
       keywords = "email;gmail;google;mail;";
@@ -129,7 +129,7 @@
       name = "Google Calendar";
       url = "https://calendar.google.com";
       domain = "calendar.google.com";
-      icon = "/etc/nixos/assets/pwa-icons/google-calendar.png";
+      icon = "/etc/nixos/assets/icons/google-calendar.svg";
       description = "Google Calendar";
       categories = "Office;Calendar;";
       keywords = "calendar;google;schedule;events;";
@@ -145,7 +145,7 @@
       name = "LinkedIn Learning";
       url = "https://www.linkedin.com/learning";
       domain = "linkedin.com";
-      icon = "/etc/nixos/assets/pwa-icons/linkedin-learning.png";
+      icon = "/etc/nixos/assets/icons/linkedin-learning.svg";
       description = "LinkedIn Learning video courses and skills training";
       categories = "Education;Network;";
       keywords = "learning;courses;linkedin;skills;training;";
