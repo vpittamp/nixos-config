@@ -48,7 +48,7 @@
       name = "Claude";
       url = "https://claude.ai/code";
       domain = "claude.ai";
-      icon = "/etc/nixos/assets/pwa-icons/claude-symbol.png";
+      icon = "/etc/nixos/assets/pwa-icons/claude.png";  # Updated to use main Claude logo
       description = "Claude AI Assistant by Anthropic";
       categories = "Network;Development;";
       keywords = "ai;claude;anthropic;assistant;";
@@ -65,7 +65,7 @@
       name = "ChatGPT";
       url = "https://chatgpt.com";
       domain = "chatgpt.com";
-      icon = "/etc/nixos/assets/pwa-icons/chatgpt-codex.png";
+      icon = "/etc/nixos/assets/pwa-icons/chatgpt.png";  # Updated to use main ChatGPT logo
       description = "ChatGPT AI assistant";
       categories = "Network;Development;";
       keywords = "ai;chatgpt;openai;assistant;";

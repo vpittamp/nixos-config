@@ -169,7 +169,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
       preferred_monitor_role = "secondary";
-      icon = "nvim";
+      icon = "/etc/nixos/assets/pwa-icons/neovim.png";  # Updated to use custom Neovim logo
       nix_package = "pkgs.neovim";
       multi_instance = true;
       fallback_behavior = "use_home";
