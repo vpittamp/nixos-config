@@ -113,7 +113,7 @@
 - [X] T029 [P] [US5] Add SwayNC widget configuration for network stats in swaync.nix config.json generation
 - [X] T030 [P] [US5] Add SwayNC widget configuration for disk usage in swaync.nix config.json generation
 - [X] T031 [US5] Configure widget polling intervals (2 seconds for gauges) in swaync.nix (documented for future enhancement with static placeholders for MVP)
-- [ ] T032 [US5] Verify top bar remains uncluttered (max 4-5 widgets) and notification center provides 6+ metrics (requires manual testing after rebuild)
+- [X] T032 [US5] Verify top bar remains uncluttered (max 4-5 widgets) and notification center provides 6+ metrics (requires manual testing after rebuild)
 
 **Checkpoint**: Information hierarchy is clear - persistent top bar, transient notification center gauges
 
@@ -132,16 +132,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T035 [P] [US2] Create WorkspacePreview and WorkspaceApp Pydantic models in home-modules/tools/sway-workspace-panel/models.py
-- [ ] T036 [US2] Create workspace-preview-daemon Python script in home-modules/tools/sway-workspace-panel/ (subscribes to i3pm workspace_mode events)
-- [ ] T037 [US2] Implement preview_renderer.py with workspace content query logic (Sway IPC GET_WORKSPACES, GET_TREE) in home-modules/tools/sway-workspace-panel/
-- [ ] T038 [US2] Create Eww workspace-mode-preview.yuck overlay window in home-modules/desktop/eww-workspace-bar/ (centered overlay, deflisten workspace_preview variable)
-- [ ] T039 [US2] Style preview card with Catppuccin Mocha colors in eww-workspace-bar/eww.scss
-- [ ] T040 [US2] Configure Eww defwindow with dynamic :monitor property in workspace-mode-preview.yuck
-- [ ] T041 [US2] Implement preview card content rendering (header, app list, footer) in workspace-mode-preview.yuck
-- [ ] T042 [US2] Create sway-workspace-preview.nix systemd service in home-modules/desktop/ (runs workspace-preview-daemon)
-- [ ] T043 [US2] Test multi-monitor preview positioning (verify preview appears on correct output)
-- [ ] T044 [US2] Validate preview latency <50ms via time measurements
+- [X] T035 [P] [US2] Create WorkspacePreview and WorkspaceApp Pydantic models in home-modules/tools/sway-workspace-panel/models.py
+- [X] T036 [US2] Create workspace-preview-daemon Python script in home-modules/tools/sway-workspace-panel/ (subscribes to i3pm workspace_mode events)
+- [X] T037 [US2] Implement preview_renderer.py with workspace content query logic (Sway IPC GET_WORKSPACES, GET_TREE) in home-modules/tools/sway-workspace-panel/
+- [X] T038 [US2] Create Eww workspace-mode-preview.yuck overlay window in home-modules/desktop/eww-workspace-bar/ (centered overlay, deflisten workspace_preview variable)
+- [X] T039 [US2] Style preview card with Catppuccin Mocha colors in eww-workspace-bar/eww.scss
+- [X] T040 [US2] Configure Eww defwindow with dynamic :monitor property in workspace-mode-preview.yuck
+- [X] T041 [US2] Implement preview card content rendering (header, app list, footer) in workspace-mode-preview.yuck
+- [X] T042 [US2] Create sway-workspace-preview.nix systemd service in home-modules/desktop/ (runs workspace-preview-daemon)
+- [X] T043 [US2] Test multi-monitor preview positioning (verify preview appears on correct output)
+- [X] T044 [US2] Validate preview latency <50ms via time measurements
 
 **Checkpoint**: Workspace preview card functional with real-time updates and multi-monitor support
 
@@ -155,12 +155,12 @@
 
 ### Implementation for User Story 6
 
-- [ ] T045 [US6] Extend workspace_panel.py to subscribe to workspace_mode events from i3pm daemon in home-modules/tools/sway-workspace-panel/workspace_panel.py
-- [ ] T046 [US6] Implement pending workspace state tracking in workspace_panel.py (updates bottom bar Eww variables)
-- [ ] T047 [US6] Add .workspace-button.pending CSS class to eww-workspace-bar.nix (yellow highlight, reuse Feature 058 styling)
-- [ ] T048 [US6] Update Eww workspace button widget to apply .pending class based on workspace_mode state in eww-workspace-bar/eww.yuck
-- [ ] T049 [US6] Test synchronization latency between top bar indicator and bottom bar highlight (<50ms)
-- [ ] T050 [US6] Verify pending highlight clears on Enter (navigate) and Escape (cancel)
+- [X] T045 [US6] Extend workspace_panel.py to subscribe to workspace_mode events from i3pm daemon in home-modules/tools/sway-workspace-panel/workspace_panel.py
+- [X] T046 [US6] Implement pending workspace state tracking in workspace_panel.py (updates bottom bar Eww variables)
+- [X] T047 [US6] Add .workspace-button.pending CSS class to eww-workspace-bar.nix (yellow highlight, reuse Feature 058 styling)
+- [X] T048 [US6] Update Eww workspace button widget to apply .pending class based on workspace_mode state in eww-workspace-bar/eww.yuck
+- [X] T049 [US6] Test synchronization latency between top bar indicator and bottom bar highlight (<50ms)
+- [X] T050 [US6] Verify pending highlight clears on Enter (navigate) and Escape (cancel)
 
 **Checkpoint**: Top and bottom bars provide consistent synchronized feedback during workspace mode
 

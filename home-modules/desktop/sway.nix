@@ -187,6 +187,8 @@ in
   # Import keybindings from separate module (moved from dynamic config to static Nix)
   imports = [
     ./sway-keybindings.nix
+    ./unified-bar-theme.nix  # Feature 057: Centralized Catppuccin Mocha theme
+    ./swaync.nix  # Feature 057: SwayNC notification center with unified theming
     ../tools/sway-tree-monitor.nix
   ];
   # Sway window manager configuration via home-manager

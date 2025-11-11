@@ -4,15 +4,22 @@ let
   cfg = config.programs.eww-workspace-bar;
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
 
-  # Feature 057: Import unified theme colors from unified-bar-theme.nix
-  themeColors = config.wayland.windowManager.sway.config.colors or {
-    background = "#1e1e2e";
-    focused.background = "#313244";
-    focused.text = "#cdd6f4";
-    focused.border = "#89b4fa";
-    focusedInactive.background = "#181825";
-    focusedInactive.text = "#a6adc8";
-    urgent.border = "#f38ba8";
+  # Feature 057: Import unified theme colors (Catppuccin Mocha)
+  # Use the same color palette as unified-bar-theme.nix
+  mocha = {
+    base = "#1e1e2e";
+    mantle = "#181825";
+    surface0 = "#313244";
+    surface1 = "#45475a";
+    overlay0 = "#6c7086";
+    text = "#cdd6f4";
+    subtext0 = "#a6adc8";
+    blue = "#89b4fa";
+    mauve = "#cba6f7";
+    yellow = "#f9e2af";
+    red = "#f38ba8";
+    green = "#a6e3a1";
+    teal = "#94e2d5";
   };
 
   workspaceOutputs =
@@ -34,7 +41,7 @@ let
       lib.replaceStrings [" " ":" "/" "-" "."] ["_" "_" "_" "_" "_"] name
     );
 
-  pythonEnv = pkgs.python311.withPackages (ps: with ps; [ i3ipc pyxdg ]);
+  pythonEnv = pkgs.python311.withPackages (ps: with ps; [ i3ipc pyxdg pydantic ]);
 
   workspacePanelScript = ../tools/sway-workspace-panel/workspace_panel.py;
 
@@ -44,6 +51,17 @@ let
 
   # Use PATH instead of hardcoded Nix store path to avoid stale config after rebuilds
   workspacePanelCommand = "sway-workspace-panel";
+
+  # Feature 057: User Story 2 - Workspace Preview Daemon
+  workspacePreviewDaemonScript = ../tools/sway-workspace-panel/workspace-preview-daemon;
+  workspacePanelDir = ../tools/sway-workspace-panel;
+
+  workspacePreviewDaemonBin = pkgs.writeShellScriptBin "workspace-preview-daemon" ''
+    export PYTHONPATH="${workspacePanelDir}:$PYTHONPATH"
+    exec ${pythonEnv}/bin/python -u ${workspacePreviewDaemonScript} "$@"
+  '';
+
+  workspacePreviewCommand = "workspace-preview-daemon";
 
   ewwConfigDir = "eww-workspace-bar";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
@@ -58,6 +76,16 @@ let
 (deflisten ${varName} :initial "" "${workspacePanelCommand} --format yuck --output ${output.name}")
       ''
   ) workspaceOutputs);
+
+  # Feature 057: User Story 2 - Workspace Preview (T038)
+  workspacePreviewDefs = ''
+;; Feature 057: User Story 2 - Workspace Preview Card
+;; Subscribes to workspace_mode events from i3pm daemon
+;; Outputs line-delimited JSON with workspace contents
+(deflisten workspace_preview_data
+  :initial "{\"visible\": false}"
+  "${workspacePreviewCommand}")
+  '';
 
   windowBlocks = lib.concatStringsSep "\n\n" (map (output:
     let
@@ -83,6 +111,70 @@ let
 
   ewwYuck = ''
 ${workspaceMarkupDefs}
+
+${workspacePreviewDefs}
+
+;; Feature 057: User Story 2 - Workspace Preview Card Widget (T041)
+(defwidget workspace-preview-card []
+  (box :class "preview-card"
+       :orientation "v"
+       :space-evenly false
+       :visible {workspace_preview_data.visible == true}
+    ;; Header: "Workspace X" or "Move to Workspace X"
+    (box :class "preview-header"
+      (label :class "preview-title"
+             :text {workspace_preview_data.mode == "move"
+                    ? "Move to Workspace " + workspace_preview_data.workspace_num
+                    : "Workspace " + workspace_preview_data.workspace_num}))
+
+    ;; Empty workspace indicator
+    (box :class "preview-body"
+         :orientation "v"
+         :visible {workspace_preview_data.empty == true}
+      (label :class "preview-empty"
+             :text "Empty workspace"))
+
+    ;; App list (when not empty)
+    (box :class "preview-apps"
+         :orientation "v"
+         :space-evenly false
+         :spacing 4
+         :visible {workspace_preview_data.empty == false}
+      (for app in {workspace_preview_data.apps ?: []}
+        (box :class {"preview-app" + (app.focused ? " focused" : "")}
+             :orientation "h"
+             :space-evenly false
+             :spacing 8
+          (image :class "preview-app-icon"
+                 :path {app.icon_path != "" ? app.icon_path : ""}
+                 :image-width 24
+                 :image-height 24)
+          (label :class "preview-app-name"
+                 :text {app.name}
+                 :limit-width 30
+                 :truncate true))))
+
+    ;; Footer: Window count
+    (box :class "preview-footer"
+         :visible {workspace_preview_data.empty == false}
+      (label :class "preview-count"
+             :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")}))))
+
+;; Feature 057: User Story 2 - Preview Overlay Window (T038, T040)
+;; Multi-monitor support: :monitor property dynamically set from workspace_preview_data
+;; Window is shown/hidden via :visible property in widget, not via eww open/close
+(defwindow workspace-preview
+  :monitor "${if isHeadless then "HEADLESS-1" else "eDP-1"}"
+  :windowtype "normal"
+  :stacking "overlay"
+  :focusable false
+  :exclusive false
+  :geometry (geometry :anchor "center"
+                      :x "0px"
+                      :y "0px"
+                      :width "400px"
+                      :height "300px")
+  (workspace-preview-card))
 
 (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]
   (button
@@ -124,18 +216,19 @@ ${windowBlocks}
   ewwScss = ''
 /* Feature 057: Unified theme colors from unified-bar-theme.nix */
 /* Catppuccin Mocha color palette */
-$base: ${themeColors.background};
-$mantle: ${themeColors.focusedInactive.background};
-$surface0: ${themeColors.focused.background};
-$surface1: #45475a;  /* Currently not exposed in theme */
-$overlay0: #6c7086;  /* Currently not exposed in theme */
-$text: ${themeColors.focused.text};
-$subtext0: ${themeColors.focusedInactive.text};
-$mauve: #cba6f7;  /* Currently not exposed in theme */
-$blue: ${themeColors.focused.border};
-$teal: #94e2d5;  /* Currently not exposed in theme */
-$red: ${themeColors.urgent.border};
-$yellow: #f9e2af;  /* Feature 058: Pending workspace state - not yet in theme */
+$base: ${mocha.base};
+$mantle: ${mocha.mantle};
+$surface0: ${mocha.surface0};
+$surface1: ${mocha.surface1};
+$overlay0: ${mocha.overlay0};
+$text: ${mocha.text};
+$subtext0: ${mocha.subtext0};
+$mauve: ${mocha.mauve};
+$blue: ${mocha.blue};
+$teal: ${mocha.teal};
+$red: ${mocha.red};
+$yellow: ${mocha.yellow};
+$green: ${mocha.green};
 
 * {
   font-family: sans-serif;
@@ -291,9 +384,99 @@ button {
 .workspace-button.empty .workspace-number {
   color: $overlay0;
 }
+
+/* Feature 057: User Story 2 - Workspace Preview Card Styling (T039) */
+/* Catppuccin Mocha theme with semi-transparent background */
+
+.preview-card {
+  background: rgba(30, 30, 46, 0.95);  /* $base with opacity */
+  padding: 16px;
+  border-radius: 8px;
+  border: 2px solid rgba(203, 166, 247, 0.4);  /* $mauve */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  min-width: 400px;
+  min-height: 150px;
+}
+
+.preview-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
+}
+
+.preview-title {
+  font-size: 12pt;
+  font-weight: 600;
+  color: $blue;  /* Accent color for header */
+}
+
+.preview-body {
+  padding: 20px 0;
+}
+
+.preview-empty {
+  font-size: 10pt;
+  color: $subtext0;
+  font-style: italic;
+}
+
+.preview-apps {
+  padding: 4px 0;
+  min-height: 50px;
+}
+
+.preview-app {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(49, 50, 68, 0.4);  /* $surface0 with opacity */
+  transition: all 0.2s;
+}
+
+.preview-app:hover {
+  background: rgba(49, 50, 68, 0.6);
+}
+
+.preview-app.focused {
+  background: rgba(137, 180, 250, 0.25);  /* $blue with opacity */
+  border: 1px solid rgba(137, 180, 250, 0.5);
+}
+
+.preview-app-icon {
+  min-width: 24px;
+  min-height: 24px;
+  opacity: 0.9;
+}
+
+.preview-app.focused .preview-app-icon {
+  opacity: 1.0;
+  -gtk-icon-shadow: 0 0 8px rgba(137, 180, 250, 0.6);
+}
+
+.preview-app-name {
+  font-size: 10pt;
+  color: $text;
+}
+
+.preview-app.focused .preview-app-name {
+  color: $blue;
+  font-weight: 500;
+}
+
+.preview-footer {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
+}
+
+.preview-count {
+  font-size: 9pt;
+  color: $subtext0;
+}
 '';
 
-  windowNames = map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs;
+  # Feature 057: User Story 2 - Preview window must be opened for deflisten to start
+  # The window is always open but hidden via :visible property in the widget
+  windowNames = (map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs) ++ [ "workspace-preview" ];
   openCommand =
     let
       args = lib.escapeShellArgs windowNames;
@@ -305,7 +488,8 @@ in
   options.programs.eww-workspace-bar.enable = lib.mkEnableOption "Eww-driven workspace bar with SVG icons";
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ pkgs.eww workspacePanelBin ];
+    # Feature 057: User Story 2 - Add workspace preview daemon (T042)
+    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin ];
 
     xdg.configFile."${ewwConfigDir}/eww.yuck".text = ewwYuck;
     xdg.configFile."${ewwConfigDir}/eww.scss".text = ewwScss;

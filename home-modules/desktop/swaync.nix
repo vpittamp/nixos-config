@@ -1,15 +1,22 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Feature 057: Import unified theme colors from unified-bar-theme.nix
-  themeColors = config.wayland.windowManager.sway.config.colors or {
-    background = "#1e1e2e";
-    focused.background = "#313244";
-    focused.text = "#cdd6f4";
-    focused.border = "#89b4fa";
-    focusedInactive.background = "#181825";
-    focusedInactive.text = "#a6adc8";
-    urgent.border = "#f38ba8";
+  # Feature 057: Import unified theme colors (Catppuccin Mocha)
+  # Use the same color palette as unified-bar-theme.nix
+  mocha = {
+    base = "#1e1e2e";
+    mantle = "#181825";
+    surface0 = "#313244";
+    surface1 = "#45475a";
+    overlay0 = "#6c7086";
+    text = "#cdd6f4";
+    subtext0 = "#a6adc8";
+    blue = "#89b4fa";
+    mauve = "#cba6f7";
+    yellow = "#f9e2af";
+    red = "#f38ba8";
+    green = "#a6e3a1";
+    teal = "#94e2d5";
   };
 
   # Catppuccin Mocha CSS for SwayNC
@@ -23,31 +30,31 @@ let
     }
 
     .notification-window {
-      background-color: ${themeColors.background};
-      border: 1px solid ${themeColors.focused.border};
+      background-color: ${mocha.base};
+      border: 1px solid ${mocha.blue};
       border-radius: 6px;
     }
 
     .notification {
-      background-color: ${themeColors.focused.background};
-      color: ${themeColors.focused.text};
+      background-color: ${mocha.surface0};
+      color: ${mocha.text};
       padding: 10px;
       margin: 5px;
       border-radius: 4px;
     }
 
     .notification-default-action {
-      background-color: ${themeColors.focused.background};
-      color: ${themeColors.focused.text};
+      background-color: ${mocha.surface0};
+      color: ${mocha.text};
     }
 
     .notification-default-action:hover {
-      background-color: ${themeColors.focused.border};
+      background-color: ${mocha.blue};
     }
 
     .notification-close-button {
-      background-color: ${themeColors.urgent.border};
-      color: ${themeColors.focused.text};
+      background-color: ${mocha.red};
+      color: ${mocha.text};
       border-radius: 50%;
     }
 
@@ -56,8 +63,8 @@ let
     }
 
     .control-center {
-      background-color: ${themeColors.background};
-      border: 1px solid ${themeColors.focused.border};
+      background-color: ${mocha.base};
+      border: 1px solid ${mocha.blue};
       border-radius: 6px;
     }
 
@@ -66,26 +73,26 @@ let
     }
 
     .widget-title {
-      color: ${themeColors.focused.text};
+      color: ${mocha.text};
       font-weight: bold;
       margin: 10px;
     }
 
     .widget-dnd {
-      background-color: ${themeColors.focused.background};
-      color: ${themeColors.focused.text};
+      background-color: ${mocha.surface0};
+      color: ${mocha.text};
       padding: 5px;
       margin: 5px;
       border-radius: 4px;
     }
 
     .widget-label {
-      color: ${themeColors.focusedInactive.text};
+      color: ${mocha.subtext0};
     }
 
     .widget-mpris {
-      background-color: ${themeColors.focused.background};
-      color: ${themeColors.focused.text};
+      background-color: ${mocha.surface0};
+      color: ${mocha.text};
       padding: 10px;
       margin: 5px;
       border-radius: 4px;
