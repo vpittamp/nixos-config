@@ -297,17 +297,13 @@ button {
 /* Feature 058: Notification badge (User Story 3) */
 .notification-badge-container {
   margin: 2px 2px 0 0;  /* T032: Position in top-right corner with slight offset */
-  min-width: 8px;  /* Constrain container size */
-  max-width: 8px;
-  min-height: 8px;
-  max-height: 8px;
 }
 
 .notification-badge {
   min-width: 8px;  /* T033: 8px diameter circle */
   min-height: 8px;
-  max-width: 8px;  /* Prevent expansion */
-  max-height: 8px;
+  padding: 0;  /* No padding to keep size tight */
+  font-size: 0;  /* Hide any text content */
   background: $red;  /* Catppuccin Mocha Red (#f38ba8) */
   border: 1px solid white;  /* Thinner border for smaller size */
   border-radius: 50%;  /* Perfect circle */
