@@ -5,9 +5,9 @@
 
 ## Summary
 
-Provide real-time visual feedback for workspace mode navigation by highlighting workspace buttons in the Eww workspace bar when digits are typed, and displaying a preview card showing the target workspace details (number, icon, application name). This eliminates the current "blind navigation" problem where users cannot see which workspace they'll navigate to until after pressing Enter.
+Provide real-time visual feedback for workspace mode navigation by highlighting workspace buttons in the Eww workspace bar when digits are typed, and displaying a preview card showing the target workspace details (number, icon, application name). Additionally, display Apple-style circular notification badges on workspace buttons when workspaces have urgent windows, using Eww's native overlay widget for clean layering. This eliminates the current "blind navigation" problem where users cannot see which workspace they'll navigate to until after pressing Enter, and makes urgent workspace states more visually prominent.
 
-**Technical Approach**: Extend the existing i3pm daemon `WorkspaceModeManager` to emit IPC events containing pending workspace state (`pending_workspace_number`, `accumulated_digits`, `mode_type`). The `sway-workspace-panel` Python daemon consumes these events via a new IPC subscription and emits updated Eww markup with pending highlight state. The Eww workspace bar CSS applies a distinct "pending" visual style (yellow/peach color from Catppuccin Mocha palette).
+**Technical Approach**: Extend the existing i3pm daemon `WorkspaceModeManager` to emit IPC events containing pending workspace state (`pending_workspace_number`, `accumulated_digits`, `mode_type`). The `sway-workspace-panel` Python daemon consumes these events via a new IPC subscription and emits updated Eww markup with pending highlight state. The Eww workspace bar CSS applies a distinct "pending" visual style (yellow color from Catppuccin Mocha palette). For notification badges, refactor workspace buttons to use Eww's native `overlay` widget, layering an 8px circular red dot on the top-right corner when workspace has urgent windows.
 
 ## Technical Context
 
@@ -177,6 +177,13 @@ tests/workspace-mode-feedback/
    - Relationships: Mapped from Sway workspace + PendingWorkspaceState
    - State Transitions: normal → pending (on digit input), pending → focused (on execute), pending → normal (on cancel)
 
+4. **NotificationBadge** (Eww overlay widget)
+   - Fields: `visible` (bool), `workspace_number` (int)
+   - Validation: `visible` true when workspace has urgent windows
+   - Relationships: Layered on top of WorkspaceButtonState via Eww overlay widget
+   - State Transitions: hidden → visible (on urgent window), visible → hidden (on urgent clear, <200ms fade-out)
+   - Visual Specs: 8px diameter circle, Catppuccin Mocha Red (#f38ba8) background, 2px white border, border-radius: 50%
+
 ### API Contracts (contracts/)
 
 **IPC Event Schema** (`workspace_mode_event.json`):
@@ -198,33 +205,73 @@ tests/workspace-mode-feedback/
 **Eww Yuck Widget API** (`workspace_button_yuck.edn`):
 
 ```lisp
-(workspace-button
-  :number_label "23"
-  :workspace_name "23"
-  :app_name "Firefox"
-  :icon_path "/etc/nixos/assets/pwa-icons/firefox.svg"
-  :workspace_id "23"
-  :focused false
-  :visible false
-  :urgent false
-  :pending true    ; NEW: Indicates pending navigation target
-  :empty false)
+; Refactored to use overlay widget for notification badge layering
+(defwidget workspace-button [number_label workspace_name app_name icon_path workspace_id focused visible urgent pending empty]
+  (overlay
+    ; Base button (first child determines size)
+    (button
+      :class {
+        "workspace-button "
+        + (focused ? "focused " : "")
+        + ((visible && !focused) ? "visible " : "")
+        + (urgent ? "urgent " : "")
+        + (pending ? "pending " : "")  ; NEW: Pending highlight
+        + ((icon_path != "") ? "has-icon " : "no-icon ")
+        + (empty ? "empty" : "populated")
+      }
+      :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
+      :onclick { "swaymsg workspace \"" + replace(workspace_name, "\"", "\\\"") + "\"" }
+      (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
+        (image :class "workspace-icon-image" :path icon_path :image-width 16 :image-height 16)
+        (label :class "workspace-number" :text number_label)))
+
+    ; Notification badge overlay (only visible when urgent)
+    (box
+      :class "notification-badge-container"
+      :valign "start"
+      :halign "end"
+      :visible urgent  ; NEW: Badge visibility tied to urgent state
+      (label :class "notification-badge" :text ""))))  ; Empty label, styled as circular dot
 ```
 
 **GTK CSS Contract** (`workspace_button_styles.scss`):
 
 ```scss
-/* Pending state: Distinct yellow/peach highlight */
+/* Pending state: Distinct yellow highlight */
 .workspace-button.pending {
-  background: rgba(250, 179, 135, 0.3);  /* Catppuccin Mocha Peach */
-  border: 1px solid rgba(250, 179, 135, 0.6);
+  background: rgba(249, 226, 175, 0.25);  /* Catppuccin Mocha Yellow */
+  border: 1px solid rgba(249, 226, 175, 0.7);
   transition: all 0.2s;  /* Smooth transitions */
+}
+
+.workspace-button.pending .workspace-icon-image {
+  -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);
 }
 
 /* Mutual exclusion: pending overrides focused on same button */
 .workspace-button.pending.focused {
-  background: rgba(250, 179, 135, 0.3);  /* Pending takes priority */
-  border: 1px solid rgba(250, 179, 135, 0.6);
+  background: rgba(249, 226, 175, 0.25);  /* Pending takes priority */
+  border: 1px solid rgba(249, 226, 175, 0.7);
+}
+
+/* Notification badge: Apple-style circular red dot */
+.notification-badge-container {
+  margin: 2px 2px 0 0;  /* Position in top-right corner */
+}
+
+.notification-badge {
+  min-width: 8px;
+  min-height: 8px;
+  background: #f38ba8;  /* Catppuccin Mocha Red */
+  border: 2px solid white;
+  border-radius: 50%;  /* Perfect circle */
+  opacity: 1;
+  transition: opacity 0.2s;  /* Smooth fade-out */
+}
+
+/* Badge coexists with pending highlight (both can be visible) */
+.workspace-button.pending + .notification-badge {
+  /* No style override needed - both indicators independent */
 }
 ```
 
