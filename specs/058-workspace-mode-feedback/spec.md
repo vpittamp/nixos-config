@@ -49,7 +49,29 @@ When a user enters workspace mode and types digits, a preview card appears on sc
 
 ---
 
-### User Story 3 - Multi-Digit Workspace Confidence Indicator (Priority: P3)
+### User Story 3 - Notification Badge on Workspace Button (Priority: P2)
+
+When a workspace has urgent windows or notifications, display a small circular badge (Apple-style red dot) in the top-right corner of the workspace button using Eww's native overlay widget.
+
+**Why this priority**: Leverages native Eww overlay widget for clean, performant badge UI without custom CSS hacks. Provides at-a-glance awareness of which workspaces need attention. Secondary to pending highlight because notification badges are less time-sensitive than navigation feedback.
+
+**Independent Test**: Can be tested by triggering an urgent window event on a workspace and verifying a red badge dot appears on the workspace button. Delivers value by making urgent workspace states more visually prominent than the current subtle red background.
+
+**Acceptance Scenarios**:
+
+1. **Given** workspace 5 has an urgent window, **When** looking at workspace bar, **Then** workspace 5 button shows a red circular badge in the top-right corner (8px diameter)
+
+2. **Given** workspace 5 has a badge and user focuses workspace 5, **When** the urgent state clears, **Then** the badge disappears with a smooth fade-out animation (<200ms)
+
+3. **Given** workspace 5 has a badge and is pending navigation, **When** user types "5" in workspace mode, **Then** both the pending highlight and badge are visible (badge renders on top via overlay)
+
+4. **Given** workspace 5 has multiple urgent windows, **When** looking at workspace bar, **Then** badge shows a single red dot (no count indicator in MVP)
+
+5. **Given** workspace 5 has a badge, **When** user hovers over workspace 5 button, **Then** tooltip shows "Workspace 5 · Firefox (urgent)" or similar text indicating urgent state
+
+---
+
+### User Story 4 - Multi-Digit Workspace Confidence Indicator (Priority: P3)
 
 When a user is typing multi-digit workspace numbers (e.g., 23, 52), provide visual confirmation that the system is accumulating digits correctly, showing each digit as it's entered before the final workspace is resolved.
 
@@ -99,12 +121,19 @@ When a user is typing multi-digit workspace numbers (e.g., 23, 52), provide visu
 - **FR-015**: System MUST auto-resolve single-digit input after 500ms delay (optional optimization for single-digit workspaces)
 - **FR-016**: System MUST differentiate between goto mode and move mode in preview card header text
 - **FR-017**: Preview card MUST appear on the monitor where the target workspace will open (based on workspace-to-monitor assignment from Feature 001)
+- **FR-018**: System MUST display a circular notification badge (8px diameter) in the top-right corner of workspace buttons when workspace has urgent windows
+- **FR-019**: Notification badge MUST use Eww's native overlay widget to layer badge over workspace button
+- **FR-020**: Notification badge MUST be styled with Catppuccin Mocha Red background (#f38ba8) and white border for contrast
+- **FR-021**: Notification badge MUST fade out smoothly (animation <200ms) when urgent state clears
+- **FR-022**: Notification badge MUST remain visible when workspace button is in pending state (both indicators can coexist)
+- **FR-023**: System MUST show single badge dot regardless of number of urgent windows on workspace (no count indicator in MVP)
 
 ### Key Entities
 
 - **Pending Workspace State**: The workspace number that will be focused when user presses Enter, derived from accumulated digits in workspace mode
 - **Workspace Preview**: Visual card showing workspace number, icon, application name, and empty status
 - **Pending Highlight**: Visual state applied to workspace bar button to indicate pending navigation target
+- **Notification Badge**: Circular red dot indicator (8px diameter) overlaid on workspace button top-right corner to show urgent windows, implemented using Eww overlay widget
 
 ## Success Criteria *(mandatory)*
 
@@ -117,6 +146,8 @@ When a user is typing multi-digit workspace numbers (e.g., 23, 52), provide visu
 - **SC-005**: Workspace mode visual feedback works consistently across single-monitor (M1) and multi-monitor (Hetzner) setups
 - **SC-006**: Preview card animations complete within 300ms (fade in/out feel responsive, not sluggish)
 - **SC-007**: System handles rapid digit entry (>10 keystrokes/second) without dropping digits or showing incorrect highlights
+- **SC-008**: Notification badges render cleanly without layout shifts or overlapping button content (overlay widget prevents layout issues)
+- **SC-009**: Badge fade-out animations complete within 200ms (feel snappy when urgent state clears)
 
 ## Assumptions
 
@@ -130,6 +161,9 @@ When a user is typing multi-digit workspace numbers (e.g., 23, 52), provide visu
 8. **Multi-Window Display**: When workspace has multiple windows, preview card will show icon of first window alphabetically by application name, with count of additional windows
 9. **Invalid Input Handling**: Typing invalid workspace numbers (>70, ≤0) will clear any existing highlights and show error state in preview card
 10. **Accessibility**: Preview card will have sufficient contrast ratio (WCAG AA minimum 4.5:1) and font size (11pt minimum per workspace bar standards)
+11. **Notification Badge Implementation**: Badge uses Eww's native overlay widget to layer circular red dot (8px diameter) on top-right corner of workspace button without requiring complex CSS positioning hacks
+12. **Badge Visual Design**: Badge styled with Catppuccin Mocha Red (#f38ba8) background, 2px white border for contrast, border-radius: 50% for perfect circle
+13. **Badge State Layering**: Notification badges and pending highlights can coexist (urgent workspace that user is typing digits for shows both yellow pending highlight and red badge dot)
 
 ## Dependencies
 
