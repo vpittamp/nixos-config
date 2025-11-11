@@ -144,6 +144,7 @@ ${workspaceMarkupDefs}
     (box :class "workspace-strip"
          :orientation "h"
          :halign "center"
+         :hexpand true
           :spacing 3
       (literal :content markup_var))
     (box :visible show_swaync :halign "end" :hexpand false
@@ -357,13 +358,13 @@ button {
 }
 
 .swaync-button:hover {
-  background: rgba(137, 180, 250, 0.15);
-  border: 1px solid rgba(137, 180, 250, 0.4);
+  background: rgba(148, 226, 213, 0.15);  /* Teal for distinction from focused */
+  border: 1px solid rgba(148, 226, 213, 0.4);
 }
 
 .swaync-button.has-notifications {
-  background: rgba(137, 180, 250, 0.25);
-  border: 1px solid rgba(137, 180, 250, 0.5);
+  background: rgba(148, 226, 213, 0.25);  /* Teal - distinct from blue active state */
+  border: 1px solid rgba(148, 226, 213, 0.5);
 }
 
 .swaync-button.dnd-active {
@@ -385,7 +386,7 @@ button {
 .swaync-count {
   font-size: 8pt;  /* Reduced from 9pt for compactness */
   font-weight: 600;
-  color: $blue;
+  color: $teal;  /* Teal to match notification widget theme */
   min-width: 0;
   padding-left: 1px;  /* Reduced from 2px */
 }
