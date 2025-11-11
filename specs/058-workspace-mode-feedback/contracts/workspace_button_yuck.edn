@@ -1,6 +1,6 @@
 ;; Eww Yuck Widget Contract: workspace-button
 ;; Feature 058: Workspace Mode Visual Feedback
-;; Extended workspace button widget with pending highlight state
+;; Extended workspace button widget with pending highlight state + notification badge overlay
 
 (defwidget workspace-button [
   ;; EXISTING FIELDS (Feature 057)
@@ -18,37 +18,70 @@
   ;; NEW FIELD (Feature 058)
   pending            ; boolean - Workspace is pending navigation target
 ]
-  (button
-    :class {
-      "workspace-button "
-      + (focused ? "focused " : "")
-      + ((visible && !focused) ? "visible " : "")
-      + (urgent ? "urgent " : "")
-      + (pending ? "pending " : "")  ;; NEW: Pending state class
-      + ((icon_path != "") ? "has-icon " : "no-icon ")
-      + (empty ? "empty" : "populated")
-    }
-    :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
-    :onclick {
-      "swaymsg workspace \""
-      + replace(workspace_name, "\"", "\\\"")
-      + "\""
-    }
-    (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
-      (image :class "workspace-icon-image"
-             :path icon_path
-             :image-width 16
-             :image-height 16)
-      (label :class "workspace-number" :text number_label))))
+  ;; REFACTORED: Use overlay widget for notification badge layering
+  (overlay
+    ;; Base button (first child determines overlay size)
+    (button
+      :class {
+        "workspace-button "
+        + (focused ? "focused " : "")
+        + ((visible && !focused) ? "visible " : "")
+        + (urgent ? "urgent " : "")
+        + (pending ? "pending " : "")  ;; NEW: Pending state class
+        + ((icon_path != "") ? "has-icon " : "no-icon ")
+        + (empty ? "empty" : "populated")
+      }
+      :tooltip { app_name != "" ? (number_label + " · " + app_name) : workspace_name }
+      :onclick {
+        "swaymsg workspace \""
+        + replace(workspace_name, "\"", "\\\"")
+        + "\""
+      }
+      (box :class "workspace-pill" :orientation "h" :space-evenly false :spacing 3
+        (image :class "workspace-icon-image"
+               :path icon_path
+               :image-width 16
+               :image-height 16)
+        (label :class "workspace-number" :text number_label)))
+
+    ;; Notification badge overlay (NEW: Feature 058 User Story 3)
+    ;; Apple-style circular red dot in top-right corner
+    (box
+      :class "notification-badge-container"
+      :valign "start"
+      :halign "end"
+      :visible urgent  ;; Badge visibility tied to urgent state
+      (label :class "notification-badge" :text ""))))  ;; Empty label styled as 8px circle
 
 ;; CSS Class Mapping (for reference - actual CSS in eww-workspace-bar.nix)
+;;
+;; Pending highlight (yellow background):
 ;; .workspace-button.pending {
 ;;   background: rgba(249, 226, 175, 0.25);  /* Catppuccin Mocha Yellow */
 ;;   border: 1px solid rgba(249, 226, 175, 0.7);
 ;;   transition: all 0.2s;
 ;; }
+;;
+;; .workspace-button.pending .workspace-icon-image {
+;;   -gtk-icon-shadow: 0 0 8px rgba(249, 226, 175, 0.8);
+;; }
+;;
+;; Notification badge (red circular dot):
+;; .notification-badge-container {
+;;   margin: 2px 2px 0 0;  /* Top-right corner positioning */
+;; }
+;;
+;; .notification-badge {
+;;   min-width: 8px;
+;;   min-height: 8px;
+;;   background: #f38ba8;  /* Catppuccin Mocha Red */
+;;   border: 2px solid white;
+;;   border-radius: 50%;  /* Perfect circle */
+;;   opacity: 1;
+;;   transition: opacity 0.2s;  /* Smooth fade-out */
+;; }
 
-;; Example usage with pending=true:
+;; Example usage with pending=true and urgent=true (both indicators visible):
 ;; (workspace-button
 ;;   :number_label "23"
 ;;   :workspace_name "23"
@@ -58,6 +91,8 @@
 ;;   :workspace_id "23"
 ;;   :focused false
 ;;   :visible false
-;;   :urgent false
-;;   :pending true    ; PENDING HIGHLIGHT - button appears yellow/peach
+;;   :urgent true     ; NOTIFICATION BADGE - red dot in top-right
+;;   :pending true    ; PENDING HIGHLIGHT - yellow background
 ;;   :empty false)
+;;
+;; Visual result: Yellow button background + red badge dot (both visible)

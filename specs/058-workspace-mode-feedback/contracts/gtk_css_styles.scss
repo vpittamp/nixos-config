@@ -94,13 +94,35 @@ $red: #f38ba8;      /* Urgent state */
   }
 }
 
-// PENDING + URGENT: Both states can coexist (rare edge case)
-// Pending takes border priority, urgent adds urgency indicator
+// PENDING + URGENT: Both states can coexist
+// Pending takes button background priority, urgent shows badge overlay
 .workspace-button.pending.urgent {
   background: rgba(249, 226, 175, 0.25);  /* Pending background */
-  border: 2px solid rgba(249, 226, 175, 0.7);  /* Thicker pending border */
-  box-shadow: 0 0 4px rgba(243, 139, 168, 0.5);  /* Red urgent glow */
+  border: 1px solid rgba(249, 226, 175, 0.7);  /* Pending border */
+  /* Urgent state shown via notification badge overlay (not button background) */
 }
+
+// NOTIFICATION BADGE (NEW: User Story 3)
+// Apple-style circular red dot in top-right corner using overlay widget
+
+/* Badge container: Position in top-right corner */
+.notification-badge-container {
+  margin: 2px 2px 0 0;  /* Slight offset from edge */
+}
+
+/* Badge dot: Perfect 8px circle with white border */
+.notification-badge {
+  min-width: 8px;
+  min-height: 8px;
+  background: #f38ba8;  /* Catppuccin Mocha Red */
+  border: 2px solid white;
+  border-radius: 50%;  /* Perfect circle */
+  opacity: 1;
+  transition: opacity 0.2s;  /* Smooth fade-out when urgent clears */
+}
+
+/* Badge visibility controlled by Yuck :visible urgent attribute */
+/* No CSS hover or interaction states needed (badge is pure indicator) */
 
 // ACCESSIBILITY: Ensure sufficient contrast ratio
 // WCAG AA minimum 4.5:1 contrast ratio for text
