@@ -45,10 +45,11 @@ let
     # Feature 042: Event-Driven Workspace Mode Navigation
     # Digit accumulation and workspace switching via daemon IPC
 
-    # Goto workspace mode - Type digits to switch workspace
+    # Goto workspace mode - Type digits to switch workspace OR letters for project
     # Feature 042 - T035: Pango markup for native mode indicator
+    # Option A: Unified Smart Detection - digits=workspace, letters=project
     mode "→ WS" {
-        # Digit input (calls daemon via i3pm CLI)
+        # Digit input (calls daemon via i3pm CLI) - Workspace navigation
         bindsym 0 exec i3pm-workspace-mode digit 0
         bindsym 1 exec i3pm-workspace-mode digit 1
         bindsym 2 exec i3pm-workspace-mode digit 2
@@ -60,7 +61,35 @@ let
         bindsym 8 exec i3pm-workspace-mode digit 8
         bindsym 9 exec i3pm-workspace-mode digit 9
 
-        # Execute switch (daemon handles workspace switch + output focus + mode exit)
+        # Letter input (Option A: Smart Detection) - Project navigation
+        bindsym a exec i3pm-workspace-mode char a
+        bindsym b exec i3pm-workspace-mode char b
+        bindsym c exec i3pm-workspace-mode char c
+        bindsym d exec i3pm-workspace-mode char d
+        bindsym e exec i3pm-workspace-mode char e
+        bindsym f exec i3pm-workspace-mode char f
+        bindsym g exec i3pm-workspace-mode char g
+        bindsym h exec i3pm-workspace-mode char h
+        bindsym i exec i3pm-workspace-mode char i
+        bindsym j exec i3pm-workspace-mode char j
+        bindsym k exec i3pm-workspace-mode char k
+        bindsym l exec i3pm-workspace-mode char l
+        bindsym m exec i3pm-workspace-mode char m
+        bindsym n exec i3pm-workspace-mode char n
+        bindsym o exec i3pm-workspace-mode char o
+        bindsym p exec i3pm-workspace-mode char p
+        bindsym q exec i3pm-workspace-mode char q
+        bindsym r exec i3pm-workspace-mode char r
+        bindsym s exec i3pm-workspace-mode char s
+        bindsym t exec i3pm-workspace-mode char t
+        bindsym u exec i3pm-workspace-mode char u
+        bindsym v exec i3pm-workspace-mode char v
+        bindsym w exec i3pm-workspace-mode char w
+        bindsym x exec i3pm-workspace-mode char x
+        bindsym y exec i3pm-workspace-mode char y
+        bindsym z exec i3pm-workspace-mode char z
+
+        # Execute switch (daemon handles workspace/project switch + mode exit)
         bindsym Return exec i3pm-workspace-mode execute
         bindsym KP_Enter exec i3pm-workspace-mode execute
 
@@ -68,8 +97,9 @@ let
         bindsym Escape exec i3pm-workspace-mode cancel
     }
 
-    # Move window to workspace mode - Type digits to move window
+    # Move window to workspace mode - Type digits to move window OR letters for project
     # Feature 042 - T035: Pango markup for native mode indicator
+    # Option A: Unified Smart Detection (move mode also supports project switching)
     mode "⇒ WS" {
         # Digit input (shared accumulation state with goto mode)
         bindsym 0 exec i3pm-workspace-mode digit 0
@@ -82,6 +112,34 @@ let
         bindsym 7 exec i3pm-workspace-mode digit 7
         bindsym 8 exec i3pm-workspace-mode digit 8
         bindsym 9 exec i3pm-workspace-mode digit 9
+
+        # Letter input (Option A: Smart Detection) - Project navigation
+        bindsym a exec i3pm-workspace-mode char a
+        bindsym b exec i3pm-workspace-mode char b
+        bindsym c exec i3pm-workspace-mode char c
+        bindsym d exec i3pm-workspace-mode char d
+        bindsym e exec i3pm-workspace-mode char e
+        bindsym f exec i3pm-workspace-mode char f
+        bindsym g exec i3pm-workspace-mode char g
+        bindsym h exec i3pm-workspace-mode char h
+        bindsym i exec i3pm-workspace-mode char i
+        bindsym j exec i3pm-workspace-mode char j
+        bindsym k exec i3pm-workspace-mode char k
+        bindsym l exec i3pm-workspace-mode char l
+        bindsym m exec i3pm-workspace-mode char m
+        bindsym n exec i3pm-workspace-mode char n
+        bindsym o exec i3pm-workspace-mode char o
+        bindsym p exec i3pm-workspace-mode char p
+        bindsym q exec i3pm-workspace-mode char q
+        bindsym r exec i3pm-workspace-mode char r
+        bindsym s exec i3pm-workspace-mode char s
+        bindsym t exec i3pm-workspace-mode char t
+        bindsym u exec i3pm-workspace-mode char u
+        bindsym v exec i3pm-workspace-mode char v
+        bindsym w exec i3pm-workspace-mode char w
+        bindsym x exec i3pm-workspace-mode char x
+        bindsym y exec i3pm-workspace-mode char y
+        bindsym z exec i3pm-workspace-mode char z
 
         # Execute move (daemon handles move + follow + output focus + mode exit)
         bindsym Return exec i3pm-workspace-mode execute

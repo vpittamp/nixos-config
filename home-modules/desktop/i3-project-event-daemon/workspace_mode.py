@@ -141,6 +141,9 @@ class WorkspaceModeManager:
         self._state.accumulated_chars += char_lower
         self._state.input_type = "project"  # NEW: Mark as project navigation
 
+        # Emit project mode event with fuzzy-matched project preview
+        await self._emit_project_mode_event("char")
+
         elapsed_ms = (time.time() - start_time) * 1000
         logger.debug(f"Char added: {char_lower}, accumulated: {self._state.accumulated_chars} (took {elapsed_ms:.2f}ms)")
 
@@ -271,6 +274,9 @@ class WorkspaceModeManager:
             # Reset state
             self._state.reset()
 
+            # Emit execute event AFTER reset (clears project mode UI)
+            await self._emit_project_mode_event("execute")
+
             return {
                 "type": "project",
                 "project": matched_project,
@@ -349,6 +355,37 @@ class WorkspaceModeManager:
         logger.debug(f"No match found for '{chars}'")
         return None
 
+    async def _get_project_icon(self, project_name: str) -> str:
+        """Get icon for a project by name.
+
+        Args:
+            project_name: Project name
+
+        Returns:
+            Project icon (emoji or text), defaults to "📁" if not found
+        """
+        if not project_name:
+            return "📁"
+
+        # Lazy-load ProjectService if needed
+        if not self._project_service:
+            if not self._config_dir:
+                logger.error("Cannot load ProjectService: config_dir not provided")
+                return "📁"
+
+            from .services.project_service import ProjectService
+            self._project_service = ProjectService(self._config_dir, self._state_manager)
+            logger.debug("Lazy-loaded ProjectService for project icon lookup")
+
+        # Get all projects and find matching project
+        projects = self._project_service.list()
+        for project in projects:
+            if project.name.lower() == project_name.lower():
+                return project.icon
+
+        # Default icon if project not found
+        return "📁"
+
     async def cancel(self) -> None:
         """Cancel workspace mode without action."""
         if not self._state.active:
@@ -357,14 +394,21 @@ class WorkspaceModeManager:
 
         logger.info("Cancelling workspace mode")
 
+        # Save input type before reset
+        input_type = self._state.input_type
+
         # Exit mode in Sway (return to default mode)
         await self._i3.command("mode default")
 
         # Reset all state fields
         self._state.reset()
 
-        # Feature 058: Emit cancel event AFTER reset (clears pending workspace highlight)
-        await self._emit_workspace_mode_event("cancel")
+        # Emit cancel event AFTER reset based on mode type (clears UI)
+        if input_type == "project":
+            await self._emit_project_mode_event("cancel")
+        else:
+            # workspace mode or no input yet
+            await self._emit_workspace_mode_event("cancel")
 
     def get_history(self, limit: Optional[int] = None) -> List[WorkspaceSwitch]:
         """Get workspace switch history.
@@ -593,6 +637,46 @@ class WorkspaceModeManager:
             logger.debug(f"Emitted workspace_mode event: type={event_type}, pending_ws={pending_workspace.workspace_number if pending_workspace else None}")
         except Exception as e:
             logger.warning(f"Failed to broadcast workspace_mode event: {e}")
+
+    async def _emit_project_mode_event(self, event_type: str) -> None:
+        """Emit project mode event via IPC with pending project match.
+
+        Option A: Unified Smart Detection - Project Mode
+        Broadcasts events to workspace-preview-daemon for real-time UI updates.
+
+        Args:
+            event_type: Type of event ("char", "cancel", "execute")
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping event emission")
+            return
+
+        # Fuzzy match project from accumulated characters
+        matched_project = await self._fuzzy_match_project(self._state.accumulated_chars) if self._state.accumulated_chars else None
+
+        # Get project icon if we have a match
+        project_icon = await self._get_project_icon(matched_project) if matched_project else None
+
+        # Create event payload for project mode
+        event_payload = {
+            "type": "project_mode",
+            "payload": {
+                "event_type": event_type,
+                "accumulated_chars": self._state.accumulated_chars,
+                "matched_project": matched_project,
+                "project_icon": project_icon,
+                "timestamp": time.time()
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted project_mode event: type={event_type}, chars={self._state.accumulated_chars}, match={matched_project}, icon={project_icon}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast project_mode event: {e}")
 
     async def _record_switch(self, workspace: int, output: str, mode_type: str) -> None:
         """Record workspace switch in history.

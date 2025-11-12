@@ -17,6 +17,7 @@
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
+    ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (brightness, network, apps)
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
@@ -74,6 +75,9 @@
 
   # eww workspace bar with SVG icons
   programs.eww-workspace-bar.enable = true;
+
+  # eww quick settings panel (Feature 057)
+  programs.eww-quick-panel.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

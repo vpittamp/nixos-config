@@ -135,63 +135,108 @@ ${workspacePreviewDefs}
        :orientation "v"
        :space-evenly false
        :visible {workspace_preview_data.visible == true}
-    ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
-    (box :class "preview-header"
+
+    ;; Option A: Unified Smart Detection - Project Mode Preview
+    (box :class "project-preview"
          :orientation "v"
          :space-evenly false
-         :halign "center"
-      ;; Primary: Large mode symbol + accumulated digits (or placeholder if instructional)
-      (label :class "preview-mode-digits"
-             :halign "center"
-             :text {workspace_preview_data.instructional == true
-                    ? (workspace_preview_data.mode == "move" ? "⇒ __" : "→ __")
-                    : (workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
-                      (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
-      ;; Secondary: Descriptive subtitle (or instructional text)
-      (label :class "preview-subtitle"
-             :halign "center"
-             :text {workspace_preview_data.instructional == true
-                    ? (workspace_preview_data.mode == "move"
-                       ? "Type workspace + monitor (e.g., 231 = WS 23 → Monitor 1)"
-                       : "Type workspace number...")
-                    : (workspace_preview_data.mode == "move"
-                       ? (workspace_preview_data.target_monitor != ""
-                          ? "Move WS " + workspace_preview_data.workspace_num + " → " + workspace_preview_data.target_monitor
-                          : "Move workspace (type monitor: 1-3)")
-                       : "Navigate to Workspace " + workspace_preview_data.workspace_num)}))
-
-    ;; Empty workspace indicator (hidden in instructional mode)
-    (box :class "preview-body"
-         :orientation "v"
-         :visible {workspace_preview_data.empty == true && workspace_preview_data.instructional != true}
-      (label :class "preview-empty"
-             :text "Empty workspace"))
-
-    ;; App list (when not empty, hidden in instructional mode)
-    (box :class "preview-apps"
-         :orientation "v"
-         :space-evenly false
-         :spacing 4
-         :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
-      (for app in {workspace_preview_data.apps ?: []}
-        (box :class {"preview-app" + (app.focused ? " focused" : "")}
+         :visible {workspace_preview_data.type == "project"}
+      ;; Project search header with icon
+      (box :class "preview-header"
+           :orientation "v"
+           :halign "center"
+        (label :class "preview-mode-digits"
+               :text {"🔍 " + workspace_preview_data.accumulated_chars})
+        ;; Project match with icon
+        (box :class "project-match-box"
              :orientation "h"
              :space-evenly false
              :spacing 8
-          (image :class "preview-app-icon"
-                 :path {app.icon_path != "" ? app.icon_path : ""}
-                 :image-width 24
-                 :image-height 24)
-          (label :class "preview-app-name"
-                 :text {app.name}
-                 :limit-width 30
-                 :truncate true))))
+             :halign "center"
+             :visible {workspace_preview_data.matched_project != ""}
+          (label :class "project-icon"
+                 :text {workspace_preview_data.project_icon ?: "📁"})
+          (label :class "preview-subtitle"
+                 :text {"Project: " + workspace_preview_data.matched_project}))
+        ;; No match / searching text
+        (label :class "preview-subtitle"
+               :visible {workspace_preview_data.matched_project == ""}
+               :text {workspace_preview_data.no_match == true
+                      ? "No project found"
+                      : "Type project name..."}))
+      ;; Match indicator
+      (box :class "preview-body"
+           :orientation "v"
+           :halign "center"
+        (label :class {workspace_preview_data.matched_project != "" ? "preview-match" : "preview-no-match"}
+               :text {workspace_preview_data.matched_project != ""
+                      ? "✓ Match found - Press Enter"
+                      : (workspace_preview_data.no_match == true
+                         ? "No matches - Try different letters"
+                         : "")})))
 
-    ;; Footer: Window count (hidden in instructional mode)
-    (box :class "preview-footer"
-         :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
-      (label :class "preview-count"
-             :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")}))))
+    ;; Workspace Mode Preview (existing functionality)
+    (box :class "workspace-preview"
+         :orientation "v"
+         :space-evenly false
+         :visible {workspace_preview_data.type != "project"}
+      ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
+      (box :class "preview-header"
+           :orientation "v"
+           :space-evenly false
+           :halign "center"
+        ;; Primary: Large mode symbol + accumulated digits (or placeholder if instructional)
+        (label :class "preview-mode-digits"
+               :halign "center"
+               :text {workspace_preview_data.instructional == true
+                      ? (workspace_preview_data.mode == "move" ? "⇒ __" : "→ __")
+                      : (workspace_preview_data.mode == "move" ? "⇒ " : "→ ") +
+                        (workspace_preview_data.accumulated_digits ?: workspace_preview_data.workspace_num)})
+        ;; Secondary: Descriptive subtitle (or instructional text)
+        (label :class "preview-subtitle"
+               :halign "center"
+               :text {workspace_preview_data.instructional == true
+                      ? (workspace_preview_data.mode == "move"
+                         ? "Type workspace + monitor (e.g., 231 = WS 23 → Monitor 1)"
+                         : "Type workspace number...")
+                      : (workspace_preview_data.mode == "move"
+                         ? (workspace_preview_data.target_monitor != ""
+                            ? "Move WS " + workspace_preview_data.workspace_num + " → " + workspace_preview_data.target_monitor
+                            : "Move workspace (type monitor: 1-3)")
+                         : "Navigate to Workspace " + workspace_preview_data.workspace_num)}))
+
+      ;; Empty workspace indicator (hidden in instructional mode)
+      (box :class "preview-body"
+           :orientation "v"
+           :visible {workspace_preview_data.empty == true && workspace_preview_data.instructional != true}
+        (label :class "preview-empty"
+               :text "Empty workspace"))
+
+      ;; App list (when not empty, hidden in instructional mode)
+      (box :class "preview-apps"
+           :orientation "v"
+           :space-evenly false
+           :spacing 4
+           :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
+        (for app in {workspace_preview_data.apps ?: []}
+          (box :class {"preview-app" + (app.focused ? " focused" : "")}
+               :orientation "h"
+               :space-evenly false
+               :spacing 8
+            (image :class "preview-app-icon"
+                   :path {app.icon_path != "" ? app.icon_path : ""}
+                   :image-width 24
+                   :image-height 24)
+            (label :class "preview-app-name"
+                   :text {app.name}
+                   :limit-width 30
+                   :truncate true))))
+
+      ;; Footer: Window count (hidden in instructional mode)
+      (box :class "preview-footer"
+           :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
+        (label :class "preview-count"
+               :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")})))))
 
 ;; Feature 057: User Story 2 - Preview Overlay Window (T038, T040)
 ;; Multi-monitor support: :monitor property dynamically set from workspace_preview_data
