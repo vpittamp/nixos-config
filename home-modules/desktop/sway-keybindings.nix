@@ -99,8 +99,9 @@ in
     "${modifier}+y" = "exec i3pm run yazi";
 
     # ========== NOTIFICATIONS (SwayNC) ==========
-    "${modifier}+i" = "exec swaync-client -t -sw";  # Toggle notification center (i for info/inbox)
-    "${modifier}+Shift+i" = "exec swaync-client -d -sw";  # Toggle Do Not Disturb
+    "${modifier}+i" = "exec toggle-quick-panel";  # Toggle Eww quick settings panel
+    "${modifier}+Shift+i" = "exec swaync-client -t -sw";  # Toggle notification center
+    "${modifier}+Ctrl+Shift+i" = "exec swaync-client -d -sw";  # Toggle Do Not Disturb
 
     # ========== ADDITIONAL UTILITIES ==========
     # Screenshots (Wayland with grim + slurp)
@@ -111,9 +112,13 @@ in
     # Clipboard history
     "${modifier}+c" = "exec clipman pick -t wofi";
 
-    # Brightness control
-    "XF86MonBrightnessUp" = "exec light -A 5";
-    "XF86MonBrightnessDown" = "exec light -U 5";
+    # Internal display brightness
+    "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
+    "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";
+
+    # Keyboard backlight (Apple Silicon laptops)
+    "XF86KbdBrightnessUp" = "exec sh -c 'if [ -d /sys/class/leds/kbd_backlight ]; then brightnessctl -d kbd_backlight -n 5 set +10%; fi'";
+    "XF86KbdBrightnessDown" = "exec sh -c 'if [ -d /sys/class/leds/kbd_backlight ]; then brightnessctl -d kbd_backlight -n 5 set 10%-; fi'";
 
     # Volume control
     "XF86AudioRaiseVolume" = "exec pactl set-sink-volume @DEFAULT_SINK@ +5%";
