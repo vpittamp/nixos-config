@@ -919,6 +919,25 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             elapsed_ms = (time.time() - start_time) * 1000
                             if elapsed_ms > 150:
                                 print(f"WARNING: All-windows preview took {elapsed_ms:.1f}ms (target: <150ms) with {all_windows_preview.total_window_count} windows", file=sys.stderr)
+                        elif event_type == "nav":
+                            # Feature 059: Handle arrow key navigation for interactive workspace menu
+                            direction = payload.get("direction")
+                            print(f"DEBUG: Received nav event: direction={direction}", file=sys.stderr, flush=True)
+
+                            # Handle navigation using NavigationHandler
+                            navigation_handler.handle_arrow_key_event(direction, mode="all_windows")
+
+                            # Re-emit preview with updated selection state
+                            selection_state = selection_manager.get_selection_state()
+                            # TODO: Re-emit all_windows preview with updated selection highlight
+
+                        elif event_type == "delete":
+                            # Feature 059: Handle Delete key to close selected window
+                            print(f"DEBUG: Received delete event", file=sys.stderr, flush=True)
+
+                            # Handle delete using NavigationHandler
+                            navigation_handler.handle_delete_key_event(mode="all_windows")
+
                         elif event_type == "digit" and pending is not None:
                             # Feature 059: Reset selection when digits are typed (switches to filtered view)
                             selection_manager.reset_selection()
