@@ -59,6 +59,53 @@
     vim = "nvim";
     vi = "nvim";
   };
+
+  # Create desktop file for Neovim (for xdg-open integration)
+  xdg.desktopEntries.nvim = {
+    name = "Neovim";
+    genericName = "Text Editor";
+    comment = "Edit text files";
+    exec = "ghostty -e nvim %F";
+    terminal = false;
+    categories = [ "Utility" "TextEditor" ];
+    mimeType = [
+      "text/plain"
+      "text/x-shellscript"
+      "text/x-python"
+      "text/x-c"
+      "text/x-c++"
+      "text/x-java"
+      "text/x-rust"
+      "text/x-go"
+      "text/x-makefile"
+      "text/markdown"
+      "text/x-markdown"
+      "application/json"
+      "application/x-yaml"
+      "application/x-nix"
+    ];
+  };
+
+  # Configure XDG MIME types to open text files with Neovim
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications = {
+      "text/plain" = "nvim.desktop";
+      "text/x-shellscript" = "nvim.desktop";
+      "text/x-python" = "nvim.desktop";
+      "text/x-c" = "nvim.desktop";
+      "text/x-c++" = "nvim.desktop";
+      "text/x-java" = "nvim.desktop";
+      "text/x-rust" = "nvim.desktop";
+      "text/x-go" = "nvim.desktop";
+      "text/x-makefile" = "nvim.desktop";
+      "text/markdown" = "nvim.desktop";
+      "text/x-markdown" = "nvim.desktop";
+      "application/json" = "nvim.desktop";
+      "application/x-yaml" = "nvim.desktop";
+      "application/x-nix" = "nvim.desktop";
+    };
+  };
   
   # Create Neovim configuration using lazy.nvim for plugin management
   # This works identically in both local and container environments

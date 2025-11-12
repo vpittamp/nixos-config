@@ -222,6 +222,12 @@ in
       # Use -b flag to run in background and suppress "ok" message
       bind -n M-v run-shell -b "/etc/nixos/scripts/clipcat-fzf.sh"
 
+      # File path scanner (prefix + u) - extract valid file paths from entire scrollback history
+      # Only shows files that exist on filesystem, opens in nvim on workspace 4
+      # Uses fzf with multi-select, bat preview, full-screen popup
+      # -S - means capture from beginning of scrollback history (not just visible screen)
+      bind u run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-buffer-scan.txt && tmux display-popup -E -h 95% -w 95% tmux-url-scan"
+
 
       # Mouse scroll sensitivity - reduce scroll speed for precision
       # By default, tmux scrolls too fast (3 lines per wheel event)

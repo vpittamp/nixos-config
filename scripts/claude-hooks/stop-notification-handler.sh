@@ -12,11 +12,12 @@
 set -euo pipefail
 
 WINDOW_ID="${1:-}"
-MESSAGE="${2:-Task complete - awaiting your input}"
+FULL_MESSAGE="${2:-Task complete - awaiting your input}"
 
-# Truncate if too long (SwayNC handles ~500 chars well)
-if [ ${#MESSAGE} -gt 500 ]; then
-    MESSAGE="${MESSAGE:0:500}..."
+# Make notification brief - extract first line or first sentence (max 80 chars)
+MESSAGE=$(echo "$FULL_MESSAGE" | head -1 | cut -c1-80)
+if [ ${#MESSAGE} -lt ${#FULL_MESSAGE} ]; then
+    MESSAGE="${MESSAGE}..."
 fi
 
 # Icon: use robot/AI-like icon or terminal icon
@@ -25,10 +26,12 @@ ICON="robot"  # Standard freedesktop icon for AI/bot
 # Send notification with SwayNC
 if [ -n "$WINDOW_ID" ]; then
     # Send with action button to return to terminal
+    # --transient makes notification auto-dismiss when actions complete
     RESPONSE=$(notify-send \
         -i "$ICON" \
         -u normal \
         -w \
+        --transient \
         -A "focus=🖥️  Return to Terminal" \
         -A "dismiss=Dismiss" \
         "Claude Code Ready" \
@@ -40,9 +43,11 @@ if [ -n "$WINDOW_ID" ]; then
     fi
 else
     # No window ID found, send notification without action
+    # --transient makes notification auto-dismiss
     notify-send \
         -i "$ICON" \
         -u normal \
+        --transient \
         "Claude Code Ready" \
         "$MESSAGE" 2>/dev/null || true
 fi

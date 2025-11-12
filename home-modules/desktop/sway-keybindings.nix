@@ -112,6 +112,12 @@ in
     # Clipboard history
     "${modifier}+c" = "exec clipman pick -t wofi";
 
+    # Open selected text/path/URL (select text, copy, then press keybinding)
+    "${modifier}+o" = "exec ghostty-smart-open";
+
+    # Extract URLs/paths from terminal with urlscan (like VSCode's link detection)
+    "${modifier}+u" = "exec urlscan";
+
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
     "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";

@@ -167,7 +167,7 @@ let
       parameters = "-e nvim-telescope-picker $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
-      preferred_workspace = 13;
+      preferred_workspace = 4;
       preferred_monitor_role = "secondary";
       icon = "/etc/nixos/assets/icons/neovim.svg";
       nix_package = "pkgs.neovim";
