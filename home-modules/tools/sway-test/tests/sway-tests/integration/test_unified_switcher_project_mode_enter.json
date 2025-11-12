@@ -1,0 +1,32 @@
+{
+  "name": "Feature 072: Switch to project mode with ':' prefix in unified switcher",
+  "description": "User Story 3: Type ':' in workspace mode to switch preview to project search mode",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Clean slate: Kill all existing windows"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for cleanup to complete"
+    }
+  ],
+  "expectedState": {
+    "mode": "exact",
+    "windowCount": 0,
+    "workspaces": []
+  },
+  "notes": [
+    "User Story 3: After entering workspace mode (US1), typing ':' should switch preview to project mode",
+    "Manual test: Enter workspace mode (CapsLock/Ctrl+0), verify all-windows preview appears, type ':', verify preview switches to project type",
+    "Expected preview after ':': type='project', visible=true, accumulated_chars='', matched_project=null, project_icon='📁'",
+    "Expected message: 'Type project name...' (instructional state)",
+    "Typing additional characters (e.g., ':nix') should trigger fuzzy search matching",
+    "Performance target: <100ms fuzzy match latency",
+    "Note: This test validates the clean slate setup. Actual project mode switching requires manual validation or daemon simulation.",
+    "Architecture: Project mode handling in workspace-preview-daemon emit_project_preview() function (lines 192-211)"
+  ]
+}

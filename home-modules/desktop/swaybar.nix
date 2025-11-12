@@ -72,7 +72,7 @@ in
           extraConfig = ''
             output ${output}
             separator_symbol " | "
-            ${lib.optionalString bindingModeIndicator "binding_mode_indicator yes"}
+            ${if bindingModeIndicator then "binding_mode_indicator yes" else "binding_mode_indicator no"}
           '';
         };
 

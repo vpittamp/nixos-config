@@ -15,6 +15,7 @@ import json
 import signal
 import socket
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -75,11 +76,16 @@ def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int],
 def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
     """Emit workspace preview JSON to stdout.
 
+    Feature 072: T036 - Added <50ms performance timing validation for workspace filtering.
+
     Args:
         visible: Whether preview card should be shown
         renderer: PreviewRenderer instance for querying workspace contents
         **kwargs: Additional fields (workspace_num, monitor, mode, accumulated_digits, etc.)
     """
+    # T036: Start timing for performance validation (<50ms target)
+    start_time = time.time()
+
     if not visible:
         # Hide preview card
         output = {"visible": False}
@@ -176,6 +182,11 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     }
 
     print(json.dumps(output), flush=True)
+
+    # T036: Log performance timing if >50ms (User Story 2 target)
+    elapsed_ms = (time.time() - start_time) * 1000
+    if elapsed_ms > 50:
+        print(f"WARNING: Preview update took {elapsed_ms:.1f}ms (target: <50ms) for workspace {workspace_num}", file=sys.stderr)
 
 
 def emit_project_preview(visible: bool, **kwargs) -> None:
@@ -276,22 +287,48 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             # Hide preview card
                             emit_preview(visible=False)
                         elif event_type == "enter":
-                            # Mode entered but no digits yet - show instructional preview
-                            # Get mode from pending workspace if available
-                            mode = "goto"
-                            monitor_output = "eDP-1"
-                            if pending is not None:
-                                mode = pending.get("mode_type", "goto")
-                                monitor_output = pending.get("target_output") or "eDP-1"
+                            # Feature 072: T016 - Show all windows preview on mode entry (User Story 1)
+                            # T049: Performance logging for all_windows preview
+                            start_time = time.time()
 
-                            emit_preview(
-                                visible=True,
-                                renderer=renderer,
-                                workspace_num=0,  # Special case: 0 means "instructional state"
-                                monitor_output=monitor_output,
-                                mode=mode,
-                                accumulated_digits="",
-                            )
+                            # Call render_all_windows() to show complete window list grouped by workspace
+                            all_windows_preview = renderer.render_all_windows()
+
+                            # Convert AllWindowsPreview Pydantic model to dict for JSON output
+                            output = {
+                                "visible": all_windows_preview.visible,
+                                "type": all_windows_preview.type,  # "all_windows"
+                                "workspace_groups": [
+                                    {
+                                        "workspace_num": group.workspace_num,
+                                        "workspace_name": group.workspace_name,
+                                        "window_count": group.window_count,
+                                        "monitor_output": group.monitor_output,
+                                        "windows": [
+                                            {
+                                                "name": window.name,
+                                                "icon_path": window.icon_path,
+                                                "app_id": window.app_id,
+                                                "window_class": window.window_class,
+                                                "focused": window.focused,
+                                                "workspace_num": window.workspace_num,
+                                            }
+                                            for window in group.windows
+                                        ],
+                                    }
+                                    for group in all_windows_preview.workspace_groups
+                                ],
+                                "total_window_count": all_windows_preview.total_window_count,
+                                "total_workspace_count": all_windows_preview.total_workspace_count,
+                                "instructional": all_windows_preview.instructional,
+                                "empty": all_windows_preview.empty,
+                            }
+                            print(json.dumps(output), flush=True)
+
+                            # T049: Log performance timing if >150ms (User Story 1 target)
+                            elapsed_ms = (time.time() - start_time) * 1000
+                            if elapsed_ms > 150:
+                                print(f"WARNING: All-windows preview took {elapsed_ms:.1f}ms (target: <150ms) with {all_windows_preview.total_window_count} windows", file=sys.stderr)
                         elif event_type == "digit" and pending is not None:
                             # Show/update preview card
                             emit_preview(

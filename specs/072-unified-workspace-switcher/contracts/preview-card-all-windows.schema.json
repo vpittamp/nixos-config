@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos.local/schemas/preview-card-all-windows.json",
+  "title": "AllWindowsPreview",
+  "description": "Preview card state showing all windows grouped by workspace (Feature 072)",
+  "type": "object",
+  "required": ["visible", "type"],
+  "properties": {
+    "visible": {
+      "type": "boolean",
+      "description": "Whether the preview card is visible",
+      "default": true
+    },
+    "type": {
+      "type": "string",
+      "const": "all_windows",
+      "description": "Preview type discriminator (must be 'all_windows')"
+    },
+    "workspace_groups": {
+      "type": "array",
+      "description": "List of workspaces with their windows, sorted by workspace number",
+      "items": {
+        "$ref": "#/definitions/WorkspaceGroup"
+      },
+      "default": []
+    },
+    "total_window_count": {
+      "type": "integer",
+      "description": "Total number of windows across all workspaces",
+      "minimum": 0,
+      "default": 0
+    },
+    "total_workspace_count": {
+      "type": "integer",
+      "description": "Number of workspaces with windows",
+      "minimum": 0,
+      "default": 0
+    },
+    "instructional": {
+      "type": "boolean",
+      "description": "Show instructional text (mode entered but no query yet)",
+      "default": false
+    },
+    "empty": {
+      "type": "boolean",
+      "description": "No windows open across all workspaces",
+      "default": false
+    }
+  },
+  "definitions": {
+    "WorkspaceGroup": {
+      "type": "object",
+      "description": "Group of windows on a single workspace",
+      "required": ["workspace_num", "window_count", "windows", "monitor_output"],
+      "properties": {
+        "workspace_num": {
+          "type": "integer",
+          "description": "Workspace number (1-70)",
+          "minimum": 1,
+          "maximum": 70
+        },
+        "workspace_name": {
+          "type": ["string", "null"],
+          "description": "Workspace name (if named workspace)",
+          "default": null
+        },
+        "window_count": {
+          "type": "integer",
+          "description": "Number of windows on this workspace",
+          "minimum": 0
+        },
+        "windows": {
+          "type": "array",
+          "description": "Windows on this workspace",
+          "items": {
+            "$ref": "#/definitions/WindowPreviewEntry"
+          }
+        },
+        "monitor_output": {
+          "type": "string",
+          "description": "Monitor output name (e.g., 'HEADLESS-1', 'eDP-1')",
+          "minLength": 1
+        }
+      }
+    },
+    "WindowPreviewEntry": {
+      "type": "object",
+      "description": "Individual window entry in the preview",
+      "required": ["name", "icon_path", "focused", "workspace_num"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Window title or application name",
+          "minLength": 1
+        },
+        "icon_path": {
+          "type": "string",
+          "description": "Path to icon SVG/PNG (empty string if not found)",
+          "default": ""
+        },
+        "app_id": {
+          "type": ["string", "null"],
+          "description": "Wayland app_id (e.g., 'firefox', 'Code')",
+          "default": null
+        },
+        "window_class": {
+          "type": ["string", "null"],
+          "description": "X11 window class (fallback for non-Wayland apps)",
+          "default": null
+        },
+        "focused": {
+          "type": "boolean",
+          "description": "Is this window currently focused?"
+        },
+        "workspace_num": {
+          "type": "integer",
+          "description": "Which workspace this window belongs to (1-70)",
+          "minimum": 1,
+          "maximum": 70
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "visible": true,
+      "type": "all_windows",
+      "workspace_groups": [
+        {
+          "workspace_num": 1,
+          "workspace_name": "1",
+          "window_count": 2,
+          "monitor_output": "HEADLESS-1",
+          "windows": [
+            {
+              "name": "Alacritty",
+              "icon_path": "/nix/store/.../alacritty.svg",
+              "app_id": "Alacritty",
+              "window_class": null,
+              "focused": false,
+              "workspace_num": 1
+            },
+            {
+              "name": "Ghostty",
+              "icon_path": "/nix/store/.../ghostty.svg",
+              "app_id": "com.mitchellh.ghostty",
+              "window_class": null,
+              "focused": true,
+              "workspace_num": 1
+            }
+          ]
+        },
+        {
+          "workspace_num": 3,
+          "workspace_name": "3",
+          "window_count": 1,
+          "monitor_output": "HEADLESS-2",
+          "windows": [
+            {
+              "name": "Firefox",
+              "icon_path": "/nix/store/.../firefox.svg",
+              "app_id": "firefox",
+              "window_class": null,
+              "focused": false,
+              "workspace_num": 3
+            }
+          ]
+        }
+      ],
+      "total_window_count": 3,
+      "total_workspace_count": 2,
+      "instructional": false,
+      "empty": false
+    },
+    {
+      "visible": true,
+      "type": "all_windows",
+      "workspace_groups": [],
+      "total_window_count": 0,
+      "total_workspace_count": 0,
+      "instructional": true,
+      "empty": false
+    },
+    {
+      "visible": true,
+      "type": "all_windows",
+      "workspace_groups": [],
+      "total_window_count": 0,
+      "total_workspace_count": 0,
+      "instructional": false,
+      "empty": true
+    }
+  ]
+}

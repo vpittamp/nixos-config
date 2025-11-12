@@ -37,6 +37,11 @@ case "$1" in
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
     # Visual feedback now handled by eww-workspace-bar (Feature 058)
     ;;
+  enter)
+    # Feature 072: Notify daemon when entering workspace mode (triggers all-windows preview)
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.enter\",\"params\":{},\"id\":1}" | \
+      "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
+    ;;
   state)
     if [ "${2:-}" = "--json" ]; then
       echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.state\",\"params\":{},\"id\":1}" | \
@@ -49,7 +54,7 @@ case "$1" in
     fi
     ;;
   *)
-    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|state [--json]}" >&2
+    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]}" >&2
     exit 1
     ;;
 esac

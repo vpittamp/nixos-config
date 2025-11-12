@@ -2,9 +2,10 @@
 
 Feature 058: Workspace Mode Visual Feedback - Workspace mode IPC events
 Feature 057: Unified Bar System - Theme configuration models
+Feature 072: Unified Workspace/Window/Project Switcher - All-windows preview models
 """
 
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from pydantic import BaseModel, Field
 
 
@@ -298,6 +299,183 @@ class NotificationIcon(BaseModel):
                     "resolved_icon": "dialog-information",
                     "fallback_icon": "dialog-information",
                     "resolution_method": "fallback"
+                }
+            ]
+        }
+
+
+# ============================================================================
+# Feature 072: Unified Workspace/Window/Project Switcher
+# T006-T008: Pydantic models for all-windows preview
+# ============================================================================
+
+
+class WindowPreviewEntry(BaseModel):
+    """Individual window entry in the all-windows preview.
+
+    Feature 072: Used for both AllWindowsPreview and WorkspaceGroup.
+    """
+
+    name: str = Field(..., description="Window title or application name", min_length=1)
+    icon_path: str = Field(default="", description="Path to icon SVG/PNG (empty string if not found)")
+    app_id: Optional[str] = Field(default=None, description="Wayland app_id (e.g., 'firefox', 'Code')")
+    window_class: Optional[str] = Field(default=None, description="X11 window class (fallback for non-Wayland apps)")
+    focused: bool = Field(default=False, description="Is this window currently focused?")
+    workspace_num: int = Field(..., ge=1, le=70, description="Which workspace this window belongs to (1-70)")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "name": "Alacritty",
+                    "icon_path": "/nix/store/.../alacritty.svg",
+                    "app_id": "Alacritty",
+                    "window_class": None,
+                    "focused": False,
+                    "workspace_num": 1
+                },
+                {
+                    "name": "Ghostty",
+                    "icon_path": "/nix/store/.../ghostty.svg",
+                    "app_id": "com.mitchellh.ghostty",
+                    "window_class": None,
+                    "focused": True,
+                    "workspace_num": 1
+                }
+            ]
+        }
+
+
+class WorkspaceGroup(BaseModel):
+    """Group of windows on a single workspace.
+
+    Feature 072: Container for all windows on one workspace in the all-windows preview.
+    """
+
+    workspace_num: int = Field(..., ge=1, le=70, description="Workspace number (1-70)")
+    workspace_name: Optional[str] = Field(default=None, description="Workspace name (if named workspace)")
+    window_count: int = Field(..., ge=0, description="Number of windows on this workspace")
+    windows: List[WindowPreviewEntry] = Field(default_factory=list, description="Windows on this workspace")
+    monitor_output: str = Field(..., min_length=1, description="Monitor output name (e.g., 'HEADLESS-1', 'eDP-1')")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "workspace_num": 1,
+                    "workspace_name": "1",
+                    "window_count": 2,
+                    "monitor_output": "HEADLESS-1",
+                    "windows": [
+                        {
+                            "name": "Alacritty",
+                            "icon_path": "/nix/store/.../alacritty.svg",
+                            "app_id": "Alacritty",
+                            "window_class": None,
+                            "focused": False,
+                            "workspace_num": 1
+                        },
+                        {
+                            "name": "Ghostty",
+                            "icon_path": "/nix/store/.../ghostty.svg",
+                            "app_id": "com.mitchellh.ghostty",
+                            "window_class": None,
+                            "focused": True,
+                            "workspace_num": 1
+                        }
+                    ]
+                }
+            ]
+        }
+
+
+class AllWindowsPreview(BaseModel):
+    """Complete preview card state showing all windows grouped by workspace.
+
+    Feature 072: Main data structure for User Story 1 (all-windows view on mode entry).
+    """
+
+    visible: bool = Field(default=True, description="Whether the preview card is visible")
+    type: Literal["all_windows"] = Field(default="all_windows", description="Preview type discriminator (must be 'all_windows')")
+    workspace_groups: List[WorkspaceGroup] = Field(default_factory=list, description="List of workspaces with their windows, sorted by workspace number")
+    total_window_count: int = Field(default=0, ge=0, description="Total number of windows across all workspaces")
+    total_workspace_count: int = Field(default=0, ge=0, description="Number of workspaces with windows")
+    instructional: bool = Field(default=False, description="Show instructional text (mode entered but no query yet)")
+    empty: bool = Field(default=False, description="No windows open across all workspaces")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "visible": True,
+                    "type": "all_windows",
+                    "workspace_groups": [
+                        {
+                            "workspace_num": 1,
+                            "workspace_name": "1",
+                            "window_count": 2,
+                            "monitor_output": "HEADLESS-1",
+                            "windows": [
+                                {
+                                    "name": "Alacritty",
+                                    "icon_path": "/nix/store/.../alacritty.svg",
+                                    "app_id": "Alacritty",
+                                    "window_class": None,
+                                    "focused": False,
+                                    "workspace_num": 1
+                                },
+                                {
+                                    "name": "Ghostty",
+                                    "icon_path": "/nix/store/.../ghostty.svg",
+                                    "app_id": "com.mitchellh.ghostty",
+                                    "window_class": None,
+                                    "focused": True,
+                                    "workspace_num": 1
+                                }
+                            ]
+                        },
+                        {
+                            "workspace_num": 3,
+                            "workspace_name": "3",
+                            "window_count": 1,
+                            "monitor_output": "HEADLESS-2",
+                            "windows": [
+                                {
+                                    "name": "Firefox",
+                                    "icon_path": "/nix/store/.../firefox.svg",
+                                    "app_id": "firefox",
+                                    "window_class": None,
+                                    "focused": False,
+                                    "workspace_num": 3
+                                }
+                            ]
+                        }
+                    ],
+                    "total_window_count": 3,
+                    "total_workspace_count": 2,
+                    "instructional": False,
+                    "empty": False
+                },
+                {
+                    "visible": True,
+                    "type": "all_windows",
+                    "workspace_groups": [],
+                    "total_window_count": 0,
+                    "total_workspace_count": 0,
+                    "instructional": True,
+                    "empty": False
+                },
+                {
+                    "visible": True,
+                    "type": "all_windows",
+                    "workspace_groups": [],
+                    "total_window_count": 0,
+                    "total_workspace_count": 0,
+                    "instructional": False,
+                    "empty": True
                 }
             ]
         }

@@ -1,0 +1,53 @@
+{
+  "name": "Feature 072: Invalid workspace number handling in unified switcher",
+  "description": "User Story 2: Type out-of-range workspace number (e.g., '99') to verify error message",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Clean slate: Kill all existing windows"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for cleanup to complete"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 5"
+      },
+      "description": "Switch to workspace 5"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 5"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 5,
+        "windows": [
+          { "app_id": "Alacritty" }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "User Story 2: Typing invalid workspace numbers (>70 or <1) should show error message",
+    "Manual test: Enter workspace mode, type '9' then '9' (workspace 99 is out of valid range 1-70)",
+    "Expected preview: type='workspace', invalid=true, visible=true, workspace_num=99, apps=[], window_count=0, empty=true",
+    "Error message should say: 'Invalid workspace number (1-70)'",
+    "Edge cases to test: '0' (invalid), '71' (invalid), '100' (invalid)",
+    "Recovery: Pressing Escape should cancel mode, typing valid digits should replace invalid input",
+    "Note: This test validates the setup state. Actual invalid workspace handling requires manual validation or daemon simulation.",
+    "Architecture: Invalid validation happens in workspace-preview-daemon emit_preview() function (lines 122-140)"
+  ]
+}
