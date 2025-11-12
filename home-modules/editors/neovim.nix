@@ -459,7 +459,7 @@
         build = "make tiktoken",
         opts = {
           debug = true,
-          model = "claude-3.7-sonnet", -- Can use gpt-4o or claude family on GitHub Models
+          model = "claude-haiku-4.5", -- Claude Haiku 4.5 (fast and cost-effective)
           temperature = 0.1,
           window = {
             layout = "vertical", -- 'vertical', 'horizontal', 'float', 'replace'

@@ -51,6 +51,7 @@ in
 
     # Editor configurations
     ../editors/neovim.nix
+    ../tools/copilot-auth.nix        # GitHub Copilot authentication (1Password + hosts.json)
 
     # Tool configurations
     ../tools/git.nix
