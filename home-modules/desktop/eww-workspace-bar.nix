@@ -145,7 +145,6 @@ ${workspacePreviewDefs}
   (box :class "preview-card"
        :orientation "v"
        :space-evenly false
-       :visible {workspace_preview_data.visible == true}
 
     ;; Option A: Unified Smart Detection - Project Mode Preview
     (box :class "project-preview"

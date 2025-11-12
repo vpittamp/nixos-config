@@ -4477,9 +4477,7 @@ class IPCServer:
         manager = self.state_manager.workspace_mode_manager
         accumulated = await manager.add_digit(digit)
 
-        # Broadcast event for status bar update
-        event = manager.create_event("digit")
-        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+        # Event broadcast handled by manager.add_digit() via _emit_workspace_mode_event()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -4513,9 +4511,7 @@ class IPCServer:
         manager = self.state_manager.workspace_mode_manager
         accumulated = await manager.add_char(char)
 
-        # Broadcast event for status bar update
-        event = manager.create_event("char")
-        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+        # Event broadcast handled by manager.add_char() via _emit_project_mode_event()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -4546,9 +4542,7 @@ class IPCServer:
         mode_type = params.get("mode", "goto")
         await manager.enter_mode(mode_type)
 
-        # Broadcast "enter" event to trigger all-windows preview (Feature 072: User Story 1)
-        event = manager.create_event("enter")
-        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+        # Event broadcast handled by manager.enter_mode() via _emit_workspace_mode_event()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -4574,9 +4568,7 @@ class IPCServer:
         manager = self.state_manager.workspace_mode_manager
         result = await manager.execute()
 
-        # Broadcast event (mode now inactive)
-        event = manager.create_event("execute")
-        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+        # Event broadcast handled by manager.execute() via _emit_workspace_mode_event()
 
         # If project switch, also broadcast project change event for immediate status bar update
         if result and result.get("type") == "project":
@@ -4617,9 +4609,7 @@ class IPCServer:
         manager = self.state_manager.workspace_mode_manager
         await manager.cancel()
 
-        # Broadcast event (mode now inactive)
-        event = manager.create_event("cancel")
-        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+        # Event broadcast handled by manager.cancel() via _emit_workspace_mode_event()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
