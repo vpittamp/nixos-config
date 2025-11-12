@@ -51,10 +51,18 @@ let
     src = ../tools/sway-workspace-panel;
     installPhase = ''
       mkdir -p $out
+      echo "DEBUG: Contents of source directory:" >&2
+      ls -laR . >&2
       cp *.py $out/
       cp workspace-preview-daemon $out/
       # Feature 059: Copy selection_models directory for Pydantic models (includes __init__.py and selection_state.py)
-      cp -r selection_models $out/
+      if [ -d selection_models ]; then
+        echo "DEBUG: Found selection_models directory, copying..." >&2
+        cp -r selection_models $out/
+      else
+        echo "ERROR: selection_models directory not found!" >&2
+        exit 1
+      fi
       chmod +x $out/workspace_panel.py
       chmod +x $out/workspace-preview-daemon
     '';
