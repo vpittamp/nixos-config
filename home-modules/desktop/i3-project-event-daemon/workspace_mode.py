@@ -434,6 +434,44 @@ class WorkspaceModeManager:
             # workspace mode or no input yet
             await self._emit_workspace_mode_event("cancel")
 
+    async def nav(self, direction: str) -> None:
+        """Navigate in workspace preview using arrow or home/end keys.
+
+        Feature 059: Workspace Navigation Event Broadcasting
+
+        Args:
+            direction: Navigation direction ("up", "down", "left", "right", "home", "end")
+
+        Raises:
+            ValueError: If direction is not one of the valid directions
+            RuntimeError: If workspace mode is not active
+        """
+        if not self._state.active:
+            raise RuntimeError("Cannot navigate: workspace mode not active")
+
+        valid_directions = {"up", "down", "left", "right", "home", "end"}
+        if direction not in valid_directions:
+            raise ValueError(f"Invalid direction: {direction}. Must be one of {valid_directions}")
+
+        # Emit navigation event with direction parameter
+        await self._emit_workspace_mode_event("nav", direction=direction)
+        logger.info(f"Navigation event emitted: direction={direction}")
+
+    async def delete(self) -> None:
+        """Delete (close) the currently selected window in workspace preview.
+
+        Feature 059: Workspace Navigation Event Broadcasting
+
+        Raises:
+            RuntimeError: If workspace mode is not active
+        """
+        if not self._state.active:
+            raise RuntimeError("Cannot delete: workspace mode not active")
+
+        # Emit delete event (no additional parameters needed - SelectionManager knows what's selected)
+        await self._emit_workspace_mode_event("delete")
+        logger.info("Delete event emitted for selected window")
+
     def get_history(self, limit: Optional[int] = None) -> List[WorkspaceSwitch]:
         """Get workspace switch history.
 
@@ -627,14 +665,16 @@ class WorkspaceModeManager:
         else:
             return self._state.output_cache.get("TERTIARY", "eDP-1")
 
-    async def _emit_workspace_mode_event(self, event_type: str) -> None:
+    async def _emit_workspace_mode_event(self, event_type: str, **kwargs) -> None:
         """Emit workspace mode event via IPC with pending workspace state.
 
         Feature 058: Workspace Mode Visual Feedback
+        Feature 059: Navigation Event Broadcasting (added **kwargs support)
         Broadcasts events to sway-workspace-panel for real-time UI updates.
 
         Args:
-            event_type: Type of event ("enter", "digit", "cancel", "execute")
+            event_type: Type of event ("enter", "digit", "nav", "delete", "cancel", "execute")
+            **kwargs: Additional event-specific fields (e.g., direction="down" for nav events)
         """
         if not self._ipc_server:
             logger.debug("IPC server not available, skipping event emission")
@@ -650,7 +690,8 @@ class WorkspaceModeManager:
                 "event_type": event_type,
                 "pending_workspace": pending_workspace.model_dump() if pending_workspace else None,
                 "mode_type": self._state.mode_type,  # Feature 059: T024 - Add mode for move-mode styling
-                "timestamp": time.time()
+                "timestamp": time.time(),
+                **kwargs  # Feature 059: Include additional fields (e.g., direction)
             }
         }
 

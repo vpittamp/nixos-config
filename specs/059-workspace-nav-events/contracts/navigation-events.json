@@ -1,0 +1,383 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workspace Navigation Event Broadcasting - JSON-RPC API Contract",
+  "description": "Feature 059: JSON-RPC methods and event schemas for workspace navigation",
+  "version": "1.0.0",
+  "definitions": {
+    "Direction": {
+      "type": "string",
+      "enum": ["up", "down", "left", "right", "home", "end"],
+      "description": "Navigation direction"
+    },
+    "ModeType": {
+      "type": "string",
+      "enum": ["goto", "move"],
+      "description": "Workspace mode type"
+    },
+    "PendingWorkspaceState": {
+      "type": "object",
+      "properties": {
+        "workspace_num": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 70,
+          "description": "Target workspace number"
+        },
+        "output_name": {
+          "type": "string",
+          "description": "Sway output name (e.g., HEADLESS-1)"
+        },
+        "monitor_role": {
+          "type": "string",
+          "enum": ["primary", "secondary", "tertiary"],
+          "description": "Monitor role assignment"
+        }
+      },
+      "required": ["workspace_num", "output_name", "monitor_role"]
+    }
+  },
+  "methods": {
+    "workspace_mode.nav": {
+      "description": "Navigate in workspace preview using arrow or home/end keys (Feature 059)",
+      "params": {
+        "type": "array",
+        "items": [
+          {
+            "$ref": "#/definitions/Direction",
+            "description": "Navigation direction"
+          }
+        ],
+        "minItems": 1,
+        "maxItems": 1
+      },
+      "result": {
+        "type": "null",
+        "description": "No return value - events broadcast asynchronously to subscribers"
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid direction parameter",
+          "data": {
+            "valid_directions": ["up", "down", "left", "right", "home", "end"]
+          }
+        },
+        {
+          "code": -32603,
+          "message": "Workspace mode not active",
+          "data": {
+            "hint": "Enter workspace mode first using CapsLock (M1) or Ctrl+0 (Hetzner)"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "description": "Navigate down in workspace list",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "workspace_mode.nav",
+            "params": ["down"],
+            "id": 1
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": null,
+            "id": 1
+          }
+        },
+        {
+          "description": "Jump to first item with Home key",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "workspace_mode.nav",
+            "params": ["home"],
+            "id": 2
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": null,
+            "id": 2
+          }
+        },
+        {
+          "description": "Invalid direction error",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "workspace_mode.nav",
+            "params": ["invalid"],
+            "id": 3
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "error": {
+              "code": -32602,
+              "message": "Invalid direction parameter",
+              "data": {
+                "valid_directions": ["up", "down", "left", "right", "home", "end"]
+              }
+            },
+            "id": 3
+          }
+        }
+      ]
+    },
+    "workspace_mode.delete": {
+      "description": "Delete (close) the currently selected window in workspace preview (Feature 059)",
+      "params": {
+        "type": "array",
+        "items": [],
+        "description": "No parameters required - operates on current selection"
+      },
+      "result": {
+        "type": "null",
+        "description": "No return value - events broadcast asynchronously to subscribers"
+      },
+      "errors": [
+        {
+          "code": -32603,
+          "message": "Workspace mode not active",
+          "data": {
+            "hint": "Enter workspace mode first using CapsLock (M1) or Ctrl+0 (Hetzner)"
+          }
+        }
+      ],
+      "examples": [
+        {
+          "description": "Close selected window",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "workspace_mode.delete",
+            "params": [],
+            "id": 4
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": null,
+            "id": 4
+          }
+        }
+      ]
+    }
+  },
+  "events": {
+    "workspace_mode": {
+      "description": "Workspace mode events broadcast to all IPC subscribers",
+      "variants": {
+        "nav": {
+          "description": "Navigation event (arrow keys, home, end)",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "workspace_mode"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "event_type": {
+                    "type": "string",
+                    "const": "nav"
+                  },
+                  "direction": {
+                    "$ref": "#/definitions/Direction"
+                  },
+                  "mode_type": {
+                    "$ref": "#/definitions/ModeType"
+                  },
+                  "accumulated_digits": {
+                    "type": "string",
+                    "description": "Currently typed digits (may be empty)"
+                  },
+                  "pending_workspace": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/definitions/PendingWorkspaceState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Target workspace info (null if no digits typed)"
+                  }
+                },
+                "required": ["event_type", "direction"]
+              }
+            },
+            "required": ["type", "payload"]
+          },
+          "example": {
+            "type": "workspace_mode",
+            "payload": {
+              "event_type": "nav",
+              "direction": "down",
+              "mode_type": "goto",
+              "accumulated_digits": "2",
+              "pending_workspace": {
+                "workspace_num": 2,
+                "output_name": "HEADLESS-1",
+                "monitor_role": "primary"
+              }
+            }
+          }
+        },
+        "delete": {
+          "description": "Delete event (Delete key pressed)",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "workspace_mode"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "event_type": {
+                    "type": "string",
+                    "const": "delete"
+                  },
+                  "mode_type": {
+                    "$ref": "#/definitions/ModeType"
+                  },
+                  "accumulated_digits": {
+                    "type": "string",
+                    "description": "Currently typed digits (may be empty)"
+                  },
+                  "pending_workspace": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/definitions/PendingWorkspaceState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Target workspace info (null if no digits typed)"
+                  }
+                },
+                "required": ["event_type"]
+              }
+            },
+            "required": ["type", "payload"]
+          },
+          "example": {
+            "type": "workspace_mode",
+            "payload": {
+              "event_type": "delete",
+              "mode_type": "goto",
+              "accumulated_digits": "23",
+              "pending_workspace": {
+                "workspace_num": 23,
+                "output_name": "HEADLESS-2",
+                "monitor_role": "secondary"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "cli_usage": {
+    "description": "Command-line interface for navigation (called by Sway keybindings)",
+    "commands": {
+      "i3pm-workspace-mode nav <direction>": {
+        "description": "Navigate in workspace preview",
+        "parameters": {
+          "direction": {
+            "$ref": "#/definitions/Direction"
+          }
+        },
+        "examples": [
+          "i3pm-workspace-mode nav down",
+          "i3pm-workspace-mode nav up",
+          "i3pm-workspace-mode nav home",
+          "i3pm-workspace-mode nav end"
+        ],
+        "bound_to": [
+          "Down arrow in workspace mode (sway-keybindings.nix:674)",
+          "Up arrow in workspace mode (sway-keybindings.nix:675)",
+          "Home key in workspace mode (sway-keybindings.nix:676)",
+          "End key in workspace mode (sway-keybindings.nix:677)"
+        ]
+      },
+      "i3pm-workspace-mode delete": {
+        "description": "Close currently selected window",
+        "parameters": {},
+        "examples": [
+          "i3pm-workspace-mode delete"
+        ],
+        "bound_to": [
+          "Delete key in workspace mode (sway-keybindings.nix:678)"
+        ]
+      }
+    }
+  },
+  "integration_flow": {
+    "description": "End-to-end flow from user keystroke to visual feedback",
+    "steps": [
+      {
+        "step": 1,
+        "actor": "User",
+        "action": "Presses Down arrow key while in workspace mode"
+      },
+      {
+        "step": 2,
+        "actor": "Sway",
+        "action": "Executes keybinding: bindsym Down exec i3pm-workspace-mode nav down"
+      },
+      {
+        "step": 3,
+        "actor": "i3pm-workspace-mode CLI",
+        "action": "Sends JSON-RPC request: {method: 'workspace_mode.nav', params: ['down']}"
+      },
+      {
+        "step": 4,
+        "actor": "i3pm daemon",
+        "action": "Calls WorkspaceModeManager.nav('down')"
+      },
+      {
+        "step": 5,
+        "actor": "WorkspaceModeManager",
+        "action": "Validates direction, calls _emit_workspace_mode_event('nav', direction='down')"
+      },
+      {
+        "step": 6,
+        "actor": "IPC Server",
+        "action": "Broadcasts event to all subscribers: {type: 'workspace_mode', payload: {event_type: 'nav', direction: 'down'}}"
+      },
+      {
+        "step": 7,
+        "actor": "workspace-preview-daemon",
+        "action": "Receives event, calls NavigationHandler.handle_arrow_key_event('down')"
+      },
+      {
+        "step": 8,
+        "actor": "NavigationHandler",
+        "action": "Calls SelectionManager to update selected_index"
+      },
+      {
+        "step": 9,
+        "actor": "SelectionManager",
+        "action": "Increments selected_index (with wrapping), emits updated preview"
+      },
+      {
+        "step": 10,
+        "actor": "Eww Workspace Bar",
+        "action": "Re-renders preview with new highlight position"
+      },
+      {
+        "step": 11,
+        "actor": "User",
+        "action": "Sees visual feedback <50ms after keypress"
+      }
+    ],
+    "performance_target": "<50ms from step 1 to step 11"
+  },
+  "compatibility": {
+    "i3pm_daemon_version": ">=1.0.0 (Feature 015)",
+    "workspace_preview_daemon_version": ">=1.0.0 (Feature 059/072)",
+    "sway_version": ">=1.8",
+    "python_version": ">=3.11"
+  }
+}

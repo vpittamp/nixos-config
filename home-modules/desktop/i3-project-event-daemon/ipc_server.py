@@ -4704,16 +4704,9 @@ class IPCServer:
         manager = self.state_manager.workspace_mode_manager
         direction = params.get("direction", "down")
 
-        if direction not in ("up", "down", "home", "end"):
-            raise ValueError(f"Invalid direction: {direction} (must be 'up', 'down', 'home', or 'end')")
-
-        # Emit navigation event to workspace-preview-daemon
-        if direction in ("up", "down"):
-            await manager._emit_arrow_key_nav_event(direction)
-        elif direction == "home":
-            await manager._emit_home_key_nav_event()
-        elif direction == "end":
-            await manager._emit_end_key_nav_event()
+        # Feature 059: Call the unified nav() method
+        # The nav() method validates direction and emits the appropriate event
+        await manager.nav(direction)
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -4741,8 +4734,9 @@ class IPCServer:
 
         manager = self.state_manager.workspace_mode_manager
 
-        # Emit delete_key_close event to workspace-preview-daemon
-        await manager._emit_delete_key_close_event()
+        # Feature 059: Call the unified delete() method
+        # The delete() method validates workspace mode is active and emits the event
+        await manager.delete()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
