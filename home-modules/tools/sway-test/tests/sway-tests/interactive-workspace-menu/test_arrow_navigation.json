@@ -1,0 +1,101 @@
+{
+  "name": "Arrow key navigation in interactive workspace menu",
+  "description": "Test Down/Up arrow navigation with circular wrap and selection updates",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"alacritty\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 100
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode nav down"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 50
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode nav down"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 50
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode nav up"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 50
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode default"
+      }
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "assertions": [
+      {
+        "type": "workspace_exists",
+        "workspace_num": 1
+      },
+      {
+        "type": "workspace_exists",
+        "workspace_num": 3
+      },
+      {
+        "type": "window_count_min",
+        "count": 2
+      }
+    ]
+  }
+}

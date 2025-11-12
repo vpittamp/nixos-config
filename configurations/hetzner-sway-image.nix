@@ -58,6 +58,9 @@
   # Disk size for QCOW2 image
   virtualisation.diskSize = 50 * 1024;  # 50GB in MB
 
+  # Memory size for build VM (needs more memory for large closure)
+  virtualisation.memorySize = 4096;  # 4GB for build process
+
   # ========== HEADLESS WAYLAND CONFIGURATION (Feature 046) ==========
 
   # Enable Sway compositor

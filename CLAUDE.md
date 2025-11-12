@@ -1320,6 +1320,8 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - JSON configuration files (~/.config/sway/appearance.json for unified theme, ~/.config/swaync/config.json for notification center layout, ~/.config/eww/workspace-mode-preview.json for preview card config) (057-unified-bar-system)
 - Python 3.11+ (matches existing workspace-preview-daemon) + i3ipc.aio (async Sway IPC), Eww 0.4+ (preview card rendering), orjson (fast JSON serialization), pyxdg (desktop entry icon resolution) (072-unified-workspace-switcher)
 - N/A (in-memory state only, consumed by Eww deflisten) (072-unified-workspace-switcher)
+- Python 3.11+ (matching existing i3pm daemon and workspace-preview-daemon) + i3ipc.aio (async Sway IPC), Eww 0.4+ (ElKowar's Wacky Widgets with Yuck DSL), GTK3 (event handling, keyboard input), orjson (fast JSON serialization), pyxdg (desktop entry icon resolution) (059-interactive-workspace-menu)
+- In-memory selection state in workspace-preview-daemon (selection index, item type, workspace number, window ID), no persistent storage required (059-interactive-workspace-menu)
 
 ## Recent Changes
 - **072-unified-workspace-switcher** (2025-11): Unified workspace/window/project switcher with all-windows preview on workspace mode entry. Three user stories: (1) View ALL windows grouped by workspace when entering workspace mode (CapsLock/Ctrl+0), (2) Filter windows by typing workspace digits, (3) Switch to project mode with ':' prefix. Uses daemon IPC for 50% faster queries (~2-5ms vs ~15-30ms). Performance: <150ms all-windows preview, <50ms filtering, <100ms project search. See `/etc/nixos/specs/072-unified-workspace-switcher/`

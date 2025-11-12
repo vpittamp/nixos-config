@@ -1,0 +1,104 @@
+{
+  "name": "Digit typing resets selection and filters workspace list",
+  "description": "Test that typing digits resets selection to first item and filters preview to specific workspace",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"alacritty\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 3"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 100
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode nav down"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 50
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode digit 3"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 100
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec i3pm-workspace-mode execute"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration_ms": 100
+      }
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "assertions": [
+      {
+        "type": "focused_workspace",
+        "workspace_num": 3,
+        "description": "Should navigate to workspace 3 after digit filtering"
+      },
+      {
+        "type": "workspace_mode_inactive",
+        "description": "Workspace mode should exit after navigation"
+      }
+    ]
+  }
+}

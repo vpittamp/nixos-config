@@ -46,7 +46,7 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel";
+    name = "sway-workspace-panel-v2";  # Changed name to force rebuild after adding window_id
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = ../tools/sway-workspace-panel;
     installPhase = ''
