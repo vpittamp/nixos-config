@@ -169,7 +169,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 13;
       preferred_monitor_role = "secondary";
-      icon = "neovim";  # Icon theme will resolve to SVG symlink
+      icon = "/etc/nixos/assets/icons/neovim.svg";
       nix_package = "pkgs.neovim";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -282,7 +282,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
-      icon = "/etc/nixos/assets/icons/yazi.svg";
+      icon = "/etc/nixos/assets/icons/yazi.png";
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";
