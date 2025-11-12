@@ -11,6 +11,7 @@ Protocol:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import signal
 import socket
@@ -19,11 +20,18 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import i3ipc  # Feature 059: For Sway IPC navigation commands
+
 from models import WorkspaceModeEvent, PendingWorkspaceState
+from selection_models.selection_state import SelectionState, NavigableItem, PreviewListModel
 from preview_renderer import PreviewRenderer
 
 # Socket path matches systemd socket unit configuration
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
+
+# Global selection manager for interactive workspace menu (Feature 059)
+selection_manager = SelectionManager()
+navigation_handler = NavigationHandler(selection_manager)
 
 
 def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int], Optional[str]]:
@@ -71,6 +79,374 @@ def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int],
 
     # More than 3 digits: invalid
     return (None, None)
+
+
+class SelectionManager:
+    """Manage selection state for interactive workspace menu navigation (Feature 059).
+
+    Owns the PreviewListModel and SelectionState, exposes navigation methods for
+    arrow key handling.
+    """
+
+    def __init__(self):
+        """Initialize SelectionManager with empty state."""
+        self.list_model: Optional[PreviewListModel] = None
+        self.selection_state: Optional[SelectionState] = None
+
+    def initialize_from_workspace_groups(self, workspace_groups: list) -> None:
+        """Initialize selection from workspace groups data.
+
+        Args:
+            workspace_groups: List of workspace group dicts from PreviewRenderer
+        """
+        # Build flattened list model from workspace groups
+        self.list_model = PreviewListModel.from_workspace_groups(workspace_groups)
+
+        # Initialize selection state to first item (if non-empty)
+        if self.list_model and not self.list_model.is_empty:
+            first_item = self.list_model.items[0]
+            self.selection_state = SelectionState(
+                selected_index=0,
+                item_type=first_item.item_type,
+                workspace_num=first_item.workspace_num,
+                window_id=first_item.window_id,
+                visible=True
+            )
+        else:
+            self.selection_state = None
+
+    def navigate_down(self) -> None:
+        """Navigate selection down (circular wrap to first if at last)."""
+        if not self.list_model or self.list_model.is_empty:
+            return
+
+        self.list_model.navigate_down()
+        self._update_selection_state_from_model()
+
+    def navigate_up(self) -> None:
+        """Navigate selection up (circular wrap to last if at first)."""
+        if not self.list_model or self.list_model.is_empty:
+            return
+
+        self.list_model.navigate_up()
+        self._update_selection_state_from_model()
+
+    def reset_selection(self) -> None:
+        """Reset selection to first item (or None if empty)."""
+        if not self.list_model:
+            self.selection_state = None
+            return
+
+        self.list_model.reset_selection()
+        self._update_selection_state_from_model()
+
+    def get_selection_state(self) -> Optional[SelectionState]:
+        """Get current selection state for JSON output."""
+        return self.selection_state
+
+    def get_selected_item(self) -> Optional[NavigableItem]:
+        """Get currently selected navigable item."""
+        if not self.list_model:
+            return None
+        return self.list_model.get_selected_item()
+
+    def clear(self) -> None:
+        """Clear all selection state (mode exit)."""
+        self.list_model = None
+        self.selection_state = None
+
+    def remove_item(self, item: NavigableItem) -> bool:
+        """Remove item from preview list (Feature 059: T045).
+
+        Args:
+            item: NavigableItem to remove
+
+        Returns:
+            True if item was found and removed, False otherwise
+        """
+        if not self.list_model:
+            return False
+        removed = self.list_model.remove_item(item)
+        if removed:
+            self._update_selection_state_from_model()
+        return removed
+
+    def clamp_selection(self) -> None:
+        """Clamp selection index after list modification (Feature 059: T046)."""
+        if not self.list_model:
+            return
+        self.list_model.clamp_selection()
+        self._update_selection_state_from_model()
+
+    def _update_selection_state_from_model(self) -> None:
+        """Update SelectionState from current PreviewListModel selection."""
+        if not self.list_model or not self.list_model.has_selection:
+            self.selection_state = None
+            return
+
+        selected_item = self.list_model.get_selected_item()
+        if selected_item:
+            self.selection_state = SelectionState(
+                selected_index=self.list_model.current_selection_index,
+                item_type=selected_item.item_type,
+                workspace_num=selected_item.workspace_num,
+                window_id=selected_item.window_id,
+                visible=True
+            )
+
+
+class NavigationHandler:
+    """Handle keyboard navigation events for interactive workspace menu (Feature 059).
+
+    Processes arrow key, Enter, and Delete key events from i3pm daemon IPC.
+    """
+
+    def __init__(self, selection_manager: SelectionManager):
+        """Initialize NavigationHandler with SelectionManager reference.
+
+        Args:
+            selection_manager: SelectionManager instance to manipulate selection
+        """
+        self.selection_manager = selection_manager
+        self.last_preview_data = None  # Cache last preview for re-emission
+        self.current_mode = "goto"  # Feature 059: T024 - Track current mode (goto/move) for move-mode styling
+
+    def handle_arrow_key_event(self, direction: str, mode: str) -> None:
+        """Handle arrow key navigation event.
+
+        Args:
+            direction: "up" or "down"
+            mode: Preview mode when key was pressed ("all_windows", etc.)
+        """
+        # T056: Performance benchmarking - measure arrow key latency (target: <10ms)
+        start_time = time.time()
+
+        # Only handle navigation in all_windows mode for Feature 059
+        if mode != "all_windows":
+            return
+
+        if direction == "down":
+            self.selection_manager.navigate_down()
+        elif direction == "up":
+            self.selection_manager.navigate_up()
+        else:
+            print(f"Warning: Unknown navigation direction: {direction}", file=sys.stderr)
+            return
+
+        # Re-emit preview with updated selection
+        self._emit_preview_with_selection()
+
+        # T056: Log performance if exceeds target
+        elapsed_ms = (time.time() - start_time) * 1000
+        if elapsed_ms > 10:
+            print(f"WARNING: Arrow navigation took {elapsed_ms:.1f}ms (target: <10ms)", file=sys.stderr)
+        else:
+            print(f"DEBUG: Arrow navigation latency: {elapsed_ms:.1f}ms", file=sys.stderr)
+
+    def handle_enter_key_event(self, mode: str, accumulated_digits: str) -> None:
+        """Handle Enter key selection event (Feature 059: T028).
+
+        Navigates to selected workspace/window, or falls back to digit navigation.
+
+        Args:
+            mode: Preview mode when Enter was pressed ("all_windows", "filtered_workspace", etc.)
+            accumulated_digits: Digits typed before Enter (for fallback)
+        """
+        # Only handle selection-based navigation in all_windows mode
+        if mode != "all_windows":
+            # Delegate to existing Feature 072 digit navigation handler (i3pm daemon handles it)
+            print(f"DEBUG: Delegating to digit navigation (mode={mode})", file=sys.stderr)
+            return
+
+        # Get selected item from SelectionManager (T032, T033)
+        selected_item = self.selection_manager.get_selected_item()
+
+        # T034: Fallback logic - if no selection, check for digit navigation
+        if selected_item is None:
+            if accumulated_digits:
+                # Fall back to digit-based navigation
+                try:
+                    workspace_num = int(accumulated_digits)
+                    sway_conn = i3ipc.Connection()
+                    result = navigate_to_workspace(sway_conn, workspace_num)
+                    if result["success"]:
+                        # T037: Clear selection and hide preview on success
+                        self.selection_manager.clear()
+                        emit_preview(visible=False)
+                    return
+                except ValueError:
+                    print(f"ERROR: Invalid workspace number: {accumulated_digits}", file=sys.stderr)
+                    return
+            else:
+                # No selection and no digits - nothing to do
+                print("DEBUG: No selection and no digits, exiting mode without action", file=sys.stderr)
+                return
+
+        # Selection exists - navigate based on item type
+        sway_conn = i3ipc.Connection()
+
+        if selected_item.is_workspace_heading():
+            # T032: Navigate to workspace heading
+            print(f"DEBUG: Navigating to workspace {selected_item.workspace_num}", file=sys.stderr)
+            result = navigate_to_workspace(sway_conn, selected_item.workspace_num)
+        elif selected_item.is_window():
+            # T033: Focus window (auto-switches to workspace)
+            print(f"DEBUG: Focusing window {selected_item.window_id} on workspace {selected_item.workspace_num}", file=sys.stderr)
+            result = focus_window(sway_conn, selected_item.window_id)
+        else:
+            print(f"ERROR: Unknown selected item type: {selected_item.item_type}", file=sys.stderr)
+            return
+
+        # T037: Clear selection and hide preview on successful navigation
+        if result.get("success"):
+            self.selection_manager.clear()
+            emit_preview(visible=False)
+            print(f"DEBUG: Navigation successful, cleared selection and hid preview", file=sys.stderr)
+        else:
+            print(f"ERROR: Navigation failed: {result.get('error')}", file=sys.stderr)
+
+    def handle_delete_key_event(self, mode: str) -> None:
+        """Handle Delete key window close event (Feature 059: T039).
+
+        Closes selected window if it's a window (not workspace heading).
+        Updates preview list and maintains workspace mode.
+
+        Args:
+            mode: Preview mode when Delete was pressed ("all_windows", etc.)
+        """
+        # Only handle deletion in all_windows mode
+        if mode != "all_windows":
+            return
+
+        # Get selected item
+        selected_item = self.selection_manager.get_selected_item()
+
+        if selected_item is None:
+            print("DEBUG: No selection, cannot delete", file=sys.stderr)
+            return
+
+        # T044: Validate that selection is a window (not workspace heading)
+        if selected_item.is_workspace_heading():
+            print(f"WARNING: Cannot close workspace heading {selected_item.workspace_num}", file=sys.stderr)
+            # No notification needed - silent no-op per contract
+            return
+
+        # Close window with verification (T043)
+        print(f"DEBUG: Closing window {selected_item.window_id} on workspace {selected_item.workspace_num}", file=sys.stderr)
+        sway_conn = i3ipc.Connection()
+        result = close_window_with_verification(sway_conn, selected_item.window_id, timeout_ms=500)
+
+        if result["success"]:
+            # T045: Remove closed window from preview list
+            self.selection_manager.remove_item(selected_item)
+
+            # T046: Adjust selection index after removal
+            self.selection_manager.clamp_selection()
+
+            # T047: Re-emit preview with updated list
+            self._emit_preview_with_selection()
+
+            print(f"DEBUG: Window {selected_item.window_id} closed successfully in {result['close_duration_ms']:.1f}ms", file=sys.stderr)
+        else:
+            # T048: Error handling for close timeout or failure
+            error_msg = result.get("error", "Unknown error")
+            warning_msg = result.get("warning")
+
+            # T049: Log timeout as WARNING (not ERROR) - expected for unsaved changes
+            if "timeout" in error_msg.lower():
+                log_msg = f"Window {selected_item.window_id} close timeout: {warning_msg or error_msg}"
+                print(f"WARNING: {log_msg}", file=sys.stderr)
+            else:
+                print(f"ERROR: Failed to close window {selected_item.window_id}: {error_msg}", file=sys.stderr)
+
+            # Show notification for blocked close (using swaynag for now - can be replaced with SwayNC)
+            notification_msg = warning_msg or error_msg
+            try:
+                sway_conn.command(f'exec swaynag -t warning -m "Window Close Blocked" -b "Dismiss" "swaymsg mode default"')
+                print(f"DEBUG: Showed notification: {notification_msg}", file=sys.stderr)
+            except Exception as e:
+                print(f"ERROR: Failed to show notification: {e}", file=sys.stderr)
+
+        # T050: Maintain workspace mode active (do NOT exit mode, allow multiple deletions)
+        # No mode exit command needed - user can press Escape or Enter to exit
+
+    def handle_home_key_event(self, mode: str) -> None:
+        """Handle Home key to jump to first item (Feature 059: T059).
+
+        Args:
+            mode: Preview mode when Home was pressed ("all_windows", etc.)
+        """
+        # Only handle navigation in all_windows mode
+        if mode != "all_windows":
+            return
+
+        if not self.selection_manager.list_model or self.selection_manager.list_model.is_empty:
+            print("DEBUG: No items to navigate to", file=sys.stderr)
+            return
+
+        # Jump to first item
+        self.selection_manager.list_model.current_selection_index = 0
+        self.selection_manager._update_selection_state_from_model()
+
+        # Re-emit preview with updated selection
+        self._emit_preview_with_selection()
+        print("DEBUG: Jumped to first item (Home key)", file=sys.stderr)
+
+    def handle_end_key_event(self, mode: str) -> None:
+        """Handle End key to jump to last item (Feature 059: T059).
+
+        Args:
+            mode: Preview mode when End was pressed ("all_windows", etc.)
+        """
+        # Only handle navigation in all_windows mode
+        if mode != "all_windows":
+            return
+
+        if not self.selection_manager.list_model or self.selection_manager.list_model.is_empty:
+            print("DEBUG: No items to navigate to", file=sys.stderr)
+            return
+
+        # Jump to last item
+        last_index = len(self.selection_manager.list_model.items) - 1
+        self.selection_manager.list_model.current_selection_index = last_index
+        self.selection_manager._update_selection_state_from_model()
+
+        # Re-emit preview with updated selection
+        self._emit_preview_with_selection()
+        print("DEBUG: Jumped to last item (End key)", file=sys.stderr)
+
+    def cache_preview_data(self, preview_data: dict, mode: str = "goto") -> None:
+        """Cache preview data for re-emission with updated selection.
+
+        Args:
+            preview_data: The workspace_groups list and metadata from renderer
+            mode: Navigation mode ("goto" or "move") for move-mode styling (Feature 059: T024)
+        """
+        self.last_preview_data = preview_data
+        self.current_mode = mode  # Feature 059: T024 - Store mode for move-mode styling
+
+    def _emit_preview_with_selection(self) -> None:
+        """Re-emit cached preview data with updated selection state."""
+        if not self.last_preview_data:
+            print("Warning: No cached preview data to re-emit", file=sys.stderr)
+            return
+
+        # Get current selection state
+        selection_state = self.selection_manager.get_selection_state()
+        selection_dict = {
+            "selected_index": selection_state.selected_index if selection_state else None,
+            "item_type": selection_state.item_type if selection_state else "workspace_heading",
+            "workspace_num": selection_state.workspace_num if selection_state else None,
+            "window_id": selection_state.window_id if selection_state else None,
+            "visible": selection_state.visible if selection_state else False,
+            "move_mode": self.current_mode == "move",  # Feature 059: T024 - Add move_mode boolean for CSS styling
+        }
+
+        # Update selection_state in cached data and re-emit
+        output = {**self.last_preview_data, "selection_state": selection_dict}
+        print(json.dumps(output), flush=True)
+
+        print(f"DEBUG: Re-emitted preview with selection_index={selection_dict['selected_index']}", file=sys.stderr, flush=True)
 
 
 def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
@@ -221,6 +597,184 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
     print(json.dumps(output), flush=True)
 
 
+# Feature 059: Sway IPC navigation functions for Enter key selection (T030-T031)
+
+def navigate_to_workspace(sway_conn: i3ipc.Connection, workspace_num: int) -> dict:
+    """Navigate to workspace using Sway IPC (Feature 059: T030).
+
+    Args:
+        sway_conn: Sway IPC connection
+        workspace_num: Target workspace number (1-70)
+
+    Returns:
+        Dict with success status and error message if failed
+    """
+    # T035: Validate workspace number range
+    if workspace_num < 1 or workspace_num > 70:
+        error_msg = f"Invalid workspace number: {workspace_num} (must be 1-70)"
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        return {"success": False, "error": error_msg}
+
+    try:
+        # Send Sway IPC command to switch workspace
+        sway_conn.command(f"workspace number {workspace_num}")
+        # Exit workspace mode
+        sway_conn.command("mode default")
+        print(f"Navigated to workspace {workspace_num}", file=sys.stderr)
+        return {"success": True, "workspace": workspace_num}
+    except Exception as e:
+        error_msg = f"Failed to navigate to workspace {workspace_num}: {e}"
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        return {"success": False, "error": error_msg}
+
+
+def focus_window(sway_conn: i3ipc.Connection, window_id: int) -> dict:
+    """Focus window using Sway IPC (Feature 059: T031).
+
+    Args:
+        sway_conn: Sway IPC connection
+        window_id: Sway container ID of window to focus
+
+    Returns:
+        Dict with success status and error message if failed
+    """
+    try:
+        # Send Sway IPC command to focus window by container ID
+        # This automatically switches to the workspace containing the window
+        sway_conn.command(f"[con_id={window_id}] focus")
+        # Exit workspace mode
+        sway_conn.command("mode default")
+        print(f"Focused window {window_id}", file=sys.stderr)
+        return {"success": True, "window_id": window_id}
+    except Exception as e:
+        # T036: Handle window not found error
+        error_msg = f"Failed to focus window {window_id}: {e}"
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        return {"success": False, "error": error_msg}
+
+
+def send_kill_command(sway_conn: i3ipc.Connection, container_id: int) -> dict:
+    """Send kill command to Sway for window close (Feature 059: T041).
+
+    Args:
+        sway_conn: Sway IPC connection
+        container_id: Sway container ID of window to close
+
+    Returns:
+        Dict with success status and error message if failed
+    """
+    try:
+        results = sway_conn.command(f'[con_id={container_id}] kill')
+
+        for reply in results:
+            if not reply.success:
+                error_msg = reply.error if hasattr(reply, 'error') else "Unknown error"
+                return {"success": False, "error": f"Kill failed: {error_msg}"}
+
+        return {"success": True, "message": "Kill command sent"}
+
+    except Exception as e:
+        return {"success": False, "error": f"Exception: {str(e)}"}
+
+
+def wait_for_window_close(sway_conn: i3ipc.Connection, container_id: int, timeout_ms: int = 500, poll_interval_ms: int = 50) -> tuple:
+    """Poll Sway tree to verify window closed within timeout (Feature 059: T042).
+
+    Args:
+        sway_conn: Sway IPC connection
+        container_id: Container ID of window to verify closure
+        timeout_ms: Maximum time to wait for close (default: 500ms)
+        poll_interval_ms: Time between polls (default: 50ms)
+
+    Returns:
+        Tuple of (closed: bool, duration_ms: int)
+    """
+    start_time = time.time()
+    timeout_sec = timeout_ms / 1000.0
+    poll_interval_sec = poll_interval_ms / 1000.0
+
+    while (time.time() - start_time) < timeout_sec:
+        tree = sway_conn.get_tree()
+        window = tree.find_by_id(container_id)
+
+        if window is None:
+            # Window closed
+            duration_ms = (time.time() - start_time) * 1000
+            return True, duration_ms
+
+        # Still exists, wait before next poll
+        time.sleep(poll_interval_sec)
+
+    # Timeout - window still exists
+    return False, timeout_ms
+
+
+def close_window_with_verification(sway_conn: i3ipc.Connection, container_id: int, timeout_ms: int = 500) -> dict:
+    """Close window and verify it closed successfully (Feature 059: T043).
+
+    Combines send_kill_command + wait_for_window_close for full verification workflow.
+
+    Args:
+        sway_conn: Sway IPC connection
+        container_id: Container ID of window to close
+        timeout_ms: Maximum time to wait for close verification (default: 500ms)
+
+    Returns:
+        Dict with keys:
+            - success (bool): Whether window closed successfully
+            - message (str): Success message
+            - error (str | None): Error message if failed
+            - warning (str | None): Warning message for timeout
+            - close_duration_ms (int): Time taken to close
+    """
+    start_time = time.time()
+
+    # Step 1: Validate window exists
+    tree = sway_conn.get_tree()
+    window = tree.find_by_id(container_id)
+
+    if not window:
+        return {
+            "success": True,
+            "message": "Window already closed",
+            "close_duration_ms": 0
+        }
+
+    # Step 2: Send kill command
+    kill_result = send_kill_command(sway_conn, container_id)
+    if not kill_result["success"]:
+        return {
+            "success": False,
+            "error": kill_result["error"],
+            "close_duration_ms": 0
+        }
+
+    # Step 3: Wait for window to close
+    remaining_timeout = timeout_ms - ((time.time() - start_time) * 1000)
+    closed, duration_ms = wait_for_window_close(
+        sway_conn,
+        container_id,
+        timeout_ms=int(remaining_timeout),
+        poll_interval_ms=50
+    )
+
+    total_duration_ms = (time.time() - start_time) * 1000
+
+    if closed:
+        return {
+            "success": True,
+            "message": "Window closed successfully",
+            "close_duration_ms": total_duration_ms
+        }
+    else:
+        return {
+            "success": False,
+            "error": "Window did not close within timeout",
+            "warning": "Application may have unsaved changes or be unresponsive",
+            "close_duration_ms": total_duration_ms
+        }
+
+
 def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
     """Subscribe to i3pm workspace_mode events via IPC socket.
 
@@ -284,6 +838,8 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                         print(f"DEBUG: Received workspace_mode event: type={event_type}, pending={pending}", file=sys.stderr, flush=True)
 
                         if event_type == "cancel" or event_type == "execute":
+                            # Feature 059: Clear selection state on mode exit
+                            selection_manager.clear()
                             # Hide preview card
                             emit_preview(visible=False)
                         elif event_type == "enter":
@@ -291,38 +847,64 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             # T049: Performance logging for all_windows preview
                             start_time = time.time()
 
+                            # Feature 059: T024 - Extract mode for move-mode styling
+                            mode_type = payload.get("mode_type", "goto")  # Mode passed directly in enter event
+                            if mode_type not in ("goto", "move"):
+                                mode_type = "goto"  # Default to goto if invalid
+
                             # Call render_all_windows() to show complete window list grouped by workspace
                             all_windows_preview = renderer.render_all_windows()
+
+                            # Feature 059: Initialize selection manager with workspace groups
+                            workspace_groups = [
+                                {
+                                    "workspace_num": group.workspace_num,
+                                    "workspace_name": group.workspace_name,
+                                    "window_count": group.window_count,
+                                    "monitor_output": group.monitor_output,
+                                    "windows": [
+                                        {
+                                            "name": window.name,
+                                            "icon_path": window.icon_path,
+                                            "app_id": window.app_id,
+                                            "window_class": window.window_class,
+                                            "focused": window.focused,
+                                            "workspace_num": window.workspace_num,
+                                            "window_id": getattr(window, 'window_id', None),  # Sway container ID
+                                        }
+                                        for window in group.windows
+                                    ],
+                                }
+                                for group in all_windows_preview.workspace_groups
+                            ]
+                            selection_manager.initialize_from_workspace_groups(workspace_groups)
+
+                            # Get selection state for JSON output
+                            selection_state = selection_manager.get_selection_state()
+                            selection_dict = {
+                                "selected_index": selection_state.selected_index if selection_state else None,
+                                "item_type": selection_state.item_type if selection_state else "workspace_heading",
+                                "workspace_num": selection_state.workspace_num if selection_state else None,
+                                "window_id": selection_state.window_id if selection_state else None,
+                                "visible": selection_state.visible if selection_state else False,
+                                "move_mode": mode_type == "move",  # Feature 059: T024 - Add move_mode boolean for CSS styling
+                            }
 
                             # Convert AllWindowsPreview Pydantic model to dict for JSON output
                             output = {
                                 "visible": all_windows_preview.visible,
                                 "type": all_windows_preview.type,  # "all_windows"
-                                "workspace_groups": [
-                                    {
-                                        "workspace_num": group.workspace_num,
-                                        "workspace_name": group.workspace_name,
-                                        "window_count": group.window_count,
-                                        "monitor_output": group.monitor_output,
-                                        "windows": [
-                                            {
-                                                "name": window.name,
-                                                "icon_path": window.icon_path,
-                                                "app_id": window.app_id,
-                                                "window_class": window.window_class,
-                                                "focused": window.focused,
-                                                "workspace_num": window.workspace_num,
-                                            }
-                                            for window in group.windows
-                                        ],
-                                    }
-                                    for group in all_windows_preview.workspace_groups
-                                ],
+                                "workspace_groups": workspace_groups,
                                 "total_window_count": all_windows_preview.total_window_count,
                                 "total_workspace_count": all_windows_preview.total_workspace_count,
                                 "instructional": all_windows_preview.instructional,
                                 "empty": all_windows_preview.empty,
+                                "selection_state": selection_dict,  # Feature 059: Add selection state
                             }
+
+                            # Feature 059: Cache preview data for arrow key navigation re-emission (T024: pass mode for move-mode styling)
+                            navigation_handler.cache_preview_data(output, mode=mode_type)
+
                             print(json.dumps(output), flush=True)
 
                             # DEBUG: Log the JSON being emitted for troubleshooting
@@ -336,6 +918,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             if elapsed_ms > 150:
                                 print(f"WARNING: All-windows preview took {elapsed_ms:.1f}ms (target: <150ms) with {all_windows_preview.total_window_count} windows", file=sys.stderr)
                         elif event_type == "digit" and pending is not None:
+                            # Feature 059: Reset selection when digits are typed (switches to filtered view)
+                            selection_manager.reset_selection()
+
                             # Show/update preview card
                             emit_preview(
                                 visible=True,
@@ -375,6 +960,68 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                         else:
                             # Unknown event type - hide preview
                             emit_project_preview(visible=False)
+
+                    # Feature 059: Handle arrow_key_nav events for interactive workspace menu
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "arrow_key_nav":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        direction = payload.get("direction")
+                        mode = payload.get("mode", "all_windows")
+
+                        print(f"DEBUG: Received arrow_key_nav event: direction={direction}, mode={mode}", file=sys.stderr, flush=True)
+
+                        # Handle arrow key navigation
+                        navigation_handler.handle_arrow_key_event(direction, mode)
+
+                    # Feature 059: T029 - Handle enter_key_select events for workspace/window navigation
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "enter_key_select":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        mode = payload.get("mode", "all_windows")
+                        accumulated_digits = payload.get("accumulated_digits", "")
+
+                        print(f"DEBUG: Received enter_key_select event: mode={mode}, digits={accumulated_digits}", file=sys.stderr, flush=True)
+
+                        # Handle Enter key selection
+                        navigation_handler.handle_enter_key_event(mode, accumulated_digits)
+
+                    # Feature 059: T040 - Handle delete_key_close events for window close
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "delete_key_close":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        mode = payload.get("mode", "all_windows")
+
+                        print(f"DEBUG: Received delete_key_close event: mode={mode}", file=sys.stderr, flush=True)
+
+                        # Handle Delete key window close
+                        navigation_handler.handle_delete_key_event(mode)
+
+                    # Feature 059: T059 - Handle home_key_nav events for jump to first item
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "home_key_nav":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        mode = payload.get("mode", "all_windows")
+
+                        print(f"DEBUG: Received home_key_nav event: mode={mode}", file=sys.stderr, flush=True)
+
+                        # Handle Home key jump to first item
+                        navigation_handler.handle_home_key_event(mode)
+
+                    # Feature 059: T059 - Handle end_key_nav events for jump to last item
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "end_key_nav":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        mode = payload.get("mode", "all_windows")
+
+                        print(f"DEBUG: Received end_key_nav event: mode={mode}", file=sys.stderr, flush=True)
+
+                        # Handle End key jump to last item
+                        navigation_handler.handle_end_key_event(mode)
 
                 except json.JSONDecodeError as e:
                     print(f"Warning: Failed to parse IPC message: {e}", file=sys.stderr)

@@ -47,11 +47,14 @@ let
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
     name = "sway-workspace-panel";
+    # Feature 059: Fixed import path - renamed models/ to selection_models/ (v3 - force rebuild)
     src = ../tools/sway-workspace-panel;
     installPhase = ''
       mkdir -p $out
       cp *.py $out/
       cp workspace-preview-daemon $out/
+      # Feature 059: Copy selection_models directory for Pydantic models (includes __init__.py and selection_state.py)
+      cp -r selection_models $out/
       chmod +x $out/workspace_panel.py
       chmod +x $out/workspace-preview-daemon
     '';
@@ -224,7 +227,13 @@ ${workspacePreviewDefs}
                  :space-evenly false
                  :spacing 4
               ;; Workspace header (workspace number + window count + monitor)
-              (box :class "workspace-group-header"
+              ;; Feature 059: Add selection highlight for workspace headings
+              ;; Feature 059: T025 - Add move-mode variant for peach accent
+              (box :class {"workspace-group-header" +
+                           ((workspace_preview_data.selection_state?.item_type == "workspace_heading" &&
+                             workspace_preview_data.selection_state?.workspace_num == group.workspace_num)
+                            ? (workspace_preview_data.selection_state?.move_mode ? " selected-move-mode" : " selected")
+                            : "")}
                    :orientation "h"
                    :space-evenly false
                    :spacing 8
@@ -241,7 +250,14 @@ ${workspacePreviewDefs}
                    :space-evenly false
                    :spacing 4
                 (for window in {group.windows ?: []}
-                  (box :class {"preview-app" + (window.focused ? " focused" : "")}
+                  ;; Feature 059: Add selection highlight for windows
+                  ;; Feature 059: T025 - Add move-mode variant for peach accent
+                  (box :class {"preview-app" +
+                               (window.focused ? " focused" : "") +
+                               ((workspace_preview_data.selection_state?.item_type == "window" &&
+                                 workspace_preview_data.selection_state?.window_id == window.window_id)
+                                ? (workspace_preview_data.selection_state?.move_mode ? " selected-move-mode" : " selected")
+                                : "")}
                        :orientation "h"
                        :space-evenly false
                        :spacing 8
@@ -613,6 +629,36 @@ button {
 .preview-app.focused {
   background: rgba(137, 180, 250, 0.25);  /* $blue with opacity */
   border: 1px solid rgba(137, 180, 250, 0.5);
+}
+
+/* Feature 059: Arrow key selection highlight */
+.preview-app.selected {
+  background: rgba(137, 180, 250, 0.2);  /* $blue at 20% opacity */
+  border-left: 3px solid rgba(137, 180, 250, 0.8);
+  transition: background 0.2s ease-in-out, border 0.2s ease-in-out;
+}
+
+.preview-workspace-heading.selected {
+  background: rgba(137, 180, 250, 0.2);  /* $blue at 20% opacity */
+  border-left: 3px solid rgba(137, 180, 250, 0.8);
+  transition: background 0.2s ease-in-out, border 0.2s ease-in-out;
+}
+
+/* Feature 059: Move mode selection (peach accent) */
+.preview-app.selected-move-mode {
+  background: rgba(250, 179, 135, 0.2);  /* $peach at 20% opacity */
+  border-left: 3px solid rgba(250, 179, 135, 0.8);
+}
+
+.preview-workspace-heading.selected-move-mode {
+  background: rgba(250, 179, 135, 0.2);  /* $peach at 20% opacity */
+  border-left: 3px solid rgba(250, 179, 135, 0.8);
+}
+
+/* Feature 059: Improve text readability on selected items */
+.preview-app.selected .preview-app-name,
+.preview-workspace-heading.selected {
+  color: #cdd6f4;  /* $text - white for readability */
 }
 
 .preview-app-icon {
