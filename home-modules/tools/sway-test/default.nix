@@ -17,15 +17,19 @@ pkgs.stdenv.mkDerivation rec {
     deno
   ];
 
-  # Deno compile needs network access during build to fetch dependencies
-  # We handle this by allowing network access in the build sandbox
+  # Note: Deno needs network access to download JSR/npm dependencies
+  # even with deno.lock present. Using __noChroot for sandbox compatibility.
   __noChroot = true;
 
   buildPhase = ''
     # Create output directory
     mkdir -p dist
 
+    # Set Deno cache directory
+    export DENO_DIR=$TMPDIR/deno_cache
+
     # Compile TypeScript to standalone binary
+    # deno.lock file provides dependency integrity hashes
     # --allow-all: sway-test needs full system access for:
     #   - IPC socket communication with Sway compositor
     #   - File I/O for test cases and state capture
