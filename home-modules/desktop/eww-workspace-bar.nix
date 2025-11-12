@@ -349,7 +349,8 @@ ${workspacePreviewDefs}
 
 ;; Feature 057: User Story 2 - Preview Overlay Window (T038, T040)
 ;; Multi-monitor support: :monitor property dynamically set from workspace_preview_data
-;; Window is shown/hidden via :visible property in widget, not via eww open/close
+;; Window visibility controlled by eww open/close commands (not :visible property)
+;; This ensures GTK creates window surface that Sway can see in its tree
 (defwindow workspace-preview
   :monitor "${if isHeadless then "HEADLESS-1" else "eDP-1"}"
   :windowtype "normal"
@@ -575,6 +576,12 @@ button {
 /* Feature 057: User Story 2 - Workspace Preview Card Styling (T039) */
 /* Catppuccin Mocha theme with semi-transparent background */
 
+/* Wrapper ensures window always has content for GTK */
+.preview-wrapper {
+  min-width: 600px;
+  min-height: 800px;
+}
+
 .preview-card {
   background: rgba(30, 30, 46, 0.95);  /* $base with opacity */
   padding: 16px;
@@ -762,8 +769,8 @@ button {
 /* from lines 517-552 (workspace mode preview) */
 '';
 
-  # Feature 057: User Story 2 - Preview window must be opened for deflisten to start
-  # The window is always open but hidden via :visible property in the widget
+  # Feature 057: User Story 2 - Preview window controlled by daemon via eww open/close
+  # Open workspace-preview at startup to trigger deflisten, then daemon controls open/close
   windowNames = (map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs) ++ [ "workspace-preview" ];
   openCommand =
     let

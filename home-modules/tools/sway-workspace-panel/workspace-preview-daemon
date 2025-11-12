@@ -8,6 +8,7 @@ Protocol:
 - Outputs line-delimited JSON to stdout
 - Each line is a complete WorkspacePreview JSON object
 - Eww deflisten workspace_preview variable consumes this stream
+- Uses eww open/close commands to control window visibility (not :visible property)
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import asyncio
 import json
 import signal
 import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -28,6 +30,56 @@ from preview_renderer import PreviewRenderer
 
 # Socket path matches systemd socket unit configuration
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
+
+# Eww configuration directory (workspace bar)
+EWW_CONFIG_DIR = Path.home() / ".config" / "eww-workspace-bar"
+
+
+def eww_open_window(window_name: str = "workspace-preview") -> None:
+    """Open an Eww window using the eww CLI.
+
+    Args:
+        window_name: Name of the Eww window to open (default: workspace-preview)
+    """
+    try:
+        subprocess.run(
+            ["eww", "--config", str(EWW_CONFIG_DIR), "open", window_name],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.0,
+        )
+        print(f"DEBUG: Opened Eww window: {window_name}", file=sys.stderr, flush=True)
+    except subprocess.TimeoutExpired:
+        print(f"WARNING: eww open {window_name} timed out after 1s", file=sys.stderr, flush=True)
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Failed to open Eww window {window_name}: {e}", file=sys.stderr, flush=True)
+    except FileNotFoundError:
+        print("ERROR: eww command not found. Is Eww installed?", file=sys.stderr, flush=True)
+
+
+def eww_close_window(window_name: str = "workspace-preview") -> None:
+    """Close an Eww window using the eww CLI.
+
+    Args:
+        window_name: Name of the Eww window to close (default: workspace-preview)
+    """
+    try:
+        subprocess.run(
+            ["eww", "--config", str(EWW_CONFIG_DIR), "close", window_name],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1.0,
+        )
+        print(f"DEBUG: Closed Eww window: {window_name}", file=sys.stderr, flush=True)
+    except subprocess.TimeoutExpired:
+        print(f"WARNING: eww close {window_name} timed out after 1s", file=sys.stderr, flush=True)
+    except subprocess.CalledProcessError as e:
+        # Window might already be closed, which is fine
+        print(f"DEBUG: eww close {window_name} returned non-zero (might already be closed): {e}", file=sys.stderr, flush=True)
+    except FileNotFoundError:
+        print("ERROR: eww command not found. Is Eww installed?", file=sys.stderr, flush=True)
 
 
 def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int], Optional[str]]:
@@ -446,9 +498,11 @@ class NavigationHandler:
 
 
 def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
-    """Emit workspace preview JSON to stdout.
+    """Emit workspace preview JSON to stdout and control Eww window visibility.
 
     Feature 072: T036 - Added <50ms performance timing validation for workspace filtering.
+    Eww Best Practice: Use eww open/close commands instead of :visible widget property
+    to ensure GTK creates window surface that Sway can see in its tree.
 
     Args:
         visible: Whether preview card should be shown
@@ -459,10 +513,16 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     start_time = time.time()
 
     if not visible:
-        # Hide preview card
-        output = {"visible": False}
+        # Close Eww window (GTK destroys window surface, removes from Sway tree)
+        eww_close_window("workspace-preview")
+        # Still emit JSON for deflisten (Eww needs stream to remain active)
+        output = {}  # Empty JSON (no data needed when window closed)
         print(json.dumps(output), flush=True)
         return
+
+    # Open Eww window (GTK creates window surface, appears in Sway tree)
+    # This MUST happen before emitting JSON to ensure window exists
+    eww_open_window("workspace-preview")
 
     # Render workspace preview with full contents
     if renderer is None:
@@ -481,7 +541,6 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     # Special case: workspace_num=0 means instructional state (mode entered, no digits yet)
     if workspace_num == 0:
         output = {
-            "visible": True,
             "monitor": monitor_output,
             "workspace_num": 0,
             "workspace_name": None,
@@ -501,7 +560,6 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     if workspace_num < 1 or workspace_num > 70:
         # Invalid workspace - show error card
         output = {
-            "visible": True,
             "monitor": monitor_output,
             "workspace_num": workspace_num,
             "workspace_name": None,
@@ -529,7 +587,6 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
 
     # Convert to dict for JSON output (matches contract schema)
     output = {
-        "visible": True,
         "monitor": preview.monitor_output,
         "workspace_num": preview.workspace_num,
         "workspace_name": preview.workspace_name,
@@ -849,6 +906,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             # T049: Performance logging for all_windows preview
                             start_time = time.time()
 
+                            # Open Eww window (GTK creates window surface, appears in Sway tree)
+                            eww_open_window("workspace-preview")
+
                             # Feature 059: T024 - Extract mode for move-mode styling
                             mode_type = payload.get("mode_type", "goto")  # Mode passed directly in enter event
                             if mode_type not in ("goto", "move"):
@@ -894,7 +954,6 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
                             # Convert AllWindowsPreview Pydantic model to dict for JSON output
                             output = {
-                                "visible": all_windows_preview.visible,
                                 "type": all_windows_preview.type,  # "all_windows"
                                 "workspace_groups": workspace_groups,
                                 "total_window_count": all_windows_preview.total_window_count,
