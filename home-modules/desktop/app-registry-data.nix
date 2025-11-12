@@ -305,6 +305,22 @@ let
       description = "Kubernetes cluster management";
     })
 
+    # WS10: Kubernetes UI (Primary: headlamp)
+    (mkApp {
+      name = "headlamp";
+      display_name = "Headlamp";
+      command = "headlamp";
+      parameters = "";
+      scope = "global";
+      expected_class = "Headlamp";
+      preferred_workspace = 10;
+      icon = "/etc/nixos/assets/icons/headlamp.svg";
+      nix_package = "pkgs.headlamp";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Kubernetes web UI for cluster management";
+    })
+
 
     # Scratchpad Terminal (Feature 062)
     # Special floating terminal for quick project access
