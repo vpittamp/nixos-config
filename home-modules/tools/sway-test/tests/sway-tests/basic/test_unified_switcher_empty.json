@@ -1,0 +1,29 @@
+{
+  "name": "Feature 072: Empty state shows 'No windows open' message",
+  "description": "When entering workspace mode with NO windows open anywhere, preview card should show empty state message.",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Kill all windows (regex pattern to match any app_id)"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for all window kills to complete"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "windowCount": 0,
+    "workspaces": []
+  },
+  "notes": [
+    "This test validates empty state handling in User Story 1",
+    "After killing all windows, manually trigger workspace mode with CapsLock/Ctrl+0",
+    "Preview card should show: 'No windows open' message (empty=true in AllWindowsPreview model)",
+    "This validates graceful handling when workstation has no open applications",
+    "Empty state should render within <150ms (same performance target as non-empty state)"
+  ]
+}

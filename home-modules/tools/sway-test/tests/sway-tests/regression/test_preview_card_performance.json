@@ -1,0 +1,304 @@
+{
+  "name": "Feature 072: All-windows preview renders within 150ms with 20 windows",
+  "description": "Performance validation: Preview card with 20 windows across 10 workspaces must render within <150ms target.",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Clean slate: Kill all existing windows"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for cleanup to complete"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 1 (window 1/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 1 (window 2/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 3"
+      },
+      "description": "Switch to workspace 3"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      },
+      "description": "Launch Firefox on WS 3 (window 3/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      },
+      "description": "Launch Firefox on WS 3 (window 4/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 5"
+      },
+      "description": "Switch to workspace 5"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 5 (window 5/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 5 (window 6/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 7"
+      },
+      "description": "Switch to workspace 7"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 7 (window 7/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 7 (window 8/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 9"
+      },
+      "description": "Switch to workspace 9"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 9 (window 9/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 9 (window 10/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 11"
+      },
+      "description": "Switch to workspace 11"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 11 (window 11/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 11 (window 12/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 13"
+      },
+      "description": "Switch to workspace 13"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 13 (window 13/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 13 (window 14/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 15"
+      },
+      "description": "Switch to workspace 15"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 15 (window 15/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 15 (window 16/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 17"
+      },
+      "description": "Switch to workspace 17"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 17 (window 17/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 17 (window 18/20)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 19"
+      },
+      "description": "Switch to workspace 19"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 19 (window 19/20)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 19 (window 20/20)"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "windowCount": 20,
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 3,
+        "windows": [
+          { "app_id": "firefox" },
+          { "app_id": "firefox" }
+        ]
+      },
+      {
+        "num": 5,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 7,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 9,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 11,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 13,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 15,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 17,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 19,
+        "windows": [
+          { "app_id": "Alacritty" },
+          { "app_id": "Alacritty" }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "Performance benchmark for User Story 1: 20 windows across 10 workspaces",
+    "This validates the <150ms render target (50ms daemon IPC + 50ms construction + 50ms Eww render)",
+    "Daemon IPC get_windows should take ~2-5ms (vs ~15-30ms for direct Sway IPC)",
+    "After test setup, manually trigger workspace mode and measure time to preview card appearance",
+    "Benchmark script should log: entry_time, daemon_query_time, model_construction_time, json_emit_time",
+    "If performance degrades >150ms, investigate: daemon query latency, icon resolution overhead, Eww render time"
+  ]
+}

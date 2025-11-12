@@ -269,6 +269,7 @@ in
         # Touchpad configuration for M1 MacBook Pro
         "type:touchpad" = {
           natural_scroll = "enabled";   # Natural scrolling
+          scroll_method = "two_finger";  # Enable two-finger scrolling
           tap = "enabled";               # Tap-to-click
           tap_button_map = "lrm";        # Two-finger right-click
           dwt = "enabled";               # Disable while typing
@@ -728,7 +729,8 @@ in
         # M1 (Physical): Use CapsLock for ergonomic single-key workspace mode access
         # Using bindcode 66 (CapsLock physical keycode) because xkb_options caps:none makes it emit VoidSymbol
         # This approach is more reliable than binding to VoidSymbol
-        bindcode --release 66 mode "→ WS"
+        # Feature 072: Call enter command to trigger all-windows preview
+        bindcode --release 66 exec i3pm-workspace-mode enter, mode "→ WS"
         bindcode --release Shift+66 mode "⇒ WS"
       ''}
     '';

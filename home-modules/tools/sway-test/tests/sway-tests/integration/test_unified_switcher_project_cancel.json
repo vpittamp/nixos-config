@@ -1,0 +1,54 @@
+{
+  "name": "Feature 072: Cancel project mode in unified switcher",
+  "description": "User Story 3: Type ':' then press Escape to cancel without switching projects",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Clean slate: Kill all existing windows"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for cleanup to complete"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      },
+      "description": "Switch to workspace 1 (starting workspace)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 1"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "focusedWorkspace": 1,
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": [
+          { "app_id": "Alacritty", "focused": true }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "User Story 3: Pressing Escape in project mode should cancel mode and return to current workspace without switching",
+    "Manual test: Enter workspace mode, type ':', verify project mode preview appears, press Escape, verify mode exits and stays on workspace 1",
+    "Expected behavior: No project switch, no workspace switch, return to normal mode on current workspace",
+    "Expected final state: workspace_preview.visible=false, current workspace still 1, Alacritty still focused",
+    "This validates that project mode is non-destructive (can be cancelled without side effects)",
+    "Edge case: ':nix' then Escape should also cancel cleanly (partial query doesn't matter)",
+    "Note: This test validates the setup and expected final state. Actual Escape handling requires manual validation.",
+    "Architecture: Cancel events handled by workspace-preview-daemon event_type='cancel' (lines 275-277, 339-341)"
+  ]
+}

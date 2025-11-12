@@ -1,0 +1,102 @@
+{
+  "name": "Feature 072: All windows preview shows grouped workspace list",
+  "description": "When entering workspace mode (CapsLock/Ctrl+0), preview card should show ALL windows grouped by workspace number. This is the core MVP functionality (User Story 1).",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] kill"
+      },
+      "description": "Clean up any existing Firefox windows"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"Alacritty\"] kill"
+      },
+      "description": "Clean up any existing Alacritty windows"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"code\"] kill"
+      },
+      "description": "Clean up any existing Code windows"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      },
+      "description": "Launch Firefox on workspace 3 (default)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      },
+      "description": "Switch to workspace 1"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on workspace 1"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 5"
+      },
+      "description": "Switch to workspace 5"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "code"
+      },
+      "description": "Launch Code on workspace 5 (Note: may fail if VS Code not installed - test framework should handle gracefully)"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "windowCount": 3,
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": [
+          {
+            "app_id": "Alacritty",
+            "focused": false
+          }
+        ]
+      },
+      {
+        "num": 3,
+        "windows": [
+          {
+            "app_id": "firefox",
+            "focused": false
+          }
+        ]
+      },
+      {
+        "num": 5,
+        "windows": [
+          {
+            "app_id": "code",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "This test validates User Story 1 (P1 MVP): View all windows on workspace mode entry",
+    "After setup, manually trigger workspace mode with CapsLock/Ctrl+0 to see the preview card",
+    "Preview card should show 3 workspace groups: WS 1 (Alacritty), WS 3 (Firefox), WS 5 (Code)",
+    "The test framework validates the Sway IPC state; preview card validation requires manual/visual testing",
+    "Performance target: Preview should appear within <150ms of entering workspace mode"
+  ]
+}

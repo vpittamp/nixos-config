@@ -13,7 +13,7 @@ let
     watchdog       # File system monitoring
 
     # i3-project-daemon specific
-    systemd        # systemd-python for sd_notify/watchdog/journald
+    systemd-python # systemd-python for sd_notify/watchdog/journald
     pytest         # Testing framework
     pytest-asyncio # Async test support
     pytest-cov     # Coverage reporting

@@ -1,0 +1,81 @@
+{
+  "name": "Feature 072: Leading zeros handling in unified switcher",
+  "description": "User Story 2: Type '0' then '5' to verify preview shows workspace 5 (not 05 or invalid)",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      },
+      "description": "Clean slate: Kill all existing windows"
+    },
+    {
+      "type": "sync",
+      "description": "Wait for cleanup to complete"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 5"
+      },
+      "description": "Switch to workspace 5"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      },
+      "description": "Launch Firefox on WS 5 (window 1/2)"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 5 (window 2/2)"
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 10"
+      },
+      "description": "Switch to workspace 10"
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      },
+      "description": "Launch Alacritty on WS 10"
+    }
+  ],
+  "expectedState": {
+    "mode": "partial",
+    "windowCount": 3,
+    "workspaces": [
+      {
+        "num": 5,
+        "windows": [
+          { "app_id": "firefox" },
+          { "app_id": "Alacritty" }
+        ]
+      },
+      {
+        "num": 10,
+        "windows": [
+          { "app_id": "Alacritty" }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "User Story 2: Leading zeros should be handled gracefully (ignored, not treated as octal)",
+    "Manual test 1: Enter workspace mode, type '0' then '5', verify preview shows workspace 5 (not invalid or empty)",
+    "Manual test 2: Enter workspace mode, type '0' then '0' then '5', verify preview shows workspace 5",
+    "Expected behavior: accumulated_digits='05' or '005' should parse to workspace_num=5",
+    "Edge case: '0' alone should not navigate (wait for Enter or timeout)",
+    "Architecture: Leading zero handling in workspace-preview-daemon parse_workspace_and_monitor() function",
+    "Python parsing: int('05') correctly returns 5 (leading zeros ignored)",
+    "Note: This test validates the setup state. Actual leading zero handling requires manual validation or daemon keystroke simulation."
+  ]
+}

@@ -175,11 +175,96 @@ ${workspacePreviewDefs}
                          ? "No matches - Try different letters"
                          : "")})))
 
+    ;; Feature 072: T020-T024 - All Windows Preview (User Story 1)
+    (box :class "all-windows-preview"
+         :orientation "v"
+         :space-evenly false
+         :visible {workspace_preview_data.type == "all_windows"}
+      ;; Header with counts
+      (box :class "preview-header"
+           :orientation "v"
+           :halign "center"
+        (label :class "preview-mode-digits"
+               :text "🪟 All Windows")
+        (label :class "preview-subtitle"
+               :text {workspace_preview_data.total_window_count + " window" +
+                      (workspace_preview_data.total_window_count != 1 ? "s" : "") +
+                      " across " + workspace_preview_data.total_workspace_count +
+                      " workspace" + (workspace_preview_data.total_workspace_count != 1 ? "s" : "")}))
+
+      ;; Instructional state (when no digits typed yet)
+      (box :class "preview-body"
+           :orientation "v"
+           :halign "center"
+           :visible {workspace_preview_data.instructional == true}
+        (label :class "preview-subtitle"
+               :text "Type workspace number to filter, or :project for project mode"))
+
+      ;; Empty state (no windows open anywhere)
+      (box :class "preview-body"
+           :orientation "v"
+           :halign "center"
+           :visible {workspace_preview_data.empty == true && workspace_preview_data.instructional != true}
+        (label :class "preview-empty"
+               :text "No windows open"))
+
+      ;; Scrollable workspace groups list (Feature 072: T021)
+      (scroll :class "workspace-groups-scroll"
+              :vscroll true
+              :hscroll false
+              :max-height 600
+              :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
+        (box :class "workspace-groups"
+             :orientation "v"
+             :space-evenly false
+             :spacing 12
+          (for group in {workspace_preview_data.workspace_groups ?: []}
+            (box :class "workspace-group"
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 4
+              ;; Workspace header (workspace number + window count + monitor)
+              (box :class "workspace-group-header"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 8
+                (label :class "workspace-group-number"
+                       :text {"Workspace " + group.workspace_num + (group.workspace_name != "" ? " (" + group.workspace_name + ")" : "")})
+                (label :class "workspace-group-count"
+                       :text {group.window_count + " window" + (group.window_count != 1 ? "s" : "")})
+                (label :class "workspace-group-monitor"
+                       :text {group.monitor_output}))
+
+              ;; Window entries for this workspace
+              (box :class "workspace-group-windows"
+                   :orientation "v"
+                   :space-evenly false
+                   :spacing 4
+                (for window in {group.windows ?: []}
+                  (box :class {"preview-app" + (window.focused ? " focused" : "")}
+                       :orientation "h"
+                       :space-evenly false
+                       :spacing 8
+                    (image :class "preview-app-icon"
+                           :path {window.icon_path != "" ? window.icon_path : ""}
+                           :image-width 24
+                           :image-height 24)
+                    (label :class "preview-app-name"
+                           :text {window.name}
+                           :limit-width 30
+                           :truncate true))))))))
+
+      ;; Footer: Truncation indicator if more than 20 workspaces
+      (box :class "preview-footer"
+           :visible {(workspace_preview_data.total_workspace_count ?: 0) > 20}
+        (label :class "preview-count"
+               :text {"... and " + ((workspace_preview_data.total_workspace_count ?: 0) - 20) + " more workspaces (type digits to filter)"})))
+
     ;; Workspace Mode Preview (existing functionality)
     (box :class "workspace-preview"
          :orientation "v"
          :space-evenly false
-         :visible {workspace_preview_data.type != "project"}
+         :visible {workspace_preview_data.type != "project" && workspace_preview_data.type != "all_windows"}
       ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
       (box :class "preview-header"
            :orientation "v"
@@ -561,6 +646,66 @@ button {
   font-size: 9pt;
   color: $subtext0;
 }
+
+/* Feature 072: All Windows Preview Widget Styling (T022) */
+.all-windows-preview {
+  /* Inherits from .preview-card */
+}
+
+.workspace-groups-scroll {
+  /* GTK scroll styling - T021: max-height 600px, smooth scrolling */
+  padding: 8px 4px;
+}
+
+.workspace-groups {
+  padding: 4px 0;
+}
+
+.workspace-group {
+  background: rgba(49, 50, 68, 0.3);  /* $surface0 with opacity */
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(108, 112, 134, 0.2);  /* $overlay0 */
+  transition: all 0.2s;
+}
+
+.workspace-group:hover {
+  background: rgba(49, 50, 68, 0.5);
+  border: 1px solid rgba(108, 112, 134, 0.4);
+}
+
+.workspace-group-header {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(108, 112, 134, 0.2);
+}
+
+.workspace-group-number {
+  font-size: 10pt;
+  font-weight: 600;
+  color: $blue;
+}
+
+.workspace-group-count {
+  font-size: 8pt;
+  color: $subtext0;
+  opacity: 0.7;
+}
+
+.workspace-group-monitor {
+  font-size: 8pt;
+  color: $overlay0;
+  opacity: 0.5;
+  font-style: italic;
+  /* Note: GTK CSS doesn't support margin-left: auto, use box alignment in Yuck instead */
+}
+
+.workspace-group-windows {
+  padding: 0;
+}
+
+/* Reuse existing .preview-app, .preview-app-icon, .preview-app-name styles */
+/* from lines 517-552 (workspace mode preview) */
 '';
 
   # Feature 057: User Story 2 - Preview window must be opened for deflisten to start

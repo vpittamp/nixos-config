@@ -210,19 +210,12 @@ get_mode_indicator() {
     local mode_upper
     mode_upper=$(echo "$mode" | tr '[:lower:]' '[:upper:]')
 
-    # Special handling for workspace modes - show typed digits only
+    # Feature 072: Hide workspace mode indicators (visual feedback now in preview card)
+    # Special handling for workspace modes - DISABLED (preview card provides feedback)
     local display_text=" ⚡ ${mode_upper} ⚡ "
     if [ "$mode" = "goto_workspace" ] || [ "$mode" = "move_workspace" ] || [ "$mode" = "→ WS" ] || [ "$mode" = "⇒ WS" ]; then
-        local typed_digits=""
-        if [ -f "/tmp/sway-workspace-mode-state" ]; then
-            typed_digits=$(cat /tmp/sway-workspace-mode-state 2>/dev/null || echo "")
-            if [ -n "$typed_digits" ] && [ "$typed_digits" != "0" ]; then
-                # Show: ⚡ 42_
-                display_text=" ⚡ ${typed_digits}_ "
-            else
-                # Show: ⚡ _
-                display_text=" ⚡ _ "
-            fi
+        # Don't show workspace mode in swaybar - preview card handles this now
+        return 0
         fi
     fi
 
