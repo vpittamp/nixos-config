@@ -872,7 +872,7 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                             "window_class": window.window_class,
                                             "focused": window.focused,
                                             "workspace_num": window.workspace_num,
-                                            "window_id": getattr(window, 'window_id', None),  # Sway container ID
+                                            "window_id": window.window_id,  # Sway container ID (Feature 059: now always present)
                                         }
                                         for window in group.windows
                                     ],

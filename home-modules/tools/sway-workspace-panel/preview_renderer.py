@@ -134,6 +134,8 @@ class PreviewRenderer:
                             # Feature 072 Fix: Daemon returns "title" not "name" for window title
                             title = win.get("title") or win.get("name", "")
                             focused = win.get("focused", False)
+                            # Feature 059: Extract window ID for interactive navigation
+                            window_id = win.get("id") or win.get("window_id") or win.get("container_id") or 0
 
                             # Resolve icon and display name (same logic as render_all_windows)
                             icon_path, display_name = self._resolve_icon_and_name(app_id, pid)
@@ -146,6 +148,7 @@ class PreviewRenderer:
                                 window_class=None,  # Not available from daemon
                                 focused=focused,
                                 workspace_num=workspace_num,
+                                window_id=window_id,
                             )
                             window_entries.append(entry)
 
@@ -350,6 +353,8 @@ class PreviewRenderer:
                     # Feature 072 Fix: Daemon returns "title" not "name" for window title
                     title = win.get("title") or win.get("name", "")
                     focused = win.get("focused", False)
+                    # Feature 059: Extract window ID for interactive navigation
+                    window_id = win.get("id") or win.get("window_id") or win.get("container_id") or 0
 
                     # Resolve icon and display name (same logic as render_workspace_preview)
                     icon_path, display_name = self._resolve_icon_and_name(app_id, pid)
@@ -362,6 +367,7 @@ class PreviewRenderer:
                         window_class=None,  # Not available from daemon (Wayland only)
                         focused=focused,
                         workspace_num=ws_num,
+                        window_id=window_id,
                     )
                     window_entries.append(entry)
 

@@ -314,6 +314,7 @@ class WindowPreviewEntry(BaseModel):
     """Individual window entry in the all-windows preview.
 
     Feature 072: Used for both AllWindowsPreview and WorkspaceGroup.
+    Feature 059: Added window_id for interactive navigation.
     """
 
     name: str = Field(..., description="Window title or application name", min_length=1)
@@ -322,6 +323,7 @@ class WindowPreviewEntry(BaseModel):
     window_class: Optional[str] = Field(default=None, description="X11 window class (fallback for non-Wayland apps)")
     focused: bool = Field(default=False, description="Is this window currently focused?")
     workspace_num: int = Field(..., ge=1, le=70, description="Which workspace this window belongs to (1-70)")
+    window_id: int = Field(..., description="Sway container ID for window operations (Feature 059)")
 
     class Config:
         """Pydantic config."""
