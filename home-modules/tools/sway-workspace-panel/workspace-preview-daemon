@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""Workspace preview daemon for Feature 057: User Story 2.
+
+Subscribes to i3pm workspace_mode events and outputs workspace preview JSON
+to stdout for Eww deflisten.
+
+Protocol:
+- Outputs line-delimited JSON to stdout
+- Each line is a complete WorkspacePreview JSON object
+- Eww deflisten workspace_preview variable consumes this stream
+"""
+from __future__ import annotations
+
+import json
+import signal
+import socket
+import sys
+from pathlib import Path
+from typing import Optional
+
+from models import WorkspaceModeEvent, PendingWorkspaceState
+from preview_renderer import PreviewRenderer
+
+# Socket path matches systemd socket unit configuration
+DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
+
+
+def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int], Optional[str]]:
+    """Parse accumulated digits into workspace number and optional monitor.
+
+    Feature 057: Workspace-to-Monitor Move (User Story 3)
+
+    Parsing rules:
+    - 1 digit: workspace only (e.g., "7" = workspace 7)
+    - 2 digits: workspace only (e.g., "23" = workspace 23)
+    - 3 digits: workspace + monitor (e.g., "231" = workspace 23, monitor 1 = HEADLESS-1)
+
+    Returns:
+        (workspace_number, monitor_name) tuple
+    """
+    if not accumulated_digits:
+        return (None, None)
+
+    # 1-2 digits: workspace only
+    if len(accumulated_digits) <= 2:
+        try:
+            workspace = int(accumulated_digits)
+            if 1 <= workspace <= 70:
+                return (workspace, None)
+        except ValueError:
+            pass
+        return (None, None)
+
+    # 3 digits: workspace + monitor
+    if len(accumulated_digits) == 3:
+        try:
+            workspace_str = accumulated_digits[:2]
+            monitor_digit = accumulated_digits[2]
+
+            workspace = int(workspace_str)
+            monitor = int(monitor_digit)
+
+            # Validate workspace (1-70) and monitor (1-3)
+            if 1 <= workspace <= 70 and 1 <= monitor <= 3:
+                monitor_name = f"HEADLESS-{monitor}"
+                return (workspace, monitor_name)
+        except ValueError:
+            pass
+        return (None, None)
+
+    # More than 3 digits: invalid
+    return (None, None)
+
+
+def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
+    """Emit workspace preview JSON to stdout.
+
+    Args:
+        visible: Whether preview card should be shown
+        renderer: PreviewRenderer instance for querying workspace contents
+        **kwargs: Additional fields (workspace_num, monitor, mode, accumulated_digits, etc.)
+    """
+    if not visible:
+        # Hide preview card
+        output = {"visible": False}
+        print(json.dumps(output), flush=True)
+        return
+
+    # Render workspace preview with full contents
+    if renderer is None:
+        print("Error: renderer is None but visible=True", file=sys.stderr)
+        return
+
+    workspace_num = kwargs.get("workspace_num")
+    monitor_output = kwargs.get("monitor_output", "HEADLESS-1")
+    mode = kwargs.get("mode", "goto")
+    accumulated_digits = kwargs.get("accumulated_digits", "")
+
+    if workspace_num is None:
+        print("Error: workspace_num is None but visible=True", file=sys.stderr)
+        return
+
+    # Special case: workspace_num=0 means instructional state (mode entered, no digits yet)
+    if workspace_num == 0:
+        output = {
+            "visible": True,
+            "monitor": monitor_output,
+            "workspace_num": 0,
+            "workspace_name": None,
+            "mode": mode,
+            "accumulated_digits": "",
+            "apps": [],
+            "window_count": 0,
+            "empty": True,
+            "invalid": False,
+            "instructional": True,
+            "icon_path": None,
+        }
+        print(json.dumps(output), flush=True)
+        return
+
+    # Validate workspace number range
+    if workspace_num < 1 or workspace_num > 70:
+        # Invalid workspace - show error card
+        output = {
+            "visible": True,
+            "monitor": monitor_output,
+            "workspace_num": workspace_num,
+            "workspace_name": None,
+            "mode": mode,
+            "accumulated_digits": accumulated_digits,
+            "apps": [],
+            "window_count": 0,
+            "empty": True,
+            "invalid": True,
+            "instructional": False,
+            "icon_path": None,
+        }
+        print(json.dumps(output), flush=True)
+        return
+
+    # Query workspace contents via Sway IPC
+    preview = renderer.render_workspace_preview(
+        workspace_num=workspace_num,
+        monitor_output=monitor_output,
+        mode=mode,
+    )
+
+    # Feature 057: Parse target monitor from accumulated digits (for move mode)
+    _, target_monitor = parse_workspace_and_monitor(accumulated_digits)
+
+    # Convert to dict for JSON output (matches contract schema)
+    output = {
+        "visible": True,
+        "monitor": preview.monitor_output,
+        "workspace_num": preview.workspace_num,
+        "workspace_name": preview.workspace_name,
+        "mode": preview.mode,
+        "accumulated_digits": accumulated_digits,
+        "target_monitor": target_monitor or "",  # Feature 057: Target monitor for move mode (empty string if not set, not null)
+        "apps": [
+            {
+                "name": app.name,
+                "icon_path": app.icon or "",
+                "app_id": app.app_id,
+                "window_class": app.window_class,
+                "focused": app.focused,
+            }
+            for app in preview.apps
+        ],
+        "window_count": preview.window_count,
+        "empty": preview.empty,
+        "invalid": False,
+        "instructional": False,
+        "icon_path": preview.apps[0].icon if preview.apps else None,
+    }
+
+    print(json.dumps(output), flush=True)
+
+
+def emit_project_preview(visible: bool, **kwargs) -> None:
+    """Emit project preview JSON to stdout.
+
+    Option A: Unified Smart Detection - Show project search results.
+
+    Args:
+        visible: Whether preview card should be shown
+        **kwargs: Additional fields (accumulated_chars, matched_project, project_icon)
+    """
+    if not visible:
+        # Hide preview card
+        output = {"visible": False}
+        print(json.dumps(output), flush=True)
+        return
+
+    accumulated_chars = kwargs.get("accumulated_chars", "")
+    matched_project = kwargs.get("matched_project")
+    project_icon = kwargs.get("project_icon", "📁")
+
+    # Show project search preview
+    output = {
+        "visible": True,
+        "type": "project",
+        "accumulated_chars": accumulated_chars,
+        "matched_project": matched_project,
+        "project_icon": project_icon,
+        "no_match": matched_project is None and len(accumulated_chars) > 0,
+    }
+
+    print(json.dumps(output), flush=True)
+
+
+def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
+    """Subscribe to i3pm workspace_mode events via IPC socket.
+
+    Args:
+        renderer: PreviewRenderer instance for querying workspace contents
+    """
+    if not DAEMON_IPC_SOCKET.exists():
+        print(f"Error: i3pm daemon socket not found: {DAEMON_IPC_SOCKET}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        # Connect to i3pm daemon IPC socket
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(str(DAEMON_IPC_SOCKET))
+
+        # Subscribe to workspace_mode and project_mode events (JSON-RPC 2.0)
+        # Option A: Unified Smart Detection - Subscribe to both event types
+        subscribe_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "subscribe",
+            "params": {"event_types": ["workspace_mode", "project_mode"]},
+        }
+        sock.sendall((json.dumps(subscribe_request) + "\n").encode())
+
+        # Read subscription response
+        response = sock.recv(4096).decode().strip()
+        response_data = json.loads(response)
+        if "error" in response_data:
+            print(f"Error: Failed to subscribe to events: {response_data['error']}", file=sys.stderr)
+            sys.exit(1)
+
+        print("DEBUG: Successfully subscribed to workspace_mode and project_mode events", file=sys.stderr, flush=True)
+
+        # Event loop: read incoming workspace_mode events
+        buffer = ""
+        while True:
+            chunk = sock.recv(4096).decode()
+            if not chunk:
+                print("DEBUG: Connection closed by daemon", file=sys.stderr)
+                break
+
+            buffer += chunk
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    event = json.loads(line)
+
+                    # Check if this is a workspace_mode event
+                    if event.get("method") == "event" and event.get("params", {}).get("type") == "workspace_mode":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload (raw dict, not Pydantic model)
+                        event_type = payload.get("event_type")
+                        pending = payload.get("pending_workspace")
+
+                        print(f"DEBUG: Received workspace_mode event: type={event_type}, pending={pending}", file=sys.stderr, flush=True)
+
+                        if event_type == "cancel" or event_type == "execute":
+                            # Hide preview card
+                            emit_preview(visible=False)
+                        elif event_type == "enter":
+                            # Mode entered but no digits yet - show instructional preview
+                            # Get mode from pending workspace if available
+                            mode = "goto"
+                            monitor_output = "eDP-1"
+                            if pending is not None:
+                                mode = pending.get("mode_type", "goto")
+                                monitor_output = pending.get("target_output") or "eDP-1"
+
+                            emit_preview(
+                                visible=True,
+                                renderer=renderer,
+                                workspace_num=0,  # Special case: 0 means "instructional state"
+                                monitor_output=monitor_output,
+                                mode=mode,
+                                accumulated_digits="",
+                            )
+                        elif event_type == "digit" and pending is not None:
+                            # Show/update preview card
+                            emit_preview(
+                                visible=True,
+                                renderer=renderer,
+                                workspace_num=pending.get("workspace_number"),
+                                monitor_output=pending.get("target_output") or "eDP-1",
+                                mode=pending.get("mode_type", "goto"),
+                                accumulated_digits=pending.get("accumulated_digits", ""),
+                            )
+                        elif pending is None:
+                            # No pending state - hide preview
+                            emit_preview(visible=False)
+
+                    # Option A: Unified Smart Detection - Handle project_mode events
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "project_mode":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        event_type = payload.get("event_type")
+                        accumulated_chars = payload.get("accumulated_chars", "")
+                        matched_project = payload.get("matched_project")
+                        project_icon = payload.get("project_icon", "📁")
+
+                        print(f"DEBUG: Received project_mode event: type={event_type}, chars={accumulated_chars}, match={matched_project}, icon={project_icon}", file=sys.stderr, flush=True)
+
+                        if event_type == "cancel" or event_type == "execute":
+                            # Hide preview card
+                            emit_project_preview(visible=False)
+                        elif event_type == "char":
+                            # Show/update project preview
+                            emit_project_preview(
+                                visible=True,
+                                accumulated_chars=accumulated_chars,
+                                matched_project=matched_project,
+                                project_icon=project_icon,
+                            )
+                        else:
+                            # Unknown event type - hide preview
+                            emit_project_preview(visible=False)
+
+                except json.JSONDecodeError as e:
+                    print(f"Warning: Failed to parse IPC message: {e}", file=sys.stderr)
+                except Exception as e:
+                    print(f"Warning: Failed to process workspace_mode event: {e}", file=sys.stderr)
+
+    except Exception as e:
+        print(f"Error in workspace_mode event subscription: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point for workspace-preview-daemon."""
+    # Set up signal handlers for clean shutdown
+    def signal_handler(sig, frame):
+        print("DEBUG: Received shutdown signal", file=sys.stderr)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Initialize preview renderer
+    renderer = PreviewRenderer()
+
+    # Emit initial state (hidden)
+    emit_preview(visible=False)
+
+    # Subscribe to workspace_mode events
+    print("DEBUG: Starting workspace-preview-daemon", file=sys.stderr, flush=True)
+    subscribe_to_workspace_mode_events(renderer)
+
+
+if __name__ == "__main__":
+    main()

@@ -206,6 +206,53 @@ Visual schematic layout of all workspaces with app names (not thumbnails). Multi
 
 **Config**: `home-modules/desktop/sway.nix` | Manual: `echo 1 > /tmp/sovpipe` (show)
 
+## 🎨 Unified Bar System (Feature 057)
+
+Centralized theming and enhanced workspace mode feedback across all bars (top bar, bottom bar, notification center). Catppuccin Mocha color palette with synchronized visual feedback.
+
+**Components**:
+- **Top Bar** (Swaybar): System metrics (time, battery, project status) - persistent info
+- **Bottom Bar** (Eww): Workspace navigation with app icons - context switching
+- **Notification Center** (SwayNC): System notifications + transient metrics (CPU, memory, network)
+- **Workspace Preview Card** (Eww overlay): Real-time workspace contents preview during navigation
+
+**Theme Configuration**: `~/.config/sway/appearance.json` (hot-reloadable)
+
+**Quick Commands**:
+```bash
+# Reload appearance (theme colors, gaps, borders)
+swaymsg reload  # Auto-reloads all bars
+
+# Restart individual components
+systemctl --user restart sway-workspace-panel  # Bottom bar daemon
+systemctl --user restart swaync                # Notification center
+
+# Check daemon status
+systemctl --user status i3-project-event-listener  # Main i3pm daemon
+systemctl --user status workspace-preview-daemon   # Preview card daemon
+```
+
+**Workspace Mode Enhancements**:
+- **Preview Card**: Shows workspace contents BEFORE navigation (apps, icons, window count)
+- **Bottom Bar Sync**: Workspace button highlights yellow when typed
+- **Move Operations**: CapsLock+Shift → type workspace + monitor → Enter to move workspace to monitor
+
+**Visual Indicators**:
+- `→ 23` - Navigate to workspace 23 (goto mode)
+- `⇒ 231` - Move workspace 23 to monitor 1 (move mode)
+- Yellow button highlight on bottom bar shows pending workspace
+- Preview card shows target monitor (e.g., "Move WS 23 → HEADLESS-1")
+- Preview card appears within 50ms of typing digits
+
+**Files**:
+- Theme: `home-modules/desktop/unified-bar-theme.nix`
+- Top bar: `home-modules/desktop/swaybar.nix`, `swaybar-enhanced.nix`
+- Bottom bar: `home-modules/desktop/eww-workspace-bar.nix`
+- Notifications: `home-modules/desktop/swaync.nix`
+- Preview daemon: `home-modules/tools/sway-workspace-panel/workspace-preview-daemon`
+
+**Docs**: `/etc/nixos/specs/057-unified-bar-system/quickstart.md`
+
 ## ⌨️ Event-Driven Workspace Mode Navigation (Feature 042)
 
 Navigate to workspace 1-70 by typing digits. <20ms latency via event-driven Python daemon.
@@ -214,7 +261,7 @@ Navigate to workspace 1-70 by typing digits. <20ms latency via event-driven Pyth
 
 **Usage**: Enter mode → Type digits → Enter (e.g., CapsLock → 2 3 → Enter = WS 23)
 
-**Visual**: Swaybar shows `→ WS` (goto) / `⇒ WS` (move) + digits
+**Visual**: Preview card overlay shows `→ WS` (goto) / `⇒ WS` (move) + digits + workspace contents (Feature 057)
 
 **CLI**: `i3pm workspace-mode {state|history}` | Manual: `i3pm workspace-mode {digit|execute|cancel}`
 
@@ -1269,8 +1316,11 @@ _Last updated: 2025-11-06 - Hybrid config: static keybindings (Nix), dynamic win
 - Python 3.11+ (matching existing workspace_panel.py daemon) (057-workspace-bar-icons)
 - Python 3.11+ (matching existing i3pm daemon and sway-workspace-panel) + i3ipc.aio (async Sway IPC), Pydantic (data models), orjson (JSON serialization) (058-workspace-mode-feedback)
 - In-memory state in `WorkspaceModeManager`, no persistent storage required (058-workspace-mode-feedback)
+- Python 3.11+ (existing workspace_panel.py daemon), Nix configuration language, GTK3 CSS for SwayNC theming + i3ipc.aio (async Sway IPC), Eww 0.4+ (ElKowar's Wacky Widgets with Yuck DSL), SwayNC 0.10+ (notification center), pyxdg (desktop entry resolution), orjson (fast JSON serialization) (057-unified-bar-system)
+- JSON configuration files (~/.config/sway/appearance.json for unified theme, ~/.config/swaync/config.json for notification center layout, ~/.config/eww/workspace-mode-preview.json for preview card config) (057-unified-bar-system)
 
 ## Recent Changes
+- **057-unified-bar-system** (2025-11): Unified theming across top/bottom bars and notification center with Catppuccin Mocha. Enhanced workspace mode with real-time preview card showing workspace contents (apps, icons), synchronized bottom bar highlighting, and move operations (CapsLock+Shift). <50ms preview latency, hot-reloadable appearance.json. See `/etc/nixos/specs/057-unified-bar-system/`
 - **001-declarative-workspace-monitor** (2025-11): Declarative workspace-to-monitor assignment with 5 user stories: monitor role configuration (primary/secondary/tertiary), automatic fallback on disconnect, PWA-specific preferences, floating window sizing (scratchpad/small/medium/large), and optional output preferences. CLI commands: `i3pm monitors {status|reassign|config}`. See `/etc/nixos/specs/001-declarative-workspace-monitor/`
 - 069-sync-test-framework: Enhanced sway-test with synchronization primitives (sync, launch_app_sync, send_ipc_sync), migrated 100% of tests from timeout-based to sync-based (zero legacy code remains), achieved 5-6x test speedup and <1% flakiness rate
 - 063-scratchpad-filtering: Added Python 3.11+ (matching existing i3pm daemon) + i3ipc.aio (async Sway IPC), asyncio (event loop), psutil (process validation), pytest (testing), Pydantic (data models)

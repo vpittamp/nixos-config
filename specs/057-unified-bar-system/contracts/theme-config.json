@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Unified Bar Theme Configuration Schema",
+  "description": "Centralized appearance configuration (appearance.json) for all bar components",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1.0"],
+      "description": "Schema version for compatibility checking"
+    },
+    "theme": {
+      "type": "string",
+      "description": "Theme identifier",
+      "examples": ["catppuccin-mocha", "catppuccin-latte", "dracula"]
+    },
+    "colors": {
+      "$ref": "#/definitions/ThemeColors"
+    },
+    "fonts": {
+      "$ref": "#/definitions/ThemeFonts"
+    },
+    "workspace_bar": {
+      "$ref": "#/definitions/WorkspaceBarConfig"
+    },
+    "top_bar": {
+      "$ref": "#/definitions/TopBarConfig"
+    },
+    "notification_center": {
+      "$ref": "#/definitions/NotificationCenterConfig"
+    }
+  },
+  "required": ["version", "theme", "colors"],
+  "definitions": {
+    "ThemeColors": {
+      "type": "object",
+      "description": "Catppuccin Mocha color palette",
+      "properties": {
+        "base": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Background base"},
+        "mantle": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Darker background"},
+        "surface0": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Surface layer 1"},
+        "surface1": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Surface layer 2"},
+        "overlay0": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Overlay/border"},
+        "text": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Primary text"},
+        "subtext0": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Dimmed text"},
+        "blue": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Focused accent"},
+        "mauve": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Border accent"},
+        "yellow": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Pending state"},
+        "red": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Urgent/critical"},
+        "green": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Success"},
+        "teal": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Info"}
+      },
+      "required": ["base", "text", "blue", "mauve"]
+    },
+    "ThemeFonts": {
+      "type": "object",
+      "properties": {
+        "bar": {"type": "string", "description": "Top bar font family"},
+        "bar_size": {"type": "number", "minimum": 6, "maximum": 24, "description": "Top bar font size (pt)"},
+        "workspace": {"type": "string", "description": "Workspace bar font family"},
+        "workspace_size": {"type": "number", "minimum": 6, "maximum": 24, "description": "Workspace bar font size (pt)"},
+        "notification": {"type": "string", "description": "SwayNC font family"},
+        "notification_size": {"type": "number", "minimum": 6, "maximum": 24, "description": "SwayNC font size (pt)"}
+      }
+    },
+    "WorkspaceBarConfig": {
+      "type": "object",
+      "description": "Bottom bar (Eww) configuration",
+      "properties": {
+        "height": {"type": "integer", "minimum": 24, "maximum": 48, "description": "Bar height (px)"},
+        "padding": {"type": "integer", "minimum": 0, "maximum": 16, "description": "Padding (px)"},
+        "border_radius": {"type": "integer", "minimum": 0, "maximum": 16, "description": "Border radius (px)"},
+        "button_spacing": {"type": "integer", "minimum": 0, "maximum": 10, "description": "Workspace button spacing (px)"},
+        "icon_size": {"type": "integer", "minimum": 12, "maximum": 32, "description": "Workspace icon size (px)"}
+      }
+    },
+    "TopBarConfig": {
+      "type": "object",
+      "description": "Top bar (Swaybar) configuration",
+      "properties": {
+        "position": {"type": "string", "enum": ["top", "bottom"], "description": "Bar position"},
+        "separator": {"type": "string", "description": "Module separator"},
+        "show_tray": {"type": "boolean", "description": "System tray visibility"},
+        "show_binding_mode": {"type": "boolean", "description": "Binding mode indicator"}
+      }
+    },
+    "NotificationCenterConfig": {
+      "type": "object",
+      "description": "SwayNC configuration",
+      "properties": {
+        "position_x": {"type": "string", "enum": ["left", "center", "right"], "description": "Horizontal position"},
+        "position_y": {"type": "string", "enum": ["top", "center", "bottom"], "description": "Vertical position"},
+        "width": {"type": "integer", "minimum": 300, "maximum": 800, "description": "Notification width (px)"},
+        "timeout": {"type": "integer", "minimum": 0, "maximum": 120, "description": "Normal timeout (s)"},
+        "timeout_critical": {"type": "integer", "minimum": 0, "maximum": 120, "description": "Critical timeout (0 = never)"},
+        "grouping": {"type": "boolean", "description": "Notification grouping"}
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": "1.0",
+      "theme": "catppuccin-mocha",
+      "colors": {
+        "base": "#1e1e2e",
+        "mantle": "#181825",
+        "surface0": "#313244",
+        "surface1": "#45475a",
+        "overlay0": "#6c7086",
+        "text": "#cdd6f4",
+        "subtext0": "#a6adc8",
+        "blue": "#89b4fa",
+        "mauve": "#cba6f7",
+        "yellow": "#f9e2af",
+        "red": "#f38ba8",
+        "green": "#a6e3a1",
+        "teal": "#94e2d5"
+      },
+      "fonts": {
+        "bar": "FiraCode Nerd Font",
+        "bar_size": 8.0,
+        "workspace": "FiraCode Nerd Font",
+        "workspace_size": 11.0,
+        "notification": "Ubuntu Nerd Font",
+        "notification_size": 10.0
+      },
+      "workspace_bar": {
+        "height": 32,
+        "padding": 4,
+        "border_radius": 6,
+        "button_spacing": 3,
+        "icon_size": 16
+      },
+      "top_bar": {
+        "position": "top",
+        "separator": " | ",
+        "show_tray": true,
+        "show_binding_mode": true
+      },
+      "notification_center": {
+        "position_x": "right",
+        "position_y": "top",
+        "width": 500,
+        "timeout": 10,
+        "timeout_critical": 0,
+        "grouping": true
+      }
+    }
+  ]
+}

@@ -97,60 +97,9 @@ class StatusGenerator:
         except Exception as e:
             logger.error(f"Failed to get project block: {e}")
 
-        # NixOS Generation (if available)
-        try:
-            gen_block = system.create_generation_block(self.config)
-            if gen_block:
-                blocks.append(gen_block)
-        except Exception as e:
-            logger.error(f"Failed to get generation block: {e}")
-
-        # System Load Average
-        try:
-            load_block = system.create_load_block(self.config)
-            if load_block:
-                blocks.append(load_block)
-        except Exception as e:
-            logger.error(f"Failed to get load block: {e}")
-
-        # Memory Usage
-        try:
-            mem_block = system.create_memory_block(self.config)
-            if mem_block:
-                blocks.append(mem_block)
-        except Exception as e:
-            logger.error(f"Failed to get memory block: {e}")
-
-        # Disk Usage
-        try:
-            disk_block = system.create_disk_block(self.config)
-            if disk_block:
-                blocks.append(disk_block)
-        except Exception as e:
-            logger.error(f"Failed to get disk block: {e}")
-
-        # Network Traffic (RX/TX bytes)
-        try:
-            traffic_block = system.create_network_traffic_block(self.config)
-            if traffic_block:
-                blocks.append(traffic_block)
-        except Exception as e:
-            logger.error(f"Failed to get network traffic block: {e}")
-
-        # CPU Temperature (if available)
-        try:
-            temp_block = system.create_temperature_block(self.config)
-            if temp_block:
-                blocks.append(temp_block)
-        except Exception as e:
-            logger.error(f"Failed to get temperature block: {e}")
-
-        # Daemon Health Indicator (i3pm daemon responsiveness)
-        try:
-            daemon_block = system.create_daemon_health_block(self.config)
-            blocks.append(daemon_block)
-        except Exception as e:
-            logger.error(f"Failed to get daemon health block: {e}")
+        # Feature 057: US5 - System metrics moved to notification center
+        # Top bar shows only persistent information (date/time, project, battery, network status)
+        # Verbose metrics (load, memory, disk, traffic, temperature) accessible via SwayNC buttons
 
         # Volume block (enhanced feature)
         try:

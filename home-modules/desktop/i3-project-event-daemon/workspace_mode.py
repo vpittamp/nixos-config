@@ -141,6 +141,9 @@ class WorkspaceModeManager:
         self._state.accumulated_chars += char_lower
         self._state.input_type = "project"  # NEW: Mark as project navigation
 
+        # Emit project mode event with fuzzy-matched project preview
+        await self._emit_project_mode_event("char")
+
         elapsed_ms = (time.time() - start_time) * 1000
         logger.debug(f"Char added: {char_lower}, accumulated: {self._state.accumulated_chars} (took {elapsed_ms:.2f}ms)")
 
@@ -171,28 +174,52 @@ class WorkspaceModeManager:
             return None
 
     async def _execute_workspace_switch(self) -> Dict[str, any]:
-        """Execute workspace switch with accumulated digits."""
-        workspace = int(self._state.accumulated_digits)
-        output = await self._get_output_for_workspace(workspace)
+        """Execute workspace switch with accumulated digits.
 
-        logger.info(f"Executing workspace switch: ws={workspace}, output={output}, mode={self._state.mode_type}")
+        Feature 057: Supports workspace-to-monitor move (User Story 3)
+        """
+        # Parse workspace and optional monitor
+        workspace, target_monitor = self._parse_workspace_and_monitor()
+
+        if workspace is None:
+            raise ValueError(f"Invalid workspace/monitor: {self._state.accumulated_digits}")
+
+        # Determine output (use parsed monitor if specified, otherwise query Sway)
+        if target_monitor:
+            output = target_monitor
+        else:
+            output = await self._get_output_for_workspace(workspace)
+
+        logger.info(f"Executing workspace switch: ws={workspace}, output={output}, mode={self._state.mode_type}, monitor={target_monitor}")
 
         start_time = time.time()
         try:
             # Execute workspace switch via i3 IPC
             ipc_start = time.time()
             if self._state.mode_type == "goto":
+                # Navigate to workspace (standard goto)
                 await self._i3.command(f"workspace number {workspace}")
+
             elif self._state.mode_type == "move":
-                # Move container + follow user
-                await self._i3.command(f"move container to workspace number {workspace}; workspace number {workspace}")
+                if target_monitor:
+                    # Feature 057: Move workspace to specified monitor
+                    # First focus the workspace, then move it to the target output, then follow
+                    await self._i3.command(f"workspace number {workspace}")
+                    await self._i3.command(f"move workspace to output {target_monitor}")
+                    await self._i3.command(f"workspace number {workspace}")
+                    logger.info(f"Moved workspace {workspace} to {target_monitor}")
+                else:
+                    # No monitor specified in move mode - error or no-op
+                    logger.warning(f"Move mode requires monitor (e.g., type '231' for WS 23 to monitor 1)")
+                    raise ValueError("Move mode requires 3 digits: workspace (2 digits) + monitor (1 digit)")
+
             ipc_elapsed_ms = (time.time() - ipc_start) * 1000
 
             # Exit mode in Sway (return to default mode)
             await self._i3.command("mode default")
 
             total_elapsed_ms = (time.time() - start_time) * 1000
-            logger.info(f"Workspace switch successful: ws={workspace}, output={output} (took {total_elapsed_ms:.2f}ms)")
+            logger.info(f"Workspace operation successful: ws={workspace}, output={output} (took {total_elapsed_ms:.2f}ms)")
 
             # Record history (Feature 042: US4)
             await self._record_switch(workspace, output, self._state.mode_type)
@@ -209,11 +236,12 @@ class WorkspaceModeManager:
                 "workspace": workspace,
                 "output": output,
                 "success": True,
-                "mode_type": mode_type
+                "mode_type": mode_type,
+                "target_monitor": target_monitor
             }
 
         except Exception as e:
-            logger.error(f"Workspace switch failed: {e}")
+            logger.error(f"Workspace operation failed: {e}")
             # Don't reset state on error - user can retry
             raise
 
@@ -245,6 +273,9 @@ class WorkspaceModeManager:
 
             # Reset state
             self._state.reset()
+
+            # Emit execute event AFTER reset (clears project mode UI)
+            await self._emit_project_mode_event("execute")
 
             return {
                 "type": "project",
@@ -324,6 +355,37 @@ class WorkspaceModeManager:
         logger.debug(f"No match found for '{chars}'")
         return None
 
+    async def _get_project_icon(self, project_name: str) -> str:
+        """Get icon for a project by name.
+
+        Args:
+            project_name: Project name
+
+        Returns:
+            Project icon (emoji or text), defaults to "📁" if not found
+        """
+        if not project_name:
+            return "📁"
+
+        # Lazy-load ProjectService if needed
+        if not self._project_service:
+            if not self._config_dir:
+                logger.error("Cannot load ProjectService: config_dir not provided")
+                return "📁"
+
+            from .services.project_service import ProjectService
+            self._project_service = ProjectService(self._config_dir, self._state_manager)
+            logger.debug("Lazy-loaded ProjectService for project icon lookup")
+
+        # Get all projects and find matching project
+        projects = self._project_service.list()
+        for project in projects:
+            if project.name.lower() == project_name.lower():
+                return project.icon
+
+        # Default icon if project not found
+        return "📁"
+
     async def cancel(self) -> None:
         """Cancel workspace mode without action."""
         if not self._state.active:
@@ -332,14 +394,21 @@ class WorkspaceModeManager:
 
         logger.info("Cancelling workspace mode")
 
+        # Save input type before reset
+        input_type = self._state.input_type
+
         # Exit mode in Sway (return to default mode)
         await self._i3.command("mode default")
 
         # Reset all state fields
         self._state.reset()
 
-        # Feature 058: Emit cancel event AFTER reset (clears pending workspace highlight)
-        await self._emit_workspace_mode_event("cancel")
+        # Emit cancel event AFTER reset based on mode type (clears UI)
+        if input_type == "project":
+            await self._emit_project_mode_event("cancel")
+        else:
+            # workspace mode or no input yet
+            await self._emit_workspace_mode_event("cancel")
 
     def get_history(self, limit: Optional[int] = None) -> List[WorkspaceSwitch]:
         """Get workspace switch history.
@@ -408,6 +477,63 @@ class WorkspaceModeManager:
                 "TERTIARY": "eDP-1"
             }
 
+    def _parse_workspace_and_monitor(self) -> tuple[Optional[int], Optional[str]]:
+        """Parse accumulated digits into workspace number and optional monitor.
+
+        Feature 057: Workspace-to-Monitor Move (User Story 3)
+
+        Parsing rules:
+        - 1 digit: workspace only (e.g., "7" = workspace 7)
+        - 2 digits: workspace only (e.g., "23" = workspace 23)
+        - 3 digits: workspace + monitor (e.g., "231" = workspace 23, monitor 1 = HEADLESS-1)
+
+        For 3 digits:
+        - First 2 digits must be <= 70 (valid workspace)
+        - Last digit must be 1-3 (valid monitor for Hetzner)
+
+        Returns:
+            (workspace_number, monitor_name) tuple
+            - workspace_number: int (1-70) or None if invalid
+            - monitor_name: "HEADLESS-1", "HEADLESS-2", "HEADLESS-3", or None if not specified
+        """
+        digits = self._state.accumulated_digits
+
+        if not digits:
+            return (None, None)
+
+        # 1-2 digits: workspace only
+        if len(digits) <= 2:
+            try:
+                workspace = int(digits)
+                if 1 <= workspace <= 70:
+                    return (workspace, None)
+                else:
+                    return (None, None)  # Invalid workspace
+            except ValueError:
+                return (None, None)
+
+        # 3 digits: workspace + monitor
+        if len(digits) == 3:
+            try:
+                # Try parsing first 2 digits as workspace, last digit as monitor
+                workspace_str = digits[:2]
+                monitor_digit = digits[2]
+
+                workspace = int(workspace_str)
+                monitor = int(monitor_digit)
+
+                # Validate workspace (1-70) and monitor (1-3)
+                if 1 <= workspace <= 70 and 1 <= monitor <= 3:
+                    monitor_name = f"HEADLESS-{monitor}"
+                    return (workspace, monitor_name)
+                else:
+                    return (None, None)  # Invalid workspace or monitor
+            except ValueError:
+                return (None, None)
+
+        # More than 3 digits: invalid
+        return (None, None)
+
     async def _calculate_pending_workspace(self) -> Optional[PendingWorkspaceState]:
         """Calculate pending workspace state from accumulated digits.
 
@@ -421,20 +547,20 @@ class WorkspaceModeManager:
         if not self._state.accumulated_digits:
             return None
 
-        # Parse workspace number
-        try:
-            workspace_number = int(self._state.accumulated_digits)
-        except ValueError:
-            logger.warning(f"Invalid accumulated_digits: {self._state.accumulated_digits}")
+        # Feature 057: Parse workspace and optional monitor (for move mode)
+        workspace_number, monitor_name = self._parse_workspace_and_monitor()
+
+        if workspace_number is None:
+            logger.debug(f"Invalid workspace/monitor in accumulated_digits: {self._state.accumulated_digits}")
             return None
 
-        # Validate workspace range (1-70)
-        if workspace_number < 1 or workspace_number > 70:
-            logger.debug(f"Workspace number out of range: {workspace_number} (valid: 1-70)")
-            return None
-
-        # Determine target output (query Sway for actual location)
-        target_output = await self._get_output_for_workspace(workspace_number)
+        # Determine target output
+        if monitor_name:
+            # Move mode with explicit monitor specified
+            target_output = monitor_name
+        else:
+            # Goto mode or move mode without monitor (query Sway for actual location)
+            target_output = await self._get_output_for_workspace(workspace_number)
 
         # Create pending workspace state
         return PendingWorkspaceState(
@@ -511,6 +637,46 @@ class WorkspaceModeManager:
             logger.debug(f"Emitted workspace_mode event: type={event_type}, pending_ws={pending_workspace.workspace_number if pending_workspace else None}")
         except Exception as e:
             logger.warning(f"Failed to broadcast workspace_mode event: {e}")
+
+    async def _emit_project_mode_event(self, event_type: str) -> None:
+        """Emit project mode event via IPC with pending project match.
+
+        Option A: Unified Smart Detection - Project Mode
+        Broadcasts events to workspace-preview-daemon for real-time UI updates.
+
+        Args:
+            event_type: Type of event ("char", "cancel", "execute")
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping event emission")
+            return
+
+        # Fuzzy match project from accumulated characters
+        matched_project = await self._fuzzy_match_project(self._state.accumulated_chars) if self._state.accumulated_chars else None
+
+        # Get project icon if we have a match
+        project_icon = await self._get_project_icon(matched_project) if matched_project else None
+
+        # Create event payload for project mode
+        event_payload = {
+            "type": "project_mode",
+            "payload": {
+                "event_type": event_type,
+                "accumulated_chars": self._state.accumulated_chars,
+                "matched_project": matched_project,
+                "project_icon": project_icon,
+                "timestamp": time.time()
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted project_mode event: type={event_type}, chars={self._state.accumulated_chars}, match={matched_project}, icon={project_icon}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast project_mode event: {e}")
 
     async def _record_switch(self, workspace: int, output: str, mode_type: str) -> None:
         """Record workspace switch in history.

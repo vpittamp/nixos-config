@@ -13,9 +13,12 @@
     ./desktop/python-environment.nix  # Shared Python environment for all modules
     ./desktop/sway.nix         # Sway window manager with HiDPI support
     # sway-easyfocus now provided by home-manager upstream
+    ./desktop/unified-bar-theme.nix  # Feature 057: Unified bar theme (Catppuccin Mocha)
     ./desktop/swaybar.nix      # Swaybar with event-driven status
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
+    ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (brightness, network, apps)
+    ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
     # Project management (works with Sway via IPC)
@@ -72,6 +75,9 @@
 
   # eww workspace bar with SVG icons
   programs.eww-workspace-bar.enable = true;
+
+  # eww quick settings panel (Feature 057)
+  programs.eww-quick-panel.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {
