@@ -376,6 +376,8 @@ class IPCServer:
                 result = await self._workspace_mode_digit(params)
             elif method == "workspace_mode.char":
                 result = await self._workspace_mode_char(params)
+            elif method == "workspace_mode.enter":
+                result = await self._workspace_mode_enter(params)
             elif method == "workspace_mode.execute":
                 result = await self._workspace_mode_execute(params)
             elif method == "workspace_mode.cancel":
@@ -4500,8 +4502,9 @@ class IPCServer:
             raise RuntimeError("Workspace mode manager not initialized")
 
         char = params.get("char")
-        if not char or len(char) != 1 or char.lower() not in "abcdefghijklmnopqrstuvwxyz":
-            raise ValueError(f"Invalid char: {char}. Must be a single letter a-z")
+        # Feature 072: Allow ':' for project mode switching (User Story 3)
+        if not char or len(char) != 1 or (char != ':' and char.lower() not in "abcdefghijklmnopqrstuvwxyz"):
+            raise ValueError(f"Invalid char: {char}. Must be a single letter a-z or ':'")
 
         manager = self.state_manager.workspace_mode_manager
         accumulated = await manager.add_char(char)
@@ -4519,6 +4522,39 @@ class IPCServer:
         )
 
         return {"accumulated_chars": accumulated}
+
+    async def _workspace_mode_enter(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.enter IPC method (Feature 072).
+
+        Enters workspace mode and emits "enter" event to trigger all-windows preview.
+
+        Returns:
+            {"success": true, "mode": "goto"}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+
+        # Enter workspace mode (default to "goto" mode)
+        mode_type = params.get("mode", "goto")
+        await manager.enter_mode(mode_type)
+
+        # Broadcast "enter" event to trigger all-windows preview (Feature 072: User Story 1)
+        event = manager.create_event("enter")
+        await self.broadcast_event({"type": "workspace_mode", **event.model_dump()})
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::enter",
+            duration_ms=duration_ms,
+            params={"mode": mode_type}
+        )
+
+        return {"success": True, "mode": mode_type}
 
     async def _workspace_mode_execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle workspace_mode.execute IPC method.

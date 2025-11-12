@@ -667,6 +667,9 @@ in
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
 
+          # Feature 072: Colon to switch to project mode
+          bindsym colon exec i3pm-workspace-mode char :
+
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"
           bindsym KP_Enter exec "i3pm-workspace-mode execute"
@@ -713,6 +716,9 @@ in
           bindsym x exec i3pm-workspace-mode char x
           bindsym y exec i3pm-workspace-mode char y
           bindsym z exec i3pm-workspace-mode char z
+
+          # Feature 072: Colon to switch to project mode
+          bindsym colon exec i3pm-workspace-mode char :
 
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"

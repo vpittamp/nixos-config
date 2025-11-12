@@ -325,6 +325,12 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             }
                             print(json.dumps(output), flush=True)
 
+                            # DEBUG: Log the JSON being emitted for troubleshooting
+                            print(f"DEBUG: Emitted all_windows JSON: groups={len(output['workspace_groups'])}, total_windows={output['total_window_count']}, empty={output['empty']}, instructional={output['instructional']}", file=sys.stderr, flush=True)
+                            # DEBUG: Log workspace groups details
+                            for i, group in enumerate(output['workspace_groups']):
+                                print(f"DEBUG: Group {i}: WS {group['workspace_num']}, windows={len(group['windows'])}, names={[w['name'] for w in group['windows']]}", file=sys.stderr, flush=True)
+
                             # T049: Log performance timing if >150ms (User Story 1 target)
                             elapsed_ms = (time.time() - start_time) * 1000
                             if elapsed_ms > 150:

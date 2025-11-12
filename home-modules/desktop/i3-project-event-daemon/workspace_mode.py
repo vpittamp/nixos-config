@@ -120,13 +120,13 @@ class WorkspaceModeManager:
         """Add letter to accumulated state for project switching (NEW).
 
         Args:
-            char: Single letter a-z (lowercase)
+            char: Single letter a-z (lowercase) or ':' to enter project mode
 
         Returns:
             Current accumulated characters string
 
         Raises:
-            ValueError: If char is not a-z
+            ValueError: If char is not a-z or ':'
             RuntimeError: If mode is not active
         """
         start_time = time.time()
@@ -135,8 +135,25 @@ class WorkspaceModeManager:
             raise RuntimeError("Cannot add char: workspace mode not active")
 
         char_lower = char.lower()
+
+        # Feature 072: Handle ':' as project mode trigger (User Story 3)
+        if char == ':':
+            # Clear any accumulated digits and switch to project mode
+            self._state.accumulated_digits = ""
+            self._state.accumulated_chars = ""  # Don't add ':' to chars
+            self._state.input_type = "project"
+
+            # Emit project mode event to show empty project search UI
+            await self._emit_project_mode_event("char")
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Project mode entered via ':', accumulated: {self._state.accumulated_chars} (took {elapsed_ms:.2f}ms)")
+
+            return self._state.accumulated_chars
+
+        # Validate regular characters (a-z)
         if not char_lower or char_lower not in "abcdefghijklmnopqrstuvwxyz":
-            raise ValueError(f"Invalid char: {char}. Must be a-z")
+            raise ValueError(f"Invalid char: {char}. Must be a-z or ':'")
 
         self._state.accumulated_chars += char_lower
         self._state.input_type = "project"  # NEW: Mark as project navigation
