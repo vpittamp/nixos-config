@@ -149,7 +149,6 @@ let
 
       # Wayland utilities
       sway
-      swaymsg
       wl-clipboard
       wlr-randr
 
@@ -183,7 +182,7 @@ let
 
   # Helper to create test definitions
   makeSwayTest = { name, testScript, nodes ? { machine = swayTestNode; } }:
-    pkgs.nixosTest {
+    pkgs.testers.nixosTest {
       inherit name nodes;
 
       testScript = ''
