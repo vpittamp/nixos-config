@@ -121,7 +121,9 @@ class PreviewRenderer:
             for output in daemon_outputs:
                 output_workspaces = output.get("workspaces", [])
                 for ws in output_workspaces:
-                    if ws.get("num") == workspace_num:
+                    # Feature 072 Fix: Daemon returns "number" not "num" for workspace number
+                    ws_num = ws.get("number") or ws.get("num")
+                    if ws_num == workspace_num:
                         # Found target workspace - extract window info
                         windows = ws.get("windows", [])
                         window_entries: List[WindowPreviewEntry] = []
@@ -129,7 +131,8 @@ class PreviewRenderer:
                         for win in windows:
                             app_id = win.get("app_id")
                             pid = win.get("pid")
-                            title = win.get("name", "")
+                            # Feature 072 Fix: Daemon returns "title" not "name" for window title
+                            title = win.get("title") or win.get("name", "")
                             focused = win.get("focused", False)
 
                             # Resolve icon and display name (same logic as render_all_windows)
@@ -326,7 +329,8 @@ class PreviewRenderer:
 
             # Iterate through workspaces on this output
             for ws in workspaces:
-                ws_num = ws.get("num")
+                # Feature 072 Fix: Daemon returns "number" not "num" for workspace number
+                ws_num = ws.get("number") or ws.get("num")
                 ws_name = ws.get("name")
                 windows = ws.get("windows", [])
 
@@ -343,7 +347,8 @@ class PreviewRenderer:
                 for win in windows:
                     app_id = win.get("app_id")
                     pid = win.get("pid")
-                    title = win.get("name", "")
+                    # Feature 072 Fix: Daemon returns "title" not "name" for window title
+                    title = win.get("title") or win.get("name", "")
                     focused = win.get("focused", False)
 
                     # Resolve icon and display name (same logic as render_workspace_preview)

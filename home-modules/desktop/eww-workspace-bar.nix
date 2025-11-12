@@ -212,7 +212,7 @@ ${workspacePreviewDefs}
       (scroll :class "workspace-groups-scroll"
               :vscroll true
               :hscroll false
-              :max-height 600
+              :height 600
               :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
         (box :class "workspace-groups"
              :orientation "v"
@@ -229,7 +229,7 @@ ${workspacePreviewDefs}
                    :space-evenly false
                    :spacing 8
                 (label :class "workspace-group-number"
-                       :text {"Workspace " + group.workspace_num + (group.workspace_name != "" ? " (" + group.workspace_name + ")" : "")})
+                       :text {"Workspace " + group.workspace_num + ((group.workspace_name ?: "") != "" ? " (" + group.workspace_name + ")" : "")})
                 (label :class "workspace-group-count"
                        :text {group.window_count + " window" + (group.window_count != 1 ? "s" : "")})
                 (label :class "workspace-group-monitor"
@@ -335,8 +335,8 @@ ${workspacePreviewDefs}
   :geometry (geometry :anchor "center"
                       :x "0px"
                       :y "0px"
-                      :width "400px"
-                      :height "300px")
+                      :width "600px"
+                      :height "800px")
   (workspace-preview-card))
 
 (defwidget workspace-button [number_label workspace_name app_name icon_path icon_fallback workspace_id focused visible urgent pending empty]

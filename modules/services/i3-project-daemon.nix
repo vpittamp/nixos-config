@@ -21,7 +21,7 @@ let
   # Python dependencies for the daemon
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     i3ipc        # i3 IPC library
-    systemd      # systemd-python for sd_notify/watchdog/journald
+    systemd-python      # systemd-python for sd_notify/watchdog/journald
     watchdog     # File system monitoring
     pydantic     # Data validation for layout models and monitor config
     pytest       # Testing framework
