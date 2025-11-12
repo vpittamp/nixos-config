@@ -47,7 +47,7 @@ let
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
     name = "sway-workspace-panel";
-    # Feature 059: Fixed import path - renamed models/ to selection_models/ (v3 - force rebuild)
+    # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = ../tools/sway-workspace-panel;
     installPhase = ''
       mkdir -p $out
