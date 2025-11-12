@@ -1,0 +1,46 @@
+{
+  "name": "i3pm Project Switching Integration Test",
+  "description": "Test project creation and switching with window scoping (Feature 037)",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "sync",
+      "params": {
+        "marker_prefix": "project_test"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "windowCount": 1,
+        "windows": [
+          {
+            "app_id": "Alacritty",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  }
+}

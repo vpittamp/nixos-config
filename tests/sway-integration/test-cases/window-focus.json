@@ -1,0 +1,49 @@
+{
+  "name": "Window Focus Navigation Test",
+  "description": "Test focus navigation between windows in tiling layout",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 4"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "focus left"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 4,
+    "workspaces": [
+      {
+        "num": 4,
+        "windowCount": 2,
+        "windows": [
+          {
+            "app_id": "Alacritty",
+            "focused": true
+          },
+          {
+            "app_id": "Alacritty",
+            "focused": false
+          }
+        ]
+      }
+    ]
+  }
+}
