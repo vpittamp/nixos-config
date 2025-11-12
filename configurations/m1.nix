@@ -181,6 +181,9 @@
   boot.extraModprobeConfig = ''
     options hid_apple iso_layout=0
   '';
+
+  # Allow unprivileged control of panel + keyboard backlights
+  services.udev.packages = [ pkgs.brightnessctl ];
   # Use firmware from boot partition (requires --impure flag)
   # Made conditional to allow evaluation on non-M1 systems (e.g., for CI/testing)
   hardware.asahi.peripheralFirmwareDirectory =
@@ -198,6 +201,20 @@
 
   # Disable IWD - conflicts with NetworkManager on Apple Silicon
   networking.wireless.iwd.enable = false;
+
+  # Provide Nerd Fonts so SwayNC/Eww glyph icons render correctly
+  fonts = {
+    packages = let nerdFonts = pkgs."nerd-fonts"; in [
+      nerdFonts.jetbrains-mono
+      nerdFonts.fira-code
+      nerdFonts.ubuntu
+      nerdFonts.symbols-only
+    ];
+    fontconfig.defaultFonts = {
+      monospace = [ "JetBrainsMono Nerd Font Mono" ];
+      sansSerif = [ "Ubuntu Nerd Font" ];
+    };
+  };
 
   # Display configuration for Retina display
   # Wayland handles HiDPI much better than X11
@@ -337,6 +354,9 @@
     # Tools that work well on ARM
     neovim
     ghostty
+
+    # Local brightness/backlight controls used by Sway keybindings
+    brightnessctl
 
     # Firefox PWA support (same as Hetzner)
     firefoxpwa # Native component for Progressive Web Apps

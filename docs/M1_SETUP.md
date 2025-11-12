@@ -173,6 +173,17 @@ Asahi Linux includes Apple Silicon power management:
 | Internal Storage | ✅ Full | NVMe SSD fully supported |
 | External Displays | ⚠️ Partial | HDMI works, DisplayPort varies |
 
+### Keyboard Backlight Controls
+
+- Fn+F5/F6 now trigger the `XF86KbdBrightness*` bindings in Sway, which call `brightnessctl -d kbd_backlight` to raise or lower the LEDs in 10 % steps.
+- `services.udev.packages = [ pkgs.brightnessctl ]` ships the required udev rules so members of the `input` group (the default `vpittamp` user) can write `/sys/class/leds/kbd_backlight/brightness` without sudo.
+- Brightness state survives reboots and suspend/resume cycles via `systemd-backlight@leds:kbd_backlight.service`.
+- Display brightness is handled with the same tool (`brightnessctl set ±5%`), so the Fn+F1/F2 keys use a consistent backend whether you’re on the M1 laptop or a VNC session.
+- Prefer GUI? Press `Mod+i` to open the dedicated **Eww quick panel**:
+  - Two brightness cards display the live `%` values from `brightnessctl` and give ± buttons for the internal panel and keyboard backlight.
+  - Action tiles (Network Manager, Bluetooth, Volume mixer, Tailscale status, Firefox, Ghostty, VS Code, Files, screenshot, lock, suspend) reuse the Arin/Dashboard icon packs pulled straight from [adi1090x/widgets](https://github.com/adi1090x/widgets/tree/main/eww/dashboard).
+- `Mod+Shift+i` still opens the native SwayNC notification center and `Mod+Ctrl+Shift+i` toggles Do Not Disturb.
+
 ## Troubleshooting
 
 ### Build Failures

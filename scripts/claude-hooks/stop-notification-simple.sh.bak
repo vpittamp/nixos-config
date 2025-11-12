@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Claude Code Stop Hook - Notify when Claude finishes and is awaiting input
+#
+# This hook runs when Claude Code stops and is waiting for the next user message.
+# It sends a notification with a limited preview of Claude's output and provides
+# an action button to return to the terminal running Claude Code.
+
+set -euo pipefail
+
+# Read hook input JSON from stdin
+INPUT=$(cat)
+
+# Extract transcript path from hook input
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // ""')
+
+# Extract last assistant message from transcript (JSONL format)
+# Get the last line with role "assistant", extract text, limit to 150 chars
+LAST_MESSAGE=""
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    LAST_MESSAGE=$(tac "$TRANSCRIPT_PATH" 2>/dev/null | \
+        grep -m1 '"type":"text"' | \
+        jq -r '.text // ""' 2>/dev/null | \
+        head -c 150 || echo "")
+fi
+
+# Fallback message if we couldn't extract from transcript
+if [ -z "$LAST_MESSAGE" ]; then
+    LAST_MESSAGE="Task complete - awaiting your input"
+fi
+
+# Find the terminal window running Claude Code
+# Strategy: Extract terminal PID from environment variables
+WINDOW_ID=""
+TERMINAL_PID=""
+
+# Alacritty: extract PID from ALACRITTY_SOCKET (e.g., /run/user/1000/Alacritty-wayland-1-813367.sock)
+if [ -n "${ALACRITTY_SOCKET:-}" ]; then
+    TERMINAL_PID=$(echo "$ALACRITTY_SOCKET" | grep -oP '\d+(?=\.)' | tail -1)
+fi
+
+# Ghostty: extract from GHOSTTY_RESOURCES_DIR
+if [ -z "$TERMINAL_PID" ] && [ -n "${GHOSTTY_RESOURCES_DIR:-}" ]; then
+    TERMINAL_PID=$(echo "$GHOSTTY_RESOURCES_DIR" | grep -oP '\d+$')
+fi
+
+# Find Sway window by terminal PID
+if [ -n "$TERMINAL_PID" ]; then
+    WINDOW_ID=$(swaymsg -t get_tree | jq -r --arg pid "$TERMINAL_PID" '
+        .. | objects |
+        select(has("type")) |
+        select(.type=="con") |
+        select(.pid == ($pid | tonumber)) |
+        .id' | head -1)
+fi
+
+# Call notification handler in background (non-blocking)
+# This allows the hook to return immediately while the notification waits for user action
+nohup "${BASH_SOURCE%/*}/stop-notification-handler.sh" \
+    "$WINDOW_ID" \
+    "$LAST_MESSAGE" \
+    >/dev/null 2>&1 &
+
+# Exit immediately (don't block Claude Code)
+exit 0

@@ -1,6 +1,19 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, osConfig ? null, ... }:
 
 let
+  hostname =
+    if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
+    then osConfig.networking.hostName
+    else "";
+  isM1 = hostname == "nixos-m1";
+  controlCenterHeight = if isM1 then 760 else 1000;
+  controlCenterWidth = if isM1 then 460 else 500;
+  arinAssets = builtins.path { path = ../../assets/swaync/arin; name = "swaync-arin-assets"; };
+  dashboardAssets = builtins.path { path = ../../assets/swaync/dashboard/images; name = "swaync-dashboard-images"; };
+  configDir = "${config.home.homeDirectory}/.config";
+  arinAssetUrl = "file://${configDir}/swaync/assets/arin";
+  dashboardAssetUrl = "file://${configDir}/swaync/assets/dashboard";
+
   # Feature 057: Import unified theme colors (Catppuccin Mocha)
   # Use the same color palette as unified-bar-theme.nix
   mocha = {
@@ -19,13 +32,150 @@ let
     teal = "#94e2d5";
   };
 
+  brightnessWidgets = [
+    {
+      name = "backlight#display-main";
+      config = {
+        label = "Built-in Display";
+        device = "apple-panel-bl";
+        min = 5;
+      };
+    }
+  ] ++ lib.optionals isM1 [
+    {
+      name = "backlight#display-sidecar";
+      config = {
+        label = "Stage Manager Display";
+        device = "228600000.dsi.0";
+        min = 5;
+      };
+    }
+  ] ++ [
+    {
+      name = "backlight#keyboard";
+      config = {
+        label = "Keyboard Backlight";
+        device = "kbd_backlight";
+        subsystem = "leds";
+        min = 0;
+      };
+    }
+  ];
+
+  brightnessWidgetNames = map (widget: widget.name) brightnessWidgets;
+  brightnessWidgetConfig = lib.listToAttrs (map (widget: {
+    name = widget.name;
+    value = widget.config;
+  }) brightnessWidgets);
+
+  systemMonitorButtons = [
+    {
+      label = "";
+      command = "ghostty -e htop";
+    }
+    {
+      label = "";
+      command = "ghostty -e btop";
+    }
+    {
+      label = "";
+      command = "ghostty -e bmon";
+    }
+    {
+      label = "";
+      command = "ghostty -e gdu -d1 /";
+    }
+  ];
+
+  connectivityButtons = [
+    {
+      label = "";
+      command = "nm-connection-editor";
+    }
+    {
+      label = "";
+      command = "blueman-manager";
+    }
+    {
+      label = "";
+      command = "pavucontrol";
+    }
+    {
+      label = "";
+      command = "ghostty -e tailscale status";
+    }
+  ];
+
+  appsLauncherButtons = [
+    {
+      label = "";
+      command = "firefox";
+    }
+    {
+      label = "";
+      command = "ghostty";
+    }
+    {
+      label = "";
+      command = "code";
+    }
+    {
+      label = "";
+      command = ''sh -c "xdg-open $HOME"'';
+    }
+  ];
+
+  sessionButtons = [
+    {
+      label = "";
+      command = "gnome-calendar";
+    }
+    {
+      label = "";
+      command = ''sh -c "grim -g \"$(slurp)\" - | wl-copy"'';
+    }
+    {
+      label = "";
+      command = "swaylock -f";
+    }
+    {
+      label = "";
+      command = "systemctl suspend";
+    }
+  ];
+
+  buttonWidgets = [
+    {
+      name = "buttons-grid#system-monitors";
+      config = { actions = systemMonitorButtons; };
+    }
+    {
+      name = "buttons-grid#quick-actions";
+      config = { actions = connectivityButtons; };
+    }
+    {
+      name = "buttons-grid#apps-launchers";
+      config = { actions = appsLauncherButtons; };
+    }
+    {
+      name = "buttons-grid#session-actions";
+      config = { actions = sessionButtons; };
+    }
+  ];
+
+  buttonWidgetNames = map (widget: widget.name) buttonWidgets;
+  buttonWidgetConfig = lib.listToAttrs (map (widget: {
+    name = widget.name;
+    value = widget.config;
+  }) buttonWidgets);
+
   # Catppuccin Mocha CSS for SwayNC
   # Feature 057: User Story 1 - Unified Theming
   swayNcStyle = ''
     /* Feature 057: Unified Bar System - Catppuccin Mocha Theme */
 
     * {
-      font-family: Ubuntu Nerd Font, sans-serif;
+      font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", "Ubuntu Nerd Font", sans-serif;
       font-size: 10pt;
     }
 
@@ -66,6 +216,7 @@ let
       background-color: ${mocha.base};
       border: 1px solid ${mocha.blue};
       border-radius: 6px;
+      padding-bottom: 8px;
     }
 
     .control-center-list {
@@ -97,6 +248,40 @@ let
       margin: 5px;
       border-radius: 4px;
     }
+
+    .widget-buttons-grid flowboxchild {
+      min-width: 48px;
+      padding: 0;
+      margin: 1px;
+    }
+
+    .widget-buttons-grid flowboxchild > button {
+      background-color: ${mocha.surface0};
+      color: ${mocha.text};
+      border-radius: 9px;
+      border: 1px solid ${mocha.surface1};
+      padding: 4px;
+      margin: 1px;
+      min-width: 44px;
+      min-height: 44px;
+      font-weight: 600;
+      font-size: 1.15em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image: none;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    .widget-buttons-grid flowboxchild > button:hover {
+      border-color: ${mocha.blue};
+      color: ${mocha.blue};
+      box-shadow: 0 3px 9px rgba(137, 180, 250, 0.35);
+    }
+
+    .widget-backlight slider, .widget-backlight scale {
+      min-height: 24px;
+    }
   '';
 
 in {
@@ -109,11 +294,30 @@ in {
   # Add SwayNC to home packages
   home.packages = with pkgs; [
     swaynotificationcenter  # SwayNC daemon and client
+
+    # Quick-action dependencies so the buttons always launch a GUI even if
+    # other modules (like swaybar-enhanced) are turned off in the future.
+    ghostty
+    btop
+    htop
+    bmon
+    gdu
+    pavucontrol
+    networkmanagerapplet
+    blueman
+    gnome-calendar
+    grim
+    slurp
+    wl-clipboard
   ];
 
   # Generate SwayNC style.css with unified theme colors
   # Feature 057: T016 - Generate SwayNC style.css from appearance.json colors
   xdg.configFile."swaync/style.css".text = swayNcStyle;
+
+  # Vendor Catppuccin/Arin + dashboard assets for icon-backed buttons
+  xdg.configFile."swaync/assets/arin".source = arinAssets;
+  xdg.configFile."swaync/assets/dashboard".source = dashboardAssets;
 
   # Feature 057: T027-T031 - SwayNC config.json with widget layout
   # User Story 5: Persistent vs. Transient Information Layout
@@ -138,10 +342,10 @@ in {
     timeout = 10;
     timeout-low = 5;
     timeout-critical = 0;  # Never timeout critical notifications
-    fit-to-screen = false;
-    control-center-width = 500;
-    control-center-height = 1000;
+    control-center-width = controlCenterWidth;
+    control-center-height = controlCenterHeight;
     notification-window-width = 400;
+    fit-to-screen = true;
     keyboard-shortcuts = true;
     image-visibility = "when-available";
     transition-time = 200;
@@ -151,55 +355,36 @@ in {
 
     # Widget layout for control center
     # Feature 057: User Story 5 - Transient information (CPU, memory, network, disk)
-    widgets = [
-      "title"
-      "dnd"
-      "notifications"
-      "mpris"
-
-      # Feature 057: T027-T030 - System metrics widgets (named labels)
-      "label#metrics-header"
-      "label#metrics-info"
-
-      "buttons-grid"
-    ];
+    widgets =
+      [
+        "title"
+        "dnd"
+        "label#monitors-header"
+      ]
+      ++ buttonWidgetNames
+      ++ [
+        "label#brightness-header"
+      ]
+      ++ brightnessWidgetNames
+      ++ [
+        "notifications"
+        "mpris"
+      ];
 
     # Widget configuration for all widgets
-    widget-config = {
-      # Feature 057: US5 - System Metrics Section
-      # Top bar: persistent info (time, project, battery, network/volume status)
-      # Notification center: access detailed metrics via buttons below
-      "label#metrics-header" = {
-        text = "━━━ System Metrics ━━━";
+    widget-config = (
+      {
+      "label#monitors-header" = {
+        text = "━━━ System Monitors & Shortcuts ━━━";
         max-lines = 1;
       };
-      "label#metrics-info" = {
-        text = "Click buttons below to view detailed system stats";
-        max-lines = 2;
-      };
 
-      # Quick action buttons
-      buttons-grid = {
-        actions = [
-          {
-            label = "  System Monitor";
-            command = "ghostty -e btop";
-          }
-          {
-            label = "  Network";
-            command = "nm-connection-editor";
-          }
-          {
-            label = "  Bluetooth";
-            command = "blueman-manager";
-          }
-          {
-            label = "  Volume";
-            command = "pavucontrol";
-          }
-        ];
+      "label#brightness-header" = {
+        text = "━━━ Brightness Controls ━━━";
+        max-lines = 1;
       };
-    };
+      }
+    ) // brightnessWidgetConfig // buttonWidgetConfig;
 
     # Feature 057: T031 - Configure widget polling intervals (2 seconds for gauges)
     # NOTE: SwayNC doesn't support dynamic widget updates natively
@@ -305,5 +490,12 @@ in {
     fi
 
     echo "Generated notification icon symlinks in $ICON_DIR"
+  '';
+
+  # Ensure swaync picks up config/style changes immediately after activation
+  home.activation.restartSwaync = lib.hm.dag.entryAfter ["generateNotificationIcons"] ''
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl --user try-restart swaync.service >/dev/null 2>&1 || true
+    fi
   '';
 }
