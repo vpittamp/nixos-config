@@ -29,10 +29,6 @@ from preview_renderer import PreviewRenderer
 # Socket path matches systemd socket unit configuration
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
 
-# Global selection manager for interactive workspace menu (Feature 059)
-selection_manager = SelectionManager()
-navigation_handler = NavigationHandler(selection_manager)
-
 
 def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int], Optional[str]]:
     """Parse accumulated digits into workspace number and optional monitor.
@@ -773,6 +769,12 @@ def close_window_with_verification(sway_conn: i3ipc.Connection, container_id: in
             "warning": "Application may have unsaved changes or be unresponsive",
             "close_duration_ms": total_duration_ms
         }
+
+
+# Global selection manager and navigation handler for interactive workspace menu (Feature 059)
+# Initialized after class definitions to avoid NameError
+selection_manager = SelectionManager()
+navigation_handler = NavigationHandler(selection_manager)
 
 
 def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
