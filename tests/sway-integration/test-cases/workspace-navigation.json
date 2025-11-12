@@ -1,0 +1,59 @@
+{
+  "name": "Workspace Navigation Integration Test",
+  "description": "Test workspace switching and focus tracking across multiple workspaces",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 3"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "Alacritty"
+          }
+        ]
+      },
+      {
+        "num": 3,
+        "focused": false,
+        "windows": [
+          {
+            "app_id": "firefox"
+          }
+        ]
+      }
+    ]
+  }
+}

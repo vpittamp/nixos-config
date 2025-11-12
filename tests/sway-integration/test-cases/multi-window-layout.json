@@ -1,0 +1,45 @@
+{
+  "name": "Multi-Window Layout Test",
+  "description": "Test tiling layout with multiple windows on same workspace",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 2"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 2,
+    "workspaces": [
+      {
+        "num": 2,
+        "focused": true,
+        "windowCount": 3,
+        "windows": [
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"},
+          {"app_id": "Alacritty"}
+        ]
+      }
+    ]
+  }
+}

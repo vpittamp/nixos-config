@@ -1,0 +1,38 @@
+{
+  "name": "Workspace Assignment Test",
+  "description": "Test that apps open on their assigned workspaces (Feature 001)",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"firefox\"] kill"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\"Alacritty\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 3,
+    "workspaces": [
+      {
+        "num": 3,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "firefox"
+          }
+        ]
+      }
+    ]
+  }
+}

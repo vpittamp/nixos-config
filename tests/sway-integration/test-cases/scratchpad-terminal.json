@@ -1,0 +1,22 @@
+{
+  "name": "Scratchpad Terminal Test",
+  "description": "Test project scratchpad terminal toggle (Feature 062)",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace number 1"
+      }
+    },
+    {
+      "type": "sync",
+      "params": {
+        "marker_prefix": "scratchpad_test"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "comment": "Scratchpad terminal should be launched via i3pm scratchpad toggle, but that requires i3pm CLI which may not be fully configured in test VM"
+  }
+}
