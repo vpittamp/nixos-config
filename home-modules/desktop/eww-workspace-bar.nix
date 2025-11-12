@@ -152,10 +152,12 @@ ${workspacePreviewDefs}
              :halign "center"
              :text {workspace_preview_data.instructional == true
                     ? (workspace_preview_data.mode == "move"
-                       ? "Type workspace number to move window..."
+                       ? "Type workspace + monitor (e.g., 231 = WS 23 → Monitor 1)"
                        : "Type workspace number...")
                     : (workspace_preview_data.mode == "move"
-                       ? "Move to Workspace " + workspace_preview_data.workspace_num
+                       ? (workspace_preview_data.target_monitor != ""
+                          ? "Move WS " + workspace_preview_data.workspace_num + " → " + workspace_preview_data.target_monitor
+                          : "Move workspace (type monitor: 1-3)")
                        : "Navigate to Workspace " + workspace_preview_data.workspace_num)}))
 
     ;; Empty workspace indicator (hidden in instructional mode)

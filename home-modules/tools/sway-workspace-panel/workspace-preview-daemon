@@ -25,6 +25,53 @@ from preview_renderer import PreviewRenderer
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
 
 
+def parse_workspace_and_monitor(accumulated_digits: str) -> tuple[Optional[int], Optional[str]]:
+    """Parse accumulated digits into workspace number and optional monitor.
+
+    Feature 057: Workspace-to-Monitor Move (User Story 3)
+
+    Parsing rules:
+    - 1 digit: workspace only (e.g., "7" = workspace 7)
+    - 2 digits: workspace only (e.g., "23" = workspace 23)
+    - 3 digits: workspace + monitor (e.g., "231" = workspace 23, monitor 1 = HEADLESS-1)
+
+    Returns:
+        (workspace_number, monitor_name) tuple
+    """
+    if not accumulated_digits:
+        return (None, None)
+
+    # 1-2 digits: workspace only
+    if len(accumulated_digits) <= 2:
+        try:
+            workspace = int(accumulated_digits)
+            if 1 <= workspace <= 70:
+                return (workspace, None)
+        except ValueError:
+            pass
+        return (None, None)
+
+    # 3 digits: workspace + monitor
+    if len(accumulated_digits) == 3:
+        try:
+            workspace_str = accumulated_digits[:2]
+            monitor_digit = accumulated_digits[2]
+
+            workspace = int(workspace_str)
+            monitor = int(monitor_digit)
+
+            # Validate workspace (1-70) and monitor (1-3)
+            if 1 <= workspace <= 70 and 1 <= monitor <= 3:
+                monitor_name = f"HEADLESS-{monitor}"
+                return (workspace, monitor_name)
+        except ValueError:
+            pass
+        return (None, None)
+
+    # More than 3 digits: invalid
+    return (None, None)
+
+
 def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
     """Emit workspace preview JSON to stdout.
 
@@ -99,6 +146,9 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
         mode=mode,
     )
 
+    # Feature 057: Parse target monitor from accumulated digits (for move mode)
+    _, target_monitor = parse_workspace_and_monitor(accumulated_digits)
+
     # Convert to dict for JSON output (matches contract schema)
     output = {
         "visible": True,
@@ -107,6 +157,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
         "workspace_name": preview.workspace_name,
         "mode": preview.mode,
         "accumulated_digits": accumulated_digits,
+        "target_monitor": target_monitor or "",  # Feature 057: Target monitor for move mode (empty string if not set, not null)
         "apps": [
             {
                 "name": app.name,
