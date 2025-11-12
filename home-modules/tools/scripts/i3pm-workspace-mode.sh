@@ -53,8 +53,23 @@ case "$1" in
         "${jq_bin}" '.result // {}'
     fi
     ;;
+  nav)
+    # Feature 059: Arrow key navigation for interactive workspace menu
+    direction="${2:-}"
+    if [ -z "${direction}" ]; then
+      echo "nav subcommand requires a direction (up or down)" >&2
+      exit 1
+    fi
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.nav\",\"params\":{\"direction\":\"${direction}\"},\"id\":1}" | \
+      "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
+    ;;
+  delete)
+    # Feature 059: Delete key to close selected window
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.delete\",\"params\":{},\"id\":1}" | \
+      "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
+    ;;
   *)
-    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]}" >&2
+    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]|nav <up|down>|delete}" >&2
     exit 1
     ;;
 esac

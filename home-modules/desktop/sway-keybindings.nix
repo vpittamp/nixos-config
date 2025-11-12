@@ -140,12 +140,32 @@ in
     # System monitor
     "${modifier}+Shift+t" = "exec btop";
 
-    # ========== WORKSPACE MODE (Feature 042 + 058) ==========
+    # ========== WORKSPACE MODE (Feature 042 + 058 + 059) ==========
     # Platform-specific entry keybindings for workspace mode navigation
     # Visual feedback now via workspace bar (Feature 058), no more notifications
     # Hetzner (VNC): Control+0 works through VNC, CapsLock doesn't
     # M1 (Physical): CapsLock is handled via bindcode in sway.nix extraConfig
-    "Control+0" = "exec swaymsg 'mode \"→ WS\"'";
+    # Feature 072: Must call 'i3pm-workspace-mode enter' to trigger all-windows preview
+    "Control+0" = "exec i3pm-workspace-mode enter; exec swaymsg 'mode \"→ WS\"'";
     "Control+Shift+0" = "exec swaymsg 'mode \"⇒ WS\"'";
+
+    # ========== FEATURE 059: Interactive Workspace Menu Keybindings ==========
+    # Arrow key navigation for workspace preview card (navigate through workspace list)
+    # These keybindings need to be added to sway.nix in the workspace mode definitions:
+    #
+    # In mode "→ WS" (goto mode) - add after line ~676:
+    #   bindsym Down exec i3pm-workspace-mode nav down
+    #   bindsym Up exec i3pm-workspace-mode nav up
+    #   bindsym Delete exec i3pm-workspace-mode delete
+    #
+    # In mode "⇒ WS" (move mode) - add at equivalent location:
+    #   bindsym Down exec i3pm-workspace-mode nav down
+    #   bindsym Up exec i3pm-workspace-mode nav up
+    #   bindsym Delete exec i3pm-workspace-mode delete
+    #
+    # Note: Return and Escape are already defined in workspace modes
+    # Return executes navigation to selected workspace/window (US2)
+    # Delete closes selected window (US3)
+    # Escape cancels and exits mode
   };
 }

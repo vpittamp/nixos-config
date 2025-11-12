@@ -670,6 +670,13 @@ in
           # Feature 072: Colon to switch to project mode
           bindsym colon exec i3pm-workspace-mode char :
 
+          # Feature 059: Arrow key navigation for interactive workspace menu
+          bindsym Down exec i3pm-workspace-mode nav down
+          bindsym Up exec i3pm-workspace-mode nav up
+          bindsym Home exec i3pm-workspace-mode nav home
+          bindsym End exec i3pm-workspace-mode nav end
+          bindsym Delete exec i3pm-workspace-mode delete
+
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"
           bindsym KP_Enter exec "i3pm-workspace-mode execute"
@@ -719,6 +726,13 @@ in
 
           # Feature 072: Colon to switch to project mode
           bindsym colon exec i3pm-workspace-mode char :
+
+          # Feature 059: Arrow key navigation for interactive workspace menu
+          bindsym Down exec i3pm-workspace-mode nav down
+          bindsym Up exec i3pm-workspace-mode nav up
+          bindsym Home exec i3pm-workspace-mode nav home
+          bindsym End exec i3pm-workspace-mode nav end
+          bindsym Delete exec i3pm-workspace-mode delete
 
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"

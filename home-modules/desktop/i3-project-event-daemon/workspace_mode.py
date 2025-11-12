@@ -179,15 +179,22 @@ class WorkspaceModeManager:
         if not self._state.active:
             raise RuntimeError("Cannot execute: workspace mode not active")
 
+        # Feature 059: Emit enter_key_select event for selection-based navigation
+        # workspace-preview-daemon will handle navigation if selection exists
+        await self._emit_enter_key_select_event()
+
         # Determine action based on input type
         if self._state.input_type == "project":
             return await self._execute_project_switch()
         elif self._state.input_type == "workspace":
             return await self._execute_workspace_switch()
         else:
-            # No input (empty)
-            logger.info("Execute called with no input, exiting mode without action")
-            await self.cancel()
+            # No input (empty) - Feature 059: workspace-preview-daemon handles selection-based navigation
+            logger.info("Execute called with no input, letting workspace-preview-daemon handle selection")
+            # Exit mode and reset state
+            await self._i3.command("mode default")
+            self._state.reset()
+            await self._emit_workspace_mode_event("execute")
             return None
 
     async def _execute_workspace_switch(self) -> Dict[str, any]:
@@ -642,6 +649,7 @@ class WorkspaceModeManager:
             "payload": {
                 "event_type": event_type,
                 "pending_workspace": pending_workspace.model_dump() if pending_workspace else None,
+                "mode_type": self._state.mode_type,  # Feature 059: T024 - Add mode for move-mode styling
                 "timestamp": time.time()
             }
         }
@@ -654,6 +662,161 @@ class WorkspaceModeManager:
             logger.debug(f"Emitted workspace_mode event: type={event_type}, pending_ws={pending_workspace.workspace_number if pending_workspace else None}")
         except Exception as e:
             logger.warning(f"Failed to broadcast workspace_mode event: {e}")
+
+    async def _emit_enter_key_select_event(self) -> None:
+        """Emit enter key selection event via IPC (Feature 059).
+
+        Notifies workspace-preview-daemon that Enter was pressed for selection-based navigation.
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping enter_key_select event")
+            return
+
+        # Create event payload for Feature 059 enter key selection (matches contract schema)
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "enter_key_select",
+                "payload": {
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "accumulated_digits": self._state.accumulated_digits or "",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted enter_key_select event: mode={event_payload['params']['params']['payload']['mode']}, digits={self._state.accumulated_digits}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast enter_key_select event: {e}")
+
+    async def _emit_arrow_key_nav_event(self, direction: str) -> None:
+        """Emit arrow key navigation event via IPC (Feature 059).
+
+        Notifies workspace-preview-daemon that Up/Down arrow key was pressed for selection navigation.
+
+        Args:
+            direction: "up" or "down"
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping arrow_key_nav event")
+            return
+
+        # Create event payload for Feature 059 arrow key navigation (matches contract schema)
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "arrow_key_nav",
+                "payload": {
+                    "direction": direction,
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted arrow_key_nav event: direction={direction}, mode={event_payload['params']['payload']['mode']}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast arrow_key_nav event: {e}")
+
+    async def _emit_delete_key_close_event(self) -> None:
+        """Emit delete key close event via IPC (Feature 059).
+
+        Notifies workspace-preview-daemon that Delete key was pressed to close selected window.
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping delete_key_close event")
+            return
+
+        # Create event payload for Feature 059 delete key close (matches contract schema)
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "delete_key_close",
+                "payload": {
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted delete_key_close event: mode={event_payload['params']['payload']['mode']}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast delete_key_close event: {e}")
+
+    async def _emit_home_key_nav_event(self) -> None:
+        """Emit Home key navigation event via IPC (Feature 059: T059).
+
+        Notifies workspace-preview-daemon that Home key was pressed to jump to first item.
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping home_key_nav event")
+            return
+
+        # Create event payload for Feature 059 Home key navigation
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "home_key_nav",
+                "payload": {
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted home_key_nav event: mode={event_payload['params']['payload']['mode']}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast home_key_nav event: {e}")
+
+    async def _emit_end_key_nav_event(self) -> None:
+        """Emit End key navigation event via IPC (Feature 059: T059).
+
+        Notifies workspace-preview-daemon that End key was pressed to jump to last item.
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping end_key_nav event")
+            return
+
+        # Create event payload for Feature 059 End key navigation
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "end_key_nav",
+                "payload": {
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted end_key_nav event: mode={event_payload['params']['payload']['mode']}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast end_key_nav event: {e}")
 
     async def _emit_project_mode_event(self, event_type: str) -> None:
         """Emit project mode event via IPC with pending project match.

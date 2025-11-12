@@ -386,6 +386,10 @@ class IPCServer:
                 result = await self._workspace_mode_state(params)
             elif method == "workspace_mode.history":
                 result = await self._workspace_mode_history(params)
+            elif method == "workspace_mode.nav":
+                result = await self._workspace_mode_nav(params)
+            elif method == "workspace_mode.delete":
+                result = await self._workspace_mode_delete(params)
 
             # Feature 058: Project management methods (T030-T033)
             elif method == "project_create":
@@ -4682,6 +4686,73 @@ class IPCServer:
             "history": [switch.to_dict() for switch in history],
             "total": total_count
         }
+
+    async def _workspace_mode_nav(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.nav IPC method for navigation (Feature 059).
+
+        Args:
+            params: {"direction": "up" | "down" | "home" | "end"}
+
+        Returns:
+            {"success": True}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+        direction = params.get("direction", "down")
+
+        if direction not in ("up", "down", "home", "end"):
+            raise ValueError(f"Invalid direction: {direction} (must be 'up', 'down', 'home', or 'end')")
+
+        # Emit navigation event to workspace-preview-daemon
+        if direction in ("up", "down"):
+            await manager._emit_arrow_key_nav_event(direction)
+        elif direction == "home":
+            await manager._emit_home_key_nav_event()
+        elif direction == "end":
+            await manager._emit_end_key_nav_event()
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type=f"workspace_mode::nav_{direction}",
+            duration_ms=duration_ms,
+            params={"direction": direction}
+        )
+
+        return {"success": True, "direction": direction}
+
+    async def _workspace_mode_delete(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.delete IPC method for window close (Feature 059).
+
+        Args:
+            params: {} (no parameters needed)
+
+        Returns:
+            {"success": True}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+
+        # Emit delete_key_close event to workspace-preview-daemon
+        await manager._emit_delete_key_close_event()
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::delete_window",
+            duration_ms=duration_ms,
+            params={}
+        )
+
+        return {"success": True}
 
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)
