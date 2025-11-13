@@ -1515,8 +1515,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                         navigation_handler.handle_end_key_event(mode)
 
                     # Feature 073: T044-T047 - Handle window action events (M, F, Shift+M)
-                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "window_action":
-                        payload = event.get("params", {}).get("payload", {})
+                    # NOTE: window_action events have double-nested params: params.params.type
+                    elif event.get("method") == "event" and event.get("params", {}).get("params", {}).get("type") == "window_action":
+                        payload = event.get("params", {}).get("params", {}).get("payload", {})
 
                         # Parse event payload
                         action = payload.get("action", "")
