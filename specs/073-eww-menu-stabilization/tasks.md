@@ -138,10 +138,10 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 
 ### Implementation for User Story 4
 
-- [ ] T040 [P] [US4] Implement async handle_window_move() with workspace validation (1-70) in home-modules/tools/sway-workspace-panel/action_handlers.py
-- [ ] T041 [P] [US4] Implement async handle_window_float_toggle() (immediate action) in home-modules/tools/sway-workspace-panel/action_handlers.py
-- [ ] T042 [P] [US4] Implement async handle_window_focus() for split container focus in home-modules/tools/sway-workspace-panel/action_handlers.py
-- [ ] T043 [P] [US4] Implement async handle_window_mark() for window marking in home-modules/tools/sway-workspace-panel/action_handlers.py
+- [X] T040 [P] [US4] Implement async handle_window_move() with workspace validation (1-70) in home-modules/tools/sway-workspace-panel/action_handlers.py
+- [X] T041 [P] [US4] Implement async handle_window_float_toggle() (immediate action) in home-modules/tools/sway-workspace-panel/action_handlers.py
+- [X] T042 [P] [US4] Implement async handle_window_focus() for split container focus in home-modules/tools/sway-workspace-panel/action_handlers.py
+- [X] T043 [P] [US4] Implement async handle_window_mark() for window marking in home-modules/tools/sway-workspace-panel/action_handlers.py
 - [ ] T044 [US4] Implement sub-mode entry handlers (enter_move_mode, enter_mark_mode) in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
 - [ ] T045 [US4] Implement digit accumulation logic for move window sub-mode in home-modules/tools/sway-workspace-panel/sub_mode_manager.py
 - [ ] T046 [US4] Implement Enter key confirmation for sub-mode execution in home-modules/tools/sway-workspace-panel/workspace-preview-daemon

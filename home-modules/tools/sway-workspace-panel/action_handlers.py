@@ -319,3 +319,408 @@ async def verify_window_closed(
         await asyncio.sleep(0.05)
 
     return False  # Timeout - window still exists
+
+
+async def handle_window_move(
+    conn: i3ipc.aio.Connection,
+    window_id: int,
+    target_workspace: int,
+    debounce_tracker: Optional[DebounceTracker] = None
+) -> ActionResult:
+    """Move a window to a different workspace via Sway IPC move command.
+
+    This is a sub-mode action for User Story 4 (P3 priority). The move workflow
+    requires user to:
+    1. Press M key to enter move sub-mode
+    2. Type workspace number (1-70)
+    3. Press Enter to confirm
+
+    Implementation:
+    1. Validate workspace number (1-70 range per spec)
+    2. Check debounce - reject if <100ms since last move of this window
+    3. Send Sway IPC command: `[con_id={window_id}] move container to workspace number {target_workspace}`
+    4. Return ActionResult with success/error status
+
+    Error Handling:
+    - INVALID_WORKSPACE: Workspace number not in 1-70 range
+    - WINDOW_NOT_FOUND: Container ID no longer exists
+    - IPC_TIMEOUT: Sway IPC command took >500ms
+    - DEBOUNCE_REJECTED: Move attempted too soon after previous move
+
+    Args:
+        conn: Active i3ipc.aio connection to Sway
+        window_id: Sway container ID of window to move
+        target_workspace: Destination workspace number (1-70)
+        debounce_tracker: Optional custom tracker (default: global singleton)
+
+    Returns:
+        ActionResult with success status, latency, and error details
+
+    Example:
+        result = await handle_window_move(conn, 12345, target_workspace=23)
+        if not result.success:
+            if result.error_code == ActionErrorCode.INVALID_WORKSPACE:
+                notify_user("Invalid workspace number")
+    """
+    start_time = time.monotonic()
+    tracker = debounce_tracker or _debounce_tracker
+
+    # Validate workspace number (1-70 per spec)
+    if not (1 <= target_workspace <= 70):
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MOVE,
+            window_id=window_id,
+            error_code=ActionErrorCode.INVALID_WORKSPACE,
+            error_message=f"Invalid workspace number: {target_workspace} (must be 1-70)",
+            latency_ms=(time.monotonic() - start_time) * 1000
+        )
+
+    # Check debounce
+    if not tracker.should_allow(ActionType.MOVE, window_id):
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MOVE,
+            window_id=window_id,
+            error_code=ActionErrorCode.DEBOUNCE_REJECTED,
+            error_message=f"Move rejected - too soon after previous move (min {tracker.min_interval_ms}ms)",
+            latency_ms=0.0
+        )
+
+    try:
+        # Send Sway IPC move command
+        command = f"[con_id={window_id}] move container to workspace number {target_workspace}"
+        replies = await conn.command(command)
+
+        # Check if command succeeded
+        if not replies or not replies[0].success:
+            error_msg = replies[0].error if replies else "Unknown IPC error"
+            return ActionResult(
+                success=False,
+                action_type=ActionType.MOVE,
+                window_id=window_id,
+                error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+                error_message=f"Sway IPC error: {error_msg}",
+                latency_ms=(time.monotonic() - start_time) * 1000
+            )
+
+        # Success
+        latency_ms = (time.monotonic() - start_time) * 1000
+        return ActionResult(
+            success=True,
+            action_type=ActionType.MOVE,
+            window_id=window_id,
+            latency_ms=latency_ms
+        )
+
+    except asyncio.TimeoutError:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MOVE,
+            window_id=window_id,
+            error_code=ActionErrorCode.IPC_TIMEOUT,
+            error_message="Sway IPC timeout (>500ms)",
+            latency_ms=500.0
+        )
+    except Exception as e:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MOVE,
+            window_id=window_id,
+            error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+            error_message=f"Unexpected error: {str(e)}",
+            latency_ms=(time.monotonic() - start_time) * 1000
+        )
+
+
+async def handle_window_float_toggle(
+    conn: i3ipc.aio.Connection,
+    window_id: int,
+    debounce_tracker: Optional[DebounceTracker] = None
+) -> ActionResult:
+    """Toggle a window between floating and tiling modes via Sway IPC.
+
+    This is an immediate action for User Story 4 (P3 priority). No sub-mode required -
+    pressing F key immediately toggles the current window's floating state.
+
+    Implementation:
+    1. Check debounce - reject if <100ms since last toggle of this window
+    2. Send Sway IPC command: `[con_id={window_id}] floating toggle`
+    3. Return ActionResult with success/error status
+
+    Error Handling:
+    - WINDOW_NOT_FOUND: Container ID no longer exists
+    - IPC_TIMEOUT: Sway IPC command took >500ms
+    - DEBOUNCE_REJECTED: Toggle attempted too soon after previous toggle
+
+    Args:
+        conn: Active i3ipc.aio connection to Sway
+        window_id: Sway container ID of window to toggle
+        debounce_tracker: Optional custom tracker (default: global singleton)
+
+    Returns:
+        ActionResult with success status, latency, and error details
+
+    Example:
+        result = await handle_window_float_toggle(conn, 12345)
+        if result.success:
+            notify_user("Window floating state toggled")
+    """
+    start_time = time.monotonic()
+    tracker = debounce_tracker or _debounce_tracker
+
+    # Check debounce
+    if not tracker.should_allow(ActionType.FLOAT_TOGGLE, window_id):
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FLOAT_TOGGLE,
+            window_id=window_id,
+            error_code=ActionErrorCode.DEBOUNCE_REJECTED,
+            error_message=f"Float toggle rejected - too soon after previous toggle (min {tracker.min_interval_ms}ms)",
+            latency_ms=0.0
+        )
+
+    try:
+        # Send Sway IPC floating toggle command
+        command = f"[con_id={window_id}] floating toggle"
+        replies = await conn.command(command)
+
+        # Check if command succeeded
+        if not replies or not replies[0].success:
+            error_msg = replies[0].error if replies else "Unknown IPC error"
+            return ActionResult(
+                success=False,
+                action_type=ActionType.FLOAT_TOGGLE,
+                window_id=window_id,
+                error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+                error_message=f"Sway IPC error: {error_msg}",
+                latency_ms=(time.monotonic() - start_time) * 1000
+            )
+
+        # Success
+        latency_ms = (time.monotonic() - start_time) * 1000
+        return ActionResult(
+            success=True,
+            action_type=ActionType.FLOAT_TOGGLE,
+            window_id=window_id,
+            latency_ms=latency_ms
+        )
+
+    except asyncio.TimeoutError:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FLOAT_TOGGLE,
+            window_id=window_id,
+            error_code=ActionErrorCode.IPC_TIMEOUT,
+            error_message="Sway IPC timeout (>500ms)",
+            latency_ms=500.0
+        )
+    except Exception as e:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FLOAT_TOGGLE,
+            window_id=window_id,
+            error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+            error_message=f"Unexpected error: {str(e)}",
+            latency_ms=(time.monotonic() - start_time) * 1000
+        )
+
+
+async def handle_window_focus(
+    conn: i3ipc.aio.Connection,
+    window_id: int,
+    debounce_tracker: Optional[DebounceTracker] = None
+) -> ActionResult:
+    """Focus a window in a split container via Sway IPC.
+
+    This is an immediate action for User Story 4 (P3 priority). Useful when multiple
+    windows are in the same workspace in split containers - pressing Enter focuses
+    the selected window.
+
+    Implementation:
+    1. Check debounce - reject if <100ms since last focus of this window
+    2. Send Sway IPC command: `[con_id={window_id}] focus`
+    3. Return ActionResult with success/error status
+
+    Error Handling:
+    - WINDOW_NOT_FOUND: Container ID no longer exists
+    - IPC_TIMEOUT: Sway IPC command took >500ms
+    - DEBOUNCE_REJECTED: Focus attempted too soon after previous focus
+
+    Args:
+        conn: Active i3ipc.aio connection to Sway
+        window_id: Sway container ID of window to focus
+        debounce_tracker: Optional custom tracker (default: global singleton)
+
+    Returns:
+        ActionResult with success status, latency, and error details
+
+    Example:
+        result = await handle_window_focus(conn, 12345)
+        if result.success:
+            # Window now has keyboard focus
+            pass
+    """
+    start_time = time.monotonic()
+    tracker = debounce_tracker or _debounce_tracker
+
+    # Check debounce
+    if not tracker.should_allow(ActionType.FOCUS, window_id):
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FOCUS,
+            window_id=window_id,
+            error_code=ActionErrorCode.DEBOUNCE_REJECTED,
+            error_message=f"Focus rejected - too soon after previous focus (min {tracker.min_interval_ms}ms)",
+            latency_ms=0.0
+        )
+
+    try:
+        # Send Sway IPC focus command
+        command = f"[con_id={window_id}] focus"
+        replies = await conn.command(command)
+
+        # Check if command succeeded
+        if not replies or not replies[0].success:
+            error_msg = replies[0].error if replies else "Unknown IPC error"
+            return ActionResult(
+                success=False,
+                action_type=ActionType.FOCUS,
+                window_id=window_id,
+                error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+                error_message=f"Sway IPC error: {error_msg}",
+                latency_ms=(time.monotonic() - start_time) * 1000
+            )
+
+        # Success
+        latency_ms = (time.monotonic() - start_time) * 1000
+        return ActionResult(
+            success=True,
+            action_type=ActionType.FOCUS,
+            window_id=window_id,
+            latency_ms=latency_ms
+        )
+
+    except asyncio.TimeoutError:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FOCUS,
+            window_id=window_id,
+            error_code=ActionErrorCode.IPC_TIMEOUT,
+            error_message="Sway IPC timeout (>500ms)",
+            latency_ms=500.0
+        )
+    except Exception as e:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.FOCUS,
+            window_id=window_id,
+            error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+            error_message=f"Unexpected error: {str(e)}",
+            latency_ms=(time.monotonic() - start_time) * 1000
+        )
+
+
+async def handle_window_mark(
+    conn: i3ipc.aio.Connection,
+    window_id: int,
+    mark_name: str,
+    debounce_tracker: Optional[DebounceTracker] = None
+) -> ActionResult:
+    """Mark a window with a named identifier via Sway IPC.
+
+    This is a sub-mode action for User Story 4 (P3 priority). The mark workflow
+    requires user to:
+    1. Press Shift+M key to enter mark sub-mode
+    2. Type mark name (alphanumeric + underscore + hyphen)
+    3. Press Enter to confirm
+
+    Marks are useful for:
+    - Quick window identification in layouts
+    - Custom keyboard shortcuts to specific windows
+    - Window grouping and organization
+
+    Implementation:
+    1. Check debounce - reject if <100ms since last mark of this window
+    2. Send Sway IPC command: `[con_id={window_id}] mark {mark_name}`
+    3. Return ActionResult with success/error status
+
+    Error Handling:
+    - WINDOW_NOT_FOUND: Container ID no longer exists
+    - IPC_TIMEOUT: Sway IPC command took >500ms
+    - DEBOUNCE_REJECTED: Mark attempted too soon after previous mark
+
+    Args:
+        conn: Active i3ipc.aio connection to Sway
+        window_id: Sway container ID of window to mark
+        mark_name: Name for the mark (alphanumeric + _ + -)
+        debounce_tracker: Optional custom tracker (default: global singleton)
+
+    Returns:
+        ActionResult with success status, latency, and error details
+
+    Example:
+        result = await handle_window_mark(conn, 12345, mark_name="browser_main")
+        if result.success:
+            # Can now reference window via: [con_mark="browser_main"] command
+            pass
+    """
+    start_time = time.monotonic()
+    tracker = debounce_tracker or _debounce_tracker
+
+    # Check debounce
+    if not tracker.should_allow(ActionType.MARK, window_id):
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MARK,
+            window_id=window_id,
+            error_code=ActionErrorCode.DEBOUNCE_REJECTED,
+            error_message=f"Mark rejected - too soon after previous mark (min {tracker.min_interval_ms}ms)",
+            latency_ms=0.0
+        )
+
+    try:
+        # Send Sway IPC mark command
+        # Note: Sway replaces existing marks on the same window
+        command = f'[con_id={window_id}] mark {mark_name}'
+        replies = await conn.command(command)
+
+        # Check if command succeeded
+        if not replies or not replies[0].success:
+            error_msg = replies[0].error if replies else "Unknown IPC error"
+            return ActionResult(
+                success=False,
+                action_type=ActionType.MARK,
+                window_id=window_id,
+                error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+                error_message=f"Sway IPC error: {error_msg}",
+                latency_ms=(time.monotonic() - start_time) * 1000
+            )
+
+        # Success
+        latency_ms = (time.monotonic() - start_time) * 1000
+        return ActionResult(
+            success=True,
+            action_type=ActionType.MARK,
+            window_id=window_id,
+            latency_ms=latency_ms
+        )
+
+    except asyncio.TimeoutError:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MARK,
+            window_id=window_id,
+            error_code=ActionErrorCode.IPC_TIMEOUT,
+            error_message="Sway IPC timeout (>500ms)",
+            latency_ms=500.0
+        )
+    except Exception as e:
+        return ActionResult(
+            success=False,
+            action_type=ActionType.MARK,
+            window_id=window_id,
+            error_code=ActionErrorCode.WINDOW_NOT_FOUND,
+            error_message=f"Unexpected error: {str(e)}",
+            latency_ms=(time.monotonic() - start_time) * 1000
+        )
