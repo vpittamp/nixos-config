@@ -131,10 +131,10 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 
 ### Tests for User Story 4
 
-- [ ] T036 [P] [US4] Create sway-test test case for move window action in home-modules/tools/sway-test/tests/sway-tests/test_window_move.json
-- [ ] T037 [P] [US4] Create sway-test test case for float toggle action in home-modules/tools/sway-test/tests/sway-tests/test_window_float_toggle.json
-- [ ] T038 [P] [US4] Create pytest unit test for sub-mode state machine transitions in tests/workspace-preview-daemon/unit/test_sub_mode_manager.py
-- [ ] T039 [P] [US4] Create pytest integration test for move window workflow in tests/workspace-preview-daemon/integration/test_daemon_sub_modes.py
+- [X] T036 [P] [US4] Create sway-test test case for move window action in home-modules/tools/sway-test/tests/sway-tests/interactive-workspace-menu/test_window_move.json
+- [X] T037 [P] [US4] Create sway-test test case for float toggle action in home-modules/tools/sway-test/tests/sway-tests/interactive-workspace-menu/test_window_float_toggle.json
+- [X] T038 [P] [US4] Create pytest unit test for sub-mode state machine transitions in tests/workspace-preview-daemon/unit/test_sub_mode_manager.py (14/14 tests passing)
+- [X] T039 [P] [US4] Create pytest integration test for move window workflow in tests/workspace-preview-daemon/integration/test_daemon_sub_modes.py (5/6 tests passing - 1 requires T050)
 
 ### Implementation for User Story 4
 
