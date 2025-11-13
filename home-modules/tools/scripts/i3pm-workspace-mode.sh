@@ -78,8 +78,13 @@ case "$1" in
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.action\",\"params\":{\"action\":\"${action_value}\"},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
     ;;
+  backspace)
+    # Remove last character from accumulated input (workspace digits or project chars)
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.backspace\",\"params\":{},\"id\":1}" | \
+      "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
+    ;;
   *)
-    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]|nav <up|down>|delete|action <m|f|shift-m>}" >&2
+    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]|nav <up|down>|delete|action <m|f|shift-m>|backspace}" >&2
     exit 1
     ;;
 esac

@@ -314,7 +314,10 @@ class NavigationHandler:
         # Only handle selection-based navigation in all_windows mode
         if mode != "all_windows":
             # Delegate to existing Feature 072 digit navigation handler (i3pm daemon handles it)
-            print(f"DEBUG: Delegating to digit navigation (mode={mode})", file=sys.stderr)
+            print(f"DEBUG: Delegating to digit navigation (mode={mode}), closing menu", file=sys.stderr)
+            # Clear selection and hide preview after digit navigation
+            self.selection_manager.clear()
+            emit_preview(visible=False)
             return
 
         # Get selected item from SelectionManager (T032, T033)
@@ -1258,6 +1261,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
         print("DEBUG: Successfully subscribed to workspace_mode and project_mode events", file=sys.stderr, flush=True)
 
+        # Track current preview mode to distinguish digit navigation from selection navigation
+        current_preview_mode = "all_windows"  # Start in all_windows mode
+
         # Event loop: read incoming workspace_mode events
         buffer = ""
         while True:
@@ -1293,16 +1299,19 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             emit_preview(visible=False)
                         elif event_type == "execute":
                             # Feature 059: T028 - Execute selected item (workspace heading or window)
-                            print(f"DEBUG: Execute event received, delegating to NavigationHandler", file=sys.stderr, flush=True)
+                            print(f"DEBUG: Execute event received, delegating to NavigationHandler (mode={current_preview_mode})", file=sys.stderr, flush=True)
                             # Call NavigationHandler to execute selection (with fallback to digit navigation)
                             navigation_handler.handle_enter_key_event(
-                                mode="all_windows",
+                                mode=current_preview_mode,
                                 accumulated_digits=pending.get("accumulated_digits", "") if pending else ""
                             )
                         elif event_type == "enter":
                             # Feature 072: T016 - Show all windows preview on mode entry (User Story 1)
                             # T049: Performance logging for all_windows preview
                             start_time = time.time()
+
+                            # Set preview mode to all_windows (initial state)
+                            current_preview_mode = "all_windows"
 
                             # Open Eww window (GTK creates window surface, appears in Sway tree)
                             eww_open_window("workspace-preview")
@@ -1412,6 +1421,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             # Feature 059: Reset selection when digits are typed (switches to filtered view)
                             selection_manager.reset_selection()
 
+                            # Set preview mode to filtered_workspace (digit navigation mode)
+                            current_preview_mode = "filtered_workspace"
+
                             # Show/update preview card
                             emit_preview(
                                 visible=True,
@@ -1422,8 +1434,23 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                 accumulated_digits=pending.get("accumulated_digits", ""),
                             )
                         elif event_type == "digit" and pending is None:
-                            # No pending state on digit event - hide preview
-                            emit_preview(visible=False)
+                            # No pending state on digit event - switch back to all_windows mode
+                            current_preview_mode = "all_windows"
+
+                            # Show all windows preview again
+                            all_windows_preview = renderer.render_all_windows()
+                            workspace_groups = [
+                                {"workspace_num": group["workspace_num"], "windows": group["windows"]}
+                                for group in all_windows_preview.get("workspace_groups", [])
+                            ]
+                            selection_manager.initialize_items(workspace_groups, move_mode=False)
+
+                            output = {
+                                **all_windows_preview,
+                                "selection_state": selection_manager.get_selection_state(),
+                            }
+                            navigation_handler.cache_preview_data(output, mode="goto")
+                            print(json.dumps(output), flush=True)
 
                     # Option A: Unified Smart Detection - Handle project_mode events
                     elif event.get("method") == "event" and event.get("params", {}).get("type") == "project_mode":

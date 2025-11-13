@@ -676,6 +676,7 @@ in
           bindsym Home exec i3pm-workspace-mode nav home
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
+          bindsym BackSpace exec i3pm-workspace-mode backspace
 
           # Feature 073: Per-window actions for interactive menu (T048, T049)
           bindsym m exec i3pm-workspace-mode action m
@@ -738,6 +739,7 @@ in
           bindsym Home exec i3pm-workspace-mode nav home
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
+          bindsym BackSpace exec i3pm-workspace-mode backspace
 
           # Feature 073: Per-window actions for interactive menu (T048, T049)
           bindsym m exec i3pm-workspace-mode action m

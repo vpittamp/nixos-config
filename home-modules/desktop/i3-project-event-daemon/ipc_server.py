@@ -392,6 +392,8 @@ class IPCServer:
                 result = await self._workspace_mode_delete(params)
             elif method == "workspace_mode.action":
                 result = await self._workspace_mode_action(params)
+            elif method == "workspace_mode.backspace":
+                result = await self._workspace_mode_backspace(params)
 
             # Feature 058: Project management methods (T030-T033)
             elif method == "project_create":
@@ -1795,9 +1797,11 @@ class IPCServer:
 
                         # Get project from marks or I3PM_PROJECT_NAME
                         project = None
+                        scope = None
                         for mark in window.marks:
-                            if mark.startswith("project:"):
+                            if mark.startswith("scoped:") or mark.startswith("global:"):
                                 mark_parts = mark.split(":")
+                                scope = mark_parts[0] if len(mark_parts) >= 1 else None
                                 project = mark_parts[1] if len(mark_parts) >= 2 else None
                                 break
                         if not project:
@@ -1805,8 +1809,9 @@ class IPCServer:
 
                         # Build marks list (include project mark for consistency)
                         marks = list(window.marks)
-                        if project and not any(m.startswith("project:") for m in marks):
-                            marks.append(f"project:{project}")
+                        if project and not any(m.startswith("scoped:") or m.startswith("global:") for m in marks):
+                            # Default to scoped if we don't have scope info
+                            marks.append(f"{scope or 'scoped'}:{project}")
 
                         # Get window class
                         window_class = window.window_class if hasattr(window, 'window_class') and window.window_class else (window.app_id if hasattr(window, 'app_id') else "unknown")
@@ -1914,10 +1919,10 @@ class IPCServer:
             is_wayland_window = hasattr(node, 'app_id') and node.app_id and not node.window
 
             if is_x11_window or is_wayland_window:
-                # Get project from marks (format: project:PROJECT_NAME:WINDOW_ID)
+                # Get project from marks (format: SCOPE:PROJECT:WINDOW_ID)
                 project = None
                 for mark in node.marks:
-                    if mark.startswith("project:"):
+                    if mark.startswith("scoped:") or mark.startswith("global:"):
                         mark_parts = mark.split(":")
                         project = mark_parts[1] if len(mark_parts) >= 2 else None
                         break
@@ -3190,13 +3195,14 @@ class IPCServer:
             # Find windows matching project
             # Only restore windows marked with project (Feature 061: Unified format)
             # Also restore scratchpad terminals (Feature 062: Project-scoped scratchpads)
-            # Format: project:PROJECT:WINDOW_ID or scratchpad:PROJECT
+            # Format: SCOPE:PROJECT:WINDOW_ID or scratchpad:PROJECT
             window_ids_to_restore = []
-            project_mark_prefix = f"project:{project_name}:"
+            scoped_mark_prefix = f"scoped:{project_name}:"
+            global_mark_prefix = f"global:{project_name}:"
             scratchpad_mark = f"scratchpad:{project_name}"
             for window in scratchpad_windows:
                 for mark in window.marks:
-                    if mark.startswith(project_mark_prefix):
+                    if mark.startswith(scoped_mark_prefix) or mark.startswith(global_mark_prefix):
                         window_ids_to_restore.append(window.id)
                         logger.debug(
                             f"Will restore project window {window.id} "
@@ -3765,7 +3771,7 @@ class IPCServer:
                     }
             
             # Get i3 marks
-            i3pm_marks = [m for m in (window.marks or []) if m.startswith("project:") or m.startswith("app:")]
+            i3pm_marks = [m for m in (window.marks or []) if m.startswith("scoped:") or m.startswith("global:") or m.startswith("app:")]
             
             # Get normalized class
             from .services.window_identifier import normalize_class, get_window_identity
@@ -4773,6 +4779,37 @@ class IPCServer:
         )
 
         return {"success": True}
+
+    async def _workspace_mode_backspace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.backspace IPC method for removing last character.
+
+        Supports both workspace navigation (digits) and project search (chars).
+
+        Args:
+            params: {} (no parameters needed)
+
+        Returns:
+            {"success": True, "accumulated": str}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+
+        # Call backspace() method which removes last character and broadcasts event
+        accumulated = await manager.backspace()
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type="workspace_mode::backspace",
+            duration_ms=duration_ms,
+            params={}
+        )
+
+        return {"success": True, "accumulated": accumulated}
 
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)

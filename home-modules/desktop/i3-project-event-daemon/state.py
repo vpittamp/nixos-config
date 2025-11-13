@@ -168,9 +168,9 @@ class StateManager:
 
                 # Check if this is a window (has window_id)
                 if container.window:
-                    # Look for project marks (format: project:PROJECT_NAME:WINDOW_ID)
+                    # Look for project marks (format: SCOPE:PROJECT:WINDOW_ID)
                     project_marks = [
-                        mark for mark in container.marks if mark.startswith("project:")
+                        mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
                     ]
 
                     if project_marks:

@@ -330,8 +330,7 @@ async def filter_windows_by_project(
         window_id = window.id
 
         # Get project and scope from window marks
-        # Old format: project:PROJECT:WINDOW_ID (assume scoped)
-        # New format: SCOPE:PROJECT:WINDOW_ID (explicit scope)
+        # Format: SCOPE:PROJECT:WINDOW_ID (explicit scope)
         # Scratchpad format: scratchpad:PROJECT (Feature 062 - project-scoped scratchpads)
         window_project = None
         window_scope = None
@@ -344,14 +343,8 @@ async def filter_windows_by_project(
                 window_scope = "scoped"
                 logger.debug(f"Window {window_id} is scratchpad terminal for project: {window_project}")
                 break
-            elif mark.startswith("project:"):
-                # Old format - assume scoped
-                mark_parts = mark.split(":")
-                window_project = mark_parts[1] if len(mark_parts) >= 2 else None
-                window_scope = "scoped"
-                break
             elif mark.startswith("scoped:") or mark.startswith("global:"):
-                # New format - explicit scope
+                # Format: SCOPE:PROJECT:WINDOW_ID
                 mark_parts = mark.split(":")
                 window_scope = mark_parts[0]
                 window_project = mark_parts[1] if len(mark_parts) >= 2 else None

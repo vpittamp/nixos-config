@@ -166,6 +166,48 @@ class WorkspaceModeManager:
 
         return self._state.accumulated_chars
 
+    async def backspace(self) -> str:
+        """Remove last character from accumulated input.
+
+        Supports both workspace navigation (digits) and project search (chars).
+
+        Returns:
+            Updated accumulated string (digits or chars depending on input_type)
+
+        Raises:
+            RuntimeError: If mode is not active
+        """
+        start_time = time.time()
+
+        if not self._state.active:
+            raise RuntimeError("Cannot backspace: workspace mode not active")
+
+        # Determine which field to update based on input type
+        if self._state.input_type == "project":
+            # Remove last char from project search
+            if self._state.accumulated_chars:
+                self._state.accumulated_chars = self._state.accumulated_chars[:-1]
+                await self._emit_project_mode_event("char")
+                logger.debug(f"Backspace in project mode, remaining: '{self._state.accumulated_chars}'")
+            else:
+                logger.debug("Backspace in project mode but no chars to remove")
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Backspace completed in project mode (took {elapsed_ms:.2f}ms)")
+            return self._state.accumulated_chars
+        else:
+            # Remove last digit from workspace navigation (input_type is "workspace" or None)
+            if self._state.accumulated_digits:
+                self._state.accumulated_digits = self._state.accumulated_digits[:-1]
+                await self._emit_workspace_mode_event("digit")
+                logger.debug(f"Backspace in workspace mode, remaining: '{self._state.accumulated_digits}'")
+            else:
+                logger.debug("Backspace in workspace mode but no digits to remove")
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Backspace completed in workspace mode (took {elapsed_ms:.2f}ms)")
+            return self._state.accumulated_digits
+
     async def execute(self) -> Optional[Dict[str, any]]:
         """Execute workspace switch OR project switch based on input type.
 
@@ -248,12 +290,12 @@ class WorkspaceModeManager:
             # Record history (Feature 042: US4)
             await self._record_switch(workspace, output, self._state.mode_type)
 
+            # Feature 058: Emit execute event BEFORE reset (so workspace-preview-daemon gets pending state)
+            await self._emit_workspace_mode_event("execute")
+
             # Reset state
             mode_type = self._state.mode_type  # Save for return value
             self._state.reset()
-
-            # Feature 058: Emit execute event AFTER reset (clears pending workspace highlight)
-            await self._emit_workspace_mode_event("execute")
 
             return {
                 "type": "workspace",
