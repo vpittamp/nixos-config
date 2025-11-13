@@ -29,6 +29,13 @@ from selection_models.selection_state import SelectionState, NavigableItem, Prev
 from preview_renderer import PreviewRenderer
 from keyboard_hint_manager import KeyboardHints  # Feature 073: T011 - Keyboard hint generation
 from sub_mode_manager import SubModeContext, SubMode  # Feature 073: T011 - Sub-mode state tracking
+from action_handlers import (  # Feature 073: T040-T043 - Window action handlers
+    handle_window_move,
+    handle_window_float_toggle,
+    handle_window_focus,
+    handle_window_mark,
+    ActionType,
+)
 
 # Socket path matches systemd socket unit configuration
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
@@ -619,6 +626,218 @@ class NavigationHandler:
             print(f"WARNING: Failed to update keyboard hints: {e}", file=sys.stderr, flush=True)
 
         print(f"DEBUG: Re-emitted preview with selection_index={selection_dict['selected_index']}", file=sys.stderr, flush=True)
+
+    def handle_m_key_event(self, mode: str) -> None:
+        """Handle M key to enter move window sub-mode (Feature 073: T044).
+
+        Args:
+            mode: Preview mode when M was pressed ("all_windows", etc.)
+        """
+        # Only handle in all_windows mode
+        if mode != "all_windows":
+            return
+
+        # Get selected item
+        selected_item = self.selection_manager.get_selected_item()
+        if selected_item is None or selected_item.is_workspace_heading():
+            print("DEBUG: M key ignored - no window selected", file=sys.stderr)
+            return
+
+        # Enter move window sub-mode
+        print(f"DEBUG: Entering MOVE_WINDOW sub-mode for window {selected_item.window_id}", file=sys.stderr)
+        self.sub_mode_context.enter_sub_mode(SubMode.MOVE_WINDOW)
+
+        # Re-emit preview with updated keyboard hints showing "Type workspace: _"
+        self._emit_preview_with_selection()
+
+    def handle_f_key_event(self, mode: str) -> None:
+        """Handle F key to toggle window floating state (Feature 073: T041).
+
+        This is an immediate action (no sub-mode).
+
+        Args:
+            mode: Preview mode when F was pressed ("all_windows", etc.)
+        """
+        # Only handle in all_windows mode
+        if mode != "all_windows":
+            return
+
+        # Get selected item
+        selected_item = self.selection_manager.get_selected_item()
+        if selected_item is None or selected_item.is_workspace_heading():
+            print("DEBUG: F key ignored - no window selected", file=sys.stderr)
+            return
+
+        # Execute float toggle action immediately
+        print(f"DEBUG: Toggling float for window {selected_item.window_id}", file=sys.stderr)
+
+        # Call async handler in sync context
+        import asyncio
+        try:
+            # Create async connection
+            async def toggle_float():
+                from i3ipc.aio import Connection as AsyncConnection
+                async_conn = await AsyncConnection(auto_reconnect=True).connect()
+                result = await handle_window_float_toggle(async_conn, selected_item.window_id)
+                return result
+
+            result = asyncio.run(toggle_float())
+
+            if result.success:
+                print(f"DEBUG: Float toggle successful in {result.latency_ms:.1f}ms", file=sys.stderr)
+                # Re-emit preview to update window state
+                self._emit_preview_with_selection()
+            else:
+                print(f"ERROR: Float toggle failed: {result.error_message}", file=sys.stderr)
+        except Exception as e:
+            print(f"ERROR: Float toggle exception: {e}", file=sys.stderr)
+
+    def handle_digit_key_event(self, digit: str, mode: str) -> None:
+        """Handle digit key press for sub-mode input (Feature 073: T045).
+
+        Args:
+            digit: Single digit character ('0'-'9')
+            mode: Preview mode when digit was pressed ("all_windows", etc.)
+        """
+        # Only handle in all_windows mode
+        if mode != "all_windows":
+            return
+
+        # Only process digits if in a sub-mode that accepts them
+        if self.sub_mode_context.current_mode == SubMode.MOVE_WINDOW:
+            accepted = self.sub_mode_context.add_digit(digit)
+            if accepted:
+                print(f"DEBUG: Digit '{digit}' accepted, accumulated: {self.sub_mode_context.accumulated_input}", file=sys.stderr)
+                # Re-emit preview with updated keyboard hints showing typed digits
+                self._emit_preview_with_selection()
+            else:
+                print(f"DEBUG: Digit '{digit}' rejected (would exceed range or invalid)", file=sys.stderr)
+
+    def handle_escape_key_event(self, mode: str) -> None:
+        """Handle Escape key to cancel sub-mode or exit workspace mode (Feature 073: T047).
+
+        Args:
+            mode: Preview mode when Escape was pressed ("all_windows", etc.")
+        """
+        # Only handle in all_windows mode
+        if mode != "all_windows":
+            return
+
+        # Check if we're in a sub-mode
+        if self.sub_mode_context.current_mode != SubMode.NORMAL:
+            print(f"DEBUG: Escape pressed, cancelling sub-mode {self.sub_mode_context.current_mode.value}", file=sys.stderr)
+            self.sub_mode_context.reset_to_normal()
+            # Re-emit preview with normal keyboard hints
+            self._emit_preview_with_selection()
+        else:
+            # Not in sub-mode - this is handled by i3pm daemon (mode exit)
+            print("DEBUG: Escape pressed in normal mode, delegating to daemon for mode exit", file=sys.stderr)
+
+    def handle_enter_key_with_submode(self, mode: str, accumulated_digits: str) -> None:
+        """Handle Enter key with sub-mode awareness (Feature 073: T046).
+
+        Extends handle_enter_key_event to check for sub-mode execution before
+        normal navigation.
+
+        Args:
+            mode: Preview mode when Enter was pressed ("all_windows", etc.)
+            accumulated_digits: Digits typed before Enter (for fallback)
+        """
+        # Only handle in all_windows mode
+        if mode != "all_windows":
+            self.handle_enter_key_event(mode, accumulated_digits)
+            return
+
+        # Check if we're in a sub-mode with valid input
+        if self.sub_mode_context.current_mode == SubMode.MOVE_WINDOW and self.sub_mode_context.can_execute():
+            # Execute move window action
+            selected_item = self.selection_manager.get_selected_item()
+            if selected_item and selected_item.is_window():
+                target_workspace = self.sub_mode_context.target_workspace
+                print(f"DEBUG: Executing move window {selected_item.window_id} to workspace {target_workspace}", file=sys.stderr)
+
+                # Call async handler
+                import asyncio
+                try:
+                    async def move_window():
+                        from i3ipc.aio import Connection as AsyncConnection
+                        async_conn = await AsyncConnection(auto_reconnect=True).connect()
+                        result = await handle_window_move(
+                            async_conn,
+                            selected_item.window_id,
+                            target_workspace
+                        )
+                        return result
+
+                    result = asyncio.run(move_window())
+
+                    if result.success:
+                        print(f"DEBUG: Move successful in {result.latency_ms:.1f}ms", file=sys.stderr)
+                        # Remove moved window from preview
+                        self.selection_manager.remove_item(selected_item)
+                        self.selection_manager.clamp_selection()
+                        # Reset sub-mode
+                        self.sub_mode_context.reset_to_normal()
+                        # Re-emit preview
+                        self._emit_preview_with_selection()
+
+                        # Check if menu should auto-exit (last window moved)
+                        if self.selection_manager.list_model and self.selection_manager.list_model.is_empty:
+                            print("DEBUG: Last window moved, auto-exiting workspace mode", file=sys.stderr)
+                            sway_conn = i3ipc.Connection()
+                            try:
+                                sway_conn.command('mode "default"')
+                                self.selection_manager.clear()
+                                eww_close_window("workspace-preview")
+                            except Exception as e:
+                                print(f"ERROR: Failed to auto-exit: {e}", file=sys.stderr)
+                    else:
+                        print(f"ERROR: Move failed: {result.error_message}", file=sys.stderr)
+                        # Reset sub-mode on failure
+                        self.sub_mode_context.reset_to_normal()
+                        self._emit_preview_with_selection()
+                except Exception as e:
+                    print(f"ERROR: Move exception: {e}", file=sys.stderr)
+                    self.sub_mode_context.reset_to_normal()
+                    self._emit_preview_with_selection()
+                return
+        elif self.sub_mode_context.current_mode == SubMode.MARK_WINDOW and self.sub_mode_context.can_execute():
+            # Execute mark window action (similar pattern to move)
+            selected_item = self.selection_manager.get_selected_item()
+            if selected_item and selected_item.is_window():
+                mark_name = self.sub_mode_context.mark_name
+                print(f"DEBUG: Executing mark window {selected_item.window_id} with name '{mark_name}'", file=sys.stderr)
+
+                import asyncio
+                try:
+                    async def mark_window():
+                        from i3ipc.aio import Connection as AsyncConnection
+                        async_conn = await AsyncConnection(auto_reconnect=True).connect()
+                        result = await handle_window_mark(
+                            async_conn,
+                            selected_item.window_id,
+                            mark_name
+                        )
+                        return result
+
+                    result = asyncio.run(mark_window())
+
+                    if result.success:
+                        print(f"DEBUG: Mark successful in {result.latency_ms:.1f}ms", file=sys.stderr)
+                    else:
+                        print(f"ERROR: Mark failed: {result.error_message}", file=sys.stderr)
+
+                    # Reset sub-mode and re-emit
+                    self.sub_mode_context.reset_to_normal()
+                    self._emit_preview_with_selection()
+                except Exception as e:
+                    print(f"ERROR: Mark exception: {e}", file=sys.stderr)
+                    self.sub_mode_context.reset_to_normal()
+                    self._emit_preview_with_selection()
+                return
+
+        # Not in sub-mode or invalid input - delegate to normal Enter handler
+        self.handle_enter_key_event(mode, accumulated_digits)
 
 
 def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kwargs) -> None:
