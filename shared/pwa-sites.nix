@@ -159,7 +159,7 @@
     # Boston Dog Butlers
     {
       name = "Boston Dog Butlers";
-      url = "www.timetopet.com/portal/services";
+      url = "https://www.timetopet.com/portal/services";
       domain = "bostondogbutlers.com";
       icon = "/etc/nixos/assets/icons/boston-dog-butlers.svg";
       description = "Boston Dog Butlers concierge dog walking and care services";
