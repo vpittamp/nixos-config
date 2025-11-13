@@ -390,6 +390,8 @@ class IPCServer:
                 result = await self._workspace_mode_nav(params)
             elif method == "workspace_mode.delete":
                 result = await self._workspace_mode_delete(params)
+            elif method == "workspace_mode.action":
+                result = await self._workspace_mode_action(params)
 
             # Feature 058: Project management methods (T030-T033)
             elif method == "project_create":
@@ -4734,6 +4736,40 @@ class IPCServer:
             event_type="workspace_mode::delete_window",
             duration_ms=duration_ms,
             params={}
+        )
+
+        return {"success": True}
+
+    async def _workspace_mode_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle workspace_mode.action IPC method for window actions (Feature 073).
+
+        Args:
+            params: {"action": str}  # "m" (move), "f" (float), "shift-m" (mark)
+
+        Returns:
+            {"success": True}
+        """
+        start_time = time.perf_counter()
+
+        if not hasattr(self.state_manager, 'workspace_mode_manager'):
+            raise RuntimeError("Workspace mode manager not initialized")
+
+        manager = self.state_manager.workspace_mode_manager
+
+        # Get action from params
+        action = params.get("action", "")
+        if not action:
+            raise ValueError("action parameter is required")
+
+        # Feature 073: Call the action() method which broadcasts the event
+        await manager.action(action)
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        await self._log_ipc_event(
+            event_type=f"workspace_mode::action_{action}",
+            duration_ms=duration_ms,
+            params={"action": action}
         )
 
         return {"success": True}

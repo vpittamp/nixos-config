@@ -1514,6 +1514,27 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                         # Handle End key jump to last item
                         navigation_handler.handle_end_key_event(mode)
 
+                    # Feature 073: T044-T047 - Handle window action events (M, F, Shift+M)
+                    elif event.get("method") == "event" and event.get("params", {}).get("type") == "window_action":
+                        payload = event.get("params", {}).get("payload", {})
+
+                        # Parse event payload
+                        action = payload.get("action", "")
+                        mode = payload.get("mode", "all_windows")
+
+                        print(f"DEBUG: Received window_action event: action={action}, mode={mode}", file=sys.stderr, flush=True)
+
+                        # Dispatch to appropriate handler
+                        if action == "m":
+                            navigation_handler.handle_m_key_event(mode)
+                        elif action == "f":
+                            navigation_handler.handle_f_key_event(mode)
+                        elif action == "shift-m":
+                            # Future: handle mark window action
+                            print(f"DEBUG: Mark window action not yet implemented", file=sys.stderr, flush=True)
+                        else:
+                            print(f"Warning: Unknown action '{action}'", file=sys.stderr, flush=True)
+
                 except json.JSONDecodeError as e:
                     print(f"Warning: Failed to parse IPC message: {e}", file=sys.stderr)
                 except Exception as e:
