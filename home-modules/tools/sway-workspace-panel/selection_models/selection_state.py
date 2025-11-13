@@ -10,7 +10,8 @@ Models:
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator, computed_field
+import sys
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
 from typing import List, Literal, Optional
 
 
@@ -52,13 +53,12 @@ class SelectionState(BaseModel):
             raise ValueError("selected_index must be non-negative")
         return v
 
-    @field_validator('item_type', mode='after')
-    @classmethod
-    def validate_window_id_for_window_type(cls, v: str, info) -> str:
+    @model_validator(mode='after')
+    def validate_window_id_for_window_type(self) -> 'SelectionState':
         """Validate window_id is present for window item_type."""
-        if v == "window" and info.data.get('window_id') is None:
+        if self.item_type == "window" and self.window_id is None:
             raise ValueError("window_id required when item_type is 'window'")
-        return v
+        return self
 
     def is_active(self) -> bool:
         """Check if selection is active (not None)."""
@@ -293,13 +293,24 @@ class PreviewListModel(BaseModel):
 
             # Add windows under this workspace
             for window in group['windows']:
-                items.append(NavigableItem.from_window(
+                # Skip windows without window_id (defensive coding)
+                window_id = window.get('window_id')
+                print(f"DEBUG: Creating NavigableItem for window '{window.get('name', 'unknown')}' with window_id={window_id} (type={type(window_id)})", file=sys.stderr)
+                if window_id is None:
+                    # Log warning and skip this window
+                    print(f"WARNING: Skipping window '{window.get('name', 'unknown')}' without window_id", file=sys.stderr)
+                    continue
+
+                # Create NavigableItem
+                nav_item = NavigableItem.from_window(
                     window_name=window['name'],
                     workspace_num=group['workspace_num'],
-                    window_id=window.get('window_id'),  # Sway container ID
+                    window_id=window_id,
                     icon_path=window.get('icon_path'),
                     position_index=position
-                ))
+                )
+                print(f"DEBUG: Created NavigableItem: type={nav_item.item_type}, window_id={nav_item.window_id}, pos={nav_item.position_index}", file=sys.stderr)
+                items.append(nav_item)
                 position += 1
 
         return cls(

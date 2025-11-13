@@ -46,7 +46,7 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel-v2";  # Changed name to force rebuild after adding window_id
+    name = "sway-workspace-panel-v11";  # Fixed Pydantic validator field order bug
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = ../tools/sway-workspace-panel;
     installPhase = ''
@@ -86,7 +86,12 @@ let
     exec ${pythonEnv}/bin/python -u ${workspacePreviewDaemonScript} "$@"
   '';
 
-  workspacePreviewCommand = "workspace-preview-daemon";
+  # Use journal reader wrapper to connect deflisten to systemd service
+  # This avoids deflisten trying to spawn the daemon (which causes issues)
+  workspacePreviewCommand = pkgs.writeShellScript "workspace-preview-journal-reader" ''
+    ${pkgs.systemd}/bin/journalctl --user -u workspace-preview-daemon -f -n 0 -o cat 2>/dev/null | \
+      ${pkgs.gnugrep}/bin/grep -v "^DEBUG:" | ${pkgs.gnugrep}/bin/grep -v "^WARNING:" | ${pkgs.gnugrep}/bin/grep -v "^ERROR:"
+  '';
 
   ewwConfigDir = "eww-workspace-bar";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
@@ -105,11 +110,9 @@ let
   # Feature 057: User Story 2 - Workspace Preview (T038)
   workspacePreviewDefs = ''
 ;; Feature 057: User Story 2 - Workspace Preview Card
-;; Subscribes to workspace_mode events from i3pm daemon
-;; Outputs line-delimited JSON with workspace contents
-(deflisten workspace_preview_data
-  :initial "{\"visible\": false}"
-  "${workspacePreviewCommand}")
+;; Updated by workspace-preview-daemon via `eww update` commands
+;; Changed from deflisten to defvar for <20ms navigation latency (Feature 072)
+(defvar workspace_preview_data "{\"visible\": false}")
   '';
 
   windowBlocks = lib.concatStringsSep "\n\n" (map (output:
@@ -769,8 +772,8 @@ button {
 '';
 
   # Feature 057: User Story 2 - Preview window controlled by daemon via eww open/close
-  # Open workspace-preview at startup to trigger deflisten, then daemon controls open/close
-  windowNames = (map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs) ++ [ "workspace-preview" ];
+  # Don't open workspace-preview at startup - daemon controls it dynamically
+  windowNames = (map (output: "workspace-bar-" + sanitize output.name) workspaceOutputs);
   openCommand =
     let
       args = lib.escapeShellArgs windowNames;
@@ -803,7 +806,39 @@ in
         RestartSec = 2;
         # Match Walker's XDG_DATA_DIRS for icon theme access (Papirus, Breeze, etc.)
         # Priority: curated apps → user apps → icon themes → system fallback
+        # PATH: Required for deflisten to find workspace-preview-daemon
+        # PYTHONPATH: Required for workspace-preview-daemon to find its modules
         Environment = [
+          "XDG_DATA_DIRS=${config.home.homeDirectory}/.local/share/i3pm-applications:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
+          "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
+          "PYTHONPATH=${workspacePanelDir}"
+        ];
+      };
+      Install = {
+        WantedBy = [ "sway-session.target" ];
+      };
+    };
+
+    # Workaround: Run workspace-preview-daemon as a dedicated service
+    # The deflisten should spawn it, but for some reason it's not working
+    # This service ensures the daemon runs independently
+    systemd.user.services.workspace-preview-daemon = {
+      Unit = {
+        Description = "Workspace preview daemon for Feature 057/072";
+        # Removed After = eww-workspace-bar to avoid circular dependency
+        # (both services are part of sway-session.target)
+        PartOf = [ "sway-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${workspacePreviewDaemonBin}/bin/workspace-preview-daemon";
+        Restart = "on-failure";
+        RestartSec = 2;
+        StandardOutput = "journal";
+        StandardError = "journal";
+        Environment = [
+          "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin"
+          "PYTHONPATH=${workspacePanelDir}"
           "XDG_DATA_DIRS=${config.home.homeDirectory}/.local/share/i3pm-applications:${config.home.homeDirectory}/.local/share:${config.home.profileDirectory}/share:/run/current-system/sw/share"
         ];
       };

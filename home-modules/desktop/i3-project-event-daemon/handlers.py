@@ -2326,19 +2326,20 @@ async def on_mode(
         logger.debug(f"Mode event: {mode_name}")
 
         # Feature 042: Workspace mode navigation
+        # Feature 072: Mode entry is now triggered via explicit IPC call (i3pm-workspace-mode enter)
+        # to enable all-windows preview. The Sway mode event is still emitted, but we skip
+        # redundant enter_mode() calls to prevent duplicate event broadcasts.
         if workspace_mode_manager and ipc_server:
             # Support both old (goto_workspace) and new (→ WS) mode names for compatibility
             if mode_name in ("goto_workspace", "→ WS"):
-                logger.info("Entering workspace goto mode")
-                await workspace_mode_manager.enter_mode("goto")
-                event_payload = workspace_mode_manager.create_event("enter")
-                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+                logger.debug("Sway entered workspace goto mode (event broadcast via IPC call)")
+                # Skip: await workspace_mode_manager.enter_mode("goto") - already called via IPC
+                # Skip: event broadcast - already done by enter_mode() via _emit_workspace_mode_event()
 
             elif mode_name in ("move_workspace", "⇒ WS"):
-                logger.info("Entering workspace move mode")
-                await workspace_mode_manager.enter_mode("move")
-                event_payload = workspace_mode_manager.create_event("enter")
-                await ipc_server.broadcast_event({"type": "workspace_mode", **event_payload.model_dump()})
+                logger.debug("Sway entered workspace move mode (event broadcast via IPC call)")
+                # Skip: await workspace_mode_manager.enter_mode("move") - already called via IPC
+                # Skip: event broadcast - already done by enter_mode() via _emit_workspace_mode_event()
 
             elif mode_name == "default":
                 # User exited workspace mode (Escape or successful execution)

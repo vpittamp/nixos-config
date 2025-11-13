@@ -234,6 +234,7 @@ class SelectionManager:
 
         selected_item = self.list_model.get_selected_item()
         if selected_item:
+            print(f"DEBUG: _update_selection_state_from_model: index={self.list_model.current_selection_index}, item_type={selected_item.item_type}, window_id={selected_item.window_id}, ws={selected_item.workspace_num}", file=sys.stderr, flush=True)
             self.selection_state = SelectionState(
                 selected_index=self.list_model.current_selection_index,
                 item_type=selected_item.item_type,
@@ -494,6 +495,23 @@ class NavigationHandler:
         output = {**self.last_preview_data, "selection_state": selection_dict}
         print(json.dumps(output), flush=True)
 
+        # Also update Eww variable directly (deflisten isn't reliable)
+        try:
+            json_str = json.dumps(output)
+            result = subprocess.run(
+                ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+                check=False,
+                capture_output=True,
+                timeout=0.5,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+            else:
+                print(f"DEBUG: Updated Eww variable with {len(json_str)} chars", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
         print(f"DEBUG: Re-emitted preview with selection_index={selection_dict['selected_index']}", file=sys.stderr, flush=True)
 
 
@@ -612,6 +630,21 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
 
     print(json.dumps(output), flush=True)
 
+    # Also update Eww variable directly (deflisten isn't reliable)
+    try:
+        json_str = json.dumps(output)
+        result = subprocess.run(
+            ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+            check=False,
+            capture_output=True,
+            timeout=0.5,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
     # T036: Log performance timing if >50ms (User Story 2 target)
     elapsed_ms = (time.time() - start_time) * 1000
     if elapsed_ms > 50:
@@ -628,9 +661,26 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
         **kwargs: Additional fields (accumulated_chars, matched_project, project_icon)
     """
     if not visible:
+        # Close Eww window (GTK destroys window surface, removes from Sway tree)
+        eww_close_window("workspace-preview")
         # Hide preview card
         output = {"visible": False}
         print(json.dumps(output), flush=True)
+
+        # Also update Eww variable directly (deflisten isn't reliable)
+        try:
+            json_str = json.dumps(output)
+            result = subprocess.run(
+                ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+                check=False,
+                capture_output=True,
+                timeout=0.5,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
         return
 
     accumulated_chars = kwargs.get("accumulated_chars", "")
@@ -648,6 +698,21 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
     }
 
     print(json.dumps(output), flush=True)
+
+    # Also update Eww variable directly (deflisten isn't reliable)
+    try:
+        json_str = json.dumps(output)
+        result = subprocess.run(
+            ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+            check=False,
+            capture_output=True,
+            timeout=0.5,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
 
 
 # Feature 059: Sway IPC navigation functions for Enter key selection (T030-T031)
@@ -968,6 +1033,23 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
                             print(json.dumps(output), flush=True)
 
+                            # Also update Eww variable directly (deflisten isn't reliable)
+                            try:
+                                json_str = json.dumps(output)
+                                result = subprocess.run(
+                                    ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+                                    check=False,
+                                    capture_output=True,
+                                    timeout=0.5,
+                                    text=True,
+                                )
+                                if result.returncode != 0:
+                                    print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+                                else:
+                                    print(f"DEBUG: Updated Eww variable with {len(json_str)} chars", file=sys.stderr, flush=True)
+                            except Exception as e:
+                                print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
                             # DEBUG: Log the JSON being emitted for troubleshooting
                             print(f"DEBUG: Emitted all_windows JSON: groups={len(output['workspace_groups'])}, total_windows={output['total_window_count']}, empty={output['empty']}, instructional={output['instructional']}", file=sys.stderr, flush=True)
                             # DEBUG: Log workspace groups details
@@ -1010,8 +1092,8 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                 mode=pending.get("mode_type", "goto"),
                                 accumulated_digits=pending.get("accumulated_digits", ""),
                             )
-                        elif pending is None:
-                            # No pending state - hide preview
+                        elif event_type == "digit" and pending is None:
+                            # No pending state on digit event - hide preview
                             emit_preview(visible=False)
 
                     # Option A: Unified Smart Detection - Handle project_mode events
