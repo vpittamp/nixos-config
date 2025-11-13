@@ -27,6 +27,8 @@ import i3ipc  # Feature 059: For Sway IPC navigation commands
 from models import WorkspaceModeEvent, PendingWorkspaceState
 from selection_models.selection_state import SelectionState, NavigableItem, PreviewListModel
 from preview_renderer import PreviewRenderer
+from keyboard_hint_manager import KeyboardHints  # Feature 073: T011 - Keyboard hint generation
+from sub_mode_manager import SubModeContext, SubMode  # Feature 073: T011 - Sub-mode state tracking
 
 # Socket path matches systemd socket unit configuration
 DAEMON_IPC_SOCKET = Path("/run/i3-project-daemon/ipc.sock")
@@ -259,6 +261,7 @@ class NavigationHandler:
         self.selection_manager = selection_manager
         self.last_preview_data = None  # Cache last preview for re-emission
         self.current_mode = "goto"  # Feature 059: T024 - Track current mode (goto/move) for move-mode styling
+        self.sub_mode_context = SubModeContext()  # Feature 073: T011 - Sub-mode state for keyboard hints
 
     def handle_arrow_key_event(self, direction: str, mode: str) -> None:
         """Handle arrow key navigation event.
@@ -396,6 +399,20 @@ class NavigationHandler:
             self._emit_preview_with_selection()
 
             print(f"DEBUG: Window {selected_item.window_id} closed successfully in {result['close_duration_ms']:.1f}ms", file=sys.stderr)
+
+            # Feature 073: T023 - Auto-exit workspace mode when last window closed
+            # Check if any windows remain in the list
+            if self.selection_manager.list_model and self.selection_manager.list_model.is_empty:
+                print("DEBUG: Last window closed, auto-exiting workspace mode", file=sys.stderr)
+                try:
+                    sway_conn.command('mode "default"')
+                    # Clear selection state
+                    self.selection_manager.clear()
+                    # Hide preview window
+                    eww_close_window("workspace-preview")
+                    print("DEBUG: Exited workspace mode and hid preview", file=sys.stderr)
+                except Exception as e:
+                    print(f"ERROR: Failed to auto-exit workspace mode: {e}", file=sys.stderr)
         else:
             # T048: Error handling for close timeout or failure
             error_msg = result.get("error", "Unknown error")
@@ -416,8 +433,8 @@ class NavigationHandler:
             except Exception as e:
                 print(f"ERROR: Failed to show notification: {e}", file=sys.stderr)
 
-        # T050: Maintain workspace mode active (do NOT exit mode, allow multiple deletions)
-        # No mode exit command needed - user can press Escape or Enter to exit
+        # Feature 073: T023 complete - auto-exit implemented above
+        # User Story 2 (T027): Menu stays open after close if windows remain (checked via is_empty)
 
     def handle_home_key_event(self, mode: str) -> None:
         """Handle Home key to jump to first item (Feature 059: T059).
@@ -491,6 +508,12 @@ class NavigationHandler:
             "move_mode": self.current_mode == "move",  # Feature 059: T024 - Add move_mode boolean for CSS styling
         }
 
+        # Feature 073: T011 - Generate keyboard hints based on selection type and sub-mode
+        hints = KeyboardHints.generate_hints(
+            selection_type=selection_dict["item_type"],
+            sub_mode_context=self.sub_mode_context
+        )
+
         # Update selection_state in cached data and re-emit
         output = {**self.last_preview_data, "selection_state": selection_dict}
         print(json.dumps(output), flush=True)
@@ -511,6 +534,22 @@ class NavigationHandler:
                 print(f"DEBUG: Updated Eww variable with {len(json_str)} chars", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
+        # Feature 073: T011 - Update keyboard hints in Eww
+        try:
+            result = subprocess.run(
+                ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"keyboard_hints={hints}"],
+                check=False,
+                capture_output=True,
+                timeout=0.5,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"WARNING: eww update keyboard_hints failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+            else:
+                print(f"DEBUG: Updated keyboard hints: {hints}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"WARNING: Failed to update keyboard hints: {e}", file=sys.stderr, flush=True)
 
         print(f"DEBUG: Re-emitted preview with selection_index={selection_dict['selected_index']}", file=sys.stderr, flush=True)
 

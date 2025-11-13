@@ -367,6 +367,9 @@
 
     # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
+
+    # Testing framework (Feature 069/070) - DISABLED: __noChroot conflicts with sandbox
+    # (pkgs.callPackage ../home-modules/tools/sway-test/default.nix { })
   ];
 
   # Firefox configuration with PWA support (same as Hetzner)
