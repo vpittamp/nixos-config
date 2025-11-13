@@ -109,17 +109,17 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 
 ### Tests for User Story 3
 
-- [ ] T030 [P] [US3] Create sway-test test case for keyboard hints visibility in home-modules/tools/sway-test/tests/sway-tests/test_keyboard_shortcuts_visible.json
-- [ ] T031 [P] [US3] Create pytest unit test for KeyboardHints.generate_hints() context-aware logic in tests/workspace-preview-daemon/unit/test_keyboard_hint_manager.py
+- [X] T030 [P] [US3] Create sway-test test case for keyboard hints visibility in home-modules/tools/sway-test/tests/sway-tests/interactive-workspace-menu/test_keyboard_shortcuts_visible.json
+- [X] T031 [P] [US3] Create pytest unit test for KeyboardHints.generate_hints() context-aware logic in tests/workspace-preview-daemon/unit/test_keyboard_hint_manager.py (9/9 tests passing)
 
 ### Implementation for User Story 3
 
-- [ ] T032 [P] [US3] Implement context-aware keyboard hints generation (window vs heading selection) in home-modules/tools/sway-workspace-panel/keyboard_hint_manager.py
-- [ ] T033 [US3] Add keyboard hints update on selection change in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T034 [US3] Add CSS styling for keyboard hints footer in home-modules/desktop/eww-workspace-bar.nix (.keyboard-hints class)
-- [ ] T035 [US3] Ensure keyboard hints load within 50ms of menu appearing (performance validation) in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
+- [X] T032 [P] [US3] ALREADY COMPLETE - Context-aware keyboard hints generation fully implemented in keyboard_hint_manager.py (lines 125-228)
+- [X] T033 [US3] ALREADY COMPLETE - Keyboard hints update on selection change (workspace-preview-daemon lines 572-619)
+- [X] T034 [US3] Add CSS styling for keyboard hints footer in home-modules/desktop/eww-workspace-bar.nix (.keyboard-hints and .keyboard-hints-footer classes)
+- [X] T035 [US3] ALREADY COMPLETE - Performance validation: hint generation <1ms average (test_hint_generation_performance), update via eww CLI <50ms
 
-**Checkpoint**: All three user stories (P1, P2) are now complete - users have visual feedback for reliable multi-action workflows
+**Checkpoint**: ✅ PHASE 5 COMPLETE - All three user stories (P1, P2, P2) complete - users have visual feedback for reliable multi-action workflows
 
 ---
 

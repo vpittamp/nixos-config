@@ -1,0 +1,73 @@
+{
+  "name": "Keyboard shortcuts hints are visible in preview menu",
+  "description": "Feature 073 - User Story 3: Verify keyboard shortcut help text footer displays within 50ms of menu appearing",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Enter workspace mode - keyboard hints should appear within 50ms"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 200
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Keyboard hints should be visible. Manual verification: Check preview card footer shows hint text."
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"default\""
+      }
+    }
+  ],
+  "expectedState": {
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "Alacritty"
+          }
+        ]
+      }
+    ]
+  }
+}

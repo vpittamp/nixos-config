@@ -726,6 +726,21 @@ button {
   color: $subtext0;
 }
 
+/* Feature 073: Keyboard Hints Footer Styling (T034) */
+.keyboard-hints-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
+}
+
+.keyboard-hints {
+  font-size: 9pt;
+  color: $subtext0;
+  font-family: monospace;
+  opacity: 0.9;
+  text-align: center;
+}
+
 /* Feature 072: All Windows Preview Widget Styling (T022) */
 .all-windows-preview {
   /* Inherits from .preview-card */
