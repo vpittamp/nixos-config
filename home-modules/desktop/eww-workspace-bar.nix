@@ -738,7 +738,7 @@ button {
   color: $subtext0;
   font-family: monospace;
   opacity: 0.9;
-  text-align: center;
+  /* text-align not supported in GTK CSS - use :halign in widget instead */
 }
 
 /* Feature 072: All Windows Preview Widget Styling (T022) */
