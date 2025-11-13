@@ -22,65 +22,11 @@ Performance:
 from __future__ import annotations
 
 from typing import Optional, List
-from enum import Enum
 
 from pydantic import BaseModel, Field
 
-
-class SubMode(Enum):
-    """Sub-modes for multi-step window actions.
-
-    Sub-modes temporarily change keyboard input behavior to collect additional
-    parameters (e.g., target workspace number for move action).
-    """
-    NORMAL = "normal"  # Default mode - all standard actions available
-    MOVE_WINDOW = "move_window"  # Collecting workspace digits for move
-    MARK_WINDOW = "mark_window"  # Collecting mark name for window marking
-
-
-class SubModeContext(BaseModel):
-    """Context for sub-mode state and accumulated input.
-
-    Used by keyboard hint manager to generate appropriate help text for
-    the current sub-mode.
-    """
-    current_mode: SubMode = Field(default=SubMode.NORMAL, description="Active sub-mode")
-    accumulated_input: str = Field(default="", description="Digits/text entered so far")
-    target_workspace: Optional[int] = Field(default=None, description="Parsed workspace number (move mode)")
-
-    def enter_sub_mode(self, mode: SubMode) -> None:
-        """Transition to a sub-mode.
-
-        Args:
-            mode: Target sub-mode to enter
-        """
-        self.current_mode = mode
-        self.accumulated_input = ""
-        self.target_workspace = None
-
-    def reset_to_normal(self) -> None:
-        """Exit sub-mode and return to normal mode."""
-        self.current_mode = SubMode.NORMAL
-        self.accumulated_input = ""
-        self.target_workspace = None
-
-    def add_digit(self, digit: str) -> None:
-        """Add digit to accumulated input (for move window mode).
-
-        Args:
-            digit: Single digit character ('0'-'9')
-        """
-        self.accumulated_input += digit
-
-        # Try to parse workspace number (1-70 range)
-        try:
-            workspace_num = int(self.accumulated_input)
-            if 1 <= workspace_num <= 70:
-                self.target_workspace = workspace_num
-            else:
-                self.target_workspace = None
-        except ValueError:
-            self.target_workspace = None
+# Feature 073: T050 - Import SubMode and SubModeContext from authoritative source
+from sub_mode_manager import SubMode, SubModeContext
 
 
 class KeyboardHintSet(BaseModel):

@@ -148,7 +148,7 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 - [X] T047 [US4] Implement Escape key cancellation from any sub-mode in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
 - [X] T048 [US4] Add M key binding for move window in home-modules/desktop/sway.nix (mode "→ WS" and "⇒ WS")
 - [X] T049 [US4] Add F key binding for float toggle in home-modules/desktop/sway.nix (mode "→ WS" and "⇒ WS")
-- [ ] T050 [US4] Update keyboard hints for sub-mode prompts (e.g., "Type workspace: 23_") in home-modules/tools/sway-workspace-panel/keyboard_hint_manager.py
+- [X] T050 [US4] Update keyboard hints for sub-mode prompts (e.g., "Type workspace: 23_") in home-modules/tools/sway-workspace-panel/keyboard_hint_manager.py - Fixed duplicate SubModeContext, now imports from sub_mode_manager.py
 - [ ] T051 [US4] Add visual feedback for sub-mode entry/exit in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
 
 **Checkpoint**: All extended window actions are functional - users can manage windows comprehensively from the preview menu
