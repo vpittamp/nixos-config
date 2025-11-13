@@ -165,15 +165,15 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 
 ### Tests for User Story 5
 
-- [ ] T052 [P] [US5] Create sway-test test case for colon prefix project search transition in home-modules/tools/sway-test/tests/sway-tests/test_project_navigation_from_menu.json
-- [ ] T053 [P] [US5] Verify existing project search mode transition works with new window actions in tests/workspace-preview-daemon/integration/test_daemon_project_navigation.py
+- [X] T052 [P] [US5] ALREADY EXISTS - test_unified_switcher_project_mode_enter.json covers colon prefix project search transition (Feature 072)
+- [X] T053 [P] [US5] CREATED test_daemon_project_navigation.py with 6 integration tests verifying project mode works with new window actions (6/6 passing)
 
 ### Implementation for User Story 5
 
-- [ ] T054 [US5] Verify colon prefix handling doesn't conflict with new sub-modes in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T055 [US5] Update keyboard hints to show project navigation option in normal mode in home-modules/tools/sway-workspace-panel/keyboard_hint_manager.py
+- [X] T054 [US5] VERIFIED - Colon prefix handled by i3pm daemon (bindsym colon exec i3pm-workspace-mode char :), separate from sub-mode logic in workspace-preview-daemon. Sub-modes only handle digits (move) and alphanumeric (mark), colon is rejected by both.
+- [X] T055 [US5] ALREADY COMPLETE - keyboard_hint_manager.py lines 116, 131 show ": Project" in both window and heading hints during normal mode
 
-**Checkpoint**: All five user stories are now complete - users have comprehensive workspace and project navigation with per-window actions
+**Checkpoint**: ✅ PHASE 7 COMPLETE - All five user stories are now complete - users have comprehensive workspace and project navigation with per-window actions
 
 ---
 
