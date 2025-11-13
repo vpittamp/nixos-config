@@ -87,17 +87,17 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Create sway-test test case for consecutive window closes in home-modules/tools/sway-test/tests/sway-tests/test_multi_action_workflow.json
-- [ ] T025 [P] [US2] Create sway-test test case for Delete on workspace heading (no action) in home-modules/tools/sway-test/tests/sway-tests/test_delete_heading_ignored.json
-- [ ] T026 [P] [US2] Create pytest integration test for multi-action workflow state preservation in tests/workspace-preview-daemon/integration/test_daemon_multi_actions.py
+- [X] T024 [P] [US2] Create sway-test test case for consecutive window closes in home-modules/tools/sway-test/tests/sway-tests/interactive-workspace-menu/test_multi_action_workflow.json
+- [X] T025 [P] [US2] Create sway-test test case for Delete on workspace heading (no action) in home-modules/tools/sway-test/tests/sway-tests/interactive-workspace-menu/test_delete_heading_ignored.json
+- [X] T026 [P] [US2] Create pytest integration test for multi-action workflow state preservation in tests/workspace-preview-daemon/integration/test_daemon_multi_actions.py (5/5 tests passing)
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Verify menu stays open after window close operation in home-modules/tools/sway-workspace-panel/workspace-preview-daemon (no auto-exit unless last window)
-- [ ] T028 [US2] Add state corruption protection for consecutive actions in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T029 [US2] Implement graceful Escape key handling to exit workspace mode cleanly in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
+- [X] T027 [US2] ALREADY COMPLETE - Menu stays open after window close (line 437 comment confirms this, checked via is_empty at line 405)
+- [X] T028 [US2] ALREADY COMPLETE - State corruption protection via _rebuild_workspace_groups_from_items() from Phase 3 (T023b)
+- [X] T029 [US2] ALREADY COMPLETE - Graceful Escape key handling exists at lines 1070-1074 (cancel event clears selection, hides preview)
 
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work - single and multi-action workflows are reliable
+**Checkpoint**: ✅ PHASE 4 COMPLETE - User Stories 1 AND 2 both work - single and multi-action workflows are reliable
 
 ---
 

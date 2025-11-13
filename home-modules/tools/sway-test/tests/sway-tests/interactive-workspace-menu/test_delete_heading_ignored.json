@@ -1,0 +1,73 @@
+{
+  "name": "Delete key on workspace heading is ignored",
+  "description": "Feature 073 - User Story 2: Verify Delete key on workspace heading has no effect (only windows can be closed)",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 200
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Selection starts on workspace heading by default. Attempt to close it with Delete key."
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec workspace-preview-daemon --action close-window"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 300
+      }
+    }
+  ],
+  "expectedState": {
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": [
+          {
+            "app_id": "Alacritty"
+          }
+        ]
+      }
+    ]
+  }
+}
