@@ -89,7 +89,6 @@ def build_workspace_payload(
         if leaf and hasattr(leaf, 'pid') and leaf.pid:
             i3pm_app_name = read_i3pm_app_name(leaf.pid)
             if i3pm_app_name:
-                import sys
                 print(f"DEBUG: WS {reply.num} PID {leaf.pid} -> I3PM_APP_NAME={i3pm_app_name}", file=sys.stderr, flush=True)
 
         # Priority: I3PM_APP_NAME > app_id > window_class > window_instance
