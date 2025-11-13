@@ -491,11 +491,72 @@ class NavigationHandler:
         self.last_preview_data = preview_data
         self.current_mode = mode  # Feature 059: T024 - Store mode for move-mode styling
 
+    def _rebuild_workspace_groups_from_items(self) -> list:
+        """Rebuild workspace_groups list from current selection_manager items.
+
+        This is needed when items are added/removed (e.g., window close) to update
+        the cached preview data with current state.
+
+        Returns:
+            List of workspace group dicts matching PreviewRenderer format
+        """
+        if not self.selection_manager.list_model:
+            return []
+
+        workspace_groups = []
+        current_workspace = None
+        current_group = None
+
+        # Extract monitor output from display_text (e.g., "WS 52 (1 windows) - HEADLESS-2")
+        def extract_monitor_output(display_text: str) -> str:
+            """Extract monitor output from workspace heading display_text."""
+            if " - " in display_text:
+                return display_text.split(" - ", 1)[1]
+            return "HEADLESS-1"  # Default fallback
+
+        for item in self.selection_manager.list_model.items:
+            if item.is_workspace_heading():
+                # Finalize previous group with accurate window count
+                if current_group is not None:
+                    current_group["window_count"] = len(current_group["windows"])
+                    workspace_groups.append(current_group)
+
+                # Start new workspace group
+                current_workspace = item.workspace_num
+                current_group = {
+                    "workspace_num": item.workspace_num,
+                    "workspace_name": None,
+                    "window_count": 0,  # Will be computed when group is finalized
+                    "monitor_output": extract_monitor_output(item.display_text),
+                    "windows": []
+                }
+            elif item.is_window() and current_group is not None:
+                # Add window to current group (display_text contains window name)
+                current_group["windows"].append({
+                    "name": item.display_text,
+                    "icon_path": item.icon_path or "",
+                    "app_id": None,  # Not stored in NavigableItem
+                    "window_class": None,  # Not stored in NavigableItem
+                    "focused": False,  # Will be determined by Sway state
+                    "workspace_num": item.workspace_num,
+                    "window_id": item.window_id,
+                })
+
+        # Add last group with accurate window count
+        if current_group is not None:
+            current_group["window_count"] = len(current_group["windows"])
+            workspace_groups.append(current_group)
+
+        return workspace_groups
+
     def _emit_preview_with_selection(self) -> None:
         """Re-emit cached preview data with updated selection state."""
         if not self.last_preview_data:
             print("Warning: No cached preview data to re-emit", file=sys.stderr)
             return
+
+        # Feature 073: Rebuild workspace_groups from current items (handles window close/add)
+        updated_workspace_groups = self._rebuild_workspace_groups_from_items()
 
         # Get current selection state
         selection_state = self.selection_manager.get_selection_state()
@@ -514,8 +575,14 @@ class NavigationHandler:
             sub_mode_context=self.sub_mode_context
         )
 
-        # Update selection_state in cached data and re-emit
-        output = {**self.last_preview_data, "selection_state": selection_dict}
+        # Update both workspace_groups and selection_state in cached data
+        output = {
+            **self.last_preview_data,
+            "workspace_groups": updated_workspace_groups,
+            "selection_state": selection_dict,
+            "total_window_count": sum(len(g["windows"]) for g in updated_workspace_groups),
+            "empty": len(updated_workspace_groups) == 0,
+        }
         print(json.dumps(output), flush=True)
 
         # Also update Eww variable directly (deflisten isn't reliable)

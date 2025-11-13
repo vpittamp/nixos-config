@@ -365,8 +365,7 @@
           rec {
             # Hetzner Sway QCOW2 image (Feature 007-number-7-short)
             # Wayland/Sway headless VM with WayVNC server
-            # NOTE: We bypass nixos-generators to directly control memSize parameter
-            # to avoid OOM errors during image build (4GB instead of default 1GB)
+            # Using make-disk-image.nix directly with 8GB memory for build VM
             hetzner-sway-qcow2 =
               let
                 # Build the NixOS configuration
@@ -375,7 +374,7 @@
                   modules = [ ./configurations/hetzner-sway-minimal.nix ];
                 }).config;
               in
-                # Call make-disk-image.nix directly with explicit memSize
+                # Call make-disk-image.nix directly with 8GB memSize
                 import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
                   inherit pkgs;
                   lib = pkgs.lib;
@@ -383,7 +382,7 @@
                   diskSize = 50 * 1024;  # 50GB in MB
                   format = "qcow2";
                   partitionTableType = "hybrid";
-                  memSize = 4096;  # 4GB QEMU VM memory for build process
+                  memSize = 8192;  # 8GB QEMU VM memory for build process
                 };
 
             # Minimal KubeVirt VM image (qcow2 format with RustDesk + Tailscale)

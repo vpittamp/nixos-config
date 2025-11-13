@@ -1,6 +1,6 @@
 # Quickstart: Eww Interactive Menu Stabilization
 
-**Feature**: 073-eww-menu-stabilization | **Status**: Phase 3 Complete - US1 MVP Deployed | **Date**: 2025-11-13
+**Feature**: 073-eww-menu-stabilization | **Status**: Phase 3 Complete - US1 MVP Deployed ✓ Visual Feedback Fixed | **Date**: 2025-11-13
 
 ## What This Feature Does
 
@@ -46,9 +46,10 @@ The workspace preview card appears showing all windows grouped by workspace.
 1. Enter workspace mode (CapsLock or Ctrl+0)
 2. Use `↑/↓` arrow keys to navigate to the window you want to close
 3. Press `Delete`
-4. Window closes within 500ms and disappears from the preview
-5. Selection automatically moves to the next window
-6. Menu stays open for more actions
+4. **✓ Visual feedback**: Window closes within 500ms and **immediately disappears from the preview**
+5. **✓ Workspace counts update**: Workspace heading shows updated window count
+6. Selection automatically moves to the next window
+7. Menu stays open for more actions
 
 **Example**: Close multiple Firefox tabs in one session:
 ```
@@ -500,5 +501,9 @@ To modify keybindings:
 **Implementation Status**:
 - ✅ Phase 1: Setup (T001-T004) - Data models and modules created
 - ✅ Phase 2: Foundational (T005-T011) - Core infrastructure complete
-- ✅ Phase 3: User Story 1 (T012-T023) - Reliable window close with <500ms latency
-- ⏸️ Phase 4-8: Pending (Multi-action workflows, visual feedback, extended actions)
+- ✅ Phase 3: User Story 1 (T012-T023b) - Reliable window close with <500ms latency
+  - ✅ T023b: **BUGFIX** - Visual feedback now working (window disappears from menu, counts update)
+  - Fixed: `_rebuild_workspace_groups_from_items()` to correctly extract data from NavigableItem
+  - Fixed: Arrow key navigation (removed AttributeError for window_count/monitor_output)
+  - Version: sway-workspace-panel-v15
+- ⏸️ Phase 4-8: Pending (Multi-action workflows, extended actions, keyboard hints)

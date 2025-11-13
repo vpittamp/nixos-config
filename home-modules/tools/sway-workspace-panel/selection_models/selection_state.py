@@ -252,6 +252,9 @@ class PreviewListModel(BaseModel):
 
         Returns:
             True if item was found and removed, False otherwise
+
+        Note:
+            Window counts are recomputed automatically in _rebuild_workspace_groups_from_items()
         """
         try:
             self.items.remove(item)

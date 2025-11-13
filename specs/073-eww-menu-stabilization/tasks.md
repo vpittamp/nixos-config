@@ -73,8 +73,9 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 - [X] T021 [US1] ALREADY EXISTS - swaynag notification in handle_delete_key_event (lines 428-434) from Feature 059
 - [X] T022 [US1] ALREADY EXISTS - is_workspace_heading check in handle_delete_key_event (lines 380-384) from Feature 059
 - [X] T023 [US1] Auto-exit workspace mode when last window closed - IMPLEMENTED (lines 403-415) checks is_empty and exits mode
+- [X] T023b [US1] BUGFIX: Update cached workspace_groups after window removal for visual feedback - FIXED (workspace-preview-daemon lines 494-536, selection_state.py lines 259-266)
 
-**Checkpoint**: At this point, User Story 1 should be fully functional - Delete key closes windows reliably with proper error handling
+**Checkpoint**: At this point, User Story 1 should be fully functional - Delete key closes windows reliably with proper error handling and visual feedback
 
 ---
 
