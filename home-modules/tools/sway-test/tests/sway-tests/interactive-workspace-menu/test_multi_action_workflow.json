@@ -1,0 +1,81 @@
+{
+  "name": "Multi-action workflow: consecutive window closes",
+  "description": "Feature 073 - User Story 2: Verify menu stays open after multiple consecutive window close operations",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "firefox"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 200
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec workspace-preview-daemon --action close-window"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 600
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "exec workspace-preview-daemon --action close-window"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 600
+      }
+    }
+  ],
+  "expectedState": {
+    "windowCount": 0,
+    "workspaces": [
+      {
+        "num": 1,
+        "windows": []
+      }
+    ]
+  }
+}

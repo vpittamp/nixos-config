@@ -1,0 +1,119 @@
+{
+  "name": "Move window to different workspace via M key",
+  "description": "Feature 073 - User Story 4: Verify M key enters sub-mode, accepts digits, moves window on Enter",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Enter workspace mode and select the window"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 200
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Press M to enter move sub-mode, type 5, press Enter"
+      }
+    },
+    {
+      "type": "send_key",
+      "params": {
+        "key": "m",
+        "mode": "→ WS"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 100
+      }
+    },
+    {
+      "type": "send_key",
+      "params": {
+        "key": "5",
+        "mode": "→ WS"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 100
+      }
+    },
+    {
+      "type": "send_key",
+      "params": {
+        "key": "Return",
+        "mode": "→ WS"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Verify window moved to workspace 5"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 5"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 5,
+    "workspaces": [
+      {
+        "num": 5,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "Alacritty"
+          }
+        ]
+      }
+    ]
+  }
+}

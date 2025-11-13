@@ -1,0 +1,88 @@
+{
+  "name": "Toggle window floating state via F key",
+  "description": "Feature 073 - User Story 4: Verify F key toggles floating/tiling state immediately",
+  "actions": [
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "[app_id=\".*\"] kill"
+      }
+    },
+    {
+      "type": "launch_app_sync",
+      "params": {
+        "app_name": "alacritty"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "workspace 1"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 500
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Enter workspace mode and select the window"
+      }
+    },
+    {
+      "type": "send_ipc_sync",
+      "params": {
+        "ipc_command": "mode \"→ WS\""
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 200
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Press F to toggle floating (tiling → floating)"
+      }
+    },
+    {
+      "type": "send_key",
+      "params": {
+        "key": "f",
+        "mode": "→ WS"
+      }
+    },
+    {
+      "type": "wait",
+      "params": {
+        "duration": 300
+      }
+    },
+    {
+      "type": "comment",
+      "params": {
+        "text": "Verify window is now floating"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "Alacritty",
+            "floating": "user_on"
+          }
+        ]
+      }
+    ]
+  }
+}

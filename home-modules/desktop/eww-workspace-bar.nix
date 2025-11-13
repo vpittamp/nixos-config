@@ -46,9 +46,12 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel-v11";  # Fixed Pydantic validator field order bug
+    name = "sway-workspace-panel-v15";  # Feature 073: Fix arrow keys - rebuild workspace_groups correctly
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
-    src = ../tools/sway-workspace-panel;
+    src = builtins.path {
+      path = ../tools/sway-workspace-panel;
+      name = "sway-workspace-panel-source";
+    };
     installPhase = ''
       mkdir -p $out
       echo "DEBUG: Contents of source directory:" >&2
@@ -113,6 +116,11 @@ let
 ;; Updated by workspace-preview-daemon via `eww update` commands
 ;; Changed from deflisten to defvar for <20ms navigation latency (Feature 072)
 (defvar workspace_preview_data "{\"visible\": false}")
+
+;; Feature 073: User Story 3 - Keyboard Shortcuts Hints (T008)
+;; Updated by workspace-preview-daemon via `eww update keyboard_hints "hint text"`
+;; Context-aware hints based on selection (window vs heading) and sub-mode
+(defvar keyboard_hints "")
   '';
 
   windowBlocks = lib.concatStringsSep "\n\n" (map (output:
@@ -262,8 +270,9 @@ ${workspacePreviewDefs}
                 (for window in {group.windows ?: []}
                   ;; Feature 059: Add selection highlight for windows
                   ;; Feature 059: T025 - Add move-mode variant for peach accent
+                  ;; Hide .focused when navigation is active to avoid dual highlights
                   (box :class {"preview-app" +
-                               (window.focused ? " focused" : "") +
+                               ((window.focused && !(workspace_preview_data.selection_state?.visible ?: false)) ? " focused" : "") +
                                ((workspace_preview_data.selection_state?.item_type == "window" &&
                                  workspace_preview_data.selection_state?.window_id == window.window_id)
                                 ? (workspace_preview_data.selection_state?.move_mode ? " selected-move-mode" : " selected")
@@ -347,7 +356,14 @@ ${workspacePreviewDefs}
       (box :class "preview-footer"
            :visible {workspace_preview_data.empty == false && workspace_preview_data.instructional != true}
         (label :class "preview-count"
-               :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")})))))
+               :text {workspace_preview_data.window_count + " window" + (workspace_preview_data.window_count != 1 ? "s" : "")}))
+
+      ;; Feature 073: User Story 3 - Keyboard Shortcuts Footer (T009)
+      ;; Context-aware keyboard hints updated via daemon
+      (box :class "keyboard-hints-footer"
+           :visible {keyboard_hints != ""}
+        (label :class "keyboard-hints"
+               :text keyboard_hints)))))
 
 ;; Feature 057: User Story 2 - Preview Overlay Window (T038, T040)
 ;; Multi-monitor support: :monitor property dynamically set from workspace_preview_data
@@ -355,7 +371,7 @@ ${workspacePreviewDefs}
 ;; This ensures GTK creates window surface that Sway can see in its tree
 (defwindow workspace-preview
   :monitor "${if isHeadless then "HEADLESS-1" else "eDP-1"}"
-  :windowtype "normal"
+  :windowtype "dock"
   :stacking "overlay"
   :focusable false
   :exclusive false
@@ -655,7 +671,7 @@ button {
   transition: background 0.2s ease-in-out, border 0.2s ease-in-out;
 }
 
-.preview-workspace-heading.selected {
+.workspace-group-header.selected {
   background: rgba(137, 180, 250, 0.2);  /* $blue at 20% opacity */
   border-left: 3px solid rgba(137, 180, 250, 0.8);
   transition: background 0.2s ease-in-out, border 0.2s ease-in-out;
@@ -667,14 +683,14 @@ button {
   border-left: 3px solid rgba(250, 179, 135, 0.8);
 }
 
-.preview-workspace-heading.selected-move-mode {
+.workspace-group-header.selected-move-mode {
   background: rgba(250, 179, 135, 0.2);  /* $peach at 20% opacity */
   border-left: 3px solid rgba(250, 179, 135, 0.8);
 }
 
 /* Feature 059: Improve text readability on selected items */
 .preview-app.selected .preview-app-name,
-.preview-workspace-heading.selected {
+.workspace-group-header.selected {
   color: #cdd6f4;  /* $text - white for readability */
 }
 
@@ -708,6 +724,21 @@ button {
 .preview-count {
   font-size: 9pt;
   color: $subtext0;
+}
+
+/* Feature 073: Keyboard Hints Footer Styling (T034) */
+.keyboard-hints-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(108, 112, 134, 0.3);  /* $overlay0 */
+}
+
+.keyboard-hints {
+  font-size: 9pt;
+  color: $subtext0;
+  font-family: monospace;
+  opacity: 0.9;
+  /* text-align not supported in GTK CSS - use :halign in widget instead */
 }
 
 /* Feature 072: All Windows Preview Widget Styling (T022) */

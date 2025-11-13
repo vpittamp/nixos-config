@@ -645,14 +645,14 @@ in
           bindsym c exec i3pm-workspace-mode char c
           bindsym d exec i3pm-workspace-mode char d
           bindsym e exec i3pm-workspace-mode char e
-          bindsym f exec i3pm-workspace-mode char f
+          # bindsym f removed - conflicts with Feature 073 float toggle action
           bindsym g exec i3pm-workspace-mode char g
           bindsym h exec i3pm-workspace-mode char h
           bindsym i exec i3pm-workspace-mode char i
           bindsym j exec i3pm-workspace-mode char j
           bindsym k exec i3pm-workspace-mode char k
           bindsym l exec i3pm-workspace-mode char l
-          bindsym m exec i3pm-workspace-mode char m
+          # bindsym m removed - conflicts with Feature 073 move window action
           bindsym n exec i3pm-workspace-mode char n
           bindsym o exec i3pm-workspace-mode char o
           bindsym p exec i3pm-workspace-mode char p
@@ -676,6 +676,11 @@ in
           bindsym Home exec i3pm-workspace-mode nav home
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
+
+          # Feature 073: Per-window actions for interactive menu (T048, T049)
+          bindsym m exec i3pm-workspace-mode action m
+          bindsym Shift+m exec i3pm-workspace-mode action shift-m
+          bindsym f exec i3pm-workspace-mode action f
 
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"
@@ -702,14 +707,14 @@ in
           bindsym c exec i3pm-workspace-mode char c
           bindsym d exec i3pm-workspace-mode char d
           bindsym e exec i3pm-workspace-mode char e
-          bindsym f exec i3pm-workspace-mode char f
+          # bindsym f removed - conflicts with Feature 073 float toggle action
           bindsym g exec i3pm-workspace-mode char g
           bindsym h exec i3pm-workspace-mode char h
           bindsym i exec i3pm-workspace-mode char i
           bindsym j exec i3pm-workspace-mode char j
           bindsym k exec i3pm-workspace-mode char k
           bindsym l exec i3pm-workspace-mode char l
-          bindsym m exec i3pm-workspace-mode char m
+          # bindsym m removed - conflicts with Feature 073 move window action
           bindsym n exec i3pm-workspace-mode char n
           bindsym o exec i3pm-workspace-mode char o
           bindsym p exec i3pm-workspace-mode char p
@@ -733,6 +738,11 @@ in
           bindsym Home exec i3pm-workspace-mode nav home
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
+
+          # Feature 073: Per-window actions for interactive menu (T048, T049)
+          bindsym m exec i3pm-workspace-mode action m
+          bindsym Shift+m exec i3pm-workspace-mode action shift-m
+          bindsym f exec i3pm-workspace-mode action f
 
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"

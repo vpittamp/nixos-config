@@ -68,8 +68,18 @@ case "$1" in
     echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.delete\",\"params\":{},\"id\":1}" | \
       "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
     ;;
+  action)
+    # Feature 073: Per-window actions (m=move, f=float, shift-m=mark)
+    action_value="${2:-}"
+    if [ -z "${action_value}" ]; then
+      echo "action subcommand requires an action (m, f, shift-m)" >&2
+      exit 1
+    fi
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"workspace_mode.action\",\"params\":{\"action\":\"${action_value}\"},\"id\":1}" | \
+      "${socat_bin}" - UNIX-CONNECT:"${SOCK}" > /dev/null 2>&1
+    ;;
   *)
-    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]|nav <up|down>|delete}" >&2
+    echo "Usage: $0 {digit <0-9>|char <a-z>|execute|cancel|enter|state [--json]|nav <up|down>|delete|action <m|f|shift-m>}" >&2
     exit 1
     ;;
 esac

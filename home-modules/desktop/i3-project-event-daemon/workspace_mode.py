@@ -472,6 +472,29 @@ class WorkspaceModeManager:
         await self._emit_workspace_mode_event("delete")
         logger.info("Delete event emitted for selected window")
 
+    async def action(self, action: str) -> None:
+        """Perform a window action (move, float toggle, mark).
+
+        Feature 073: Per-Window Actions
+
+        Args:
+            action: Action type ("m" for move, "f" for float, "shift-m" for mark)
+
+        Raises:
+            RuntimeError: If workspace mode is not active
+            ValueError: If action is invalid
+        """
+        if not self._state.active:
+            raise RuntimeError("Cannot perform action: workspace mode is not active")
+
+        valid_actions = ["m", "f", "shift-m"]
+        if action not in valid_actions:
+            raise ValueError(f"Invalid action: {action}. Must be one of {valid_actions}")
+
+        # Emit window_action event with action type
+        await self._emit_window_action_event(action)
+        logger.info(f"Window action event emitted: {action}")
+
     def get_history(self, limit: Optional[int] = None) -> List[WorkspaceSwitch]:
         """Get workspace switch history.
 
@@ -798,6 +821,40 @@ class WorkspaceModeManager:
             logger.debug(f"Emitted delete_key_close event: mode={event_payload['params']['payload']['mode']}")
         except Exception as e:
             logger.warning(f"Failed to broadcast delete_key_close event: {e}")
+
+    async def _emit_window_action_event(self, action: str) -> None:
+        """Emit window action event via IPC (Feature 073).
+
+        Notifies workspace-preview-daemon that M/F/Shift+M key was pressed for window actions.
+
+        Args:
+            action: Action type ("m" for move, "f" for float, "shift-m" for mark)
+        """
+        if not self._ipc_server:
+            logger.debug("IPC server not available, skipping window_action event")
+            return
+
+        # Create event payload for Feature 073 window actions (matches contract schema)
+        event_payload = {
+            "method": "event",
+            "params": {
+                "type": "window_action",
+                "payload": {
+                    "action": action,
+                    "mode": "all_windows" if not self._state.accumulated_digits else "filtered_workspace",
+                    "timestamp_ms": int(time.time() * 1000)
+                }
+            }
+        }
+
+        # Broadcast event asynchronously (non-blocking)
+        try:
+            asyncio.create_task(
+                self._ipc_server.broadcast_event(event_payload)
+            )
+            logger.debug(f"Emitted window_action event: action={action}, mode={event_payload['params']['payload']['mode']}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast window_action event: {e}")
 
     async def _emit_home_key_nav_event(self) -> None:
         """Emit Home key navigation event via IPC (Feature 059: T059).

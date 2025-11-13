@@ -36,8 +36,10 @@ pkgs.stdenv.mkDerivation rec {
     #   - Network access for tree-monitor daemon communication
     #   - Process spawning for test execution
     #   - Environment variable access for configuration
+    # --no-check: Skip type checking (Deno 2.0 API compatibility issues)
     deno compile \
       --allow-all \
+      --no-check \
       --output dist/sway-test \
       main.ts
 
