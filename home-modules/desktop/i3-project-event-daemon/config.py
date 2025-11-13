@@ -84,12 +84,14 @@ def load_app_classification(config_file: Path) -> ApplicationClassification:
         ValueError: If configuration is invalid
     """
     # Feature 030: Load directly from JSON (remove i3pm dependency)
+    # NOTE: App classification is now ONLY used for window rules workspace assignment,
+    # NOT for scope determination. Scope comes exclusively from I3PM_SCOPE env var.
     try:
         if not config_file.exists():
-            logger.warning(f"App classification file does not exist: {config_file}, using defaults")
+            logger.info(f"App classification file does not exist: {config_file}, using empty defaults (scope determined by I3PM_SCOPE)")
             return ApplicationClassification(
-                scoped_classes={"Code", "ghostty", "Alacritty", "Yazi"},
-                global_classes={"firefox", "chromium-browser", "k9s"},
+                scoped_classes=set(),
+                global_classes=set(),
             )
 
         with open(config_file) as f:
@@ -111,10 +113,10 @@ def load_app_classification(config_file: Path) -> ApplicationClassification:
 
     except (json.JSONDecodeError, KeyError) as e:
         logger.error(f"Failed to load application classification from {config_file}: {e}")
-        logger.warning("Using default classification")
+        logger.warning("Using empty classification (scope determined by I3PM_SCOPE)")
         return ApplicationClassification(
-            scoped_classes={"Code", "ghostty", "Alacritty", "Yazi"},
-            global_classes={"firefox", "chromium-browser", "k9s"},
+            scoped_classes=set(),
+            global_classes=set(),
         )
     except Exception as e:
         logger.error(f"Unexpected error loading application classification: {e}")

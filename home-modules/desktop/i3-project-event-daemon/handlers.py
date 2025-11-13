@@ -912,11 +912,15 @@ async def on_window_new(
 
             # ALWAYS mark windows for consistency and debugging
             # Updated format: SCOPE:PROJECT:WINDOW_ID (includes scope for filtering)
-            # - SCOPE: "scoped" or "global" from app registry
+            # - SCOPE: "scoped" or "global" from app registry (via I3PM_SCOPE env var)
             # - PROJECT: project name or "none" if no active project
             # - WINDOW_ID: unique window identifier (container.id)
             # This allows window_filter.py to correctly identify global apps
-            scope_for_mark = classification.scope  # "scoped" or "global"
+
+            # Feature 035/057 - Environment Variable-Based Scope:
+            # Use I3PM_SCOPE from app registry as single source of truth
+            # All apps launched via registry wrapper have this variable set
+            scope_for_mark = window_env.scope if window_env else "global"  # Default to global if no I3PM environment
             project_for_mark = actual_project or "none"
             mark = f"{scope_for_mark}:{project_for_mark}:{window_id}"
 
@@ -924,7 +928,7 @@ async def on_window_new(
             await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
 
             if actual_project:
-                logger.info(f"Marked window {window_id} with {mark} (from {mark_source or 'classification'})")
+                logger.info(f"Marked window {window_id} with {mark} (project from {mark_source or 'active project'})")
             else:
                 logger.info(f"Marked window {window_id} with {mark} (no active project)")
 
