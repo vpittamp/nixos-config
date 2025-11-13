@@ -63,7 +63,7 @@
     # ChatGPT
     {
       name = "ChatGPT";
-      url = "https://chatgpt.com";
+      url = "https://chatgpt.com/codex";
       domain = "chatgpt.com";
       icon = "/etc/nixos/assets/icons/chatgpt.svg";
       description = "ChatGPT AI assistant";
@@ -159,7 +159,7 @@
     # Boston Dog Butlers
     {
       name = "Boston Dog Butlers";
-      url = "https://bostondogbutlers.com";
+      url = "www.timetopet.com/portal/services";
       domain = "bostondogbutlers.com";
       icon = "/etc/nixos/assets/icons/boston-dog-butlers.svg";
       description = "Boston Dog Butlers concierge dog walking and care services";

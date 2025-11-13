@@ -645,14 +645,14 @@ in
           bindsym c exec i3pm-workspace-mode char c
           bindsym d exec i3pm-workspace-mode char d
           bindsym e exec i3pm-workspace-mode char e
-          bindsym f exec i3pm-workspace-mode char f
+          # bindsym f removed - conflicts with Feature 073 float toggle action
           bindsym g exec i3pm-workspace-mode char g
           bindsym h exec i3pm-workspace-mode char h
           bindsym i exec i3pm-workspace-mode char i
           bindsym j exec i3pm-workspace-mode char j
           bindsym k exec i3pm-workspace-mode char k
           bindsym l exec i3pm-workspace-mode char l
-          bindsym m exec i3pm-workspace-mode char m
+          # bindsym m removed - conflicts with Feature 073 move window action
           bindsym n exec i3pm-workspace-mode char n
           bindsym o exec i3pm-workspace-mode char o
           bindsym p exec i3pm-workspace-mode char p
@@ -707,14 +707,14 @@ in
           bindsym c exec i3pm-workspace-mode char c
           bindsym d exec i3pm-workspace-mode char d
           bindsym e exec i3pm-workspace-mode char e
-          bindsym f exec i3pm-workspace-mode char f
+          # bindsym f removed - conflicts with Feature 073 float toggle action
           bindsym g exec i3pm-workspace-mode char g
           bindsym h exec i3pm-workspace-mode char h
           bindsym i exec i3pm-workspace-mode char i
           bindsym j exec i3pm-workspace-mode char j
           bindsym k exec i3pm-workspace-mode char k
           bindsym l exec i3pm-workspace-mode char l
-          bindsym m exec i3pm-workspace-mode char m
+          # bindsym m removed - conflicts with Feature 073 move window action
           bindsym n exec i3pm-workspace-mode char n
           bindsym o exec i3pm-workspace-mode char o
           bindsym p exec i3pm-workspace-mode char p
