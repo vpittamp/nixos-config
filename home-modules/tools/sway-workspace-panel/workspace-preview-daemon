@@ -961,11 +961,19 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
                         print(f"DEBUG: Received workspace_mode event: type={event_type}, pending={pending}", file=sys.stderr, flush=True)
 
-                        if event_type == "cancel" or event_type == "execute":
+                        if event_type == "cancel":
                             # Feature 059: Clear selection state on mode exit
                             selection_manager.clear()
                             # Hide preview card
                             emit_preview(visible=False)
+                        elif event_type == "execute":
+                            # Feature 059: T028 - Execute selected item (workspace heading or window)
+                            print(f"DEBUG: Execute event received, delegating to NavigationHandler", file=sys.stderr, flush=True)
+                            # Call NavigationHandler to execute selection (with fallback to digit navigation)
+                            navigation_handler.handle_enter_key_event(
+                                mode="all_windows",
+                                accumulated_digits=pending.get("accumulated_digits", "") if pending else ""
+                            )
                         elif event_type == "enter":
                             # Feature 072: T016 - Show all windows preview on mode entry (User Story 1)
                             # T049: Performance logging for all_windows preview
@@ -1065,12 +1073,8 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             direction = payload.get("direction")
                             print(f"DEBUG: Received nav event: direction={direction}", file=sys.stderr, flush=True)
 
-                            # Handle navigation using NavigationHandler
+                            # Handle navigation using NavigationHandler (emits updated preview internally)
                             navigation_handler.handle_arrow_key_event(direction, mode="all_windows")
-
-                            # Re-emit preview with updated selection state
-                            selection_state = selection_manager.get_selection_state()
-                            # TODO: Re-emit all_windows preview with updated selection highlight
 
                         elif event_type == "delete":
                             # Feature 059: Handle Delete key to close selected window
