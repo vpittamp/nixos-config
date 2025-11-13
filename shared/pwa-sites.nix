@@ -171,6 +171,57 @@
       app_scope = "global";
       preferred_workspace = 59;
     }
+
+    # Microsoft Outlook
+    {
+      name = "Microsoft Outlook";
+      url = "https://outlook.office.com/mail";
+      domain = "outlook.office.com";
+      icon = "/etc/nixos/assets/icons/outlook.svg";
+      description = "Microsoft Outlook web email client";
+      categories = "Network;Email;Office;";
+      keywords = "email;outlook;microsoft;office;mail;calendar;";
+      scope = "https://outlook.office.com/";
+      ulid = "01K9WW04PVPHM40D1PV2RVHZFT";  # Generated 2025-11-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 60;
+      preferred_monitor_role = "secondary";  # Email client on center monitor
+    }
+
+    # Hetzner Cloud Console
+    {
+      name = "Hetzner Cloud";
+      url = "https://console.hetzner.cloud";
+      domain = "console.hetzner.cloud";
+      icon = "/etc/nixos/assets/icons/hetzner-cloud.svg";
+      description = "Hetzner Cloud infrastructure management console";
+      categories = "Network;Development;System;";
+      keywords = "cloud;infrastructure;server;hosting;hetzner;devops;";
+      scope = "https://console.hetzner.cloud/";
+      ulid = "01K9WW04PVCDRTE4WFFPCYC436";  # Generated 2025-11-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 61;
+      preferred_monitor_role = "tertiary";  # Infrastructure tools on tertiary monitor
+    }
+
+    # Tailscale Admin Console
+    {
+      name = "Tailscale";
+      url = "https://login.tailscale.com/admin/machines";
+      domain = "login.tailscale.com";
+      icon = "/etc/nixos/assets/icons/tailscale.svg";
+      description = "Tailscale VPN admin console for managing devices and network";
+      categories = "Network;System;Security;";
+      keywords = "vpn;tailscale;network;mesh;admin;devices;";
+      scope = "https://login.tailscale.com/";
+      ulid = "01K9YS261RFD4HHDNVGDAV41EG";  # Generated 2025-11-12
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 62;
+      preferred_monitor_role = "tertiary";  # Network admin tools on tertiary monitor
+    }
   ];
 
   # ULID validation function

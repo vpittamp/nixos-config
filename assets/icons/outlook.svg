@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Microsoft Outlook icon - Modern design -->
+  <defs>
+    <linearGradient id="outlookGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078D4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0052A3;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Main square background -->
+  <rect x="4" y="4" width="40" height="40" rx="2" fill="url(#outlookGradient)"/>
+  <!-- Envelope design -->
+  <path d="M 12 16 L 24 26 L 36 16 Z" fill="#FFFFFF" opacity="0.9"/>
+  <path d="M 12 16 L 12 32 L 36 32 L 36 16 L 24 26 Z" fill="none" stroke="#FFFFFF" stroke-width="1.5" opacity="0.9"/>
+  <!-- "O" letter overlay -->
+  <circle cx="24" cy="24" r="8" fill="none" stroke="#FFFFFF" stroke-width="2.5" opacity="0.3"/>
+</svg>
