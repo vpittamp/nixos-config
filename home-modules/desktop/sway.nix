@@ -677,6 +677,11 @@ in
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
 
+          # Feature 073: Per-window actions for interactive menu (T048, T049)
+          bindsym m exec i3pm-workspace-mode action m
+          bindsym Shift+m exec i3pm-workspace-mode action shift-m
+          bindsym f exec i3pm-workspace-mode action f
+
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"
           bindsym KP_Enter exec "i3pm-workspace-mode execute"
@@ -733,6 +738,11 @@ in
           bindsym Home exec i3pm-workspace-mode nav home
           bindsym End exec i3pm-workspace-mode nav end
           bindsym Delete exec i3pm-workspace-mode delete
+
+          # Feature 073: Per-window actions for interactive menu (T048, T049)
+          bindsym m exec i3pm-workspace-mode action m
+          bindsym Shift+m exec i3pm-workspace-mode action shift-m
+          bindsym f exec i3pm-workspace-mode action f
 
           # Execute/cancel (Feature 058: Visual feedback now via workspace bar)
           bindsym Return exec "i3pm-workspace-mode execute"

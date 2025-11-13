@@ -142,12 +142,12 @@ This feature extends existing workspace-preview-daemon in `/etc/nixos/home-modul
 - [X] T041 [P] [US4] Implement async handle_window_float_toggle() (immediate action) in home-modules/tools/sway-workspace-panel/action_handlers.py
 - [X] T042 [P] [US4] Implement async handle_window_focus() for split container focus in home-modules/tools/sway-workspace-panel/action_handlers.py
 - [X] T043 [P] [US4] Implement async handle_window_mark() for window marking in home-modules/tools/sway-workspace-panel/action_handlers.py
-- [ ] T044 [US4] Implement sub-mode entry handlers (enter_move_mode, enter_mark_mode) in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T045 [US4] Implement digit accumulation logic for move window sub-mode in home-modules/tools/sway-workspace-panel/sub_mode_manager.py
-- [ ] T046 [US4] Implement Enter key confirmation for sub-mode execution in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T047 [US4] Implement Escape key cancellation from any sub-mode in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
-- [ ] T048 [US4] Add M key binding for move window in home-modules/desktop/sway-keybindings.nix (mode "→ WS" and "⇒ WS")
-- [ ] T049 [US4] Add F key binding for float toggle in home-modules/desktop/sway-keybindings.nix (mode "→ WS" and "⇒ WS")
+- [X] T044 [US4] Implement sub-mode entry handlers (enter_move_mode, enter_mark_mode) in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
+- [X] T045 [US4] Implement digit accumulation logic for move window sub-mode in home-modules/tools/sway-workspace-panel/sub_mode_manager.py (already complete from Phase 2)
+- [X] T046 [US4] Implement Enter key confirmation for sub-mode execution in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
+- [X] T047 [US4] Implement Escape key cancellation from any sub-mode in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
+- [X] T048 [US4] Add M key binding for move window in home-modules/desktop/sway.nix (mode "→ WS" and "⇒ WS")
+- [X] T049 [US4] Add F key binding for float toggle in home-modules/desktop/sway.nix (mode "→ WS" and "⇒ WS")
 - [ ] T050 [US4] Update keyboard hints for sub-mode prompts (e.g., "Type workspace: 23_") in home-modules/tools/sway-workspace-panel/keyboard_hint_manager.py
 - [ ] T051 [US4] Add visual feedback for sub-mode entry/exit in home-modules/tools/sway-workspace-panel/workspace-preview-daemon
 
