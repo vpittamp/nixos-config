@@ -26,12 +26,23 @@ Performance:
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from typing import Dict, Tuple, Optional
 from enum import Enum
 
 from pydantic import BaseModel, Field
 import i3ipc.aio
+
+
+def log_action(message: str, level: str = "INFO") -> None:
+    """Log action handler events to stderr for daemon monitoring.
+
+    Args:
+        message: Log message
+        level: Log level (INFO, WARN, ERROR)
+    """
+    print(f"[ACTION_HANDLER] [{level}] {message}", file=sys.stderr, flush=True)
 
 
 class ActionType(Enum):
@@ -210,6 +221,7 @@ async def handle_window_close(
 
     # Check debounce
     if not tracker.should_allow(ActionType.CLOSE, window_id):
+        log_action(f"Close window {window_id} rejected - debounce (min {tracker.min_interval_ms}ms)", "WARN")
         return ActionResult(
             success=False,
             action_type=ActionType.CLOSE,
@@ -223,12 +235,14 @@ async def handle_window_close(
         # Send Sway IPC kill command
         # Note: Sway uses con_id (container ID) for precise targeting
         command = f"[con_id={window_id}] kill"
+        log_action(f"Closing window {window_id}: {command}", "INFO")
         replies = await conn.command(command)
 
         # Check if command succeeded
         # Sway returns list of CommandReply objects, check first reply
         if not replies or not replies[0].success:
             error_msg = replies[0].error if replies else "Unknown IPC error"
+            log_action(f"Close window {window_id} failed: {error_msg}", "ERROR")
             return ActionResult(
                 success=False,
                 action_type=ActionType.CLOSE,
@@ -240,6 +254,7 @@ async def handle_window_close(
 
         # Success
         latency_ms = (time.monotonic() - start_time) * 1000
+        log_action(f"Close window {window_id} succeeded ({latency_ms:.1f}ms)", "INFO")
         return ActionResult(
             success=True,
             action_type=ActionType.CLOSE,
@@ -248,6 +263,7 @@ async def handle_window_close(
         )
 
     except asyncio.TimeoutError:
+        log_action(f"Close window {window_id} timeout (>500ms)", "ERROR")
         return ActionResult(
             success=False,
             action_type=ActionType.CLOSE,
@@ -257,6 +273,7 @@ async def handle_window_close(
             latency_ms=500.0
         )
     except Exception as e:
+        log_action(f"Close window {window_id} unexpected error: {str(e)}", "ERROR")
         return ActionResult(
             success=False,
             action_type=ActionType.CLOSE,
@@ -367,6 +384,7 @@ async def handle_window_move(
 
     # Validate workspace number (1-70 per spec)
     if not (1 <= target_workspace <= 70):
+        log_action(f"Move window {window_id} to WS {target_workspace} rejected - invalid workspace", "ERROR")
         return ActionResult(
             success=False,
             action_type=ActionType.MOVE,
@@ -378,6 +396,7 @@ async def handle_window_move(
 
     # Check debounce
     if not tracker.should_allow(ActionType.MOVE, window_id):
+        log_action(f"Move window {window_id} to WS {target_workspace} rejected - debounce", "WARN")
         return ActionResult(
             success=False,
             action_type=ActionType.MOVE,
@@ -390,11 +409,13 @@ async def handle_window_move(
     try:
         # Send Sway IPC move command
         command = f"[con_id={window_id}] move container to workspace number {target_workspace}"
+        log_action(f"Moving window {window_id} to WS {target_workspace}: {command}", "INFO")
         replies = await conn.command(command)
 
         # Check if command succeeded
         if not replies or not replies[0].success:
             error_msg = replies[0].error if replies else "Unknown IPC error"
+            log_action(f"Move window {window_id} to WS {target_workspace} failed: {error_msg}", "ERROR")
             return ActionResult(
                 success=False,
                 action_type=ActionType.MOVE,
@@ -406,6 +427,7 @@ async def handle_window_move(
 
         # Success
         latency_ms = (time.monotonic() - start_time) * 1000
+        log_action(f"Move window {window_id} to WS {target_workspace} succeeded ({latency_ms:.1f}ms)", "INFO")
         return ActionResult(
             success=True,
             action_type=ActionType.MOVE,
@@ -414,6 +436,7 @@ async def handle_window_move(
         )
 
     except asyncio.TimeoutError:
+        log_action(f"Move window {window_id} to WS {target_workspace} timeout (>500ms)", "ERROR")
         return ActionResult(
             success=False,
             action_type=ActionType.MOVE,
@@ -423,6 +446,7 @@ async def handle_window_move(
             latency_ms=500.0
         )
     except Exception as e:
+        log_action(f"Move window {window_id} to WS {target_workspace} unexpected error: {str(e)}", "ERROR")
         return ActionResult(
             success=False,
             action_type=ActionType.MOVE,
