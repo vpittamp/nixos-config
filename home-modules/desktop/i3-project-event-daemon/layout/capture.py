@@ -426,8 +426,10 @@ class LayoutCapture:
         leaf_nodes = self._find_leaf_nodes(workspace_node)
 
         for node in leaf_nodes:
-            # Skip nodes without window_class (containers, etc.)
-            if not hasattr(node, 'window_class') or not node.window_class:
+            # Skip nodes without window_class/app_id (containers, etc.)
+            # Sway uses app_id, i3 uses window_class
+            window_class = getattr(node, 'window_class', None) or getattr(node, 'app_id', None)
+            if not window_class:
                 continue
 
             # Create Window object (Feature 074: T037 - async for terminal cwd capture)
@@ -453,8 +455,16 @@ class LayoutCapture:
         if leaves is None:
             leaves = []
 
-        # If node has window property, it's a leaf
+        # If node has window property, it's a leaf (i3/X11)
+        # In Sway, windows have pid and app_id instead of window ID
+        is_leaf = False
         if hasattr(node, 'window') and node.window and node.window > 0:
+            is_leaf = True
+        elif hasattr(node, 'pid') and node.pid and (hasattr(node, 'app_id') or hasattr(node, 'window_class')):
+            # Sway: has pid and either app_id or window_class
+            is_leaf = True
+
+        if is_leaf:
             leaves.append(node)
             return leaves
 
@@ -501,7 +511,8 @@ class LayoutCapture:
                 floating = floating_str not in ['auto_off', 'no']
 
             # Discover launch command (T032, T033)
-            window_class = getattr(node, 'window_class', None) or "unknown"
+            # Sway uses app_id, i3 uses window_class
+            window_class = getattr(node, 'window_class', None) or getattr(node, 'app_id', None) or "unknown"
             window_instance = getattr(node, 'window_instance', None)
             if not window_instance:
                 window_instance = window_class.lower() if window_class != "unknown" else None
@@ -514,10 +525,10 @@ class LayoutCapture:
                 pid=pid,
             )
 
-            # If no launch command could be discovered, skip this window
+            # Feature 074: launch_command is no longer required - we use AppLauncher with app_registry_name
+            # Just log a debug message if not found, but don't skip the window
             if not launch_command:
-                logger.warning(f"Could not discover launch command for {window_class}")
-                return None
+                logger.debug(f"No launch command discovered for {window_class} (will use AppLauncher for restoration)")
 
             # Feature 074: Session Management - Capture terminal working directory (T037, US2)
             # REQUIRED field - use Path() for non-terminals or failed captures

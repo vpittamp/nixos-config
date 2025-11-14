@@ -49,21 +49,24 @@ async function saveLayout(args: string[], flags: Record<string, unknown>): Promi
 
     // Call daemon to save layout
     const result = await daemon.request("layout.save", {
-      project_name: projectName,
-      layout_name: layoutName,
+      project: projectName,
+      name: layoutName,
     }) as {
-      project: string;
-      layout_name: string;
-      windows_captured: number;
-      file_path: string;
+      success: boolean;
+      layout_path: string;
+      workspace_count: number;
+      window_count: number;
+      focused_workspace: number;
     };
 
     if (flags.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      console.log(`\n✓ Layout '${result.layout_name}' saved successfully`);
-      console.log(`  Windows captured: ${result.windows_captured}`);
-      console.log(`  Location: ${result.file_path}\n`);
+      console.log(`\n✓ Layout '${layoutName || "default"}' saved successfully`);
+      console.log(`  Windows captured: ${result.window_count}`);
+      console.log(`  Workspaces: ${result.workspace_count}`);
+      console.log(`  Focused workspace: ${result.focused_workspace}`);
+      console.log(`  Location: ${result.layout_path}\n`);
     }
 
     return 0;
@@ -94,34 +97,39 @@ async function restoreLayout(args: string[], flags: Record<string, unknown>): Pr
 
     // Call daemon to restore layout
     const result = await daemon.request("layout.restore", {
-      project_name: projectName,
-      layout_name: layoutName,
+      project: projectName,
+      name: layoutName,
     }) as {
-      restored: number;
-      missing: Array<{
-        app_id: string;
-        app_name: string;
-        workspace: number;
+      success: boolean;
+      windows_launched: number;
+      windows_matched: number;
+      windows_timeout: number;
+      windows_failed: number;
+      elapsed_seconds: number;
+      correlations: Array<{
+        restoration_mark: string;
+        window_class: string;
+        status: string;
+        window_id: number;
+        correlation_time: number;
       }>;
-      total: number;
     };
-
-    if (result.missing.length > 0) {
-      console.log("\nMissing windows (not currently open):");
-      for (const window of result.missing) {
-        console.log(`  ⚠ ${window.app_name} (workspace ${window.workspace})`);
-      }
-      console.log();
-    }
 
     if (flags.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
       console.log(`\n✓ Layout restored successfully`);
-      console.log(`  Restored: ${result.restored}/${result.total} windows`);
-      if (result.missing.length > 0) {
-        console.log(`  Missing: ${result.missing.length} windows not currently open`);
+      console.log(`  Windows launched: ${result.windows_launched}`);
+      console.log(`  Windows matched: ${result.windows_matched}`);
+
+      if (result.windows_timeout > 0) {
+        console.log(`  ⚠ Windows timeout: ${result.windows_timeout}`);
       }
+      if (result.windows_failed > 0) {
+        console.log(`  ✗ Windows failed: ${result.windows_failed}`);
+      }
+
+      console.log(`  Elapsed time: ${result.elapsed_seconds.toFixed(1)}s`);
       console.log();
     }
 

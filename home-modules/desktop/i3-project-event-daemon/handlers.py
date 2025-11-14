@@ -484,6 +484,19 @@ async def _switch_project(
 
     logger.info(f"TICK: Switching project: {old_project} → {project_name}")
 
+    # Feature 074: Session Management - Auto-save layout before switching (T078-T080, US5)
+    if old_project and hasattr(state_manager, 'auto_save_manager') and state_manager.auto_save_manager:
+        try:
+            # T079: Auto-save in background to avoid blocking (<200ms target)
+            auto_save_task = asyncio.create_task(
+                state_manager.auto_save_manager.auto_save_on_switch(old_project)
+            )
+            logger.debug(f"Started auto-save background task for {old_project}")
+            # Note: Task runs in background, doesn't block project switch
+        except Exception as e:
+            logger.error(f"Failed to start auto-save for {old_project}: {e}")
+            # Don't fail the project switch if auto-save fails
+
     # Feature 037: Use mark-based window filtering (rebuild trigger: 2025-10-25-18:55)
     logger.info(f"TICK: Importing and calling mark-based filter_windows_by_project")
     from .services.window_filter import filter_windows_by_project
@@ -547,6 +560,19 @@ async def _switch_project(
             # Don't fail the project switch if focus restoration fails
     else:
         logger.debug("FocusTracker not initialized, skipping workspace focus restoration")
+
+    # Feature 074: Session Management - Auto-restore layout after activation (T092-T093, US6)
+    # Auto-restore happens AFTER workspace focus restoration to maintain correct workspace context
+    if hasattr(state_manager, 'auto_restore_manager') and state_manager.auto_restore_manager:
+        try:
+            # T092-T093: Restore layout automatically if enabled for this project
+            await state_manager.auto_restore_manager.auto_restore_on_activate(project_name)
+            logger.debug(f"Auto-restore check completed for project {project_name}")
+        except Exception as e:
+            logger.error(f"Error during auto-restore for project {project_name}: {e}")
+            # Don't fail the project switch if auto-restore fails
+    else:
+        logger.debug("AutoRestoreManager not initialized, skipping auto-restore")
 
     # Save to config file
     from .models import ActiveProjectState
@@ -766,6 +792,21 @@ async def on_window_new(
         if window_pid:
             try:
                 env = read_process_environ(window_pid)
+
+                # Feature 074: Apply restoration mark for layout restore
+                # Check if this window was launched with I3PM_RESTORE_MARK
+                restore_mark = env.get("I3PM_RESTORE_MARK")
+                if restore_mark:
+                    logger.info(
+                        f"Window {window_id} ({window_class}) has restoration mark: {restore_mark}, applying mark"
+                    )
+                    try:
+                        # Apply the restoration mark to the window for correlation
+                        await conn.command(f'[con_id="{window_id}"] mark --add "{restore_mark}"')
+                        logger.debug(f"Successfully applied restoration mark {restore_mark} to window {window_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to apply restoration mark {restore_mark} to window {window_id}: {e}")
+
                 # Feature 062: Skip project marking for scratchpad terminals
                 if env.get("I3PM_SCRATCHPAD") == "true":
                     is_scratchpad_terminal = True
@@ -1852,6 +1893,10 @@ async def on_window_focus(
     try:
         await state_manager.update_window(window_id, last_focus=datetime.now())
         logger.debug(f"Updated focus timestamp for window {window_id}")
+
+        # Feature 074 T066 (US4): Track focused window per workspace
+        if current_ws and hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
+            await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
 
     except Exception as e:
         error_msg = str(e)

@@ -270,6 +270,13 @@ export I3PM_LAUNCHER_PID="$$"
 export I3PM_TARGET_WORKSPACE="$PREFERRED_WORKSPACE"
 export I3PM_EXPECTED_CLASS="$EXPECTED_CLASS"
 
+# Feature 074: Layout restore correlation mark
+# If I3PM_RESTORE_MARK is set (by AppLauncher during layout restore), export it
+if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
+    export I3PM_RESTORE_MARK
+    log "DEBUG" "I3PM_RESTORE_MARK=$I3PM_RESTORE_MARK (layout restore)"
+fi
+
 log "DEBUG" "I3PM_APP_ID=$I3PM_APP_ID"
 log "DEBUG" "I3PM_APP_NAME=$I3PM_APP_NAME"
 log "DEBUG" "I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME"
@@ -402,6 +409,12 @@ ENV_EXPORTS=(
     "export I3PM_TARGET_WORKSPACE='$I3PM_TARGET_WORKSPACE'"
     "export I3PM_EXPECTED_CLASS='$I3PM_EXPECTED_CLASS'"
 )
+
+# Feature 074: Add I3PM_RESTORE_MARK for layout restore correlation (if set)
+# This ensures restoration marks are passed through swaymsg exec to launched processes
+if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
+    ENV_EXPORTS+=("export I3PM_RESTORE_MARK='$I3PM_RESTORE_MARK'")
+fi
 
 ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 

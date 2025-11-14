@@ -178,9 +178,20 @@ class MarkBasedCorrelator:
         Returns:
             RestoreCorrelation tracking object with status and timing
         """
-        # Generate mark and create correlation tracker
-        mark = self.generate_restoration_mark()
-        placeholder.restoration_mark = mark
+        # Use existing restoration mark if already set (and not placeholder value)
+        # (Feature 074: restore.py pre-generates marks and passes to AppLauncher)
+        has_mark = (
+            hasattr(placeholder, 'restoration_mark') and
+            placeholder.restoration_mark and
+            placeholder.restoration_mark != "i3pm-restore-00000000"  # Exclude placeholder
+        )
+        if has_mark:
+            mark = placeholder.restoration_mark
+            logger.debug(f"Using pre-generated restoration mark: {mark}")
+        else:
+            mark = self.generate_restoration_mark()
+            placeholder.restoration_mark = mark
+            logger.debug(f"Generated new restoration mark: {mark} (placeholder was: {getattr(placeholder, 'restoration_mark', 'none')})")
 
         correlation = RestoreCorrelation(
             restoration_mark=mark,

@@ -97,17 +97,34 @@ class AppLauncher:
 
         logger.debug(f"Launching app: {app_name} (project: {project}, cwd: {cwd})")
 
-        # Build command with substitutions
-        command = self._build_command(app_info, project, cwd)
+        # Feature 074: Use unified app launcher wrapper (replaces direct command execution)
+        # The wrapper handles:
+        # - Loading app from registry
+        # - Building command with parameter substitution
+        # - Injecting all I3PM_* environment variables
+        # - Sending launch notification to daemon
+        # - systemd-run process isolation
+        import os
+        wrapper_path = os.path.expanduser("~/.local/bin/app-launcher-wrapper.sh")
+        command = [wrapper_path, app_name]
 
-        # Build environment with I3PM_* variables
-        env = self._build_environment(app_info, project, restore_mark, extra_env)
+        # Build environment with restoration context
+        env = dict(os.environ)  # Inherit current environment
+
+        # Add I3PM_RESTORE_MARK for layout correlation (Feature 074)
+        if restore_mark:
+            env["I3PM_RESTORE_MARK"] = restore_mark
+            logger.debug(f"Injecting I3PM_RESTORE_MARK={restore_mark}")
+
+        # Add any extra environment variables
+        if extra_env:
+            env.update(extra_env)
 
         # Determine working directory
         launch_cwd = self._resolve_cwd(app_info, project, cwd)
 
         try:
-            # Launch subprocess
+            # Launch via unified wrapper
             process = subprocess.Popen(
                 command,
                 env=env,
@@ -118,13 +135,13 @@ class AppLauncher:
             )
 
             logger.info(
-                f"Launched {app_name} (PID: {process.pid}, cwd: {launch_cwd})"
+                f"Launched {app_name} via wrapper (PID: {process.pid}, cwd: {launch_cwd})"
             )
 
             return process
 
         except Exception as e:
-            logger.error(f"Failed to launch {app_name}: {e}", exc_info=True)
+            logger.error(f"Failed to launch {app_name} via wrapper: {e}", exc_info=True)
             return None
 
     def _build_command(
