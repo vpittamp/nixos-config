@@ -42,6 +42,17 @@ let
         #   git checkout ${self.rev or "main"}
       '';
     };
+
+  # Internal helper: Create pkgs instances for a given system
+  mkPkgs = system: import nixpkgs {
+    inherit system;
+    config.allowUnfree = true;
+  };
+
+  mkPkgsUnstable = system: import nixpkgs-bleeding {
+    inherit system;
+    config.allowUnfree = true;
+  };
 in
 {
   # Create a standardized Home Manager configuration for NixOS modules
@@ -82,17 +93,6 @@ in
         home-manager.nixosModules.home-manager
       ];
     };
-
-  # Create pkgs instances for a given system
-  mkPkgs = system: import nixpkgs {
-    inherit system;
-    config.allowUnfree = true;
-  };
-
-  mkPkgsUnstable = system: import nixpkgs-bleeding {
-    inherit system;
-    config.allowUnfree = true;
-  };
 
   # Create a standalone Home Manager configuration
   # Used for non-NixOS systems (macOS, other Linux distros)
