@@ -192,9 +192,9 @@ in
    Visibility and Transitions
    ============================================================================ */
 
-.metric-block[visible="false"] {
-  display: none;
-}
+/* Note: GTK CSS doesn't support attribute selectors like [visible="false"]
+ * Visibility is controlled by the :visible property in eww.yuck widgets instead
+ * Widgets with :visible false won't render at all */
 
 /* Smooth transitions for value changes */
 .value {
