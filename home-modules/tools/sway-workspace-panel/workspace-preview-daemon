@@ -56,11 +56,11 @@ def eww_open_window(window_name: str = "workspace-preview") -> None:
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=1.0,
+            timeout=3.0,
         )
         print(f"DEBUG: Opened Eww window: {window_name}", file=sys.stderr, flush=True)
     except subprocess.TimeoutExpired:
-        print(f"WARNING: eww open {window_name} timed out after 1s", file=sys.stderr, flush=True)
+        print(f"WARNING: eww open {window_name} timed out after 3s", file=sys.stderr, flush=True)
     except subprocess.CalledProcessError as e:
         print(f"ERROR: Failed to open Eww window {window_name}: {e}", file=sys.stderr, flush=True)
     except FileNotFoundError:
@@ -79,11 +79,11 @@ def eww_close_window(window_name: str = "workspace-preview") -> None:
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=1.0,
+            timeout=3.0,
         )
         print(f"DEBUG: Closed Eww window: {window_name}", file=sys.stderr, flush=True)
     except subprocess.TimeoutExpired:
-        print(f"WARNING: eww close {window_name} timed out after 1s", file=sys.stderr, flush=True)
+        print(f"WARNING: eww close {window_name} timed out after 3s", file=sys.stderr, flush=True)
     except subprocess.CalledProcessError as e:
         # Window might already be closed, which is fine
         print(f"DEBUG: eww close {window_name} returned non-zero (might already be closed): {e}", file=sys.stderr, flush=True)
@@ -602,7 +602,7 @@ class NavigationHandler:
                 ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
                 check=False,
                 capture_output=True,
-                timeout=0.5,
+                timeout=2.0,
                 text=True,
             )
             if result.returncode != 0:
@@ -618,7 +618,7 @@ class NavigationHandler:
                 ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"keyboard_hints={hints}"],
                 check=False,
                 capture_output=True,
-                timeout=0.5,
+                timeout=2.0,
                 text=True,
             )
             if result.returncode != 0:
@@ -965,7 +965,7 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
             ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
             check=False,
             capture_output=True,
-            timeout=0.5,
+            timeout=2.0,
             text=True,
         )
         if result.returncode != 0:
@@ -1002,7 +1002,7 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
                 ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
                 check=False,
                 capture_output=True,
-                timeout=0.5,
+                timeout=2.0,
                 text=True,
             )
             if result.returncode != 0:
@@ -1034,7 +1034,7 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
             ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
             check=False,
             capture_output=True,
-            timeout=0.5,
+            timeout=2.0,
             text=True,
         )
         if result.returncode != 0:
@@ -1382,7 +1382,7 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                                     ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
                                     check=False,
                                     capture_output=True,
-                                    timeout=0.5,
+                                    timeout=2.0,
                                     text=True,
                                 )
                                 if result.returncode != 0:

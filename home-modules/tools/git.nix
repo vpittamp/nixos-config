@@ -51,13 +51,12 @@
         };
       };
       
-      # Credential helpers - use 1Password for all Git operations
-      # This replaces gh/glab credential helpers with unified 1Password integration
-      credential = {
-        # Primary credential helper: 1Password
-        # This handles GitHub, GitLab, and all other Git remotes
-        helper = "${pkgs._1password-gui or pkgs._1password}/libexec/git-credential-1password";
-      };
+      # Credential helpers - disabled for SSH-only authentication
+      # We use SSH keys via 1Password SSH agent instead of HTTPS credential helpers
+      # If you need HTTPS authentication, consider using git-credential-oauth
+      # credential = {
+      #   helper = "${pkgs.git-credential-oauth}/bin/git-credential-oauth";
+      # };
     };
   };
   

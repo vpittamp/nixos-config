@@ -406,10 +406,12 @@ ENV_EXPORTS=(
 ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 
 # Build application command with working directory
-if [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+# For scoped apps: use project directory (if available)
+# For global apps: always use HOME to avoid AppImage/bubblewrap sandbox issues
+if [ "$SCOPE" = "scoped" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
     APP_CMD="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
 else
-    APP_CMD="${ARGS[*]}"
+    APP_CMD="cd '$HOME' && ${ARGS[*]}"
 fi
 
 # Complete shell command with environment setup

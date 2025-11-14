@@ -368,6 +368,9 @@
     # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
 
+    # 1Password GUI - needed for git-credential-1password helper
+    _1password-gui    # Contains op-ssh-sign and git-credential-1password
+
     # Testing framework (Feature 069/070) - DISABLED: __noChroot conflicts with sandbox
     # (pkgs.callPackage ../home-modules/tools/sway-test/default.nix { })
   ];

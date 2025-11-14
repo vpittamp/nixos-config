@@ -234,6 +234,8 @@ in {
         ExecStopPost = "${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all";
         Restart = "on-failure";
         RestartSec = 2;
+        # Kill all child processes when service stops
+        KillMode = "control-group";
       };
       Install = {
         WantedBy = [ "sway-session.target" ];

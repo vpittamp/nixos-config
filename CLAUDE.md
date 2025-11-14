@@ -82,18 +82,49 @@ Visual schematic layout of all workspaces with app names.
 
 ## 🎨 Unified Bar System (Feature 057)
 
-Centralized theming with Catppuccin Mocha across top bar (Swaybar), bottom bar (Eww), and notification center (SwayNC).
+Centralized theming with Catppuccin Mocha across top bar (Eww), bottom bar (Eww), and notification center (SwayNC).
 
 **Theme**: `~/.config/sway/appearance.json` (hot-reloadable)
 
 **Commands**:
 ```bash
-swaymsg reload                         # Reload appearance
+swaymsg reload                             # Reload appearance
+systemctl --user restart eww-top-bar       # Top bar (Feature 060)
 systemctl --user restart sway-workspace-panel  # Bottom bar
-systemctl --user restart swaync       # Notification center
+systemctl --user restart swaync            # Notification center
 ```
 
 **Docs**: `/etc/nixos/specs/057-unified-bar-system/quickstart.md`
+
+### Eww Top Bar (Feature 060)
+
+Eww-based top bar with system metrics (CPU, memory, disk, network, temperature, date/time).
+
+**Enable**:
+```nix
+# File: /etc/nixos/home-vpittamp.nix
+programs.eww-top-bar.enable = true;
+```
+
+**Commands**:
+```bash
+systemctl --user {status|restart|stop} eww-top-bar
+journalctl --user -u eww-top-bar -f        # Follow logs
+```
+
+**Metrics**:
+- CPU: Load average (2s update)
+- Memory: Used/Total GB and percentage (2s update)
+- Disk: Used/Total GB and percentage (2s update)
+- Network: RX/TX Mbps (2s update)
+- Temperature: Average thermal zone temp (2s update)
+- Date/Time: Full date and time (1s update)
+
+**Multi-Monitor**: Auto-detects outputs (eDP-1/HDMI-A-1 on M1, HEADLESS-1/2/3 on Hetzner)
+
+**Hardware Auto-Detection**: Battery, bluetooth, thermal sensors (shows only if available)
+
+**Docs**: `/etc/nixos/specs/060-eww-top-bar/quickstart.md`
 
 ## ⌨️ Event-Driven Workspace Mode Navigation (Feature 042)
 

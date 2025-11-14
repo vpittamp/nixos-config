@@ -13,6 +13,9 @@ in
     # Once in mode: type digits, press Enter to execute
     # See workspace number appear in status bar as you type
 
+    # Force-close stuck workspace preview (emergency exit)
+    "${modifier}+Shift+Escape" = "exec i3pm-workspace-mode cancel";
+
     # Toggle between current and last workspace
     "${modifier}+Tab" = "workspace back_and_forth";
 

@@ -10,6 +10,7 @@
     ./home-modules/desktop/sway.nix  # Sway window manager configuration
     ./home-modules/desktop/swaybar.nix  # Swaybar with event-driven status
     ./home-modules/desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
+    ./home-modules/desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
     ./home-modules/desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
     ./home-modules/profiles/declarative-cleanup.nix  # Automatic XDG cleanup
 
@@ -71,4 +72,7 @@
   };
 
   programs.eww-workspace-bar.enable = true;
+
+  # Feature 060: Eww top bar with system metrics
+  programs.eww-top-bar.enable = true;  # ✅ Enabled - all features implemented (Phases 1-10)
 }

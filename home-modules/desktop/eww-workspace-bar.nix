@@ -96,6 +96,28 @@ let
       ${pkgs.gnugrep}/bin/grep -v "^DEBUG:" | ${pkgs.gnugrep}/bin/grep -v "^WARNING:" | ${pkgs.gnugrep}/bin/grep -v "^ERROR:"
   '';
 
+  # Recovery script to restore workspace bar when it disappears
+  restoreBarScript = pkgs.writeShellScriptBin "restore-workspace-bar" ''
+    echo "Checking for orphaned Eww processes..."
+    if ${pkgs.procps}/bin/pgrep -f "eww.*workspace-preview" >/dev/null; then
+      echo "Found orphaned preview window, killing..."
+      ${pkgs.procps}/bin/pkill -f "eww.*workspace-preview"
+      sleep 0.5
+    fi
+
+    echo "Restarting workspace bar service..."
+    ${pkgs.systemd}/bin/systemctl --user restart eww-workspace-bar
+
+    echo "Checking status..."
+    sleep 1
+    if ${pkgs.systemd}/bin/systemctl --user is-active eww-workspace-bar >/dev/null; then
+      echo "✓ Workspace bar restored successfully"
+    else
+      echo "✗ Failed to restore workspace bar. Check: systemctl --user status eww-workspace-bar"
+      exit 1
+    fi
+  '';
+
   ewwConfigDir = "eww-workspace-bar";
   ewwConfigPath = "%h/.config/${ewwConfigDir}";
 
@@ -817,7 +839,7 @@ in
 
   config = lib.mkIf cfg.enable {
     # Feature 057: User Story 2 - Add workspace preview daemon (T042)
-    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin ];
+    home.packages = [ pkgs.eww workspacePanelBin workspacePreviewDaemonBin restoreBarScript ];
 
     xdg.configFile."${ewwConfigDir}/eww.yuck".text = ewwYuck;
     xdg.configFile."${ewwConfigDir}/eww.scss".text = ewwScss;
@@ -835,6 +857,8 @@ in
         ExecStopPost = ''${pkgs.eww}/bin/eww --config ${ewwConfigPath} close-all'';
         Restart = "on-failure";
         RestartSec = 2;
+        # Kill all child processes (including eww open commands) when service stops
+        KillMode = "control-group";
         # Match Walker's XDG_DATA_DIRS for icon theme access (Papirus, Breeze, etc.)
         # Priority: curated apps → user apps → icon themes → system fallback
         # PATH: Required for deflisten to find workspace-preview-daemon
@@ -862,7 +886,26 @@ in
       };
       Service = {
         Type = "simple";
+        # Cleanup stuck preview windows before starting (prevent cascade failures)
+        ExecStartPre = pkgs.writeShellScript "cleanup-preview" ''
+          # Force close any stuck preview windows via Sway directly
+          ${pkgs.sway}/bin/swaymsg '[title=".*workspace.*preview.*"] kill' 2>/dev/null || true
+
+          # Also kill any orphaned eww preview processes
+          ${pkgs.procps}/bin/pkill -f "eww.*workspace-preview" 2>/dev/null || true
+
+          sleep 0.2
+        '';
         ExecStart = "${workspacePreviewDaemonBin}/bin/workspace-preview-daemon";
+        # Ensure clean shutdown even if eww hangs
+        ExecStop = pkgs.writeShellScript "stop-preview" ''
+          # Try graceful close first
+          ${pkgs.eww}/bin/eww --config ${config.home.homeDirectory}/.config/eww-workspace-bar close workspace-preview 2>/dev/null || true
+
+          # Force kill via Sway if still open after 2s
+          sleep 2
+          ${pkgs.sway}/bin/swaymsg '[title=".*workspace.*preview.*"] kill' 2>/dev/null || true
+        '';
         Restart = "on-failure";
         RestartSec = 2;
         StandardOutput = "journal";

@@ -222,6 +222,22 @@
       preferred_workspace = 62;
       preferred_monitor_role = "tertiary";  # Network admin tools on tertiary monitor
     }
+
+    # Uber Eats
+    {
+      name = "Uber Eats";
+      url = "https://www.ubereats.com";
+      domain = "ubereats.com";
+      icon = "/etc/nixos/assets/icons/ubereats.jpeg";
+      description = "Uber Eats food delivery service";
+      categories = "Network;Utility;";
+      keywords = "food;delivery;ubereats;restaurant;order;";
+      scope = "https://www.ubereats.com/";
+      ulid = "01MD0VNQPKST6Y7X8Z9ABCDEFH";  # Generated 2025-11-13
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 63;
+    }
   ];
 
   # ULID validation function

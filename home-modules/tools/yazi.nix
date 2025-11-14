@@ -3,35 +3,7 @@
 with lib;
 
 let
-  # Yazi launcher with fzf directory selection
-  yazi-fzf = pkgs.writeShellScriptBin "yazi-fzf" ''
-    # Common directories to search (customize as needed)
-    SEARCH_DIRS=(
-      "$HOME"
-      "$HOME/projects"
-      "$HOME/Documents"
-      "/etc/nixos"
-    )
-
-    # Build list of directories (max depth 3)
-    DIRS=$(for dir in "''${SEARCH_DIRS[@]}"; do
-      if [[ -d "$dir" ]]; then
-        ${pkgs.fd}/bin/fd --type d --max-depth 3 . "$dir" 2>/dev/null
-      fi
-    done | sort -u)
-
-    # Use fzf to select directory
-    SELECTED=$(echo "$DIRS" | ${pkgs.fzf}/bin/fzf \
-      --prompt="Select directory for yazi: " \
-      --height=50% \
-      --preview='${pkgs.eza}/bin/eza -la --color=always --icons {}' \
-      --preview-window=right:50%)
-
-    # If a directory was selected, open it with yazi
-    if [[ -n "$SELECTED" ]]; then
-      ${pkgs.yazi}/bin/yazi "$SELECTED"
-    fi
-  '';
+  zoxideToolsPath = makeBinPath [ pkgs.fzf ];
 in
 {
   options = {
@@ -39,9 +11,6 @@ in
   };
 
   config = mkIf config.modules.tools.yazi.enable {
-    # Add yazi-fzf to packages
-    home.packages = [ yazi-fzf ];
-
     # Desktop entries now managed by app-registry.nix (Feature 034)
     # xdg.dataFile."applications/yazi.desktop".text = ''
     #   [Desktop Entry]
@@ -55,37 +24,18 @@ in
     #   Keywords=file;manager;explorer;terminal;
     # '';
 
-    # Feature 034: DISABLED - Now using app-registry.nix for all Walker applications
-    # xdg.dataFile."applications/yazi-fzf.desktop".text = ''
-    #   [Desktop Entry]
-    #   Type=Application
-    #   Name=Yazi (Select Directory)
-    #   Comment=Launch Yazi with fzf directory picker
-    #   Exec=ghostty --class=floating_fzf -e yazi-fzf
-    #   Icon=folder-open
-    #   Terminal=false
-    #   Categories=System;FileTools;FileManager;
-    #   Keywords=file;manager;explorer;terminal;fzf;search;
-    # '';
-
     # Yazi file manager configuration
     programs.yazi = {
       enable = true;
       enableBashIntegration = true;
       
-      # FZF and zoxide integration keybindings
+      # Zoxide integration keybindings
       keymap = {
         mgr = {
           prepend_keymap = [
-            # Recursive fuzzy file find (f key)
-            { on = ["f"]; run = "shell 'selected=$(${pkgs.fd}/bin/fd --type f . | ${pkgs.fzf}/bin/fzf --preview \"${pkgs.bat}/bin/bat --color=always {}\") && [ -n \"$selected\" ] && dir=$(${pkgs.coreutils}/bin/dirname \"$selected\") && file=$(${pkgs.coreutils}/bin/basename \"$selected\") && ya=$YAZI_ID && echo \"cd \\\"$dir\\\"\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya && echo \"arrow $file\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya' --block"; desc = "Fuzzy find files recursively"; }
-
-            # FZF integration
-            { on = ["<C-f>"]; run = "shell 'ya=$YAZI_ID; yazi_dir=$(find . -type d 2>/dev/null | fzf --preview \"ls -la {}\") && echo \"cd \\\"$yazi_dir\\\"\" | yazi-msg --id=$ya'"; desc = "Jump to directory with fzf"; }
-
             # Zoxide integration
-            { on = ["z"]; run = "shell 'ya=$YAZI_ID; zoxide_dir=$(zoxide query -l | fzf --preview \"ls -la {2..-1}\") && echo \"cd \\\"$zoxide_dir\\\"\" | yazi-msg --id=$ya' --block"; desc = "Jump to frecent directory with zoxide"; }
-            { on = ["Z"]; run = "shell 'ya=$YAZI_ID; read -p \"Jump to: \" query && zoxide_dir=$(zoxide query \"$query\") && echo \"cd \\\"$zoxide_dir\\\"\" | yazi-msg --id=$ya' --block"; desc = "Jump with zoxide query"; }
+            { on = ["z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -l | ${pkgs.fzf}/bin/fzf --prompt \"Zoxide > \" --height=40% --reverse --preview \"${pkgs.eza}/bin/eza -la --color=always {}\" --preview-window=right:60%); if [ -n \"$zoxide_dir\" ]; then printf \"cd \\\"%s\\\"\\n\" \"$zoxide_dir\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya; fi' --block"; desc = "Jump to frecent directory with zoxide"; }
+            { on = ["Z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -i); if [ -n \"$zoxide_dir\" ]; then printf \"cd \\\"%s\\\"\\n\" \"$zoxide_dir\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya; fi' --block"; desc = "Jump with zoxide query"; }
             
             # Smart find
             { on = ["/"]; run = "find --smart"; desc = "Smart find with highlighting"; }

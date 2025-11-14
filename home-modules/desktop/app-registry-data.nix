@@ -127,7 +127,7 @@ let
     # WS1: Terminals (Primary: ghostty with sesh)
     (mkApp {
       name = "terminal";
-      display_name = "Ghostty Terminal";
+      display_name = "Terminal";
       command = "ghostty";
       # Use sesh connect to attach/create tmux session in project directory
       # sesh will use PROJECT_DIR as session directory context
@@ -136,7 +136,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       preferred_monitor_role = "primary";
-      icon = "com.mitchellh.ghostty";
+      icon = "/etc/nixos/assets/icons/tmux-original.svg";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -235,7 +235,7 @@ let
       scope = "scoped";
       expected_class = "Thunar";
       preferred_workspace = 6;
-      icon = "/etc/nixos/assets/icons/thunar.png";  # Use Walker icon
+      icon = "/etc/nixos/assets/icons/thunar.svg";  # Use Walker icon
       nix_package = "pkgs.xfce.thunar";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -302,7 +302,7 @@ let
       nix_package = "pkgs.k9s";
       multi_instance = false;
       fallback_behavior = "skip";
-      description = "Kubernetes cluster management";
+      description = "Kubernetes cluster management via Tailscale";
     })
 
     # WS10: Kubernetes UI (Primary: headlamp)
@@ -310,7 +310,7 @@ let
       name = "headlamp";
       display_name = "Headlamp";
       command = "headlamp";
-      parameters = "";
+      parameters = "--disable-gpu";
       scope = "global";
       expected_class = "Headlamp";
       preferred_workspace = 10;
@@ -318,7 +318,7 @@ let
       nix_package = "pkgs.headlamp";
       multi_instance = false;
       fallback_behavior = "skip";
-      description = "Kubernetes web UI for cluster management";
+      description = "Kubernetes web UI for cluster management via Tailscale";
     })
 
 
