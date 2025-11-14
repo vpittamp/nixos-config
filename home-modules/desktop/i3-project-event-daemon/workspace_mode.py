@@ -337,11 +337,12 @@ class WorkspaceModeManager:
             total_elapsed_ms = (time.time() - start_time) * 1000
             logger.info(f"Project switch successful: {matched_project} (took {total_elapsed_ms:.2f}ms)")
 
-            # Reset state
-            self._state.reset()
-
-            # Emit execute event AFTER reset (clears project mode UI)
+            # Emit execute event BEFORE reset (so daemon can close preview with current state)
             await self._emit_project_mode_event("execute")
+
+            # Reset state AFTER emitting event
+            self._state.reset()
+            logger.info("Workspace mode state reset after project switch")
 
             return {
                 "type": "project",

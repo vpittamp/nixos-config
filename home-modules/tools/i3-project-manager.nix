@@ -110,7 +110,8 @@ in {
       fi
 
       # Backward compatibility aliases (replace old bash scripts)
-      alias i3-project-switch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias i3-project-switch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias i3-project-current='i3pm current'
       alias i3-project-clear='i3pm clear'
       alias i3-project-list='i3pm list'
@@ -120,7 +121,8 @@ in {
       alias i3-project-delete='i3pm delete'
 
       # Short aliases
-      alias pswitch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias pswitch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias pcurrent='i3pm current'
       alias pclear='i3pm clear'
       alias plist='i3pm list'
@@ -136,7 +138,8 @@ in {
       fi
 
       # Backward compatibility aliases
-      alias i3-project-switch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias i3-project-switch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias i3-project-current='i3pm current'
       alias i3-project-clear='i3pm clear'
       alias i3-project-list='i3pm list'
@@ -144,7 +147,8 @@ in {
       alias i3-project-show='i3pm show'
       alias i3-project-edit='i3pm edit'
       alias i3-project-delete='i3pm delete'
-      alias pswitch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias pswitch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias pcurrent='i3pm current'
       alias pclear='i3pm clear'
       alias plist='i3pm list'
@@ -156,7 +160,8 @@ in {
       register-python-argcomplete --shell fish i3pm | source
 
       # Backward compatibility aliases
-      alias i3-project-switch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias i3-project-switch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias i3-project-current='i3pm current'
       alias i3-project-clear='i3pm clear'
       alias i3-project-list='i3pm list'
@@ -164,7 +169,8 @@ in {
       alias i3-project-show='i3pm show'
       alias i3-project-edit='i3pm edit'
       alias i3-project-delete='i3pm delete'
-      alias pswitch='i3pm switch'
+      # Feature 072 fix: Close preview window before switching projects
+      alias pswitch='i3pm-workspace-mode cancel 2>/dev/null; i3pm switch'
       alias pcurrent='i3pm current'
       alias pclear='i3pm clear'
       alias plist='i3pm list'

@@ -100,7 +100,10 @@ done <<< "$PROJECT_LIST"
 # Get project name from the index
 if [ $INDEX -lt ${#PROJECT_KEYS[@]} ]; then
     SELECTED_NAME="${PROJECT_KEYS[$INDEX]}"
-    
+
+    # Feature 072 fix: Close preview window before switching projects
+    i3pm-workspace-mode cancel 2>/dev/null || true
+
     # Handle selection (redirect output to suppress success messages)
     if [ "$SELECTED_NAME" = "__CLEAR__" ]; then
         $I3PM project clear >/dev/null 2>&1
