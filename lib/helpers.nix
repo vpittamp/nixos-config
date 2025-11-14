@@ -4,33 +4,8 @@
 
 let
   inherit (inputs) nixpkgs nixpkgs-bleeding home-manager;
-in
-{
-  # Create a standardized Home Manager configuration for NixOS modules
-  # This ensures consistency across all NixOS configurations
-  mkHomeManagerConfig = { system, user, modules, osConfig ? null }:
-    let
-      pkgs-unstable = import nixpkgs-bleeding {
-        inherit system;
-        config.allowUnfree = true;
-      };
-    in
-    {
-      home-manager = {
-        backupFileExtension = "backup";
-        useGlobalPkgs = true;
-        useUserPackages = true;
-        extraSpecialArgs = {
-          inherit inputs self pkgs-unstable;
-        } // (if osConfig != null then { inherit osConfig; } else { });
-        users.${user} = {
-          imports = modules;
-          home.enableNixpkgsReleaseCheck = false;
-        };
-      };
-    };
 
-  # Create build metadata configuration
+  # Internal helper: Create build metadata configuration
   # Provides git commit info and build details in /etc/nixos-metadata
   mkBuildMetadata = { hostname, system }:
     {
@@ -66,6 +41,31 @@ in
         # Switch to this git revision:
         #   git checkout ${self.rev or "main"}
       '';
+    };
+in
+{
+  # Create a standardized Home Manager configuration for NixOS modules
+  # This ensures consistency across all NixOS configurations
+  mkHomeManagerConfig = { system, user, modules, osConfig ? null }:
+    let
+      pkgs-unstable = import nixpkgs-bleeding {
+        inherit system;
+        config.allowUnfree = true;
+      };
+    in
+    {
+      home-manager = {
+        backupFileExtension = "backup";
+        useGlobalPkgs = true;
+        useUserPackages = true;
+        extraSpecialArgs = {
+          inherit inputs self pkgs-unstable;
+        } // (if osConfig != null then { inherit osConfig; } else { });
+        users.${user} = {
+          imports = modules;
+          home.enableNixpkgsReleaseCheck = false;
+        };
+      };
     };
 
   # Create a complete NixOS system configuration
