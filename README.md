@@ -2,6 +2,8 @@
 
 A comprehensive, modular NixOS configuration supporting multiple platforms: WSL2, Hetzner Cloud, Apple Silicon Macs, and containers.
 
+**📢 Recent Refactor (2025-11):** Migrated to flake-parts with modular outputs (flake.nix reduced from 550 to 110 lines). See `FLAKE_REFACTOR_GUIDE.md` for details.
+
 ## 🎯 Overview
 
 This repository contains a unified NixOS configuration that has been carefully architected to:
@@ -94,6 +96,16 @@ The configuration follows a modular, hierarchical design:
 
 ### Key Directories
 
+**Flake Organization (2025-11 Refactor):**
+- **`flake.nix`** - Main entry point (110 lines, uses flake-parts)
+- **`lib/`** - Common helper functions for consistency
+- **`nixos/`** - NixOS system configurations (hetzner-sway, m1)
+- **`home/`** - Standalone Home Manager configs (macOS only)
+- **`packages/`** - Container and VM image builds
+- **`checks/`** - Flake test checks
+- **`devshells/`** - Development shell environments
+
+**System Configuration:**
 - **`configurations/`** - Platform-specific configurations
 - **`hardware/`** - Hardware-specific settings
 - **`modules/`** - Reusable system modules
