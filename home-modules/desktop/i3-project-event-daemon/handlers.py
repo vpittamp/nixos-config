@@ -685,8 +685,9 @@ async def on_window_new(
     ipc_server: Optional["IPCServer"] = None,
     application_registry: Optional[Dict[str, Dict]] = None,  # Feature 037 T026
     workspace_tracker=None,  # Feature 037 T026
+    mark_manager=None,  # Feature 076: Mark-based app identification
 ) -> None:
-    """Handle window::new events - auto-mark and classify new windows (T014, T023, T026).
+    """Handle window::new events - auto-mark and classify new windows (T014, T023, T026, Feature 076).
 
     Uses the 4-level precedence classification system:
     1. Project scoped_classes (priority 1000)
@@ -802,7 +803,8 @@ async def on_window_new(
                     )
                     try:
                         # Apply the restoration mark to the window for correlation
-                        await conn.command(f'[con_id="{window_id}"] mark --add "{restore_mark}"')
+                        # Feature 075: Use con_id without quotes for Sway IPC (numeric criteria)
+                        await conn.command(f'[con_id={window_id}] mark --add "{restore_mark}"')
                         logger.debug(f"Successfully applied restoration mark {restore_mark} to window {window_id}")
                     except Exception as e:
                         logger.error(f"Failed to apply restoration mark {restore_mark} to window {window_id}: {e}")
@@ -823,6 +825,26 @@ async def on_window_new(
                         f"app={window_env.app_name}, project={window_env.project_name}, "
                         f"scope={window_env.scope}"
                     )
+
+                    # Feature 076 T014-T015: Inject marks for app identification
+                    if mark_manager and window_env.app_name:
+                        try:
+                            mark_metadata = await mark_manager.inject_marks(
+                                window_id=window_id,
+                                app_name=window_env.app_name,
+                                project=window_env.project_name if window_env.scope == "scoped" else None,
+                                workspace=workspace_number,
+                                scope=window_env.scope,
+                            )
+                            logger.info(
+                                f"Injected marks for window {window_id} ({window_env.app_name}): "
+                                f"{', '.join(mark_metadata.to_sway_marks())}"
+                            )
+                        except Exception as e:
+                            # T015: Graceful degradation - log error but don't fail window creation
+                            logger.warning(
+                                f"Failed to inject marks for window {window_id} ({window_env.app_name}): {e}"
+                            )
             except (PermissionError, FileNotFoundError):
                 logger.debug(f"Cannot read environment for PID {window_pid}, assuming global scope")
         else:
@@ -1794,8 +1816,9 @@ async def on_window_close(
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
     ipc_server: Optional["IPCServer"] = None,
+    mark_manager=None,  # Feature 076: Mark cleanup on window close
 ) -> None:
-    """Handle window::close events - remove from tracking (T016).
+    """Handle window::close events - remove from tracking (T016, Feature 076: T033-T034).
 
     Args:
         conn: i3 async connection
@@ -1803,6 +1826,7 @@ async def on_window_close(
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
         ipc_server: IPC server for broadcasting events to subscribed clients (Feature 025)
+        mark_manager: Optional MarkManager for cleaning up marks (Feature 076)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -1826,6 +1850,23 @@ async def on_window_close(
     )
 
     try:
+        # Feature 076 T033-T034: Clean up marks before removing window from tracking
+        if mark_manager:
+            try:
+                removed_count = await mark_manager.cleanup_marks(window_id)
+                if removed_count > 0:
+                    logger.debug(
+                        f"Feature 076: Cleaned up {removed_count} mark(s) from window {window_id} ({window_class})"
+                    )
+            except ValueError as e:
+                # Window not found - already closed, this is expected
+                logger.debug(f"Feature 076: Window {window_id} not found during mark cleanup (already closed)")
+            except Exception as e:
+                # T034: Graceful error handling - log but don't fail window close
+                logger.warning(
+                    f"Feature 076: Failed to cleanup marks for window {window_id} ({window_class}): {e}"
+                )
+
         await state_manager.remove_window(window_id)
         logger.debug(f"Removed closed window {window_id}")
 

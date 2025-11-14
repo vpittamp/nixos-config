@@ -162,6 +162,12 @@ class WindowPlaceholder(BaseModel):
     restoration_mark: str  # Temporary mark for Sway correlation (T007, US3) - generated during restore
     app_registry_name: str  # App registry name for wrapper-based restoration (T015A) - "unknown" for manual launches
 
+    # Feature 076: Mark-based app identification (T017-T018)
+    marks_metadata: Optional['MarkMetadata'] = Field(
+        default=None,
+        description="Structured mark metadata for mark-based restoration"
+    )
+
     @field_validator('launch_command')
     @classmethod
     def validate_command_executable(cls, v: str) -> str:
@@ -435,6 +441,314 @@ class ClassificationRule(BaseModel):
         return bool(re.search(self.pattern, target, re.IGNORECASE))
 
 
+# ============================================================================
+# Feature 075: Idempotent Layout Restoration
+# ============================================================================
+
+class RunningApp(BaseModel):
+    """Represents a currently running application detected from Sway window tree.
+
+    Feature 075: Idempotent Layout Restoration (T002, US2)
+    Source: Sway IPC GET_TREE + /proc/<pid>/environ inspection
+    """
+    app_name: str = Field(
+        ...,
+        description="Application name from I3PM_APP_NAME environment variable",
+        examples=["terminal", "lazygit", "chatgpt-pwa"]
+    )
+
+    window_id: int = Field(
+        ...,
+        description="Sway container ID (not Wayland window ID)",
+        gt=0
+    )
+
+    pid: int = Field(
+        ...,
+        description="Process ID for environment reading",
+        gt=0
+    )
+
+    workspace: int = Field(
+        ...,
+        description="Current workspace number",
+        ge=1,
+        le=70
+    )
+
+    app_id: Optional[str] = Field(
+        default=None,
+        description="Wayland app_id or X11 window class (for diagnostics)"
+    )
+
+
+class SavedWindow(BaseModel):
+    """Window configuration from saved layout file.
+
+    Feature 075: Idempotent Layout Restoration (T004, MVP)
+    Source: Loaded from JSON layout file (~/.local/share/i3pm/layouts/<project>/<name>.json)
+
+    Note: This replaces WindowPlaceholder for simplified MVP restoration approach.
+    """
+    app_registry_name: str = Field(
+        ...,
+        description="Key from app-registry-data.nix (e.g., 'terminal', 'claude-pwa')",
+        examples=["terminal", "code", "lazygit", "chatgpt-pwa"]
+    )
+
+    workspace: int = Field(
+        ...,
+        description="Target workspace number for restoration",
+        ge=1,
+        le=70,
+        alias="workspace_num"  # Support both field names for compatibility
+    )
+
+    cwd: Optional[Path] = Field(
+        default=None,
+        description="Working directory for terminal applications (None for non-terminals)"
+    )
+
+    focused: bool = Field(
+        default=False,
+        description="Whether this window was focused when layout was saved"
+    )
+
+    # Phase 2 fields (unused in MVP)
+    geometry: Optional[dict] = Field(
+        default=None,
+        description="Window geometry (x, y, width, height) - Phase 2 feature"
+    )
+
+    floating: Optional[bool] = Field(
+        default=False,
+        description="Whether window was floating - Phase 2 feature"
+    )
+
+
+class RestoreResult(BaseModel):
+    """Represents outcome of layout restore operation.
+
+    Feature 075: Idempotent Layout Restoration (T003, US1)
+    Source: Generated during restore execution, returned to caller
+    """
+    status: str = Field(
+        ...,
+        description="Overall status: 'success', 'partial', or 'failed'",
+        pattern="^(success|partial|failed)$"
+    )
+
+    apps_already_running: list[str] = Field(
+        default_factory=list,
+        description="Apps skipped because already present (idempotent behavior)"
+    )
+
+    apps_launched: list[str] = Field(
+        default_factory=list,
+        description="Apps successfully launched during restore"
+    )
+
+    apps_failed: list[str] = Field(
+        default_factory=list,
+        description="Apps that failed to launch (not in registry, launch error, etc.)"
+    )
+
+    elapsed_seconds: float = Field(
+        ...,
+        description="Total restore duration in seconds",
+        ge=0.0
+    )
+
+    # Computed properties
+    @property
+    def total_apps(self) -> int:
+        """Total apps in saved layout."""
+        return len(self.apps_already_running) + len(self.apps_launched) + len(self.apps_failed)
+
+    @property
+    def success_rate(self) -> float:
+        """Percentage of apps successfully handled (running + launched)."""
+        if self.total_apps == 0:
+            return 100.0
+        successful = len(self.apps_already_running) + len(self.apps_launched)
+        return (successful / self.total_apps) * 100
+
+
+# ============================================================================
+# Feature 076: Mark-Based App Identification
+# ============================================================================
+
+class MarkMetadata(BaseModel):
+    """Structured mark metadata for window classification.
+
+    Feature 076: Mark-Based App Identification (T001)
+    Stores app-registry metadata as Sway marks for deterministic window identification.
+    """
+    app: str = Field(
+        ...,
+        pattern=r'^[a-z0-9][a-z0-9-]*$',
+        description="Application name from app-registry",
+        examples=["terminal", "code", "chatgpt-pwa"]
+    )
+
+    project: Optional[str] = Field(
+        default=None,
+        description="Project context for scoped apps"
+    )
+
+    workspace: Optional[str] = Field(
+        default=None,
+        pattern=r'^[1-9][0-9]{0,1}$',
+        description="Workspace number (1-70) as string"
+    )
+
+    scope: Optional[str] = Field(
+        default=None,
+        pattern=r'^(scoped|global)$',
+        description="App scope classification"
+    )
+
+    custom: Optional[dict[str, str]] = Field(
+        default=None,
+        description="Custom metadata for extensibility"
+    )
+
+    @field_validator('custom')
+    @classmethod
+    def validate_custom_keys(cls, v: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+        """Ensure custom keys are snake_case identifiers."""
+        if v is not None:
+            for key in v.keys():
+                if not re.match(r'^[a-z_][a-z0-9_]*$', key):
+                    raise ValueError(f"Custom key '{key}' must be snake_case identifier")
+        return v
+
+    def to_sway_marks(self) -> list[str]:
+        """Convert to Sway mark strings (i3pm_<key>:<value>)."""
+        marks = [f"i3pm_app:{self.app}"]
+
+        if self.project:
+            marks.append(f"i3pm_project:{self.project}")
+        if self.workspace:
+            marks.append(f"i3pm_ws:{self.workspace}")
+        if self.scope:
+            marks.append(f"i3pm_scope:{self.scope}")
+        if self.custom:
+            for key, value in self.custom.items():
+                marks.append(f"i3pm_custom:{key}:{value}")
+
+        return marks
+
+    @classmethod
+    def from_sway_marks(cls, marks: list[str]) -> 'MarkMetadata':
+        """Parse from Sway mark strings."""
+        data: dict[str, Any] = {}
+        custom: dict[str, str] = {}
+
+        for mark in marks:
+            if not mark.startswith("i3pm_"):
+                continue
+
+            # Remove prefix and parse
+            mark_content = mark[5:]  # Remove "i3pm_"
+
+            if mark_content.startswith("custom:"):
+                # Custom mark format: custom:key:value
+                parts = mark_content.split(":", 2)
+                if len(parts) == 3:
+                    _, key, value = parts
+                    custom[key] = value
+            elif ":" in mark_content:
+                key, value = mark_content.split(":", 1)
+                # Map shortened keys to full field names
+                if key == "ws":
+                    data["workspace"] = value
+                else:
+                    data[key] = value
+
+        if custom:
+            data["custom"] = custom
+
+        return cls(**data)
+
+
+class WindowMarkQuery(BaseModel):
+    """Query parameters for finding windows by marks.
+
+    Feature 076: Mark-Based App Identification (T002)
+    Used by MarkManager.find_windows() to filter windows by mark criteria.
+    """
+    app: Optional[str] = None
+    project: Optional[str] = None
+    workspace: Optional[int] = Field(default=None, ge=1, le=70)
+    scope: Optional[str] = Field(default=None, pattern=r'^(scoped|global)$')
+    custom_key: Optional[str] = None
+    custom_value: Optional[str] = None
+
+    @field_validator('custom_value')
+    @classmethod
+    def validate_custom_value_requires_key(cls, v: Optional[str], info) -> Optional[str]:
+        """Ensure custom_value requires custom_key to be set."""
+        if v and not info.data.get('custom_key'):
+            raise ValueError("custom_value requires custom_key to be set")
+        return v
+
+    @property
+    def is_empty(self) -> bool:
+        """Check if query has any filters."""
+        return not any([
+            self.app,
+            self.project,
+            self.workspace,
+            self.scope,
+            self.custom_key
+        ])
+
+    def to_sway_marks(self) -> list[str]:
+        """Convert to Sway mark strings for querying."""
+        marks = []
+        if self.app:
+            marks.append(f"i3pm_app:{self.app}")
+        if self.project:
+            marks.append(f"i3pm_project:{self.project}")
+        if self.workspace:
+            marks.append(f"i3pm_ws:{self.workspace}")
+        if self.scope:
+            marks.append(f"i3pm_scope:{self.scope}")
+        if self.custom_key:
+            if self.custom_value:
+                marks.append(f"i3pm_custom:{self.custom_key}:{self.custom_value}")
+            else:
+                # Match any value for this key
+                marks.append(f"i3pm_custom:{self.custom_key}:")
+        return marks
+
+
+# Extend SavedWindow with marks field for Feature 076
+class SavedWindowWithMarks(SavedWindow):
+    """SavedWindow extended with mark metadata for Feature 076.
+
+    Feature 076: Mark-Based App Identification (T001)
+    Adds optional marks field to SavedWindow for mark-based restoration.
+    """
+    marks: Optional[MarkMetadata] = Field(
+        default=None,
+        description="Mark metadata for mark-based restoration"
+    )
+
+    @field_validator('marks')
+    @classmethod
+    def validate_marks_match_app(cls, v: Optional[MarkMetadata], info) -> Optional[MarkMetadata]:
+        """Ensure mark app matches app_registry_name if marks present."""
+        if v and 'app_registry_name' in info.data:
+            if v.app != info.data['app_registry_name']:
+                raise ValueError(
+                    f"Mark app '{v.app}' must match app_registry_name '{info.data['app_registry_name']}'"
+                )
+        return v
+
+
 # Forward references resolution
 Container.model_rebuild()
 Project.model_rebuild()
+MarkMetadata.model_rebuild()

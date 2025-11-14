@@ -53,6 +53,7 @@ from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
 from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-raise-hide launching
+from .services.mark_manager import MarkManager  # Feature 076: Mark-based app identification
 from datetime import datetime
 import time
 
@@ -166,6 +167,7 @@ class I3ProjectDaemon:
         self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
+        self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -294,6 +296,11 @@ class I3ProjectDaemon:
         self.ipc_server.run_raise_manager = self.run_raise_manager
         logger.info("Run-raise manager initialized")
 
+        # Feature 076: Initialize mark manager
+        self.mark_manager = MarkManager(self.connection.conn)
+        self.ipc_server.mark_manager = self.mark_manager
+        logger.info("Mark manager initialized")
+
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
 
@@ -381,7 +388,8 @@ class I3ProjectDaemon:
                 window_rules=self.window_rules,  # Gets current value from daemon
                 ipc_server=self.ipc_server,  # Feature 025: broadcast events to subscribed clients
                 application_registry=self.application_registry,  # Feature 037 T026: Workspace assignment
-                workspace_tracker=self.workspace_tracker  # Feature 037 T026: Track initial assignment
+                workspace_tracker=self.workspace_tracker,  # Feature 037 T026: Track initial assignment
+                mark_manager=self.mark_manager  # Feature 076: Mark-based app identification
             )
 
         async def get_window_rules_wrapper_title(conn, event):
@@ -402,7 +410,7 @@ class I3ProjectDaemon:
         )
         self.connection.subscribe(
             "window::close",
-            partial(on_window_close, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
+            partial(on_window_close, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server, mark_manager=self.mark_manager)  # Feature 076: T033
         )
         self.connection.subscribe(
             "window::focus",
@@ -491,6 +499,9 @@ class I3ProjectDaemon:
 
         # Feature 074: Session Management - Load persisted focus state (T025, US1)
         await self.state_manager.load_focus_state()
+
+        # Feature 074: Session Management - Initialize auto-save and auto-restore managers (T099, US5-US6)
+        self.state_manager.initialize_auto_save_manager(self.connection.conn, ipc_server=self.ipc_server)
 
     async def run(self) -> None:
         """Main event loop."""

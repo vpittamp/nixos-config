@@ -36,6 +36,12 @@ class StateManager:
         self.focus_tracker = FocusTracker(self, config_dir)
         logger.info("Initialized FocusTracker for session management")
 
+        # Feature 074: Session Management - T099 (US5)
+        # Auto-save manager for automatic layout capture
+        # Note: Will be initialized when i3 connection is available
+        self.auto_save_manager = None
+        self.auto_restore_manager = None
+
     async def add_window(self, window_info: WindowInfo) -> None:
         """Add a window to the tracking map.
 
@@ -269,6 +275,65 @@ class StateManager:
                 f"scoped {old_scoped_count}→{len(classification.scoped_classes)}, "
                 f"global {old_global_count}→{len(classification.global_classes)}"
             )
+
+    def initialize_auto_save_manager(self, conn, ipc_server=None) -> None:
+        """Initialize auto-save and auto-restore managers with i3 connection (Feature 074: T099, US5-US6).
+
+        Args:
+            conn: i3/Sway async connection
+            ipc_server: Optional IPC server for event notifications
+        """
+        try:
+            from .layout.capture import LayoutCapture
+            from .layout.restore import LayoutRestore
+            from .layout.persistence import LayoutPersistence
+            from .layout.auto_save import AutoSaveManager
+            from .layout.auto_restore import AutoRestoreManager
+            from .models.config import ProjectConfiguration
+
+            # Feature 076 T017-T018, T021-T022: Get mark_manager from ipc_server if available
+            mark_manager = ipc_server.mark_manager if ipc_server and hasattr(ipc_server, 'mark_manager') else None
+
+            # Initialize layout services
+            layout_capture = LayoutCapture(conn, mark_manager=mark_manager)
+            layout_restore = LayoutRestore(conn, mark_manager=mark_manager)  # Feature 076: T021-T022
+            layout_persistence = LayoutPersistence()
+
+            # Project config loader function
+            def load_project_config(project_name: str):
+                try:
+                    project_dir = Path.home() / "projects" / project_name
+                    return ProjectConfiguration(
+                        name=project_name,
+                        directory=project_dir
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not load config for {project_name}: {e}")
+                    return None
+
+            # Initialize auto-save manager (Feature 074: T099, US5)
+            self.auto_save_manager = AutoSaveManager(
+                layout_capture,
+                layout_persistence,
+                load_project_config,
+                ipc_server=ipc_server
+            )
+            logger.info("Initialized AutoSaveManager for session management")
+
+            # Initialize auto-restore manager (Feature 074: T099, US6)
+            self.auto_restore_manager = AutoRestoreManager(
+                layout_capture,
+                layout_restore,
+                layout_persistence,
+                load_project_config,
+                ipc_server=ipc_server
+            )
+            logger.info("Initialized AutoRestoreManager for session management")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Auto-Save/Auto-Restore managers: {e}")
+            self.auto_save_manager = None
+            self.auto_restore_manager = None
 
     async def load_focus_state(self) -> None:
         """Load focus state from disk on daemon startup (Feature 074: T025, US1).

@@ -1,0 +1,131 @@
+{
+  "name": "test_idempotent_restore",
+  "description": "Idempotent restore: run 3x consecutively → verify no duplicates",
+  "feature": "075-layout-restore-production",
+  "task": "T021 (US3 - Integration Tests)",
+  "steps": [
+    {
+      "action": "comment",
+      "message": "Setup: Launch 2 apps (terminal, lazygit)"
+    },
+    {
+      "action": "launch_app",
+      "app": "terminal",
+      "workspace": 1,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "launch_app",
+      "app": "lazygit",
+      "workspace": 5,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "comment",
+      "message": "Save layout as 'test-idempotent'"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout save test-idempotent",
+      "sync": "command_completed"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Initial state (2 windows)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg -t get_tree | jq '[recurse(.nodes[]?, .floating_nodes[]?) | select(.pid? and .pid > 0)] | length'",
+      "expected_output": "2",
+      "description": "Exactly 2 windows running"
+    },
+    {
+      "action": "comment",
+      "message": "First restore (all apps already running)"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout restore nixos test-idempotent",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 2000,
+      "description": "Wait for restore to complete"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Still 2 windows (no duplicates)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg -t get_tree | jq '[recurse(.nodes[]?, .floating_nodes[]?) | select(.pid? and .pid > 0)] | length'",
+      "expected_output": "2",
+      "description": "Still exactly 2 windows (idempotent)"
+    },
+    {
+      "action": "comment",
+      "message": "Second restore (still all running)"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout restore nixos test-idempotent",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 2000,
+      "description": "Wait for restore to complete"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Still 2 windows (no duplicates)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg -t get_tree | jq '[recurse(.nodes[]?, .floating_nodes[]?) | select(.pid? and .pid > 0)] | length'",
+      "expected_output": "2",
+      "description": "Still exactly 2 windows (idempotent)"
+    },
+    {
+      "action": "comment",
+      "message": "Third restore (still all running)"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout restore nixos test-idempotent",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 2000,
+      "description": "Wait for restore to complete"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: FINAL CHECK - still 2 windows (fully idempotent)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg -t get_tree | jq '[recurse(.nodes[]?, .floating_nodes[]?) | select(.pid? and .pid > 0)] | length'",
+      "expected_output": "2",
+      "description": "Still exactly 2 windows after 3 restores (idempotent)"
+    },
+    {
+      "action": "comment",
+      "message": "Cleanup: Delete test layout and close windows"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout delete test-idempotent && swaymsg '[workspace=1] kill' && swaymsg '[workspace=5] kill'",
+      "sync": "command_completed"
+    }
+  ],
+  "expected_outcome": "Window count remains constant across 3 consecutive restores",
+  "success_criteria": [
+    "First restore: 2 windows → 2 windows (0 new)",
+    "Second restore: 2 windows → 2 windows (0 new)",
+    "Third restore: 2 windows → 2 windows (0 new)",
+    "No duplicate windows created"
+  ]
+}

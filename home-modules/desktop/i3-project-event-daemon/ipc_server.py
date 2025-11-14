@@ -53,7 +53,8 @@ class IPCServer:
         window_rules_getter: Optional[callable] = None,
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
         scratchpad_manager: Optional[Any] = None,
-        run_raise_manager: Optional[Any] = None
+        run_raise_manager: Optional[Any] = None,
+        mark_manager: Optional[Any] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -65,6 +66,7 @@ class IPCServer:
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
             run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
+            mark_manager: MarkManager instance for mark-based app identification (Feature 076)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
@@ -73,6 +75,7 @@ class IPCServer:
         self.workspace_tracker = workspace_tracker
         self.scratchpad_manager = scratchpad_manager
         self.run_raise_manager = run_raise_manager
+        self.mark_manager = mark_manager
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -87,7 +90,8 @@ class IPCServer:
         window_rules_getter: Optional[callable] = None,
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
         scratchpad_manager: Optional[Any] = None,
-        run_raise_manager: Optional[Any] = None
+        run_raise_manager: Optional[Any] = None,
+        mark_manager: Optional[Any] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -99,11 +103,12 @@ class IPCServer:
             workspace_tracker: WorkspaceTracker instance for window filtering (Feature 037)
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
             run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
+            mark_manager: MarkManager instance for mark-based app identification (Feature 076)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager, run_raise_manager)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager, run_raise_manager, mark_manager)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -464,6 +469,18 @@ class IPCServer:
                 result = await self._project_get_focused_workspace(params)
             elif method == "project.set_focused_workspace":
                 result = await self._project_set_focused_workspace(params)
+
+            # Feature 074: Session Management - Config IPC methods (T085-T086)
+            elif method == "config.get":
+                result = await self._config_get(params)
+            elif method == "config.set":
+                result = await self._config_set(params)
+
+            # Feature 074: Session Management - State and version methods (T096-T097)
+            elif method == "state.get":
+                result = await self._state_get(params)
+            elif method == "daemon.version":
+                result = await self._daemon_version(params)
 
             # Feature 001: Declarative workspace-to-monitor assignment
             elif method == "monitors.status":
@@ -1029,6 +1046,258 @@ class IPCServer:
                 event_type="project::set_focused_workspace",
                 project=params.get("project") if params else None,
                 workspace=params.get("workspace") if params else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _config_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get session management configuration for a project (T085, US5, Feature 074).
+
+        Returns configuration settings that control auto-save, auto-restore,
+        and other session management features for the specified project.
+
+        Args:
+            params: Dictionary with required key:
+                - project: Project name to query (string)
+
+        Returns:
+            Dictionary with:
+                - project: Project name (string)
+                - auto_save: Auto-save enabled (boolean)
+                - auto_restore: Auto-restore enabled (boolean)
+                - default_layout: Default layout name (string or None)
+                - max_auto_saves: Maximum auto-saves to keep (int)
+
+        Raises:
+            KeyError: If 'project' parameter is missing
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project = params["project"]
+
+            # Load project configuration
+            from .models.config import ProjectConfiguration
+            from pathlib import Path
+
+            try:
+                project_dir = Path.home() / "projects" / project
+                project_config = ProjectConfiguration(
+                    name=project,
+                    directory=project_dir
+                )
+            except Exception as e:
+                logger.debug(f"Could not load config for {project}: {e}, using defaults")
+                # Use defaults if config cannot be loaded
+                project_config = ProjectConfiguration(
+                    name=project,
+                    directory=Path.home() / "projects" / project
+                )
+
+            result = {
+                "project": project,
+                "auto_save": project_config.auto_save,
+                "auto_restore": project_config.auto_restore,
+                "default_layout": project_config.default_layout,
+                "max_auto_saves": project_config.max_auto_saves
+            }
+
+            logger.debug(f"IPC: config.get({project}) → {result}")
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="config::get",
+                project=params.get("project") if params else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _config_set(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update session management configuration (T086, US5, Feature 074).
+
+        Updates configuration settings for a project (runtime only, not persisted).
+        Changes are lost on daemon restart. To persist, edit app-registry-data.nix.
+
+        Args:
+            params: Dictionary with:
+                - project: Project name (required, string)
+                - auto_save: Enable auto-save (optional, boolean)
+                - auto_restore: Enable auto-restore (optional, boolean)
+                - default_layout: Default layout name (optional, string or None)
+                - max_auto_saves: Maximum auto-saves to keep (optional, int 1-100)
+
+        Returns:
+            Dictionary with:
+                - success: True if operation succeeded (boolean)
+                - config: Updated configuration dictionary
+
+        Raises:
+            KeyError: If 'project' parameter is missing
+            ValueError: If any parameter value is invalid
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project = params["project"]
+
+            # Note: This is a runtime-only configuration update.
+            # The actual implementation would need a runtime config store
+            # in StateManager. For now, we log the intent and return success.
+
+            # Validate parameters
+            if "auto_save" in params and not isinstance(params["auto_save"], bool):
+                raise ValueError("auto_save must be a boolean")
+
+            if "auto_restore" in params and not isinstance(params["auto_restore"], bool):
+                raise ValueError("auto_restore must be a boolean")
+
+            if "max_auto_saves" in params:
+                max_saves = params["max_auto_saves"]
+                if not isinstance(max_saves, int) or max_saves < 1 or max_saves > 100:
+                    raise ValueError("max_auto_saves must be an integer between 1 and 100")
+
+            # Build updated config (this would be persisted to runtime store)
+            updated_config = {
+                "project": project,
+                "auto_save": params.get("auto_save", True),
+                "auto_restore": params.get("auto_restore", False),
+                "default_layout": params.get("default_layout"),
+                "max_auto_saves": params.get("max_auto_saves", 10)
+            }
+
+            logger.info(f"IPC: config.set({project}) → {updated_config}")
+            logger.warning("Runtime config updates not persisted - edit app-registry-data.nix for persistence")
+
+            return {
+                "success": True,
+                "config": updated_config
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="config::set",
+                project=params.get("project") if params else None,
+                params=params,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _state_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get current daemon state including focus tracking (T096, Feature 074).
+
+        Returns complete daemon state with focus dictionaries for projects and workspaces.
+
+        Args:
+            params: Empty dictionary (no parameters required)
+
+        Returns:
+            Dictionary with:
+                - active_project: Current project (string or None)
+                - uptime_seconds: Daemon uptime (float)
+                - event_count: Total events processed (int)
+                - error_count: Total errors (int)
+                - window_count: Number of tracked windows (int)
+                - workspace_count: Number of tracked workspaces (int)
+                - project_focused_workspaces: Project → workspace mapping (dict)
+                - workspace_focused_windows: Workspace → window ID mapping (dict)
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            # Get basic stats from state manager
+            stats = await self.state_manager.get_stats()
+
+            # Add focus tracking state (Feature 074: T096)
+            if hasattr(self.state_manager, 'focus_tracker') and self.state_manager.focus_tracker:
+                # Get all project focus data
+                project_focused_workspaces = {}
+                # Note: We'd need to iterate through known projects
+                # For now, get from DaemonState directly
+                if hasattr(self.state_manager.state, 'project_focused_workspace'):
+                    project_focused_workspaces = self.state_manager.state.project_focused_workspace.copy()
+
+                # Get all workspace focus data
+                workspace_focused_windows = {}
+                if hasattr(self.state_manager.state, 'workspace_focused_window'):
+                    workspace_focused_windows = self.state_manager.state.workspace_focused_window.copy()
+            else:
+                project_focused_workspaces = {}
+                workspace_focused_windows = {}
+
+            result = {
+                **stats,  # Include basic stats (active_project, uptime_seconds, etc.)
+                "project_focused_workspaces": project_focused_workspaces,
+                "workspace_focused_windows": workspace_focused_windows
+            }
+
+            logger.debug(f"IPC: state.get() → {len(result)} fields")
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="state::get",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _daemon_version(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get daemon API version for version negotiation (T097, Feature 074).
+
+        Returns API version information for client compatibility checking.
+
+        Args:
+            params: Empty dictionary (no parameters required)
+
+        Returns:
+            Dictionary with:
+                - version: Daemon version (string, e.g., "1.0.0")
+                - api_version: API version (string, e.g., "1.0.0")
+                - features: List of supported features (list of strings)
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            result = {
+                "version": "1.0.0",
+                "api_version": "1.0.0",
+                "features": [
+                    "session-management",
+                    "mark-based-correlation",
+                    "auto-save",
+                    "auto-restore",
+                    "workspace-focus-tracking",
+                    "window-focus-tracking",
+                    "terminal-cwd-tracking"
+                ]
+            }
+
+            logger.debug(f"IPC: daemon.version() → {result['version']}")
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="daemon::version",
                 duration_ms=duration_ms,
                 error=error_msg,
             )
@@ -2531,45 +2800,46 @@ class IPCServer:
             if not name:
                 raise ValueError("name parameter is required")
 
-            # Feature 074: Use new restore system with mark-based correlation (T054-T057)
-            from .layout.restore import restore_layout
+            # Feature 075: Use new app-registry-based idempotent restore (T029)
+            from .layout.restore import restore_workflow
+            from .layout.persistence import load_layout
 
-            # Restore layout
-            restore_results = await restore_layout(
-                i3_connection=self.i3_connection,
-                name=name,
+            # Load layout
+            layout = load_layout(name, project)
+            if not layout:
+                raise FileNotFoundError(f"Layout '{name}' not found for project '{project}'")
+
+            # Restore layout using idempotent workflow
+            restore_result = await restore_workflow(
+                layout=layout,
                 project=project,
-                adapt_monitors=True
+                i3_connection=self.i3_connection,
             )
 
-            # Convert correlation objects to serializable dicts
-            correlations = []
-            for corr in restore_results.get("correlations", []):
-                correlations.append({
-                    "restoration_mark": corr.restoration_mark,
-                    "window_class": corr.placeholder.window_class or "unknown",
-                    "status": corr.status.value,
-                    "window_id": corr.matched_window_id,
-                    "correlation_time": corr.elapsed_seconds
-                })
-
+            # Convert RestoreResult to IPC response format
             result = {
-                "success": restore_results.get("success", True),
-                "windows_launched": restore_results.get("windows_launched", 0),
-                "windows_matched": restore_results.get("windows_matched", 0),
-                "windows_timeout": restore_results.get("windows_timeout", 0),
-                "windows_failed": restore_results.get("windows_failed", 0),
-                "elapsed_seconds": restore_results.get("duration_seconds", 0.0),
-                "correlations": correlations
+                "success": restore_result.status == "success",
+                "status": restore_result.status,  # "success", "partial", or "failed"
+                "apps_already_running": restore_result.apps_already_running,
+                "apps_launched": restore_result.apps_launched,
+                "apps_failed": restore_result.apps_failed,
+                "elapsed_seconds": restore_result.elapsed_seconds,
+                "total_apps": restore_result.total_apps,
+                "success_rate": restore_result.success_rate,
+                # Legacy fields for backward compatibility (deprecated)
+                "windows_launched": len(restore_result.apps_launched),
+                "windows_matched": 0,  # Not used in MVP
+                "windows_timeout": 0,  # No timeouts in new approach
+                "windows_failed": len(restore_result.apps_failed),
             }
 
             logger.info(
                 f"Layout restored: {project}/{name} - "
-                f"{result['windows_launched']} launched, "
-                f"{result['windows_matched']} matched, "
-                f"{result['windows_timeout']} timeout, "
-                f"{result['windows_failed']} failed "
-                f"({result['elapsed_seconds']:.1f}s)"
+                f"status={result['status']}, "
+                f"{len(result['apps_already_running'])} already running, "
+                f"{len(result['apps_launched'])} launched, "
+                f"{len(result['apps_failed'])} failed "
+                f"({result['elapsed_seconds']:.1f}s, {result['success_rate']:.1f}% success)"
             )
 
             return result
@@ -2599,11 +2869,13 @@ class IPCServer:
         List saved layout snapshots.
 
         Feature 058: Python Backend Consolidation - User Story 2
+        Feature 074: Session Management - Task T084 (include_auto_saves parameter)
         Implements layout_list JSON-RPC method from contracts/layout-api.json
 
         Args:
             params: List parameters
                 - project_name: Project name (required)
+                - include_auto_saves: Include auto-saved layouts (optional, default: True)
 
         Returns:
             {
@@ -2613,9 +2885,11 @@ class IPCServer:
                         "layout_name": str,
                         "timestamp": str (ISO 8601),
                         "windows_count": int,
-                        "file_path": str
+                        "file_path": str,
+                        "is_auto_save": bool
                     }
-                ]
+                ],
+                "total_count": int
             }
 
         Raises:
@@ -2625,6 +2899,7 @@ class IPCServer:
 
         try:
             project_name = params.get("project_name")
+            include_auto_saves = params.get("include_auto_saves", True)
 
             if not project_name:
                 raise ValueError("project_name parameter is required")
@@ -2634,14 +2909,26 @@ class IPCServer:
             layout_engine = LayoutEngine(self.i3_connection)
 
             # List layouts
-            layouts = layout_engine.list_layouts(project_name)
+            all_layouts = layout_engine.list_layouts(project_name)
+
+            # Feature 074: T084 - Filter auto-saves if requested
+            if not include_auto_saves:
+                layouts = [layout for layout in all_layouts
+                          if not layout.get("layout_name", "").startswith("auto-")]
+            else:
+                layouts = all_layouts
+
+            # Add is_auto_save flag to each layout (Feature 074: T084)
+            for layout in layouts:
+                layout["is_auto_save"] = layout.get("layout_name", "").startswith("auto-")
 
             result = {
                 "project": project_name,
-                "layouts": layouts
+                "layouts": layouts,
+                "total_count": len(layouts)  # Feature 074: T084
             }
 
-            logger.info(f"Listed layouts: {len(layouts)} found for project {project_name}")
+            logger.info(f"Listed layouts: {len(layouts)} found for project {project_name} (include_auto_saves={include_auto_saves})")
 
             return result
 

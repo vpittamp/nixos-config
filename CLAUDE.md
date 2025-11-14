@@ -296,6 +296,71 @@ Migration required: Re-save your layouts with: i3pm layout save <name>
 
 **Docs**: `/etc/nixos/specs/074-session-management/quickstart.md`
 
+## 🏷️ Mark-Based App Identification (Feature 076)
+
+**Status**: ✅ IMPLEMENTED (2025-11-14)
+
+Deterministic app identification using Sway marks for idempotent layout restoration.
+
+### Key Features
+
+✅ **Idempotent Restore**: Multiple restores won't create duplicate windows
+✅ **Automatic Mark Injection**: Marks injected on window launch (via `window::new` handler)
+✅ **Persistent Metadata**: Marks stored in layout files as structured JSON
+✅ **Automatic Cleanup**: Marks removed on window close (zero pollution)
+✅ **Backward Compatible**: Old layouts without marks still work
+
+### Mark Format
+
+```bash
+# Marks injected automatically on app launch:
+i3pm_app:terminal       # App registry name
+i3pm_project:nixos      # Project scope
+i3pm_ws:1               # Workspace number (1-70)
+i3pm_scope:scoped       # Scope classification
+i3pm_custom:key:value   # Extensible custom metadata
+```
+
+### How It Works
+
+```bash
+# 1. Launch app (marks injected automatically)
+i3pm app launch terminal
+# → Marks: i3pm_app:terminal, i3pm_project:nixos, i3pm_ws:1, i3pm_scope:scoped
+
+# 2. Save layout (marks persisted automatically)
+i3pm layout save my-layout
+# → Layout file contains marks_metadata for all windows
+
+# 3. Restore layout (idempotent - no duplicates)
+i3pm layout restore nixos my-layout
+# → Existing windows detected by marks, skipped
+# → Only missing windows launched
+```
+
+### Querying Windows by Marks
+
+```bash
+# View all i3pm marks on current windows
+swaymsg -t get_marks | grep i3pm_
+
+# Check marks on specific window
+swaymsg -t get_tree | jq '..|select(.focused?==true)|.marks'
+```
+
+### Debugging
+
+```bash
+# Enable mark-related logging
+journalctl --user -u i3-project-event-listener -f | grep "Feature 076"
+
+# Verify mark injection on window launch
+# Verify mark cleanup on window close
+# Verify idempotent restore (no duplicates)
+```
+
+**Docs**: `/etc/nixos/specs/076-mark-based-app-identification/quickstart.md`
+
 ## 🚀 IPC Launch Context (Feature 041)
 
 Pre-notification system for multi-instance app tracking. Accuracy: 100% sequential, 95% rapid launches.
@@ -427,6 +492,7 @@ gh auth status               # Auto-uses 1Password token
 - Eww 0.4+ (ElKowar's Wacky Widgets), GTK3, SwayNC 0.10+
 - In-memory daemon state, JSON configuration files
 - Python 3.11+ (existing daemon standard per Constitution Principle X) (074-session-management)
+- JSON layout files in `~/.local/share/i3pm/layouts/<project>/<name>.json` (076-mark-based-app-identification)
 
 ## Recent Changes
 - 074-session-management: Added Python 3.11+ (existing daemon standard per Constitution Principle X)

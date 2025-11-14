@@ -1,0 +1,159 @@
+{
+  "name": "test_full_restore",
+  "description": "Full restore workflow: save → close all → restore → verify",
+  "feature": "075-layout-restore-production",
+  "task": "T020 (US3 - Integration Tests)",
+  "steps": [
+    {
+      "action": "comment",
+      "message": "Setup: Launch 3 apps (terminal, code, lazygit)"
+    },
+    {
+      "action": "launch_app",
+      "app": "terminal",
+      "workspace": 1,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "launch_app",
+      "app": "code",
+      "workspace": 2,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "launch_app",
+      "app": "lazygit",
+      "workspace": 5,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: 3 windows launched successfully"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 1,
+      "windowCount": 1,
+      "description": "Terminal on workspace 1"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 2,
+      "windowCount": 1,
+      "description": "Code on workspace 2"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 5,
+      "windowCount": 1,
+      "description": "Lazygit on workspace 5"
+    },
+    {
+      "action": "comment",
+      "message": "Save layout as 'test-full-restore'"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout save test-full-restore",
+      "sync": "command_completed"
+    },
+    {
+      "action": "comment",
+      "message": "Close all windows"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg '[workspace=1] kill'",
+      "sync": "command_completed"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg '[workspace=2] kill'",
+      "sync": "command_completed"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg '[workspace=5] kill'",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 500,
+      "description": "Wait for windows to close"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: All windows closed"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 1,
+      "windowCount": 0,
+      "description": "Workspace 1 empty"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 2,
+      "windowCount": 0,
+      "description": "Workspace 2 empty"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 5,
+      "windowCount": 0,
+      "description": "Workspace 5 empty"
+    },
+    {
+      "action": "comment",
+      "message": "Restore layout"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout restore nixos test-full-restore",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 8000,
+      "description": "Wait for apps to launch (up to 8s for 3 apps)"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: All 3 apps restored successfully"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 1,
+      "windowCount": 1,
+      "description": "Terminal restored on workspace 1"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 2,
+      "windowCount": 1,
+      "description": "Code restored on workspace 2"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 5,
+      "windowCount": 1,
+      "description": "Lazygit restored on workspace 5"
+    },
+    {
+      "action": "comment",
+      "message": "Cleanup: Delete test layout"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout delete test-full-restore",
+      "sync": "command_completed"
+    }
+  ],
+  "expected_outcome": "All 3 apps launch successfully after restore",
+  "success_criteria": [
+    "Layout saves correctly",
+    "All windows close",
+    "All 3 apps restore to correct workspaces",
+    "No duplicates created"
+  ]
+}

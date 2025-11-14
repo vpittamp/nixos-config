@@ -53,13 +53,14 @@ class LayoutRestore:
     5. Apply geometry and marks (T038)
     """
 
-    def __init__(self, i3_connection, project_directory: Optional[Path] = None):
+    def __init__(self, i3_connection, project_directory: Optional[Path] = None, mark_manager=None):
         """
         Initialize layout restore
 
         Args:
             i3_connection: i3ipc connection instance
             project_directory: Project root directory for terminal cwd fallback (Feature 074)
+            mark_manager: Optional MarkManager for Feature 076 mark-based detection
         """
         self.i3 = i3_connection
         self.swallow_timeout = 30.0  # seconds
@@ -78,6 +79,11 @@ class LayoutRestore:
 
         # Feature 074: Session Management - Unified app launcher for wrapper-based restoration (T055A, Feature 057)
         self.app_launcher = AppLauncher() if AppLauncher else None
+
+        # Feature 076: Mark-based app identification - idempotent restore (T021-T022, US2)
+        self.mark_manager = mark_manager
+        if self.mark_manager:
+            logger.debug("Initialized MarkManager for mark-based window detection")
         if self.app_launcher:
             logger.debug("Initialized AppLauncher for wrapper-based window restoration")
 
@@ -498,7 +504,7 @@ class LayoutRestore:
         results: Dict
     ) -> None:
         """
-        Restore a single window (T036-T038, Feature 074: T040)
+        Restore a single window (T036-T038, Feature 074: T040, Feature 076: T021-T026)
 
         Args:
             window: Window to restore
@@ -509,6 +515,48 @@ class LayoutRestore:
             logger.warning(f"No launch command for {window.window_class}, skipping")
             results["windows_failed"] += 1
             return
+
+        # Feature 076 T021-T022, T025, T026: Check for existing window with saved marks (idempotent restore)
+        if self.mark_manager and hasattr(window, 'marks_metadata') and window.marks_metadata:
+            try:
+                # Query for existing windows with matching app name
+                from .models import WindowMarkQuery
+                query = WindowMarkQuery(
+                    app=window.marks_metadata.app,
+                    project=window.marks_metadata.project,
+                    workspace=int(window.marks_metadata.workspace) if window.marks_metadata.workspace else None
+                )
+                existing_windows = await self.mark_manager.find_windows(query)
+
+                if existing_windows:
+                    # Window already exists - skip launching (T026: logging for mark-based detection)
+                    logger.info(
+                        f"Feature 076: Window already exists with marks "
+                        f"(app={window.marks_metadata.app}, project={window.marks_metadata.project}) "
+                        f"- skipping launch (idempotent restore)"
+                    )
+                    # Track as already present (not counted as launched or failed)
+                    if "windows_already_present" not in results:
+                        results["windows_already_present"] = 0
+                    results["windows_already_present"] += 1
+                    return
+                else:
+                    # No existing window - proceed with launch (T026: logging)
+                    logger.debug(
+                        f"Feature 076: No existing window found with marks "
+                        f"(app={window.marks_metadata.app}, project={window.marks_metadata.project}) "
+                        f"- proceeding with launch"
+                    )
+            except Exception as e:
+                # T024: Graceful fallback if mark detection fails
+                logger.warning(f"Feature 076: Mark-based detection failed, falling back to launch: {e}")
+        elif not hasattr(window, 'marks_metadata') or not window.marks_metadata:
+            # T024, T026, T045: Backward compatibility - no marks saved, use old behavior
+            logger.warning(
+                f"Feature 076: No mark metadata in saved layout for {window.window_class}. "
+                f"Layout restoration may be slower and less reliable. "
+                f"Consider re-saving this layout with: i3pm layout save <name>"
+            )
 
         # Feature 074: Session Management - Compute launch directory for terminals (T040, US2)
         # REQUIRED field - check for empty Path() sentinel value
@@ -763,3 +811,145 @@ async def restore_layout(
     # Restore
     restore = LayoutRestore(i3_connection)
     return await restore.restore_layout(snapshot, adapt_monitors=adapt_monitors)
+
+
+# ============================================================================
+# Feature 075: Idempotent Layout Restoration (MVP)
+# ============================================================================
+
+async def restore_workflow(
+    layout: LayoutSnapshot,
+    project: str,
+    i3_connection,
+) -> "RestoreResult":  # type: ignore
+    """Restore layout using app-registry-based detection (idempotent).
+
+    Feature 075: T010-T015 (User Story 1 - Idempotent App Restoration)
+
+    This is the simplified MVP approach that replaces mark-based correlation:
+    1. Detect currently running apps (T012)
+    2. Filter layout to skip already-running apps (T011)
+    3. Launch missing apps sequentially (T013)
+    4. Focus saved workspace (T014)
+    5. Build RestoreResult with metrics (T015)
+
+    Args:
+        layout: LayoutSnapshot loaded from JSON
+        project: Current project name (e.g., "nixos")
+        i3_connection: i3ipc connection for workspace focusing
+
+    Returns:
+        RestoreResult with apps_already_running, apps_launched, apps_failed, elapsed_seconds
+
+    Example:
+        >>> layout = load_layout("main", "nixos")
+        >>> result = await restore_workflow(layout, "nixos", conn)
+        >>> print(result.status)  # "success" or "partial" or "failed"
+        >>> print(result.apps_launched)  # ["code", "lazygit"]
+    """
+    from .auto_restore import detect_running_apps
+    from .models import RestoreResult, SavedWindow
+    from ..services.app_launcher import AppLauncher
+    import time
+
+    start_time = time.time()
+
+    # T012: Detect currently running apps (O(W) where W = window count)
+    running_apps = await detect_running_apps()
+    logger.info(f"restore_workflow: detected {len(running_apps)} running apps: {sorted(running_apps)}")
+
+    # T011: Filter layout windows - skip already-running, collect missing
+    apps_already_running = []
+    apps_to_launch = []
+
+    for ws_layout in layout.workspace_layouts:
+        for window_data in ws_layout.windows:
+            # Parse as SavedWindow (supports both dict and WindowPlaceholder formats)
+            if isinstance(window_data, dict):
+                saved_window = SavedWindow(**window_data)
+            else:
+                # Already a WindowPlaceholder or SavedWindow - extract app_registry_name
+                if hasattr(window_data, 'app_registry_name'):
+                    saved_window = SavedWindow(
+                        app_registry_name=window_data.app_registry_name,
+                        workspace=ws_layout.workspace_num,
+                        cwd=window_data.cwd if hasattr(window_data, 'cwd') else None,
+                        focused=window_data.focused if hasattr(window_data, 'focused') else False,
+                    )
+                else:
+                    logger.warning(f"Window missing app_registry_name: {window_data}")
+                    continue
+
+            app_name = saved_window.app_registry_name
+
+            # Set-based membership test (O(1))
+            if app_name in running_apps:
+                apps_already_running.append(app_name)
+                logger.debug(f"✓ {app_name} already running - skip")
+            else:
+                apps_to_launch.append(saved_window)
+                logger.debug(f"→ {app_name} missing - will launch")
+
+    # T013: Launch missing apps sequentially via AppLauncher
+    launcher = AppLauncher()
+    apps_launched = []
+    apps_failed = []
+
+    for saved_window in apps_to_launch:
+        app_name = saved_window.app_registry_name
+        workspace = saved_window.workspace
+        cwd = saved_window.cwd
+
+        try:
+            logger.info(f"Launching {app_name} on workspace {workspace} (cwd: {cwd or 'N/A'})")
+
+            # Launch via unified app launcher (Feature 057 wrapper-based system)
+            await launcher.launch_app(
+                app_name=app_name,
+                workspace=workspace,
+                cwd=cwd,
+                project=project,
+            )
+
+            apps_launched.append(app_name)
+            logger.info(f"✓ Successfully launched {app_name}")
+
+        except Exception as e:
+            apps_failed.append(app_name)
+            logger.error(f"✗ Failed to launch {app_name}: {e}")
+
+    # T014: Focus saved workspace
+    try:
+        focused_ws = layout.focused_workspace
+        await i3_connection.command(f'workspace number {focused_ws}')
+        logger.info(f"Focused workspace {focused_ws}")
+    except Exception as e:
+        logger.warning(f"Failed to focus workspace {layout.focused_workspace}: {e}")
+
+    # T015: Build RestoreResult with metrics
+    elapsed_seconds = time.time() - start_time
+
+    # Determine status
+    if apps_failed:
+        if apps_launched or apps_already_running:
+            status = "partial"  # Some succeeded, some failed
+        else:
+            status = "failed"  # All failed
+    else:
+        status = "success"  # No failures
+
+    result = RestoreResult(
+        status=status,
+        apps_already_running=apps_already_running,
+        apps_launched=apps_launched,
+        apps_failed=apps_failed,
+        elapsed_seconds=elapsed_seconds,
+    )
+
+    logger.info(
+        f"Restore complete: {status} ({result.success_rate:.1f}% success rate) - "
+        f"{len(apps_already_running)} skipped, {len(apps_launched)} launched, "
+        f"{len(apps_failed)} failed in {elapsed_seconds:.2f}s"
+    )
+
+    return result

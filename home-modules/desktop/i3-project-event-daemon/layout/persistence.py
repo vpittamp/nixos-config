@@ -66,7 +66,22 @@ class LayoutPersistence:
         with open(filepath, 'w') as f:
             json.dump(snapshot_dict, f, indent=2, default=str)
 
-        logger.info(f"Saved layout snapshot: {filepath}")
+        # Feature 076 T020: Log mark metadata statistics
+        windows_with_marks = 0
+        total_windows = 0
+        for workspace_data in snapshot.workspaces:
+            for window in workspace_data.windows:
+                total_windows += 1
+                if hasattr(window, 'marks_metadata') and window.marks_metadata:
+                    windows_with_marks += 1
+
+        if windows_with_marks > 0:
+            logger.info(
+                f"Saved layout snapshot: {filepath} "
+                f"({windows_with_marks}/{total_windows} windows with mark metadata)"
+            )
+        else:
+            logger.info(f"Saved layout snapshot: {filepath}")
 
         return filepath
 

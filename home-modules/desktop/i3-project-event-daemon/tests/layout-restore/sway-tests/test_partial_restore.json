@@ -1,0 +1,142 @@
+{
+  "name": "test_partial_restore",
+  "description": "Partial restore: some apps running → verify only missing apps launch",
+  "feature": "075-layout-restore-production",
+  "task": "T022 (US3 - Integration Tests)",
+  "steps": [
+    {
+      "action": "comment",
+      "message": "Setup: Launch terminal on workspace 1"
+    },
+    {
+      "action": "launch_app",
+      "app": "terminal",
+      "workspace": 1,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "comment",
+      "message": "Save layout with terminal + code + lazygit"
+    },
+    {
+      "action": "launch_app",
+      "app": "code",
+      "workspace": 2,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "launch_app",
+      "app": "lazygit",
+      "workspace": 5,
+      "sync": "window_appeared"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout save test-partial",
+      "sync": "command_completed"
+    },
+    {
+      "action": "comment",
+      "message": "Close code and lazygit (leave terminal running)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg '[workspace=2] kill' && swaymsg '[workspace=5] kill'",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 500,
+      "description": "Wait for windows to close"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Only terminal running (1 window)"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 1,
+      "windowCount": 1,
+      "description": "Terminal still on workspace 1"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 2,
+      "windowCount": 0,
+      "description": "Code closed"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 5,
+      "windowCount": 0,
+      "description": "Lazygit closed"
+    },
+    {
+      "action": "comment",
+      "message": "Partial restore (terminal already running)"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout restore nixos test-partial",
+      "sync": "command_completed"
+    },
+    {
+      "action": "sleep",
+      "duration_ms": 6000,
+      "description": "Wait for code and lazygit to launch"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Terminal skipped, code + lazygit launched"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 1,
+      "windowCount": 1,
+      "description": "Terminal still only 1 window (not duplicated)"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 2,
+      "windowCount": 1,
+      "description": "Code launched on workspace 2"
+    },
+    {
+      "action": "assert_workspace",
+      "workspace": 5,
+      "windowCount": 1,
+      "description": "Lazygit launched on workspace 5"
+    },
+    {
+      "action": "comment",
+      "message": "Verify: Total window count is 3 (not 4)"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg -t get_tree | jq '[recurse(.nodes[]?, .floating_nodes[]?) | select(.pid? and .pid > 0)] | length'",
+      "expected_output": "3",
+      "description": "Exactly 3 windows (terminal not duplicated)"
+    },
+    {
+      "action": "comment",
+      "message": "Cleanup: Delete test layout and close all windows"
+    },
+    {
+      "action": "shell",
+      "command": "i3pm layout delete test-partial",
+      "sync": "command_completed"
+    },
+    {
+      "action": "shell",
+      "command": "swaymsg '[workspace=1] kill' && swaymsg '[workspace=2] kill' && swaymsg '[workspace=5] kill'",
+      "sync": "command_completed"
+    }
+  ],
+  "expected_outcome": "Only missing apps (code, lazygit) launch; terminal skipped",
+  "success_criteria": [
+    "Terminal not duplicated (still 1 window on WS 1)",
+    "Code launches on workspace 2",
+    "Lazygit launches on workspace 5",
+    "Total window count = 3 (not 4)"
+  ]
+}

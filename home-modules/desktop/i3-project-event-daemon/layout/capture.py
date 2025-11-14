@@ -48,14 +48,16 @@ class LayoutCapture:
     Converts to LayoutSnapshot model for persistence.
     """
 
-    def __init__(self, i3_connection):
+    def __init__(self, i3_connection, mark_manager=None):
         """
         Initialize layout capture
 
         Args:
             i3_connection: i3ipc connection instance
+            mark_manager: MarkManager instance for mark metadata extraction (Feature 076)
         """
         self.i3 = i3_connection
+        self.mark_manager = mark_manager  # Feature 076: Mark-based app identification
 
         # Feature 074: Session Management - Terminal CWD tracking (T036)
         self.terminal_cwd_tracker = TerminalCwdTracker() if TerminalCwdTracker else None
@@ -504,6 +506,20 @@ class LayoutCapture:
             # Extract marks
             marks = list(node.marks) if hasattr(node, 'marks') and node.marks else []
 
+            # Feature 076 T017-T018: Extract mark metadata for persistence
+            mark_metadata = None
+            if self.mark_manager and hasattr(node, 'id'):
+                try:
+                    mark_metadata = await self.mark_manager.get_mark_metadata(node.id)
+                    if mark_metadata:
+                        logger.debug(
+                            f"Captured mark metadata for window {node.id} ({window_class}): "
+                            f"app={mark_metadata.app}, project={mark_metadata.project}"
+                        )
+                except Exception as e:
+                    logger.debug(f"Could not extract mark metadata for window {node.id}: {e}")
+                    # Not a critical error - continue without mark metadata
+
             # Determine if floating
             floating = False
             if hasattr(node, 'floating'):
@@ -588,6 +604,7 @@ class LayoutCapture:
                 app_registry_name=app_registry_name,  # Feature 074: T037A - App registry name (REQUIRED)
                 focused=is_focused,  # Feature 074: T068 - Focused window per workspace (REQUIRED)
                 restoration_mark="i3pm-restore-00000000",  # Feature 074: Placeholder - will be replaced during restore (REQUIRED)
+                marks_metadata=mark_metadata,  # Feature 076 T017-T018: Mark metadata for mark-based restoration
             )
 
             return placeholder

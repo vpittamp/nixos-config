@@ -91,21 +91,27 @@ class MarkBasedCorrelator:
         logger.debug(f"Waiting for window with mark: {mark} (timeout: {timeout}s)")
 
         elapsed = 0.0
+        poll_count = 0
         while elapsed < timeout:
             # Query Sway tree
             tree = await self._get_tree()
+            poll_count += 1
+
+            # Feature 075: Debug tree polling
+            if poll_count % 10 == 1:  # Log every 10 polls (every ~1 second)
+                logger.debug(f"Poll #{poll_count}: Searching tree for mark {mark} (elapsed: {elapsed:.1f}s)")
 
             # Search for window with mark
             window_id = self._find_window_with_mark(tree, mark)
             if window_id:
-                logger.info(f"Found window with mark {mark}: window_id={window_id} (elapsed: {elapsed:.2f}s)")
+                logger.info(f"Found window with mark {mark}: window_id={window_id} (elapsed: {elapsed:.2f}s, polls: {poll_count})")
                 return window_id
 
             # Wait before next poll
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
 
-        logger.warning(f"Timeout waiting for window with mark: {mark} (waited {timeout}s)")
+        logger.warning(f"Timeout waiting for window with mark: {mark} (waited {timeout}s, {poll_count} polls)")
         return None
 
     async def apply_window_geometry(
@@ -266,33 +272,42 @@ class MarkBasedCorrelator:
                 # Async i3ipc
                 return await self.i3.command(command)
 
-    def _find_window_with_mark(self, node, mark: str) -> Optional[int]:
+    def _find_window_with_mark(self, node, mark: str, depth: int = 0) -> Optional[int]:
         """Recursively search tree for window with specific mark.
 
         Args:
             node: Current tree node to search
             mark: Mark to search for
+            depth: Recursion depth for debugging
 
         Returns:
-            Window ID if found, None otherwise
+            Container ID if found, None otherwise
         """
+        # Feature 075: Debug - log every node with marks
+        if hasattr(node, 'marks') and node.marks and len(node.marks) > 0:
+            has_target = mark in node.marks
+            logger.debug(f"Depth {depth}: Node id={getattr(node, 'id', '?')} has marks={node.marks}, target_mark={mark}, match={has_target}")
+
         # Check if this node has the mark
         if hasattr(node, 'marks') and node.marks and mark in node.marks:
-            # Check if this is a window (has window ID)
-            if hasattr(node, 'window') and node.window and node.window > 0:
-                return node.window
+            logger.debug(f"Found node with mark {mark}: id={getattr(node, 'id', None)}, pid={getattr(node, 'pid', None)}, type={getattr(node, 'type', None)}")
+            # Check if this is a window container (has PID indicating actual window)
+            # Feature 075: For Wayland windows, node.window is null, use node.id (container ID)
+            if hasattr(node, 'pid') and node.pid and node.pid > 0:
+                logger.debug(f"Returning container ID {node.id} for window with mark {mark}")
+                return node.id  # Return container ID for Sway IPC commands (con_id=)
 
         # Recursively search children
         if hasattr(node, 'nodes') and node.nodes:
             for child in node.nodes:
-                window_id = self._find_window_with_mark(child, mark)
+                window_id = self._find_window_with_mark(child, mark, depth + 1)
                 if window_id:
                     return window_id
 
         # Also check floating nodes
         if hasattr(node, 'floating_nodes') and node.floating_nodes:
             for child in node.floating_nodes:
-                window_id = self._find_window_with_mark(child, mark)
+                window_id = self._find_window_with_mark(child, mark, depth + 1)
                 if window_id:
                     return window_id
 
