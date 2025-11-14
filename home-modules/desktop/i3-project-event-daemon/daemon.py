@@ -45,6 +45,7 @@ from .handlers import (
     on_workspace_init,
     on_workspace_empty,
     on_workspace_move,
+    on_workspace_focus,  # Feature 074 T026: Workspace focus tracking
     on_output,  # Feature 024: R013
     on_mode,  # Feature 042: Workspace mode navigation
 )
@@ -430,6 +431,11 @@ class I3ProjectDaemon:
             "workspace::move",
             partial(on_workspace_move, state_manager=self.state_manager)
         )
+        # Feature 074: Session Management - Workspace focus tracking (T026, US1)
+        self.connection.subscribe(
+            "workspace::focus",
+            partial(on_workspace_focus, state_manager=self.state_manager)
+        )
 
         # Feature 024: R013 - Multi-monitor output event handling
         # Feature 042: Also refresh workspace mode cache on output changes
@@ -482,6 +488,9 @@ class I3ProjectDaemon:
             self.workspace_tracker
         )
         logger.info("Project switch request queue initialized")
+
+        # Feature 074: Session Management - Load persisted focus state (T025, US1)
+        await self.state_manager.load_focus_state()
 
     async def run(self) -> None:
         """Main event loop."""

@@ -137,11 +137,12 @@ home-modules/desktop/i3-project-event-daemon/
 ├── handlers.py                        # MODIFY: _switch_project() to restore workspace focus
 ├── services/
 │   ├── focus_tracker.py              # NEW: Per-project workspace/window focus tracking
-│   └── terminal_cwd.py               # NEW: Terminal working directory extraction
+│   ├── terminal_cwd.py               # NEW: Terminal working directory extraction
+│   └── app_launcher.py               # NEW: Unified app launcher for wrapper-based restoration (Feature 057 integration)
 ├── layout/
-│   ├── models.py                     # EXTEND: WindowPlaceholder (cwd, focused), LayoutSnapshot (focused_workspace)
-│   ├── capture.py                    # EXTEND: Capture terminal cwd and focused window
-│   ├── restore.py                    # REPLACE: _swallow_window() with mark-based correlation
+│   ├── models.py                     # EXTEND: WindowPlaceholder (cwd, focused, app_registry_name), LayoutSnapshot (focused_workspace)
+│   ├── capture.py                    # EXTEND: Capture terminal cwd, focused window, and I3PM_APP_NAME from /proc
+│   ├── restore.py                    # MODIFY: Use AppLauncher for wrapper-based restoration, replace _swallow_window() with mark-based correlation
 │   ├── correlation.py                # NEW: Mark-based window correlation for Sway
 │   └── persistence.py                # EXTEND: Auto-save/restore logic, layout pruning
 └── event_handlers/
@@ -153,6 +154,7 @@ tests/i3pm-session-management/
 │   ├── test_focus_tracker.py         # Focus state tracking logic
 │   ├── test_terminal_cwd.py          # Terminal cwd extraction
 │   ├── test_correlation.py           # Mark-based correlation algorithm
+│   ├── test_app_launcher.py          # AppLauncher service (wrapper-based launching)
 │   └── test_models.py                # Extended Pydantic model validation
 ├── integration/
 │   ├── test_focus_restoration.py     # Workspace focus restoration on project switch

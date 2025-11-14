@@ -504,6 +504,50 @@ async def _switch_project(
     # Update active project
     await state_manager.set_active_project(project_name)
 
+    # Feature 074: Session Management - Restore workspace focus (T027-T029, US1)
+    # Restore the previously focused workspace for this project
+    if hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
+        try:
+            # T027: Get previously focused workspace for this project
+            focused_workspace = await state_manager.focus_tracker.get_project_focused_workspace(project_name)
+
+            if focused_workspace:
+                # Check if workspace exists (has windows) by querying Sway tree
+                tree = await conn.get_tree()
+                workspace_exists = any(ws.num == focused_workspace for ws in tree.workspaces())
+
+                if workspace_exists:
+                    # T027: Restore focus to previously focused workspace
+                    await conn.command(f"workspace number {focused_workspace}")
+                    logger.info(f"Restored workspace focus for project {project_name} → workspace {focused_workspace}")
+                else:
+                    # T029: Fallback - focus first workspace with project windows
+                    project_windows = await state_manager.get_windows_by_project(project_name)
+                    if project_windows:
+                        # Find first workspace with visible windows
+                        workspaces_with_windows = sorted(set(w.workspace_num for w in project_windows if hasattr(w, 'workspace_num') and w.workspace_num))
+                        if workspaces_with_windows:
+                            fallback_ws = workspaces_with_windows[0]
+                            await conn.command(f"workspace number {fallback_ws}")
+                            logger.info(f"Previously focused workspace {focused_workspace} doesn't exist, focused first workspace with project windows: {fallback_ws}")
+                        else:
+                            # T028: Fallback - focus workspace 1 if no project windows found
+                            await conn.command("workspace number 1")
+                            logger.debug(f"No project windows found, focused workspace 1 as fallback")
+                    else:
+                        # T028: Fallback - focus workspace 1 if no project windows
+                        await conn.command("workspace number 1")
+                        logger.debug(f"No project windows found, focused workspace 1 as fallback")
+            else:
+                # T028: No focus history - focus workspace 1
+                await conn.command("workspace number 1")
+                logger.debug(f"No focus history for project {project_name}, focused workspace 1 as fallback")
+        except Exception as e:
+            logger.error(f"Error restoring workspace focus for project {project_name}: {e}")
+            # Don't fail the project switch if focus restoration fails
+    else:
+        logger.debug("FocusTracker not initialized, skipping workspace focus restoration")
+
     # Save to config file
     from .models import ActiveProjectState
 
@@ -2058,6 +2102,54 @@ async def on_workspace_move(
 
     except Exception as e:
         logger.error(f"Error handling workspace::move event: {e}")
+        await state_manager.increment_error_count()
+
+
+async def on_workspace_focus(
+    conn: aio.Connection, event: WorkspaceEvent, state_manager: StateManager
+) -> None:
+    """Handle workspace::focus events - track focused workspace per project (T026, US1, Feature 074).
+
+    When user switches to a different workspace, record which workspace is focused
+    for the active project. This enables automatic workspace restoration when
+    switching back to the project later.
+
+    Args:
+        conn: i3 async connection
+        event: Workspace event
+        state_manager: State manager (with embedded FocusTracker via focus_tracker attribute)
+    """
+    try:
+        current = event.current
+        workspace_num = current.num
+
+        # Feature 053 Phase 6: Comprehensive workspace event logging
+        log_event_entry(
+            "workspace::focus",
+            {
+                "workspace_name": current.name,
+                "workspace_num": workspace_num,
+                "output": current.ipc_data.get("output", "?"),
+                "visible": current.ipc_data.get("visible", False),
+            },
+            level="DEBUG"
+        )
+
+        # Get current active project
+        project = await state_manager.get_active_project()
+        if not project:
+            logger.debug(f"No active project, skipping focus tracking for workspace {workspace_num}")
+            return
+
+        # Track workspace focus for the active project (Feature 074: Session Management)
+        if hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
+            await state_manager.focus_tracker.track_workspace_focus(project, workspace_num)
+            logger.debug(f"Tracked workspace focus: project={project} → workspace={workspace_num}")
+        else:
+            logger.warning("FocusTracker not initialized in StateManager, cannot track workspace focus")
+
+    except Exception as e:
+        logger.error(f"Error handling workspace::focus event: {e}")
         await state_manager.increment_error_count()
 
 

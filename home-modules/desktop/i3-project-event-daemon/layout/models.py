@@ -57,6 +57,14 @@ class RuleSource(str, Enum):
     USER = "user"
 
 
+class CorrelationStatus(str, Enum):
+    """Status of window correlation attempt (Feature 074: T043, US3)"""
+    PENDING = "pending"      # Waiting for window to appear
+    MATCHED = "matched"      # Window successfully matched
+    TIMEOUT = "timeout"      # Window did not appear within timeout
+    FAILED = "failed"        # Matching failed due to error
+
+
 # ============================================================================
 # Geometry and Position
 # ============================================================================
@@ -133,7 +141,11 @@ class Window(BaseModel):
 
 
 class WindowPlaceholder(BaseModel):
-    """Window placeholder for layout restoration"""
+    """Window placeholder for layout restoration
+
+    Feature 074: Session Management
+    Extended with terminal cwd tracking, focused state, and mark-based correlation
+    """
     window_class: Optional[str] = None
     instance: Optional[str] = None
     title_pattern: Optional[str] = None
@@ -141,6 +153,12 @@ class WindowPlaceholder(BaseModel):
     geometry: WindowGeometry
     floating: bool = False
     marks: list[str] = Field(default_factory=list)
+
+    # Feature 074: Session Management extensions
+    cwd: Optional[Path] = None  # Terminal working directory (T007, US2)
+    focused: bool = False  # Window focus state (T007, US4)
+    restoration_mark: Optional[str] = None  # Temporary mark for Sway correlation (T007, US3)
+    app_registry_name: Optional[str] = None  # App registry name for wrapper-based restoration (T015A, Feature 057 integration)
 
     @field_validator('launch_command')
     @classmethod
@@ -154,6 +172,14 @@ class WindowPlaceholder(BaseModel):
             raise ValueError(f"Invalid command: {e}")
         return v
 
+    @field_validator('cwd')
+    @classmethod
+    def validate_cwd_absolute(cls, v: Optional[Path]) -> Optional[Path]:
+        """Ensure cwd is absolute path if provided (T008, US2)"""
+        if v is not None and not v.is_absolute():
+            raise ValueError(f"Working directory must be absolute: {v}")
+        return v
+
     def to_swallow_criteria(self) -> dict[str, str]:
         """Generate i3 swallow criteria"""
         criteria = {}
@@ -164,6 +190,28 @@ class WindowPlaceholder(BaseModel):
         if self.title_pattern:
             criteria["title"] = self.title_pattern
         return criteria
+
+    def is_terminal(self) -> bool:
+        """Check if this placeholder represents a terminal application (T009, US2)"""
+        TERMINAL_CLASSES = {"ghostty", "Alacritty", "kitty", "foot", "WezTerm"}
+        return self.window_class in TERMINAL_CLASSES
+
+    def get_launch_env(self, project: str) -> dict[str, str]:
+        """Generate environment variables for window launch with correlation mark (T010, US3)"""
+        import uuid
+        import os
+
+        # Generate unique restoration mark if not already set
+        if not self.restoration_mark:
+            self.restoration_mark = f"i3pm-restore-{uuid.uuid4().hex[:8]}"
+
+        env = {
+            **os.environ,
+            "I3PM_RESTORE_MARK": self.restoration_mark,
+            "I3PM_PROJECT": project,
+        }
+
+        return env
 
 
 class Container(BaseModel):
@@ -230,13 +278,42 @@ class MonitorConfiguration(BaseModel):
 
 
 class LayoutSnapshot(BaseModel):
-    """A saved workspace configuration for session persistence"""
+    """A saved workspace configuration for session persistence
+
+    Feature 074: Session Management
+    Extended with focused workspace tracking for session restoration
+    """
     name: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=1, max_length=50)
     project: str = Field(..., pattern=r'^[a-z0-9-]+$')
     created_at: datetime = Field(default_factory=datetime.now)
     monitor_config: MonitorConfiguration
     workspace_layouts: list[WorkspaceLayout] = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    # Feature 074: Session Management extension
+    focused_workspace: Optional[int] = Field(default=None, ge=1, le=70)  # T011, US1
+
+    @model_validator(mode='after')
+    def validate_focused_workspace_exists(self) -> 'LayoutSnapshot':
+        """Ensure focused workspace exists in workspace_layouts if specified (T012, US1)"""
+        if self.focused_workspace is not None:
+            workspace_nums = {wl.workspace_num for wl in self.workspace_layouts}
+            if self.focused_workspace not in workspace_nums:
+                raise ValueError(
+                    f"Focused workspace {self.focused_workspace} not in layout workspaces: {workspace_nums}"
+                )
+        return self
+
+    def is_auto_save(self) -> bool:
+        """Check if this is an auto-saved layout (name starts with 'auto-') (T013, US5)"""
+        return self.name.startswith("auto-")
+
+    def get_timestamp(self) -> Optional[str]:
+        """Extract timestamp from auto-save name (format: auto-YYYYMMDD-HHMMSS) (T013, US5)"""
+        if not self.is_auto_save():
+            return None
+        # Extract timestamp portion after "auto-"
+        return self.name[5:] if len(self.name) > 5 else None
 
     def to_i3_json(self) -> dict[str, Any]:
         """Convert to i3's append_layout JSON format (placeholder)"""
@@ -264,6 +341,51 @@ class Event(BaseModel):
         """Establish correlation with another event"""
         self.correlation_id = other.event_id
         self.confidence_score = confidence
+
+
+class RestoreCorrelation(BaseModel):
+    """Tracks correlation state for a single window restoration (Feature 074: T042, US3)
+
+    Used by mark-based correlation to track window matching during layout restoration.
+    Each window restoration gets a unique correlation ID and restoration mark.
+    """
+    correlation_id: UUID = Field(default_factory=uuid4)
+    restoration_mark: str = Field(..., pattern=r'^i3pm-restore-[0-9a-f]{8}$')
+    placeholder: WindowPlaceholder
+    status: CorrelationStatus = CorrelationStatus.PENDING
+    started_at: datetime = Field(default_factory=datetime.now)
+    completed_at: Optional[datetime] = None
+    matched_window_id: Optional[int] = None
+    error_message: Optional[str] = None
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Time elapsed since correlation started (T045, US3)"""
+        end_time = self.completed_at or datetime.now()
+        return (end_time - self.started_at).total_seconds()
+
+    @property
+    def is_complete(self) -> bool:
+        """Check if correlation has finished - matched, timeout, or failed (T045, US3)"""
+        return self.status != CorrelationStatus.PENDING
+
+    def mark_matched(self, window_id: int) -> None:
+        """Mark correlation as successfully matched (T044, US3)"""
+        self.status = CorrelationStatus.MATCHED
+        self.matched_window_id = window_id
+        self.completed_at = datetime.now()
+
+    def mark_timeout(self) -> None:
+        """Mark correlation as timed out (T044, US3)"""
+        self.status = CorrelationStatus.TIMEOUT
+        self.completed_at = datetime.now()
+        self.error_message = f"No window appeared with mark {self.restoration_mark} within timeout"
+
+    def mark_failed(self, error: str) -> None:
+        """Mark correlation as failed with error message (T044, US3)"""
+        self.status = CorrelationStatus.FAILED
+        self.completed_at = datetime.now()
+        self.error_message = error
 
 
 class ClassificationRule(BaseModel):

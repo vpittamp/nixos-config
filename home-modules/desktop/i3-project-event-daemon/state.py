@@ -10,6 +10,8 @@ from i3ipc import aio
 
 from .models import DaemonState, WindowInfo, WorkspaceInfo
 from .services.launch_registry import LaunchRegistry  # Feature 041: IPC Launch Context - T013
+from .services.focus_tracker import FocusTracker  # Feature 074: Session Management - T021
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,13 @@ class StateManager:
         # Launch registry for correlating windows to launch notifications
         self.launch_registry = LaunchRegistry(timeout=5.0)
         logger.info("Initialized LaunchRegistry with 5-second timeout")
+
+        # Feature 074: Session Management - T021
+        # Focus tracker for workspace and window focus restoration
+        config_dir = Path.home() / ".config" / "i3"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        self.focus_tracker = FocusTracker(self, config_dir)
+        logger.info("Initialized FocusTracker for session management")
 
     async def add_window(self, window_info: WindowInfo) -> None:
         """Add a window to the tracking map.
@@ -260,3 +269,19 @@ class StateManager:
                 f"scoped {old_scoped_count}→{len(classification.scoped_classes)}, "
                 f"global {old_global_count}→{len(classification.global_classes)}"
             )
+
+    async def load_focus_state(self) -> None:
+        """Load focus state from disk on daemon startup (Feature 074: T025, US1).
+
+        Loads previously persisted workspace and window focus state to restore
+        session management context across daemon restarts.
+        """
+        if hasattr(self, 'focus_tracker') and self.focus_tracker:
+            try:
+                await self.focus_tracker.load_focus_state()
+                logger.info("Successfully loaded focus state from disk")
+            except Exception as e:
+                logger.warning(f"Failed to load focus state: {e}")
+                # Non-fatal error - daemon can continue without persisted focus state
+        else:
+            logger.debug("FocusTracker not initialized, skipping focus state load")

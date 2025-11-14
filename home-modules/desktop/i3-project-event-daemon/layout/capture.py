@@ -9,6 +9,7 @@ Captures complete window layout from i3 including:
 - Window geometry and properties
 - Window marks and project associations
 - Monitor configuration
+- Terminal working directories (Feature 074: T036-T037)
 """
 
 import logging
@@ -22,12 +23,15 @@ try:
         Monitor, MonitorConfiguration
     )
     from .launch_commands import discover_launch_command
+    from ..services.terminal_cwd import TerminalCwdTracker  # Feature 074: T036
 except ImportError:
     from models import (
         LayoutSnapshot, WorkspaceLayout, Window, WindowGeometry,
         Monitor, MonitorConfiguration
     )
     from launch_commands import discover_launch_command
+    # Services not available in standalone mode
+    TerminalCwdTracker = None
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +56,11 @@ class LayoutCapture:
             i3_connection: i3ipc connection instance
         """
         self.i3 = i3_connection
+
+        # Feature 074: Session Management - Terminal CWD tracking (T036)
+        self.terminal_cwd_tracker = TerminalCwdTracker() if TerminalCwdTracker else None
+        if self.terminal_cwd_tracker:
+            logger.debug("Initialized TerminalCwdTracker for layout capture")
 
     async def capture_current_layout(
         self,
@@ -78,8 +87,8 @@ class LayoutCapture:
         # Capture monitor configuration
         monitor_config = self._capture_monitor_config(outputs)
 
-        # Capture workspace layouts
-        workspace_layouts = self._capture_workspace_layouts(tree, workspaces, outputs)
+        # Capture workspace layouts (Feature 074: T037 - async for terminal cwd capture)
+        workspace_layouts = await self._capture_workspace_layouts(tree, workspaces, outputs)
 
         # Create snapshot
         snapshot = LayoutSnapshot(
@@ -211,7 +220,7 @@ class LayoutCapture:
             workspace_assignments=workspace_assignments
         )
 
-    def _capture_workspace_layouts(
+    async def _capture_workspace_layouts(
         self,
         tree,
         workspaces: List,
@@ -253,8 +262,8 @@ class LayoutCapture:
                 logger.warning(f"Skipping workspace with invalid name: {ws_name}")
                 continue
 
-            # Capture windows in this workspace
-            windows = self._capture_windows_in_workspace(ws_node)
+            # Capture windows in this workspace (Feature 074: T037 - async for terminal cwd)
+            windows = await self._capture_windows_in_workspace(ws_node)
 
             # Get layout mode from workspace node
             layout_mode_str = getattr(ws_node, 'layout', 'splith')
@@ -307,7 +316,7 @@ class LayoutCapture:
 
         return workspaces
 
-    def _capture_windows_in_workspace(self, workspace_node) -> List:
+    async def _capture_windows_in_workspace(self, workspace_node) -> List:
         """
         Capture all windows in a workspace
 
@@ -327,8 +336,8 @@ class LayoutCapture:
             if not hasattr(node, 'window_class') or not node.window_class:
                 continue
 
-            # Create Window object
-            window = self._create_window_from_node(node)
+            # Create Window object (Feature 074: T037 - async for terminal cwd capture)
+            window = await self._create_window_from_node(node)
             if window:
                 windows.append(window)
 
@@ -365,7 +374,7 @@ class LayoutCapture:
 
         return leaves
 
-    def _create_window_from_node(self, node):
+    async def _create_window_from_node(self, node):
         """
         Create WindowPlaceholder object from i3 tree node
 
@@ -413,6 +422,46 @@ class LayoutCapture:
                 logger.warning(f"Could not discover launch command for {window_class}")
                 return None
 
+            # Feature 074: Session Management - Capture terminal working directory (T037, US2)
+            cwd = None
+            if self.terminal_cwd_tracker and pid:
+                # Check if this is a terminal window
+                if self.terminal_cwd_tracker.is_terminal_window(window_class):
+                    try:
+                        cwd = await self.terminal_cwd_tracker.get_terminal_cwd(pid)
+                        if cwd:
+                            logger.debug(f"Captured terminal cwd for {window_class} (PID {pid}): {cwd}")
+                        else:
+                            logger.debug(f"Could not capture cwd for terminal {window_class} (PID {pid})")
+                    except Exception as e:
+                        logger.warning(f"Error capturing terminal cwd for PID {pid}: {e}")
+                        cwd = None
+
+            # Feature 074: Session Management - Capture app registry name from I3PM_APP_NAME (T037A, Feature 057 integration)
+            app_registry_name = None
+            if pid:
+                try:
+                    environ_path = Path(f"/proc/{pid}/environ")
+                    if environ_path.exists():
+                        # Read environment variables (null-separated)
+                        environ_data = environ_path.read_bytes()
+                        environ_dict = {}
+                        for entry in environ_data.split(b'\0'):
+                            if b'=' in entry:
+                                key, value = entry.split(b'=', 1)
+                                environ_dict[key.decode('utf-8', errors='ignore')] = value.decode('utf-8', errors='ignore')
+
+                        # Extract I3PM_APP_NAME
+                        app_registry_name = environ_dict.get('I3PM_APP_NAME')
+                        if app_registry_name:
+                            logger.debug(f"Captured I3PM_APP_NAME for {window_class} (PID {pid}): {app_registry_name}")
+                        else:
+                            logger.debug(f"No I3PM_APP_NAME found for {window_class} (PID {pid})")
+
+                except Exception as e:
+                    logger.debug(f"Could not read environ for PID {pid}: {e}")
+                    app_registry_name = None
+
             # Create WindowPlaceholder object for restoration
             from .models import WindowPlaceholder
             placeholder = WindowPlaceholder(
@@ -423,6 +472,8 @@ class LayoutCapture:
                 geometry=geometry,
                 marks=marks,
                 floating=floating,
+                cwd=cwd,  # Feature 074: T037 - Terminal working directory
+                app_registry_name=app_registry_name,  # Feature 074: T037A - App registry name for wrapper-based restoration
             )
 
             return placeholder

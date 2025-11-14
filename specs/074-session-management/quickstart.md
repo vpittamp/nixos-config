@@ -1,8 +1,21 @@
 # Quickstart: Session Management
 
 **Feature**: 074-session-management
-**Status**: Implementation Planned
+**Status**: Phase 5 Complete (MVP Ready - US1-US3)
+**Branch**: `074-session-management`
 **For**: Users and developers of i3pm project management system
+
+## Implementation Status
+
+✅ **Phase 1-2**: Foundation (Data models, Pydantic extensions) - COMPLETE
+✅ **Phase 3**: User Story 1 (Workspace Focus Restoration) - COMPLETE
+✅ **Phase 4**: User Story 2 (Terminal Working Directory) - COMPLETE
+✅ **Phase 5**: User Story 3 (Sway Mark-Based Correlation) - COMPLETE
+⏳ **Phase 6**: User Story 4 (Focused Window Restoration) - NOT STARTED
+⏳ **Phase 7**: User Story 5 (Auto-Save) - NOT STARTED
+⏳ **Phase 8**: User Story 6 (Auto-Restore) - NOT STARTED
+
+**MVP Features Available**: Workspace focus tracking, terminal cwd preservation, Sway-compatible window restoration with mark-based correlation
 
 ## Overview
 
@@ -10,16 +23,26 @@ Session management extends i3pm with workspace focus restoration, terminal worki
 
 ## Key Features
 
-✅ **Workspace Focus Restoration** - Return to the exact workspace you were using when switching back to a project
-✅ **Terminal Working Directory** - Terminals reopen in their original directories (not `$HOME`)
-✅ **Focused Window Restoration** - Each workspace focuses the same window you were using
-✅ **Auto-Save on Switch** - Automatically save layout when leaving a project
-✅ **Auto-Restore on Activate** - Optionally restore layout when activating a project
-✅ **Sway Compatible** - Works on Sway/Wayland (replaces broken i3 swallow mechanism)
+### Implemented (Phase 5 Complete)
+
+✅ **Workspace Focus Restoration** (US1) - Return to the exact workspace you were using when switching back to a project
+✅ **Terminal Working Directory** (US2) - Terminals reopen in their original directories (not `$HOME`)
+✅ **Sway Compatible** (US3) - Works on Sway/Wayland using mark-based correlation (replaces broken i3 swallow mechanism)
+✅ **Layout Capture IPC** - Save current layout via `layout.capture` JSON-RPC method
+✅ **Layout Restore IPC** - Restore saved layout via `layout.restore` JSON-RPC method with correlation statistics
+✅ **AppLauncher Integration** - Wrapper-based window restoration with I3PM_* environment variable injection
+
+### Planned (Phase 6-8)
+
+⏳ **Focused Window Restoration** (US4) - Each workspace focuses the same window you were using
+⏳ **Auto-Save on Switch** (US5) - Automatically save layout when leaving a project
+⏳ **Auto-Restore on Activate** (US6) - Optionally restore layout when activating a project
 
 ## Basic Usage
 
-### Workspace Focus (Automatic)
+**Note**: Auto-save (US5) and auto-restore (US6) are not yet implemented. Currently available: workspace focus tracking, manual layout save/restore with terminal cwd preservation, and mark-based correlation for Sway.
+
+### Workspace Focus (Automatic) ✅ IMPLEMENTED
 
 When you switch projects, i3pm automatically tracks which workspace you were focused on:
 
@@ -38,9 +61,9 @@ i3pm project switch nixos
 
 **No configuration needed** - workspace focus tracking is always active.
 
-### Layout Save & Restore
+### Layout Save & Restore ✅ IMPLEMENTED
 
-Save your current workspace layout:
+Save your current workspace layout (includes terminal working directories and I3PM_APP_NAME for restoration):
 
 ```bash
 # Save current layout with a name
@@ -56,9 +79,9 @@ i3pm layout restore main
 i3pm layout delete old-layout
 ```
 
-### Auto-Save Configuration
+### Auto-Save Configuration ⏳ PLANNED (Phase 7 - US5)
 
-Enable auto-save to automatically capture layouts when switching projects:
+**Not yet implemented.** Future functionality will automatically capture layouts when switching projects:
 
 ```nix
 # File: home-modules/desktop/app-registry-data.nix
@@ -84,9 +107,9 @@ i3pm layout list
 → main (manually saved)
 ```
 
-### Auto-Restore Configuration
+### Auto-Restore Configuration ⏳ PLANNED (Phase 8 - US6)
 
-Enable auto-restore to automatically restore layout when activating a project:
+**Not yet implemented.** Future functionality will automatically restore layout when activating a project:
 
 ```nix
 projects = [

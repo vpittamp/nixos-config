@@ -459,6 +459,12 @@ class IPCServer:
             elif method == "scratchpad.cleanup":
                 result = await self._scratchpad_cleanup(params)
 
+            # Feature 074: Session Management - Focus tracking methods (T030-T031, US1)
+            elif method == "project.get_focused_workspace":
+                result = await self._project_get_focused_workspace(params)
+            elif method == "project.set_focused_workspace":
+                result = await self._project_set_focused_workspace(params)
+
             # Feature 001: Declarative workspace-to-monitor assignment
             elif method == "monitors.status":
                 result = await self._monitors_status(params)
@@ -913,6 +919,116 @@ class IPCServer:
                 old_project=previous_project if 'previous_project' in locals() else None,
                 new_project=None,
                 windows_affected=windows_to_show if 'windows_to_show' in locals() else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _project_get_focused_workspace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the focused workspace for a project (T030, US1, Feature 074).
+
+        Queries the FocusTracker to retrieve which workspace was last focused
+        for the specified project. This allows external tools to query focus history.
+
+        Args:
+            params: Dictionary with required key:
+                - project: Project name to query (string)
+
+        Returns:
+            Dictionary with:
+                - project: Project name (string)
+                - workspace: Focused workspace number (int, 1-70) or None if no history
+
+        Raises:
+            KeyError: If 'project' parameter is missing
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project = params["project"]
+
+            # Query FocusTracker for focused workspace
+            if hasattr(self.state_manager, 'focus_tracker') and self.state_manager.focus_tracker:
+                workspace = await self.state_manager.focus_tracker.get_project_focused_workspace(project)
+                logger.debug(f"IPC: get_focused_workspace({project}) → {workspace}")
+            else:
+                logger.warning("FocusTracker not initialized, returning None")
+                workspace = None
+
+            return {
+                "project": project,
+                "workspace": workspace,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::get_focused_workspace",
+                project=params.get("project") if params else None,
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
+    async def _project_set_focused_workspace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set the focused workspace for a project (T031, US1, Feature 074).
+
+        Manually sets which workspace should be focused when switching to this project.
+        This allows external tools or manual intervention to override the automatic
+        focus tracking.
+
+        Args:
+            params: Dictionary with required keys:
+                - project: Project name (string)
+                - workspace: Workspace number to focus (int, 1-70)
+
+        Returns:
+            Dictionary with:
+                - project: Project name (string)
+                - workspace: Workspace number that was set (int)
+                - success: True if operation succeeded (boolean)
+
+        Raises:
+            KeyError: If 'project' or 'workspace' parameter is missing
+            ValueError: If workspace number is not in range 1-70
+        """
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            project = params["project"]
+            workspace = params["workspace"]
+
+            # Validate workspace number
+            if not isinstance(workspace, int) or workspace < 1 or workspace > 70:
+                raise ValueError(f"Workspace must be an integer between 1 and 70, got: {workspace}")
+
+            # Set focused workspace via FocusTracker
+            if hasattr(self.state_manager, 'focus_tracker') and self.state_manager.focus_tracker:
+                await self.state_manager.focus_tracker.track_workspace_focus(project, workspace)
+                logger.info(f"IPC: set_focused_workspace({project}, {workspace}) succeeded")
+                success = True
+            else:
+                logger.error("FocusTracker not initialized, cannot set focused workspace")
+                success = False
+
+            return {
+                "project": project,
+                "workspace": workspace,
+                "success": success,
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::set_focused_workspace",
+                project=params.get("project") if params else None,
+                workspace=params.get("workspace") if params else None,
                 duration_ms=duration_ms,
                 error=error_msg,
             )
@@ -2287,59 +2403,65 @@ class IPCServer:
         """
         Capture and save current workspace layout.
 
-        Feature 058: Python Backend Consolidation - User Story 2
-        Implements layout_save JSON-RPC method from contracts/layout-api.json
+        Feature 074: Session Management - Task T059
+        Implements layout.capture JSON-RPC method from contracts/ipc-api.md
 
         Args:
             params: Save parameters
-                - project_name: Project name (required)
-                - layout_name: Layout name (optional, defaults to project_name)
+                - project: Project name (required, lowercase alphanumeric with hyphens)
+                - name: Layout name (required, lowercase alphanumeric with hyphens)
 
         Returns:
             {
-                "project": str,
-                "layout_name": str,
-                "windows_captured": int,
-                "file_path": str
+                "success": bool,
+                "layout_path": str,
+                "workspace_count": int,
+                "window_count": int,
+                "focused_workspace": int
             }
 
         Raises:
-            ValueError: If project_name is missing
-            LayoutError: If capture or save fails
+            ValueError: If required params missing or invalid
+            RuntimeError: If capture or save fails
         """
         start_time = time.perf_counter()
 
         try:
-            project_name = params.get("project_name")
-            layout_name = params.get("layout_name")
+            project = params.get("project")
+            name = params.get("name")
 
-            if not project_name:
-                raise ValueError("project_name parameter is required")
+            # Validate required parameters
+            if not project:
+                raise ValueError("project parameter is required")
+            if not name:
+                raise ValueError("name parameter is required")
 
-            # Create LayoutEngine instance
-            from .services.layout_engine import LayoutEngine
-            layout_engine = LayoutEngine(self.i3_connection)
+            # Feature 074: Use new capture system with terminal cwd tracking (T036-T037)
+            from .layout.capture import capture_layout
+            from .layout.persistence import save_layout
 
-            # Capture layout
-            layout, warnings = await layout_engine.capture_layout(project_name, layout_name)
-
-            # Log warnings
-            for warning in warnings:
-                logger.warning(f"Layout capture warning: {warning}")
+            # Capture current layout
+            snapshot = await capture_layout(
+                i3_connection=self.i3_connection,
+                name=name,
+                project=project
+            )
 
             # Save to file
-            filepath = layout_engine.save_layout(layout)
+            layout_path = save_layout(snapshot)
 
             result = {
-                "project": layout.project_name,
-                "layout_name": layout.layout_name,
-                "windows_captured": len(layout.windows),
-                "file_path": str(filepath)
+                "success": True,
+                "layout_path": str(layout_path),
+                "workspace_count": len(snapshot.workspace_layouts),
+                "window_count": snapshot.metadata.get("total_windows", 0),
+                "focused_workspace": snapshot.focused_workspace or 1
             }
 
             logger.info(
-                f"Layout saved: {layout.project_name}/{layout.layout_name} "
-                f"({len(layout.windows)} windows) to {filepath}"
+                f"Layout captured: {project}/{name} - "
+                f"{result['workspace_count']} workspaces, "
+                f"{result['window_count']} windows → {layout_path}"
             )
 
             return result
@@ -2347,17 +2469,14 @@ class IPCServer:
         except ValueError as e:
             # Invalid params error code
             raise ValueError(str(e))
-        except FileNotFoundError as e:
-            # Project not found
-            raise RuntimeError(f"Project not found: {params.get('project_name')}")
         except Exception as e:
-            logger.error(f"Layout save failed: {e}", exc_info=True)
-            raise RuntimeError(f"Layout save failed: {e}")
+            logger.error(f"Layout capture failed: {e}", exc_info=True)
+            raise RuntimeError(f"Layout capture failed: {e}")
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
-                event_type="layout::save",
-                project_name=params.get("project_name"),
+                event_type="layout::capture",
+                project_name=params.get("project"),
                 params=params,
                 duration_ms=duration_ms,
             )
@@ -2366,57 +2485,91 @@ class IPCServer:
         """
         Restore workspace layout from snapshot.
 
-        Feature 058: Python Backend Consolidation - User Story 2
-        Implements layout_restore JSON-RPC method from contracts/layout-api.json
+        Feature 074: Session Management - Task T058
+        Implements layout.restore JSON-RPC method from contracts/ipc-api.md
+        Uses mark-based correlation for Sway compatibility (US3)
 
         Args:
             params: Restore parameters
-                - project_name: Project name (required)
-                - layout_name: Layout name (optional, defaults to project_name)
+                - project: Project name (required)
+                - name: Layout name (required)
+                - timeout: Max correlation timeout in seconds (optional, default: 30.0)
 
         Returns:
             {
-                "restored": int,  # Number of windows successfully restored
-                "missing": [  # Windows that couldn't be restored
+                "success": bool,
+                "windows_launched": int,
+                "windows_matched": int,
+                "windows_timeout": int,
+                "windows_failed": int,
+                "elapsed_seconds": float,
+                "correlations": [
                     {
-                        "app_id": str,
-                        "app_name": str,
-                        "workspace": int
+                        "restoration_mark": str,
+                        "window_class": str,
+                        "status": str,
+                        "window_id": int,
+                        "correlation_time": float
                     }
-                ],
-                "total": int  # Total windows in layout
+                ]
             }
 
         Raises:
-            ValueError: If project_name is missing
-            LayoutError: If layout file not found or restoration fails
+            ValueError: If required params missing
+            RuntimeError: If layout not found or restoration fails
         """
         start_time = time.perf_counter()
 
         try:
-            project_name = params.get("project_name")
-            layout_name = params.get("layout_name")
+            project = params.get("project")
+            name = params.get("name")
+            timeout = params.get("timeout", 30.0)
 
-            if not project_name:
-                raise ValueError("project_name parameter is required")
+            # Validate required parameters
+            if not project:
+                raise ValueError("project parameter is required")
+            if not name:
+                raise ValueError("name parameter is required")
 
-            # Create LayoutEngine instance
-            from .services.layout_engine import LayoutEngine
-            layout_engine = LayoutEngine(self.i3_connection)
+            # Feature 074: Use new restore system with mark-based correlation (T054-T057)
+            from .layout.restore import restore_layout
 
             # Restore layout
-            restore_results = await layout_engine.restore_layout(project_name, layout_name)
+            restore_results = await restore_layout(
+                i3_connection=self.i3_connection,
+                name=name,
+                project=project,
+                adapt_monitors=True
+            )
+
+            # Convert correlation objects to serializable dicts
+            correlations = []
+            for corr in restore_results.get("correlations", []):
+                correlations.append({
+                    "restoration_mark": corr.restoration_mark,
+                    "window_class": corr.placeholder.window_class or "unknown",
+                    "status": corr.status.value,
+                    "window_id": corr.matched_window_id,
+                    "correlation_time": corr.elapsed_seconds
+                })
 
             result = {
-                "restored": restore_results["restored"],
-                "missing": restore_results["missing"],
-                "total": restore_results["total"]
+                "success": restore_results.get("success", True),
+                "windows_launched": restore_results.get("windows_launched", 0),
+                "windows_matched": restore_results.get("windows_matched", 0),
+                "windows_timeout": restore_results.get("windows_timeout", 0),
+                "windows_failed": restore_results.get("windows_failed", 0),
+                "elapsed_seconds": restore_results.get("duration_seconds", 0.0),
+                "correlations": correlations
             }
 
             logger.info(
-                f"Layout restored: {project_name}/{layout_name or project_name} - "
-                f"{result['restored']}/{result['total']} windows restored, "
-                f"{len(result['missing'])} missing"
+                f"Layout restored: {project}/{name} - "
+                f"{result['windows_launched']} launched, "
+                f"{result['windows_matched']} matched, "
+                f"{result['windows_timeout']} timeout, "
+                f"{result['windows_failed']} failed "
+                f"({result['elapsed_seconds']:.1f}s)"
             )
 
             return result
@@ -2424,8 +2577,7 @@ class IPCServer:
         except FileNotFoundError as e:
             # Layout not found
             raise RuntimeError(
-                f"Layout not found: {params.get('layout_name') or params.get('project_name')} "
-                f"for project {params.get('project_name')}"
+                f"Layout not found: {params.get('name')} for project {params.get('project')}"
             )
         except ValueError as e:
             # Invalid params
@@ -2437,7 +2589,7 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="layout::restore",
-                project_name=params.get("project_name"),
+                project_name=params.get("project"),
                 params=params,
                 duration_ms=duration_ms,
             )

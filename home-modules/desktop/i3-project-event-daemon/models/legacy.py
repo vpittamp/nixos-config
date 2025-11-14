@@ -329,12 +329,60 @@ class DaemonState:
     scoped_classes: Set[str] = field(default_factory=set)  # Window classes that are project-scoped
     global_classes: Set[str] = field(default_factory=set)  # Window classes that are always global
 
+    # Feature 074: Session Management - Focus tracking (T016-T020, US1, US4)
+    project_focused_workspace: Dict[str, int] = field(default_factory=dict)  # project → workspace_num (T016, US1)
+    workspace_focused_window: Dict[int, int] = field(default_factory=dict)  # workspace_num → window_id (T060, US4)
+
     def __post_init__(self) -> None:
         """Initialize daemon state."""
         import os
 
         if self.pid == 0:
             self.pid = os.getpid()
+
+    # Feature 074: Session Management - Focus tracking methods (T017-T020, US1)
+    def get_focused_workspace(self, project: str) -> Optional[int]:
+        """Get focused workspace for a project (T017, US1)"""
+        return self.project_focused_workspace.get(project)
+
+    def set_focused_workspace(self, project: str, workspace_num: int) -> None:
+        """Set focused workspace for a project (T018, US1)"""
+        self.project_focused_workspace[project] = workspace_num
+
+    def get_focused_window(self, workspace_num: int) -> Optional[int]:
+        """Get focused window ID for a workspace (T061, US4)"""
+        return self.workspace_focused_window.get(workspace_num)
+
+    def set_focused_window(self, workspace_num: int, window_id: int) -> None:
+        """Set focused window for a workspace (T062, US4)"""
+        self.workspace_focused_window[workspace_num] = window_id
+
+    def to_json(self) -> Dict[str, Any]:
+        """Serialize state to JSON-compatible dict for persistence (T019, US1)"""
+        return {
+            "active_project": self.active_project,
+            "project_focused_workspace": self.project_focused_workspace,
+            "workspace_focused_window": {
+                str(k): v for k, v in self.workspace_focused_window.items()
+            },
+            "start_time": self.start_time.isoformat(),
+            "event_count": self.event_count,
+            "error_count": self.error_count,
+        }
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> 'DaemonState':
+        """Deserialize state from JSON (T020, US1)"""
+        state = cls()
+        state.active_project = data.get("active_project")
+        state.project_focused_workspace = data.get("project_focused_workspace", {})
+        state.workspace_focused_window = {
+            int(k): v for k, v in data.get("workspace_focused_window", {}).items()
+        }
+        state.start_time = datetime.fromisoformat(data["start_time"]) if "start_time" in data else datetime.now()
+        state.event_count = data.get("event_count", 0)
+        state.error_count = data.get("error_count", 0)
+        return state
 
 
 # ============================================================================

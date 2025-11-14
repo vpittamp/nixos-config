@@ -40,6 +40,13 @@ class WindowPlaceholder(BaseModel):
     # NEW: Temporary restoration mark for Sway correlation
     restoration_mark: Optional[str] = None
 
+    # NEW: App registry name for wrapper-based restoration (Feature 057 integration)
+    # This field stores the app name from I3PM_APP_NAME environment variable
+    # Examples: "yazi", "claude-pwa", "code", "scratchpad-terminal"
+    # When present, restoration uses AppLauncher service instead of raw launch_command
+    # This ensures consistent wrapper injection of I3PM_* environment variables
+    app_registry_name: Optional[str] = None
+
     @field_validator('cwd')
     @classmethod
     def validate_cwd_absolute(cls, v: Optional[Path]) -> Optional[Path]:
@@ -72,8 +79,9 @@ class WindowPlaceholder(BaseModel):
 ```
 
 **Backward Compatibility** (FR-041):
-- `cwd` and `focused` are optional fields with `None` default
+- `cwd`, `focused`, and `app_registry_name` are optional fields with `None` default
 - Existing saved layouts will deserialize successfully with these fields as `None`
+- When `app_registry_name` is None, system falls back to direct `launch_command` execution
 - Pydantic v2 handles missing fields gracefully
 
 ### 2. LayoutSnapshot (Extended)
@@ -308,6 +316,74 @@ class ProjectConfiguration(BaseModel):
             return auto_saves[0].stem
         return None
 ```
+
+### 6. AppLauncher Service (New Service)
+
+**Location**: `home-modules/desktop/i3-project-event-daemon/services/app_launcher.py`
+
+**Purpose**: Unified application launcher for consistent wrapper-based launches across Walker, restore, daemon, and CLI
+
+**Integration with Feature 057**: This service ensures all app launches use the wrapper system that injects I3PM_* environment variables, maintaining the 100% deterministic window matching achieved in Feature 057.
+
+**Key Methods**:
+```python
+class AppLauncher:
+    """Unified app launcher using app registry definitions.
+
+    Ensures all app launches (Walker, restore, daemon, CLI) use the same
+    wrapper system with I3PM_* environment variable injection.
+    """
+
+    def __init__(self, registry_path: Path = Path.home() / ".local/share/i3pm/app-registry.json"):
+        """Initialize with app registry JSON."""
+        self.registry = self._load_registry(registry_path)
+
+    async def launch_app(
+        self,
+        app_name: str,
+        project: Optional[str] = None,
+        cwd: Optional[Path] = None,
+        extra_env: Optional[Dict[str, str]] = None,
+        restore_mark: Optional[str] = None
+    ) -> subprocess.Popen:
+        """Launch application via wrapper system.
+
+        Args:
+            app_name: App name from registry (e.g., "yazi", "claude-pwa", "code")
+            project: Project context for I3PM_PROJECT
+            cwd: Working directory for terminals
+            extra_env: Additional environment variables
+            restore_mark: I3PM_RESTORE_MARK for layout correlation
+
+        Returns:
+            subprocess.Popen instance
+        """
+        # 1. Look up app in registry
+        # 2. Build command with $PROJECT_DIR/$CWD substitution
+        # 3. Build environment with I3PM_APP_NAME, I3PM_PROJECT, etc.
+        # 4. Launch subprocess with full environment
+        pass
+
+    def get_app_info(self, app_name: str) -> Optional[Dict[str, Any]]:
+        """Get app registry entry (for validation)."""
+        pass
+
+    def list_apps(self, scope: Optional[str] = None) -> list[Dict[str, Any]]:
+        """List all apps, optionally filtered by scope."""
+        pass
+```
+
+**Launch Flow**:
+1. **Walker/Rofi** → `launch <app-name>` → AppLauncher.launch_app() → subprocess with I3PM_* env
+2. **Layout Restore** → WindowPlaceholder.app_registry_name → AppLauncher.launch_app() → subprocess with I3PM_RESTORE_MARK
+3. **Daemon Scratchpad** → AppLauncher.launch_app("scratchpad-terminal") → subprocess with I3PM_* env
+4. **CLI Testing** → `i3pm launch <app-name>` → AppLauncher.launch_app() → subprocess with I3PM_* env
+
+**Why This Matters**:
+- **PWA Support**: PWAs require `launch-pwa-by-name <ULID>` wrapper - direct launch fails
+- **Terminal Apps**: Need proper ghostty wrapper with parameters like `-e yazi $PROJECT_DIR`
+- **Feature 057 Alignment**: I3PM_APP_NAME must be injected for daemon window correlation
+- **Consistency**: Same launch path for all sources (Walker, restore, daemon, CLI)
 
 ## Persistence Files
 

@@ -2,8 +2,16 @@
 
 **Feature Branch**: `074-session-management`
 **Created**: 2025-01-14
-**Status**: Draft
+**Status**: Phase 5 Complete (MVP Implementation - US1-US3)
+**Last Updated**: 2025-11-14
 **Input**: User description: "Comprehensive session management with per-project workspace focus restoration, terminal working directory tracking, focused window restoration, auto-save/restore capabilities, and Sway-compatible window restoration using mark-based correlation"
+
+**Implementation Progress**:
+- ✅ Phase 1-2: Foundation (Pydantic models, data structures)
+- ✅ Phase 3: User Story 1 (Workspace Focus Restoration)
+- ✅ Phase 4: User Story 2 (Terminal Working Directory)
+- ✅ Phase 5: User Story 3 (Sway Mark-Based Correlation + AppLauncher Integration)
+- ⏳ Phase 6-8: User Stories 4-6 (Focused Window, Auto-Save, Auto-Restore) - Planned
 
 ## User Scenarios & Testing *(mandatory)*
 

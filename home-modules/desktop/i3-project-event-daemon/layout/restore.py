@@ -7,26 +7,36 @@ Task T037: Implement window swallowing for layout restore
 Task T038: Apply geometry and marks after swallow
 Task T039: Detect current monitor configuration
 Task T040: Adapt layout to different monitor setup
+Feature 074: Session Management (T040-T041) - Terminal working directory restoration
 
 Restores saved layouts by:
 1. Launching applications
 2. Waiting for windows to appear (swallowing)
 3. Applying saved geometry and marks
 4. Adapting to current monitor configuration
+5. Restoring terminal working directories (Feature 074)
 """
 
 import logging
 import asyncio
 import subprocess
+from pathlib import Path
 from typing import List, Dict, Optional, Set
 from datetime import datetime, timedelta
 
 try:
-    from .models import LayoutSnapshot, Window, WorkspaceLayout, Monitor, Resolution, Position
+    from .models import LayoutSnapshot, Window, WorkspaceLayout, Monitor, Resolution, Position, RestoreCorrelation
     from .persistence import load_layout
+    from .correlation import MarkBasedCorrelator  # Feature 074: T053, US3
+    from ..services.terminal_cwd import TerminalCwdTracker  # Feature 074: T040
+    from ..services.app_launcher import AppLauncher  # Feature 074: T055A, Feature 057 integration
 except ImportError:
-    from models import LayoutSnapshot, Window, WorkspaceLayout, Monitor, Resolution, Position
+    from models import LayoutSnapshot, Window, WorkspaceLayout, Monitor, Resolution, Position, RestoreCorrelation
     from persistence import load_layout
+    # Services not available in standalone mode
+    TerminalCwdTracker = None
+    MarkBasedCorrelator = None
+    AppLauncher = None
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +53,33 @@ class LayoutRestore:
     5. Apply geometry and marks (T038)
     """
 
-    def __init__(self, i3_connection):
+    def __init__(self, i3_connection, project_directory: Optional[Path] = None):
         """
         Initialize layout restore
 
         Args:
             i3_connection: i3ipc connection instance
+            project_directory: Project root directory for terminal cwd fallback (Feature 074)
         """
         self.i3 = i3_connection
         self.swallow_timeout = 30.0  # seconds
         self.swallow_check_interval = 0.5  # seconds
+
+        # Feature 074: Session Management - Terminal CWD restoration (T040)
+        self.terminal_cwd_tracker = TerminalCwdTracker() if TerminalCwdTracker else None
+        self.project_directory = project_directory
+        if self.terminal_cwd_tracker:
+            logger.debug("Initialized TerminalCwdTracker for layout restoration")
+
+        # Feature 074: Session Management - Mark-based correlation for Sway (T053, US3)
+        self.mark_correlator = MarkBasedCorrelator(i3_connection) if MarkBasedCorrelator else None
+        if self.mark_correlator:
+            logger.debug("Initialized MarkBasedCorrelator for Sway window restoration")
+
+        # Feature 074: Session Management - Unified app launcher for wrapper-based restoration (T055A, Feature 057)
+        self.app_launcher = AppLauncher() if AppLauncher else None
+        if self.app_launcher:
+            logger.debug("Initialized AppLauncher for wrapper-based window restoration")
 
     async def restore_layout(
         self,
@@ -75,10 +102,14 @@ class LayoutRestore:
         results = {
             "success": True,
             "windows_launched": 0,
-            "windows_swallowed": 0,
+            "windows_swallowed": 0,  # Deprecated - kept for backward compatibility
             "windows_failed": 0,
             "errors": [],
             "start_time": start_time.isoformat(),
+            # Feature 074: Session Management - Mark-based correlation statistics (T057, US3)
+            "windows_matched": 0,     # Windows successfully correlated
+            "windows_timeout": 0,     # Windows that timed out
+            "correlations": [],       # List of RestoreCorrelation objects
         }
 
         try:
@@ -418,7 +449,7 @@ class LayoutRestore:
         results: Dict
     ) -> None:
         """
-        Restore a single window (T036-T038)
+        Restore a single window (T036-T038, Feature 074: T040)
 
         Args:
             window: Window to restore
@@ -430,32 +461,101 @@ class LayoutRestore:
             results["windows_failed"] += 1
             return
 
-        # T036: Launch application
-        logger.debug(f"Launching: {window.launch_command}")
-        await self._launch_application(window.launch_command)
-        results["windows_launched"] += 1
+        # Feature 074: Session Management - Compute launch directory for terminals (T040, US2)
+        launch_cwd = None
+        if self.terminal_cwd_tracker and hasattr(window, 'cwd'):
+            # Check if this is a terminal window
+            window_class = getattr(window, 'window_class', None)
+            if window_class and self.terminal_cwd_tracker.is_terminal_window(window_class):
+                # Use fallback chain: saved cwd → project directory → $HOME
+                launch_cwd = self.terminal_cwd_tracker.get_launch_cwd(
+                    saved_cwd=window.cwd,
+                    project_directory=self.project_directory,
+                    fallback_home=Path.home()
+                )
+                logger.debug(f"Terminal {window_class} will launch in: {launch_cwd}")
 
-        # T037: Wait for window to appear (swallow)
-        swallowed_window = await self._swallow_window(window.window_class)
+        # Feature 074: Session Management - Mark-based correlation for Sway (T054-T056, US3)
+        if self.mark_correlator:
+            # Use mark-based correlation workflow instead of swallow
+            logger.debug(f"Launching with mark-based correlation: {window.launch_command}" + (f" (cwd={launch_cwd})" if launch_cwd else ""))
 
-        if not swallowed_window:
-            logger.warning(f"Failed to swallow window: {window.window_class}")
-            results["windows_failed"] += 1
-            return
+            # Generate mark and inject into environment
+            mark = self.mark_correlator.generate_restoration_mark()
+            window.restoration_mark = mark
 
-        results["windows_swallowed"] += 1
+            # Feature 074: Session Management - Use AppLauncher for wrapper-based restoration (T055B, Feature 057)
+            app_registry_name = getattr(window, 'app_registry_name', None)
+            if self.app_launcher and app_registry_name:
+                # Launch via AppLauncher (wrapper system with I3PM_* injection)
+                logger.debug(f"Launching via AppLauncher: {app_registry_name} (mark: {mark})")
+                process = await self.app_launcher.launch_app(
+                    app_name=app_registry_name,
+                    project=results.get("project", "global"),
+                    cwd=launch_cwd,
+                    restore_mark=mark
+                )
+                if not process:
+                    logger.error(f"AppLauncher failed to launch {app_registry_name}")
+                    results["windows_failed"] += 1
+                    return
+                results["windows_launched"] += 1
+            else:
+                # Feature 074: Session Management - Fallback to direct launch (T055C, backward compatibility)
+                logger.debug(f"Launching via direct command (no app_registry_name): {window.launch_command}")
+                env = self.mark_correlator.inject_mark_env(window, results.get("project", "global"))
+                await self._launch_application_with_env(window.launch_command, env, cwd=launch_cwd)
+                results["windows_launched"] += 1
 
-        # T038: Apply geometry and marks
-        await self._apply_window_properties(swallowed_window, window, workspace)
+            # Wait for window and correlate
+            correlation = await self.mark_correlator.correlate_window(window, results.get("project", "global"), timeout=self.swallow_timeout)
+            results["correlations"].append(correlation)
 
-    async def _launch_application(self, command: str) -> None:
+            # Update statistics based on correlation result (T056, T057)
+            if correlation.status.value == "matched":
+                results["windows_matched"] += 1
+                results["windows_swallowed"] += 1  # Backward compatibility
+                logger.info(f"Window correlation succeeded for {window.window_class}: window_id={correlation.matched_window_id}")
+            elif correlation.status.value == "timeout":
+                results["windows_timeout"] += 1
+                results["windows_failed"] += 1
+                logger.warning(f"Window correlation timed out for {window.window_class}: {correlation.error_message}")
+            else:  # failed
+                results["windows_failed"] += 1
+                logger.error(f"Window correlation failed for {window.window_class}: {correlation.error_message}")
+
+        else:
+            # Fallback to old swallow mechanism (for i3/X11 backward compatibility)
+            logger.debug(f"Launching: {window.launch_command}" + (f" (cwd={launch_cwd})" if launch_cwd else ""))
+            await self._launch_application(window.launch_command, cwd=launch_cwd)
+            results["windows_launched"] += 1
+
+            # T037: Wait for window to appear (swallow)
+            swallowed_window = await self._swallow_window(window.window_class)
+
+            if not swallowed_window:
+                logger.warning(f"Failed to swallow window: {window.window_class}")
+                results["windows_failed"] += 1
+                return
+
+            results["windows_swallowed"] += 1
+
+            # T038: Apply geometry and marks
+            await self._apply_window_properties(swallowed_window, window, workspace)
+
+    async def _launch_application(self, command: str, cwd: Optional[Path] = None) -> None:
         """
-        Launch application (T036)
+        Launch application (T036, Feature 074: T041 - with optional cwd)
 
         Args:
             command: Command to execute
+            cwd: Working directory for the process (Feature 074: Terminal CWD restoration)
         """
         try:
+            # Feature 074: Session Management - Launch terminals in saved working directory (T041, US2)
+            # Convert Path to string for subprocess.Popen
+            cwd_str = str(cwd) if cwd else None
+
             # Launch in background, detached from this process
             subprocess.Popen(
                 command,
@@ -464,12 +564,46 @@ class LayoutRestore:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                cwd=cwd_str,  # Feature 074: T041 - Terminal working directory
             )
             # Give app a moment to start
             await asyncio.sleep(0.5)
 
         except Exception as e:
-            logger.error(f"Failed to launch '{command}': {e}")
+            logger.error(f"Failed to launch '{command}'" + (f" in {cwd}" if cwd else "") + f": {e}")
+            raise
+
+    async def _launch_application_with_env(self, command: str, env: dict, cwd: Optional[Path] = None) -> None:
+        """
+        Launch application with custom environment (Feature 074: T054, US3)
+
+        Used by mark-based correlation to inject I3PM_RESTORE_MARK environment variable.
+
+        Args:
+            command: Command to execute
+            env: Environment variables dictionary (includes I3PM_RESTORE_MARK)
+            cwd: Working directory for the process (Feature 074: Terminal CWD restoration)
+        """
+        try:
+            # Convert Path to string for subprocess.Popen
+            cwd_str = str(cwd) if cwd else None
+
+            # Launch in background with enhanced environment
+            subprocess.Popen(
+                command,
+                shell=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,  # Feature 074: T054 - Mark-based correlation environment
+                cwd=cwd_str,  # Feature 074: T041 - Terminal working directory
+            )
+            # Give app a moment to start
+            await asyncio.sleep(0.5)
+
+        except Exception as e:
+            logger.error(f"Failed to launch '{command}' with environment" + (f" in {cwd}" if cwd else "") + f": {e}")
             raise
 
     async def _swallow_window(self, window_class: str) -> Optional[any]:
