@@ -380,3 +380,7 @@ gh auth status               # Auto-uses 1Password token
 - TypeScript/Deno 1.40+ + Zod 3.22+, @std/cli, Sway IPC mark/unmark
 - Eww 0.4+ (ElKowar's Wacky Widgets), GTK3, SwayNC 0.10+
 - In-memory daemon state, JSON configuration files
+- Python 3.11+ (existing daemon standard per Constitution Principle X) (074-session-management)
+
+## Recent Changes
+- 074-session-management: Added Python 3.11+ (existing daemon standard per Constitution Principle X)
