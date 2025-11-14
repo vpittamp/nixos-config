@@ -250,6 +250,52 @@ i3pm diagnose events [--follow] # Event trace (500 buffer, colored timing)
 i3pm diagnose validate         # State consistency check
 ```
 
+## 💾 Session Management (Feature 074)
+
+**⚠️ BREAKING CHANGE**: Old layouts incompatible. Re-save all layouts after upgrade.
+
+Save and restore workspace layouts with terminal working directories and focused states.
+
+### Quick Commands
+
+```bash
+i3pm layout save my-layout        # Save current layout
+i3pm layout restore my-layout     # Restore saved layout
+i3pm layout list                  # List saved layouts
+i3pm layout delete old-layout     # Delete layout
+```
+
+### Features
+
+✅ **Workspace Focus Restoration**: Automatically returns to focused workspace per project
+✅ **Terminal Working Directory**: Terminals reopen in original directories (not `$HOME`)
+✅ **Sway Compatible**: Mark-based window correlation (replaces broken i3 swallow)
+✅ **AppLauncher Integration**: Wrapper-based restoration with `I3PM_*` environment variables
+
+### Migration Required
+
+Old layout format (before Feature 074) is **incompatible**:
+
+```bash
+# 1. Switch to each project and re-save layouts
+pswitch nixos && i3pm layout save main
+pswitch dotfiles && i3pm layout save main
+
+# 2. Verify new format (should have focused_workspace, cwd, etc.)
+cat ~/.local/share/i3pm/layouts/*/main.json | jq .
+
+# 3. Clean up old incompatible layouts
+find ~/.local/share/i3pm/layouts -name "*.json" -mtime +7 -delete
+```
+
+**Error if old layout detected**:
+```
+Layout 'old-layout' is incompatible (missing required fields: focused_workspace, cwd).
+Migration required: Re-save your layouts with: i3pm layout save <name>
+```
+
+**Docs**: `/etc/nixos/specs/074-session-management/quickstart.md`
+
 ## 🚀 IPC Launch Context (Feature 041)
 
 Pre-notification system for multi-instance app tracking. Accuracy: 100% sequential, 95% rapid launches.

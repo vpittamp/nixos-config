@@ -145,6 +145,8 @@ class WindowPlaceholder(BaseModel):
 
     Feature 074: Session Management
     Extended with terminal cwd tracking, focused state, and mark-based correlation
+
+    ⚠️ BREAKING CHANGE: All Feature 074 fields are REQUIRED (no Optional)
     """
     window_class: Optional[str] = None
     instance: Optional[str] = None
@@ -154,11 +156,11 @@ class WindowPlaceholder(BaseModel):
     floating: bool = False
     marks: list[str] = Field(default_factory=list)
 
-    # Feature 074: Session Management extensions
-    cwd: Optional[Path] = None  # Terminal working directory (T007, US2)
-    focused: bool = False  # Window focus state (T007, US4)
-    restoration_mark: Optional[str] = None  # Temporary mark for Sway correlation (T007, US3)
-    app_registry_name: Optional[str] = None  # App registry name for wrapper-based restoration (T015A, Feature 057 integration)
+    # Feature 074: Session Management extensions - ALL REQUIRED
+    cwd: Path  # Terminal working directory (T007, US2) - Path() for non-terminals
+    focused: bool  # Window focus state (T007, US4) - exactly one per workspace
+    restoration_mark: str  # Temporary mark for Sway correlation (T007, US3) - generated during restore
+    app_registry_name: str  # App registry name for wrapper-based restoration (T015A) - "unknown" for manual launches
 
     @field_validator('launch_command')
     @classmethod
@@ -174,10 +176,26 @@ class WindowPlaceholder(BaseModel):
 
     @field_validator('cwd')
     @classmethod
-    def validate_cwd_absolute(cls, v: Optional[Path]) -> Optional[Path]:
-        """Ensure cwd is absolute path if provided (T008, US2)"""
-        if v is not None and not v.is_absolute():
-            raise ValueError(f"Working directory must be absolute: {v}")
+    def validate_cwd_absolute(cls, v: Path) -> Path:
+        """Ensure cwd is absolute path or empty (T008, US2)"""
+        if v != Path() and not v.is_absolute():
+            raise ValueError(f"Working directory must be absolute or empty: {v}")
+        return v
+
+    @field_validator('app_registry_name')
+    @classmethod
+    def validate_app_name_not_empty(cls, v: str) -> str:
+        """Ensure app name is not empty string"""
+        if not v or not v.strip():
+            raise ValueError("app_registry_name cannot be empty")
+        return v
+
+    @field_validator('restoration_mark')
+    @classmethod
+    def validate_restoration_mark_format(cls, v: str) -> str:
+        """Ensure restoration mark follows expected format"""
+        if not v.startswith("i3pm-restore-") or len(v) != 21:  # i3pm-restore- + 8 hex chars
+            raise ValueError(f"Invalid restoration mark format: {v}")
         return v
 
     def to_swallow_criteria(self) -> dict[str, str]:
@@ -197,13 +215,11 @@ class WindowPlaceholder(BaseModel):
         return self.window_class in TERMINAL_CLASSES
 
     def get_launch_env(self, project: str) -> dict[str, str]:
-        """Generate environment variables for window launch with correlation mark (T010, US3)"""
-        import uuid
-        import os
+        """Generate environment variables for window launch with correlation mark (T010, US3)
 
-        # Generate unique restoration mark if not already set
-        if not self.restoration_mark:
-            self.restoration_mark = f"i3pm-restore-{uuid.uuid4().hex[:8]}"
+        Note: restoration_mark must be set before calling this method
+        """
+        import os
 
         env = {
             **os.environ,
@@ -282,6 +298,8 @@ class LayoutSnapshot(BaseModel):
 
     Feature 074: Session Management
     Extended with focused workspace tracking for session restoration
+
+    ⚠️ BREAKING CHANGE: focused_workspace is REQUIRED (no Optional)
     """
     name: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=1, max_length=50)
     project: str = Field(..., pattern=r'^[a-z0-9-]+$')
@@ -290,18 +308,17 @@ class LayoutSnapshot(BaseModel):
     workspace_layouts: list[WorkspaceLayout] = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    # Feature 074: Session Management extension
-    focused_workspace: Optional[int] = Field(default=None, ge=1, le=70)  # T011, US1
+    # Feature 074: Session Management extension - REQUIRED
+    focused_workspace: int = Field(..., ge=1, le=70)  # T011, US1 - always captured, fallback to 1
 
     @model_validator(mode='after')
     def validate_focused_workspace_exists(self) -> 'LayoutSnapshot':
-        """Ensure focused workspace exists in workspace_layouts if specified (T012, US1)"""
-        if self.focused_workspace is not None:
-            workspace_nums = {wl.workspace_num for wl in self.workspace_layouts}
-            if self.focused_workspace not in workspace_nums:
-                raise ValueError(
-                    f"Focused workspace {self.focused_workspace} not in layout workspaces: {workspace_nums}"
-                )
+        """Ensure focused workspace exists in workspace_layouts (T012, US1)"""
+        workspace_nums = {wl.workspace_num for wl in self.workspace_layouts}
+        if self.focused_workspace not in workspace_nums:
+            raise ValueError(
+                f"Focused workspace {self.focused_workspace} not in layout workspaces: {workspace_nums}"
+            )
         return self
 
     def is_auto_save(self) -> bool:

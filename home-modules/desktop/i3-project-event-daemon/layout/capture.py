@@ -90,6 +90,13 @@ class LayoutCapture:
         # Capture workspace layouts (Feature 074: T037 - async for terminal cwd capture)
         workspace_layouts = await self._capture_workspace_layouts(tree, workspaces, outputs)
 
+        # Feature 074: Capture focused workspace (REQUIRED field - no Optional)
+        focused_workspace = self._get_focused_workspace(tree)
+        # Fallback to 1 if no focused workspace found
+        if focused_workspace is None:
+            logger.warning("No focused workspace found, defaulting to 1")
+            focused_workspace = 1
+
         # Create snapshot
         snapshot = LayoutSnapshot(
             name=name,
@@ -97,6 +104,7 @@ class LayoutCapture:
             created_at=datetime.now(),
             monitor_config=monitor_config,
             workspace_layouts=workspace_layouts,
+            focused_workspace=focused_workspace,  # Feature 074: REQUIRED field
             metadata={
                 "total_windows": sum(len(ws.windows) for ws in workspace_layouts),
                 "total_workspaces": len(workspace_layouts),
@@ -262,8 +270,11 @@ class LayoutCapture:
                 logger.warning(f"Skipping workspace with invalid name: {ws_name}")
                 continue
 
+            # Feature 074 T067 (US4): Detect focused window in workspace
+            focused_window_id = self._find_focused_window_in_workspace(ws_node)
+
             # Capture windows in this workspace (Feature 074: T037 - async for terminal cwd)
-            windows = await self._capture_windows_in_workspace(ws_node)
+            windows = await self._capture_windows_in_workspace(ws_node, focused_window_id)
 
             # Get layout mode from workspace node
             layout_mode_str = getattr(ws_node, 'layout', 'splith')
@@ -316,12 +327,95 @@ class LayoutCapture:
 
         return workspaces
 
-    async def _capture_windows_in_workspace(self, workspace_node) -> List:
+    def _find_focused_window_in_workspace(self, workspace_node) -> Optional[int]:
+        """
+        Find the focused window ID in a workspace (Feature 074 T067, US4)
+
+        Args:
+            workspace_node: Workspace tree node
+
+        Returns:
+            Window ID (node.id) of focused window, or None if no focus
+        """
+        # Recursively search for the node with focused=True
+        def find_focused_recursive(node):
+            if hasattr(node, 'focused') and node.focused:
+                # If this is a window node (has window/id), return its ID
+                if hasattr(node, 'id'):
+                    return node.id
+
+            # Check children
+            if hasattr(node, 'nodes') and node.nodes:
+                for child in node.nodes:
+                    result = find_focused_recursive(child)
+                    if result:
+                        return result
+
+            # Check floating nodes
+            if hasattr(node, 'floating_nodes') and node.floating_nodes:
+                for child in node.floating_nodes:
+                    result = find_focused_recursive(child)
+                    if result:
+                        return result
+
+            return None
+
+        focused_id = find_focused_recursive(workspace_node)
+        if focused_id:
+            logger.debug(f"Found focused window in workspace {workspace_node.name}: {focused_id}")
+        return focused_id
+
+    def _get_focused_workspace(self, tree) -> Optional[int]:
+        """
+        Find the currently focused workspace number (Feature 074 - REQUIRED field)
+
+        Args:
+            tree: i3 window tree
+
+        Returns:
+            Workspace number (1-70) or None if no focused workspace found
+        """
+        def find_focused_workspace_recursive(node):
+            # Check if this is a workspace node with focused=True
+            if hasattr(node, 'type') and node.type == 'workspace':
+                if hasattr(node, 'focused') and node.focused:
+                    # Extract workspace number from name like "1" or "1:terminal"
+                    try:
+                        ws_num = int(node.name.split(':')[0])
+                        return ws_num
+                    except (ValueError, IndexError, AttributeError):
+                        return None
+
+            # Check children
+            if hasattr(node, 'nodes') and node.nodes:
+                for child in node.nodes:
+                    result = find_focused_workspace_recursive(child)
+                    if result:
+                        return result
+
+            # Check floating nodes
+            if hasattr(node, 'floating_nodes') and node.floating_nodes:
+                for child in node.floating_nodes:
+                    result = find_focused_workspace_recursive(child)
+                    if result:
+                        return result
+
+            return None
+
+        focused_ws = find_focused_workspace_recursive(tree)
+        if focused_ws:
+            logger.debug(f"Found focused workspace: {focused_ws}")
+        else:
+            logger.warning("No focused workspace found in tree")
+        return focused_ws
+
+    async def _capture_windows_in_workspace(self, workspace_node, focused_window_id: Optional[int] = None) -> List:
         """
         Capture all windows in a workspace
 
         Args:
             workspace_node: Workspace tree node
+            focused_window_id: ID of focused window in this workspace (Feature 074 T068, US4)
 
         Returns:
             List of WindowPlaceholder objects for layout restoration
@@ -337,7 +431,9 @@ class LayoutCapture:
                 continue
 
             # Create Window object (Feature 074: T037 - async for terminal cwd capture)
-            window = await self._create_window_from_node(node)
+            # Feature 074 T068 (US4): Pass focused status
+            is_focused = (focused_window_id is not None and hasattr(node, 'id') and node.id == focused_window_id)
+            window = await self._create_window_from_node(node, is_focused=is_focused)
             if window:
                 windows.append(window)
 
@@ -374,12 +470,13 @@ class LayoutCapture:
 
         return leaves
 
-    async def _create_window_from_node(self, node):
+    async def _create_window_from_node(self, node, is_focused: bool = False):
         """
         Create WindowPlaceholder object from i3 tree node
 
         Args:
             node: i3 window node
+            is_focused: Whether this window is focused in its workspace (Feature 074 T068, US4)
 
         Returns:
             WindowPlaceholder object or None if invalid
@@ -423,22 +520,25 @@ class LayoutCapture:
                 return None
 
             # Feature 074: Session Management - Capture terminal working directory (T037, US2)
-            cwd = None
+            # REQUIRED field - use Path() for non-terminals or failed captures
+            cwd = Path()  # Default to empty Path (sentinel value)
             if self.terminal_cwd_tracker and pid:
                 # Check if this is a terminal window
                 if self.terminal_cwd_tracker.is_terminal_window(window_class):
                     try:
-                        cwd = await self.terminal_cwd_tracker.get_terminal_cwd(pid)
-                        if cwd:
+                        terminal_cwd = await self.terminal_cwd_tracker.get_terminal_cwd(pid)
+                        if terminal_cwd:
+                            cwd = terminal_cwd
                             logger.debug(f"Captured terminal cwd for {window_class} (PID {pid}): {cwd}")
                         else:
-                            logger.debug(f"Could not capture cwd for terminal {window_class} (PID {pid})")
+                            logger.debug(f"Could not capture cwd for terminal {window_class} (PID {pid}), using Path()")
                     except Exception as e:
-                        logger.warning(f"Error capturing terminal cwd for PID {pid}: {e}")
-                        cwd = None
+                        logger.warning(f"Error capturing terminal cwd for PID {pid}: {e}, using Path()")
+                        # Keep cwd = Path()
 
             # Feature 074: Session Management - Capture app registry name from I3PM_APP_NAME (T037A, Feature 057 integration)
-            app_registry_name = None
+            # REQUIRED field - use "unknown" for manual launches or failed captures
+            app_registry_name = "unknown"  # Default sentinel value
             if pid:
                 try:
                     environ_path = Path(f"/proc/{pid}/environ")
@@ -452,15 +552,16 @@ class LayoutCapture:
                                 environ_dict[key.decode('utf-8', errors='ignore')] = value.decode('utf-8', errors='ignore')
 
                         # Extract I3PM_APP_NAME
-                        app_registry_name = environ_dict.get('I3PM_APP_NAME')
-                        if app_registry_name:
+                        captured_app_name = environ_dict.get('I3PM_APP_NAME')
+                        if captured_app_name and captured_app_name.strip():
+                            app_registry_name = captured_app_name
                             logger.debug(f"Captured I3PM_APP_NAME for {window_class} (PID {pid}): {app_registry_name}")
                         else:
-                            logger.debug(f"No I3PM_APP_NAME found for {window_class} (PID {pid})")
+                            logger.debug(f"No I3PM_APP_NAME found for {window_class} (PID {pid}), using 'unknown'")
 
                 except Exception as e:
-                    logger.debug(f"Could not read environ for PID {pid}: {e}")
-                    app_registry_name = None
+                    logger.debug(f"Could not read environ for PID {pid}: {e}, using 'unknown'")
+                    # Keep app_registry_name = "unknown"
 
             # Create WindowPlaceholder object for restoration
             from .models import WindowPlaceholder
@@ -472,8 +573,10 @@ class LayoutCapture:
                 geometry=geometry,
                 marks=marks,
                 floating=floating,
-                cwd=cwd,  # Feature 074: T037 - Terminal working directory
-                app_registry_name=app_registry_name,  # Feature 074: T037A - App registry name for wrapper-based restoration
+                cwd=cwd,  # Feature 074: T037 - Terminal working directory (REQUIRED)
+                app_registry_name=app_registry_name,  # Feature 074: T037A - App registry name (REQUIRED)
+                focused=is_focused,  # Feature 074: T068 - Focused window per workspace (REQUIRED)
+                restoration_mark="i3pm-restore-00000000",  # Feature 074: Placeholder - will be replaced during restore (REQUIRED)
             )
 
             return placeholder

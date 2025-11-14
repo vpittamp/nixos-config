@@ -93,13 +93,44 @@ class LayoutPersistence:
             with open(filepath, 'r') as f:
                 data = json.load(f)
 
-            # Reconstruct LayoutSnapshot
+            # Feature 074: Strict validation - enforce required fields (no backward compatibility)
+            # Check for required top-level fields
+            required_top_level = ['focused_workspace']
+            missing_top = [f for f in required_top_level if f not in data]
+            if missing_top:
+                error_msg = (
+                    f"Layout '{name}' is incompatible (missing required fields: {', '.join(missing_top)}).\n"
+                    f"This layout was created before Feature 074 (Session Management).\n"
+                    f"Migration required: Re-save your layouts with: i3pm layout save {name}"
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            # Check for required window fields
+            for ws in data.get('workspace_layouts', []):
+                for window in ws.get('windows', []):
+                    required_window_fields = ['cwd', 'focused', 'app_registry_name', 'restoration_mark']
+                    missing_window = [f for f in required_window_fields if f not in window]
+                    if missing_window:
+                        error_msg = (
+                            f"Layout '{name}' has incompatible windows (missing fields: {', '.join(missing_window)}).\n"
+                            f"This layout was created before Feature 074 (Session Management).\n"
+                            f"Migration required: Re-save this layout with: i3pm layout save {name}"
+                        )
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
+
+            # Reconstruct LayoutSnapshot (Pydantic will enforce types)
             snapshot = LayoutSnapshot(**data)
 
             logger.info(f"Loaded layout snapshot: {filepath}")
 
             return snapshot
 
+        except ValueError as e:
+            # Re-raise validation errors with original message
+            logger.error(f"Layout validation failed: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to load layout {filepath}: {e}")
             return None

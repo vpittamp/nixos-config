@@ -26,33 +26,45 @@ class WindowPlaceholder(BaseModel):
     marks: list[str] = Field(default_factory=list)
 ```
 
-**Extensions** (FR-039, FR-040):
+**Extensions** (FR-039, FR-040) - **REQUIRED FIELDS (No Optional)**:
 ```python
 class WindowPlaceholder(BaseModel):
     # ... existing fields unchanged
 
-    # NEW: Terminal working directory tracking (FR-039)
-    cwd: Optional[Path] = None
+    # NEW: Terminal working directory tracking (FR-039) - REQUIRED
+    # For terminals: actual working directory from /proc/{pid}/cwd
+    # For non-terminals: Path() (empty path)
+    cwd: Path
 
-    # NEW: Focused state tracking (FR-040)
-    focused: bool = False
+    # NEW: Focused state tracking (FR-040) - REQUIRED
+    # Exactly one window per workspace has focused=True
+    focused: bool
 
-    # NEW: Temporary restoration mark for Sway correlation
-    restoration_mark: Optional[str] = None
+    # NEW: Temporary restoration mark for Sway correlation - REQUIRED during restore
+    # Generated during restoration: "i3pm-restore-{8-char-hex}"
+    restoration_mark: str
 
-    # NEW: App registry name for wrapper-based restoration (Feature 057 integration)
+    # NEW: App registry name for wrapper-based restoration (Feature 057 integration) - REQUIRED
     # This field stores the app name from I3PM_APP_NAME environment variable
     # Examples: "yazi", "claude-pwa", "code", "scratchpad-terminal"
-    # When present, restoration uses AppLauncher service instead of raw launch_command
-    # This ensures consistent wrapper injection of I3PM_* environment variables
-    app_registry_name: Optional[str] = None
+    # For manual launches without wrapper: "unknown"
+    # Always uses AppLauncher service (no direct launch_command fallback)
+    app_registry_name: str
 
     @field_validator('cwd')
     @classmethod
-    def validate_cwd_absolute(cls, v: Optional[Path]) -> Optional[Path]:
-        """Ensure cwd is absolute path if provided."""
-        if v is not None and not v.is_absolute():
-            raise ValueError(f"Working directory must be absolute: {v}")
+    def validate_cwd_absolute(cls, v: Path) -> Path:
+        """Ensure cwd is absolute path or empty."""
+        if v != Path() and not v.is_absolute():
+            raise ValueError(f"Working directory must be absolute or empty: {v}")
+        return v
+
+    @field_validator('app_registry_name')
+    @classmethod
+    def validate_app_name_not_empty(cls, v: str) -> str:
+        """Ensure app name is not empty."""
+        if not v or not v.strip():
+            raise ValueError("app_registry_name cannot be empty")
         return v
 
     def is_terminal(self) -> bool:
@@ -78,11 +90,11 @@ class WindowPlaceholder(BaseModel):
         return env
 ```
 
-**Backward Compatibility** (FR-041):
-- `cwd`, `focused`, and `app_registry_name` are optional fields with `None` default
-- Existing saved layouts will deserialize successfully with these fields as `None`
-- When `app_registry_name` is None, system falls back to direct `launch_command` execution
-- Pydantic v2 handles missing fields gracefully
+**⚠️ BREAKING CHANGE - No Backward Compatibility**:
+- ALL fields are REQUIRED (no Optional, no None defaults)
+- Old layouts (before Feature 074) are INCOMPATIBLE and will be rejected
+- Migration required: Re-save all layouts after upgrade
+- Strict validation on load: Missing fields = clear error message
 
 ### 2. LayoutSnapshot (Extended)
 
@@ -99,23 +111,23 @@ class LayoutSnapshot(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 ```
 
-**Extension** (FR-038):
+**Extension** (FR-038) - **REQUIRED FIELD**:
 ```python
 class LayoutSnapshot(BaseModel):
     # ... existing fields unchanged
 
-    # NEW: Focused workspace tracking (FR-038)
-    focused_workspace: Optional[int] = Field(default=None, ge=1, le=70)
+    # NEW: Focused workspace tracking (FR-038) - REQUIRED
+    # Always captured from Sway tree, fallback to 1 if no focused workspace
+    focused_workspace: int = Field(..., ge=1, le=70)
 
     @model_validator(mode='after')
     def validate_focused_workspace_exists(self) -> 'LayoutSnapshot':
-        """Ensure focused workspace exists in workspace_layouts if specified."""
-        if self.focused_workspace is not None:
-            workspace_nums = {wl.workspace_num for wl in self.workspace_layouts}
-            if self.focused_workspace not in workspace_nums:
-                raise ValueError(
-                    f"Focused workspace {self.focused_workspace} not in layout workspaces: {workspace_nums}"
-                )
+        """Ensure focused workspace exists in workspace_layouts."""
+        workspace_nums = {wl.workspace_num for wl in self.workspace_layouts}
+        if self.focused_workspace not in workspace_nums:
+            raise ValueError(
+                f"Focused workspace {self.focused_workspace} not in layout workspaces: {workspace_nums}"
+            )
         return self
 
     def is_auto_save(self) -> bool:
@@ -539,24 +551,23 @@ class AppLauncher:
 
 ## Migration Strategy
 
-### Backward Compatibility
+### ⚠️ Migration Required - No Backward Compatibility
 
-**Existing layouts without new fields**:
-- Load successfully (Pydantic optional fields default to None)
-- Display warning: "Layout missing focus state, using defaults"
-- Focus state falls back to workspace 1
+**Old layouts (before Feature 074)**:
+- **WILL NOT LOAD** - Strict validation rejects missing fields
+- Clear error message: "Layout incompatible (missing: cwd, focused, app_registry_name)"
+- Migration instructions provided in error
 
-**Upgrading layouts**:
-- First save after upgrade will include new fields
-- Old layouts remain usable but without focus restoration
-- No automatic migration needed (forward-compatible)
+**Migration Steps**:
+1. Backup old layouts: `cp -r ~/.local/share/i3pm/layouts ~/.local/share/i3pm/layouts.backup`
+2. For each project: Switch to project, arrange windows, save layout
+3. Delete old incompatible layouts
 
-### Forward Compatibility
-
-**New layouts on old daemon**:
-- Unknown fields ignored by Pydantic
-- Core layout restoration still works
-- Focus restoration features unavailable (graceful degradation)
+**Why No Backward Compatibility?**:
+- Constitution Principle XII: "Forward-Only Development & Legacy Elimination"
+- Simpler code: No Optional fields, no None checks, no fallbacks
+- Better errors: Clear messages instead of NoneType exceptions
+- Type safety: Required fields enforced at model level
 
 ## Next Steps
 

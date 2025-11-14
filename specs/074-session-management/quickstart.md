@@ -5,6 +5,48 @@
 **Branch**: `074-session-management`
 **For**: Users and developers of i3pm project management system
 
+---
+
+## ⚠️ BREAKING CHANGE: Layout Format Updated
+
+**Feature 074 introduces a new layout format. Old layouts are incompatible and will NOT load.**
+
+### Quick Migration
+
+If you have existing layouts from before Feature 074:
+
+```bash
+# 1. Backup old layouts (optional)
+cp -r ~/.local/share/i3pm/layouts ~/.local/share/i3pm/layouts.backup
+
+# 2. For each project, re-save layouts
+i3pm project switch my-project
+# Arrange windows as needed
+i3pm layout save my-layout-name
+
+# 3. Delete old incompatible layouts (optional)
+rm -rf ~/.local/share/i3pm/layouts.backup
+```
+
+### What Changed
+
+New **required** fields in layout format:
+- `focused_workspace`: Which workspace was focused (always captured, fallback to 1)
+- `cwd`: Working directory for ALL windows (empty `Path()` for non-terminals)
+- `focused`: Which window was focused per workspace (exactly one per workspace)
+- `app_registry_name`: App name from wrapper system (`"unknown"` for manual launches)
+- `restoration_mark`: Unique mark for window correlation (generated during restore)
+
+Old layouts lacking these fields will **fail to load** with a clear error message:
+
+```
+Layout 'old-layout' is incompatible (missing required fields: focused_workspace, cwd).
+This layout was created before Feature 074 (Session Management).
+Migration required: Re-save your layouts with: i3pm layout save <name>
+```
+
+---
+
 ## Implementation Status
 
 ✅ **Phase 1-2**: Foundation (Data models, Pydantic extensions) - COMPLETE
