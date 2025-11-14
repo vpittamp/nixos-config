@@ -194,7 +194,7 @@ in
 
 ;; Active Project widget (with click handler to open project switcher)
 (defwidget project-widget []
-  (eventbox :onclick "${pkgs.i3pm-deno}/bin/i3pm project switch &"
+  (eventbox :onclick "i3pm project switch &"
     (box :class "metric-block"
          :spacing 6
          (label :class "icon project-icon"
@@ -204,7 +204,7 @@ in
 
 ;; Daemon Health widget (with click handler to open diagnostics)
 (defwidget daemon-health-widget []
-  (eventbox :onclick "${pkgs.ghostty}/bin/ghostty -e ${pkgs.i3pm-deno}/bin/i3pm diagnose health &"
+  (eventbox :onclick "${pkgs.ghostty}/bin/ghostty -e i3pm diagnose health &"
     (box :class "metric-block"
          :spacing 6
          (label :class {daemon_health.status == "healthy" ? "icon daemon-icon daemon-healthy" :
