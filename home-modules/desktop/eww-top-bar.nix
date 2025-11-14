@@ -32,15 +32,16 @@ let
 
   # Multi-monitor output configuration
   # Headless: HEADLESS-1/2/3 (Hetzner VNC)
-  # Laptop: eDP-1 (built-in), HDMI-A-1 (external)
+  # Laptop: eDP-1 (built-in), HDMI-A-1 (external - only when connected)
   topBarOutputs =
     if isHeadless then [
       { name = "HEADLESS-1"; showTray = true; }
       { name = "HEADLESS-2"; showTray = false; }
       { name = "HEADLESS-3"; showTray = false; }
     ] else [
+      # Only open on built-in display (eDP-1)
+      # TODO: Auto-detect connected monitors and open windows dynamically
       { name = "eDP-1"; showTray = true; }
-      { name = "HDMI-A-1"; showTray = false; }
     ];
 
   # Sanitize output names for Eww window IDs (lowercase, replace special chars)
