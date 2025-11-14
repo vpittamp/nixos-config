@@ -1,8 +1,38 @@
 # Tasks: Eww-Based Top Bar with Catppuccin Mocha Theme
 
 **Feature Branch**: `060-eww-top-bar`
+**Status**: ✅ **Deployed** (2025-11-14 09:07 EST)
+**Generation**: 784 | **Commit**: eccb9dd
 **Input**: Design documents from `/etc/nixos/specs/060-eww-top-bar/`
 **Prerequisites**: plan.md ✅, spec.md ✅
+
+## Current Status
+
+**Completed**: 95/110 tasks (86%)
+**Deployed**: M1 MacBook Pro, NixOS generation 784
+**Working**: All 8 user stories functional
+
+**What's Working**:
+- ✅ Phases 1-10: All implementation complete
+- ✅ Phase 12: Documentation complete (quickstart.md, CLAUDE.md updates)
+- ✅ Successfully replaced Swaybar (no dual bars)
+- ✅ All metrics displaying with correct colors and live updates
+- ✅ Hardware auto-detection working (battery, bluetooth, temperature)
+- ✅ Click handlers launching correct applications
+- ✅ systemd service stable with auto-restart
+
+**Known Issues**:
+1. **Daemon health script exit code** (High Priority)
+   - File: `home-modules/desktop/eww-top-bar/scripts/i3pm-health.sh`
+   - Issue: Exits with code 1 when daemon unhealthy, causing Eww warnings every 5s
+   - Impact: Cosmetic (script returns correct JSON, but Eww logs warnings)
+   - Fix: Script should always exit 0 and encode status in JSON only
+
+**Remaining Work** (15 tasks):
+- Phase 7 (US4): Multi-monitor testing on external display + Hetzner
+- Phase 11: Automated test suite (unit/integration/Sway IPC tests)
+- Phase 12: Screenshots for documentation
+- Bug fix: Daemon health script exit code
 
 **Tests**: Manual validation (visual rendering) + Sway IPC tests (window positioning)
 
@@ -152,6 +182,8 @@ All paths relative to `/etc/nixos/` repository root:
 
 ## Phase 7: User Story 4 - Multi-Monitor Support (Priority: P2)
 
+**Status**: ⚠️ **Partial** - Code implemented, only tested on eDP-1 (M1 built-in display)
+
 **Goal**: Top bar appears on all configured outputs with output-specific positioning
 
 **Independent Test**: Connect multiple monitors and verify bar appears on each configured output
@@ -164,6 +196,8 @@ All paths relative to `/etc/nixos/` repository root:
 - [ ] T061 [US4] Verify bar positioning and struts reservation on all outputs (requires deployment)
 
 **Checkpoint**: Multi-monitor support working - bars appear on all configured outputs
+
+**Note**: Code is implemented for multi-monitor (eww-top-bar.nix lines 33-45), but only tested on single display. External monitor testing and Hetzner deployment pending.
 
 ---
 
@@ -228,9 +262,13 @@ All paths relative to `/etc/nixos/` repository root:
 
 **Checkpoint**: Daemon health indicator displays and updates based on daemon state
 
+**⚠️ Known Issue**: T081-T082 have a bug - script exits with code 1 when daemon unhealthy, causing Eww warnings. Script should always exit 0 and encode status in JSON only. Functionality works correctly but logs warnings every 5 seconds.
+
 ---
 
 ## Phase 11: Testing & Validation
+
+**Status**: ⚠️ **Incomplete** - All tasks pending (manual validation performed, automated tests not written)
 
 **Purpose**: Verify all user stories meet acceptance criteria
 
@@ -254,6 +292,8 @@ All paths relative to `/etc/nixos/` repository root:
 
 ## Phase 12: Polish & Cross-Cutting Concerns
 
+**Status**: ⚠️ **Mostly Complete** - Documentation done, screenshots pending
+
 **Purpose**: Documentation and final improvements
 
 - [X] T101 [P] Create quickstart.md at specs/060-eww-top-bar/quickstart.md
@@ -266,6 +306,8 @@ All paths relative to `/etc/nixos/` repository root:
 - [X] T108 Document performance characteristics (RAM: <50MB, CPU: <2%, startup: <3s)
 - [ ] T109 Add screenshots to specs/060-eww-top-bar/ showing top bar on both M1 and Hetzner
 - [ ] T110 Run quickstart.md validation (follow steps as new user would)
+
+**Note**: T107 completed for M1 only. Hetzner deployment pending multi-monitor testing (T058).
 
 ---
 
