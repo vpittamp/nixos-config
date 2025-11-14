@@ -129,7 +129,7 @@ in
 
 ;; Network Traffic widget (with click handler to open network settings)
 (defwidget network-widget []
-  (eventbox :onclick "${pkgs.gnome.gnome-control-center}/bin/gnome-control-center wifi &"
+  (eventbox :onclick "${pkgs.gnome-control-center}/bin/gnome-control-center wifi &"
     (box :class "metric-block"
          :spacing 6
          (label :class "icon network-icon"
