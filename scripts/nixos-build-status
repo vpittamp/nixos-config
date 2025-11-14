@@ -157,18 +157,19 @@ check_build_errors() {
     printf ']}'
   else
     if [[ $error_count -gt 0 ]]; then
-      printf '%b\n' "${RED}✗ Found $error_count error source(s)${NC}"
+      printf '%b\n' "${RED}✗ Found $error_count error source(s)${NC}" >&2
       if [[ $VERBOSE -eq 1 ]]; then
         for error in "${errors[@]}"; do
-          printf '%b\n' "${RED}$error${NC}"
+          printf '%b\n' "${RED}$error${NC}" >&2
         done
       fi
     else
-      printf '%b\n' "${GREEN}✓ No recent build errors detected${NC}"
+      printf '%b\n' "${GREEN}✓ No recent build errors detected${NC}" >&2
     fi
   fi
 
-  echo "$error_count"
+  # Return count only
+  return $error_count
 }
 
 # Check boot status
@@ -193,16 +194,17 @@ check_boot_status() {
       "$(json_escape "$boot_errors")"
   else
     if [[ $boot_failed -eq 1 ]]; then
-      printf '%b\n' "${RED}✗ System has failed units${NC}"
+      printf '%b\n' "${RED}✗ System has failed units${NC}" >&2
       if [[ $VERBOSE -eq 1 ]]; then
-        printf '%b\n' "${RED}$boot_errors${NC}"
+        printf '%b\n' "${RED}$boot_errors${NC}" >&2
       fi
     else
-      printf '%b\n' "${GREEN}✓ All systemd units started successfully${NC}"
+      printf '%b\n' "${GREEN}✓ All systemd units started successfully${NC}" >&2
     fi
   fi
 
-  echo "$boot_failed"
+  # Return status
+  return $boot_failed
 }
 
 # Check if system can be built
@@ -224,13 +226,14 @@ check_buildability() {
       "$(json_escape "$build_error")"
   else
     if [[ $can_build -eq 1 ]]; then
-      printf '%b\n' "${GREEN}✓ Flake can be evaluated${NC}"
+      printf '%b\n' "${GREEN}✓ Flake can be evaluated${NC}" >&2
     else
-      printf '%b\n' "${RED}✗ Flake evaluation failed: $build_error${NC}"
+      printf '%b\n' "${RED}✗ Flake evaluation failed: $build_error${NC}" >&2
     fi
   fi
 
-  echo "$can_build"
+  # Return status (0 = can build, 1 = cannot build)
+  [ $can_build -eq 1 ] && return 0 || return 1
 }
 
 # Main execution
@@ -250,25 +253,25 @@ main() {
 
     # Build errors
     printf '  "buildErrors": '
-    local error_count
-    error_count=$(check_build_errors)
+    check_build_errors
+    local error_count=$?
     printf ',\n'
 
     # Boot status
     printf '  "bootStatus": '
-    local boot_failed
-    boot_failed=$(check_boot_status)
+    check_boot_status
+    local boot_failed=$?
     printf ',\n'
 
     # Buildability
     printf '  "buildability": '
-    local can_build
-    can_build=$(check_buildability)
+    check_buildability
+    local can_build=$?
     printf ',\n'
 
     # Overall status
     local status="success"
-    if [[ $error_count -gt 0 || $boot_failed -eq 1 || $can_build -eq 0 ]]; then
+    if [[ $error_count -ne 0 || $boot_failed -ne 0 || $can_build -ne 0 ]]; then
       status="error"
       exit_code=2
     fi
@@ -302,25 +305,25 @@ main() {
 
     # Build errors
     printf '%b\n' "${BOLD}Build Error Check:${NC}"
-    local error_count
-    error_count=$(check_build_errors)
+    check_build_errors
+    local error_count=$?
     printf '\n'
 
     # Boot status
     printf '%b\n' "${BOLD}Boot Status:${NC}"
-    local boot_failed
-    boot_failed=$(check_boot_status)
+    check_boot_status
+    local boot_failed=$?
     printf '\n'
 
     # Buildability
     printf '%b\n' "${BOLD}Flake Status:${NC}"
-    local can_build
-    can_build=$(check_buildability)
+    check_buildability
+    local can_build=$?
     printf '\n'
 
     # Overall summary
     printf '%b\n' "${BOLD}${CYAN}=== Summary ===${NC}"
-    if [[ $error_count -eq 0 && $boot_failed -eq 0 && $can_build -eq 1 ]]; then
+    if [[ $error_count -eq 0 && $boot_failed -eq 0 && $can_build -eq 0 ]]; then
       printf '%b\n' "${GREEN}✓ System is healthy${NC}"
 
       # Check sync status
