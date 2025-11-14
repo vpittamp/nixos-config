@@ -14,8 +14,8 @@
     ./desktop/sway.nix         # Sway window manager with HiDPI support
     # sway-easyfocus now provided by home-manager upstream
     ./desktop/unified-bar-theme.nix  # Feature 057: Unified bar theme (Catppuccin Mocha)
-    ./desktop/swaybar.nix      # Swaybar with event-driven status
-    ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (battery, network, volume, bluetooth)
+    # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by eww-top-bar Feature 060)
+    # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by eww-top-bar Feature 060)
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar with icons
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (brightness, network, apps)
     ./desktop/eww-top-bar.nix   # Feature 060: Eww top bar with system metrics
@@ -61,13 +61,13 @@
     debounceMs = 500;  # Wait 500ms after last change before reloading
   };
 
-  # Feature 052: Enhanced Swaybar Status
-  programs.swaybar-enhanced = {
-    enable = true;
-    # Uses default Catppuccin Mocha theme and standard update intervals
-    # Bluetooth status block enabled with click handler to open Blueman Manager
-    detectBluetooth = true;
-  };
+  # Feature 052: Enhanced Swaybar Status (DISABLED: replaced by eww-top-bar Feature 060)
+  # programs.swaybar-enhanced = {
+  #   enable = true;
+  #   # Uses default Catppuccin Mocha theme and standard update intervals
+  #   # Bluetooth status block enabled with click handler to open Blueman Manager
+  #   detectBluetooth = true;
+  # };
 
   # Feature 056: Declarative PWA Installation
   programs.firefoxpwa-declarative = {
