@@ -26,21 +26,30 @@
   .top-bar {
     background-color: #1e1e2e; /* base */
     color: #cdd6f4; /* text */
-    padding: 2px 6px;
+    padding: 3px 8px;
   }
 
-  /* Block sections */
+  /* Block sections - consistent spacing */
   .left-block,
   .center-block,
   .right-block {
     min-width: 0;
+    padding: 0 4px;
+  }
+
+  /* Visual separator */
+  .separator {
+    color: #45475a; /* surface1 - subtle */
+    opacity: 0.6;
+    padding: 0 4px;
+    font-size: 12px;
   }
 
   /* Metric Blocks (widgets) */
   .metric-block {
-    padding: 2px 4px;
+    padding: 3px 6px;
     margin: 0;
-    border-radius: 2px;
+    border-radius: 3px;
     transition: background-color 0.15s ease-in-out;
   }
 

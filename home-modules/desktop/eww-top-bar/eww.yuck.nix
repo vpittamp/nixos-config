@@ -80,7 +80,7 @@
 ;; CPU Load Average widget
 (defwidget cpu-widget []
   (box :class "metric-block"
-       :spacing 2
+       :spacing 6
        (label :class "icon cpu-icon"
               :text "")
        (label :class "value cpu-value"
@@ -89,7 +89,7 @@
 ;; Memory Usage widget (compact - percentage only)
 (defwidget memory-widget []
   (box :class "metric-block"
-       :spacing 2
+       :spacing 6
        (label :class "icon memory-icon"
               :text "")
        (label :class "value memory-value"
@@ -98,7 +98,7 @@
 ;; Disk Usage widget (compact - percentage only)
 (defwidget disk-widget []
   (box :class "metric-block"
-       :spacing 2
+       :spacing 6
        (label :class "icon disk-icon"
               :text "")
        (label :class "value disk-value"
@@ -128,7 +128,6 @@
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
     (box :class "metric-block wifi-widget"
-         :spacing 2
          (label :class {wifi_status.connected ? "icon wifi-icon signal-strong" : "icon wifi-icon disconnected"}
                 :style "color: ''${wifi_status.color ?: '#6c7086'}"
                 :text {wifi_status.icon ?: ""}))))
@@ -137,7 +136,7 @@
 (defwidget datetime-widget []
   (eventbox :onclick "gnome-calendar &"
     (box :class "metric-block"
-         :spacing 2
+         :spacing 6
          (label :class "icon datetime-icon"
                 :text "")
          (label :class "value datetime-value"
@@ -147,7 +146,6 @@
 (defwidget volume-widget-enhanced []
   (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
     (box :class "metric-block volume-widget"
-         :spacing 2
          (label :class "icon volume-icon"
                 :text {volume_status.icon ?: "🔇"}))))
 
@@ -211,9 +209,10 @@
                 :text "''${daemon_health.response_ms ?: '0'}ms"))))
 
 ;; Separator between blocks
+;; Visual separator between widget groups
 (defwidget separator []
   (label :class "separator"
-         :text "|"))
+         :text "│"))
 
 ;; Feature 061: System Tray widget (US1) - conditional on is_primary
 (defwidget systray-widget [is_primary]
@@ -243,27 +242,31 @@
 ;; Main bar layout (horizontal) - with is_primary parameter
 (defwidget main-bar [is_primary]
   (centerbox :class "top-bar"
-    ;; Left: System metrics (minimal)
+    ;; Left: System metrics (grouped with consistent spacing)
     (box :class "left-block"
          :halign "start"
-         :spacing 3
+         :space-evenly false
+         :spacing 8
          (cpu-widget)
          (memory-widget)
          (disk-widget)
+         (separator)
          (wifi-widget)
          (volume-widget-enhanced))
 
     ;; Center: Active Project
     (box :class "center-block"
          :halign "center"
-         :spacing 6
+         :space-evenly false
          (project-widget))
 
-    ;; Right: Date/Time and System Tray
+    ;; Right: Date/Time and System Tray (grouped with consistent spacing)
     (box :class "right-block"
          :halign "end"
-         :spacing 3
+         :space-evenly false
+         :spacing 8
          (datetime-widget)
+         (separator)
          (systray-widget :is_primary is_primary))))
 
 ;; ============================================================================
