@@ -908,9 +908,9 @@ async def restore_workflow(
             logger.info(f"Launching {app_name} on workspace {workspace} (cwd: {cwd or 'N/A'})")
 
             # Launch via unified app launcher (Feature 057 wrapper-based system)
+            # Note: workspace assignment handled via I3PM_TARGET_WORKSPACE env var in wrapper
             await launcher.launch_app(
                 app_name=app_name,
-                workspace=workspace,
                 cwd=cwd,
                 project=project,
             )
