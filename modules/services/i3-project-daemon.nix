@@ -40,7 +40,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.9-1763190532";  # Fix: Add workspace_num field for SavedWindow validation (retry with alias)
+    version = "1.7.9-1763191913";  # Fix: Remove workspace parameter from AppLauncher call
     src = daemonSrc;
 
     installPhase = ''
