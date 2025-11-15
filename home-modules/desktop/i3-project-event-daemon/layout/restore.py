@@ -876,7 +876,7 @@ async def restore_workflow(
                 if hasattr(window_data, 'app_registry_name'):
                     saved_window = SavedWindow(
                         app_registry_name=window_data.app_registry_name,
-                        workspace=ws_layout.workspace_num,
+                        workspace_num=ws_layout.workspace_num,  # Use alias name for Pydantic v2
                         cwd=window_data.cwd if hasattr(window_data, 'cwd') else None,
                         focused=window_data.focused if hasattr(window_data, 'focused') else False,
                     )
