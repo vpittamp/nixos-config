@@ -17,7 +17,7 @@
     background-color: #1e1e2e;
     color: #cdd6f4;
     padding: 5px;
-    font-size: 13px;
+    font-size: 11px;
   }
 
   /* Sections */

@@ -19,11 +19,11 @@
   :initial '{"cpu_load":"0.00","mem_used_pct":"0","disk_used_pct":"0","net_rx_mbps":"0.0","net_tx_mbps":"0.0","temp_celsius":"0","temp_available":false}'
   `python3 ~/.config/eww/eww-top-bar/scripts/system-metrics.py`)
 
-;; Date/time updates every 1s
+;; Date/time updates every 1s (12-hour format)
 (defpoll datetime
   :interval "1s"
   :initial "..."
-  `date '+%a %b %d | %H:%M:%S'`)
+  `date '+%a %b %d | %I:%M:%S %p'`)
 
 ;; Feature 061: WiFi status monitoring (US2)
 (defpoll wifi_status
