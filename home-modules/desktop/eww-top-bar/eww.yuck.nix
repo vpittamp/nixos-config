@@ -1,100 +1,77 @@
-{ config, lib, pkgs, osConfig ? null, ... }:
+{ config, lib, pkgs, ... }:
 
-# Eww widget definitions (Yuck syntax) for top bar
-# Feature 060: System metrics display with Catppuccin Mocha colors
+# Feature 061: Eww Top Bar - Enhanced widget definitions
+# Adds: System tray, WiFi widget, enhanced volume control with popup
 
-let
-  cfg = config.programs.eww-top-bar;
-
-  # Catppuccin Mocha colors (imported from unified-bar-theme.nix via main module)
-  mocha = {
-    text = "#cdd6f4";
-    subtext0 = "#a6adc8";
-    blue = "#89b4fa";      # CPU
-    sapphire = "#74c7ec";  # Memory
-    sky = "#89dceb";       # Disk
-    teal = "#94e2d5";      # Network
-    peach = "#fab387";     # Temperature
-    green = "#a6e3a1";     # Success
-    red = "#f38ba8";       # Critical
-  };
-
-  # Script paths
-  systemMetricsScript = "${config.xdg.configHome}/eww/eww-top-bar/scripts/system-metrics.py";
-  hardwareDetectScript = "${config.xdg.configHome}/eww/eww-top-bar/scripts/hardware-detect.py";
-
-  # Detect headless Sway configuration
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
-
-  # Multi-monitor output configuration
-  topBarOutputs =
-    if isHeadless then [
-      { name = "HEADLESS-1"; showTray = true; }
-      { name = "HEADLESS-2"; showTray = false; }
-      { name = "HEADLESS-3"; showTray = false; }
-    ] else [
-      { name = "eDP-1"; showTray = true; }
-      { name = "HDMI-A-1"; showTray = false; }
-    ];
-
-  # Sanitize output names for Eww window IDs
-  sanitizeOutputName = name:
-    lib.toLower (lib.replaceStrings [" " ":" "/" "_" "-"] ["" "" "" "" ""] name);
-
-in
 ''
 ;; Eww Top Bar - System Metrics Display
-;; Feature 060: Catppuccin Mocha themed status bar
+;; Feature 060: Core functionality
+;; Feature 061: Added system tray, WiFi, volume popup, calendar
 
 ;; ============================================================================
 ;; Variables (defpoll for periodic updates)
 ;; ============================================================================
 
 ;; System metrics: CPU, memory, disk, network, temperature
-;; Updates every ${toString cfg.updateIntervals.systemMetrics}s
+;; Updates every 2s
 (defpoll system_metrics
-  :interval "${toString cfg.updateIntervals.systemMetrics}s"
+  :interval "2s"
   :initial '{"cpu_load":"0.00","mem_used_pct":"0","disk_used_pct":"0","net_rx_mbps":"0.0","net_tx_mbps":"0.0","temp_celsius":"0","temp_available":false}'
-  `${pkgs.python3}/bin/python3 ${systemMetricsScript}`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/system-metrics.py`)
 
-;; Date/time updates every ${toString cfg.updateIntervals.dateTime}s
+;; Date/time updates every 1s
 (defpoll datetime
-  :interval "${toString cfg.updateIntervals.dateTime}s"
+  :interval "1s"
   :initial "..."
-  `${pkgs.coreutils}/bin/date '+%a %b %d  %H:%M:%S'`)
+  `date '+%a %b %d | %H:%M:%S'`)
 
-;; Volume monitoring (real-time via deflisten)
+;; Feature 061: WiFi status monitoring (US2)
+(defpoll wifi_status
+  :interval "2s"
+  :initial '{"connected":false,"ssid":null,"signal":null,"color":"#6c7086","icon":""}'
+  `bash ~/.config/eww/eww-top-bar/scripts/wifi-status.sh`)
+
+;; Feature 061: Volume status monitoring (US3)
+(defpoll volume_status
+  :interval "2s"
+  :initial '{"volume":0,"muted":false,"icon":"🔇"}'
+  `bash ~/.config/eww/eww-top-bar/scripts/volume-status.sh`)
+
+;; Volume monitoring (real-time via deflisten) - kept for compatibility
 (deflisten volume
   :initial '{\"volume_pct\":\"0\",\"muted\":true}'
-  `${pkgs.python3}/bin/python3 ${config.xdg.configHome}/eww/eww-top-bar/scripts/volume-monitor.py`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/volume-monitor.py`)
 
 ;; Battery monitoring (real-time via deflisten)
 (deflisten battery
   :initial '{\"percentage\":0,\"charging\":false,\"level\":\"unknown\"}'
-  `${pkgs.python3}/bin/python3 ${config.xdg.configHome}/eww/eww-top-bar/scripts/battery-monitor.py`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/battery-monitor.py`)
 
 ;; Bluetooth monitoring (real-time via deflisten)
 (deflisten bluetooth
   :initial '{\"state\":\"disabled\",\"device_count\":0}'
-  `${pkgs.python3}/bin/python3 ${config.xdg.configHome}/eww/eww-top-bar/scripts/bluetooth-monitor.py`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/bluetooth-monitor.py`)
 
 ;; Active i3pm project monitoring (polling via deflisten)
 (deflisten active_project
   :initial '{\"project\":\"Global\",\"active\":false}'
-  `${pkgs.python3}/bin/python3 ${config.xdg.configHome}/eww/eww-top-bar/scripts/active-project.py`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/active-project.py`)
 
 ;; Hardware capabilities (run once at startup)
 (defpoll hardware
   :interval "0"
   :run-while false
   :initial '{"battery":false,"bluetooth":false,"thermal":false}'
-  `${pkgs.python3}/bin/python3 ${hardwareDetectScript}`)
+  `python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py`)
 
-;; i3pm daemon health check (every ${toString cfg.updateIntervals.daemonHealth}s)
+;; Feature 061: i3pm daemon health check - FIXED exit code 0 (US6)
 (defpoll daemon_health
-  :interval "${toString cfg.updateIntervals.daemonHealth}s"
+  :interval "5s"
   :initial '{"status":"unknown","response_ms":0}'
-  `${pkgs.bash}/bin/bash ${config.xdg.configHome}/eww/eww-top-bar/scripts/i3pm-health.sh`)
+  `bash ~/.config/eww/eww-top-bar/scripts/i3pm-health.sh`)
+
+;; Feature 061: Volume popup visibility state (US3)
+(defvar volume_popup_visible false)
 
 ;; ============================================================================
 ;; Widgets
@@ -129,7 +106,7 @@ in
 
 ;; Network Traffic widget (with click handler to open network settings)
 (defwidget network-widget []
-  (eventbox :onclick "${pkgs.gnome-control-center}/bin/gnome-control-center wifi &"
+  (eventbox :onclick "nm-connection-editor &"
     (box :class "metric-block"
          :spacing 6
          (label :class "icon network-icon"
@@ -147,9 +124,21 @@ in
        (label :class "value temp-value"
               :text "''${system_metrics.temp_celsius ?: '0'}°C")))
 
+;; Feature 061: WiFi widget (US2)
+(defwidget wifi-widget []
+  (eventbox :onclick "nm-connection-editor &"
+    (box :class "metric-block wifi-widget"
+         :spacing 6
+         (label :class {wifi_status.connected ? "icon wifi-icon signal-strong" : "icon wifi-icon disconnected"}
+                :style "color: ''${wifi_status.color ?: '#6c7086'}"
+                :text {wifi_status.icon ?: ""})
+         (label :class "value wifi-value"
+                :visible {wifi_status.connected ?: false}
+                :text "''${wifi_status.ssid ?: 'N/A'} (''${wifi_status.signal ?: '0'}%)"))))
+
 ;; Date/Time widget (with click handler to open calendar)
 (defwidget datetime-widget []
-  (eventbox :onclick "${pkgs.gnome-calendar}/bin/gnome-calendar &"
+  (eventbox :onclick "gnome-calendar &"
     (box :class "metric-block"
          :spacing 6
          (label :class "icon datetime-icon"
@@ -157,9 +146,19 @@ in
          (label :class "value datetime-value"
                 :text {datetime ?: "..."}))))
 
-;; Volume widget (with click handler to open pavucontrol)
+;; Feature 061: Enhanced Volume widget with popup (US3)
+(defwidget volume-widget-enhanced []
+  (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
+    (box :class "metric-block volume-widget"
+         :spacing 6
+         (label :class "icon volume-icon"
+                :text {volume_status.icon ?: "🔇"})
+         (label :class "value volume-value"
+                :text "''${volume_status.volume ?: '0'}%"))))
+
+;; Legacy volume widget (kept for compatibility)
 (defwidget volume-widget []
-  (eventbox :onclick "${pkgs.pavucontrol}/bin/pavucontrol &"
+  (eventbox :onclick "pavucontrol &"
     (box :class "metric-block"
          :spacing 6
          (label :class "icon volume-icon"
@@ -181,7 +180,7 @@ in
 
 ;; Bluetooth widget (conditional - only shown if bluetooth hardware present, with click handler)
 (defwidget bluetooth-widget []
-  (eventbox :onclick "${pkgs.blueman}/bin/blueman-manager &"
+  (eventbox :onclick "blueman-manager &"
     (box :class "metric-block"
          :spacing 6
          :visible {hardware.bluetooth ?: false}
@@ -204,8 +203,8 @@ in
 
 ;; Daemon Health widget (with click handler to open diagnostics)
 (defwidget daemon-health-widget []
-  (eventbox :onclick "${pkgs.ghostty}/bin/ghostty -e i3pm diagnose health &"
-    (box :class "metric-block"
+  (eventbox :onclick "ghostty -e i3pm diagnose health &"
+    (box :class "metric-block daemon-health"
          :spacing 6
          (label :class {daemon_health.status == "healthy" ? "icon daemon-icon daemon-healthy" :
                         daemon_health.status == "slow" ? "icon daemon-icon daemon-slow" :
@@ -221,8 +220,33 @@ in
   (label :class "separator"
          :text "|"))
 
-;; Main bar layout (horizontal)
-(defwidget main-bar []
+;; Feature 061: System Tray widget (US1) - conditional on is_primary
+(defwidget systray-widget [is_primary]
+  (box :class "metric-block"
+       :visible is_primary
+       (systray :spacing 4
+                :icon-size 16
+                :orientation "horizontal"
+                :prepend-new false)))
+
+;; Feature 061: Volume popup with slider (US3)
+(defwidget volume-popup-content []
+  (box :class "volume-popup"
+       :orientation "v"
+       :spacing 8
+    (box :class "volume-slider"
+         :orientation "v"
+         (scale :min 0
+                :max 100
+                :value {volume_status.volume ?: 0}
+                :timeout "100ms"
+                :onchange "wpctl set-volume @DEFAULT_AUDIO_SINK@ {}% || pactl set-sink-volume @DEFAULT_SINK@ {}%"))
+    (button :class "volume-mute-button"
+            :onclick "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle || pactl set-sink-mute @DEFAULT_SINK@ toggle"
+            {volume_status.muted ? "Unmute" : "Mute"})))
+
+;; Main bar layout (horizontal) - with is_primary parameter
+(defwidget main-bar [is_primary]
   (centerbox :class "top-bar"
     ;; Left: System metrics
     (box :class "left-block"
@@ -236,9 +260,11 @@ in
          (separator)
          (network-widget)
          (separator)
+         (wifi-widget)
+         (separator)
          (temperature-widget)
          (separator)
-         (volume-widget))
+         (volume-widget-enhanced))
 
     ;; Center: Active Project and Daemon Health
     (box :class "center-block"
@@ -248,7 +274,7 @@ in
          (separator)
          (daemon-health-widget))
 
-    ;; Right: Hardware status and Date/Time
+    ;; Right: Hardware status, Date/Time, and System Tray
     (box :class "right-block"
          :halign "end"
          :spacing 12
@@ -256,15 +282,17 @@ in
          (separator)
          (bluetooth-widget)
          (separator)
-         (datetime-widget))))
+         (datetime-widget)
+         (separator)
+         (systray-widget :is_primary is_primary))))
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)
 ;; ============================================================================
 
-'' + (lib.concatMapStringsSep "\n" (output: ''
-(defwindow top-bar-${sanitizeOutputName output.name}
-  :monitor "${output.name}"
+;; Built-in display (primary)
+(defwindow top-bar-edp1
+  :monitor "eDP-1"
   :geometry (geometry
     :x "0px"
     :y "0px"
@@ -277,5 +305,37 @@ in
   :namespace "eww-top-bar"
   :reserve (struts :distance "36px" :side "top")
   :windowtype "dock"
-  (main-bar))
-'') topBarOutputs)
+  (main-bar :is_primary true))
+
+;; External display (secondary)
+(defwindow top-bar-hdmia1
+  :monitor "HDMI-A-1"
+  :geometry (geometry
+    :x "0px"
+    :y "0px"
+    :width "100%"
+    :height "32px"
+    :anchor "top center")
+  :stacking "fg"
+  :exclusive true
+  :focusable false
+  :namespace "eww-top-bar"
+  :reserve (struts :distance "36px" :side "top")
+  :windowtype "dock"
+  (main-bar :is_primary false))
+
+;; Feature 061: Volume popup window (US3)
+(defwindow volume-popup
+  :monitor "eDP-1"
+  :geometry (geometry
+    :anchor "top right"
+    :x "-10px"
+    :y "40px")
+  :stacking "overlay"
+  :focusable true
+  :namespace "eww-volume-popup"
+  (revealer :transition "slidedown"
+            :reveal volume_popup_visible
+            :duration "200ms"
+    (volume-popup-content)))
+''

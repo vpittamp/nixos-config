@@ -1,203 +1,186 @@
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 
-# Eww styles (CSS/SCSS) for top bar
-# Feature 060: Catppuccin Mocha theme matching bottom workspace bar
+# Feature 061: Eww Top Bar - GTK CSS Styling
+# Catppuccin Mocha theme colors from Feature 057
 
-let
-  # Catppuccin Mocha colors
-  mocha = {
-    base = "#1e1e2e";
-    surface0 = "#313244";
-    text = "#cdd6f4";
-    subtext0 = "#a6adc8";
-    blue = "#89b4fa";
-    sapphire = "#74c7ec";
-    sky = "#89dceb";
-    teal = "#94e2d5";
-    peach = "#fab387";
-    green = "#a6e3a1";
-    yellow = "#f9e2af";
-    red = "#f38ba8";
-  };
-
-in
 ''
-/* Eww Top Bar Styles - Feature 060: Catppuccin Mocha Theme */
+  /* Feature 061: Eww Top Bar Polish & Completion */
+  /* GTK CSS Styling with Catppuccin Mocha Theme */
 
-* {
-  all: unset;
-  font-family: "FiraCode Nerd Font", "Font Awesome 6 Free";
-  font-size: 10px;
-}
+  /* ========================================================================== */
+  /* Color Palette - Catppuccin Mocha (from Feature 057) */
+  /* ========================================================================== */
 
-/* ============================================================================
-   Top Bar Container
-   ============================================================================ */
+  * {
+    all: unset;
+    font-family: "JetBrainsMono Nerd Font", monospace;
+    font-size: 12px;
+  }
 
-.top-bar {
-  background-color: rgba(30, 30, 46, 0.85);  /* ${mocha.base} with transparency */
-  border-radius: 6px;
-  padding: 4px 12px;
-  margin: 4px;
-}
+  /* Top Bar Container */
+  .top-bar {
+    background-color: #1e1e2e; /* base */
+    color: #cdd6f4; /* text */
+    padding: 2px 8px;
+  }
 
-/* ============================================================================
-   Block Layouts
-   ============================================================================ */
+  /* Metric Blocks (widgets) */
+  .metric-block {
+    padding: 4px 8px;
+    margin: 0 2px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease-in-out;
+  }
 
-.left-block,
-.center-block,
-.right-block {
-  padding: 0 8px;
-}
+  .metric-block:hover {
+    background-color: rgba(69, 71, 90, 0.6); /* surface1 */
+  }
 
-.metric-block {
-  padding: 2px 6px;
-  margin: 0 2px;
-}
+  .metric-block:active {
+    background-color: rgba(69, 71, 90, 0.8); /* surface1 darker */
+    transition: background-color 0.1s ease-in-out;
+  }
 
-/* ============================================================================
-   Separator
-   ============================================================================ */
+  /* Widget Labels */
+  .widget-label {
+    color: #cdd6f4; /* text */
+    margin-right: 4px;
+  }
 
-.separator {
-  color: ${mocha.subtext0};
-  font-size: 8px;
-  opacity: 0.5;
-  padding: 0 4px;
-}
+  .widget-value {
+    color: #89b4fa; /* blue */
+    font-weight: bold;
+  }
 
-/* ============================================================================
-   Icons (Nerd Fonts)
-   ============================================================================ */
+  /* System Tray Styling */
+  .systray {
+    padding: 0 4px;
+  }
 
-.icon {
-  font-family: "FiraCode Nerd Font";
-  font-size: 11px;
-  margin-right: 4px;
-}
+  /* WiFi Widget Styling */
+  .wifi-widget {
+    padding: 4px 8px;
+  }
 
-/* CPU icon - blue */
-.cpu-icon {
-  color: ${mocha.blue};
-}
+  .wifi-icon {
+    margin-right: 4px;
+    transition: color 0.3s ease-in-out;
+  }
 
-/* Memory icon - sapphire */
-.memory-icon {
-  color: ${mocha.sapphire};
-}
+  .wifi-icon.signal-strong {
+    color: #a6e3a1; /* green */
+  }
 
-/* Disk icon - sky */
-.disk-icon {
-  color: ${mocha.sky};
-}
+  .wifi-icon.signal-medium {
+    color: #f9e2af; /* yellow */
+  }
 
-/* Network icon - teal */
-.network-icon {
-  color: ${mocha.teal};
-}
+  .wifi-icon.signal-weak {
+    color: #fab387; /* orange */
+  }
 
-/* Temperature icon - peach */
-.temp-icon {
-  color: ${mocha.peach};
-}
+  .wifi-icon.disconnected {
+    color: #6c7086; /* overlay0 / gray */
+  }
 
-/* Volume icon - green (unmuted) / red (muted) */
-.volume-icon {
-  color: ${mocha.green};
-}
+  /* Volume Widget Styling */
+  .volume-widget {
+    padding: 4px 8px;
+  }
 
-/* Battery icon - color-coded by level */
-.battery-icon {
-  color: ${mocha.green};  /* Default: normal level */
-}
+  .volume-icon {
+    margin-right: 4px;
+    transition: color 0.3s ease-in-out;
+  }
 
-.battery-icon.battery-low {
-  color: ${mocha.yellow};  /* Warning: 20-50% */
-}
+  /* Volume Slider Popup */
+  .volume-popup {
+    background-color: #313244; /* surface0 */
+    border: 1px solid #45475a; /* surface1 */
+    border-radius: 8px;
+    padding: 12px;
+  }
 
-.battery-icon.battery-critical {
-  color: ${mocha.red};  /* Critical: <20% */
-}
+  .volume-slider scale trough {
+    background-color: rgba(108, 112, 134, 0.3); /* overlay0 */
+    border-radius: 4px;
+    min-height: 6px;
+    min-width: 200px;
+  }
 
-/* Bluetooth icon - color-coded by state */
-.bluetooth-icon {
-  color: ${mocha.blue};  /* Default */
-}
+  .volume-slider scale highlight {
+    background-color: #89b4fa; /* blue */
+    border-radius: 4px;
+    transition: all 0.3s ease-in-out;
+  }
 
-.bluetooth-icon.bluetooth-connected {
-  color: ${mocha.blue};  /* Connected: blue */
-}
+  .volume-slider scale slider {
+    background-color: #cdd6f4; /* text */
+    border-radius: 50%;
+    min-height: 16px;
+    min-width: 16px;
+  }
 
-.bluetooth-icon.bluetooth-enabled {
-  color: ${mocha.green};  /* Enabled but not connected: green */
-}
+  .volume-mute-button {
+    margin-top: 8px;
+    padding: 6px 12px;
+    background-color: #45475a; /* surface1 */
+    border-radius: 4px;
+    transition: background-color 0.15s ease-in-out;
+  }
 
-.bluetooth-icon.bluetooth-disabled {
-  color: ${mocha.subtext0};  /* Disabled: gray */
-}
+  .volume-mute-button:hover {
+    background-color: #585b70; /* surface2 */
+  }
 
-/* Active Project icon - subtext color */
-.project-icon {
-  color: ${mocha.subtext0};
-}
+  /* Calendar Popup */
+  .calendar-popup {
+    background-color: #313244; /* surface0 */
+    border: 1px solid #45475a; /* surface1 */
+    border-radius: 8px;
+    padding: 12px;
+  }
 
-/* Daemon Health icon - color-coded by status */
-.daemon-icon {
-  color: ${mocha.green};  /* Default: healthy */
-}
+  .calendar-widget {
+    color: #cdd6f4; /* text */
+  }
 
-.daemon-icon.daemon-healthy {
-  color: ${mocha.green};  /* Healthy (<100ms): green */
-}
+  .calendar-widget:selected {
+    background-color: #89b4fa; /* blue */
+    color: #1e1e2e; /* base */
+    border-radius: 4px;
+  }
 
-.daemon-icon.daemon-slow {
-  color: ${mocha.yellow};  /* Slow (100-500ms): yellow */
-}
+  /* Daemon Health Widget */
+  .daemon-health {
+    padding: 4px 8px;
+  }
 
-.daemon-icon.daemon-unhealthy {
-  color: ${mocha.red};  /* Unhealthy (>500ms or unresponsive): red */
-}
+  .daemon-health.healthy {
+    color: #a6e3a1; /* green */
+  }
 
-/* Date/Time icon - text color */
-.datetime-icon {
-  color: ${mocha.text};
-}
+  .daemon-health.slow {
+    color: #f9e2af; /* yellow */
+  }
 
-/* ============================================================================
-   Values (metric text)
-   ============================================================================ */
+  .daemon-health.unhealthy {
+    color: #f38ba8; /* red */
+  }
 
-.value {
-  color: ${mocha.text};
-  font-size: 9px;
-}
+  /* Date/Time Widget */
+  .datetime-widget {
+    padding: 4px 12px;
+    font-weight: 500;
+  }
 
-/* Specific value colors can be added here if needed */
-.cpu-value,
-.memory-value,
-.disk-value,
-.network-value,
-.temp-value,
-.volume-value,
-.battery-value,
-.bluetooth-value,
-.project-value,
-.daemon-value,
-.datetime-value {
-  color: ${mocha.text};
-}
+  /* Icon Transitions */
+  .widget-icon {
+    transition: color 0.3s ease-in-out;
+  }
 
-/* ============================================================================
-   Visibility and Transitions
-   ============================================================================ */
-
-/* Note: GTK CSS doesn't support attribute selectors like [visible="false"]
- * Visibility is controlled by the :visible property in eww.yuck widgets instead
- * Widgets with :visible false won't render at all */
-
-/* Smooth transitions for value changes */
-.value {
-  transition: color 0.2s ease;
-}
+  /* Popup Animations (handled by Eww revealer widget) */
+  revealer {
+    transition: all 0.2s ease-in-out;
+  }
 ''
