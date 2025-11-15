@@ -183,7 +183,7 @@ in
     # Eww styles (CSS/SCSS)
     # Generated from eww.scss.nix module
     xdg.configFile."eww/eww-top-bar/eww.scss".text = import ./eww-top-bar/eww.scss.nix {
-      inherit config lib;
+      inherit config lib pkgs;
     };
 
     # systemd user service for Eww top bar
