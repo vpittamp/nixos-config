@@ -22,12 +22,28 @@ Single Retina display (eDP-1), RustDesk, local audio. Requires `--impure` flag f
 
 ## 📁 Directory Structure
 
-- `flake.nix` - Entry point
-- `configurations/` - Target configs (wsl, hetzner-sway, m1, container)
+### Flake Organization (2025-11 Refactor)
+
+- `flake.nix` - Main entry point (110 lines, uses flake-parts)
+- `lib/` - Common helper functions
+  - `helpers.nix` - Reusable functions for system/home configs
+- `nixos/` - NixOS system configurations
+  - `default.nix` - System definitions (hetzner-sway, m1)
+- `home/` - Standalone Home Manager configs (macOS only)
+  - `default.nix` - Darwin home configuration
+- `packages/` - Container and VM image builds
+- `checks/` - Flake test checks
+- `devshells/` - Development shell environments
+
+### System Configuration
+
+- `configurations/` - Target configs (hetzner-sway, m1, container)
 - `hardware/` - Hardware-specific settings
 - `modules/` - Reusable system modules
 - `home-modules/` - User environment (editors, shell, terminal, tools)
 - `docs/` - Detailed documentation
+
+**See `FLAKE_REFACTOR_GUIDE.md` for migration details**
 
 ## 🎯 Configuration Targets
 

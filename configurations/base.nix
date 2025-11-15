@@ -151,11 +151,14 @@
     # Nix tools
     nix-prefetch-git
     nixpkgs-fmt
-    nh
+    nh  # Modern Nix helper with nom integration
+    nix-output-monitor  # Better build visualization (nom)
 
     # Custom scripts
     (pkgs.writeScriptBin "nixos-metadata" (builtins.readFile ../scripts/nixos-metadata))
     (pkgs.writeScriptBin "nixos-generation-info" (builtins.readFile ../scripts/nixos-generation-info))
+    (pkgs.writeScriptBin "nixos-build-status" (builtins.readFile ../scripts/nixos-build-status))
+    (pkgs.writeScriptBin "nixos-build-wrapper" (builtins.readFile ../scripts/nixos-build-wrapper))
     (pkgs.writeScriptBin "test-ai-agents-permissions" (builtins.readFile ../scripts/test-ai-agents-permissions))
   ];
 }
