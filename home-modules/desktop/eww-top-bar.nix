@@ -172,6 +172,18 @@ in
       executable = true;
     };
 
+    # Feature 061: WiFi status script
+    xdg.configFile."eww/eww-top-bar/scripts/wifi-status.sh" = {
+      source = ./eww-top-bar/scripts/wifi-status.sh;
+      executable = true;
+    };
+
+    # Feature 061: Volume status script
+    xdg.configFile."eww/eww-top-bar/scripts/volume-status.sh" = {
+      source = ./eww-top-bar/scripts/volume-status.sh;
+      executable = true;
+    };
+
     # Eww widget definitions (Yuck syntax)
     # Generated from eww.yuck.nix module
     xdg.configFile."eww/eww-top-bar/eww.yuck".text = import ./eww-top-bar/eww.yuck.nix {

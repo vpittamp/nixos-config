@@ -14,21 +14,21 @@
   * {
     all: unset;
     font-family: "JetBrainsMono Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 11px;
   }
 
   /* Top Bar Container */
   .top-bar {
     background-color: #1e1e2e; /* base */
     color: #cdd6f4; /* text */
-    padding: 2px 8px;
+    padding: 2px 6px;
   }
 
   /* Metric Blocks (widgets) */
   .metric-block {
-    padding: 4px 8px;
-    margin: 0 2px;
-    border-radius: 4px;
+    padding: 3px 6px;
+    margin: 0 1px;
+    border-radius: 3px;
     transition: background-color 0.15s ease-in-out;
   }
 

@@ -80,29 +80,29 @@
 ;; CPU Load Average widget
 (defwidget cpu-widget []
   (box :class "metric-block"
-       :spacing 6
+       :spacing 4
        (label :class "icon cpu-icon"
               :text "")
        (label :class "value cpu-value"
               :text {system_metrics.cpu_load ?: "0.00"})))
 
-;; Memory Usage widget
+;; Memory Usage widget (compact - percentage only)
 (defwidget memory-widget []
   (box :class "metric-block"
-       :spacing 6
+       :spacing 4
        (label :class "icon memory-icon"
               :text "")
        (label :class "value memory-value"
-              :text "''${system_metrics.mem_used_gb ?: '0.0'}G / ''${system_metrics.mem_total_gb ?: '0'}G (''${system_metrics.mem_used_pct ?: '0'}%)")))
+              :text "''${system_metrics.mem_used_pct ?: '0'}%")))
 
-;; Disk Usage widget
+;; Disk Usage widget (compact - percentage only)
 (defwidget disk-widget []
   (box :class "metric-block"
-       :spacing 6
+       :spacing 4
        (label :class "icon disk-icon"
               :text "")
        (label :class "value disk-value"
-              :text "''${system_metrics.disk_used_gb ?: '0'}G / ''${system_metrics.disk_total_gb ?: '0'}G (''${system_metrics.disk_used_pct ?: '0'}%)")))
+              :text "''${system_metrics.disk_used_pct ?: '0'}%")))
 
 ;; Network Traffic widget (with click handler to open network settings)
 (defwidget network-widget []
@@ -124,23 +124,23 @@
        (label :class "value temp-value"
               :text "''${system_metrics.temp_celsius ?: '0'}°C")))
 
-;; Feature 061: WiFi widget (US2)
+;; Feature 061: WiFi widget (US2 - compact)
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
     (box :class "metric-block wifi-widget"
-         :spacing 6
+         :spacing 4
          (label :class {wifi_status.connected ? "icon wifi-icon signal-strong" : "icon wifi-icon disconnected"}
                 :style "color: ''${wifi_status.color ?: '#6c7086'}"
                 :text {wifi_status.icon ?: ""})
          (label :class "value wifi-value"
                 :visible {wifi_status.connected ?: false}
-                :text "''${wifi_status.ssid ?: 'N/A'} (''${wifi_status.signal ?: '0'}%)"))))
+                :text "''${wifi_status.ssid ?: 'N/A'}"))))
 
 ;; Date/Time widget (with click handler to open calendar)
 (defwidget datetime-widget []
   (eventbox :onclick "gnome-calendar &"
     (box :class "metric-block"
-         :spacing 6
+         :spacing 4
          (label :class "icon datetime-icon"
                 :text "")
          (label :class "value datetime-value"
@@ -150,7 +150,7 @@
 (defwidget volume-widget-enhanced []
   (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
     (box :class "metric-block volume-widget"
-         :spacing 6
+         :spacing 4
          (label :class "icon volume-icon"
                 :text {volume_status.icon ?: "🔇"})
          (label :class "value volume-value"
@@ -248,28 +248,24 @@
 ;; Main bar layout (horizontal) - with is_primary parameter
 (defwidget main-bar [is_primary]
   (centerbox :class "top-bar"
-    ;; Left: System metrics
+    ;; Left: System metrics (compact)
     (box :class "left-block"
          :halign "start"
-         :spacing 12
+         :spacing 4
          (cpu-widget)
          (separator)
          (memory-widget)
          (separator)
          (disk-widget)
          (separator)
-         (network-widget)
-         (separator)
          (wifi-widget)
-         (separator)
-         (temperature-widget)
          (separator)
          (volume-widget-enhanced))
 
     ;; Center: Active Project and Daemon Health
     (box :class "center-block"
          :halign "center"
-         :spacing 12
+         :spacing 8
          (project-widget)
          (separator)
          (daemon-health-widget))
@@ -277,7 +273,7 @@
     ;; Right: Hardware status, Date/Time, and System Tray
     (box :class "right-block"
          :halign "end"
-         :spacing 12
+         :spacing 4
          (battery-widget)
          (separator)
          (bluetooth-widget)
