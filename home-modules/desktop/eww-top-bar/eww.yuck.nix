@@ -79,29 +79,29 @@
 
 ;; CPU Load Average widget
 (defwidget cpu-widget []
-  (box :class "metric-block"
-       :spacing 6
-       (label :class "icon cpu-icon"
+  (box :class "metric"
+       :spacing 5
+       (label :class "icon"
               :text "")
-       (label :class "value cpu-value"
+       (label :class "value"
               :text {system_metrics.cpu_load ?: "0.00"})))
 
 ;; Memory Usage widget (compact - percentage only)
 (defwidget memory-widget []
-  (box :class "metric-block"
-       :spacing 6
-       (label :class "icon memory-icon"
+  (box :class "metric"
+       :spacing 5
+       (label :class "icon"
               :text "")
-       (label :class "value memory-value"
+       (label :class "value"
               :text "''${system_metrics.mem_used_pct ?: '0'}%")))
 
 ;; Disk Usage widget (compact - percentage only)
 (defwidget disk-widget []
-  (box :class "metric-block"
-       :spacing 6
-       (label :class "icon disk-icon"
+  (box :class "metric"
+       :spacing 5
+       (label :class "icon"
               :text "")
-       (label :class "value disk-value"
+       (label :class "value"
               :text "''${system_metrics.disk_used_pct ?: '0'}%")))
 
 ;; Network Traffic widget (with click handler to open network settings)
@@ -124,29 +124,29 @@
        (label :class "value temp-value"
               :text "''${system_metrics.temp_celsius ?: '0'}°C")))
 
-;; Feature 061: WiFi widget (US2 - minimal, icon only)
+;; WiFi widget (icon only)
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
-    (box :class "metric-block wifi-widget"
-         (label :class {wifi_status.connected ? "icon wifi-icon signal-strong" : "icon wifi-icon disconnected"}
+    (box :class "metric"
+         (label :class "icon"
                 :style "color: ''${wifi_status.color ?: '#6c7086'}"
                 :text {wifi_status.icon ?: ""}))))
 
-;; Date/Time widget (with click handler to open calendar)
+;; Date/Time widget
 (defwidget datetime-widget []
   (eventbox :onclick "gnome-calendar &"
-    (box :class "metric-block"
-         :spacing 6
-         (label :class "icon datetime-icon"
+    (box :class "metric"
+         :spacing 5
+         (label :class "icon"
                 :text "")
-         (label :class "value datetime-value"
+         (label :class "value"
                 :text {datetime ?: "..."}))))
 
-;; Feature 061: Enhanced Volume widget with popup (US3 - icon only)
+;; Volume widget (icon only)
 (defwidget volume-widget-enhanced []
   (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
-    (box :class "metric-block volume-widget"
-         (label :class "icon volume-icon"
+    (box :class "metric"
+         (label :class "icon"
                 :text {volume_status.icon ?: "🔇"}))))
 
 ;; Legacy volume widget (kept for compatibility)
@@ -239,34 +239,36 @@
             :onclick "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle || pactl set-sink-mute @DEFAULT_SINK@ toggle"
             {volume_status.muted ? "Unmute" : "Mute"})))
 
-;; Main bar layout (horizontal) - with is_primary parameter
+;; Main bar layout - modeled after successful eww bars
 (defwidget main-bar [is_primary]
-  (centerbox :class "top-bar"
-    ;; Left: System metrics (grouped with consistent spacing)
-    (box :class "left-block"
-         :halign "start"
+  (centerbox :orientation "h"
+             :class "bar"
+    ;; Left: System metrics
+    (box :class "left"
+         :orientation "h"
          :space-evenly false
-         :spacing 8
+         :halign "start"
+         :spacing 10
          (cpu-widget)
          (memory-widget)
          (disk-widget)
-         (separator)
          (wifi-widget)
          (volume-widget-enhanced))
 
     ;; Center: Active Project
-    (box :class "center-block"
-         :halign "center"
+    (box :class "center"
+         :orientation "h"
          :space-evenly false
+         :halign "center"
          (project-widget))
 
-    ;; Right: Date/Time and System Tray (grouped with consistent spacing)
-    (box :class "right-block"
-         :halign "end"
+    ;; Right: Date/Time and System Tray
+    (box :class "right"
+         :orientation "h"
          :space-evenly false
-         :spacing 8
+         :halign "end"
+         :spacing 10
          (datetime-widget)
-         (separator)
          (systray-widget :is_primary is_primary))))
 
 ;; ============================================================================
