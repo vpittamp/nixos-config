@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Active i3pm project monitoring for Eww top bar widgets
 
-Listens to i3pm daemon IPC socket for project switch events and outputs JSON
-with active project name for deflisten consumption.
+Reads active project from i3pm state file and outputs JSON for deflisten consumption.
 
 Output format:
 {
@@ -17,59 +16,51 @@ Exits with code 0 on normal termination, 1 on errors.
 """
 
 import json
-import os
-import socket
 import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 
-# i3pm daemon IPC socket path (from i3pm daemon configuration)
-IPC_SOCKET_PATH = Path("/run/user") / str(os.getuid()) / "i3-project-daemon" / "ipc.sock"
+# i3pm active project state file
+ACTIVE_PROJECT_FILE = Path.home() / ".config" / "i3" / "active-project.json"
 
 
 class ActiveProjectMonitor:
-    """Monitor i3pm active project via IPC socket"""
+    """Monitor i3pm active project via state file"""
 
     def __init__(self):
         self.project = "Global"
         self.active = False
 
-        if not IPC_SOCKET_PATH.exists():
-            print(json.dumps({"project": "Global", "active": False, "error": "i3pm daemon not running"}), flush=True)
-            sys.exit(1)
-
-    def _query_daemon(self) -> Optional[dict]:
-        """Query i3pm daemon for current project state"""
+    def _read_project_file(self) -> Optional[dict]:
+        """Read active project from state file"""
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-                sock.settimeout(1.0)  # 1 second timeout
-                sock.connect(str(IPC_SOCKET_PATH))
+            if not ACTIVE_PROJECT_FILE.exists():
+                return None
 
-                # Send query command (JSON-RPC style)
-                query = json.dumps({"command": "get_active_project"})
-                sock.sendall(query.encode() + b"\n")
+            with open(ACTIVE_PROJECT_FILE, "r") as f:
+                data = json.load(f)
 
-                # Receive response
-                response = sock.recv(4096).decode()
-                return json.loads(response)
-        except (socket.error, json.JSONDecodeError, Exception) as e:
-            # Daemon unavailable or error - fallback to global mode
+            if not data or "project_name" not in data:
+                return None
+
+            return data
+
+        except (json.JSONDecodeError, Exception):
             return None
 
     def _update_state(self):
-        """Update active project state from daemon"""
-        result = self._query_daemon()
+        """Update active project state from file"""
+        result = self._read_project_file()
 
-        if result and result.get("success"):
-            project_name = result.get("project", "")
-            self.active = bool(project_name)
-            self.project = project_name if project_name else "Global"
+        if result and result.get("project_name"):
+            self.project = result["project_name"]
+            self.active = True
         else:
-            # Fallback: no active project
-            self.active = False
+            # No active project - global mode
             self.project = "Global"
+            self.active = False
 
         self._output_state()
 
@@ -82,13 +73,11 @@ class ActiveProjectMonitor:
         print(json.dumps(state), flush=True)
 
     def run(self):
-        """Poll daemon for active project updates"""
+        """Poll state file for active project updates"""
         # Output initial state
         self._update_state()
 
         # Poll every 2 seconds for project changes
-        # Note: This is polling-based since i3pm daemon doesn't provide event streaming yet
-        # Future: Implement deflisten with daemon event stream for real-time updates
         while True:
             time.sleep(2)
             self._update_state()
