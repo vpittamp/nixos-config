@@ -6,7 +6,7 @@
   # List of PWA sites with static ULID identifiers
   # App Registry Fields:
   #   - app_scope: "scoped" (project-specific) or "global" (shared across projects)
-  #   - preferred_workspace: workspace number (50-70 for PWAs to avoid conflicts with standard apps on 1-9)
+  #   - preferred_workspace: workspace number (50+ for PWAs, no upper bound; regular apps use 1-50)
   #   - preferred_monitor_role: (optional) "primary", "secondary", or "tertiary" - Feature 001: User Story 3
   #       If omitted, role is inferred from workspace number (WS 1-2→primary, 3-5→secondary, 6+→tertiary)
   pwaSites = [
@@ -237,6 +237,70 @@
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 63;
+    }
+
+    # Home Assistant
+    {
+      name = "Home Assistant";
+      url = "http://localhost:8123";
+      domain = "localhost";
+      icon = "/etc/nixos/assets/icons/home-assistant.svg";
+      description = "Home Assistant - Open source home automation";
+      categories = "Network;Utility;";
+      keywords = "home;automation;iot;smart-home;homeassistant;";
+      scope = "http://localhost:8123/";
+      ulid = "3TH05T0Z8NQQTVZQ86ZNNQDTPA";  # Generated 2025-11-15 (valid ULID format)
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 64;
+    }
+
+    # 1Password
+    {
+      name = "1Password";
+      url = "https://pittampalli.1password.com/home";
+      domain = "pittampalli.1password.com";
+      icon = "/etc/nixos/assets/icons/1password.svg";
+      description = "1Password web application";
+      categories = "Network;";
+      keywords = "1password;password;vault;security;";
+      scope = "https://pittampalli.1password.com/home/";
+      ulid = "2V60G2X1JTZRG6Y41YTKRG2WWW";  # Generated 2025-11-15
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 65;
+    }
+
+    # Perplexity
+    {
+      name = "Perplexity";
+      url = "https://www.perplexity.ai";
+      domain = "www.perplexity.ai";
+      icon = "/etc/nixos/assets/icons/perplexity.svg";
+      description = "Perplexity - AI-powered search engine";
+      categories = "Network;Development;";
+      keywords = "perplexity;ai;search;research;assistant;chatbot;";
+      scope = "https://www.perplexity.ai/";
+      ulid = "7YFECJA7EMY52HNX7BRFVMJ6MC";  # Generated 2025-11-15 (valid ULID format)
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 66;
+    }
+
+    # VS Code Web
+    {
+      name = "VS Code Web";
+      url = "https://vscode.dev";
+      domain = "vscode.dev";
+      icon = "/etc/nixos/assets/icons/vscode-dev.svg";
+      description = "VS Code for the Web - Online code editor";
+      categories = "Development;Network;";
+      keywords = "vscode;code;editor;development;web;ide;browser;";
+      scope = "https://vscode.dev/";
+      ulid = "4RV2WXPQBXGKS37MXKGX451A11";  # Generated 2025-11-15
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 67;
     }
   ];
 

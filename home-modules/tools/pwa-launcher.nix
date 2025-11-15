@@ -37,7 +37,7 @@ let
     PWA_ID=""
 
     # Method 1: Check if NAME is already a ULID (26 character ULID format)
-    if [[ "$NAME" =~ ^01[0-9A-HJKMNP-TV-Z]{24}$ ]]; then
+    if [[ "$NAME" =~ ^[0-9A-HJKMNP-TV-Z]{26}$ ]]; then
     PWA_ID="$NAME"
   fi
 
@@ -45,7 +45,7 @@ let
     if [[ -z "$PWA_ID" ]]; then
       PWA_ID=$(${pkgs.firefoxpwa}/bin/firefoxpwa profile list 2>/dev/null | \
                grep -E "^- $NAME:" | \
-               grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | \
+               grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | \
                head -1)
     fi
 
@@ -55,10 +55,10 @@ let
         DESKTOP_FILE=$(grep -l "^Name=$NAME\(\s\|$\)" ~/.local/share/applications/$pattern 2>/dev/null | head -1)
         if [[ -n "$DESKTOP_FILE" ]]; then
           # Try extracting ULID from Exec line
-          PWA_ID=$(grep "^Exec=" "$DESKTOP_FILE" | grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | head -1)
+          PWA_ID=$(grep "^Exec=" "$DESKTOP_FILE" | grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | head -1)
           # Also try StartupWMClass field
           if [[ -z "$PWA_ID" ]]; then
-            PWA_ID=$(grep "^StartupWMClass=" "$DESKTOP_FILE" | grep -oP '01[0-9A-HJKMNP-TV-Z]{26}' | head -1)
+            PWA_ID=$(grep "^StartupWMClass=" "$DESKTOP_FILE" | grep -oP '[0-9A-HJKMNP-TV-Z]{26}' | head -1)
           fi
           [[ -n "$PWA_ID" ]] && break
         fi

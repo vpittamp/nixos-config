@@ -373,9 +373,21 @@ let
     (lib.length (lib.filter (n: n == name) appNames)) > 1
   ) (lib.unique appNames);
 
-  # Additional validation: check workspace range (1-70 to accommodate PWAs on WS 50-64)
+  # Additional validation: check workspace range
+  # Regular apps (non-PWA): 1-50
+  # PWA apps (name ends with -pwa): 50+ (no upper bound)
   invalidWorkspaces = lib.filter (app:
-    app ? preferred_workspace && (app.preferred_workspace < 1 || app.preferred_workspace > 70)
+    if app ? preferred_workspace then
+      let
+        isPWA = lib.hasSuffix "-pwa" app.name;
+        ws = app.preferred_workspace;
+      in
+        if isPWA then
+          ws < 50  # PWAs must be >= 50, no upper limit
+        else
+          ws < 1 || ws > 50  # Regular apps must be 1-50
+    else
+      false
   ) applications;
 
   # Additional validation: check name format (kebab-case or reverse-domain notation)
@@ -389,7 +401,16 @@ let
     if duplicates != [] then
       throw "Duplicate application names found: ${builtins.concatStringsSep ", " duplicates}"
     else if invalidWorkspaces != [] then
-      throw "Invalid workspace numbers (must be 1-20): ${builtins.concatStringsSep ", " (map (app: app.name) invalidWorkspaces)}"
+      let
+        invalidList = map (app:
+          let
+            isPWA = lib.hasSuffix "-pwa" app.name;
+            ws = if app ? preferred_workspace then app.preferred_workspace else 0;
+          in
+            "${app.name} (WS ${toString ws}, ${if isPWA then "PWA must be >=50" else "regular app must be 1-50"})"
+        ) invalidWorkspaces;
+      in
+        throw "Invalid workspace numbers:\n  ${builtins.concatStringsSep "\n  " invalidList}"
     else if invalidNames != [] then
       throw "Invalid application names (must be kebab-case or reverse-domain): ${builtins.concatStringsSep ", " (map (app: app.name) invalidNames)}"
     else

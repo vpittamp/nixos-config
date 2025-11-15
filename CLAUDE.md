@@ -167,6 +167,21 @@ pwa-list             # List configured PWAs
 
 **Add PWA**: Edit `home-modules/tools/firefox-pwas-declarative.nix` → Rebuild → `pwa-install-all`
 
+### Workspace Allocation
+
+**Regular Applications** (1-50):
+- Standard apps use workspaces 1-50
+- Typical allocation: Core apps on 1-9, utilities on 10+
+- Hard limit: 50 (enforced by validation)
+
+**PWAs** (50+):
+- PWAs use workspaces 50 and above
+- No upper bound (can use 50, 51, 52, ..., 100+)
+- Typical range: 50-70 for common PWAs
+- Example: YouTube (50), Claude (52), GitHub (54), Gmail (56)
+
+**Rationale**: This separation prevents conflicts between regular apps and PWAs, allowing unlimited PWA expansion while keeping core apps in the 1-50 range.
+
 ## 🎯 Project Management Workflow (i3pm)
 
 Project-scoped workspace management. Switch contexts, auto show/hide apps.

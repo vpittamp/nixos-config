@@ -9,21 +9,6 @@ let
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
   pwas = pwaSitesConfig.pwaSites;
 
-  # T076: pwa-install-all command
-  pwaInstallAll = pkgs.writeShellScriptBin "pwa-install-all" ''
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    echo "Installing all declared PWAs..."
-    echo ""
-
-    # Trigger home-manager activation
-    home-manager switch --flake /etc/nixos
-
-    echo ""
-    echo "PWA installation complete. Run 'pwa-list' to verify."
-  '';
-
   # T077: pwa-list command
   pwaList = pkgs.writeShellScriptBin "pwa-list" ''
     #!/usr/bin/env bash
@@ -92,7 +77,7 @@ let
       echo "✓ All PWAs configured correctly"
       exit 0
     else
-      echo "✗ $MISSING PWAs missing - run 'pwa-install-all' to install"
+      echo "✗ $MISSING PWAs missing - run 'sudo nixos-rebuild switch' to install"
       exit 1
     fi
   '';
@@ -173,7 +158,6 @@ This system uses DECLARATIVE PWA installation via NixOS home-manager.
 
 ### Commands
 
-- pwa-install-all: Install all declared PWAs
 - pwa-list: List configured and installed PWAs
 - pwa-validate: Validate PWA configuration
 - pwa-get-ids: Get PWA IDs for taskbar pinning
@@ -206,7 +190,6 @@ in
 {
   home.packages = [
     pkgs.firefoxpwa
-    pwaInstallAll
     pwaList
     pwaValidate
     pwaGetIds

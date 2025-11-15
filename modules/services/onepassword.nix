@@ -4,7 +4,8 @@
 
 let
   # Detect if we're in a headless environment (no GUI)
-  hasGui = config.services.xserver.enable or false;
+  # Check for both X11 and Wayland/Sway GUI environments
+  hasGui = (config.services.xserver.enable or false) || (config.services.sway.enable or false);
 in
 {
   # 1Password packages - GUI only if desktop is available
@@ -16,15 +17,18 @@ in
 
   # Enable 1Password system services with proper NixOS configuration
   programs._1password.enable = true;
-  programs._1password-gui = {
-    enable = hasGui;  # Only enable GUI program if desktop is available
+  programs._1password-gui = lib.mkIf hasGui {
+    enable = true;
     # This enables polkit integration for system authentication
     # The user can unlock 1Password with system password/fingerprint
-    polkitPolicyOwners = lib.optionals hasGui [ "vpittamp" ];
+    polkitPolicyOwners = [ "vpittamp" ];
   };
   
   # Note: polkit rules are automatically configured by polkitPolicyOwners
   # No manual polkit configuration needed - NixOS handles this properly
+
+  # Security wrapper for 1Password BrowserSupport is automatically created by
+  # programs._1password-gui when enabled - no manual configuration needed
 
   # Git configuration - removed as it's handled in home-manager
   # The credential helpers are configured in home-modules/tools/git.nix
