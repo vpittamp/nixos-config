@@ -38,9 +38,9 @@
 
   /* Metric Blocks (widgets) */
   .metric-block {
-    padding: 3px 6px;
-    margin: 0 1px;
-    border-radius: 3px;
+    padding: 2px 4px;
+    margin: 0;
+    border-radius: 2px;
     transition: background-color 0.15s ease-in-out;
   }
 

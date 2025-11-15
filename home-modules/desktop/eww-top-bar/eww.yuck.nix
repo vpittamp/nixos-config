@@ -80,7 +80,7 @@
 ;; CPU Load Average widget
 (defwidget cpu-widget []
   (box :class "metric-block"
-       :spacing 4
+       :spacing 2
        (label :class "icon cpu-icon"
               :text "")
        (label :class "value cpu-value"
@@ -89,7 +89,7 @@
 ;; Memory Usage widget (compact - percentage only)
 (defwidget memory-widget []
   (box :class "metric-block"
-       :spacing 4
+       :spacing 2
        (label :class "icon memory-icon"
               :text "")
        (label :class "value memory-value"
@@ -98,7 +98,7 @@
 ;; Disk Usage widget (compact - percentage only)
 (defwidget disk-widget []
   (box :class "metric-block"
-       :spacing 4
+       :spacing 2
        (label :class "icon disk-icon"
               :text "")
        (label :class "value disk-value"
@@ -124,37 +124,32 @@
        (label :class "value temp-value"
               :text "''${system_metrics.temp_celsius ?: '0'}°C")))
 
-;; Feature 061: WiFi widget (US2 - compact)
+;; Feature 061: WiFi widget (US2 - minimal, icon only)
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
     (box :class "metric-block wifi-widget"
-         :spacing 4
+         :spacing 2
          (label :class {wifi_status.connected ? "icon wifi-icon signal-strong" : "icon wifi-icon disconnected"}
                 :style "color: ''${wifi_status.color ?: '#6c7086'}"
-                :text {wifi_status.icon ?: ""})
-         (label :class "value wifi-value"
-                :visible {wifi_status.connected ?: false}
-                :text "''${wifi_status.ssid ?: 'N/A'}"))))
+                :text {wifi_status.icon ?: ""}))))
 
 ;; Date/Time widget (with click handler to open calendar)
 (defwidget datetime-widget []
   (eventbox :onclick "gnome-calendar &"
     (box :class "metric-block"
-         :spacing 4
+         :spacing 2
          (label :class "icon datetime-icon"
                 :text "")
          (label :class "value datetime-value"
                 :text {datetime ?: "..."}))))
 
-;; Feature 061: Enhanced Volume widget with popup (US3)
+;; Feature 061: Enhanced Volume widget with popup (US3 - icon only)
 (defwidget volume-widget-enhanced []
   (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
     (box :class "metric-block volume-widget"
-         :spacing 4
+         :spacing 2
          (label :class "icon volume-icon"
-                :text {volume_status.icon ?: "🔇"})
-         (label :class "value volume-value"
-                :text "''${volume_status.volume ?: '0'}%"))))
+                :text {volume_status.icon ?: "🔇"}))))
 
 ;; Legacy volume widget (kept for compatibility)
 (defwidget volume-widget []
@@ -248,38 +243,27 @@
 ;; Main bar layout (horizontal) - with is_primary parameter
 (defwidget main-bar [is_primary]
   (centerbox :class "top-bar"
-    ;; Left: System metrics (compact)
+    ;; Left: System metrics (minimal)
     (box :class "left-block"
          :halign "start"
-         :spacing 4
+         :spacing 3
          (cpu-widget)
-         (separator)
          (memory-widget)
-         (separator)
          (disk-widget)
-         (separator)
          (wifi-widget)
-         (separator)
          (volume-widget-enhanced))
 
-    ;; Center: Active Project and Daemon Health
+    ;; Center: Active Project
     (box :class "center-block"
          :halign "center"
-         :spacing 8
-         (project-widget)
-         (separator)
-         (daemon-health-widget))
+         :spacing 6
+         (project-widget))
 
-    ;; Right: Hardware status, Date/Time, and System Tray
+    ;; Right: Date/Time and System Tray
     (box :class "right-block"
          :halign "end"
-         :spacing 4
-         (battery-widget)
-         (separator)
-         (bluetooth-widget)
-         (separator)
+         :spacing 3
          (datetime-widget)
-         (separator)
          (systray-widget :is_primary is_primary))))
 
 ;; ============================================================================
