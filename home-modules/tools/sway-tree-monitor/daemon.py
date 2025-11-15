@@ -14,7 +14,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from i3ipc import aio
 from i3ipc import Event
@@ -86,6 +86,9 @@ class SwayTreeMonitorDaemon:
         self._snapshot_counter = 0
         self._start_time = time.time()
         self._running = False
+        self._background_tasks: List[asyncio.Task] = []
+        self._shutdown_task: Optional[asyncio.Task] = None
+        self._shutdown_complete = False
 
         # Sync marker tracking (Feature 069 - tick-event-based sync)
         self._pending_sync_markers: Dict[str, asyncio.Event] = {}
@@ -125,8 +128,9 @@ class SwayTreeMonitorDaemon:
             logger.info(f"RPC server listening on {self.rpc_server.socket_path}")
 
             # Start background tasks (Phase 6 - Performance)
-            asyncio.create_task(self._periodic_cache_cleanup())
-            asyncio.create_task(self._periodic_memory_monitor())
+            cache_task = asyncio.create_task(self._periodic_cache_cleanup())
+            memory_task = asyncio.create_task(self._periodic_memory_monitor())
+            self._background_tasks = [cache_task, memory_task]
             logger.info("Background tasks started (cache cleanup, memory monitoring)")
 
             # Mark as running
@@ -142,16 +146,46 @@ class SwayTreeMonitorDaemon:
 
     async def stop(self):
         """Graceful shutdown"""
+        if self._shutdown_complete:
+            return
+
+        current_task = asyncio.current_task()
+        if self._shutdown_task and self._shutdown_task is not current_task:
+            await self._shutdown_task
+            return
+
+        if self._shutdown_task is current_task:
+            return
+
+        self._shutdown_task = current_task
+
+        try:
+            await self._shutdown()
+        finally:
+            self._shutdown_complete = True
+            self._shutdown_task = None
+
+    async def _shutdown(self):
         logger.info("Stopping daemon...")
         self._running = False
 
-        # Stop RPC server
+        if self.connection:
+            self.connection.main_quit()
+
+        for task in self._background_tasks:
+            task.cancel()
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            self._background_tasks.clear()
+
         await self.rpc_server.stop()
 
-        # Optionally persist buffer
         if self.buffer.persistence_dir:
-            await self.buffer.save_to_disk()
-            logger.info("Buffer persisted to disk")
+            try:
+                await self.buffer.save_to_disk()
+                logger.info("Buffer persisted to disk")
+            except Exception as exc:
+                logger.warning(f"Failed to persist buffer: {exc}")
 
         logger.info("Daemon stopped")
 
@@ -226,7 +260,8 @@ class SwayTreeMonitorDaemon:
                 timestamp_ms=timestamp_ms,
                 action_type=action_type,
                 binding_symbol=symbol,
-                binding_command=command
+                binding_command=command,
+                input_type=getattr(event.binding, 'input_type', None) if hasattr(event, 'binding') else None
             )
 
             # Track for correlation
@@ -352,7 +387,7 @@ class SwayTreeMonitorDaemon:
 
             # Refine confidence scores using multi-factor scoring
             refined_correlations = []
-            competing_actions = len(correlations) - 1  # Other correlations are competing
+            competing_actions = max(0, len(correlations) - 1)  # Other correlations are competing
             for correlation in correlations:
                 refined = update_correlation_with_scoring(
                     correlation=correlation,
@@ -363,7 +398,7 @@ class SwayTreeMonitorDaemon:
                 refined_correlations.append(refined)
 
             # If this event has a high-confidence correlation, start a cascade chain
-            if refined_correlations and refined_correlations[0].confidence >= 0.7:
+            if refined_correlations and refined_correlations[0].confidence_score >= 0.7:
                 self.cascade_tracker.start_cascade(primary_event_id=0)  # Will be assigned by buffer
 
             # Create TreeEvent with correlations

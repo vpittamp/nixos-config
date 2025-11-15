@@ -289,14 +289,18 @@ class RPCServer:
             # Serialize correlations
             correlations_list = []
             for corr in event.correlations:
+                action = corr.user_action
                 correlations_list.append({
                     'action': {
-                        'timestamp_ms': corr.action.timestamp_ms,
-                        'action_type': corr.action.action_type.name,
-                        'binding_command': corr.action.binding_command,
-                        'input_type': corr.action.input_type
+                        'timestamp_ms': action.timestamp_ms,
+                        'action_type': action.action_type.name,
+                        'binding_command': action.binding_command,
+                        'binding_symbol': action.binding_symbol,
+                        'input_type': action.input_type or 'unknown',
+                        'source': action.source
                     },
-                    'confidence': corr.confidence,
+                    'confidence': corr.confidence_score,
+                    'confidence_level': corr.confidence_level or 'unknown',
                     'time_delta_ms': corr.time_delta_ms,
                     'reasoning': corr.reasoning
                 })
@@ -372,15 +376,18 @@ class RPCServer:
         # Serialize correlations
         correlations_list = []
         for corr in event.correlations:
+            action = corr.user_action
             correlations_list.append({
                 'action': {
-                    'timestamp_ms': corr.action.timestamp_ms,
-                    'action_type': corr.action.action_type.name,
-                    'binding_command': corr.action.binding_command,
-                    'input_type': corr.action.input_type
+                    'timestamp_ms': action.timestamp_ms,
+                    'action_type': action.action_type.name,
+                    'binding_command': action.binding_command,
+                    'binding_symbol': action.binding_symbol,
+                    'input_type': action.input_type or 'unknown',
+                    'source': action.source
                 },
-                'confidence': corr.confidence,
-                'confidence_level': corr.confidence_level.name if hasattr(corr, 'confidence_level') else 'unknown',
+                'confidence': corr.confidence_score,
+                'confidence_level': corr.confidence_level or 'unknown',
                 'time_delta_ms': corr.time_delta_ms,
                 'reasoning': corr.reasoning
             })

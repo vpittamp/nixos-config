@@ -312,6 +312,12 @@ class UserAction:
     """Mouse Y coordinate"""
 
     # Metadata
+    input_type: Optional[str] = None
+    """
+    Input source type (e.g., 'keybinding', 'mouse', 'ipc'). Mirrors Sway binding
+    input_type for richer correlation context.
+    """
+
     source: str = "sway"
     """
     Source of action event:
@@ -384,6 +390,12 @@ class EventCorrelation:
     - 1: Secondary effect (triggered by primary)
     - 2: Tertiary effect, etc.
     """
+
+    confidence_level: Optional[str] = None
+    """Textual confidence level label (e.g., 'very likely', 'likely')."""
+
+    reasoning: Optional[str] = None
+    """Human-readable explanation of the confidence score."""
 
     def get_confidence_label(self) -> str:
         """Human-readable confidence interpretation"""

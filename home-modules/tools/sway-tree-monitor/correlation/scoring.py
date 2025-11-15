@@ -37,7 +37,7 @@ def calculate_confidence(
     time_delta_ms: int,
     competing_actions: int = 0,
     cascade_depth: int = 0
-) -> Tuple[float, ConfidenceLevel, str]:
+) -> Tuple[float, ConfidenceLevel, str, Dict[str, float]]:
     """
     Calculate multi-factor confidence score for correlation.
 
@@ -49,7 +49,7 @@ def calculate_confidence(
         cascade_depth: Depth in cascade chain (0 = primary, 1+ = secondary)
 
     Returns:
-        Tuple of (confidence_score, confidence_level, reasoning)
+        Tuple of (confidence_score, confidence_level, reasoning, factor_scores)
     """
     # Factor 1: Temporal Proximity (40%)
     temporal_score = _score_temporal_proximity(time_delta_ms)
@@ -84,7 +84,14 @@ def calculate_confidence(
         time_delta_ms, action.action_type, event_type, competing_actions, cascade_depth
     )
 
-    return final_score, confidence_level, reasoning
+    factor_scores = {
+        'temporal': temporal_score,
+        'semantic': semantic_score,
+        'exclusivity': exclusivity_score,
+        'cascade': cascade_score
+    }
+
+    return final_score, confidence_level, reasoning, factor_scores
 
 
 def _score_temporal_proximity(time_delta_ms: int) -> float:
@@ -306,18 +313,23 @@ def update_correlation_with_scoring(
     Returns:
         Updated correlation with refined confidence score
     """
-    new_confidence, confidence_level, reasoning = calculate_confidence(
-        action=correlation.action,
+    new_confidence, confidence_level, reasoning, factor_scores = calculate_confidence(
+        action=correlation.user_action,
         event_type=event_type,
         time_delta_ms=correlation.time_delta_ms,
         competing_actions=competing_actions,
         cascade_depth=cascade_depth
     )
 
-    # Create new correlation with updated values
-    return EventCorrelation(
-        action=correlation.action,
-        confidence=new_confidence,
-        time_delta_ms=correlation.time_delta_ms,
-        reasoning=reasoning
-    )
+    correlation.confidence_score = new_confidence
+    correlation.confidence_level = confidence_level.value
+    correlation.reasoning = reasoning
+    correlation.cascade_level = cascade_depth
+    correlation.confidence_factors = {
+        'temporal': factor_scores['temporal'] * 100,
+        'semantic': factor_scores['semantic'] * 100,
+        'exclusivity': factor_scores['exclusivity'] * 100,
+        'cascade': factor_scores['cascade'] * 100,
+    }
+
+    return correlation
