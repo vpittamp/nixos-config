@@ -33,11 +33,14 @@ let
   ]);
 
   # Daemon package (Feature 061: Unified mark format)
-  daemonSrc = ../../home-modules/desktop/i3-project-event-daemon;
+  daemonSrc = builtins.path {
+    path = ../../home-modules/desktop/i3-project-event-daemon;
+    name = "i3pm-daemon-src";
+  };
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.8";  # Feature 058: Add Event.MODE subscription for workspace mode visual feedback
+    version = "1.7.9-1763190532";  # Fix: Add workspace_num field for SavedWindow validation (retry with alias)
     src = daemonSrc;
 
     installPhase = ''

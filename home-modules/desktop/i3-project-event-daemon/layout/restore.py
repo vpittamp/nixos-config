@@ -866,7 +866,11 @@ async def restore_workflow(
         for window_data in ws_layout.windows:
             # Parse as SavedWindow (supports both dict and WindowPlaceholder formats)
             if isinstance(window_data, dict):
-                saved_window = SavedWindow(**window_data)
+                # Add workspace from parent workspace_layout (not stored in individual windows)
+                # Use 'workspace_num' alias for Pydantic v2 (alias is required when passing dict)
+                window_data_with_ws = {**window_data, 'workspace_num': ws_layout.workspace_num}
+                logger.debug(f"DEBUG: Creating SavedWindow with keys: {list(window_data_with_ws.keys())}")
+                saved_window = SavedWindow(**window_data_with_ws)
             else:
                 # Already a WindowPlaceholder or SavedWindow - extract app_registry_name
                 if hasattr(window_data, 'app_registry_name'):

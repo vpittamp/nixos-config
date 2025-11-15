@@ -69,7 +69,7 @@ class LayoutPersistence:
         # Feature 076 T020: Log mark metadata statistics
         windows_with_marks = 0
         total_windows = 0
-        for workspace_data in snapshot.workspaces:
+        for workspace_data in snapshot.workspace_layouts:
             for window in workspace_data.windows:
                 total_windows += 1
                 if hasattr(window, 'marks_metadata') and window.marks_metadata:

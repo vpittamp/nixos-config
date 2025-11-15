@@ -290,7 +290,7 @@
 
   # Enable 1Password password management
   services.onepassword-password-management = {
-    enable = true;
+    enable = false;
     users.vpittamp = {
       enable = true;
       passwordReference = "op://CLI/NixOS User Password/password";
