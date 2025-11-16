@@ -98,9 +98,10 @@ export async function findNextFeatureNumber(
   }
 
   // 3. Check ALL local branches with numeric prefix
+  // Note: git branch prefixes are: * (current), + (checked out in another worktree), space (normal)
   try {
     const localOutput = await execGit(["branch", "--list"], repoRoot);
-    const localPattern = /^\*?\s*(\d+)-/gm;
+    const localPattern = /^[\*\+]?\s*(\d+)-/gm;
     let match;
     while ((match = localPattern.exec(localOutput)) !== null) {
       numbers.push(parseInt(match[1], 10));
