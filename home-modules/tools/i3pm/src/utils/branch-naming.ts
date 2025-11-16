@@ -109,7 +109,19 @@ export async function findNextFeatureNumber(
     // No matching local branches
   }
 
-  // 4. Check ALL specs directories with numeric prefix
+  // 4. Check worktree branches (not visible in regular branch list)
+  try {
+    const worktreeOutput = await execGit(["worktree", "list", "--porcelain"], repoRoot);
+    const worktreePattern = /^branch refs\/heads\/(\d+)-/gm;
+    let match;
+    while ((match = worktreePattern.exec(worktreeOutput)) !== null) {
+      numbers.push(parseInt(match[1], 10));
+    }
+  } catch {
+    // No worktrees or git worktree not supported
+  }
+
+  // 5. Check ALL specs directories with numeric prefix
   try {
     const specsDir = `${repoRoot}/specs`;
     for await (const entry of Deno.readDir(specsDir)) {
