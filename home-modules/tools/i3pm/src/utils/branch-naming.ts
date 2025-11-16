@@ -103,8 +103,17 @@ export async function findNextFeatureNumber(
     const localOutput = await execGit(["branch", "--list"], repoRoot);
     const localPattern = /^[\*\+]?\s*(\d+)-/gm;
     let match;
+    const localNums: number[] = [];
     while ((match = localPattern.exec(localOutput)) !== null) {
-      numbers.push(parseInt(match[1], 10));
+      localNums.push(parseInt(match[1], 10));
+    }
+    numbers.push(...localNums);
+
+    if (Deno.env.get("I3PM_DEBUG")) {
+      console.error(`[DEBUG] Local branches: found ${localNums.length} nums, max=${Math.max(...localNums, 0)}`);
+      // Show last 5 lines of output for debugging
+      const lastLines = localOutput.trim().split("\n").slice(-5);
+      console.error(`[DEBUG] Last 5 branches: ${lastLines.join(" | ")}`);
     }
   } catch {
     // No matching local branches
