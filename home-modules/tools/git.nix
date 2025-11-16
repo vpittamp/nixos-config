@@ -37,6 +37,9 @@
       core = {
         editor = "nvim";
         autocrlf = "input";
+        # Explicitly use 1Password SSH agent for git operations
+        # This ensures SSH auth works even in subprocesses without SSH_AUTH_SOCK
+        sshCommand = "ssh -o IdentityAgent=~/.1password/agent.sock";
       };
       color.ui = true;
       push.autoSetupRemote = true;
