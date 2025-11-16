@@ -108,13 +108,6 @@ export async function findNextFeatureNumber(
       localNums.push(parseInt(match[1], 10));
     }
     numbers.push(...localNums);
-
-    if (Deno.env.get("I3PM_DEBUG")) {
-      console.error(`[DEBUG] Local branches: found ${localNums.length} nums, max=${Math.max(...localNums, 0)}`);
-      // Show last 5 lines of output for debugging
-      const lastLines = localResult.stdout.trim().split("\n").slice(-5);
-      console.error(`[DEBUG] Last 5 branches: ${lastLines.join(" | ")}`);
-    }
   } catch {
     // No matching local branches
   }
@@ -149,12 +142,6 @@ export async function findNextFeatureNumber(
 
   // Find highest number and return next
   const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
-
-  // Debug output (remove after fixing)
-  if (Deno.env.get("I3PM_DEBUG")) {
-    console.error(`[DEBUG] Found ${numbers.length} numbers, max=${maxNumber}, next=${maxNumber + 1}`);
-  }
-
   return maxNumber + 1;
 }
 

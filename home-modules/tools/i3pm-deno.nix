@@ -10,7 +10,7 @@ let
   # Feature 059: Unified window view - show all windows including scratchpad by default
   # Feature 060: Project-centric tree view - group windows by project
   # Feature 061: Unified mark format - only project:NAME:ID
-  version = "2.8.4";  # Feature 077: Fix execGit result access (.stdout)
+  version = "2.9.0";  # Feature 077: Git worktree project management with speckit integration
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
