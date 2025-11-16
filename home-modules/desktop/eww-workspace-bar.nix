@@ -46,7 +46,7 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel-v16";  # Feature 078: Add project_list preview with fuzzy matching
+    name = "sway-workspace-panel-v20";  # Fix GTK CSS - remove unsupported align-items
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = builtins.path {
       path = ../tools/sway-workspace-panel;
@@ -363,14 +363,17 @@ ${workspacePreviewDefs}
                    :orientation "h"
                    :space-evenly false
                    :spacing 8
+                   :valign "center"
                 (label :class "project-icon"
                        :text {project.icon})
                 (label :class "project-name"
                        :text {project.display_name}
                        :limit-width 30
-                       :truncate true)
+                       :truncate true
+                       :hexpand true)
                 (label :class "project-time"
-                       :text {project.relative_time}))
+                       :text {project.relative_time}
+                       :halign "end"))
               ;; Second row: worktree badge, parent, git status
               (box :class "project-item-metadata"
                    :orientation "h"
@@ -384,19 +387,20 @@ ${workspacePreviewDefs}
                        :text {"← " + project.parent_project_name}
                        :visible {project.parent_project_name != "null" && project.parent_project_name != ""})
                 ;; Git status (only show if present and not null)
+                ;; Use Elvis operator (?:) for null-safe access - Eww evaluates expressions even in non-visible widgets
                 (box :class "project-git-indicators"
                      :orientation "h"
                      :space-evenly false
                      :spacing 4
-                     :visible {project.git_status != "null"}
-                  (label :class {project.git_status.is_clean ? "project-git-clean" : "project-git-dirty"}
-                         :text {project.git_status.is_clean ? "✓ clean" : "✗ dirty"})
+                     :visible {project.git_status != "null" && project.git_status != ""}
+                  (label :class {(project.git_status ?: {"is_clean": true}).is_clean ? "project-git-clean" : "project-git-dirty"}
+                         :text {(project.git_status ?: {"is_clean": true}).is_clean ? "✓ clean" : "✗ dirty"})
                   (label :class "project-git-ahead"
-                         :text {"↑" + project.git_status.ahead_count}
-                         :visible {project.git_status.ahead_count > 0})
+                         :text {"↑" + (project.git_status ?: {"ahead_count": 0}).ahead_count}
+                         :visible {(project.git_status ?: {"ahead_count": 0}).ahead_count > 0})
                   (label :class "project-git-behind"
-                         :text {"↓" + project.git_status.behind_count}
-                         :visible {project.git_status.behind_count > 0}))
+                         :text {"↓" + (project.git_status ?: {"behind_count": 0}).behind_count}
+                         :visible {(project.git_status ?: {"behind_count": 0}).behind_count > 0}))
                 ;; Missing directory warning
                 (label :class "project-warning"
                        :text "⚠️ missing"
@@ -847,7 +851,7 @@ button {
 .project-time {
   font-size: 9pt;
   color: #a6adc8;  /* $subtext0 */
-  margin-left: auto;
+  /* Note: GTK CSS doesn't support margin-left: auto, using :halign in yuck instead */
 }
 
 .project-badge {
@@ -911,7 +915,7 @@ button {
 }
 
 .project-item-header {
-  align-items: center;
+  /* Note: GTK CSS doesn't support align-items, using :valign in yuck instead */
 }
 
 .project-item-metadata {
