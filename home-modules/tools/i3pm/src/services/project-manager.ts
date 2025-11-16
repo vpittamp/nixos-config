@@ -9,6 +9,7 @@
 import { DaemonClient } from "./daemon-client.ts";
 import type { Project } from "../models/project.ts";
 import { isWorktreeProject, type WorktreeProject } from "../models/worktree.ts";
+import { join } from "@std/path";
 
 // ============================================================================
 // ProjectManagerService Class
@@ -35,19 +36,30 @@ export class ProjectManagerService {
    * @throws Error if project creation fails
    */
   async createWorktreeProject(project: WorktreeProject): Promise<WorktreeProject> {
-    const client = new DaemonClient();
+    // Write project JSON directly to ~/.config/i3/projects/
+    // The daemon will pick it up on next reload
+    const homeDir = Deno.env.get("HOME") || "/home/vpittamp";
+    const projectsDir = join(homeDir, ".config", "i3", "projects");
 
-    // Create project via daemon JSON-RPC
-    // The daemon will write the project JSON to ~/.config/i3/projects/
-    await client.call("create_project", {
+    // Ensure projects directory exists
+    await Deno.mkdir(projectsDir, { recursive: true });
+
+    const projectFile = join(projectsDir, `${project.name}.json`);
+
+    // Write project JSON
+    const projectData = {
       name: project.name,
       display_name: project.display_name,
       directory: project.directory,
       icon: project.icon,
       scoped_classes: project.scoped_classes || [],
-      // Include worktree metadata as additional fields
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      // Include worktree metadata
       worktree: project.worktree,
-    });
+    };
+
+    await Deno.writeTextFile(projectFile, JSON.stringify(projectData, null, 2));
 
     return project;
   }
@@ -85,7 +97,7 @@ export class ProjectManagerService {
    */
   async getAllProjects(): Promise<Project[]> {
     const client = new DaemonClient();
-    return await client.call<Project[]>("list_projects");
+    return await client.request<Project[]>("list_projects");
   }
 
   /**

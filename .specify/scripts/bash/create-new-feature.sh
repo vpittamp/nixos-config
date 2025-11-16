@@ -235,7 +235,19 @@ if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
 fi
 
 if [ "$HAS_GIT" = true ]; then
-    git checkout -b "$BRANCH_NAME"
+    # Check if we're already on this branch (worktree scenario)
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+    if [ "$CURRENT_BRANCH" = "$BRANCH_NAME" ]; then
+        >&2 echo "[specify] Already on branch $BRANCH_NAME (parallel worktree mode)"
+    elif git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
+        # Branch exists but not current - checkout it
+        >&2 echo "[specify] Branch $BRANCH_NAME exists, checking out..."
+        git checkout "$BRANCH_NAME"
+    else
+        # Branch doesn't exist - create it
+        git checkout -b "$BRANCH_NAME"
+    fi
 else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
@@ -245,7 +257,12 @@ mkdir -p "$FEATURE_DIR"
 
 TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
 SPEC_FILE="$FEATURE_DIR/spec.md"
-if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+# Only copy template if spec.md doesn't exist (idempotent for worktree scenario)
+if [ ! -f "$SPEC_FILE" ]; then
+    if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+else
+    >&2 echo "[specify] Spec file already exists at $SPEC_FILE (parallel worktree mode)"
+fi
 
 # Set the SPECIFY_FEATURE environment variable for the current session
 export SPECIFY_FEATURE="$BRANCH_NAME"

@@ -11,6 +11,7 @@ import { GitWorktreeService } from "../../services/git-worktree.ts";
 import { WorktreeMetadataService } from "../../services/worktree-metadata.ts";
 import { ProjectManagerService } from "../../services/project-manager.ts";
 import { getRepositoryRoot } from "../../utils/git.ts";
+import { generateFeatureBranchName } from "../../utils/branch-naming.ts";
 import type { WorktreeProject } from "../../models/worktree.ts";
 import { bold, green, yellow, red, dim } from "../../ui/ansi.ts";
 
@@ -23,11 +24,13 @@ i3pm worktree create - Create a new worktree project
 
 USAGE:
   i3pm worktree create <branch-name> [OPTIONS]
+  i3pm worktree create --from-description "feature description" [OPTIONS]
 
 ARGUMENTS:
   <branch-name>         Branch name to checkout or create
 
 OPTIONS:
+  --from-description <desc>  Generate branch name from feature description (speckit naming)
   --name <name>         Custom worktree directory name (default: branch-name)
   --base-path <path>    Base directory for worktrees (default: sibling to main repo)
   --checkout            Checkout existing branch instead of creating new
@@ -38,6 +41,10 @@ OPTIONS:
 EXAMPLES:
   # Create new branch and worktree
   i3pm worktree create feature-auth-refactor
+
+  # Auto-generate branch name from description (speckit style)
+  i3pm worktree create --from-description "Add user authentication system" --base-path ~/
+  # Creates: 078-user-authentication-system
 
   # Checkout existing remote branch
   i3pm worktree create hotfix-payment --checkout
@@ -50,6 +57,8 @@ NOTES:
   - If main repo is at /home/user/nixos, worktree will be at /home/user/nixos-feature-auth-refactor
   - Project is automatically registered with i3pm and can be switched to immediately
   - Scoped apps (terminal, editor, file manager) will open in the worktree directory
+  - Using --from-description auto-numbers the branch (e.g., 078-feature-name) matching speckit conventions
+  - Specs directory is pre-created for parallel Claude Code sessions
 `);
   Deno.exit(0);
 }
@@ -87,7 +96,7 @@ async function resolveProjectNameConflict(
  */
 export async function createWorktreeCommand(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
-    string: ["name", "base-path", "display-name", "icon"],
+    string: ["name", "base-path", "display-name", "icon", "from-description"],
     boolean: ["checkout", "help"],
     alias: {
       h: "help",
@@ -98,35 +107,57 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
     showHelp();
   }
 
-  // Validate branch name argument
-  if (parsed._.length === 0) {
-    console.error(red("Error: Branch name is required"));
+  const fromDescription = parsed["from-description"];
+
+  // Validate arguments
+  if (!fromDescription && parsed._.length === 0) {
+    console.error(red("Error: Branch name or --from-description is required"));
     console.error("");
     console.error("Usage: i3pm worktree create <branch-name> [OPTIONS]");
+    console.error("       i3pm worktree create --from-description \"feature description\" [OPTIONS]");
     console.error("Run 'i3pm worktree create --help' for more information");
     Deno.exit(1);
   }
 
-  const branchName = String(parsed._[0]);
-  const worktreeName = parsed.name || branchName;
-  const displayName = parsed["display-name"] || branchName;
-  const icon = parsed.icon || "🌿";
-  const shouldCheckout = parsed.checkout || false;
-  const customBasePath = parsed["base-path"];
-
-  // Initialize services
+  // Initialize services early for branch name generation
   const gitWorktreeService = new GitWorktreeService();
   const metadataService = new WorktreeMetadataService();
   const projectManager = new ProjectManagerService();
 
+  // Get repository root early (needed for branch name generation)
+  const cwd = Deno.cwd();
+  let repoRoot: string;
   try {
-    // Step 1: Validate we're in a git repository
     console.log(dim("Validating git repository..."));
-    const cwd = Deno.cwd();
     await gitWorktreeService.validateRepository(cwd);
+    repoRoot = await getRepositoryRoot(cwd);
+  } catch (error) {
+    console.error(red("Error: Not in a git repository"));
+    console.error(red(error.message));
+    Deno.exit(1);
+  }
 
-    // Get repository root
-    const repoRoot = await getRepositoryRoot(cwd);
+  // Determine branch name (either from argument or generated from description)
+  let branchName: string;
+  let featureDescription: string | undefined;
+
+  if (fromDescription) {
+    console.log(dim(`Generating branch name from: "${fromDescription}"`));
+    const generated = await generateFeatureBranchName(fromDescription, repoRoot);
+    branchName = generated.branchName;
+    featureDescription = fromDescription;
+    console.log(green(`✓ Generated branch name: ${branchName}`));
+  } else {
+    branchName = String(parsed._[0]);
+  }
+
+  const worktreeName = parsed.name || branchName;
+  const displayName = parsed["display-name"] || featureDescription || branchName;
+  const icon = parsed.icon || "🌿";
+  const shouldCheckout = parsed.checkout || false;
+  const customBasePath = parsed["base-path"];
+
+  try {
     console.log(dim(`Repository: ${repoRoot}`));
 
     // Step 2: Check if branch exists
@@ -193,6 +224,12 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
     );
 
     console.log(green("✓ Git worktree created successfully"));
+
+    // Step 4b: Create specs directory for speckit compatibility
+    const specsDir = join(worktreePath, "specs", branchName);
+    console.log(dim(`Creating specs directory: ${specsDir}`));
+    await Deno.mkdir(specsDir, { recursive: true });
+    console.log(green("✓ Specs directory created for parallel Claude Code sessions"));
 
     // Step 5: Extract worktree metadata
     console.log(dim("Extracting git metadata..."));
