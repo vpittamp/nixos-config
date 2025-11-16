@@ -7,6 +7,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { createWorktreeCommand } from "./worktree/create.ts";
+import { removeWorktreeCommand } from "./worktree/remove.ts";
 
 /**
  * Show worktree command help
@@ -20,7 +21,7 @@ USAGE:
 
 SUBCOMMANDS:
   create <branch>       Create a new worktree and register as i3pm project
-  delete <name>         Delete a worktree and its i3pm project
+  remove <name>         Remove a worktree and clean up all resources
   list                  List all worktrees with metadata
   discover              Discover and register manually created worktrees
 
@@ -34,8 +35,8 @@ EXAMPLES:
   # List all worktrees
   i3pm worktree list
 
-  # Delete a worktree project
-  i3pm worktree delete feature-auth-refactor
+  # Remove a worktree project
+  i3pm worktree remove 078-feature-auth-refactor
 
   # Discover manually created worktrees
   i3pm worktree discover
@@ -68,10 +69,9 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       await createWorktreeCommand(subcommandArgs);
       break;
 
+    case "remove":
     case "delete":
-      console.error("Error: 'worktree delete' not yet implemented");
-      console.error("This will be available in a future update");
-      Deno.exit(1);
+      await removeWorktreeCommand(subcommandArgs);
       break;
 
     case "list":
@@ -89,7 +89,7 @@ export async function worktreeCommand(args: string[]): Promise<void> {
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
-      console.error("Available subcommands: create, delete, list, discover");
+      console.error("Available subcommands: create, remove, list, discover");
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);
   }
