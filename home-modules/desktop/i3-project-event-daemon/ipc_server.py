@@ -3536,12 +3536,13 @@ class IPCServer:
 
                     # Check for project mark matching this project (Feature 061: Unified format)
                     # Also check for scratchpad marks (Feature 062: Project-scoped scratchpads)
-                    project_mark_prefix = f"project:{project_name}:"
+                    # FIX: Use "scoped:" prefix to match actual mark format (not "project:")
+                    scoped_mark_prefix = f"scoped:{project_name}:"
                     scratchpad_mark = f"scratchpad:{project_name}"
                     for mark in con.marks:
-                        if mark.startswith(project_mark_prefix):
+                        if mark.startswith(scoped_mark_prefix):
                             logger.info(
-                                f"Will hide project window {con.id} "
+                                f"Will hide scoped window {con.id} "
                                 f"(mark: {mark}, project: {project_name})"
                             )
                             window_ids_to_hide.append(con.id)
