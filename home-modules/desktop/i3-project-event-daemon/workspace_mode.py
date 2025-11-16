@@ -148,6 +148,11 @@ class WorkspaceModeManager:
             self._state.accumulated_chars = ""  # Don't add ':' to chars
             self._state.input_type = "project"
 
+            # Feature 079: Clear project cache to reload from disk on each session
+            # This ensures newly created projects (e.g., worktrees) appear immediately
+            self._all_projects = []
+            logger.debug("Cleared project cache for fresh reload on project mode entry")
+
             # Emit project mode event to show empty project search UI
             await self._emit_project_mode_event("char")
 

@@ -1337,8 +1337,9 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
         while True:
             chunk = sock.recv(4096).decode()
             if not chunk:
-                print("DEBUG: Connection closed by daemon", file=sys.stderr)
-                break
+                # Socket closed unexpectedly - exit with code 1 to trigger systemd restart
+                print("ERROR: Connection closed by daemon - exiting with code 1 to trigger restart", file=sys.stderr)
+                sys.exit(1)
 
             buffer += chunk
             while "\n" in buffer:

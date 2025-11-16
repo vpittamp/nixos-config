@@ -1113,7 +1113,7 @@ in
           sleep 2
           ${pkgs.sway}/bin/swaymsg '[title=".*workspace.*preview.*"] kill' 2>/dev/null || true
         '';
-        Restart = "on-failure";
+        Restart = "always";  # Always restart, including when socket closes cleanly (exit 0)
         RestartSec = 2;
         StandardOutput = "journal";
         StandardError = "journal";
