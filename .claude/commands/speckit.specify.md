@@ -16,88 +16,61 @@ The text the user typed after `/speckit.specify` in the triggering message **is*
 
 Given that feature description, do this:
 
-1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
-   - Create a 2-4 word short name that captures the essence of the feature
-   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
-   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
-   - Keep it concise but descriptive enough to understand the feature at a glance
-   - Examples:
-     - "I want to add user authentication" → "user-auth"
-     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
-     - "Create a dashboard for analytics" → "analytics-dashboard"
-     - "Fix payment processing timeout bug" → "fix-payment-timeout"
+1. **Validate worktree/branch setup** (REQUIRED FIRST STEP):
 
-2. **Detect if already on a feature branch (worktree scenario)**:
-
-   Before creating a new branch, check if we're already on a matching feature branch:
-
-   ```bash
-   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-   ```
-
-   If the current branch matches the pattern `NNN-short-name` (e.g., `078-preview-pane-project-switching`):
-
-   a. Extract the branch number and short name:
+   a. Check current branch:
       ```bash
-      # Pattern: 3+ digits followed by hyphen and words
-      if [[ "$CURRENT_BRANCH" =~ ^([0-9]+)-(.+)$ ]]; then
-        BRANCH_NUMBER="${BASH_REMATCH[1]}"
-        SHORT_NAME="${BASH_REMATCH[2]}"
-      fi
+      git rev-parse --abbrev-ref HEAD
       ```
 
-   b. Check if specs directory already exists:
+   b. Verify it's a feature branch (pattern: `NNN-feature-name`):
+      - Must match pattern `^[0-9]+-[a-z0-9-]+$`
+      - Examples: `078-user-auth`, `079-preview-pane-switching`
+
+   c. Check if specs directory exists:
       ```bash
-      ls -d "specs/$CURRENT_BRANCH" 2>/dev/null
+      ls -d specs/$(git rev-parse --abbrev-ref HEAD) 2>/dev/null
       ```
 
-   c. **If BOTH conditions are true** (on feature branch AND specs directory exists):
-      - **SKIP step 3 entirely** (do NOT run create-new-feature.sh)
-      - Use existing branch: `BRANCH_NAME=$CURRENT_BRANCH`
-      - Use existing specs dir: `SPEC_FILE=specs/$CURRENT_BRANCH/spec.md`
-      - Log: `[specify] Using existing feature branch: $CURRENT_BRANCH (worktree mode)`
-      - Proceed directly to step 4 (load template) and step 5 (write spec)
+   d. **If NOT on a feature branch OR specs directory missing**:
+      - STOP and instruct user:
+        ```
+        ❌ Not in a feature worktree. Please create one first:
 
-   d. **If NOT on feature branch OR specs directory doesn't exist**:
-      - Proceed to step 3 (create new branch)
+        i3pm worktree create --from-description "your feature description"
 
-   **This enables parallel Claude Code sessions in worktrees without branch collisions.**
+        Then switch to that project:
+        i3pm project switch <branch-name>
 
-3. **Check for existing branches before creating new one** (SKIP if step 2 matched):
+        And run /speckit.specify again from within that worktree.
+        ```
+      - Do NOT proceed with spec generation
 
-   a. First, fetch all remote branches to ensure we have the latest information:
+   e. **If on a valid feature branch with specs directory**:
+      - Extract BRANCH_NAME from current branch
+      - Set SPEC_FILE to `specs/<BRANCH_NAME>/spec.md`
+      - Set FEATURE_DIR to `specs/<BRANCH_NAME>`
+      - Proceed to step 2
+
+2. **Prepare spec file** (only if step 1 passed):
+
+   a. Check if spec.md already exists:
       ```bash
-      git fetch --all --prune
+      ls specs/<BRANCH_NAME>/spec.md 2>/dev/null
       ```
-   
-   b. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
-   
-   c. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-   
-   d. Run the script `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS"` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
-   
-   **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
-   - You must only ever run this script once per feature
-   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
-4. Load `.specify/templates/spec-template.md` to understand required sections.
+   b. If spec.md doesn't exist, copy template:
+      ```bash
+      cp .specify/templates/spec-template.md specs/<BRANCH_NAME>/spec.md
+      ```
 
-5. Follow this execution flow:
+   c. If spec.md exists but is just the template (no content filled in), proceed to fill it
+
+   d. If spec.md exists with content, ask user if they want to overwrite or update
+
+3. Load `.specify/templates/spec-template.md` to understand required sections.
+
+4. Follow this execution flow:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
@@ -123,9 +96,9 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-6. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-7. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
 
@@ -217,9 +190,9 @@ Given that feature description, do this:
 
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-8. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing. When in worktree mode (step 2 matched), the branch and spec file already exist.
+**NOTE:** This workflow assumes the user has already created a feature worktree using `i3pm worktree create --from-description "..."`. The specs directory is pre-created during worktree setup for parallel Claude Code sessions.
 
 ## General Guidelines
 
