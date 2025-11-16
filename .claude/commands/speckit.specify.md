@@ -28,8 +28,44 @@ Given that feature description, do this:
      - "Create a dashboard for analytics" → "analytics-dashboard"
      - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Check for existing branches before creating new one**:
-   
+2. **Detect if already on a feature branch (worktree scenario)**:
+
+   Before creating a new branch, check if we're already on a matching feature branch:
+
+   ```bash
+   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+   ```
+
+   If the current branch matches the pattern `NNN-short-name` (e.g., `078-preview-pane-project-switching`):
+
+   a. Extract the branch number and short name:
+      ```bash
+      # Pattern: 3+ digits followed by hyphen and words
+      if [[ "$CURRENT_BRANCH" =~ ^([0-9]+)-(.+)$ ]]; then
+        BRANCH_NUMBER="${BASH_REMATCH[1]}"
+        SHORT_NAME="${BASH_REMATCH[2]}"
+      fi
+      ```
+
+   b. Check if specs directory already exists:
+      ```bash
+      ls -d "specs/$CURRENT_BRANCH" 2>/dev/null
+      ```
+
+   c. **If BOTH conditions are true** (on feature branch AND specs directory exists):
+      - **SKIP step 3 entirely** (do NOT run create-new-feature.sh)
+      - Use existing branch: `BRANCH_NAME=$CURRENT_BRANCH`
+      - Use existing specs dir: `SPEC_FILE=specs/$CURRENT_BRANCH/spec.md`
+      - Log: `[specify] Using existing feature branch: $CURRENT_BRANCH (worktree mode)`
+      - Proceed directly to step 4 (load template) and step 5 (write spec)
+
+   d. **If NOT on feature branch OR specs directory doesn't exist**:
+      - Proceed to step 3 (create new branch)
+
+   **This enables parallel Claude Code sessions in worktrees without branch collisions.**
+
+3. **Check for existing branches before creating new one** (SKIP if step 2 matched):
+
    a. First, fetch all remote branches to ensure we have the latest information:
       ```bash
       git fetch --all --prune
@@ -59,9 +95,9 @@ Given that feature description, do this:
    - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
    - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
 
-3. Load `.specify/templates/spec-template.md` to understand required sections.
+4. Load `.specify/templates/spec-template.md` to understand required sections.
 
-4. Follow this execution flow:
+5. Follow this execution flow:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
@@ -87,9 +123,9 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+6. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+7. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
 
@@ -136,7 +172,7 @@ Given that feature description, do this:
 
    c. **Handle Validation Results**:
 
-      - **If all items pass**: Mark checklist complete and proceed to step 6
+      - **If all items pass**: Mark checklist complete and proceed to step 7
 
       - **If items fail (excluding [NEEDS CLARIFICATION])**:
         1. List the failing items and specific issues
@@ -181,9 +217,9 @@ Given that feature description, do this:
 
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+8. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
+**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing. When in worktree mode (step 2 matched), the branch and spec file already exist.
 
 ## General Guidelines
 
