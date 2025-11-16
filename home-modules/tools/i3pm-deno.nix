@@ -10,7 +10,7 @@ let
   # Feature 059: Unified window view - show all windows including scratchpad by default
   # Feature 060: Project-centric tree view - group windows by project
   # Feature 061: Unified mark format - only project:NAME:ID
-  version = "2.10.0";  # Feature 077: Add --source and --from-current flags for branch origin
+  version = "2.11.0";  # Feature 077: Add zoxide integration for sesh directory picker
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {

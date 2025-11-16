@@ -288,6 +288,22 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
     await projectManager.createWorktreeProject(worktreeProject);
 
     console.log(green("✓ i3pm project created successfully"));
+
+    // Step 8: Add project directory to zoxide for sesh integration
+    console.log(dim("Adding to zoxide for sesh integration..."));
+    try {
+      const zoxideCmd = new Deno.Command("zoxide", {
+        args: ["add", worktreePath],
+        stdout: "null",
+        stderr: "null",
+      });
+      await zoxideCmd.output();
+      console.log(green("✓ Directory added to zoxide"));
+    } catch {
+      // zoxide not available, skip silently
+      console.log(yellow("⚠ zoxide not available, skipping sesh integration"));
+    }
+
     console.log("");
     console.log(bold("Worktree project created:"));
     console.log(`  ${icon} ${displayName} (${projectName})`);
