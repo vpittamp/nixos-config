@@ -39,6 +39,7 @@ GLOBAL OPTIONS:
 
 COMMANDS:
   project          Project management commands
+  worktree         Git worktree project management (Feature 077)
   run              Smart application launcher with run-raise-hide (Feature 051)
   scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
@@ -126,6 +127,13 @@ async function main(): Promise<void> {
       {
         const { projectCommand } = await import("./commands/project.ts");
         await projectCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "worktree":
+      {
+        const { worktreeCommand } = await import("./commands/worktree.ts");
+        await worktreeCommand(commandArgs.map(String));
       }
       break;
 
