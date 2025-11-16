@@ -148,6 +148,9 @@ class WorkspaceModeManager:
             self._state.accumulated_chars = ""  # Don't add ':' to chars
             self._state.input_type = "project"
 
+            # Feature 079: Invalidate project cache to pick up new worktrees
+            self._all_projects = []
+
             # Emit project mode event to show empty project search UI
             await self._emit_project_mode_event("char")
 
