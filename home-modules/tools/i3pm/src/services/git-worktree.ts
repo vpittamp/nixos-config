@@ -76,7 +76,13 @@ export class GitWorktreeService {
       return customBasePath;
     }
 
-    // Default: use parent directory of main repository
+    // Default: use home directory (avoids permission issues with /etc/)
+    const homeDir = Deno.env.get("HOME");
+    if (homeDir) {
+      return homeDir;
+    }
+
+    // Fallback: use parent directory of main repository
     return dirname(repoPath);
   }
 
