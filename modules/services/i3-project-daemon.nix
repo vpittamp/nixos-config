@@ -40,7 +40,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.8.0-078";  # Feature 078: Enhanced project selection with fuzzy matching
+    version = "1.8.2-078";  # Feature 078: Fix timezone-naive datetime comparison
     src = daemonSrc;
 
     installPhase = ''

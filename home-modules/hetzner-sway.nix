@@ -18,6 +18,7 @@
     ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar replacing bottom swaybar
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
+    ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
@@ -85,6 +86,9 @@
 
   # eww quick settings panel (Feature 057)
   programs.eww-quick-panel.enable = true;
+
+  # Eww top bar with system metrics (Feature 060)
+  programs.eww-top-bar.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

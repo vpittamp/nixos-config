@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from models import Project
-from models.project_filter import (
+from .models import Project
+from .models.project_filter import (
     ProjectListItem,
     GitStatus,
     MatchPosition,
@@ -211,12 +211,20 @@ def load_all_projects(config_dir: Path) -> List[ProjectListItem]:
                 if worktree and "last_modified" in worktree:
                     try:
                         lm = worktree["last_modified"]
-                        return datetime.fromisoformat(lm.replace("Z", "+00:00"))
+                        dt = datetime.fromisoformat(lm.replace("Z", "+00:00"))
+                        # Ensure timezone-aware
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return dt
                     except Exception:
                         pass
                 try:
                     ua = data.get("updated_at", "1970-01-01T00:00:00Z")
-                    return datetime.fromisoformat(ua.replace("Z", "+00:00"))
+                    dt = datetime.fromisoformat(ua.replace("Z", "+00:00"))
+                    # Ensure timezone-aware (handles offset-naive timestamps like "2025-11-08T12:10:00.715975")
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
                 except Exception:
                     pass
         return datetime.min.replace(tzinfo=timezone.utc)

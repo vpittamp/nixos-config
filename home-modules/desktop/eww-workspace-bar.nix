@@ -377,7 +377,7 @@ ${workspacePreviewDefs}
                    :space-evenly false
                    :spacing 6
                 ;; Worktree or root badge
-                (label :class {"project-badge" + (project.is_worktree ? " worktree" : " root")}
+                (label :class {project.is_worktree ? "project-badge-worktree" : "project-badge-root"}
                        :text {project.is_worktree ? "worktree" : "root project"})
                 ;; Parent relationship (only show if present and not null)
                 (label :class "project-parent"
@@ -389,7 +389,7 @@ ${workspacePreviewDefs}
                      :space-evenly false
                      :spacing 4
                      :visible {project.git_status != "null"}
-                  (label :class {"project-git-clean" + (project.git_status.is_clean ? " clean" : " dirty")}
+                  (label :class {project.git_status.is_clean ? "project-git-clean" : "project-git-dirty"}
                          :text {project.git_status.is_clean ? "✓ clean" : "✗ dirty"})
                   (label :class "project-git-ahead"
                          :text {"↑" + project.git_status.ahead_count}
@@ -804,6 +804,119 @@ button {
 .preview-app.selected .preview-app-name,
 .workspace-group-header.selected {
   color: #cdd6f4;  /* $text - white for readability */
+}
+
+/* Feature 078: Project list item styling */
+.project-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(49, 50, 68, 0.6);  /* $surface0 with transparency */
+  border: 2px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.project-item:hover {
+  background: rgba(69, 71, 90, 0.8);  /* $surface1 */
+}
+
+/* Feature 078: Selected project highlighting - prominent green accent */
+.project-item.selected {
+  background: rgba(166, 227, 161, 0.25);  /* $green at 25% opacity */
+  border: 2px solid rgba(166, 227, 161, 0.9);  /* $green at 90% opacity */
+  box-shadow: 0 0 12px rgba(166, 227, 161, 0.3), inset 0 0 8px rgba(166, 227, 161, 0.1);
+  border-left: 6px solid rgba(166, 227, 161, 1);  /* Prominent left indicator */
+}
+
+.project-icon {
+  font-size: 16pt;
+  min-width: 28px;
+}
+
+.project-name {
+  font-size: 12pt;
+  font-weight: 500;
+  color: #cdd6f4;  /* $text */
+}
+
+.project-item.selected .project-name {
+  color: rgba(166, 227, 161, 1);  /* $green - bright for selected */
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(166, 227, 161, 0.4);
+}
+
+.project-time {
+  font-size: 9pt;
+  color: #a6adc8;  /* $subtext0 */
+  margin-left: auto;
+}
+
+.project-badge {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(108, 112, 134, 0.3);  /* $overlay0 */
+  color: #bac2de;  /* $subtext1 */
+}
+
+.project-badge-worktree {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(137, 180, 250, 0.2);  /* $blue */
+  color: rgba(137, 180, 250, 0.9);
+}
+
+.project-badge-root {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(148, 226, 213, 0.2);  /* $teal */
+  color: rgba(148, 226, 213, 0.9);
+}
+
+.project-parent {
+  font-size: 9pt;
+  color: #7f849c;  /* $overlay1 */
+  font-style: italic;
+}
+
+.project-git-clean {
+  color: rgba(166, 227, 161, 0.9);  /* $green */
+  font-size: 9pt;
+}
+
+.project-git-dirty {
+  color: rgba(243, 139, 168, 0.9);  /* $red */
+  font-size: 9pt;
+}
+
+.project-git-ahead {
+  color: rgba(250, 179, 135, 0.9);  /* $peach */
+  font-size: 9pt;
+}
+
+.project-git-behind {
+  color: rgba(245, 194, 231, 0.9);  /* $pink */
+  font-size: 9pt;
+}
+
+.project-warning {
+  color: rgba(249, 226, 175, 0.9);  /* $yellow */
+  font-size: 9pt;
+  font-weight: bold;
+}
+
+.project-list-scroll {
+  margin: 8px 0;
+}
+
+.project-item-header {
+  align-items: center;
+}
+
+.project-item-metadata {
+  margin-top: 4px;
+  margin-left: 36px;  /* Align with project name (icon width + spacing) */
 }
 
 .preview-app-icon {
