@@ -103,12 +103,17 @@ export class GitWorktreeService {
     worktreePath: string,
     repoPath: string,
     createBranch = false,
+    sourceBranch?: string,
   ): Promise<string> {
     const args = ["worktree", "add"];
 
     if (createBranch) {
-      // Create new branch from current HEAD
+      // Create new branch
       args.push("-b", branchName, worktreePath);
+      // If source branch specified, branch from that; otherwise from HEAD
+      if (sourceBranch) {
+        args.push(sourceBranch);
+      }
     } else {
       // Checkout existing branch
       args.push(worktreePath, branchName);

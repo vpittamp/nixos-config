@@ -31,20 +31,26 @@ ARGUMENTS:
 
 OPTIONS:
   --from-description <desc>  Generate branch name from feature description (speckit naming)
+  --source <branch>     Source branch to create from (default: main)
+  --from-current        Create from current branch instead of main
   --name <name>         Custom worktree directory name (default: branch-name)
-  --base-path <path>    Base directory for worktrees (default: sibling to main repo)
+  --base-path <path>    Base directory for worktrees (default: $HOME)
   --checkout            Checkout existing branch instead of creating new
   --display-name <name> Custom display name for project
   --icon <emoji>        Icon for project (default: 🌿)
   -h, --help            Show this help message
 
 EXAMPLES:
-  # Create new branch and worktree
-  i3pm worktree create feature-auth-refactor
+  # Create new branch from main (default)
+  i3pm worktree create --from-description "Add user authentication"
+  # Creates: 078-user-authentication branched from main
 
-  # Auto-generate branch name from description (speckit style)
-  i3pm worktree create --from-description "Add user authentication system" --base-path ~/
-  # Creates: 078-user-authentication-system
+  # Create branch from current branch (dependent feature)
+  i3pm worktree create --from-description "Fix auth bug" --from-current
+  # Creates: 079-fix-auth-bug branched from current HEAD
+
+  # Create branch from specific branch
+  i3pm worktree create --from-description "Hotfix" --source release-v1.0
 
   # Checkout existing remote branch
   i3pm worktree create hotfix-payment --checkout
@@ -53,11 +59,11 @@ EXAMPLES:
   i3pm worktree create feature-ui --name ui-work --display-name "UI Redesign" --icon 🎨
 
 NOTES:
-  - Worktrees are created as siblings to the main repository by default
-  - If main repo is at /home/user/nixos, worktree will be at /home/user/nixos-feature-auth-refactor
+  - NEW branches default to branching from 'main' (independent features)
+  - Use --from-current for dependent features that build on current work
+  - Worktrees are created in $HOME by default (e.g., ~/nixos-078-feature-name)
   - Project is automatically registered with i3pm and can be switched to immediately
   - Scoped apps (terminal, editor, file manager) will open in the worktree directory
-  - Using --from-description auto-numbers the branch (e.g., 078-feature-name) matching speckit conventions
   - Specs directory is pre-created for parallel Claude Code sessions
 `);
   Deno.exit(0);
@@ -96,8 +102,8 @@ async function resolveProjectNameConflict(
  */
 export async function createWorktreeCommand(args: string[]): Promise<void> {
   const parsed = parseArgs(args, {
-    string: ["name", "base-path", "display-name", "icon", "from-description"],
-    boolean: ["checkout", "help"],
+    string: ["name", "base-path", "display-name", "icon", "from-description", "source"],
+    boolean: ["checkout", "help", "from-current"],
     alias: {
       h: "help",
     },
@@ -108,6 +114,8 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
   }
 
   const fromDescription = parsed["from-description"];
+  const fromCurrent = parsed["from-current"] || false;
+  const explicitSource = parsed.source;
 
   // Validate arguments
   if (!fromDescription && parsed._.length === 0) {
@@ -156,6 +164,21 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
   const icon = parsed.icon || "🌿";
   const shouldCheckout = parsed.checkout || false;
   const customBasePath = parsed["base-path"];
+
+  // Determine source branch for new branches
+  // Priority: --source > --from-current > default (main)
+  let sourceBranch: string | undefined;
+  if (!shouldCheckout) {
+    if (explicitSource) {
+      sourceBranch = explicitSource;
+    } else if (fromCurrent) {
+      // Use current HEAD (don't specify source = git uses HEAD)
+      sourceBranch = undefined;
+    } else {
+      // Default: branch from main
+      sourceBranch = "main";
+    }
+  }
 
   try {
     console.log(dim(`Repository: ${repoRoot}`));
@@ -210,17 +233,19 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
 
     // Step 4: Create git worktree
     console.log("");
-    console.log(
-      createNewBranch
-        ? `Creating worktree with new branch "${branchName}"...`
-        : `Creating worktree from existing branch "${branchName}"...`,
-    );
+    if (createNewBranch) {
+      const sourceInfo = sourceBranch ? ` from ${sourceBranch}` : " from current HEAD";
+      console.log(`Creating worktree with new branch "${branchName}"${sourceInfo}...`);
+    } else {
+      console.log(`Creating worktree from existing branch "${branchName}"...`);
+    }
 
     await gitWorktreeService.createWorktree(
       branchName,
       worktreePath,
       repoRoot,
       createNewBranch,
+      sourceBranch,
     );
 
     console.log(green("✓ Git worktree created successfully"));
