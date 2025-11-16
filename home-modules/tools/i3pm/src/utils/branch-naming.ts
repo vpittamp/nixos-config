@@ -140,6 +140,12 @@ export async function findNextFeatureNumber(
 
   // Find highest number and return next
   const maxNumber = numbers.length > 0 ? Math.max(...numbers) : 0;
+
+  // Debug output (remove after fixing)
+  if (Deno.env.get("I3PM_DEBUG")) {
+    console.error(`[DEBUG] Found ${numbers.length} numbers, max=${maxNumber}, next=${maxNumber + 1}`);
+  }
+
   return maxNumber + 1;
 }
 
