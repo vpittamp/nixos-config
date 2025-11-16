@@ -84,13 +84,13 @@ export async function findNextFeatureNumber(
 
   // 2. Check ALL remote branches with numeric prefix
   try {
-    const remoteOutput = await execGit(
+    const remoteResult = await execGit(
       ["ls-remote", "--heads", "origin"],
       repoRoot
     );
     const remotePattern = /refs\/heads\/(\d+)-/gm;
     let match;
-    while ((match = remotePattern.exec(remoteOutput)) !== null) {
+    while ((match = remotePattern.exec(remoteResult.stdout)) !== null) {
       numbers.push(parseInt(match[1], 10));
     }
   } catch {
@@ -100,11 +100,11 @@ export async function findNextFeatureNumber(
   // 3. Check ALL local branches with numeric prefix
   // Note: git branch prefixes are: * (current), + (checked out in another worktree), space (normal)
   try {
-    const localOutput = await execGit(["branch", "--list"], repoRoot);
+    const localResult = await execGit(["branch", "--list"], repoRoot);
     const localPattern = /^[\*\+]?\s*(\d+)-/gm;
     let match;
     const localNums: number[] = [];
-    while ((match = localPattern.exec(localOutput)) !== null) {
+    while ((match = localPattern.exec(localResult.stdout)) !== null) {
       localNums.push(parseInt(match[1], 10));
     }
     numbers.push(...localNums);
@@ -112,7 +112,7 @@ export async function findNextFeatureNumber(
     if (Deno.env.get("I3PM_DEBUG")) {
       console.error(`[DEBUG] Local branches: found ${localNums.length} nums, max=${Math.max(...localNums, 0)}`);
       // Show last 5 lines of output for debugging
-      const lastLines = localOutput.trim().split("\n").slice(-5);
+      const lastLines = localResult.stdout.trim().split("\n").slice(-5);
       console.error(`[DEBUG] Last 5 branches: ${lastLines.join(" | ")}`);
     }
   } catch {
@@ -121,10 +121,10 @@ export async function findNextFeatureNumber(
 
   // 4. Check worktree branches (not visible in regular branch list)
   try {
-    const worktreeOutput = await execGit(["worktree", "list", "--porcelain"], repoRoot);
+    const worktreeResult = await execGit(["worktree", "list", "--porcelain"], repoRoot);
     const worktreePattern = /^branch refs\/heads\/(\d+)-/gm;
     let match;
-    while ((match = worktreePattern.exec(worktreeOutput)) !== null) {
+    while ((match = worktreePattern.exec(worktreeResult.stdout)) !== null) {
       numbers.push(parseInt(match[1], 10));
     }
   } catch {
