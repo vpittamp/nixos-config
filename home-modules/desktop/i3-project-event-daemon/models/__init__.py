@@ -39,6 +39,15 @@ from .workspace_mode_feedback import (
     PendingWorkspaceState,
 )
 
+# Feature 078: Enhanced Project Selection in Eww Preview Dialog
+from .project_filter import (
+    MatchPosition,
+    GitStatus,
+    ProjectListItem,
+    ScoredMatch,
+    FilterState,
+)
+
 # Legacy models - import everything EXCEPT the ones we're replacing
 from .legacy import (
     WindowInfo,
@@ -89,6 +98,12 @@ __all__ = [
     "ActiveProjectState",
     # Feature 058: Workspace Mode Visual Feedback
     "PendingWorkspaceState",
+    # Feature 078: Enhanced Project Selection
+    "MatchPosition",
+    "GitStatus",
+    "ProjectListItem",
+    "ScoredMatch",
+    "FilterState",
     # Feature 001: Monitor role and floating window models
     "MonitorRoleV2",
     "OutputInfoV2",

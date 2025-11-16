@@ -1,0 +1,257 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Project Mode IPC Event Schema",
+  "description": "Contract for project_mode events broadcast from i3pm daemon to workspace-preview-daemon",
+  "type": "object",
+  "required": ["type", "payload"],
+  "properties": {
+    "type": {
+      "const": "project_mode"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["event_type", "accumulated_chars", "selected_index", "projects"],
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["enter", "char", "nav", "backspace", "execute", "cancel"],
+          "description": "Type of project mode event"
+        },
+        "accumulated_chars": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]*$",
+          "maxLength": 100,
+          "description": "Lowercase characters typed by user for filtering"
+        },
+        "selected_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of currently selected project in the list"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ProjectListItem"
+          },
+          "maxItems": 100,
+          "description": "Filtered and sorted list of projects"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ProjectListItem": {
+      "type": "object",
+      "required": [
+        "name",
+        "display_name",
+        "icon",
+        "is_worktree",
+        "directory_exists",
+        "relative_time",
+        "match_score",
+        "match_positions",
+        "selected"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9-]+$",
+          "maxLength": 100,
+          "description": "Project identifier (e.g., '078-eww-preview-improvement')"
+        },
+        "display_name": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Human-readable project name"
+        },
+        "icon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10,
+          "description": "Emoji icon for the project"
+        },
+        "is_worktree": {
+          "type": "boolean",
+          "description": "True if project is a git worktree"
+        },
+        "parent_project_name": {
+          "type": ["string", "null"],
+          "description": "Name of parent project (for worktrees)"
+        },
+        "directory_exists": {
+          "type": "boolean",
+          "description": "True if project directory exists on filesystem"
+        },
+        "relative_time": {
+          "type": "string",
+          "pattern": "^(just now|\\d+[mhd] ago|\\d+mo ago|unknown)$",
+          "description": "Relative time since last activity"
+        },
+        "git_status": {
+          "type": ["object", "null"],
+          "properties": {
+            "is_clean": {
+              "type": "boolean",
+              "description": "True if no uncommitted changes"
+            },
+            "ahead_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of commits ahead of remote"
+            },
+            "behind_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of commits behind remote"
+            }
+          },
+          "required": ["is_clean", "ahead_count", "behind_count"],
+          "description": "Git status indicators (null for non-worktrees)"
+        },
+        "match_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1100,
+          "description": "Fuzzy match score (higher is better)"
+        },
+        "match_positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "end": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["start", "end"]
+          },
+          "description": "Character positions where query matched in name"
+        },
+        "selected": {
+          "type": "boolean",
+          "description": "True if this project is currently selected"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "project_mode",
+      "payload": {
+        "event_type": "enter",
+        "accumulated_chars": "",
+        "selected_index": 0,
+        "projects": [
+          {
+            "name": "078-eww-preview-improvement",
+            "display_name": "eww preview improvement",
+            "icon": "🌿",
+            "is_worktree": true,
+            "parent_project_name": "nixos",
+            "directory_exists": true,
+            "relative_time": "2h ago",
+            "git_status": {
+              "is_clean": true,
+              "ahead_count": 0,
+              "behind_count": 0
+            },
+            "match_score": 0,
+            "match_positions": [],
+            "selected": true
+          },
+          {
+            "name": "nixos",
+            "display_name": "NixOS",
+            "icon": "❄️",
+            "is_worktree": false,
+            "parent_project_name": null,
+            "directory_exists": true,
+            "relative_time": "3d ago",
+            "git_status": null,
+            "match_score": 0,
+            "match_positions": [],
+            "selected": false
+          }
+        ]
+      }
+    },
+    {
+      "type": "project_mode",
+      "payload": {
+        "event_type": "char",
+        "accumulated_chars": "nix",
+        "selected_index": 0,
+        "projects": [
+          {
+            "name": "nixos",
+            "display_name": "NixOS",
+            "icon": "❄️",
+            "is_worktree": false,
+            "parent_project_name": null,
+            "directory_exists": true,
+            "relative_time": "3d ago",
+            "git_status": null,
+            "match_score": 500,
+            "match_positions": [{"start": 0, "end": 3}],
+            "selected": true
+          },
+          {
+            "name": "nixos-worktree",
+            "display_name": "NixOS Worktree",
+            "icon": "🌳",
+            "is_worktree": false,
+            "parent_project_name": null,
+            "directory_exists": true,
+            "relative_time": "10d ago",
+            "git_status": null,
+            "match_score": 450,
+            "match_positions": [{"start": 0, "end": 3}],
+            "selected": false
+          }
+        ]
+      }
+    },
+    {
+      "type": "project_mode",
+      "payload": {
+        "event_type": "nav",
+        "accumulated_chars": "nix",
+        "selected_index": 1,
+        "projects": [
+          {
+            "name": "nixos",
+            "display_name": "NixOS",
+            "icon": "❄️",
+            "is_worktree": false,
+            "parent_project_name": null,
+            "directory_exists": true,
+            "relative_time": "3d ago",
+            "git_status": null,
+            "match_score": 500,
+            "match_positions": [{"start": 0, "end": 3}],
+            "selected": false
+          },
+          {
+            "name": "nixos-worktree",
+            "display_name": "NixOS Worktree",
+            "icon": "🌳",
+            "is_worktree": false,
+            "parent_project_name": null,
+            "directory_exists": true,
+            "relative_time": "10d ago",
+            "git_status": null,
+            "match_score": 450,
+            "match_positions": [{"start": 0, "end": 3}],
+            "selected": true
+          }
+        ]
+      }
+    }
+  ]
+}

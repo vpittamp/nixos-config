@@ -1,0 +1,127 @@
+{
+  "$schema": "../../contracts/project-fixtures.json",
+  "description": "Mock projects for Feature 078 testing - covers various scenarios",
+  "projects": [
+    {
+      "name": "078-eww-preview-improvement",
+      "display_name": "eww preview improvement",
+      "directory": "/home/vpittamp/nixos-078-eww-preview-improvement",
+      "icon": "🌿",
+      "scoped_classes": ["Ghostty", "code", "yazi", "lazygit"],
+      "created_at": "2025-11-16T17:03:24.481Z",
+      "updated_at": "2025-11-16T17:03:24.482Z",
+      "worktree": {
+        "branch": "078-eww-preview-improvement",
+        "commit_hash": "371a109f",
+        "is_clean": true,
+        "has_untracked": false,
+        "ahead_count": 0,
+        "behind_count": 0,
+        "worktree_path": "/home/vpittamp/nixos-078-eww-preview-improvement",
+        "repository_path": "/etc/nixos",
+        "last_modified": "2025-11-16T11:45:03-05:00"
+      }
+    },
+    {
+      "name": "nixos",
+      "display_name": "NixOS",
+      "directory": "/etc/nixos",
+      "icon": "❄️",
+      "scoped_classes": ["Ghostty", "code", "yazi", "lazygit"],
+      "created_at": "2025-10-20T10:19:00Z",
+      "updated_at": "2025-11-14T13:42:00Z"
+    },
+    {
+      "name": "agent-framework",
+      "display_name": "Agent Framework",
+      "directory": "/home/vpittamp/projects/agent-framework",
+      "icon": "🤖",
+      "scoped_classes": ["Ghostty", "code"],
+      "created_at": "2025-09-15T09:00:00Z",
+      "updated_at": "2025-11-10T16:30:00Z"
+    },
+    {
+      "name": "dapr",
+      "display_name": "Dapr Services",
+      "directory": "/home/vpittamp/projects/dapr",
+      "icon": "🔧",
+      "scoped_classes": ["Ghostty", "code"],
+      "created_at": "2025-08-01T14:00:00Z",
+      "updated_at": "2025-10-25T11:00:00Z"
+    },
+    {
+      "name": "077-worktree-creation",
+      "display_name": "worktree creation",
+      "directory": "/home/vpittamp/nixos-077-worktree-creation",
+      "icon": "🌿",
+      "scoped_classes": ["Ghostty", "code"],
+      "created_at": "2025-11-14T10:00:00Z",
+      "updated_at": "2025-11-15T09:00:00Z",
+      "worktree": {
+        "branch": "077-worktree-creation",
+        "commit_hash": "abc12345",
+        "is_clean": false,
+        "has_untracked": true,
+        "ahead_count": 3,
+        "behind_count": 1,
+        "worktree_path": "/home/vpittamp/nixos-077-worktree-creation",
+        "repository_path": "/etc/nixos",
+        "last_modified": "2025-11-15T09:00:00-05:00"
+      }
+    },
+    {
+      "name": "dotfiles",
+      "display_name": "Dotfiles",
+      "directory": "/home/vpittamp/dotfiles",
+      "icon": "📝",
+      "scoped_classes": ["Ghostty", "code"],
+      "created_at": "2025-06-01T08:00:00Z",
+      "updated_at": "2025-11-01T10:00:00Z"
+    },
+    {
+      "name": "claude-code-cli",
+      "display_name": "Claude Code CLI",
+      "directory": "/home/vpittamp/projects/claude-code-cli",
+      "icon": "💻",
+      "scoped_classes": ["Ghostty", "code"],
+      "created_at": "2025-10-01T12:00:00Z",
+      "updated_at": "2025-11-12T14:00:00Z"
+    },
+    {
+      "name": "missing-project",
+      "display_name": "Missing Project",
+      "directory": "/home/vpittamp/nonexistent-path",
+      "icon": "⚠️",
+      "scoped_classes": [],
+      "created_at": "2025-07-01T10:00:00Z",
+      "updated_at": "2025-07-01T10:00:00Z"
+    }
+  ],
+  "test_scenarios": {
+    "fuzzy_search": {
+      "query": "nix",
+      "expected_matches": ["nixos", "078-eww-preview-improvement"],
+      "best_match": "nixos"
+    },
+    "digit_prefix": {
+      "query": "078",
+      "expected_matches": ["078-eww-preview-improvement"],
+      "best_match": "078-eww-preview-improvement"
+    },
+    "no_matches": {
+      "query": "xyz",
+      "expected_matches": [],
+      "best_match": null
+    },
+    "partial_word": {
+      "query": "age",
+      "expected_matches": ["agent-framework"],
+      "best_match": "agent-framework"
+    },
+    "worktree_filter": {
+      "query": "eww",
+      "expected_matches": ["078-eww-preview-improvement"],
+      "best_match": "078-eww-preview-improvement"
+    }
+  }
+}

@@ -200,6 +200,37 @@ Project-scoped workspace management. Switch contexts, auto show/hide apps.
 **Scoped apps** (hidden on switch): Ghostty, VS Code, Yazi, Lazygit
 **Global apps** (always visible): Firefox, PWAs, K9s
 
+### Enhanced Project Selection (Feature 078)
+
+**Status**: MVP IMPLEMENTED (User Story 1)
+
+Fast project switching with fuzzy search and visual feedback.
+
+**Usage**:
+1. Enter workspace mode (`CapsLock` on M1, `Ctrl+0` on Hetzner)
+2. Type `:` to enter project selection mode
+3. Type filter characters (e.g., `nix`, `078`, `dapr`)
+4. Press Enter to switch to highlighted project
+5. Press Escape to cancel
+
+**Features**:
+- Priority-based fuzzy matching (exact > prefix > substring)
+- Full scrollable project list with icons
+- Real-time filtering (<50ms response)
+- Visual selection highlighting
+- "No matching projects" empty state
+
+**Technical Details**:
+- Python daemon: `home-modules/desktop/i3-project-event-daemon/workspace_mode.py`
+- Fuzzy matching: `home-modules/desktop/i3-project-event-daemon/project_filter_service.py`
+- Pydantic models: `home-modules/desktop/i3-project-event-daemon/models/project_filter.py`
+- Eww widget: `home-modules/desktop/eww-workspace-bar.nix` (project_list widget)
+- Workspace preview daemon: `home-modules/tools/sway-workspace-panel/workspace-preview-daemon`
+
+**Tests**: `tests/078-eww-preview-improvement/` (48 tests covering fuzzy matching, rendering, workflow)
+
+**Docs**: `/etc/nixos/specs/078-eww-preview-improvement/quickstart.md`
+
 ### Scratchpad Terminal (Feature 062)
 
 Project-scoped floating terminal with state persistence.
@@ -505,6 +536,7 @@ gh auth status               # Auto-uses 1Password token
 ## ⚠️ Recent Updates (2025-11)
 
 **Key Features**:
+- **Feature 078**: Enhanced project selection with fuzzy search and visual feedback. See `/etc/nixos/specs/078-eww-preview-improvement/`
 - **Feature 073**: Eww interactive menu stabilization (M/F key actions, Delete key close, keyboard hints). See `/etc/nixos/specs/073-eww-menu-stabilization/`
 - **Feature 072**: Unified workspace/window/project switcher with all-windows preview
 - **Feature 062**: Project-scoped scratchpad terminal
@@ -524,6 +556,9 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state, JSON configuration files
 - Python 3.11+ (existing daemon standard per Constitution Principle X) (074-session-management)
 - JSON layout files in `~/.local/share/i3pm/layouts/<project>/<name>.json` (076-mark-based-app-identification)
+- Python 3.11+ (i3pm daemon, workspace-preview-daemon), Nix (Eww widget generation) + i3ipc.aio, Pydantic, Eww (GTK widgets), asyncio (078-eww-preview-improvement)
+- JSON project files (`~/.config/i3/projects/*.json`), in-memory daemon state (078-eww-preview-improvement)
 
 ## Recent Changes
+- 078-eww-preview-improvement: Added enhanced project selection with fuzzy matching, Pydantic models, Eww project list widget (MVP complete)
 - 074-session-management: Added Python 3.11+ (existing daemon standard per Constitution Principle X)

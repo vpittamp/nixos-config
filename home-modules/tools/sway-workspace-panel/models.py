@@ -3,6 +3,7 @@
 Feature 058: Workspace Mode Visual Feedback - Workspace mode IPC events
 Feature 057: Unified Bar System - Theme configuration models
 Feature 072: Unified Workspace/Window/Project Switcher - All-windows preview models
+Feature 078: Enhanced Project Selection in Eww Preview Dialog - Project list models
 """
 
 from typing import Optional, Literal, List
@@ -477,6 +478,126 @@ class AllWindowsPreview(BaseModel):
                     "total_window_count": 0,
                     "total_workspace_count": 0,
                     "instructional": False,
+                    "empty": True
+                }
+            ]
+        }
+
+
+# ============================================================================
+# Feature 078: Enhanced Project Selection in Eww Preview Dialog
+# T007: Pydantic models for project list preview
+# ============================================================================
+
+
+class ProjectGitStatus(BaseModel):
+    """Git status for project list item.
+
+    Feature 078: Simplified git status for Eww rendering.
+    """
+    is_clean: bool = Field(..., description="No uncommitted changes")
+    ahead_count: int = Field(default=0, ge=0, description="Commits ahead of remote")
+    behind_count: int = Field(default=0, ge=0, description="Commits behind remote")
+
+
+class ProjectListEntry(BaseModel):
+    """Single project entry for Eww project list widget.
+
+    Feature 078: Used for rendering project selection in Eww preview dialog.
+    """
+    name: str = Field(..., min_length=1, description="Project identifier")
+    display_name: str = Field(..., min_length=1, description="Human-readable name")
+    icon: str = Field(..., min_length=1, description="Emoji icon")
+    is_worktree: bool = Field(..., description="Show worktree badge")
+    parent_project_name: Optional[str] = Field(default=None, description="Parent project for relationship display")
+    directory_exists: bool = Field(..., description="Show missing warning if false")
+    relative_time: str = Field(..., description="Last activity time (e.g., '2h ago')")
+    git_status: Optional[ProjectGitStatus] = Field(default=None, description="Git status for badge display")
+    selected: bool = Field(default=False, description="Apply highlight class if true")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "name": "078-eww-preview-improvement",
+                    "display_name": "eww preview improvement",
+                    "icon": "🌿",
+                    "is_worktree": True,
+                    "parent_project_name": "nixos",
+                    "directory_exists": True,
+                    "relative_time": "2h ago",
+                    "git_status": {
+                        "is_clean": True,
+                        "ahead_count": 0,
+                        "behind_count": 0
+                    },
+                    "selected": True
+                }
+            ]
+        }
+
+
+class ProjectListPreview(BaseModel):
+    """Complete project list preview data for Eww widget.
+
+    Feature 078: Main data structure for project_list mode in workspace_preview_data.
+    """
+    visible: bool = Field(default=True, description="Whether the preview card is visible")
+    type: Literal["project_list"] = Field(default="project_list", description="Preview type discriminator")
+    accumulated_chars: str = Field(default="", description="Filter characters typed by user")
+    selected_index: int = Field(default=0, ge=0, description="Index of currently selected project")
+    total_count: int = Field(default=0, ge=0, description="Total number of projects (for 'X of Y' display)")
+    projects: List[ProjectListEntry] = Field(default_factory=list, description="List of projects to render")
+    empty: bool = Field(default=False, description="No projects match filter")
+
+    class Config:
+        """Pydantic config."""
+        json_schema_extra = {
+            "examples": [
+                {
+                    "visible": True,
+                    "type": "project_list",
+                    "accumulated_chars": "",
+                    "selected_index": 0,
+                    "total_count": 8,
+                    "projects": [
+                        {
+                            "name": "078-eww-preview-improvement",
+                            "display_name": "eww preview improvement",
+                            "icon": "🌿",
+                            "is_worktree": True,
+                            "parent_project_name": "nixos",
+                            "directory_exists": True,
+                            "relative_time": "2h ago",
+                            "git_status": {
+                                "is_clean": True,
+                                "ahead_count": 0,
+                                "behind_count": 0
+                            },
+                            "selected": True
+                        },
+                        {
+                            "name": "nixos",
+                            "display_name": "NixOS",
+                            "icon": "❄️",
+                            "is_worktree": False,
+                            "parent_project_name": None,
+                            "directory_exists": True,
+                            "relative_time": "3d ago",
+                            "git_status": None,
+                            "selected": False
+                        }
+                    ],
+                    "empty": False
+                },
+                {
+                    "visible": True,
+                    "type": "project_list",
+                    "accumulated_chars": "xyz",
+                    "selected_index": 0,
+                    "total_count": 0,
+                    "projects": [],
                     "empty": True
                 }
             ]

@@ -40,7 +40,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.9-1763191913";  # Fix: Remove workspace parameter from AppLauncher call
+    version = "1.8.0-078";  # Feature 078: Enhanced project selection with fuzzy matching
     src = daemonSrc;
 
     installPhase = ''

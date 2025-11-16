@@ -1043,6 +1043,74 @@ def emit_project_preview(visible: bool, **kwargs) -> None:
         print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
 
 
+def emit_project_list_preview(visible: bool, **kwargs) -> None:
+    """Emit project list preview JSON for Feature 078.
+
+    Args:
+        visible: Whether preview card should be shown
+        **kwargs: Additional fields:
+            - accumulated_chars: Filter query string
+            - selected_index: Currently selected project index
+            - projects: List of project dicts with full metadata
+    """
+    if not visible:
+        # Close Eww window
+        eww_close_window("workspace-preview")
+        output = {"visible": False, "type": "project_list"}
+        print(json.dumps(output), flush=True)
+
+        # Update Eww variable
+        try:
+            json_str = json.dumps(output)
+            subprocess.run(
+                ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+                check=False,
+                capture_output=True,
+                timeout=2.0,
+                text=True,
+            )
+        except Exception as e:
+            print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+        return
+
+    accumulated_chars = kwargs.get("accumulated_chars", "")
+    selected_index = kwargs.get("selected_index", 0)
+    projects = kwargs.get("projects", [])
+
+    # Build project list preview output (matches ProjectListPreview schema)
+    output = {
+        "visible": True,
+        "type": "project_list",
+        "accumulated_chars": accumulated_chars,
+        "selected_index": selected_index,
+        "total_count": len(projects),
+        "projects": projects,
+        "empty": len(projects) == 0,
+    }
+
+    # Open Eww window if not already open
+    eww_open_window("workspace-preview")
+
+    print(json.dumps(output), flush=True)
+
+    # Update Eww variable directly
+    try:
+        json_str = json.dumps(output)
+        result = subprocess.run(
+            ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+            check=False,
+            capture_output=True,
+            timeout=2.0,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+        else:
+            print(f"DEBUG: Updated project_list preview: chars='{accumulated_chars}', projects={len(projects)}, selected={selected_index}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
+
 # Feature 059: Sway IPC navigation functions for Enter key selection (T030-T031)
 
 def navigate_to_workspace(sway_conn: i3ipc.Connection, workspace_num: int) -> dict:
@@ -1453,31 +1521,32 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                             print(json.dumps(output), flush=True)
 
                     # Option A: Unified Smart Detection - Handle project_mode events
+                    # Feature 078: Enhanced Project Selection in Eww Preview Dialog
                     elif event.get("method") == "event" and event.get("params", {}).get("type") == "project_mode":
                         payload = event.get("params", {}).get("payload", {})
 
-                        # Parse event payload
+                        # Parse event payload (Feature 078: full project list)
                         event_type = payload.get("event_type")
                         accumulated_chars = payload.get("accumulated_chars", "")
-                        matched_project = payload.get("matched_project")
-                        project_icon = payload.get("project_icon", "📁")
+                        selected_index = payload.get("selected_index", 0)
+                        projects = payload.get("projects", [])
 
-                        print(f"DEBUG: Received project_mode event: type={event_type}, chars={accumulated_chars}, match={matched_project}, icon={project_icon}", file=sys.stderr, flush=True)
+                        print(f"DEBUG: Received project_mode event: type={event_type}, chars={accumulated_chars}, projects={len(projects)}, selected={selected_index}", file=sys.stderr, flush=True)
 
                         if event_type == "cancel" or event_type == "execute":
                             # Hide preview card
-                            emit_project_preview(visible=False)
-                        elif event_type == "char":
-                            # Show/update project preview
-                            emit_project_preview(
+                            emit_project_list_preview(visible=False)
+                        elif event_type in ("char", "enter", "nav", "backspace"):
+                            # Show/update project list preview (Feature 078)
+                            emit_project_list_preview(
                                 visible=True,
                                 accumulated_chars=accumulated_chars,
-                                matched_project=matched_project,
-                                project_icon=project_icon,
+                                selected_index=selected_index,
+                                projects=projects,
                             )
                         else:
                             # Unknown event type - hide preview
-                            emit_project_preview(visible=False)
+                            emit_project_list_preview(visible=False)
 
                     # Feature 059: Handle arrow_key_nav events for interactive workspace menu
                     elif event.get("method") == "event" and event.get("params", {}).get("type") == "arrow_key_nav":

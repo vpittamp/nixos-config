@@ -46,11 +46,11 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel-v15";  # Feature 073: Fix arrow keys - rebuild workspace_groups correctly
+    name = "sway-workspace-panel-v16";  # Feature 078: Add project_list preview with fuzzy matching
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = builtins.path {
       path = ../tools/sway-workspace-panel;
-      name = "sway-workspace-panel-source";
+      name = "sway-workspace-panel-source-078";  # Force rebuild with Feature 078 changes
     };
     installPhase = ''
       mkdir -p $out
@@ -317,11 +317,101 @@ ${workspacePreviewDefs}
         (label :class "preview-count"
                :text {"... and " + ((workspace_preview_data.total_workspace_count ?: 0) - 20) + " more workspaces (type digits to filter)"})))
 
+    ;; Feature 078: T022-T025 - Project List Preview
+    (box :class "project-list-preview"
+         :orientation "v"
+         :space-evenly false
+         :visible {workspace_preview_data.type == "project_list"}
+      ;; Header with filter input
+      (box :class "preview-header"
+           :orientation "v"
+           :halign "center"
+        (label :class "preview-mode-digits"
+               :text {"🔍 :" + workspace_preview_data.accumulated_chars})
+        (label :class "preview-subtitle"
+               :text {workspace_preview_data.total_count + " project" +
+                      (workspace_preview_data.total_count != 1 ? "s" : "") +
+                      (workspace_preview_data.accumulated_chars != "" ? " matching" : "")}))
+
+      ;; Empty state (no projects match filter) - T025
+      (box :class "preview-body"
+           :orientation "v"
+           :halign "center"
+           :visible {workspace_preview_data.empty == true}
+        (label :class "preview-empty"
+               :text "No matching projects"))
+
+      ;; Scrollable project list - T022
+      (scroll :class "project-list-scroll"
+              :vscroll true
+              :hscroll false
+              :height 500
+              :visible {workspace_preview_data.empty == false}
+        (box :class "project-list"
+             :orientation "v"
+             :space-evenly false
+             :spacing 8
+          (for project in {workspace_preview_data.projects ?: []}
+            ;; T023: Project item template with icon and name
+            ;; T024: Highlight selected project
+            (box :class {"project-item" + (project.selected ? " selected" : "")}
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 2
+              ;; First row: icon, name, relative time
+              (box :class "project-item-header"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 8
+                (label :class "project-icon"
+                       :text {project.icon})
+                (label :class "project-name"
+                       :text {project.display_name}
+                       :limit-width 30
+                       :truncate true)
+                (label :class "project-time"
+                       :text {project.relative_time}))
+              ;; Second row: worktree badge, parent, git status
+              (box :class "project-item-metadata"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 6
+                ;; Worktree or root badge
+                (label :class {"project-badge" + (project.is_worktree ? " worktree" : " root")}
+                       :text {project.is_worktree ? "worktree" : "root project"})
+                ;; Parent relationship (only show if present and not null)
+                (label :class "project-parent"
+                       :text {"← " + project.parent_project_name}
+                       :visible {project.parent_project_name != "null" && project.parent_project_name != ""})
+                ;; Git status (only show if present and not null)
+                (box :class "project-git-indicators"
+                     :orientation "h"
+                     :space-evenly false
+                     :spacing 4
+                     :visible {project.git_status != "null"}
+                  (label :class {"project-git-clean" + (project.git_status.is_clean ? " clean" : " dirty")}
+                         :text {project.git_status.is_clean ? "✓ clean" : "✗ dirty"})
+                  (label :class "project-git-ahead"
+                         :text {"↑" + project.git_status.ahead_count}
+                         :visible {project.git_status.ahead_count > 0})
+                  (label :class "project-git-behind"
+                         :text {"↓" + project.git_status.behind_count}
+                         :visible {project.git_status.behind_count > 0}))
+                ;; Missing directory warning
+                (label :class "project-warning"
+                       :text "⚠️ missing"
+                       :visible {!project.directory_exists}))))))
+
+      ;; Footer: Keyboard hints
+      (box :class "preview-footer"
+        (label :class "preview-hint"
+               :text "↑↓ Navigate • Enter Switch • Esc Cancel")))
+
     ;; Workspace Mode Preview (existing functionality)
     (box :class "workspace-preview"
          :orientation "v"
          :space-evenly false
-         :visible {workspace_preview_data.type != "project" && workspace_preview_data.type != "all_windows"}
+         :visible {workspace_preview_data.type != "project" && workspace_preview_data.type != "all_windows" && workspace_preview_data.type != "project_list"}
       ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
       (box :class "preview-header"
            :orientation "v"
