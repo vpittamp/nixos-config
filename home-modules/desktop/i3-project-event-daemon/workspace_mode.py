@@ -13,6 +13,8 @@ from typing import Optional, List, Dict, TYPE_CHECKING
 
 # Import Pydantic models from existing models module
 from .models import WorkspaceModeState, WorkspaceSwitch, WorkspaceModeEvent, PendingWorkspaceState
+# Feature 078: Enhanced Project Selection
+from .models.project_filter import FilterState, ProjectListItem
 
 if TYPE_CHECKING:
     from i3ipc.aio import Connection
@@ -41,6 +43,9 @@ class WorkspaceModeManager:
         self._project_service = None  # Lazy-loaded on first use
         self._state = WorkspaceModeState()
         self._history: List[WorkspaceSwitch] = []  # Circular buffer, max 100
+        # Feature 078: Enhanced Project Selection
+        self._filter_state = FilterState()
+        self._all_projects: List[ProjectListItem] = []  # Cached project list
 
     @property
     def state(self) -> WorkspaceModeState:
@@ -421,6 +426,41 @@ class WorkspaceModeManager:
 
         logger.debug(f"No match found for '{chars}'")
         return None
+
+    async def _load_and_filter_projects(self, query: str = "") -> List[ProjectListItem]:
+        """Load all projects and filter by query (Feature 078).
+
+        Uses project_filter_service for fuzzy matching with scoring.
+
+        Args:
+            query: Filter query string (empty = all projects)
+
+        Returns:
+            Filtered and scored list of ProjectListItem
+        """
+        # Lazy-load projects on first call
+        if not self._all_projects:
+            if not self._config_dir:
+                logger.error("Cannot load projects: config_dir not provided")
+                return []
+
+            try:
+                from .project_filter_service import load_all_projects
+                self._all_projects = load_all_projects(Path(self._config_dir))
+                logger.debug(f"Loaded {len(self._all_projects)} projects for filtering")
+            except Exception as e:
+                logger.error(f"Failed to load projects: {e}")
+                return []
+
+        # Filter using the service
+        if query:
+            from .project_filter_service import filter_projects
+            filtered = filter_projects(self._all_projects, query)
+            logger.debug(f"Filtered to {len(filtered)} projects for query '{query}'")
+            return filtered
+        else:
+            # No query - return all projects
+            return self._all_projects
 
     async def _get_project_icon(self, project_name: str) -> str:
         """Get icon for a project by name.
@@ -960,33 +1000,58 @@ class WorkspaceModeManager:
             logger.warning(f"Failed to broadcast end_key_nav event: {e}")
 
     async def _emit_project_mode_event(self, event_type: str) -> None:
-        """Emit project mode event via IPC with pending project match.
+        """Emit project mode event via IPC with full filtered project list.
 
-        Option A: Unified Smart Detection - Project Mode
+        Feature 078: Enhanced Project Selection in Eww Preview Dialog
         Broadcasts events to workspace-preview-daemon for real-time UI updates.
 
         Args:
-            event_type: Type of event ("char", "cancel", "execute")
+            event_type: Type of event ("enter", "char", "nav", "backspace", "execute", "cancel")
         """
         if not self._ipc_server:
             logger.debug("IPC server not available, skipping event emission")
             return
 
-        # Fuzzy match project from accumulated characters
-        matched_project = await self._fuzzy_match_project(self._state.accumulated_chars) if self._state.accumulated_chars else None
+        # Feature 078: Load and filter projects
+        query = self._state.accumulated_chars
+        filtered_projects = await self._load_and_filter_projects(query)
 
-        # Get project icon if we have a match
-        project_icon = await self._get_project_icon(matched_project) if matched_project else None
+        # Update filter state
+        self._filter_state.accumulated_chars = query
+        self._filter_state.update_projects(filtered_projects)
 
-        # Create event payload for project mode
+        # Convert to serializable format for IPC
+        projects_payload = []
+        for i, project in enumerate(self._filter_state.projects):
+            proj_dict = {
+                "name": project.name,
+                "display_name": project.display_name,
+                "icon": project.icon,
+                "is_worktree": project.is_worktree,
+                "parent_project_name": project.parent_project_name,
+                "directory_exists": project.directory_exists,
+                "relative_time": project.relative_time,
+                "git_status": None,
+                "match_score": project.match_score,
+                "match_positions": [{"start": mp.start, "end": mp.end} for mp in project.match_positions],
+                "selected": (i == self._filter_state.selected_index),
+            }
+            if project.git_status:
+                proj_dict["git_status"] = {
+                    "is_clean": project.git_status.is_clean,
+                    "ahead_count": project.git_status.ahead_count,
+                    "behind_count": project.git_status.behind_count,
+                }
+            projects_payload.append(proj_dict)
+
+        # Create event payload with full project list (per contract)
         event_payload = {
             "type": "project_mode",
             "payload": {
                 "event_type": event_type,
-                "accumulated_chars": self._state.accumulated_chars,
-                "matched_project": matched_project,
-                "project_icon": project_icon,
-                "timestamp": time.time()
+                "accumulated_chars": self._filter_state.accumulated_chars,
+                "selected_index": self._filter_state.selected_index,
+                "projects": projects_payload,
             }
         }
 
@@ -995,7 +1060,7 @@ class WorkspaceModeManager:
             asyncio.create_task(
                 self._ipc_server.broadcast_event(event_payload)
             )
-            logger.debug(f"Emitted project_mode event: type={event_type}, chars={self._state.accumulated_chars}, match={matched_project}, icon={project_icon}")
+            logger.debug(f"Emitted project_mode event: type={event_type}, chars={query}, projects={len(projects_payload)}, selected={self._filter_state.selected_index}")
         except Exception as e:
             logger.warning(f"Failed to broadcast project_mode event: {e}")
 

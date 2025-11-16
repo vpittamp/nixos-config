@@ -40,7 +40,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.7.9-1763191913";  # Fix: Remove workspace parameter from AppLauncher call
+    version = "1.8.2-078";  # Feature 078: Fix timezone-naive datetime comparison
     src = daemonSrc;
 
     installPhase = ''

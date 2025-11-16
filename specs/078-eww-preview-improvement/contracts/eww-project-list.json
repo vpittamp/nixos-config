@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Eww Project List Data Schema",
+  "description": "Contract for workspace_preview_data variable when in project_list mode",
+  "type": "object",
+  "required": ["type", "accumulated_chars", "selected_index", "total_count", "projects"],
+  "properties": {
+    "type": {
+      "const": "project_list",
+      "description": "Widget type identifier for conditional rendering"
+    },
+    "accumulated_chars": {
+      "type": "string",
+      "description": "Filter characters typed by user (displayed in header)"
+    },
+    "selected_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Index of currently selected project for highlight"
+    },
+    "total_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of projects (for 'X of Y' display)"
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/EwwProjectItem"
+      },
+      "description": "List of projects to render"
+    }
+  },
+  "definitions": {
+    "EwwProjectItem": {
+      "type": "object",
+      "required": [
+        "name",
+        "display_name",
+        "icon",
+        "is_worktree",
+        "directory_exists",
+        "relative_time",
+        "selected"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project identifier for switch command"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Human-readable name for display"
+        },
+        "icon": {
+          "type": "string",
+          "description": "Emoji icon"
+        },
+        "is_worktree": {
+          "type": "boolean",
+          "description": "Show worktree badge"
+        },
+        "parent_project_name": {
+          "type": ["string", "null"],
+          "description": "Parent project name for relationship display"
+        },
+        "directory_exists": {
+          "type": "boolean",
+          "description": "Show missing warning if false"
+        },
+        "relative_time": {
+          "type": "string",
+          "description": "Last activity time (e.g., '2h ago')"
+        },
+        "git_status": {
+          "type": ["object", "null"],
+          "properties": {
+            "is_clean": {"type": "boolean"},
+            "ahead_count": {"type": "integer"},
+            "behind_count": {"type": "integer"}
+          },
+          "description": "Git status for badge display"
+        },
+        "selected": {
+          "type": "boolean",
+          "description": "Apply highlight class if true"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "project_list",
+      "accumulated_chars": "",
+      "selected_index": 0,
+      "total_count": 8,
+      "projects": [
+        {
+          "name": "078-eww-preview-improvement",
+          "display_name": "eww preview improvement",
+          "icon": "🌿",
+          "is_worktree": true,
+          "parent_project_name": "nixos",
+          "directory_exists": true,
+          "relative_time": "2h ago",
+          "git_status": {
+            "is_clean": true,
+            "ahead_count": 0,
+            "behind_count": 0
+          },
+          "selected": true
+        },
+        {
+          "name": "nixos",
+          "display_name": "NixOS",
+          "icon": "❄️",
+          "is_worktree": false,
+          "parent_project_name": null,
+          "directory_exists": true,
+          "relative_time": "3d ago",
+          "git_status": null,
+          "selected": false
+        }
+      ]
+    },
+    {
+      "type": "project_list",
+      "accumulated_chars": "nix",
+      "selected_index": 0,
+      "total_count": 2,
+      "projects": [
+        {
+          "name": "nixos",
+          "display_name": "NixOS",
+          "icon": "❄️",
+          "is_worktree": false,
+          "parent_project_name": null,
+          "directory_exists": true,
+          "relative_time": "3d ago",
+          "git_status": null,
+          "selected": true
+        },
+        {
+          "name": "nixos-worktree",
+          "display_name": "NixOS Worktree",
+          "icon": "🌳",
+          "is_worktree": false,
+          "parent_project_name": null,
+          "directory_exists": true,
+          "relative_time": "10d ago",
+          "git_status": null,
+          "selected": false
+        }
+      ]
+    },
+    {
+      "type": "project_list",
+      "accumulated_chars": "xyz",
+      "selected_index": 0,
+      "total_count": 0,
+      "projects": []
+    }
+  ]
+}

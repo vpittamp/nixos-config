@@ -46,11 +46,11 @@ let
   # Feature 057: Shared module directory for icon_resolver.py, models.py
   # Copy all Python modules from source directory
   workspacePanelDir = pkgs.stdenv.mkDerivation {
-    name = "sway-workspace-panel-v15";  # Feature 073: Fix arrow keys - rebuild workspace_groups correctly
+    name = "sway-workspace-panel-v16";  # Feature 078: Add project_list preview with fuzzy matching
     # Feature 059: Fixed import path + added window_id field (v4 - force rebuild with window_id)
     src = builtins.path {
       path = ../tools/sway-workspace-panel;
-      name = "sway-workspace-panel-source";
+      name = "sway-workspace-panel-source-078";  # Force rebuild with Feature 078 changes
     };
     installPhase = ''
       mkdir -p $out
@@ -317,11 +317,101 @@ ${workspacePreviewDefs}
         (label :class "preview-count"
                :text {"... and " + ((workspace_preview_data.total_workspace_count ?: 0) - 20) + " more workspaces (type digits to filter)"})))
 
+    ;; Feature 078: T022-T025 - Project List Preview
+    (box :class "project-list-preview"
+         :orientation "v"
+         :space-evenly false
+         :visible {workspace_preview_data.type == "project_list"}
+      ;; Header with filter input
+      (box :class "preview-header"
+           :orientation "v"
+           :halign "center"
+        (label :class "preview-mode-digits"
+               :text {"🔍 :" + workspace_preview_data.accumulated_chars})
+        (label :class "preview-subtitle"
+               :text {workspace_preview_data.total_count + " project" +
+                      (workspace_preview_data.total_count != 1 ? "s" : "") +
+                      (workspace_preview_data.accumulated_chars != "" ? " matching" : "")}))
+
+      ;; Empty state (no projects match filter) - T025
+      (box :class "preview-body"
+           :orientation "v"
+           :halign "center"
+           :visible {workspace_preview_data.empty == true}
+        (label :class "preview-empty"
+               :text "No matching projects"))
+
+      ;; Scrollable project list - T022
+      (scroll :class "project-list-scroll"
+              :vscroll true
+              :hscroll false
+              :height 500
+              :visible {workspace_preview_data.empty == false}
+        (box :class "project-list"
+             :orientation "v"
+             :space-evenly false
+             :spacing 8
+          (for project in {workspace_preview_data.projects ?: []}
+            ;; T023: Project item template with icon and name
+            ;; T024: Highlight selected project
+            (box :class {"project-item" + (project.selected ? " selected" : "")}
+                 :orientation "v"
+                 :space-evenly false
+                 :spacing 2
+              ;; First row: icon, name, relative time
+              (box :class "project-item-header"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 8
+                (label :class "project-icon"
+                       :text {project.icon})
+                (label :class "project-name"
+                       :text {project.display_name}
+                       :limit-width 30
+                       :truncate true)
+                (label :class "project-time"
+                       :text {project.relative_time}))
+              ;; Second row: worktree badge, parent, git status
+              (box :class "project-item-metadata"
+                   :orientation "h"
+                   :space-evenly false
+                   :spacing 6
+                ;; Worktree or root badge
+                (label :class {project.is_worktree ? "project-badge-worktree" : "project-badge-root"}
+                       :text {project.is_worktree ? "worktree" : "root project"})
+                ;; Parent relationship (only show if present and not null)
+                (label :class "project-parent"
+                       :text {"← " + project.parent_project_name}
+                       :visible {project.parent_project_name != "null" && project.parent_project_name != ""})
+                ;; Git status (only show if present and not null)
+                (box :class "project-git-indicators"
+                     :orientation "h"
+                     :space-evenly false
+                     :spacing 4
+                     :visible {project.git_status != "null"}
+                  (label :class {project.git_status.is_clean ? "project-git-clean" : "project-git-dirty"}
+                         :text {project.git_status.is_clean ? "✓ clean" : "✗ dirty"})
+                  (label :class "project-git-ahead"
+                         :text {"↑" + project.git_status.ahead_count}
+                         :visible {project.git_status.ahead_count > 0})
+                  (label :class "project-git-behind"
+                         :text {"↓" + project.git_status.behind_count}
+                         :visible {project.git_status.behind_count > 0}))
+                ;; Missing directory warning
+                (label :class "project-warning"
+                       :text "⚠️ missing"
+                       :visible {!project.directory_exists}))))))
+
+      ;; Footer: Keyboard hints
+      (box :class "preview-footer"
+        (label :class "preview-hint"
+               :text "↑↓ Navigate • Enter Switch • Esc Cancel")))
+
     ;; Workspace Mode Preview (existing functionality)
     (box :class "workspace-preview"
          :orientation "v"
          :space-evenly false
-         :visible {workspace_preview_data.type != "project" && workspace_preview_data.type != "all_windows"}
+         :visible {workspace_preview_data.type != "project" && workspace_preview_data.type != "all_windows" && workspace_preview_data.type != "project_list"}
       ;; Enhanced Header: Prominent mode + digits, then descriptive subtitle
       (box :class "preview-header"
            :orientation "v"
@@ -714,6 +804,119 @@ button {
 .preview-app.selected .preview-app-name,
 .workspace-group-header.selected {
   color: #cdd6f4;  /* $text - white for readability */
+}
+
+/* Feature 078: Project list item styling */
+.project-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(49, 50, 68, 0.6);  /* $surface0 with transparency */
+  border: 2px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.project-item:hover {
+  background: rgba(69, 71, 90, 0.8);  /* $surface1 */
+}
+
+/* Feature 078: Selected project highlighting - prominent green accent */
+.project-item.selected {
+  background: rgba(166, 227, 161, 0.25);  /* $green at 25% opacity */
+  border: 2px solid rgba(166, 227, 161, 0.9);  /* $green at 90% opacity */
+  box-shadow: 0 0 12px rgba(166, 227, 161, 0.3), inset 0 0 8px rgba(166, 227, 161, 0.1);
+  border-left: 6px solid rgba(166, 227, 161, 1);  /* Prominent left indicator */
+}
+
+.project-icon {
+  font-size: 16pt;
+  min-width: 28px;
+}
+
+.project-name {
+  font-size: 12pt;
+  font-weight: 500;
+  color: #cdd6f4;  /* $text */
+}
+
+.project-item.selected .project-name {
+  color: rgba(166, 227, 161, 1);  /* $green - bright for selected */
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(166, 227, 161, 0.4);
+}
+
+.project-time {
+  font-size: 9pt;
+  color: #a6adc8;  /* $subtext0 */
+  margin-left: auto;
+}
+
+.project-badge {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(108, 112, 134, 0.3);  /* $overlay0 */
+  color: #bac2de;  /* $subtext1 */
+}
+
+.project-badge-worktree {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(137, 180, 250, 0.2);  /* $blue */
+  color: rgba(137, 180, 250, 0.9);
+}
+
+.project-badge-root {
+  font-size: 8pt;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(148, 226, 213, 0.2);  /* $teal */
+  color: rgba(148, 226, 213, 0.9);
+}
+
+.project-parent {
+  font-size: 9pt;
+  color: #7f849c;  /* $overlay1 */
+  font-style: italic;
+}
+
+.project-git-clean {
+  color: rgba(166, 227, 161, 0.9);  /* $green */
+  font-size: 9pt;
+}
+
+.project-git-dirty {
+  color: rgba(243, 139, 168, 0.9);  /* $red */
+  font-size: 9pt;
+}
+
+.project-git-ahead {
+  color: rgba(250, 179, 135, 0.9);  /* $peach */
+  font-size: 9pt;
+}
+
+.project-git-behind {
+  color: rgba(245, 194, 231, 0.9);  /* $pink */
+  font-size: 9pt;
+}
+
+.project-warning {
+  color: rgba(249, 226, 175, 0.9);  /* $yellow */
+  font-size: 9pt;
+  font-weight: bold;
+}
+
+.project-list-scroll {
+  margin: 8px 0;
+}
+
+.project-item-header {
+  align-items: center;
+}
+
+.project-item-metadata {
+  margin-top: 4px;
+  margin-left: 36px;  /* Align with project name (icon width + spacing) */
 }
 
 .preview-app-icon {
