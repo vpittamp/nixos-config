@@ -67,6 +67,69 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+# ============================================================================
+# WORKTREE INTEGRATION CHECK
+# If we're already on a feature branch (NNN-*), use that instead of creating new
+# This enables parallel Claude Code sessions where worktree was pre-created
+# ============================================================================
+AUTO_DETECT_FEATURE_BRANCH() {
+    if command -v git >/dev/null 2>&1; then
+        local current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        # Check if current branch matches feature pattern: NNN-something
+        if echo "$current_branch" | grep -qE '^[0-9]{3}-'; then
+            local branch_num=$(echo "$current_branch" | grep -oE '^[0-9]+')
+            local branch_suffix=$(echo "$current_branch" | sed 's/^[0-9]*-//')
+            echo "$branch_num $branch_suffix $current_branch"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Check if we're already on a feature branch (common in worktree scenarios)
+if FEATURE_BRANCH_INFO=$(AUTO_DETECT_FEATURE_BRANCH); then
+    read -r DETECTED_NUM DETECTED_SUFFIX DETECTED_BRANCH <<< "$FEATURE_BRANCH_INFO"
+    # Use 10# to force base-10 interpretation (avoid octal issues with 078, 079, etc.)
+    FEATURE_NUM=$(printf "%03d" "$((10#$DETECTED_NUM))")
+    BRANCH_NAME="$DETECTED_BRANCH"
+
+    >&2 echo "[specify] Auto-detected feature branch: $BRANCH_NAME (worktree mode)"
+
+    # Resolve repository root
+    if git rev-parse --show-toplevel >/dev/null 2>&1; then
+        REPO_ROOT=$(git rev-parse --show-toplevel)
+    else
+        echo "Error: Could not determine repository root" >&2
+        exit 1
+    fi
+
+    SPECS_DIR="$REPO_ROOT/specs"
+    FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
+    mkdir -p "$FEATURE_DIR"
+
+    TEMPLATE="$REPO_ROOT/.specify/templates/spec-template.md"
+    SPEC_FILE="$FEATURE_DIR/spec.md"
+
+    # Only copy template if spec.md doesn't exist
+    if [ ! -f "$SPEC_FILE" ]; then
+        if [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
+    else
+        >&2 echo "[specify] Spec file already exists at $SPEC_FILE"
+    fi
+
+    export SPECIFY_FEATURE="$BRANCH_NAME"
+
+    if $JSON_MODE; then
+        printf '{"BRANCH_NAME":"%s","SPEC_FILE":"%s","FEATURE_NUM":"%s"}\n' "$BRANCH_NAME" "$SPEC_FILE" "$FEATURE_NUM"
+    else
+        echo "BRANCH_NAME: $BRANCH_NAME"
+        echo "SPEC_FILE: $SPEC_FILE"
+        echo "FEATURE_NUM: $FEATURE_NUM"
+        echo "SPECIFY_FEATURE environment variable set to: $BRANCH_NAME"
+    fi
+    exit 0
+fi
+
 # Function to find the repository root by searching for existing project markers
 find_repo_root() {
     local dir="$1"
