@@ -1040,6 +1040,10 @@ class WorkspaceModeManager:
                 "match_score": project.match_score,
                 "match_positions": [{"start": mp.start, "end": mp.end} for mp in project.match_positions],
                 "selected": (i == self._filter_state.selected_index),
+                # Feature 079: US4 - Branch metadata for display (T034)
+                "branch_number": project.branch_number,
+                "branch_type": project.branch_type,
+                "full_branch_name": project.full_branch_name,
             }
             if project.git_status:
                 proj_dict["git_status"] = {

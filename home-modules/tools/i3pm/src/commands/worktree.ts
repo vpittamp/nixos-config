@@ -8,6 +8,7 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { createWorktreeCommand } from "./worktree/create.ts";
 import { removeWorktreeCommand } from "./worktree/remove.ts";
+import { listWorktreesCommand } from "./worktree/list.ts";
 
 /**
  * Show worktree command help
@@ -75,9 +76,8 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       break;
 
     case "list":
-      console.error("Error: 'worktree list' not yet implemented");
-      console.error("This will be available in a future update");
-      Deno.exit(1);
+      // Feature 079: US6 - T046-T049
+      await listWorktreesCommand(subcommandArgs);
       break;
 
     case "discover":

@@ -48,6 +48,17 @@ if [ -n "$TERMINAL_PID" ]; then
         .id' | head -1)
 fi
 
+# Feature 079: T065 - Extract tmux session and window information
+TMUX_SESSION=""
+TMUX_WINDOW=""
+
+# Check if we're running inside tmux (TMUX environment variable is set)
+if [ -n "${TMUX:-}" ]; then
+    # Extract current session name and window index
+    TMUX_SESSION=$(tmux display-message -p "#{session_name}" 2>/dev/null || true)
+    TMUX_WINDOW=$(tmux display-message -p "#{window_index}" 2>/dev/null || true)
+fi
+
 # Parse transcript for notification content
 LAST_MESSAGE=""
 TOOL_SUMMARY=""
@@ -113,9 +124,12 @@ fi
 
 # Call notification handler in background (non-blocking)
 # This allows the hook to return immediately while the notification waits for user action
+# Feature 079: T066 - Pass TMUX_SESSION and TMUX_WINDOW to handler script
 nohup "${BASH_SOURCE%/*}/stop-notification-handler.sh" \
     "$WINDOW_ID" \
     "$NOTIFICATION_BODY" \
+    "$TMUX_SESSION" \
+    "$TMUX_WINDOW" \
     >/dev/null 2>&1 &
 
 # Exit immediately (don't block Claude Code)

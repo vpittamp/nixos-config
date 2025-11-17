@@ -88,4 +88,39 @@
   .volume-mute-button:hover {
     background-color: #585b70;
   }
+
+  /* Feature 079: US7 - T054/T055 - Project block styling with accent colors */
+  .project-block {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background-color: rgba(69, 71, 90, 0.3);
+    transition: all 0.2s;
+  }
+
+  .project-block:hover {
+    background-color: rgba(69, 71, 90, 0.6);
+  }
+
+  /* Worktree projects with Catppuccin Mocha peach accent (#fab387) */
+  .project-block-worktree {
+    padding: 2px 8px;
+    border-radius: 6px;
+    background-color: rgba(250, 179, 135, 0.15);
+    border: 1px solid rgba(250, 179, 135, 0.3);
+    transition: all 0.2s;
+  }
+
+  .project-block-worktree:hover {
+    background-color: rgba(250, 179, 135, 0.25);
+    border: 1px solid rgba(250, 179, 135, 0.5);
+  }
+
+  .project-block-worktree .project-value {
+    color: #fab387;
+    font-weight: 600;
+  }
+
+  .project-block-worktree .project-icon {
+    color: #fab387;
+  }
 ''

@@ -185,14 +185,17 @@
                 :text {bluetooth.device_count > 0 ? "''${bluetooth.device_count ?: '0'}" : ""}))))
 
 ;; Active Project widget (with click handler to open project switcher)
+;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
 (defwidget project-widget []
   (eventbox :onclick "i3pm project switch &"
-    (box :class "metric-block"
+    (box :class {active_project.is_worktree ? "metric-block project-block-worktree" : "metric-block project-block"}
          :spacing 6
+         ;; T052: Project icon from metadata
          (label :class "icon project-icon"
-                :text "")
+                :text {active_project.icon ?: "📁"})
+         ;; T053: Formatted label with branch number
          (label :class "value project-value"
-                :text {active_project.project ?: "Global"}))))
+                :text {active_project.formatted_label ?: "Global"}))))
 
 ;; Daemon Health widget (with click handler to open diagnostics)
 (defwidget daemon-health-widget []

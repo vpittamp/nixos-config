@@ -158,6 +158,11 @@ def project_to_list_item(
         logger.warning(f"Failed to parse date for {project_data.get('name')}: {e}")
         relative_time = "unknown"
 
+    # Feature 079: Extract full_branch_name from worktree data for branch number extraction
+    full_branch_name = ""
+    if is_worktree and worktree_data:
+        full_branch_name = worktree_data.get("branch", "")
+
     return ProjectListItem(
         name=project_data.get("name", "unknown"),
         display_name=project_data.get("display_name", project_data.get("name", "Unknown")),
@@ -167,6 +172,7 @@ def project_to_list_item(
         directory_exists=directory_exists,
         relative_time=relative_time,
         git_status=git_status,
+        full_branch_name=full_branch_name,  # Feature 079: Enables branch_number and branch_type auto-extraction
         match_score=0,
         match_positions=[],
         selected=False,
@@ -244,6 +250,10 @@ def fuzzy_match_score(query: str, text: str) -> Tuple[int, List[MatchPosition]]:
     - Word boundary match: 300 + 50 per consecutive word
     - No match: 0
 
+    Feature 079: T071-T073 - Space-to-hyphen normalization
+    Spaces in query are treated as equivalent to hyphens for fuzzy matching.
+    This allows ":preview pane" to match "079-preview-pane-user-experience".
+
     Args:
         query: Search query (lowercase)
         text: Text to match against
@@ -257,17 +267,25 @@ def fuzzy_match_score(query: str, text: str) -> Tuple[int, List[MatchPosition]]:
     text_lower = text.lower()
     query_lower = query.lower()
 
-    # Exact match
-    if text_lower == query_lower:
+    # Feature 079: T073 - Normalize spaces to hyphens in query for matching
+    # This enables "preview pane" to match "preview-pane" in branch names
+    query_normalized = query_lower.replace(" ", "-")
+
+    # Exact match (with normalization)
+    if text_lower == query_lower or text_lower == query_normalized:
         return (1000, [MatchPosition(start=0, end=len(text))])
 
-    # Prefix match
-    if text_lower.startswith(query_lower):
+    # Prefix match (with normalization)
+    if text_lower.startswith(query_lower) or text_lower.startswith(query_normalized):
         score = 500 + int((len(query) / len(text)) * 100)
         return (score, [MatchPosition(start=0, end=len(query))])
 
-    # Substring match (anywhere in text)
+    # Substring match (anywhere in text) - try both original and normalized
+    # Feature 079: T071/T072 - Space-to-word-boundary normalization
     pos = text_lower.find(query_lower)
+    if pos == -1:
+        # Try normalized query (spaces as hyphens)
+        pos = text_lower.find(query_normalized)
     if pos != -1:
         # Penalize based on position (further = lower score)
         position_penalty = min(pos * 10, 50)

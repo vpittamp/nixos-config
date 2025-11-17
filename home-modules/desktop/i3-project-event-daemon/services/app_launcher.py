@@ -11,9 +11,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from ..models.worktree_environment import WorktreeEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +225,13 @@ class AppLauncher:
         import uuid
         env["I3PM_APP_ID"] = str(uuid.uuid4())
 
+        # Feature 079: T060-T062 - Inject worktree metadata environment variables
+        if project:
+            worktree_env = self._load_worktree_environment(project)
+            if worktree_env:
+                env.update(worktree_env.to_env_dict())
+                logger.debug(f"Injected worktree env vars: {worktree_env.to_env_dict()}")
+
         # Add extra environment variables
         if extra_env:
             env.update(extra_env)
@@ -276,6 +286,106 @@ class AppLauncher:
             App registry entry or None if not found
         """
         return self.registry.get(app_name)
+
+    def _load_worktree_environment(self, project_name: str) -> Optional[WorktreeEnvironment]:
+        """Load worktree metadata from project JSON (Feature 079: T060-T062).
+
+        Args:
+            project_name: Name of the project
+
+        Returns:
+            WorktreeEnvironment instance with metadata, or None if loading fails
+        """
+        project_file = Path.home() / ".config/i3/projects" / f"{project_name}.json"
+
+        if not project_file.exists():
+            logger.debug(f"Project file not found: {project_file}")
+            return None
+
+        try:
+            with open(project_file, "r") as f:
+                project_data = json.load(f)
+
+            # Check if this is a worktree project
+            worktree_data = project_data.get("worktree")
+
+            if worktree_data:
+                # Extract branch metadata (T061, T062)
+                branch = worktree_data.get("branch", "")
+                branch_number = None
+                branch_type = None
+
+                # Extract numeric prefix from branch name
+                match = re.match(r"^(\d+)-", branch)
+                if match:
+                    branch_number = match.group(1)
+
+                # Classify branch type based on name patterns
+                if "-fix-" in branch or branch.startswith("fix-"):
+                    branch_type = "fix"
+                elif "-feature-" in branch or "-feat-" in branch:
+                    branch_type = "feature"
+                elif "-refactor-" in branch:
+                    branch_type = "refactor"
+                else:
+                    # Default to feature for numbered branches
+                    branch_type = "feature" if branch_number else None
+
+                # Resolve parent project name
+                parent_project = None
+                repository_path = worktree_data.get("repository_path", "")
+                if repository_path:
+                    # Try to find parent project by directory
+                    parent_project = self._resolve_parent_project_name(repository_path)
+
+                return WorktreeEnvironment(
+                    is_worktree=True,
+                    parent_project=parent_project,
+                    branch_type=branch_type,
+                    branch_number=branch_number,
+                    full_branch_name=branch,
+                )
+            else:
+                # Not a worktree project
+                return WorktreeEnvironment(
+                    is_worktree=False,
+                    parent_project=None,
+                    branch_type=None,
+                    branch_number=None,
+                    full_branch_name=None,
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed to load worktree environment for {project_name}: {e}")
+            return None
+
+    def _resolve_parent_project_name(self, repository_path: str) -> Optional[str]:
+        """Resolve parent project name from repository path.
+
+        Args:
+            repository_path: Absolute path to parent repository
+
+        Returns:
+            Name of parent project or None if not found
+        """
+        # Search all project JSONs for matching directory
+        project_dir = Path.home() / ".config/i3/projects"
+
+        if not project_dir.exists():
+            return None
+
+        try:
+            for project_file in project_dir.glob("*.json"):
+                with open(project_file, "r") as f:
+                    project_data = json.load(f)
+
+                # Check if this project's directory matches the repository path
+                if project_data.get("directory") == repository_path:
+                    return project_data.get("name")
+        except Exception as e:
+            logger.warning(f"Failed to resolve parent project: {e}")
+
+        return None
 
     def list_apps(
         self,

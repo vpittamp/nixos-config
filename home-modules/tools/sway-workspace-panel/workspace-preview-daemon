@@ -269,31 +269,57 @@ class NavigationHandler:
         self.last_preview_data = None  # Cache last preview for re-emission
         self.current_mode = "goto"  # Feature 059: T024 - Track current mode (goto/move) for move-mode styling
         self.sub_mode_context = SubModeContext()  # Feature 073: T011 - Sub-mode state for keyboard hints
+        # Feature 079: T015 - Project list navigation state
+        self._project_filter_state = None  # FilterState instance for project mode
+        # Feature 079: T016 - Cache project preview data for re-emission
+        self._last_project_preview_data = None
 
     def handle_arrow_key_event(self, direction: str, mode: str) -> None:
-        """Handle arrow key navigation event.
+        """Handle arrow key navigation event for workspace or project mode.
+
+        Feature 079: Enhanced to support project_list mode navigation.
 
         Args:
             direction: "up" or "down"
-            mode: Preview mode when key was pressed ("all_windows", etc.)
+            mode: Preview mode when key was pressed ("all_windows", "project_list", etc.)
         """
         # T056: Performance benchmarking - measure arrow key latency (target: <10ms)
         start_time = time.time()
 
-        # Only handle navigation in all_windows mode for Feature 059
-        if mode != "all_windows":
-            return
+        # Feature 079: T017 - Route based on mode
+        if mode == "all_windows":
+            # Feature 059: Workspace/window navigation
+            if direction == "down":
+                self.selection_manager.navigate_down()
+            elif direction == "up":
+                self.selection_manager.navigate_up()
+            else:
+                print(f"Warning: Unknown navigation direction: {direction}", file=sys.stderr)
+                return
 
-        if direction == "down":
-            self.selection_manager.navigate_down()
-        elif direction == "up":
-            self.selection_manager.navigate_up()
+            # Re-emit preview with updated selection
+            self._emit_preview_with_selection()
+
+        elif mode == "project_list":
+            # Feature 079: Project list navigation
+            if not self._project_filter_state:
+                print("WARNING: No project filter state cached, cannot navigate", file=sys.stderr)
+                return
+
+            if direction == "down":
+                self._project_filter_state.navigate_down()
+            elif direction == "up":
+                self._project_filter_state.navigate_up()
+            else:
+                print(f"Warning: Unknown navigation direction: {direction}", file=sys.stderr)
+                return
+
+            # Re-emit project list with updated selection
+            self._emit_project_list_with_selection()
+
         else:
-            print(f"Warning: Unknown navigation direction: {direction}", file=sys.stderr)
+            print(f"DEBUG: Arrow navigation not supported for mode: {mode}", file=sys.stderr)
             return
-
-        # Re-emit preview with updated selection
-        self._emit_preview_with_selection()
 
         # T056: Log performance if exceeds target
         elapsed_ms = (time.time() - start_time) * 1000
@@ -629,6 +655,52 @@ class NavigationHandler:
             print(f"WARNING: Failed to update keyboard hints: {e}", file=sys.stderr, flush=True)
 
         print(f"DEBUG: Re-emitted preview with selection_index={selection_dict['selected_index']}", file=sys.stderr, flush=True)
+
+    def _emit_project_list_with_selection(self) -> None:
+        """Re-emit cached project preview data with updated selection state.
+
+        Feature 079: T018 - For project mode arrow key navigation.
+        Updates Eww variable with new selection index after navigation.
+        """
+        if not self._last_project_preview_data or not self._project_filter_state:
+            print("Warning: No cached project preview data to re-emit", file=sys.stderr)
+            return
+
+        # Get current selection state from FilterState
+        selected_index = self._project_filter_state.selected_index
+        projects = self._last_project_preview_data.get("projects", [])
+
+        # Update selected flags on all projects
+        for i, proj in enumerate(projects):
+            proj["selected"] = (i == selected_index)
+
+        # Build output with updated selection
+        output = {
+            **self._last_project_preview_data,
+            "selected_index": selected_index,
+            "projects": projects,
+        }
+
+        print(json.dumps(output), flush=True)
+
+        # Update Eww variable directly
+        try:
+            json_str = json.dumps(output)
+            result = subprocess.run(
+                ["eww", "--config", str(EWW_CONFIG_DIR), "update", f"workspace_preview_data={json_str}"],
+                check=False,
+                capture_output=True,
+                timeout=2.0,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"WARNING: eww update failed with code {result.returncode}: {result.stderr}", file=sys.stderr, flush=True)
+            else:
+                print(f"DEBUG: Updated Eww variable with project list ({len(json_str)} chars)", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"WARNING: Failed to update Eww variable: {e}", file=sys.stderr, flush=True)
+
+        print(f"DEBUG: Re-emitted project list with selection_index={selected_index}", file=sys.stderr, flush=True)
 
     def handle_m_key_event(self, mode: str) -> None:
         """Handle M key to enter move window sub-mode (Feature 073: T044).
@@ -1077,15 +1149,30 @@ def emit_project_list_preview(visible: bool, **kwargs) -> None:
     selected_index = kwargs.get("selected_index", 0)
     projects = kwargs.get("projects", [])
 
+    # Feature 079: T040 - Add hierarchy structure to Eww variable schema
+    # Enhance each project with indentation_level for visual hierarchy
+    enhanced_projects = []
+    for proj in projects:
+        # Calculate indentation level: 0 for root projects, 1 for worktrees
+        indent_level = 0
+        if proj.get("is_worktree", False) and proj.get("parent_project_name"):
+            indent_level = 1
+
+        enhanced_proj = {
+            **proj,
+            "indentation_level": indent_level,
+        }
+        enhanced_projects.append(enhanced_proj)
+
     # Build project list preview output (matches ProjectListPreview schema)
     output = {
         "visible": True,
         "type": "project_list",
         "accumulated_chars": accumulated_chars,
         "selected_index": selected_index,
-        "total_count": len(projects),
-        "projects": projects,
-        "empty": len(projects) == 0,
+        "total_count": len(enhanced_projects),
+        "projects": enhanced_projects,
+        "empty": len(enhanced_projects) == 0,
     }
 
     # Open Eww window if not already open
@@ -1535,9 +1622,41 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
                         print(f"DEBUG: Received project_mode event: type={event_type}, chars={accumulated_chars}, projects={len(projects)}, selected={selected_index}", file=sys.stderr, flush=True)
 
                         if event_type == "cancel" or event_type == "execute":
-                            # Hide preview card
+                            # Hide preview card and clear cached state
                             emit_project_list_preview(visible=False)
+                            # Feature 079: T019 - Clear cached project state on exit
+                            navigation_handler._project_filter_state = None
+                            navigation_handler._last_project_preview_data = None
+                        elif event_type == "backspace" and accumulated_chars == "":
+                            # Feature 079: T026 - Backspace removed ":", exit project mode
+                            print(f"DEBUG: Backspace exit detected (empty filter), returning to workspace mode", file=sys.stderr, flush=True)
+                            emit_project_list_preview(visible=False)
+                            # Clear cached project state
+                            navigation_handler._project_filter_state = None
+                            navigation_handler._last_project_preview_data = None
                         elif event_type in ("char", "enter", "nav", "backspace"):
+                            # Feature 079: T019 - Cache project state for arrow key navigation
+                            # Import FilterState dynamically to avoid circular imports
+                            try:
+                                from models.project_filter import FilterState, ProjectListItem
+                                navigation_handler._project_filter_state = FilterState(
+                                    accumulated_chars=accumulated_chars,
+                                    selected_index=selected_index,
+                                    user_navigated=(selected_index != 0),  # Mark as navigated if index > 0
+                                    projects=[],  # Projects stored separately for efficiency
+                                )
+                                navigation_handler._last_project_preview_data = {
+                                    "visible": True,
+                                    "type": "project_list",
+                                    "accumulated_chars": accumulated_chars,
+                                    "selected_index": selected_index,
+                                    "total_count": len(projects),
+                                    "projects": projects,
+                                    "empty": len(projects) == 0,
+                                }
+                            except ImportError as e:
+                                print(f"WARNING: Could not import FilterState for caching: {e}", file=sys.stderr, flush=True)
+
                             # Show/update project list preview (Feature 078)
                             emit_project_list_preview(
                                 visible=True,

@@ -2,12 +2,14 @@
 Pydantic models for project filtering and fuzzy search.
 
 Feature 078: Enhanced Project Selection in Eww Preview Dialog
+Feature 079: Preview Pane User Experience (branch number, worktree hierarchy)
 Provides data models for fuzzy matching, filter state management, and project list items.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
+import re
 
 
 class MatchPosition(BaseModel):
@@ -33,6 +35,7 @@ class ProjectListItem(BaseModel):
     """Single project entry in the filtered list with match metadata.
 
     Feature 078: Used for UI rendering in project selection mode.
+    Feature 079: Enhanced with branch number and type for worktree hierarchy.
     Contains project metadata plus fuzzy match scoring information.
     """
     name: str = Field(..., min_length=1, description="Project identifier (e.g., '078-eww-preview-improvement')")
@@ -43,6 +46,11 @@ class ProjectListItem(BaseModel):
     directory_exists: bool = Field(..., description="True if project directory exists on filesystem")
     relative_time: str = Field(..., description="Relative time since last activity (e.g., '2h ago')")
 
+    # Feature 079: Branch metadata for numeric prefix filtering and hierarchy display
+    branch_number: Optional[str] = Field(default=None, description="Extracted numeric prefix (e.g., '079')")
+    branch_type: str = Field(default="main", description="Branch classification: 'feature', 'main', 'hotfix', 'release'")
+    full_branch_name: str = Field(default="", description="Full git branch name (e.g., '079-preview-pane-user-experience')")
+
     # Git status (only for worktrees with git metadata)
     git_status: Optional[GitStatus] = Field(default=None, description="Git status indicators")
 
@@ -52,6 +60,54 @@ class ProjectListItem(BaseModel):
 
     # Selection state for UI
     selected: bool = Field(default=False, description="True if this project is currently highlighted")
+
+    @model_validator(mode='after')
+    def extract_branch_metadata(self) -> 'ProjectListItem':
+        """Extract branch number and classify branch type from full_branch_name.
+
+        Feature 079: Automatic metadata extraction for numeric prefix filtering.
+        """
+        if self.full_branch_name and not self.branch_number:
+            # Extract numeric prefix (e.g., '079' from '079-preview-pane-user-experience')
+            match = re.match(r'^(\d+)-', self.full_branch_name)
+            if match:
+                self.branch_number = match.group(1)
+
+        # Classify branch type based on naming pattern
+        if self.full_branch_name:
+            if re.match(r'^\d+-', self.full_branch_name):
+                self.branch_type = "feature"
+            elif self.full_branch_name.startswith("hotfix-"):
+                self.branch_type = "hotfix"
+            elif self.full_branch_name.startswith("release-"):
+                self.branch_type = "release"
+            elif self.branch_type == "main":
+                # Keep default "main" for main/master branches
+                pass
+
+        return self
+
+    def formatted_display_name(self) -> str:
+        """Return formatted name with branch number if present.
+
+        Feature 079: Display as '079 - Preview Pane UX' for deterministic filtering.
+        """
+        if self.branch_number:
+            return f"{self.branch_number} - {self.display_name}"
+        return self.display_name
+
+    def indentation_level(self) -> int:
+        """Calculate indentation level for hierarchy display.
+
+        Feature 079: US5 - T038 - Worktree hierarchy indentation.
+        Returns:
+            0 for root projects (no parent)
+            1 for worktrees with parent
+            0 for orphan worktrees (parent not loaded)
+        """
+        if self.is_worktree and self.parent_project_name:
+            return 1
+        return 0
 
     class Config:
         """Pydantic config."""
@@ -190,6 +246,63 @@ class FilterState(BaseModel):
         # Update selected flags on all items
         for i, project in enumerate(self.projects):
             project.selected = (i == self.selected_index)
+
+    def group_by_parent(self) -> List[dict]:
+        """Group projects into parent-children hierarchy.
+
+        Feature 079: US5 - T037/T039 - Worktree hierarchy grouping.
+
+        Returns:
+            List of dicts with 'parent' (ProjectListItem) and 'children' (List[ProjectListItem])
+            Root projects have empty children list.
+            Worktrees with loaded parent are children of their parent.
+            Orphan worktrees (parent not loaded) become their own group.
+        """
+        if not self.projects:
+            return []
+
+        # Build parent map: parent_name -> list of children
+        parent_to_children: dict = {}
+        root_projects: List[ProjectListItem] = []
+        orphan_worktrees: List[ProjectListItem] = []
+
+        # Identify root projects
+        root_names = {p.name for p in self.projects if not p.is_worktree}
+
+        for project in self.projects:
+            if not project.is_worktree:
+                # Root project
+                root_projects.append(project)
+                if project.name not in parent_to_children:
+                    parent_to_children[project.name] = []
+            elif project.parent_project_name and project.parent_project_name in root_names:
+                # Worktree with loaded parent
+                if project.parent_project_name not in parent_to_children:
+                    parent_to_children[project.parent_project_name] = []
+                parent_to_children[project.parent_project_name].append(project)
+            else:
+                # Orphan worktree (parent not loaded or None)
+                orphan_worktrees.append(project)
+
+        # Build grouped structure preserving order
+        groups = []
+
+        # Add root projects with their children
+        for root in root_projects:
+            children = parent_to_children.get(root.name, [])
+            groups.append({
+                "parent": root,
+                "children": children
+            })
+
+        # Add orphan worktrees as standalone groups
+        for orphan in orphan_worktrees:
+            groups.append({
+                "parent": orphan,
+                "children": []
+            })
+
+        return groups
 
     class Config:
         """Pydantic config."""
