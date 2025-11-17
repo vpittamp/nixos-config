@@ -1,9 +1,9 @@
 # Goose Desktop - AI Agent Desktop Application
 # Electron app packaged as DEB, extracted and wrapped for NixOS
-{ lib, stdenv, fetchurl, dpkg, autoPatchelfHook, makeWrapper, wrapGAppsHook
+{ lib, stdenv, fetchurl, dpkg, autoPatchelfHook, makeWrapper, wrapGAppsHook3
 , alsa-lib, at-spi2-atk, at-spi2-core, atk, cairo, cups, dbus, expat, fontconfig
 , freetype, gdk-pixbuf, glib, gtk3, libdrm, libnotify, libxkbcommon, mesa, nspr
-, nss, pango, systemd, xorg, libappindicator-gtk3, libGL }:
+, nss, pango, systemd, xorg, libappindicator-gtk3, libGL, gnutar, binutils, zstd }:
 
 let
   version = "1.14.0";
@@ -60,14 +60,20 @@ stdenv.mkDerivation {
     dpkg
     autoPatchelfHook
     makeWrapper
-    wrapGAppsHook
+    wrapGAppsHook3
+    binutils  # for ar to extract .deb
+    gnutar    # for extracting with --no-same-permissions
+    zstd      # for decompressing data.tar.zst
   ];
 
   buildInputs = runtimeLibs;
 
   unpackPhase = ''
     runHook preUnpack
-    dpkg-deb -x $src .
+    # Extract control and data archives separately to avoid setuid permission issues
+    ar x $src
+    # Extract data.tar without preserving special permissions (setuid/setgid)
+    tar --no-same-permissions --no-same-owner -xf data.tar.* 2>/dev/null || tar -xf data.tar.*
     runHook postUnpack
   '';
 
@@ -83,25 +89,49 @@ stdenv.mkDerivation {
     mkdir -p $out/share/applications
     mkdir -p $out/share/icons/hicolor
 
-    # Copy the application files
-    cp -r opt/Goose/* $out/opt/goose/ || cp -r usr/lib/goose/* $out/opt/goose/ || cp -r usr/share/goose/* $out/opt/goose/ || true
-
-    # If the app is in a different location, try to find it
-    if [ ! -f "$out/opt/goose/goose" ] && [ ! -f "$out/opt/goose/Goose" ]; then
+    # Copy the application files - handle different possible locations
+    if [ -d usr/lib/goose ]; then
+      cp -r usr/lib/goose/* $out/opt/goose/
+    elif [ -d opt/Goose ]; then
+      cp -r opt/Goose/* $out/opt/goose/
+    elif [ -d usr/share/goose ]; then
+      cp -r usr/share/goose/* $out/opt/goose/
+    else
       # Try to find the main executable
-      find . -type f -name "goose" -o -name "Goose" | head -1 | xargs -I {} cp -r "$(dirname {})"/* $out/opt/goose/
+      GOOSE_DIR=$(find . -type f \( -name "goose" -o -name "Goose" \) | head -1 | xargs -I {} dirname {})
+      if [ -n "$GOOSE_DIR" ] && [ -d "$GOOSE_DIR" ]; then
+        cp -r "$GOOSE_DIR"/* $out/opt/goose/
+      fi
     fi
 
-    # Make the main binary executable
-    chmod +x $out/opt/goose/goose 2>/dev/null || chmod +x $out/opt/goose/Goose 2>/dev/null || true
+    # Make the main binary executable - find it first
+    if [ -f "$out/opt/goose/goose" ]; then
+      chmod +x $out/opt/goose/goose
+      MAIN_BINARY="$out/opt/goose/goose"
+    elif [ -f "$out/opt/goose/Goose" ]; then
+      chmod +x $out/opt/goose/Goose
+      MAIN_BINARY="$out/opt/goose/Goose"
+    else
+      # List what we have for debugging
+      echo "Contents of $out/opt/goose:"
+      ls -la $out/opt/goose/ | head -20
+      echo "Looking for any executable files..."
+      MAIN_BINARY=$(find $out/opt/goose -maxdepth 1 -type f -name "*.bin" -o -type f ! -name "*.*" | head -1)
+      if [ -n "$MAIN_BINARY" ]; then
+        chmod +x "$MAIN_BINARY"
+      else
+        echo "ERROR: Could not find main binary in $out/opt/goose"
+        exit 1
+      fi
+    fi
 
     # Install desktop file if present
     if [ -f usr/share/applications/*.desktop ]; then
       cp usr/share/applications/*.desktop $out/share/applications/
       substituteInPlace $out/share/applications/*.desktop \
-        --replace '/opt/Goose/' "$out/opt/goose/" \
-        --replace '/usr/lib/goose/' "$out/opt/goose/" \
-        --replace '/usr/share/goose/' "$out/opt/goose/"
+        --replace-warn '/opt/Goose/' "$out/opt/goose/" \
+        --replace-warn '/usr/lib/goose/' "$out/opt/goose/" \
+        --replace-warn '/usr/share/goose/' "$out/opt/goose/"
     fi
 
     # Install icons if present
@@ -110,12 +140,7 @@ stdenv.mkDerivation {
     fi
 
     # Create wrapper script
-    makeWrapper "$out/opt/goose/goose" "$out/bin/goose-desktop" \
-      --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
-      --add-flags "--no-sandbox" \
-      "''${gappsWrapperArgs[@]}" \
-      2>/dev/null || \
-    makeWrapper "$out/opt/goose/Goose" "$out/bin/goose-desktop" \
+    makeWrapper "$MAIN_BINARY" "$out/bin/goose-desktop" \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
       --add-flags "--no-sandbox" \
       "''${gappsWrapperArgs[@]}"
