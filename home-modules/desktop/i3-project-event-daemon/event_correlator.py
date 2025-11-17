@@ -126,10 +126,15 @@ class EventCorrelator:
 
             # If we found correlated children, create EventCorrelation
             if child_events:
-                # Calculate time delta to first child
-                time_delta_ms = (
-                    child_events[0].timestamp - window_event.timestamp
-                ).total_seconds() * 1000
+                # Sort child events by timestamp to get chronologically first
+                child_events_sorted = sorted(child_events, key=lambda e: e.timestamp)
+
+                # Calculate time delta to first child (chronologically)
+                # Use abs() to handle rare cases where process event timestamp is before window event
+                # (can happen due to event capture timing or clock drift)
+                time_delta_ms = abs(
+                    (child_events_sorted[0].timestamp - window_event.timestamp).total_seconds() * 1000
+                )
 
                 # Use factors from first (highest confidence) child
                 first_factors = factors_list[0][0]
