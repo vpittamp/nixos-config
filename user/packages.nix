@@ -11,6 +11,9 @@ let
   # IDP Builder - x86_64 only
   idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix { };
 
+  # Goose Desktop - AI Agent Desktop Application (x86_64 only)
+  goose-desktop = pkgs.callPackage ../packages/goose-desktop.nix { };
+
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -48,10 +51,13 @@ let
 
   # AI and LLM tools
   aiTools = with pkgs; [
+    goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
     # Note: gitingest is run on-demand via: uvx gitingest <repo-url>
     # This ensures we always use the latest version without pre-installation
     # See /etc/nixos/.claude/commands/gitingest.md for usage
+  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
+    goose-desktop # Goose AI Agent Desktop (custom package, x86_64 only)
   ];
 
   # Shell enhancements
