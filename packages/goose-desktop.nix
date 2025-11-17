@@ -142,7 +142,7 @@ stdenv.mkDerivation {
     # Create wrapper script
     makeWrapper "$MAIN_BINARY" "$out/bin/goose-desktop" \
       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath runtimeLibs}" \
-      --add-flags "--no-sandbox" \
+      --add-flags "--no-sandbox --disable-gpu --disable-software-rasterizer" \
       "''${gappsWrapperArgs[@]}"
 
     runHook postInstall

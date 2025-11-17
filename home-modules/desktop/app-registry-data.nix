@@ -322,7 +322,7 @@ let
       description = "Kubernetes web UI for cluster management via Tailscale";
     })
 
-    # WS11: AI Agents (Primary: goose-desktop)
+    # WS11: AI Agents (Primary: goose-desktop) - HEADLESS-1
     (mkApp {
       name = "goose-desktop";
       display_name = "Goose AI Agent";
@@ -331,6 +331,7 @@ let
       scope = "global";
       expected_class = "goose";  # Electron app class
       preferred_workspace = 11;
+      preferred_monitor_role = "primary";  # Always on HEADLESS-1
       icon = "/etc/nixos/assets/icons/goose.svg";
       nix_package = "pkgs.goose-desktop";
       multi_instance = false;
