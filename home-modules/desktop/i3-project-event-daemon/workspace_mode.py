@@ -180,6 +180,7 @@ class WorkspaceModeManager:
         """Remove last character from accumulated input.
 
         Supports both workspace navigation (digits) and project search (chars).
+        Feature 079: US2 - When in project mode with empty chars, exit project mode.
 
         Returns:
             Updated accumulated string (digits or chars depending on input_type)
@@ -197,10 +198,20 @@ class WorkspaceModeManager:
             # Remove last char from project search
             if self._state.accumulated_chars:
                 self._state.accumulated_chars = self._state.accumulated_chars[:-1]
-                await self._emit_project_mode_event("char")
+                # Update filter state to match
+                self._filter_state.accumulated_chars = self._state.accumulated_chars
+                await self._emit_project_mode_event("backspace")
                 logger.debug(f"Backspace in project mode, remaining: '{self._state.accumulated_chars}'")
             else:
-                logger.debug("Backspace in project mode but no chars to remove")
+                # Feature 079: US2 - No chars left, exit project mode back to workspace mode
+                logger.debug("Backspace on empty project filter - exiting project mode")
+                self._state.input_type = None
+                self._filter_state.accumulated_chars = ""
+                self._filter_state.selected_index = 0
+                # Emit event to hide project list and show workspace preview
+                await self._emit_project_mode_event("backspace")
+                # Also emit workspace mode to restore workspace preview
+                await self._emit_workspace_mode_event("digit")
 
             elapsed_ms = (time.time() - start_time) * 1000
             logger.debug(f"Backspace completed in project mode (took {elapsed_ms:.2f}ms)")
@@ -526,6 +537,7 @@ class WorkspaceModeManager:
         """Navigate in workspace preview using arrow or home/end keys.
 
         Feature 059: Workspace Navigation Event Broadcasting
+        Feature 079: Enhanced for project mode navigation
 
         Args:
             direction: Navigation direction ("up", "down", "left", "right", "home", "end")
@@ -541,9 +553,20 @@ class WorkspaceModeManager:
         if direction not in valid_directions:
             raise ValueError(f"Invalid direction: {direction}. Must be one of {valid_directions}")
 
-        # Emit navigation event with direction parameter
-        await self._emit_workspace_mode_event("nav", direction=direction)
-        logger.info(f"Navigation event emitted: direction={direction}")
+        # Feature 079: Check if we're in project mode (filter has ':' prefix)
+        if self._filter_state.accumulated_chars:
+            # In project mode - navigate project list
+            if direction == "down":
+                self._filter_state.navigate_down()
+            elif direction == "up":
+                self._filter_state.navigate_up()
+            # Emit project mode event with navigation
+            await self._emit_project_mode_event("nav")
+            logger.info(f"Project mode navigation: direction={direction}, selected={self._filter_state.selected_index}")
+        else:
+            # Standard workspace navigation
+            await self._emit_workspace_mode_event("nav", direction=direction)
+            logger.info(f"Navigation event emitted: direction={direction}")
 
     async def delete(self) -> None:
         """Delete (close) the currently selected window in workspace preview.
