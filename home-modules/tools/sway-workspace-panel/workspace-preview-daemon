@@ -930,17 +930,23 @@ def emit_preview(visible: bool, renderer: Optional[PreviewRenderer] = None, **kw
     # T036: Start timing for performance validation (<50ms target)
     start_time = time.time()
 
+    global _eww_window_open
+
     if not visible:
         # Close Eww window (GTK destroys window surface, removes from Sway tree)
-        eww_close_window("workspace-preview")
+        if _eww_window_open:
+            eww_close_window("workspace-preview")
+            _eww_window_open = False
         # Still emit JSON for deflisten (Eww needs stream to remain active)
         output = {}  # Empty JSON (no data needed when window closed)
         print(json.dumps(output), flush=True)
         return
 
     # Open Eww window (GTK creates window surface, appears in Sway tree)
-    # This MUST happen before emitting JSON to ensure window exists
-    eww_open_window("workspace-preview")
+    # Feature 079: Only open if not already open (avoid flickering)
+    if not _eww_window_open:
+        eww_open_window("workspace-preview")
+        _eww_window_open = True
 
     # Render workspace preview with full contents
     if renderer is None:
@@ -1125,9 +1131,13 @@ def emit_project_list_preview(visible: bool, **kwargs) -> None:
             - selected_index: Currently selected project index
             - projects: List of project dicts with full metadata
     """
+    global _eww_window_open
+
     if not visible:
         # Close Eww window
-        eww_close_window("workspace-preview")
+        if _eww_window_open:
+            eww_close_window("workspace-preview")
+            _eww_window_open = False
         output = {"visible": False, "type": "project_list"}
         print(json.dumps(output), flush=True)
 
@@ -1175,8 +1185,10 @@ def emit_project_list_preview(visible: bool, **kwargs) -> None:
         "empty": len(enhanced_projects) == 0,
     }
 
-    # Open Eww window if not already open
-    eww_open_window("workspace-preview")
+    # Feature 079: Open Eww window only if not already open (avoid flickering)
+    if not _eww_window_open:
+        eww_open_window("workspace-preview")
+        _eww_window_open = True
 
     print(json.dumps(output), flush=True)
 
@@ -1380,6 +1392,10 @@ def close_window_with_verification(sway_conn: i3ipc.Connection, container_id: in
 # Initialized after class definitions to avoid NameError
 selection_manager = SelectionManager()
 navigation_handler = NavigationHandler(selection_manager)
+
+# Feature 079: Track Eww window state to avoid flickering on updates
+# Set to True when window is opened, False when closed
+_eww_window_open = False
 
 
 def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:

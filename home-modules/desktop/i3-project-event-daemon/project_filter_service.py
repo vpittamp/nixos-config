@@ -11,14 +11,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .models import Project
-from .models.project_filter import (
-    ProjectListItem,
-    GitStatus,
-    MatchPosition,
-    ScoredMatch,
-    FilterState,
-)
+try:
+    from .models import Project
+    from .models.project_filter import (
+        ProjectListItem,
+        GitStatus,
+        MatchPosition,
+        ScoredMatch,
+        FilterState,
+    )
+except ImportError:
+    # Support direct import for tests
+    from models import Project
+    from models.project_filter import (
+        ProjectListItem,
+        GitStatus,
+        MatchPosition,
+        ScoredMatch,
+        FilterState,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -235,9 +246,34 @@ def load_all_projects(config_dir: Path) -> List[ProjectListItem]:
                     pass
         return datetime.min.replace(tzinfo=timezone.utc)
 
-    project_items.sort(key=get_sort_key, reverse=True)
+    # Feature 079: Group worktrees under their parent projects
+    # Sort so that: root projects come first, then their worktrees
+    root_projects = [p for p in project_items if not p.is_worktree]
+    worktrees = [p for p in project_items if p.is_worktree]
 
-    return project_items
+    # Sort root projects by recency
+    root_projects.sort(key=get_sort_key, reverse=True)
+
+    # Build grouped list: for each root, add its worktrees after it
+    grouped_items = []
+    used_worktrees = set()
+
+    for root in root_projects:
+        grouped_items.append(root)
+        # Find worktrees belonging to this root
+        root_worktrees = [w for w in worktrees if w.parent_project_name == root.name]
+        # Sort these worktrees by recency
+        root_worktrees.sort(key=get_sort_key, reverse=True)
+        grouped_items.extend(root_worktrees)
+        for w in root_worktrees:
+            used_worktrees.add(w.name)
+
+    # Add any orphan worktrees (parent project not found) at the end
+    orphan_worktrees = [w for w in worktrees if w.name not in used_worktrees]
+    orphan_worktrees.sort(key=get_sort_key, reverse=True)
+    grouped_items.extend(orphan_worktrees)
+
+    return grouped_items
 
 
 def fuzzy_match_score(query: str, text: str) -> Tuple[int, List[MatchPosition]]:
