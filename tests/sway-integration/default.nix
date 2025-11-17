@@ -156,6 +156,7 @@ let
       wlr-randr
 
       # Test applications
+      foot  # Lightweight terminal that works with software rendering
       alacritty
       firefox
       ghostty
@@ -241,17 +242,45 @@ in
   windowLaunch = makeSwayTest {
     name = "sway-window-launch";
     testScript = ''
-      # Launch Alacritty terminal
-      machine.succeed("su - testuser -c 'alacritty &'")
-      machine.sleep(2)
+      # Use retry with wait_for_window helper
+      def wait_for_window(app_id, timeout=10):
+          """Wait for a window with the given app_id to appear"""
+          import time
+          start = time.time()
+          while time.time() - start < timeout:
+              try:
+                  output = machine.succeed(f"su - testuser -c 'swaymsg -t get_tree | jq -r \".. | .app_id? // empty\" | grep -q {app_id} && echo found'", timeout=5)
+                  if "found" in output:
+                      return True
+              except Exception as e:
+                  print(f"Window not yet found: {e}")
+              machine.sleep(1)
+          return False
 
-      # Verify window appeared
-      output = machine.succeed("su - testuser -c 'swaymsg -t get_tree | jq -r \".. | .app_id? | select(. == \\\"Alacritty\\\")\"'")
-      assert "Alacritty" in output, "Alacritty window not found"
+      # Launch Foot terminal using swaymsg exec (proper Sway environment)
+      print("Launching Foot terminal via swaymsg exec...")
+      machine.succeed("su - testuser -c 'swaymsg exec foot'")
+      target_app = "foot"
+
+      # Wait for window to appear with retry
+      print(f"Waiting for {target_app} window...")
+      if not wait_for_window(target_app, timeout=20):
+          # Debug: show what windows exist
+          tree = machine.succeed("su - testuser -c 'swaymsg -t get_tree | jq -r \".. | .app_id? // empty\" | head -20'")
+          print(f"Available windows: {tree}")
+          # Also check if the process is running
+          ps = machine.succeed("su - testuser -c 'ps aux | grep -E \"foot|ghostty|firefox\" | head -10' || true")
+          print(f"Running processes: {ps}")
+          # Check for errors in journal
+          journal = machine.succeed("su - testuser -c 'journalctl --user -n 20 2>/dev/null' || true")
+          print(f"Recent journal: {journal}")
+          raise Exception(f"{target_app} window not found within timeout")
+
+      print("Foot window appeared!")
 
       # Get focused workspace
       workspace = machine.succeed("su - testuser -c 'swaymsg -t get_workspaces | jq -r \".[] | select(.focused == true) | .num\"'")
-      print(f"Alacritty opened on workspace {workspace.strip()}")
+      print(f"{target_app} opened on workspace {workspace.strip()}")
 
       machine.screenshot("window_launched")
 
