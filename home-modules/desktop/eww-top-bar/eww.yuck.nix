@@ -1,8 +1,36 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, topBarOutputs ? [], sanitizeOutputName ? (x: x), ... }:
 
 # Feature 061: Eww Top Bar - Enhanced widget definitions
 # Adds: System tray, WiFi widget, enhanced volume control with popup
+# Now with dynamic monitor-based window generation (fixes Hetzner/M1 mismatch)
 
+let
+  # Generate Eww window definition for a monitor
+  mkWindowDef = output: let
+    windowId = sanitizeOutputName output.name;
+    isPrimary = output.showTray;
+  in ''
+    ;; ${output.name} display (${if isPrimary then "primary" else "secondary"})
+    (defwindow top-bar-${windowId}
+      :monitor "${output.name}"
+      :geometry (geometry
+        :x "0px"
+        :y "0px"
+        :width "100%"
+        :height "32px"
+        :anchor "top center")
+      :stacking "fg"
+      :exclusive true
+      :focusable false
+      :namespace "eww-top-bar"
+      :reserve (struts :distance "36px" :side "top")
+      :windowtype "dock"
+      (main-bar :is_primary ${if isPrimary then "true" else "false"}))
+  '';
+
+  # Generate volume popup window for first monitor
+  firstMonitor = if topBarOutputs != [] then (builtins.head topBarOutputs).name else "eDP-1";
+in
 ''
 ;; Eww Top Bar - System Metrics Display
 ;; Feature 060: Core functionality
@@ -276,45 +304,14 @@
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)
+;; Generated dynamically based on detected monitors (Hetzner: HEADLESS-*, M1: eDP-1/HDMI-A-1)
 ;; ============================================================================
 
-;; Built-in display (primary)
-(defwindow top-bar-edp1
-  :monitor "eDP-1"
-  :geometry (geometry
-    :x "0px"
-    :y "0px"
-    :width "100%"
-    :height "32px"
-    :anchor "top center")
-  :stacking "fg"
-  :exclusive true
-  :focusable false
-  :namespace "eww-top-bar"
-  :reserve (struts :distance "36px" :side "top")
-  :windowtype "dock"
-  (main-bar :is_primary true))
-
-;; External display (secondary)
-(defwindow top-bar-hdmia1
-  :monitor "HDMI-A-1"
-  :geometry (geometry
-    :x "0px"
-    :y "0px"
-    :width "100%"
-    :height "32px"
-    :anchor "top center")
-  :stacking "fg"
-  :exclusive true
-  :focusable false
-  :namespace "eww-top-bar"
-  :reserve (struts :distance "36px" :side "top")
-  :windowtype "dock"
-  (main-bar :is_primary false))
+${lib.concatMapStrings mkWindowDef topBarOutputs}
 
 ;; Feature 061: Volume popup window (US3)
 (defwindow volume-popup
-  :monitor "eDP-1"
+  :monitor "${firstMonitor}"
   :geometry (geometry
     :anchor "top right"
     :x "-10px"

@@ -104,7 +104,9 @@ function filterOutputs(
           w.marks.some((m) =>
             m.startsWith(`project:${filters.project}:`) ||
             m === `project:${filters.project}` ||
-            m === `scratchpad:${filters.project}`
+            m === `scratchpad:${filters.project}` ||
+            m.startsWith(`scoped:${filters.project}:`) ||
+            m.startsWith(`global:${filters.project}:`)
           )
         ),
       })),

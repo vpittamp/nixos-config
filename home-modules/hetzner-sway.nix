@@ -1,6 +1,6 @@
 # Home-manager configuration for Hetzner Cloud Sway (Feature 046)
 # Headless Wayland with Sway, VNC remote access, i3pm daemon, walker launcher
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -14,8 +14,8 @@
     ./desktop/sway.nix         # Sway window manager with headless support
     # sway-easyfocus now provided by home-manager upstream
     ./desktop/unified-bar-theme.nix  # Feature 057: Unified bar theme (Catppuccin Mocha)
-    ./desktop/swaybar.nix      # Swaybar with event-driven status
-    ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (system monitoring + rich indicators)
+    # ./desktop/swaybar.nix      # Swaybar with event-driven status (DISABLED: replaced by eww-top-bar Feature 060)
+    # ./desktop/swaybar-enhanced.nix  # Feature 052: Enhanced swaybar status (DISABLED: replaced by eww-top-bar Feature 060)
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar replacing bottom swaybar
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
     ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
@@ -42,6 +42,18 @@
 
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
+
+  # Add gnome-keyring for D-Bus secrets service (needed for Goose auth)
+  home.packages = with pkgs; [
+    gnome-keyring
+    libsecret  # For secret-tool CLI
+  ];
+
+  # Enable gnome-keyring service for org.freedesktop.secrets
+  services.gnome-keyring = {
+    enable = true;
+    components = [ "secrets" ];  # Only secrets, not ssh/pkcs11
+  };
 
   # Feature 046: i3-msg → swaymsg compatibility symlink
   # i3pm CLI uses i3-msg, but Sway uses swaymsg (compatible CLI)
@@ -76,11 +88,11 @@
     debounceMs = 500;  # Wait 500ms after last change before reloading
   };
 
-  # Feature 052: Enhanced Swaybar Status
-  programs.swaybar-enhanced = {
-    enable = true;
-    # Uses default Catppuccin Mocha theme and standard update intervals
-  };
+  # Feature 052: Enhanced Swaybar Status (DISABLED: replaced by eww-top-bar Feature 060)
+  # programs.swaybar-enhanced = {
+  #   enable = true;
+  #   # Uses default Catppuccin Mocha theme and standard update intervals
+  # };
 
   programs.eww-workspace-bar.enable = true;
 
@@ -124,5 +136,11 @@
   # Feature 056: Declarative PWA Installation
   programs.firefoxpwa-declarative = {
     enable = true;
+  };
+
+  # Override default browser to Chromium for better OAuth/authentication support
+  # (Goose and other apps that need browser auth work better with Chromium)
+  home.sessionVariables = {
+    BROWSER = lib.mkForce "chromium";
   };
 }

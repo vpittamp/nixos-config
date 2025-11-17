@@ -190,6 +190,8 @@ in
       inherit config lib pkgs;
       inherit (pkgs.stdenv.hostPlatform) system;
       osConfig = osConfig;
+      # Pass monitor configuration for dynamic window generation
+      inherit topBarOutputs sanitizeOutputName;
     };
 
     # Eww styles (CSS/SCSS)
