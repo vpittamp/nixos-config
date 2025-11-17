@@ -302,6 +302,70 @@
       app_scope = "global";
       preferred_workspace = 67;
     }
+
+    # Keycloak (Project)
+    {
+      name = "Keycloak";
+      url = "https://cnoe.localtest.me:8443/keycloak";
+      domain = "cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/keycloak.svg";
+      description = "Keycloak identity and access management (project)";
+      categories = "Security;Network;";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;";
+      scope = "https://cnoe.localtest.me:8443/keycloak/";
+      ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 68;
+    }
+
+    # Backstage (Project)
+    {
+      name = "Backstage";
+      url = "https://cnoe.localtest.me:8443";
+      domain = "cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/backstage.svg";
+      description = "Backstage developer portal (project)";
+      categories = "Development;Network;";
+      keywords = "backstage;developer-portal;sdp;platform;";
+      scope = "https://cnoe.localtest.me:8443/";
+      ulid = "01MD4D0A6S2CVXKNNY4EJ5PQ1G";  # Generated 2025-11-17
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 69;
+    }
+
+    # ArgoCD (Project)
+    {
+      name = "ArgoCD";
+      url = "https://argocd.cnoe.localtest.me:8443";
+      domain = "argocd.cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/argocd.svg";
+      description = "ArgoCD GitOps controller (project)";
+      categories = "Development;Network;System;";
+      keywords = "argocd;gitops;cd;kubernetes;devops;";
+      scope = "https://argocd.cnoe.localtest.me:8443/";
+      ulid = "01MD4D0N7A8F9P6QS0R1TV2WX3";  # Generated 2025-11-17
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 70;
+    }
+
+    # Gitea (Project)
+    {
+      name = "Gitea";
+      url = "https://gitea.cnoe.localtest.me:8443";
+      domain = "gitea.cnoe.localtest.me";
+      icon = "/etc/nixos/assets/icons/gitea.svg";
+      description = "Gitea self-hosted git service (project)";
+      categories = "Development;Network;";
+      keywords = "gitea;git;scm;code;devops;";
+      scope = "https://gitea.cnoe.localtest.me:8443/";
+      ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 71;
+    }
   ];
 
   # ULID validation function

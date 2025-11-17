@@ -201,6 +201,12 @@ function getProjectFromMarks(marks: string[]): string | null {
       const projectName = parts[1] || null;
       return projectName === "none" ? null : projectName;
     }
+    // New unified mark format: "scoped:PROJECT:ID" or "global:PROJECT:ID"
+    if (mark.startsWith("scoped:") || mark.startsWith("global:")) {
+      const parts = mark.split(":");
+      const projectName = parts[1] || null;
+      return projectName === "none" ? null : projectName;
+    }
     // Feature 062/063: Scratchpad terminals have marks like "scratchpad:projectname"
     if (mark.startsWith("scratchpad:")) {
       const projectName = mark.substring(11); // Remove "scratchpad:" prefix

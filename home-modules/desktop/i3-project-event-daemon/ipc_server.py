@@ -2306,17 +2306,36 @@ class IPCServer:
             if is_x11_window or is_wayland_window:
                 # Get project from marks (format: SCOPE:PROJECT:WINDOW_ID)
                 project = None
+                scope_from_mark = None
                 for mark in node.marks:
                     if mark.startswith("scoped:") or mark.startswith("global:"):
                         mark_parts = mark.split(":")
+                        scope_from_mark = mark_parts[0] if len(mark_parts) >= 1 else None
                         project = mark_parts[1] if len(mark_parts) >= 2 else None
                         break
 
                 # Get window class (X11 uses window_class, Wayland uses app_id)
                 window_class = node.window_class if hasattr(node, 'window_class') and node.window_class else (node.app_id if hasattr(node, 'app_id') else "")
 
+                # Read I3PM_* environment (single read reused for app_id + project metadata)
+                env = {}
+                if hasattr(node, 'pid') and node.pid:
+                    try:
+                        from .services.window_filter import read_process_environ_with_fallback
+                        env = read_process_environ_with_fallback(node.pid)
+                    except (FileNotFoundError, PermissionError) as e:
+                        # Process may have exited or we don't have permission
+                        logger.debug(f"Failed to read environ for window {node.id if hasattr(node,'id') else node.window} PID {node.pid}: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error reading environ for window {node.id if hasattr(node,'id') else node.window} PID {node.pid}: {e}", exc_info=True)
+
+                # Fall back to environment project when marks are missing (common regression)
+                if not project:
+                    project = env.get("I3PM_PROJECT_NAME") or env.get("I3PM_PARENT_PROJECT")
+                project = project or ""
+
                 # Determine classification from daemon state
-                classification = "global"
+                classification = scope_from_mark or env.get("I3PM_SCOPE") or "global"
                 hidden = False
                 if window_class:
                     if project and window_class in self.state_manager.state.scoped_classes:
@@ -2333,23 +2352,13 @@ class IPCServer:
                 # Use node.id for Wayland windows (unique identifier), node.window for X11
                 window_id = node.window if is_x11_window else node.id
 
-                # Read I3PM_APP_ID from process environment if PID available
-                app_id = None
-                if hasattr(node, 'pid') and node.pid:
-                    try:
-                        from .services.window_filter import read_process_environ
-                        env = read_process_environ(node.pid)
-                        app_id = env.get("I3PM_APP_ID")
-                        if app_id:
-                            logger.debug(f"Found I3PM_APP_ID for window {window_id} PID {node.pid}: {app_id}")
-                        else:
-                            i3pm_keys = [k for k in env.keys() if k.startswith('I3PM')]
-                            logger.debug(f"No I3PM_APP_ID for window {window_id} PID {node.pid}, I3PM keys: {i3pm_keys}")
-                    except (FileNotFoundError, PermissionError) as e:
-                        # Process may have exited or we don't have permission
-                        logger.debug(f"Failed to read environ for window {window_id} PID {node.pid}: {e}")
-                    except Exception as e:
-                        logger.error(f"Unexpected error reading environ for window {window_id} PID {node.pid}: {e}", exc_info=True)
+                # Extract app_id and worktree metadata from already-read env
+                app_id = env.get("I3PM_APP_ID")
+                if app_id:
+                    logger.debug(f"Found I3PM_APP_ID for window {window_id} PID {node.pid}: {app_id}")
+                elif env:
+                    i3pm_keys = [k for k in env.keys() if k.startswith('I3PM')]
+                    logger.debug(f"No I3PM_APP_ID for window {window_id} PID {node.pid}, I3PM keys: {i3pm_keys}")
 
                 window_data = {
                     "id": window_id,
@@ -2360,6 +2369,13 @@ class IPCServer:
                     "title": node.name or "",
                     "workspace": workspace_str,
                     "output": output_name,
+                    "project": project,
+                    # Worktree metadata (Feature 079)
+                    "is_worktree": env.get("I3PM_IS_WORKTREE", "false").lower() == "true",
+                    "parent_project": env.get("I3PM_PARENT_PROJECT") or None,
+                    "branch_type": env.get("I3PM_BRANCH_TYPE") or None,
+                    "branch_number": env.get("I3PM_BRANCH_NUMBER") or None,
+                    "full_branch_name": env.get("I3PM_FULL_BRANCH_NAME") or None,
                     "marks": node.marks,
                     "floating": node.floating == "user_on",
                     "focused": node.focused,

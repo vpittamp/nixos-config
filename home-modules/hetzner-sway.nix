@@ -1,6 +1,6 @@
 # Home-manager configuration for Hetzner Cloud Sway (Feature 046)
 # Headless Wayland with Sway, VNC remote access, i3pm daemon, walker launcher
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -42,6 +42,18 @@
 
   home.username = "vpittamp";
   home.homeDirectory = "/home/vpittamp";
+
+  # Add gnome-keyring for D-Bus secrets service (needed for Goose auth)
+  home.packages = with pkgs; [
+    gnome-keyring
+    libsecret  # For secret-tool CLI
+  ];
+
+  # Enable gnome-keyring service for org.freedesktop.secrets
+  services.gnome-keyring = {
+    enable = true;
+    components = [ "secrets" ];  # Only secrets, not ssh/pkcs11
+  };
 
   # Feature 046: i3-msg → swaymsg compatibility symlink
   # i3pm CLI uses i3-msg, but Sway uses swaymsg (compatible CLI)
@@ -124,5 +136,11 @@
   # Feature 056: Declarative PWA Installation
   programs.firefoxpwa-declarative = {
     enable = true;
+  };
+
+  # Override default browser to Chromium for better OAuth/authentication support
+  # (Goose and other apps that need browser auth work better with Chromium)
+  home.sessionVariables = {
+    BROWSER = lib.mkForce "chromium";
   };
 }
