@@ -536,6 +536,7 @@ gh auth status               # Auto-uses 1Password token
 ## ⚠️ Recent Updates (2025-11)
 
 **Key Features**:
+- **Feature 079**: Preview pane UX enhancements - branch number display, worktree hierarchy, space-to-hyphen matching. See `/etc/nixos/specs/079-preview-pane-user-experience/`
 - **Feature 078**: Enhanced project selection with fuzzy search and visual feedback. See `/etc/nixos/specs/078-eww-preview-improvement/`
 - **Feature 073**: Eww interactive menu stabilization (M/F key actions, Delete key close, keyboard hints). See `/etc/nixos/specs/073-eww-menu-stabilization/`
 - **Feature 072**: Unified workspace/window/project switcher with all-windows preview
@@ -558,7 +559,10 @@ gh auth status               # Auto-uses 1Password token
 - JSON layout files in `~/.local/share/i3pm/layouts/<project>/<name>.json` (076-mark-based-app-identification)
 - Python 3.11+ (i3pm daemon, workspace-preview-daemon), Nix (Eww widget generation) + i3ipc.aio, Pydantic, Eww (GTK widgets), asyncio (078-eww-preview-improvement)
 - JSON project files (`~/.config/i3/projects/*.json`), in-memory daemon state (078-eww-preview-improvement)
+- Python 3.11+ (i3-project-event-daemon), TypeScript/Deno 1.40+ (i3pm CLI), Nix (Eww widget generation) + i3ipc.aio (Sway IPC), Pydantic (data models), Eww (GTK widgets), asyncio (event handling), SwayNC (notifications) (079-preview-pane-user-experience)
+- JSON project files (`~/.config/i3/projects/`), in-memory daemon state (079-preview-pane-user-experience)
 
 ## Recent Changes
+- 079-preview-pane-user-experience: Enhanced project list with branch numbers ("079 - Display Name"), worktree hierarchy with indentation, space-to-hyphen filter matching, top bar peach accent styling, `i3pm worktree list` CLI command
 - 078-eww-preview-improvement: Added enhanced project selection with fuzzy matching, Pydantic models, Eww project list widget (MVP complete)
 - 074-session-management: Added Python 3.11+ (existing daemon standard per Constitution Principle X)

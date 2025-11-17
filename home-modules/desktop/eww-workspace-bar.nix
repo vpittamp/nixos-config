@@ -354,21 +354,31 @@ ${workspacePreviewDefs}
           (for project in {workspace_preview_data.projects ?: []}
             ;; T023: Project item template with icon and name
             ;; T024: Highlight selected project
-            (box :class {"project-item" + (project.selected ? " selected" : "")}
+            ;; Feature 079: T041 - Render hierarchical project list with indentation
+            ;; Feature 079: T042 - Add indentation CSS via dynamic class
+            (box :class {"project-item" + (project.selected ? " selected" : "") +
+                         ((project.indentation_level ?: 0) > 0 ? " indent-1" : "")}
                  :orientation "v"
                  :space-evenly false
                  :spacing 2
-              ;; First row: icon, name, relative time
+              ;; First row: icon, name (with branch number if present), relative time
+              ;; Feature 079: US4 - T035/T036 - Display branch number prefix
+              ;; Feature 079: T043 - Use folder icon for root projects, branch icon for worktrees
               (box :class "project-item-header"
                    :orientation "h"
                    :space-evenly false
                    :spacing 8
                    :valign "center"
+                ;; T043: Icon based on project type (folder for root, branch for worktree)
                 (label :class "project-icon"
-                       :text {project.icon})
+                       :text {project.is_worktree ? "🌿" : (project.icon ?: "📁")})
+                ;; T035: Display "{branch_number} - {display_name}" when branch_number present
+                ;; T036: Gracefully handle missing/null branch_number (show display_name only)
                 (label :class "project-name"
-                       :text {project.display_name}
-                       :limit-width 30
+                       :text {(project.branch_number ?: "") != ""
+                              ? project.branch_number + " - " + project.display_name
+                              : project.display_name}
+                       :limit-width 35
                        :truncate true
                        :hexpand true)
                 (label :class "project-time"
@@ -829,6 +839,17 @@ button {
   border: 2px solid rgba(166, 227, 161, 0.9);  /* $green at 90% opacity */
   box-shadow: 0 0 12px rgba(166, 227, 161, 0.3), inset 0 0 8px rgba(166, 227, 161, 0.1);
   border-left: 6px solid rgba(166, 227, 161, 1);  /* Prominent left indicator */
+}
+
+/* Feature 079: T042 - Indentation CSS for worktree children */
+/* Visual hierarchy: indent worktrees under their parent projects */
+.project-item.indent-1 {
+  margin-left: 24px;
+  border-left: 3px solid rgba(250, 179, 135, 0.5);  /* $peach - worktree indicator */
+}
+
+.project-item.indent-1.selected {
+  border-left: 6px solid rgba(166, 227, 161, 1);  /* Override with selection indicator */
 }
 
 .project-icon {
