@@ -164,7 +164,8 @@ let
       name = "nvim";
       display_name = "Neovim";
       command = "ghostty";
-      parameters = "-e nvim-telescope-picker $PROJECT_DIR";
+      # Launch Neovim directly in the active project directory
+      parameters = "-e nvim $PROJECT_DIR";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 4;

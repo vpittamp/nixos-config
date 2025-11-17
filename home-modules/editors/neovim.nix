@@ -3,6 +3,8 @@
   # Use unwrapped neovim to avoid Nix plugin system issues in containers
   home.packages = with pkgs; [
     neovim-unwrapped  # Pure neovim without Nix wrapping
+    gh                # GitHub CLI (Octo + gh-dash)
+    gh-dash           # TUI for PR triage
     # Dependencies for plugins
     ripgrep           # For telescope
     fd                # For telescope file finder
@@ -306,5 +308,72 @@
         },
       },
     }
+  '';
+
+  # GitHub PR triage + review: gh-dash (triage) + octo.nvim (review)
+  xdg.configFile."nvim/lua/plugins/github-prs.lua".text = ''
+    return {
+      {
+        "pwntester/octo.nvim",
+        cmd = "Octo",
+        dependencies = {
+          "nvim-lua/plenary.nvim",
+          "nvim-telescope/telescope.nvim",
+          "nvim-tree/nvim-web-devicons",
+        },
+        config = true,
+        keys = {
+          { "<leader>gO", "<cmd>Octo<cr>", desc = "Octo (dashboard)" },
+          { "<leader>gpl", "<cmd>Octo pr list<cr>", desc = "PR list" },
+          { "<leader>gpc", "<cmd>Octo pr checkout<cr>", desc = "PR checkout" },
+          { "<leader>gpr", "<cmd>Octo review start<cr>", desc = "Start review" },
+          { "<leader>gps", "<cmd>Octo review submit<cr>", desc = "Submit review" },
+        },
+      },
+      {
+        -- Helper keymap to open gh-dash for PR triage in project root
+        "LazyVim/LazyVim",
+        keys = function(_, keys)
+          local Util = require("lazyvim.util")
+          table.insert(keys, {
+            "<leader>gD",
+            function()
+              local cwd = (Util.root and Util.root.get()) or vim.loop.cwd()
+              Util.terminal.open({ "gh", "dash" }, { cwd = cwd })
+            end,
+            desc = "GH Dash (PR triage)",
+          })
+          return keys
+        end,
+      },
+    }
+  '';
+
+  # gh-dash configuration: start with preview closed to avoid stuck/"null" pane
+  xdg.configFile."gh-dash/config.yml".text = ''
+    # yaml-language-server: $schema=https://gh-dash.dev/schema.json
+    defaults:
+      preview:
+        open: false   # keep preview closed on load; toggle with "p"
+        width: 50
+      prsLimit: 30
+      issuesLimit: 30
+      view: prs
+
+    prSections:
+      - title: Needs My Review
+        filters: is:open review-requested:@me
+      - title: My PRs
+        filters: is:open author:@me
+      - title: Involved
+        filters: is:open involves:@me -author:@me
+
+    issuesSections:
+      - title: Assigned
+        filters: is:open assignee:@me
+      - title: Created
+        filters: is:open author:@me
+      - title: Involved
+        filters: is:open involves:@me -author:@me
   '';
 }

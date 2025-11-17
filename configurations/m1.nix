@@ -352,7 +352,6 @@
   # Additional packages for Apple Silicon
   environment.systemPackages = with pkgs; [
     # Tools that work well on ARM
-    neovim
     ghostty
 
     # Local brightness/backlight controls used by Sway keybindings
