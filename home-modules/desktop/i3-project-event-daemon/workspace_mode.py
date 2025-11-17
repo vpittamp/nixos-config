@@ -151,6 +151,10 @@ class WorkspaceModeManager:
             # Feature 079: Clear project cache to reload from disk on each session
             # This ensures newly created projects (e.g., worktrees) appear immediately
             self._all_projects = []
+            # Reset filter state for fresh project selection
+            self._filter_state.accumulated_chars = ""
+            self._filter_state.selected_index = 0
+            self._filter_state.user_navigated = False
             logger.debug("Cleared project cache for fresh reload on project mode entry")
 
             # Emit project mode event to show empty project search UI
@@ -334,8 +338,18 @@ class WorkspaceModeManager:
 
     async def _execute_project_switch(self) -> Dict[str, any]:
         """Execute project switch with accumulated characters (NEW)."""
-        # Fuzzy match project from accumulated characters (lazy-loads ProjectService)
-        matched_project = await self._fuzzy_match_project(self._state.accumulated_chars)
+        # Feature 079: If no chars typed, use selected project from filter state
+        if not self._state.accumulated_chars and self._filter_state.projects:
+            # User navigated with arrows without typing - use selected project
+            selected_idx = self._filter_state.selected_index
+            if 0 <= selected_idx < len(self._filter_state.projects):
+                matched_project = self._filter_state.projects[selected_idx].name
+                logger.info(f"Using arrow-selected project at index {selected_idx}: {matched_project}")
+            else:
+                matched_project = None
+        else:
+            # Fuzzy match project from accumulated characters (lazy-loads ProjectService)
+            matched_project = await self._fuzzy_match_project(self._state.accumulated_chars)
 
         if not matched_project:
             logger.warning(f"No project found matching '{self._state.accumulated_chars}'")
@@ -553,8 +567,9 @@ class WorkspaceModeManager:
         if direction not in valid_directions:
             raise ValueError(f"Invalid direction: {direction}. Must be one of {valid_directions}")
 
-        # Feature 079: Check if we're in project mode (filter has ':' prefix)
-        if self._filter_state.accumulated_chars:
+        # Feature 079: Check if we're in project mode (input_type, not accumulated_chars)
+        # User may have pressed ":" but not typed any filter chars yet
+        if self._state.input_type == "project":
             # In project mode - navigate project list
             if direction == "down":
                 self._filter_state.navigate_down()

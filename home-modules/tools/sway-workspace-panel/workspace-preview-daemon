@@ -1404,6 +1404,8 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
     Args:
         renderer: PreviewRenderer instance for querying workspace contents
     """
+    global _eww_window_open  # Allow modification of window state tracking
+
     if not DAEMON_IPC_SOCKET.exists():
         print(f"Error: i3pm daemon socket not found: {DAEMON_IPC_SOCKET}", file=sys.stderr)
         sys.exit(1)
@@ -1487,6 +1489,7 @@ def subscribe_to_workspace_mode_events(renderer: PreviewRenderer) -> None:
 
                             # Open Eww window (GTK creates window surface, appears in Sway tree)
                             eww_open_window("workspace-preview")
+                            _eww_window_open = True  # Track window state for project_mode transitions
 
                             # Feature 059: T024 - Extract mode for move-mode styling
                             mode_type = payload.get("mode_type", "goto")  # Mode passed directly in enter event
