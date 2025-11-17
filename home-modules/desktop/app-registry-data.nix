@@ -322,6 +322,22 @@ let
       description = "Kubernetes web UI for cluster management via Tailscale";
     })
 
+    # WS11: AI Agents (Primary: goose-desktop)
+    (mkApp {
+      name = "goose-desktop";
+      display_name = "Goose AI Agent";
+      command = "goose-desktop";
+      parameters = "";
+      scope = "global";
+      expected_class = "goose";  # Electron app class
+      preferred_workspace = 11;
+      icon = "/etc/nixos/assets/icons/goose.svg";
+      nix_package = "pkgs.goose-desktop";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Open-source AI agent with desktop interface";
+    })
+
 
     # Scratchpad Terminal (Feature 062)
     # Special floating terminal for quick project access
