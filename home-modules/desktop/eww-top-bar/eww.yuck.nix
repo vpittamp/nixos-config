@@ -322,21 +322,21 @@ in
        :spacing 6
        :visible true
        (box :orientation "h" :spacing 4
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-1"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
-                    (label :class "pill-text"
-                           :text (if (= (get (get active_outputs "map") "HEADLESS-1") true) "H1 ●" "H1 ○")))
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-2"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
-                    (label :class "pill-text"
-                           :text (if (= (get (get active_outputs "map") "HEADLESS-2") true) "H2 ●" "H2 ○")))
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-3"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
-                    (label :class "pill-text"
-                           :text (if (= (get (get active_outputs "map") "HEADLESS-3") true) "H3 ●" "H3 ○")))))))
+           (button :class "pill"
+                   :tooltip "Toggle HEADLESS-1"
+                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
+                   (label :class "pill-text"
+                          :text (if (get (get active_outputs "map") "HEADLESS-1") "H1 ●" "H1 ○")))
+           (button :class "pill"
+                   :tooltip "Toggle HEADLESS-2"
+                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
+                   (label :class "pill-text"
+                          :text (if (get (get active_outputs "map") "HEADLESS-2") "H2 ●" "H2 ○")))
+           (button :class "pill"
+                   :tooltip "Toggle HEADLESS-3"
+                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
+                   (label :class "pill-text"
+                          :text (if (get (get active_outputs "map") "HEADLESS-3") "H3 ●" "H3 ○")))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
