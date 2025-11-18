@@ -323,15 +323,15 @@ in
        :visible true
        (label :class "icon" :text "")
        ;; Buttons for 1/2/3 outputs
-       (button :class (str "pill " (if (= (get active_outputs "active_count") 1) "pill-active" ""))
+       (button :class (if (= (get active_outputs "active_count") 1) "pill pill-active" "pill")
                :tooltip "Use 1 output"
                :onclick "~/.local/bin/active-monitors HEADLESS-1"
                (label :class "pill-text" :text "1"))
-       (button :class (str "pill " (if (= (get active_outputs "active_count") 2) "pill-active" ""))
+       (button :class (if (= (get active_outputs "active_count") 2) "pill pill-active" "pill")
                :tooltip "Use 2 outputs"
                :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2"
                (label :class "pill-text" :text "2"))
-       (button :class (str "pill " (if (= (get active_outputs "active_count") 3) "pill-active" ""))
+       (button :class (if (= (get active_outputs "active_count") 3) "pill pill-active" "pill")
                :tooltip "Use 3 outputs"
                :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2 HEADLESS-3"
                (label :class "pill-text" :text "3"))
