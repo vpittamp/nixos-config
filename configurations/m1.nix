@@ -187,22 +187,12 @@
   # Use firmware from boot partition (requires --impure flag)
   # Made conditional to allow evaluation on non-M1 systems (e.g., for CI/testing)
   hardware.asahi.peripheralFirmwareDirectory =
-    if builtins.pathExists /boot/asahi
-    then /boot/asahi
-    else
-      builtins.trace "WARNING: /boot/asahi not found - using dummy for evaluation only (not deployable!)"
-        (pkgs.runCommand "dummy-asahi-firmware" { } ''
-          mkdir -p $out
-          cd $out
-          # Provide minimal structure so asahi-fwextract succeeds even without real firmware
-          mkdir -p firmware/bluetooth
-          touch firmware/bluetooth/placeholder
-          tar -czf all_firmware.tar.gz firmware
-        '');
+    lib.assertMsg (builtins.pathExists /boot/asahi)
+      "Missing /boot/asahi; copy firmware with asahi-fwextract before building the M1 system" 
+      /boot/asahi;
 
-  # Skip peripheral firmware extraction when firmware payloads are unavailable
-  # (e.g., on CI or dev machines without the /boot/asahi contents mounted).
-  hardware.asahi.extractPeripheralFirmware = false;
+  # Ensure the real firmware payloads are extracted so Wi-Fi/BT work on Apple Silicon.
+  hardware.asahi.extractPeripheralFirmware = true;
 
   # Use NetworkManager with wpa_supplicant for WiFi (more stable on Apple Silicon)
   networking.networkmanager = {
