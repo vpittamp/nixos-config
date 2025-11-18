@@ -259,16 +259,16 @@
         border-color: transparent;
         box-shadow: 0 2px 6px rgba(137, 180, 250, 0.35);
       }
-      &.pill-inactive {
-        opacity: 0.55;
-        border-style: dashed;
-      }
-      &.strong {
-        font-weight: 800;
-      }
       &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
+    .active-count {
+      margin-left: 8px;
+      background: rgba(137, 180, 250, 0.35);
+      color: #1e1e2e;
+      border: 1px solid rgba(137, 180, 250, 0.6);
+      font-weight: 800;
+    }
     .active-list {
       margin-left: 8px;
       color: #a6adc8;

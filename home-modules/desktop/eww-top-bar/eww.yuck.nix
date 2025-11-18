@@ -317,28 +317,32 @@ in
 
 ;; Monitor toggle widget (headless monitor manager)
 (defwidget monitor-toggle-widget []
-  (box :class "metric-block monitor-toggle"
-       :orientation "h"
-       :spacing 4
-       :visible true
-       (label :class "icon" :text "")
-       ;; Buttons for 1/2/3 outputs
-       (button :class (if (= (get active_outputs "active_count") 1) "pill pill-active strong" "pill pill-inactive")
-               :tooltip "Use 1 output"
-               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1'"
-               (label :class "pill-text" :text "1"))
-       (button :class (if (= (get active_outputs "active_count") 2) "pill pill-active strong" "pill pill-inactive")
-               :tooltip "Use 2 outputs"
-               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2'"
-               (label :class "pill-text" :text "2"))
-       (button :class (if (= (get active_outputs "active_count") 3) "pill pill-active strong" "pill pill-inactive")
-               :tooltip "Use 3 outputs"
-               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2 HEADLESS-3'"
-               (label :class "pill-text" :text "3"))
-       ;; Live text of which outputs are active
-       (label :class "pill active-list"
-              :tooltip "Active outputs"
-              :text (join ", " (get active_outputs "active")))))
+      (box :class "metric-block monitor-toggle"
+           :orientation "h"
+           :spacing 4
+           :visible true
+           (label :class "icon" :text "")
+           ;; Buttons for 1/2/3 outputs
+           (button :class "pill"
+                   :tooltip "Use 1 output"
+                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1'"
+                   (label :class "pill-text" :text "1"))
+           (button :class "pill"
+                   :tooltip "Use 2 outputs"
+                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2'"
+                   (label :class "pill-text" :text "2"))
+           (button :class "pill"
+                   :tooltip "Use 3 outputs"
+                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2 HEADLESS-3'"
+                   (label :class "pill-text" :text "3"))
+           ;; Active count badge
+           (label :class "pill active-count"
+                  :tooltip "Currently active outputs"
+                  :text (str (get active_outputs "active_count")))
+           ;; Live text of which outputs are active
+           (label :class "pill active-list"
+                  :tooltip "Active outputs"
+                  :text (join ", " (get active_outputs "active")))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
