@@ -1,6 +1,58 @@
 # Home-manager configuration for Hetzner Cloud Sway (Feature 046)
 # Headless Wayland with Sway, VNC remote access, i3pm daemon, walker launcher
 { pkgs, lib, ... }:
+let
+  # Custom package: Google Antigravity (Linux x86_64)
+  antigravity = pkgs.stdenv.mkDerivation rec {
+    pname = "antigravity";
+    version = "1.11.2-6251250307170304";
+
+    src = pkgs.fetchurl {
+      url = "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/${version}/linux-x64/Antigravity.tar.gz";
+      sha256 = "1dv4bx598nshjsq0d8nnf8zfn86wsbjf2q56dqvmq9vcwxd13cfi";
+    };
+
+    nativeBuildInputs = [ pkgs.autoPatchelfHook pkgs.wrapGAppsHook3 ];
+    buildInputs = [
+      pkgs.atk pkgs.glib pkgs.gtk3 pkgs.nss pkgs.cups pkgs.alsa-lib
+      pkgs.libsecret pkgs.libdrm pkgs.libxkbcommon pkgs.pango
+      pkgs.libxkbfile pkgs.mesa
+      pkgs.xorg.libX11 pkgs.xorg.libxcb pkgs.xorg.libXcomposite
+      pkgs.xorg.libXdamage pkgs.xorg.libXext pkgs.xorg.libXfixes
+      pkgs.xorg.libXi pkgs.xorg.libXtst pkgs.xorg.libXScrnSaver
+    ];
+
+    unpackPhase = ''mkdir source; tar xzf $src --strip-components=1 -C source'';
+
+    installPhase = ''
+      mkdir -p $out/opt/antigravity $out/bin \
+               $out/share/applications $out/share/icons/hicolor/512x512/apps
+
+      cp -r source/* $out/opt/antigravity
+
+      cat > $out/bin/antigravity <<EOF
+      #!${pkgs.runtimeShell}
+      # Prefer Chromium for OAuth/device login flows
+      export BROWSER=${pkgs.chromium}/bin/chromium
+      exec "$out/opt/antigravity/antigravity" --no-sandbox "\$@"
+      EOF
+      chmod +x $out/bin/antigravity
+
+      cat > $out/share/applications/antigravity.desktop <<'EOF'
+      [Desktop Entry]
+      Name=Antigravity
+      Exec=antigravity %U
+      Terminal=false
+      Type=Application
+      Icon=antigravity
+      Categories=Development;IDE;
+      EOF
+
+      cp source/resources/app/resources/linux/code.png \
+         $out/share/icons/hicolor/512x512/apps/antigravity.png
+    '';
+  };
+in
 {
   imports = [
     # Base home configuration (shell, editors, tools)
@@ -47,6 +99,7 @@
   home.packages = with pkgs; [
     gnome-keyring
     libsecret  # For secret-tool CLI
+    antigravity
   ];
 
   # Enable gnome-keyring service for org.freedesktop.secrets

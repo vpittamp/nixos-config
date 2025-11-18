@@ -161,6 +161,22 @@ let
     })
 
     (mkApp {
+      name = "antigravity";
+      display_name = "Antigravity";
+      command = "antigravity";
+      parameters = "";
+      scope = "global";
+      expected_class = "Antigravity";
+      preferred_workspace = 2;
+      preferred_monitor_role = "secondary";
+      icon = "antigravity"; # installed by custom package
+      nix_package = "antigravity";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "Google Antigravity IDE with embedded agent tools";
+    })
+
+    (mkApp {
       name = "nvim";
       display_name = "Neovim";
       command = "ghostty";
