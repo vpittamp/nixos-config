@@ -322,18 +322,21 @@ in
        :spacing 6
        :visible true
        (box :orientation "h" :spacing 4
-            (button :class (if (= (get (get active_outputs "map") "HEADLESS-1") true) "pill pill-active" "pill pill-inactive")
+            (button :class "pill"
                     :tooltip "Toggle HEADLESS-1"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
-                    (label :class "pill-text" :text "H1"))
-            (button :class (if (= (get (get active_outputs "map") "HEADLESS-2") true) "pill pill-active" "pill pill-inactive")
+                    (label :class (if (= (get (get active_outputs "map") "HEADLESS-1") true) "pill-text active" "pill-text inactive")
+                           :text (if (= (get (get active_outputs "map") "HEADLESS-1") true) "H1 ●" "H1 ○")))
+            (button :class "pill"
                     :tooltip "Toggle HEADLESS-2"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
-                    (label :class "pill-text" :text "H2"))
-            (button :class (if (= (get (get active_outputs "map") "HEADLESS-3") true) "pill pill-active" "pill pill-inactive")
+                    (label :class (if (= (get (get active_outputs "map") "HEADLESS-2") true) "pill-text active" "pill-text inactive")
+                           :text (if (= (get (get active_outputs "map") "HEADLESS-2") true) "H2 ●" "H2 ○")))
+            (button :class "pill"
                     :tooltip "Toggle HEADLESS-3"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
-                    (label :class "pill-text" :text "H3")))))
+                    (label :class (if (= (get (get active_outputs "map") "HEADLESS-3") true) "pill-text active" "pill-text inactive")
+                           :text (if (= (get (get active_outputs "map") "HEADLESS-3") true) "H3 ●" "H3 ○")))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 

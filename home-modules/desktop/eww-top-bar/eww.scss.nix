@@ -253,18 +253,19 @@
       padding: 2px 8px;
       font-weight: 600;
       transition: all 0.15s ease;
-      &.pill-active {
-        background: linear-gradient(135deg, #b4befe, #89b4fa);
-        color: #1e1e2e;
-        border-color: transparent;
-        box-shadow: 0 2px 6px rgba(137, 180, 250, 0.35);
-      }
-      &.pill-inactive {
-        opacity: 0.55;
-        border-style: dashed;
-      }
       &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
+    .pill-text.active {
+      color: #1e1e2e;
+      font-weight: 800;
+      background: linear-gradient(135deg, #b4befe, #89b4fa);
+      padding: 0 4px;
+      border-radius: 6px;
+    }
+    .pill-text.inactive {
+      color: #a6adc8;
+      opacity: 0.6;
+    }
   }
 ''
