@@ -221,8 +221,8 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${pkgs.eww}/bin/eww daemon --no-daemonize --config ${config.xdg.configHome}/eww/eww-top-bar";
+        # Only open defined windows; headless config now defines just HEADLESS-1 window
         ExecStartPost = let
-          # Generate comma-separated list of window IDs for eww open-many
           windowIds = lib.concatMapStringsSep " " (output: "top-bar-${sanitizeOutputName output.name}") topBarOutputs;
         in "${pkgs.eww}/bin/eww open-many ${windowIds} --config ${config.xdg.configHome}/eww/eww-top-bar";
         ExecStop = "${pkgs.eww}/bin/eww kill --config ${config.xdg.configHome}/eww/eww-top-bar";
