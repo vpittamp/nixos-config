@@ -15,6 +15,8 @@ in
   programs.codex = {
     enable = true;
     package = pkgs-unstable.codex or pkgs.codex; # Use unstable if available, fallback to stable
+    # We don't need backups; overwrite the config directly
+    settings.force = lib.mkForce true;
 
     # Custom instructions for the agent
     # custom-instructions = 

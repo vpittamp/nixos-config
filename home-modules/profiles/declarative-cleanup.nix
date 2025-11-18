@@ -37,6 +37,7 @@
       # 6. Remove lingering Codex permission backups that can block activation
       rm -f $HOME/.codex/config.toml.hm-bak 2>/dev/null || true
       rm -f $HOME/.codex/config.toml.backup 2>/dev/null || true
+      rm -f $HOME/.codex/config.toml 2>/dev/null || true
 
       echo "=== Cleanup complete ==="
     '';
