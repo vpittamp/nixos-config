@@ -262,18 +262,5 @@
       &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
-    .active-count {
-      margin-left: 8px;
-      background: rgba(137, 180, 250, 0.35);
-      color: #1e1e2e;
-      border: 1px solid rgba(137, 180, 250, 0.6);
-      font-weight: 800;
-    }
-    .active-list {
-      margin-left: 8px;
-      color: #a6adc8;
-      background: rgba(205, 214, 244, 0.08);
-      border: 1px solid rgba(205, 214, 244, 0.25);
-    }
   }
 ''

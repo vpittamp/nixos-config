@@ -862,6 +862,10 @@ in
     source = ./scripts/active-monitors-safe.sh;
     executable = true;
   };
+  home.file.".local/bin/toggle-output" = {
+    source = ./scripts/toggle-output.sh;
+    executable = true;
+  };
   home.file.".local/bin/active-monitors-auto" = {
     source = ./scripts/active-monitors-auto.sh;
     executable = true;
