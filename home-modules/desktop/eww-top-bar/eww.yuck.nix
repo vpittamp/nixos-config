@@ -321,12 +321,19 @@ in
        :orientation "h"
        :spacing 6
        :visible true
-       (for out in ["HEADLESS-1" "HEADLESS-2" "HEADLESS-3"]
-         (button :class "pill"
-                 :tooltip (str "Toggle " out)
-                 :onclick (str "bash -lc '$HOME/.local/bin/toggle-output " out "'")
-                 (label :class "pill-text"
-                        :text out)))))
+       (box :orientation "h" :spacing 4
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-1"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
+                    (label :class "pill-text" :text "H1"))
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-2"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
+                    (label :class "pill-text" :text "H2"))
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-3"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
+                    (label :class "pill-text" :text "H3")))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
