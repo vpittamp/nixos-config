@@ -322,15 +322,15 @@ in
        :spacing 6
        :visible true
        (box :orientation "h" :spacing 4
-            (button :class "pill"
+            (button :class {if (get (get active_outputs \"map\") \"HEADLESS-1\") \"pill pill-active\" \"pill pill-inactive\"}
                     :tooltip "Toggle HEADLESS-1"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
                     (label :class "pill-text" :text "H1"))
-            (button :class "pill"
+            (button :class {if (get (get active_outputs \"map\") \"HEADLESS-2\") \"pill pill-active\" \"pill pill-inactive\"}
                     :tooltip "Toggle HEADLESS-2"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
                     (label :class "pill-text" :text "H2"))
-            (button :class "pill"
+            (button :class {if (get (get active_outputs \"map\") \"HEADLESS-3\") \"pill pill-active\" \"pill pill-inactive\"}
                     :tooltip "Toggle HEADLESS-3"
                     :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
                     (label :class "pill-text" :text "H3")))))

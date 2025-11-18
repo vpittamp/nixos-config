@@ -23,9 +23,28 @@ all_list=()
 IFS=',' read -ra all_arr <<< "${all}"
 for o in "${all_arr[@]}"; do [[ -n "$o" ]] && all_list+=("\"$o\""); done
 
+# Build per-output active map
+declare -A amap
+for o in "${all_arr[@]}"; do
+  [[ -z "$o" ]] && continue
+  amap[$o]=false
+done
+for o in "${active_arr[@]}"; do
+  [[ -z "$o" ]] && continue
+  amap[$o]=true
+done
+
+map_entries=()
+for o in "${!amap[@]}"; do
+  val=${amap[$o]}
+  map_entries+=("\"$o\":${val}")
+done
+map_json=$(IFS=','; echo "${map_entries[*]}")
+
 printf '{'
 printf '"active":[%s],' "$(IFS=,; echo "${active_list[*]}")"
 printf '"enabled":[%s],' "$(IFS=,; echo "${enabled_list[*]}")"
 printf '"all":[%s],' "$(IFS=,; echo "${all_list[*]}")"
-printf '"active_count":%d' "${#active_list[@]}"
+printf '"active_count":%d,' "${#active_list[@]}"
+printf '"map":{%s}' "$map_json"
 printf '}\n'
