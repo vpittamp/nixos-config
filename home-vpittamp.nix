@@ -57,6 +57,10 @@
         echo "Removing old conflict: $HOME/$file.hm-backup"
         rm -f "$HOME/$file.hm-backup"
       fi
+      if [ -f "$HOME/$file.hm-bak" ]; then
+        echo "Removing old conflict: $HOME/$file.hm-bak"
+        rm -f "$HOME/$file.hm-bak"
+      fi
       if [ -f "$HOME/$file.old" ]; then
         echo "Removing old file: $HOME/$file.old"
         rm -f "$HOME/$file.old"

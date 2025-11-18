@@ -34,6 +34,10 @@
       echo "Cleaning up stale lock files..."
       ${pkgs.findutils}/bin/find $HOME/.config -name "*.lock" -type f -mtime +7 -delete 2>/dev/null || true
 
+      # 6. Remove lingering Codex permission backups that can block activation
+      rm -f $HOME/.codex/config.toml.hm-bak 2>/dev/null || true
+      rm -f $HOME/.codex/config.toml.backup 2>/dev/null || true
+
       echo "=== Cleanup complete ==="
     '';
   };
