@@ -235,19 +235,18 @@ in
 ;; Battery widget (conditional - only shown if battery hardware present)
 (defwidget battery-widget []
   (box :class "pill metric-pill battery"
-       :spacing 2
-       :visible {hardware.battery ?: false}
+       :spacing 3
        :tooltip "Battery status"
-        (label :class {battery.level == "critical" ? "icon battery-icon battery-critical" :
-                       battery.level == "low" ? "icon battery-icon battery-low" :
-                       "icon battery-icon battery-normal"}
-               :text {battery.charging ? "" : ""})
-       (label :class "value battery-value"
-              :text "''${battery.percentage ?: '0'}%")
+       (label :class {battery.level == "critical" ? "icon battery-icon battery-critical" :
+                      battery.level == "low" ? "icon battery-icon battery-low" :
+                      "icon battery-icon battery-normal"}
+              :text {battery.charging ? "" : ""})
        (scale :class "meter meter-battery"
               :min 0
               :max 100
-              :value {battery.percentage ?: 0})))
+              :value {battery.percentage ?: 0})
+       (label :class "value battery-value"
+              :text "''${battery.percentage ?: '0'}%")))
 
 ;; Bluetooth widget (conditional - only shown if bluetooth hardware present, with click handler)
 (defwidget bluetooth-widget []

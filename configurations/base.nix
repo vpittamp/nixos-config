@@ -87,6 +87,11 @@
     }];
   };
 
+  # Ensure per-user profile roots exist (needed for home-manager when run via system builds)
+  systemd.tmpfiles.rules = [
+    "d /nix/var/nix/profiles/per-user/vpittamp 0755 vpittamp users -"
+  ];
+
   # Core Nix configuration
   nix = {
     settings = {
