@@ -259,7 +259,7 @@
         border-color: transparent;
         box-shadow: 0 2px 6px rgba(137, 180, 250, 0.35);
       }
-      &:hover { filter: brightness(1.1); }
+      &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
     .active-list {
