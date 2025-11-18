@@ -113,11 +113,11 @@ in
   :initial '{"battery":false,"bluetooth":false,"thermal":false}'
   `python3 ~/.config/eww/eww-top-bar/scripts/hardware-detect.py`)
 
-;; Feature 061: i3pm daemon health check - FIXED exit code 0 (US6)
-(defpoll daemon_health
-  :interval "5s"
-  :initial '{"status":"unknown","response_ms":0}'
-  `bash ~/.config/eww/eww-top-bar/scripts/i3pm-health.sh`)
+;; Build health poll - uses nixos-build-status for OS & HM generations / errors
+(defpoll build_health
+  :interval "10s"
+  :initial '{"status":"unknown","os_generation":"--","hm_generation":"--","error_count":0,"details":"..."}'
+  `bash ~/.config/eww/eww-top-bar/scripts/build-health.sh`)
 
 ;; Interactions / popups
 (defvar volume_popup_visible false)
@@ -273,17 +273,21 @@ in
          (label :class "value project-value"
                 :text {active_project.formatted_label ?: "Global"}))))
 
-;; Daemon Health widget (with click handler to open diagnostics)
-(defwidget daemon-health-widget []
-  (eventbox :onclick "ghostty -e i3pm diagnose health &"
-    (box :class "pill metric-pill daemon-health"
-         :spacing 2
-         (label :class {daemon_health.status == "healthy" ? "icon daemon-icon daemon-healthy" :
-                        daemon_health.status == "slow" ? "icon daemon-icon daemon-slow" :
-                        "icon daemon-icon daemon-unhealthy"}
+;; Build health widget (shows generations + status)
+(defwidget build-health-widget []
+  (eventbox :onclick "nixos-build-status --verbose | less"
+    (box :class "pill metric-pill build-health"
+         :spacing 3
+         (label :class {build_health.status == "healthy" ? "icon health-icon health-healthy" :
+                        build_health.status == "warning" ? "icon health-icon health-warning" :
+                        "icon health-icon health-error"}
                 :text "●")
-         (label :class "value daemon-value"
-                :text {daemon_health.status ?: "unknown"}))))
+         (label :class "value health-os"
+                :text {build_health.os_generation ?: "--"})
+         (label :class "value health-hm"
+                :text {build_health.hm_generation ?: "--"})
+         (label :class "value health-status"
+                :text {build_health.status ?: "unknown"}))))
 
 ;; Separator between blocks
 ;; Visual separator between widget groups
@@ -319,7 +323,7 @@ in
          (volume-widget-enhanced)
          (battery-widget)
          (bluetooth-widget)
-         (daemon-health-widget))
+         (build-health-widget))
 
     ;; Center: Active Project
     (box :class "center"

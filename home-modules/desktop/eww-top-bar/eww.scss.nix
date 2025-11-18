@@ -99,9 +99,9 @@
   .battery-low { color: #f9e2af; }
   .battery-critical { color: #f38ba8; }
   .bluetooth-icon { color: #89b4fa; }
-  .daemon-healthy { color: #a6e3a1; }
-  .daemon-slow { color: #f9e2af; }
-  .daemon-unhealthy { color: #f38ba8; }
+  .health-healthy { color: #a6e3a1; }
+  .health-warning { color: #f9e2af; }
+  .health-error { color: #f38ba8; }
 
   .wifi-disconnected .icon { color: #6c7086; }
 
