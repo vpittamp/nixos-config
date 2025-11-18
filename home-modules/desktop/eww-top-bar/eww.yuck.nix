@@ -101,6 +101,12 @@ in
   :initial '{\"state\":\"disabled\",\"device_count\":0}'
   `python3 ~/.config/eww/eww-top-bar/scripts/bluetooth-monitor.py`)
 
+;; Active outputs (poll swaymsg) - controls and reflects monitor state
+(defpoll active_outputs
+  :interval "2s"
+  :initial '{"active":[],"enabled":[],"all":[],"active_count":0}'
+  `bash ~/.config/eww/eww-top-bar/scripts/active-outputs-status.sh`)
+
 ;; Active i3pm project monitoring (polling via deflisten)
 (deflisten active_project
   :initial '{\"project\":\"Global\",\"active\":false}'
@@ -309,6 +315,31 @@ in
                 :orientation "horizontal"
                 :prepend-new false)))
 
+;; Monitor toggle widget (headless monitor manager)
+(defwidget monitor-toggle-widget []
+  (box :class "metric-block monitor-toggle"
+       :orientation "h"
+       :spacing 4
+       :visible true
+       (label :class "icon" :text "")
+       ;; Buttons for 1/2/3 outputs
+       (button :class (str "pill " (if (= (get active_outputs "active_count") 1) "pill-active" ""))
+               :tooltip "Use 1 output"
+               :onclick "~/.local/bin/active-monitors HEADLESS-1"
+               (label :class "pill-text" :text "1"))
+       (button :class (str "pill " (if (= (get active_outputs "active_count") 2) "pill-active" ""))
+               :tooltip "Use 2 outputs"
+               :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2"
+               (label :class "pill-text" :text "2"))
+       (button :class (str "pill " (if (= (get active_outputs "active_count") 3) "pill-active" ""))
+               :tooltip "Use 3 outputs"
+               :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2 HEADLESS-3"
+               (label :class "pill-text" :text "3"))
+       ;; Live text of which outputs are active
+       (label :class "pill active-list"
+              :tooltip "Active outputs"
+              :text (join ", " (get active_outputs "active")))))
+
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
 (defwidget main-bar [is_primary]
@@ -345,9 +376,10 @@ in
                   (wifi-widget)))
 
            ;; Always-visible controls
+           (monitor-toggle-widget)
            (volume-widget-enhanced)
            (battery-widget)
-           (bluetooth-widget)
+            (bluetooth-widget)
 
            ;; Health widget stays visible with text
            (build-health-widget)))

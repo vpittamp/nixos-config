@@ -172,6 +172,11 @@ in
       executable = true;
     };
 
+    xdg.configFile."eww/eww-top-bar/scripts/active-outputs-status.sh" = {
+      source = ./eww-top-bar/scripts/active-outputs-status.sh;
+      executable = true;
+    };
+
     xdg.configFile."eww/eww-top-bar/scripts/i3pm-health.sh" = {
       source = ./eww-top-bar/scripts/i3pm-health.sh;
       executable = true;

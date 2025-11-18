@@ -240,4 +240,33 @@
   .metric-block {
     padding: 0 4px;
   }
+
+  /* Monitor toggle styling */
+  .metric-block.monitor-toggle {
+    padding: 4px 6px;
+    .icon { margin-right: 6px; color: #89b4fa; }
+    .pill {
+      background: rgba(137, 180, 250, 0.15);
+      color: #cdd6f4;
+      border: 1px solid rgba(137, 180, 250, 0.35);
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+      &.pill-active {
+        background: linear-gradient(135deg, #b4befe, #89b4fa);
+        color: #1e1e2e;
+        border-color: transparent;
+        box-shadow: 0 2px 6px rgba(137, 180, 250, 0.35);
+      }
+      &:hover { filter: brightness(1.1); }
+    }
+    .pill + .pill { margin-left: 4px; }
+    .active-list {
+      margin-left: 8px;
+      color: #a6adc8;
+      background: rgba(205, 214, 244, 0.08);
+      border: 1px solid rgba(205, 214, 244, 0.25);
+    }
+  }
 ''
