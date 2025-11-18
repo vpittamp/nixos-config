@@ -325,15 +325,15 @@ in
        ;; Buttons for 1/2/3 outputs
        (button :class "pill"
                :tooltip "Use 1 output"
-               :onclick "~/.local/bin/active-monitors HEADLESS-1"
+               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1'"
                (label :class "pill-text" :text "1"))
        (button :class "pill"
                :tooltip "Use 2 outputs"
-               :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2"
+               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2'"
                (label :class "pill-text" :text "2"))
        (button :class "pill"
                :tooltip "Use 3 outputs"
-               :onclick "~/.local/bin/active-monitors HEADLESS-1 HEADLESS-2 HEADLESS-3"
+               :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2 HEADLESS-3'"
                (label :class "pill-text" :text "3"))
        ;; Live text of which outputs are active
        (label :class "pill active-list"
