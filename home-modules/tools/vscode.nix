@@ -59,7 +59,21 @@ let
     };
   };
 
-  marketplaceExtensions = [ playwrightExtension chatgptExtension ];
+  # GitLens from marketplace (pre-built) - nixpkgs version has webpack build issues
+  gitlensExtension = pkgs.vscode-utils.buildVscodeMarketplaceExtension {
+    mktplcRef = {
+      name = "gitlens";
+      publisher = "eamodio";
+      version = "2025.11.1404";
+      sha256 = "sha256-Brx0MOKAIPDGoD1Lo51ZCq1BtCEL8rgYW2EbGaOQ97o=";
+    };
+    meta = {
+      description = "Git supercharged";
+      license = lib.licenses.mit;
+    };
+  };
+
+  marketplaceExtensions = [ playwrightExtension chatgptExtension gitlensExtension ];
 
   baseExtensions = (with pkgs.vscode-extensions; [
     # Development essentials
@@ -78,7 +92,7 @@ let
     Google.gemini-cli-vscode-ide-companion
 
     # Git integration
-    eamodio.gitlens
+    # eamodio.gitlens - using marketplace version instead (nixpkgs build fails)
     mhutchie.git-graph
     github.vscode-pull-request-github
 

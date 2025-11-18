@@ -17,16 +17,37 @@ let
         :x "0px"
         :y "0px"
         :width "100%"
-        :height "32px"
+        :height "26px"
         :anchor "top center")
       :stacking "fg"
       :exclusive true
       :focusable false
       :namespace "eww-top-bar"
-      :reserve (struts :distance "36px" :side "top")
+      :reserve (struts :distance "30px" :side "top")
       :windowtype "dock"
       (main-bar :is_primary ${if isPrimary then "true" else "false"}))
   '';
+
+  # Only add fallback window when no generated output covers eDP-1
+  hasEDP1 = builtins.any (o: o.name == "eDP-1") topBarOutputs;
+  fallbackWindow = lib.optionalString (!hasEDP1) ''
+;; Fallback primary window
+(defwindow top-bar-edp1
+  :monitor "eDP-1"
+  :geometry (geometry
+    :x "0px"
+    :y "0px"
+    :width "100%"
+    :height "26px"
+    :anchor "top center")
+  :stacking "fg"
+  :exclusive true
+  :focusable false
+  :namespace "eww-top-bar"
+  :reserve (struts :distance "30px" :side "top")
+  :windowtype "dock"
+  (main-bar :is_primary true))
+'';
 
   # Generate volume popup window for first monitor
   firstMonitor = if topBarOutputs != [] then (builtins.head topBarOutputs).name else "eDP-1";
@@ -44,7 +65,7 @@ in
 ;; Updates every 2s
 (defpoll system_metrics
   :interval "2s"
-  :initial '{"cpu_load":"0.00","mem_used_pct":"0","disk_used_pct":"0","net_rx_mbps":"0.0","net_tx_mbps":"0.0","temp_celsius":"0","temp_available":false}'
+  :initial '{"cpu_load":"0.00","mem_used_pct":"0","mem_used_gb":"0.0","mem_total_gb":"0","disk_used_pct":"0","disk_used_gb":"0","disk_total_gb":"0","net_rx_mbps":"0.0","net_tx_mbps":"0.0","temp_celsius":"0","temp_available":false}'
   `python3 ~/.config/eww/eww-top-bar/scripts/system-metrics.py`)
 
 ;; Date/time updates every 1s (12-hour format)
@@ -98,146 +119,171 @@ in
   :initial '{"status":"unknown","response_ms":0}'
   `bash ~/.config/eww/eww-top-bar/scripts/i3pm-health.sh`)
 
-;; Feature 061: Volume popup visibility state (US3)
+;; Interactions / popups
 (defvar volume_popup_visible false)
+(defvar show_wifi_details false)
+(defvar show_volume_peek false)
 
 ;; ============================================================================
 ;; Widgets
 ;; ============================================================================
 
-;; CPU Load Average widget
+;; CPU Load Average widget (pill-style)
 (defwidget cpu-widget []
-  (box :class "metric"
-       :spacing 5
-       (label :class "icon"
-              :text "")
-       (label :class "value"
-              :text {system_metrics.cpu_load ?: "0.00"})))
+  (box :class "pill metric-pill cpu"
+       :spacing 2
+       :tooltip "CPU load (1m average)"
+       (label :class "icon cpu-icon" :text "")
+       (label :class "value" :text {system_metrics.cpu_load ?: "0.00"})))
 
-;; Memory Usage widget (compact - percentage only)
+;; Memory Usage widget
 (defwidget memory-widget []
-  (box :class "metric"
-       :spacing 5
-       (label :class "icon"
-              :text "")
-       (label :class "value"
-              :text "''${system_metrics.mem_used_pct ?: '0'}%")))
+  (box :class "pill metric-pill mem"
+       :spacing 2
+       :tooltip "Memory in use"
+        (label :class "icon mem-icon"
+               :text "")
+       (label :class "value mem-value"
+              :text "''${system_metrics.mem_used_pct ?: 0}%")))
 
-;; Disk Usage widget (compact - percentage only)
+;; Disk Usage widget
 (defwidget disk-widget []
-  (box :class "metric"
-       :spacing 5
-       (label :class "icon"
-              :text "")
-       (label :class "value"
-              :text "''${system_metrics.disk_used_pct ?: '0'}%")))
+  (box :class "pill metric-pill disk"
+       :spacing 2
+       :tooltip "Root disk usage"
+        (label :class "icon disk-icon"
+               :text "")
+       (label :class "value disk-value"
+              :text "''${system_metrics.disk_used_pct ?: 0}%")))
+
+;; Temperature widget (conditional)
+(defwidget temperature-widget []
+  (box :class "pill metric-pill temp"
+       :spacing 2
+       :visible {system_metrics.temp_available ?: false}
+       :tooltip "Average CPU temperature"
+        (label :class "icon temp-icon"
+               :text "")
+       (label :class "value temp-value"
+              :text "''${system_metrics.temp_celsius ?: 0}°C")))
 
 ;; Network Traffic widget (with click handler to open network settings)
 (defwidget network-widget []
   (eventbox :onclick "nm-connection-editor &"
-    (box :class "metric-block"
-         :spacing 6
-         (label :class "icon network-icon"
-                :text "")
+    (box :class "pill metric-pill net"
+         :spacing 2
+         :tooltip "Network throughput (Mbps)"
+         (label :class "icon network-icon" :text "")
          (label :class "value network-value"
-                :text "↓''${system_metrics.net_rx_mbps ?: '0.0'} ↑''${system_metrics.net_tx_mbps ?: '0.0'} Mbps"))))
+                :text "↓''${system_metrics.net_rx_mbps ?: '0.0'} ↑''${system_metrics.net_tx_mbps ?: '0.0'}"))))
 
-;; Temperature widget (conditional - only shown if thermal sensors available)
-(defwidget temperature-widget []
-  (box :class "metric-block"
-       :spacing 6
-       :visible {system_metrics.temp_available ?: false}
-       (label :class "icon temp-icon"
-              :text "")
-       (label :class "value temp-value"
-              :text "''${system_metrics.temp_celsius ?: '0'}°C")))
-
-;; WiFi widget (icon only)
+;; WiFi widget (icon + hover reveal strength bar)
 (defwidget wifi-widget []
   (eventbox :onclick "nm-connection-editor &"
-    (box :class "metric"
-         (label :class "icon"
+            :onhover "eww update show_wifi_details=true"
+            :onhoverlost "eww update show_wifi_details=false"
+    (box :class {wifi_status.connected ? "pill metric-pill wifi" : "pill metric-pill wifi wifi-disconnected"}
+         :spacing 2
+         :tooltip {wifi_status.connected ? (wifi_status.ssid ?: "WiFi") : "Not connected"}
+         (label :class "icon wifi-icon"
                 :style "color: ''${wifi_status.color ?: '#6c7086'}"
-                :text {wifi_status.icon ?: ""}))))
+                :text "")
+         (label :class "value wifi-value"
+                :text {wifi_status.connected ? "''${wifi_status.signal ?: 0}%" : "--"}))))
 
 ;; Date/Time widget
 (defwidget datetime-widget []
   (eventbox :onclick "gnome-calendar &"
-    (box :class "metric"
-         :spacing 5
-         (label :class "icon"
-                :text "")
-         (label :class "value"
-                :text {datetime ?: "..."}))))
+    (box :class "pill time-pill"
+         :spacing 3
+         (label :class "icon time-icon"
+                :text "")
+         (label :class "value time-value"
+                :text {datetime}))))
 
-;; Volume widget (icon only)
+;; Volume widget (icon + hover slider)
 (defwidget volume-widget-enhanced []
-  (eventbox :onclick "eww update volume_popup_visible=''${!volume_popup_visible}"
-    (box :class "metric"
-         (label :class "icon"
-                :text {volume_status.icon ?: "🔇"}))))
+  (eventbox :onclick ""
+            :onhover "eww update show_volume_peek=true"
+            :onhoverlost "eww update show_volume_peek=false"
+    (box :class "pill metric-pill volume"
+         :spacing 2
+         :tooltip "Volume"
+         (label :class "icon volume-icon"
+                :text {volume_status.icon ?: "🔇"})
+         (label :class "value volume-value"
+                :text "''${volume_status.volume ?: 0}%")
+         (revealer :transition "slideleft"
+                   :reveal show_volume_peek
+                   (scale :class "meter meter-volume"
+                          :min 0
+                          :max 100
+                          :value {volume_status.volume ?: 0})))))
 
 ;; Legacy volume widget (kept for compatibility)
 (defwidget volume-widget []
   (eventbox :onclick "pavucontrol &"
-    (box :class "metric-block"
-         :spacing 6
+    (box :class "pill metric-pill volume"
+         :spacing 2
          (label :class "icon volume-icon"
                 :text {volume.muted ? "" : ""})
-         (label :class "value volume-value"
-                :text "''${volume.volume_pct ?: '0'}%"))))
+         (scale :class "meter meter-volume"
+                :min 0
+                :max 100
+                :value {volume.volume_pct ?: 0}))))
 
 ;; Battery widget (conditional - only shown if battery hardware present)
 (defwidget battery-widget []
-  (box :class "metric-block"
-       :spacing 6
+  (box :class "pill metric-pill battery"
+       :spacing 2
        :visible {hardware.battery ?: false}
-       (label :class {battery.level == "critical" ? "icon battery-icon battery-critical" :
-                      battery.level == "low" ? "icon battery-icon battery-low" :
-                      "icon battery-icon battery-normal"}
-              :text {battery.charging ? "" : ""})
+       :tooltip "Battery status"
+        (label :class {battery.level == "critical" ? "icon battery-icon battery-critical" :
+                       battery.level == "low" ? "icon battery-icon battery-low" :
+                       "icon battery-icon battery-normal"}
+               :text {battery.charging ? "" : ""})
        (label :class "value battery-value"
-              :text "''${battery.percentage ?: '0'}%")))
+              :text "''${battery.percentage ?: '0'}%")
+       (scale :class "meter meter-battery"
+              :min 0
+              :max 100
+              :value {battery.percentage ?: 0})))
 
 ;; Bluetooth widget (conditional - only shown if bluetooth hardware present, with click handler)
 (defwidget bluetooth-widget []
   (eventbox :onclick "blueman-manager &"
-    (box :class "metric-block"
-         :spacing 6
+    (box :class "pill metric-pill bluetooth"
+         :spacing 2
          :visible {hardware.bluetooth ?: false}
+         :tooltip "Bluetooth status"
          (label :class {bluetooth.state == "connected" ? "icon bluetooth-icon bluetooth-connected" :
                         bluetooth.state == "enabled" ? "icon bluetooth-icon bluetooth-enabled" :
                         "icon bluetooth-icon bluetooth-disabled"}
-                :text {bluetooth.state == "connected" ? "" : ""})
-         (label :class "value bluetooth-value"
-                :text {bluetooth.device_count > 0 ? "''${bluetooth.device_count ?: '0'}" : ""}))))
+               :text ""))))
 
 ;; Active Project widget (with click handler to open project switcher)
 ;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
 (defwidget project-widget []
   (eventbox :onclick "i3pm project switch &"
-    (box :class {active_project.is_worktree ? "metric-block project-block-worktree" : "metric-block project-block"}
-         :spacing 6
+    (box :class {active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill"}
+         :spacing 2
          ;; T052: Project icon from metadata
          (label :class "icon project-icon"
-                :text {active_project.icon ?: "📁"})
-         ;; T053: Formatted label with branch number
+                :text {active_project.icon ?: ""})
          (label :class "value project-value"
                 :text {active_project.formatted_label ?: "Global"}))))
 
 ;; Daemon Health widget (with click handler to open diagnostics)
 (defwidget daemon-health-widget []
   (eventbox :onclick "ghostty -e i3pm diagnose health &"
-    (box :class "metric-block daemon-health"
-         :spacing 6
+    (box :class "pill metric-pill daemon-health"
+         :spacing 2
          (label :class {daemon_health.status == "healthy" ? "icon daemon-icon daemon-healthy" :
                         daemon_health.status == "slow" ? "icon daemon-icon daemon-slow" :
                         "icon daemon-icon daemon-unhealthy"}
-                :text {daemon_health.status == "healthy" ? "✓" :
-                       daemon_health.status == "slow" ? "⚠" :
-                       "❌"})
+                :text "●")
          (label :class "value daemon-value"
-                :text "''${daemon_health.response_ms ?: '0'}ms"))))
+                :text {daemon_health.status ?: "unknown"}))))
 
 ;; Separator between blocks
 ;; Visual separator between widget groups
@@ -250,27 +296,11 @@ in
   (box :class "metric-block"
        :visible is_primary
        (systray :spacing 4
-                :icon-size 16
+                :icon-size 14
                 :orientation "horizontal"
                 :prepend-new false)))
 
-;; Feature 061: Volume popup with slider (US3)
-(defwidget volume-popup-content []
-  (box :class "volume-popup"
-       :orientation "v"
-       :spacing 8
-    (box :class "volume-slider"
-         :orientation "v"
-         (scale :min 0
-                :max 100
-                :value {volume_status.volume ?: 0}
-                :timeout "100ms"
-                :onchange "wpctl set-volume @DEFAULT_AUDIO_SINK@ {}% || pactl set-sink-volume @DEFAULT_SINK@ {}%"))
-    (button :class "volume-mute-button"
-            :onclick "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle || pactl set-sink-mute @DEFAULT_SINK@ toggle"
-            {volume_status.muted ? "Unmute" : "Mute"})))
-
-;; Main bar layout - modeled after successful eww bars
+;; Main bar layout - upgraded pill layout with reveals/hover states
 (defwidget main-bar [is_primary]
   (centerbox :orientation "h"
              :class "bar"
@@ -279,18 +309,24 @@ in
          :orientation "h"
          :space-evenly false
          :halign "start"
-         :spacing 10
+         :spacing 3
          (cpu-widget)
          (memory-widget)
          (disk-widget)
+         (temperature-widget)
+         (network-widget)
          (wifi-widget)
-         (volume-widget-enhanced))
+         (volume-widget-enhanced)
+         (battery-widget)
+         (bluetooth-widget)
+         (daemon-health-widget))
 
     ;; Center: Active Project
     (box :class "center"
          :orientation "h"
          :space-evenly false
          :halign "center"
+         :spacing 4
          (project-widget))
 
     ;; Right: Date/Time and System Tray
@@ -298,9 +334,9 @@ in
          :orientation "h"
          :space-evenly false
          :halign "end"
-         :spacing 10
-         (datetime-widget)
-         (systray-widget :is_primary is_primary))))
+         :spacing 4
+          (datetime-widget)
+          (systray-widget :is_primary is_primary))))
 
 ;; ============================================================================
 ;; Windows (per-monitor instances)
@@ -308,19 +344,6 @@ in
 ;; ============================================================================
 
 ${lib.concatMapStrings mkWindowDef topBarOutputs}
+${fallbackWindow}
 
-;; Feature 061: Volume popup window (US3)
-(defwindow volume-popup
-  :monitor "${firstMonitor}"
-  :geometry (geometry
-    :anchor "top right"
-    :x "-10px"
-    :y "40px")
-  :stacking "overlay"
-  :focusable true
-  :namespace "eww-volume-popup"
-  (revealer :transition "slidedown"
-            :reveal volume_popup_visible
-            :duration "200ms"
-    (volume-popup-content)))
 ''

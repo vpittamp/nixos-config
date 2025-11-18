@@ -366,6 +366,22 @@
       app_scope = "scoped";
       preferred_workspace = 71;
     }
+
+    # CVS Pharmacy
+    {
+      name = "CVS Pharmacy";
+      url = "https://www.cvs.com";
+      domain = "cvs.com";
+      icon = "/etc/nixos/assets/icons/cvs-pharmacy.svg";
+      description = "CVS Pharmacy - Health and wellness retailer";
+      categories = "Network;Utility;";
+      keywords = "cvs;pharmacy;health;prescriptions;wellness;drugstore;";
+      scope = "https://www.cvs.com/";
+      ulid = "66X3EWFQ4ZZMEHWY8Q7DWPB6BN";  # Generated 2025-11-17
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 72;
+    }
   ];
 
   # ULID validation function

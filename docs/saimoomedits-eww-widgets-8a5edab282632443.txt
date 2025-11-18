@@ -1,0 +1,3274 @@
+Directory structure:
+└── saimoomedits-eww-widgets/
+    ├── README.md
+    └── eww/
+        ├── bar/
+        │   ├── eww.scss
+        │   ├── eww.yuck
+        │   ├── launch_bar
+        │   └── scripts/
+        │       ├── battery
+        │       ├── mem-ad
+        │       ├── memory
+        │       ├── music_info
+        │       ├── pop
+        │       ├── wifi
+        │       └── workspace
+        ├── leftbar/
+        │   ├── eww.scss
+        │   ├── eww.yuck
+        │   ├── launch_left
+        │   └── scripts/
+        │       ├── battery
+        │       ├── cpu
+        │       ├── mem-ad
+        │       ├── memory
+        │       ├── music_info
+        │       ├── notifs
+        │       ├── vol
+        │       └── wifi
+        └── leftbar_old_pls_dont_use/
+            ├── eww.scss
+            ├── eww.yuck
+            ├── launch_left
+            └── scripts/
+                ├── battery
+                ├── cpu
+                ├── mem-ad
+                ├── memory
+                └── music_info
+
+================================================
+FILE: README.md
+================================================
+<h1 align="center"> <a href="https://github.com/elkowar/eww"> EWW - Elkowar's Wacky Widgets <h1> </a>
+<!-- ![eww](https://user-images.githubusercontent.com/72156551/153015496-6111b2c9-4f68-4999-a62e-b85273a926e0.gif) -->
+<img src="https://github.com/saimoomedits/eww-widgets/blob/main/eww.gif"  alt="bar"/><br/></h3>
+
+![SS](https://user-images.githubusercontent.com/72156551/154564705-ecd540bd-e8c5-4b03-8827-c76b2ef6eb08.png)
+
+ # Old
+![eww-again](https://user-images.githubusercontent.com/72156551/153015524-00e97b37-6af2-412b-92a2-bf092c2fc5ae.png)
+  
+# Credits
+**[niraj998 - workspace script for eww](https://github.com/niraj998)**
+
+
+
+================================================
+FILE: eww/bar/eww.scss
+================================================
+/** EWW.SCSS
+Created by saimoom **/
+*{
+	all: unset;
+	font-family: feather;
+	font-family: DaddyTimeMono NF;
+}
+
+/** General **/
+.bar_class {
+    background-color: #0f0f17;
+    border-radius: 16px;
+}
+.module {
+    margin: 0px 0px 0px 0px;
+    border-radius: 10px 16px 0px 10px;
+}
+
+/** tooltip!! **/
+tooltip.background {
+    background-color: #0f0f17;
+    font-size: 18;
+    border-radius: 10px;
+    color: #bfc9db;
+}
+
+tooltip label {
+    margin: 6px;
+}
+
+
+/** Widgets **/
+
+.clock_time_sep {
+    font-size: 16;
+    color: #bfc9db;
+    margin: 0px 4px 1px 4px;
+}
+.clock_time_class, .clock_minute_class {
+    font-size: 23;
+}
+.clock_date_class {
+    font-size: 18;
+    margin: 0px 20px 0px -1px;
+    color: #d7beda;
+}
+.clock_minute_class {
+    margin: 0px 20px 0px 3px;
+    color: #bfc9db;
+}
+
+.clock_time_class {
+    color: #bfc9db;
+    font-weight: bold;
+    margin: 0px 5px 0px 0px;
+}
+
+
+.membar {
+  color: #e0b089;
+    background-color: #38384d;
+  border-radius: 10px;
+}
+.batbar {
+  color: #afbea2;
+    background-color: #38384d;
+  border-radius: 10px;
+}
+.brightbar trough highlight {
+  background-image: linear-gradient(to right, #e4c9af 30%, #f2cdcd 50%, #e0b089 100% *50);
+  border-radius: 10px;
+}
+.volbar trough highlight {
+  background-image: linear-gradient(to right, #afcee0 30%, #a1bdce 50%, #77a5bf 100% *50);
+  border-radius: 10px;
+}
+.volume_icon {
+    font-size: 22;
+    color: #a1bdce;
+  margin: 0px 10px 0px 10px;
+}
+
+
+.module_essid {
+    font-size: 18;
+    color: #a1bdce;
+  margin: 0px 10px 0px 0px;
+}
+.module-wif {
+    font-size: 22;
+    color: #a1bdce;
+    border-radius: 100%;
+  margin: 0px 10px 0px 5px;
+}
+
+.iconmem {
+    color: #e0b089;
+}
+.iconbat {
+    color: #afbea2;
+}
+.iconbat, .iconmem {
+    font-size: 15;
+    margin: 10px;
+}
+.bright_icon {
+    font-size: 22;
+    color: #e4c9af;
+  margin: 0px 10px 0px 10px;
+}
+
+
+.separ {
+    color: #3e424f;
+    font-weight: bold;
+    font-size: 22px;
+    margin: 0px 8px 0px 8px;
+  }
+
+.mem_module {
+    background-color: #0f0f17;
+	border-radius: 16px;
+  margin: 0px 10px 0px 3px;
+  }
+.bat_module {
+    background-color: #0f0f17;
+	border-radius: 16px;
+  margin: 0px 10px 0px 10px;
+  }
+
+
+scale trough {
+  all: unset;
+  background-color: #22242b;
+  box-shadow: 0 2px 3px 2px #06060b;
+  border-radius: 16px;
+  min-height: 10px;
+  min-width: 70px;
+  margin: 0px 10px 0px 0px;
+}
+
+.works {
+font-size: 27px;
+font-weight: normal;
+margin: 5px 0px 0px 20px;
+background-color: #0f0f17;
+}
+
+.0 , .01, .02, .03, .04, .05, .06,
+.011, .022, .033, .044, .055, .066{
+  margin: 0px 10px 0px 0px;
+}
+
+/* Unoccupied */
+.0 {
+color: #3e424f;
+}
+
+/* Occupied */
+.01, .02, .03, .04, .05, .06 {
+  color: #bfc9db;
+}
+
+/* Focused */
+.011, .022, .033, .044, .055, .066 {
+  color: #a1bdce;
+}
+
+
+.song_cover_art {
+	background-size: cover;	
+	background-position: center;
+	min-height: 24px;
+	min-width: 24px;
+	margin: 10px;
+	border-radius: 100px;
+}
+
+.song {
+	color: #a1bdce;
+	font-size : 18px;
+	font-weight : bold;
+	margin : 3px 5px 0px 0px;
+}
+
+.song_btn_play {
+	color: #a1bdce;
+	font-size : 28px;
+	margin : 3px 0px 0px 5px;
+
+}
+
+
+.song_btn_prev, .song_btn_next {
+	color: #bfc9db;
+	font-size : 24px;
+	margin : 3px 0px 0px 5px;
+
+}
+// Calendar
+.cal {
+  background-color: #0f0f17;
+  font-family: JetBrainsMono Nerd Font;
+  font-size: 18px;
+  font-weight: normal;
+
+.cal-in {
+    padding: 0px 10px 0px 10px;
+    color: #bfc9db;
+
+.cal {
+     &.highlight {
+          padding: 20px;
+      }
+
+      padding: 5px 5px 5px 5px;
+      margin-left: 10px;
+    }
+  }
+}
+
+calender {
+    color: #bfc9db;
+}
+calendar:selected {
+  color: #a1bdce;
+}
+
+calendar.header {
+color: #a1bdce;
+font-weight: bold;
+}
+
+calendar.button {
+color: #afbea2;
+}
+
+calendar.highlight {
+color: #a1bdce;
+font-weight: bold;
+}
+
+calendar:indeterminate {
+color: #bfc9db;
+}
+
+
+
+
+
+
+
+.sys_sep {
+    color: #38384d;
+    font-size: 18;
+    margin: 0px 10px 0px 10px;
+}
+.sys_text_bat_sub, .sys_text_mem_sub {
+    font-size: 16;
+    color: #bbc5d7;
+    margin: 5px 0px 0px 25px;
+}
+.sys_text_bat, .sys_text_mem {
+    font-size: 21;
+    font-weight: bold;
+    margin: 14px 0px 0px 25px;
+}
+.sys_icon_bat, .sys_icon_mem {
+    font-size: 30;
+    margin: 30px;
+}
+.sys_win {
+    background-color: #0f0f17;
+}
+.sys_bat {
+  color: #afbea2;
+    background-color: #38384d;
+  border-radius: 10px;
+}
+.sys_mem {
+  color: #e4c9af;
+    background-color: #38384d;
+  border-radius: 10px;
+}
+.sys_icon_bat, .sys_text_bat {
+    color: #afbea2;
+}
+.sys_icon_mem, .sys_text_mem {
+    color: #e4c9af;
+}
+.sys_bat_box {
+	border-radius: 16px;
+    margin: 15px 10px 10px 20px;
+  }
+.sys_mem_box {
+	border-radius: 16px;
+    margin: 10px 10px 15px 20px;
+  }
+
+
+
+
+
+
+
+.music_pop {
+    background-color: #0f0f17;
+	border-radius: 16px;
+}
+  .music_cover_art {
+	background-size: cover;
+	background-position: center;
+	min-height: 100px;
+    box-shadow: 5px 5px 5px 5px #06060b;
+	min-width: 170px;
+	margin: 20px;
+	border-radius: 20px;
+}
+
+.music {
+	color: #a1bdce;
+	font-size : 20px;
+	font-weight : bold;
+	margin : 20px 0px 0px -15px;
+}
+
+.music_artist {
+	color: #bbc5d7;
+	font-size : 16px;
+	font-weight : normal;
+	margin : 0px 0px 0px 0px;
+}
+
+.music_btn_prev, .music_btn_play, .music_btn_next {
+	font-family: Iosevka Nerd Font;
+}
+.music_btn_prev {
+	color: #bbc5d7;
+	font-size : 32px;
+	font-weight : normal;
+	margin: 0px 0px 0px 0px;
+}
+.music_btn_play {
+	color: #a1bdce;
+	font-size : 48px;
+	font-weight : normal;
+	margin: 0px 0px 0px 0px;
+}
+.music_btn_next {
+	color: #bbc5d7;
+	font-size : 32px;
+	font-weight : normal;
+	margin: 0px 0px 0px 0px;
+}
+
+.music_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to right, #afcee0 30%, #a1bdce 50%, #77a5bf 100% *50);
+	border-radius: 24px;
+}
+.music_bar scale trough {
+	all: unset;
+	background-color: #232232;
+    box-shadow: 0 6px 5px 2px #06060b;
+	border-radius: 24px;
+	min-height: 13px;
+	min-width: 190px;
+	margin : -10px 10px 20px 0px;
+}
+
+.audio-box {
+    background-color: #0f0f17;
+	border-radius: 16px;
+}
+.speaker_icon {
+	background-size: cover;
+    background-image: url('images/speaker.png');
+	background-position: center;
+	min-height: 70px;
+	min-width: 75px;
+	margin: 10px 20px 5px 20px;
+	border-radius: 12px;
+}
+
+.speaker_text {
+	color: #a1bdce;
+	font-size : 26px;
+	font-weight : bold;
+	margin: 20px 0px 0px 0px;
+}
+
+.speaker_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to right, #afcee0 30%, #a1bdce 50%, #77a5bf 100% *50);
+	border-radius: 24px;
+}
+.speaker_bar scale trough {
+	all: unset;
+	background-color: #232232;
+    box-shadow: 0 6px 5px 2px #06060b;
+	border-radius: 24px;
+	min-height: 13px;
+	min-width: 120px;
+	margin : 0px 0px 5px 0px;
+}
+
+
+
+
+.mic_icon {
+	background-size: cover;
+    background-image: url('images/mic.png');
+	background-position: center;
+	min-height: 70px;
+	min-width: 75px;
+	margin: 5px 20px 20px 20px;
+	border-radius: 12px;
+}
+
+.mic_text {
+	color: #a1bdce;
+	font-size : 26px;
+	font-weight : bold;
+	margin: 0px 0px 0px 0px;
+}
+
+.mic_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to right, #afcee0 30%, #a1bdce 50%, #77a5bf 100% *50);
+	border-radius: 24px;
+}
+.mic_bar scale trough {
+	all: unset;
+    box-shadow: 0 6px 5px 2px #06060b;
+	background-color: #232232;
+	border-radius: 24px;
+	min-height: 13px;
+	min-width: 120px;
+	margin : 0px 0px 20px 0px;
+}
+
+.audio_sep {
+    color: #38384d;
+    font-size: 18;
+	margin : 0px 0px 0px 0px;
+}
+
+
+
+
+================================================
+FILE: eww/bar/eww.yuck
+================================================
+;; Variables
+(defpoll clock_time :interval "5m" "date +\%I")
+(defpoll clock_minute :interval "5s" "date +\%M")
+(defpoll clock_date :interval "10h" "date '+%d/%m'")
+(defpoll volume_percent :interval "3s" "amixer -D pulse sget Master | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll mic_percent :interval "3s" "amixer -D pulse sget Capture | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll brightness_percent :interval "5s" "brightnessctl -m -d intel_backlight | awk -F, '{print substr($4, 0, length($4)-1)}' | tr -d '%'")
+(defpoll battery :interval "15s" "./scripts/battery --bat")
+(defpoll battery_status :interval "1m" "./scripts/battery --bat-st")
+(defpoll memory :interval "15s" "scripts/memory")
+(defpoll memory_used_mb :interval "2m" "scripts/mem-ad used")
+(defpoll memory_total_mb :interval "2m" "scripts/mem-ad total")
+(defpoll memory_free_mb :interval "2m" "scripts/mem-ad free")
+(defvar vol_reveal false)
+(defvar br_reveal false)
+(defvar music_reveal false)
+(defvar wifi_rev false)
+(defvar time_rev false)
+(deflisten workspace "scripts/workspace")
+
+(defvar eww "$HOME/.local/bin/eww/eww -c $HOME/.config/eww/bar")
+
+
+(defpoll COL_WLAN :interval "1m" "~/.config/eww/bar/scripts/wifi --COL")
+(defpoll ESSID_WLAN :interval "1m" "~/.config/eww/bar/scripts/wifi --ESSID")
+(defpoll WLAN_ICON :interval "1m" "~/.config/eww/bar/scripts/wifi --ICON")
+
+
+(defpoll song :interval "2s"  "~/.config/eww/bar/scripts/music_info --song")
+(defpoll song_artist :interval "2s"  "~/.config/eww/bar/scripts/music_info --artist")
+(defpoll current_status :interval "1s"  "~/.config/eww/bar/scripts/music_info --time")
+(defpoll song_status :interval "2s"  "~/.config/eww/bar/scripts/music_info --status")
+(defpoll cover_art :interval "2s"  "~/.config/eww/bar/scripts/music_info --cover")
+
+(defpoll calendar_day :interval "20h" "date '+%d'")
+(defpoll calendar_year :interval "20h" "date '+%Y'")
+
+;; widgets
+
+(defwidget wifi [] 
+  (eventbox :onhover "${eww} update wifi_rev=true"
+			  :onhoverlost "${eww} update wifi_rev=false"
+		(box :vexpand "false" :hexpand "false" :space-evenly "false"
+				(button :class "module-wif" :onclick "networkmanager_dmenu" :wrap "false" :limit-width 12 :style "color: ${COL_WLAN};" WLAN_ICON)
+	(revealer :transition "slideright"
+			  :reveal wifi_rev
+			  :duration "350ms"
+	(label    :class "module_essid"
+			  :text ESSID_WLAN
+			  :orientation "h"
+			  )))))
+
+
+(defwidget workspaces []
+  (literal :content workspace))
+
+
+(defwidget bat []
+		(box :class "bat_module" :vexpand "false" :hexpand "false" 
+            (circular-progress :value battery
+                :class "batbar"
+                :thickness 4
+            (button 
+                :class "iconbat"
+                :limit-width 2
+                :tooltip "battery on ${battery}%"
+                :show_truncated false
+                :onclick "$HOME/.config/eww/bar/scripts/pop system"
+                :wrap false
+                ""))))
+
+
+(defwidget mem []
+		(box :class "mem_module" :vexpand "false" :hexpand "false" 
+            (circular-progress :value memory
+                :class "membar"
+                :thickness 4
+            (button 
+                :class "iconmem"
+                :limit-width 2
+                :tooltip "using ${memory}% ram"
+                :onclick "$HOME/.config/eww/bar/scripts/pop system"
+                :show_truncated false
+                :wrap false
+                ""))))
+
+
+
+(defwidget sep []
+  (box :class "module-2" :vexpand "false" :hexpand "false"
+    (label :class "separ" :text "|")))
+
+(defwidget clock_module []
+  (eventbox :onhover "${eww} update time_rev=true"
+			  :onhoverlost "${eww} update time_rev=false"
+    (box :class "module" :space-evenly "false" :orientation "h" :spacing "3" 
+      (label :text clock_time :class "clock_time_class" )
+      (label :text "" :class "clock_time_sep" )
+      (label :text clock_minute :class "clock_minute_class")
+	  (revealer :transition "slideleft"
+			  :reveal time_rev
+			  :duration "350ms"
+      (button :class "clock_date_class"
+             :onclick "$HOME/.config/eww/bar/scripts/pop calendar" clock_date
+        )
+  ))))
+  
+(defwidget volume []
+  (eventbox :onhover "${eww} update vol_reveal=true"
+			  :onhoverlost "${eww} update vol_reveal=false"
+  (box :class "module-2" :space-evenly "false" :orientation "h" :spacing "3" 
+	(button   :onclick "scripts/pop audio"   :class "volume_icon" "")
+	(revealer :transition "slideleft"
+			  :reveal vol_reveal
+			  :duration "350ms"
+	(scale    :class "volbar"
+			  :value volume_percent
+			  :orientation "h"
+			  :tooltip "${volume_percent}%"
+			  :max 100
+			  :min 0
+			  :onchange "amixer -D pulse sset Master {}%" )))))
+
+(defwidget bright []
+  (eventbox :onhover "${eww} update br_reveal=true" :onhoverlost "${eww} update br_reveal=false"
+  (box :class "module-2" :space-evenly "false" :orientation "h" :spacing "3" 
+    (label :text "" :class "bright_icon" :tooltip "brightness")
+	(revealer :transition "slideleft"
+			  :reveal br_reveal
+			  :duration "350ms"
+	(scale    :class "brightbar"
+			  :value brightness_percent
+			  :orientation "h"
+			  :tooltip "${brightness_percent}%"
+			  :max 100
+			  :min 0
+			  :onchange "brightnessctl set {}%" )))))
+
+
+
+	;;  Music 
+(defwidget music [] 
+  (eventbox :onhover "${eww} update music_reveal=true"
+			  :onhoverlost "${eww} update music_reveal=false"
+		(box :class "module-2" :orientation "h" :space-evenly "false" :vexpand "false" :hexpand "false" 
+			(box :class "song_cover_art" :vexpand "false" :hexpand "false" :style "background-image: url('${cover_art}');")
+			(button :class "song" :wrap "true" :onclick "~/.config/eww/bar/scripts/pop music" song)
+	    (revealer :transition "slideright"
+			      :reveal music_reveal
+			      :duration "350ms"
+          (box :vexpand "false" :hexpand "false" :oreintation "h" 
+                    (button :class "song_btn_prev" :onclick "~/.config/eww/bar/scripts/music_info --prev" "")
+					(button :class "song_btn_play" :onclick "~/.config/eww/bar/scripts/music_info --toggle" song_status)
+					(button :class "song_btn_next" :onclick "~/.config/eww/bar/scripts/music_info --next" ""))))))
+
+
+
+(defwidget left []
+	(box :orientation "h" 
+		 :space-evenly false  
+         :halign "end"
+		 :class "left_modules"
+(bright)
+(volume)
+(wifi)
+(sep)
+(bat)
+(mem)
+(sep)
+(clock_module)))
+
+
+(defwidget right []
+	(box :orientation "h" 
+		 :space-evenly false  
+         :halign "start"
+		 :class "right_modules"
+(workspaces)))
+
+
+(defwidget center []
+	(box :orientation "h" 
+		 :space-evenly false  
+         :halign "center"
+		 :class "center_modules"
+(music)))
+
+(defwidget bar_1 []
+  (box :class "bar_class"
+       :orientation "h"
+  (right)
+  (center)
+  (left)
+    ))
+
+(defwindow bar
+          :geometry (geometry :x "0%"
+                       :y "9px"
+                       :width "98%"
+                       :height "30px"
+                       :anchor "top center")
+          :stacking "fg"
+          :windowtype "dock"
+  (bar_1))
+  
+(defwidget system []
+  (box :class "sys_win" :orientation "v" :space-evenly "false" :hexpand "false" :vexpand "false" :spacing 0
+  (box :class "sys_bat_box" :orientation "h" :space-evenly "false"
+      (circular-progress :value battery
+                :class "sys_bat"
+                :thickness 9
+            (label :text ""
+                :class "sys_icon_bat"
+                :limit-width 2
+                :show_truncated false
+                :wrap false))
+            (box :orientation "v" :space-evenly "false" :spacing 0 :hexpand "false" :vexpand "false"
+            (label :text "battery"
+                :halign "start"
+                :class "sys_text_bat"
+                :limit-width 9
+                :show_truncated false
+                :wrap false)
+            (label :text "${battery}%"
+                :halign "start"
+                :class "sys_text_bat_sub"
+                :limit-width 22
+                :show_truncated false
+                :wrap false)
+            (label :text "${battery_status}"
+                :halign "start"
+                :class "sys_text_bat_sub"
+                :limit-width 22
+                :show_truncated false
+                :wrap false)))
+            (label :text "" :class "sys_sep" :halign "center")
+  (box :class "sys_mem_box" :orientation "h" :space-evenly "false" :halign "start"
+      (circular-progress :value memory
+                :class "sys_mem"
+                :thickness 9
+            (label :text ""
+                :class "sys_icon_mem"
+                :limit-width 2
+                :show_truncated false
+                :wrap false
+                :angle 0.0))
+            (box :orientation "v" :space-evenly "false" :spacing 0 :hexpand "false" :vexpand "false"
+            (label :text "memory"
+                :halign "start"
+                :class "sys_text_mem"
+                :limit-width 9
+                :show_truncated false
+                :wrap false)
+            (label :text "${memory_used_mb} | ${memory_total_mb}mb "
+                :halign "start"
+                :class "sys_text_mem_sub"
+                :limit-width 22
+                :show_truncated false
+                :wrap false)
+            (label :text "${memory_free_mb}mb free"
+                :halign "start"
+                :class "sys_text_mem_sub"
+                :limit-width 22
+                :show_truncated false
+                :wrap false)))))
+
+(defwidget cal []
+	(box :class "cal" :orientation "v"
+	(box :class "cal-in"
+	(calendar :class "cal" 
+			  :day calendar_day 
+			  :year calendar_year))))
+
+(defwindow calendar
+	:geometry (geometry :x "-20px" 
+						:y "7%" 
+                        :anchor "top right"
+						:width "270px" 
+						:height "60px")
+(cal))
+
+
+
+(defwidget audio []
+	(box :class "audio-box" :orientation "v" :space-evenly "false" :vexpand "false" :hexpand "false"
+	(box :halign "v" :space-evenly "false" :hexpand "false" :vexpand "false"
+	(box :class "speaker_icon" :orientation "v")
+	(box :orientation "v" :halign "center" :vexpand "false" :hexpand "false"
+    (label :class "speaker_text" :text "speaker" :valign "center" :halign "left" )
+	(box :class "speaker_bar" :halign "center" :vexpand "false" :hexpand "false"
+	(scale    :value volume_percent
+              :space-evenly "false"
+			  :orientation "h"
+			  :onchange "amixer -D pulse sset Master {}%" 
+              :tooltip "volume on ${volume_percent}%"
+			  :max 100
+			  :min 0))))
+            (label :text "" :class "audio_sep" :halign "center")
+	(box :halign "v" :space-evenly "false" :hexpand "false" :vexpand "false"
+	(box :class "mic_icon" :orientation "v")
+	(box :orientation "v" :halign "center" :vexpand "false" :hexpand "false"
+    (label :class "mic_text" :text "mic" :valign "center" :halign "left" )
+	(box :class "mic_bar" :halign "center" :vexpand "false" :hexpand "false"
+	(scale    :value mic_percent
+              :space-evenly "false"
+			  :orientation "h"
+              :tooltip "mic on ${mic_percent}%"
+			  :onchange "amixer -D pulse sset Capture {}%" 
+			  :max 100
+			  :min 0))))))
+
+(defwindow audio_ctl
+	:geometry (geometry :x "-20px" 
+						:y "7%" 
+                        :anchor "top right"
+						:width "280px" 
+						:height "60px")
+(audio))
+
+
+(defwindow system
+	:geometry (geometry :x "-20px" 
+						:y "7%" 
+                        :anchor "top right"
+						:width "290px" 
+						:height "120px")
+(system))
+
+
+
+;;  Music
+(defwidget music_pop []
+		(box :class "music_pop" :orientation "h" :space-evenly "false" :vexpand "false" :hexpand "false"
+			(box :class "music_cover_art" :vexpand "false" :hexpand "false" :style "background-image: url('${cover_art}');")
+			(box :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+				(label :halign "center" :class "music" :wrap "true" :limit-width 13 :text song)
+				(label :halign "center" :class "music_artist" :wrap "true" :limit-width 15 :text song_artist)
+				(box :orientation "h" :spacing 15 :halign "center" :space-evenly "false" :vexpand "false" :hexpand "false"
+					(button :class "music_btn_prev" :onclick "~/.config/eww/bar/scripts/music_info --prev" "")
+					(button :class "music_btn_play" :onclick "~/.config/eww/bar/scripts/music_info --toggle" song_status)
+					(button :class "music_btn_next" :onclick "~/.config/eww/bar/scripts/music_info --next" ""))
+				(box :class "music_bar" :halign "center" :vexpand "false" :hexpand "false" :space-evenly "false"
+					(scale :onscroll "mpc -q seek {}" :min 0 :active "true" :max 100 :value current_status)))))
+
+
+;;  music
+		(defwindow music_win :stacking "fg" :focusable "false" :screen 1
+			    :geometry (geometry :x "0" :y "7%" :width 428 :height 104 :anchor "top center")
+			     				(music_pop))
+
+
+
+
+================================================
+FILE: eww/bar/launch_bar
+================================================
+#!/bin/bash
+
+## Files and cmd
+FILE="$HOME/.cache/eww_launch.xyz"
+EWW="$HOME/.local/bin/eww/eww -c $HOME/.config/eww/bar"
+
+## Run eww daemon if not running already
+if [[ ! `pidof eww` ]]; then
+	${EWW} daemon
+	sleep 1
+fi
+
+## Open widgets 
+run_eww() {
+	${EWW} open-many \
+         bar
+        
+}
+
+## Launch or close widgets accordingly
+if [[ ! -f "$FILE" ]]; then
+	touch "$FILE"
+	run_eww && bspc config -m LVDS-1 top_padding 49
+else
+	${EWW} close-all && killall eww
+	rm "$FILE"
+fi
+
+
+
+================================================
+FILE: eww/bar/scripts/battery
+================================================
+#!/bin/bash
+
+battery() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/capacity
+}
+battery_stat() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/status
+}
+
+if [[ "$1" == "--bat" ]]; then
+	battery
+elif [[ "$1" == "--bat-st" ]]; then
+	battery_stat
+fi
+
+
+
+
+================================================
+FILE: eww/bar/scripts/mem-ad
+================================================
+#!/bin/sh
+
+
+total="$(free -m | grep Mem: | awk '{ print $2 }')"
+used="$(free -m | grep Mem: | awk '{ print $3 }')"
+
+free=$(expr $total - $used)
+
+if [ "$1" = "total" ]; then
+    echo $total
+elif [ "$1" = "used" ]; then
+    echo $used
+elif [ "$1" = "free" ]; then
+    echo $free
+fi
+
+
+
+================================================
+FILE: eww/bar/scripts/memory
+================================================
+#!/bin/sh
+
+printf "%.0f\n" $(free -m | grep Mem | awk '{print ($3/$2)*100}')
+
+
+
+================================================
+FILE: eww/bar/scripts/music_info
+================================================
+#!/bin/bash
+# scripts by adi1090x
+
+## Get data
+STATUS="$(mpc status)"
+COVER="/tmp/.music_cover.png"
+MUSIC_DIR="$HOME/Music"
+
+## Get status
+get_status() {
+	if [[ $STATUS == *"[playing]"* ]]; then
+		echo ""
+	else
+		echo "奈"
+	fi
+}
+
+## Get song
+get_song() {
+	song=`mpc -f %title% current`
+	if [[ -z "$song" ]]; then
+		echo "Offline"
+	else
+		echo "$song"
+	fi	
+}
+
+## Get artist
+get_artist() {
+	artist=`mpc -f %artist% current`
+	if [[ -z "$artist" ]]; then
+		echo ""
+	else
+		echo "$artist"
+	fi	
+}
+
+## Get time
+get_time() {
+	time=`mpc status | grep "%)" | awk '{print $4}' | tr -d '(%)'`
+	if [[ -z "$time" ]]; then
+		echo "0"
+	else
+		echo "$time"
+	fi	
+}
+get_ctime() {
+	ctime=`mpc status | grep "#" | awk '{print $3}' | sed 's|/.*||g'`
+	if [[ -z "$ctime" ]]; then
+		echo "0:00"
+	else
+		echo "$ctime"
+	fi	
+}
+get_ttime() {
+	ttime=`mpc -f %time% current`
+	if [[ -z "$ttime" ]]; then
+		echo "0:00"
+	else
+		echo "$ttime"
+	fi	
+}
+
+## Get cover
+get_cover() {
+	ffmpeg -i "${MUSIC_DIR}/$(mpc current -f %file%)" "${COVER}" -y &> /dev/null
+	STATUS=$?
+
+	# Check if the file has a embbeded album art
+	if [ "$STATUS" -eq 0 ];then
+		echo "$COVER"
+	else
+		echo "images/music.png"
+	fi
+}
+
+## Execute accordingly
+if [[ "$1" == "--song" ]]; then
+	get_song
+elif [[ "$1" == "--artist" ]]; then
+	get_artist
+elif [[ "$1" == "--status" ]]; then
+	get_status
+elif [[ "$1" == "--time" ]]; then
+	get_time
+elif [[ "$1" == "--ctime" ]]; then
+	get_ctime
+elif [[ "$1" == "--ttime" ]]; then
+	get_ttime
+elif [[ "$1" == "--cover" ]]; then
+	get_cover
+elif [[ "$1" == "--toggle" ]]; then
+	mpc -q toggle
+elif [[ "$1" == "--next" ]]; then
+	{ mpc -q next; get_cover; }
+elif [[ "$1" == "--prev" ]]; then
+	{ mpc -q prev; get_cover; }
+fi
+
+
+
+================================================
+FILE: eww/bar/scripts/pop
+================================================
+#!/bin/bash
+
+calendar() {
+LOCK_FILE="$HOME/.cache/eww-calendar.lock"
+EWW_BIN="$HOME/.local/bin/eww/eww"
+
+run() {
+    ${EWW_BIN} -c $HOME/.config/eww/bar open calendar
+}
+
+# Open widgets
+if [[ ! -f "$LOCK_FILE" ]]; then
+    ${EWW_BIN} -c $HOME/.config/eww/bar close system music_win audio_ctl
+    touch "$LOCK_FILE"
+    run && echo "ok good!"
+else
+    ${EWW_BIN} -c $HOME/.config/eww/bar close calendar
+    rm "$LOCK_FILE" && echo "closed"
+fi
+}
+
+
+system() {
+LOCK_FILE_MEM="$HOME/.cache/eww-system.lock"
+EWW_BIN="$HOME/.local/bin/eww/eww"
+
+run() {
+    ${EWW_BIN} -c $HOME/.config/eww/bar open system 
+}
+
+# Open widgets
+if [[ ! -f "$LOCK_FILE_MEM" ]]; then
+    ${EWW_BIN} -c $HOME/.config/eww/bar close calendar music_win audio_ctl
+    touch "$LOCK_FILE_MEM"
+    run && echo "ok good!"
+else
+    ${EWW_BIN} -c $HOME/.config/eww/bar close system 
+    rm "$LOCK_FILE_MEM" && echo "closed"
+fi
+}
+
+
+music() {
+LOCK_FILE_SONG="$HOME/.cache/eww-song.lock"
+EWW_BIN="$HOME/.local/bin/eww/eww"
+
+run() {
+    ${EWW_BIN} -c $HOME/.config/eww/bar open music_win 
+}
+
+# Open widgets
+if [[ ! -f "$LOCK_FILE_SONG" ]]; then
+    ${EWW_BIN} -c $HOME/.config/eww/bar close system calendar
+    touch "$LOCK_FILE_SONG"
+    run && echo "ok good!"
+else
+    ${EWW_BIN} -c $HOME/.config/eww/bar close music_win
+    rm "$LOCK_FILE_SONG" && echo "closed"
+fi
+}
+
+
+
+audio() {
+LOCK_FILE_AUDIO="$HOME/.cache/eww-audio.lock"
+EWW_BIN="$HOME/.local/bin/eww/eww"
+
+run() {
+    ${EWW_BIN} -c $HOME/.config/eww/bar open audio_ctl 
+}
+
+# Open widgets
+if [[ ! -f "$LOCK_FILE_AUDIO" ]]; then
+    ${EWW_BIN} -c $HOME/.config/eww/bar close system calendar music
+    touch "$LOCK_FILE_AUDIO"
+    run && echo "ok good!"
+else
+    ${EWW_BIN} -c $HOME/.config/eww/bar close audio_ctl
+    rm "$LOCK_FILE_AUDIO" && echo "closed"
+fi
+}
+
+
+if [ "$1" = "calendar" ]; then
+calendar
+elif [ "$1" = "system" ]; then
+system
+elif [ "$1" = "music" ]; then
+music
+elif [ "$1" = "audio" ]; then
+audio
+fi
+
+
+
+================================================
+FILE: eww/bar/scripts/wifi
+================================================
+#!/bin/bash
+
+status=$(nmcli g | grep -oE "disconnected")
+essid=$(nmcli c | grep wlp2s0 | awk '{print ($1)}')
+
+if [ $status ] ; then
+    icon=""
+    text=""
+    col="#575268"
+
+else
+    icon=""
+    text="${essid}"
+    col="#a1bdce"
+fi
+
+
+
+if [[ "$1" == "--COL" ]]; then
+    echo $col	
+elif [[ "$1" == "--ESSID" ]]; then
+	echo $text
+elif [[ "$1" == "--ICON" ]]; then
+	echo $icon
+fi
+
+
+
+
+================================================
+FILE: eww/bar/scripts/workspace
+================================================
+#!/bin/sh
+workspaces() {
+
+ws1="1"
+ws2="2"
+ws3="3"
+ws4="4"
+ws5="5"
+ws6="6"
+
+# Unoccupied
+un="0"
+
+# check if Occupied
+o1=$(bspc query -D -d .occupied --names | grep "$ws1" )
+o2=$(bspc query -D -d .occupied --names | grep "$ws2" )
+o3=$(bspc query -D -d .occupied --names | grep "$ws3" )
+o4=$(bspc query -D -d .occupied --names | grep "$ws4" )
+o5=$(bspc query -D -d .occupied --names | grep "$ws5" )
+o6=$(bspc query -D -d .occupied --names | grep "$ws6" )
+
+# check if Focused
+f1=$(bspc query -D -d focused --names | grep "$ws1" )
+f2=$(bspc query -D -d focused --names | grep "$ws2" )
+f3=$(bspc query -D -d focused --names | grep "$ws3" )
+f4=$(bspc query -D -d focused --names | grep "$ws4" )
+f5=$(bspc query -D -d focused --names | grep "$ws5" )
+f6=$(bspc query -D -d focused --names | grep "$ws6" )
+
+ic_1=""
+ic_2=""
+ic_3=""
+ic_4=""
+ic_5=""
+ic_6=""
+if [ $f1 ]; then
+    ic_1=""
+elif [ $f2 ]; then
+    ic_2=""
+elif [ $f3 ]; then
+    ic_3=""
+elif [ $f4 ]; then
+    ic_4=""
+elif [ $f5 ]; then
+    ic_5=""
+elif [ $f6 ]; then
+    ic_6=""
+fi
+
+echo 	"(box	:class \"works\"	:orientation \"h\" :spacing 5 :space-evenly \"false\" (button :onclick \"bspc desktop -f $ws1\"	:class	\"$un$o1$f1\"	\"$ic_1\") (button :onclick \"bspc desktop -f $ws2\"	:class \"$un$o2$f2\"	 \"$ic_2\") (button :onclick \"bspc desktop -f $ws3\"	:class \"$un$o3$f3\" \"$ic_3\") (button :onclick \"bspc desktop -f $ws4\"	:class \"$un$o4$f4\"	\"$ic_4\") (button :onclick \"bspc desktop -f $ws5\"	:class \"$un$o5$f5\" \"$ic_5\")  (button :onclick \"bspc desktop -f $ws6\"	:class \"$un$o6$f6\" \"$ic_6\"))"
+
+}
+workspaces
+bspc subscribe desktop node_transfer | while read -r _ ; do
+workspaces
+done
+
+
+
+================================================
+FILE: eww/leftbar/eww.scss
+================================================
+*{
+	all: unset;
+	font-family: feather;
+	font-family: JetBrainsMono NF;
+}
+
+
+/** tooltip!! **/
+tooltip.background {
+    background-color: #0f0f17;
+    font-size: 18;
+    border-radius: 10px;
+    color: #bfc9db;
+}
+
+tooltip label {
+    margin: 6px;
+}
+
+/** time **/
+.hour_class {
+    color: #bec8da;
+    font-size: 42px;
+    font-weight: bold;
+    margin: 15px 0px 0px 10px;
+}
+
+.minute_class {
+    color: #bec8da;
+    font-size: 42px;
+    margin: 15px 10px 0px 20px;
+}
+
+.mer_class {
+    color: #767c87;
+    font-size: 22px;
+    margin: 15px 0px 0px 0px;
+}
+
+
+.day_class {
+    color: #767c88;
+    font-size: 30px;
+    margin: 0px 0px 10px 10px;
+}
+
+.month_class {
+    color: #767c88;
+    font-size: 30px;
+    margin: 0px 10px 10px 10px;
+}
+
+.year_class {
+    color: #767c88;
+    font-size: 30px;
+    margin: 0px 20px 10px 10px;
+}
+
+
+.time_sep_class {
+    color: #bec8da;
+    font-size: 18px;
+    margin: 0px 0px 0px 0px;
+}
+
+.day_class_n {
+    color: #767c88;
+    font-size: 18px;
+    margin: 0px 0px 5px 10px;
+}
+
+.month_class_n {
+    color: #767c88;
+    font-size: 18px;
+    margin: 0px 0px 5px 0px;
+}
+
+
+
+
+
+.sep {
+    background-color: #bfc9db;
+    border-radius: 8px;
+}
+
+.profile_picture {
+	background-image: url('images/profile.png');
+	background-size: 180px;
+	background-position: 50% 35%;
+	min-height: 180px;
+	min-width: 180px;
+	margin: 0px 0px 0px 0px;
+	border-radius: 10px 0px 50px 0px;
+}
+
+.profile_greeting {
+	color: #b5e8e0;
+	font-size : 18px;
+	font-weight : normal;
+	margin : 0px 0px 0px 10px;
+}
+
+.profile_username {
+	color: #a1bdce;
+	font-size : 36px;
+	font-weight : bold;
+	margin : -15px 0px 0px 0px;
+}
+
+
+.bg {
+    background-color: #0f0f17;
+    border-radius: 0px;
+}
+
+.bg_alt {
+    background-color: #13141c;
+    border-radius: 16px;
+}
+.close_btn {
+    font-size: 44px;
+    color: #767c88;
+    margin: 0px 0px 0px 10px;
+}
+.exit_btn {
+    font-size: 56px;
+    color: #d78787;
+}
+.close_bg {
+    background-color: #13141c;
+    border-radius: 0px 20px 0px 40px;
+}
+.win {
+    background-color: #13141c;
+    border-radius: 18px;
+}
+
+
+
+.cc_cc {
+    font-size: 28;
+    margin: 32px;
+}
+
+.sys_icon_bat, .sys_icon_mem, .sys_icon_cpu{
+    font-size: 24;
+    margin: 20px 0px 0px 0px;
+}
+.sys_win {
+    background-color: #14141c;
+    border-radius: 18px;
+}
+.sys_cpu {
+  color: #bfc9db;
+    background-color: #0f0f17;
+  border-radius: 10px;
+}
+.sys_bat {
+  color: #bfc9db;
+    background-color: #0f0f17;
+  border-radius: 10px;
+}
+.sys_mem {
+  color: #bfc9db;
+    background-color: #0f0f17;
+  border-radius: 10px;
+}
+.sys_icon_bat {
+    color: #bfc9db;
+}
+.sys_icon_cpu {
+    color: #bfc9db;
+}
+.sys_icon_mem {
+    color: #bfc9db;
+}
+.sys_bat_box {
+	border-radius: 16px;
+    margin: 30px 0px 10px 50px;
+  }
+.sys_cpu_box {
+	border-radius: 16px;
+    margin: 30px 50px 10px 50px;
+  }
+.sys_mem_box {
+	border-radius: 16px;
+    margin: 30px 50px 15px 0px;
+  }
+
+
+.storage_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #91ab7a 30%, #afbea2 50%, #ccefad 100% *50);
+	border-radius: 24px;
+}
+.bright_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #e0b089 30%, #e4c9af 50%, #ebd0b7 100% *50);
+	border-radius: 24px;
+}
+.volume_bar scale trough highlight {
+	all: unset;
+    background-color: #bfc9db;
+	border-radius: 24px;
+}
+.mic_bar scale trough highlight {
+	all: unset;
+    background-color: #bfc9db;
+	border-radius: 24px;
+}
+scale trough {
+	all: unset;
+	background-color: #232232;
+	border-radius: 24px;
+	min-height: 130px;
+	min-width: 14px;
+	margin : 10px 0px 0px 0px;
+}
+
+.vol_icon, .brg_icon, .stor_icon, .mic_icon {
+    font-size: 26;
+}
+.vol_icon {
+    color: #bfc9db;
+}
+.mic_icon {
+    color: #bfc9db;
+}
+.brg_icon {
+    color: #e4c9af;
+}
+.stor_icon {
+    color: #afbea2;
+}
+
+.fetch_img {
+	background-size: cover;	
+	background-position: center;
+	min-height: 140px;
+	min-width: 100px;
+	margin: 13px;
+	border-radius: 16px;
+}
+
+
+.fetch_text_2 , .fetch_text_3 {
+    font-size: 20px;
+	font-weight : normal;
+	margin : 0px 35px 0px 0px;
+}
+
+.fetch_text_1 {
+    font-size: 20px;
+	font-weight : normal;
+	margin : 20px 35px 0px 0px;
+}
+.fetch_icon_2 , .fetch_icon_3 {
+    font-size: 24px;
+	font-weight : bold;
+	margin : 0px 0px 0px 35px;
+}
+.fetch_icon_1 {
+    font-size: 24px;
+	font-weight : bold;
+	margin : 20px 0px 0px 35px;
+}
+.fetch_sep_1 {
+    font-size: 24px;
+	font-weight : bold;
+    color: #95939f;
+	margin : 20px 0px 0px 0px;
+}
+.fetch_sep {
+    font-size: 24px;
+	font-weight : bold;
+    color: #95939f;
+	margin : 0px 0px 0px 0px;
+}
+.fetch_icon_1 {
+    color: #d7beda;
+}
+.fetch_text_1 {
+    color: #d7beda;
+}
+
+.fetch_icon_2 {
+    color: #e4c9af;
+}
+.fetch_text_2 {
+    color: #e4c9af;
+}
+
+.fetch_icon_3 {
+    color: #d78787;
+}
+.fetch_text_3 {
+    color: #d78787;
+}
+
+
+
+.msc_bg {
+	background-size: cover;	
+	background-position: center;
+    background-image: url("images/minimal.jpg");
+	min-height: 140px;
+	min-width: 140px;
+	margin: 0px;
+	border-radius: 16px;
+}
+
+.song {
+    font-size: 24px;
+	font-weight : bold;
+    color: #bfc9db;
+	margin : 10px 0px 0px 15px;
+}
+.song_artist {
+    font-size: 18px;
+	font-weight : bold;
+    color: #bfc9db;
+	margin : 0px 0px 0px 15px;
+}
+
+
+.song_btn_prev, .song_btn_next, .song_btn_loop {
+    font-size: 30px;
+    font-weight: normal;
+    color: #bfc9db;
+	margin : 4px 20px 0px 20px;
+}
+.song_btn_play {
+    font-weight: normal;
+    font-size: 34px;
+    color: #bfc9db;
+	margin : 4px 20px 0px 20px;
+}
+
+.msc_ctl_bg {
+    background-color: #13141c;
+	border-radius: 12px;
+}
+
+
+.song_prog scale trough highlight {
+	all: unset;
+    background-color: #bfc9db;
+	border-radius: 8px;
+}
+.song_prog scale trough {
+	all: unset;
+	background-color: #232232;
+	border-radius: 8px;
+	min-height: 5px;
+	min-width: 220px;
+	margin : 15px;
+}
+.music_prog_bg {
+    background-color: #13141c;
+    border-radius: 8px;
+}
+
+
+.sus_tray {
+    background-color: #14141c;
+    border-radius: 8px;
+}
+.wifi_but {
+    border-radius: 18px 10px 18px 10px;
+    padding: 15px;
+    font-size: 32px;
+    margin: 15px;
+}
+
+.notif_but {
+    border-radius: 18px 10px 18px 10px;
+    padding: 15px;
+    font-size: 32px;
+    margin: 15px;
+}
+
+
+.vol_but {
+    border-radius: 18px 10px 18px 10px;
+    padding: 15px;
+    font-size: 32px;
+    margin: 15px;
+}
+
+.log_but {
+    border-radius: 18px 10px 18px 10px;
+    padding: 15px;
+    font-size: 32px;
+    background-color: #0f0f17;
+    color: #bbc5d7;
+    margin: 15px;
+}
+
+.bright_box {
+    border-radius: 10px;
+    background-color: #14141c;
+}
+
+.bright scale trough highlight {
+	all: unset;
+    background-color: #bfc9db;
+	border-radius: 8px 20px 2px 8px;
+}
+.bright scale trough {
+	all: unset;
+	background-color: #232232;
+	border-radius: 8px;
+	min-height: 10px;
+	min-width: 450px;
+	margin : 15px;
+}
+.br_icon {
+    font-size: 38;
+    color: #bfc9db;
+    margin: 0px 0px 0px 20px;
+}
+
+
+
+================================================
+FILE: eww/leftbar/eww.yuck
+================================================
+(defvar IMAGE "images/profile.png")
+(defpoll username :interval "48h"  "whoami")
+
+(defpoll uptime :interval "50s" "uptime -p | sed -e 's/up //;s/ hours,/h/;s/ hour,/h/;s/ minutes/m/;s/ minute/m/'")
+
+(defpoll time_hour :interval "5m"
+       "date +\"%I\"")
+(defpoll time_year :interval "5m"
+       "date +\"%C\"")
+(defpoll time_min :interval "5s"
+       "date +\"%M\"")
+(defpoll time_mer :interval "12h"
+        "date +\"%p\"")
+(defpoll time_day :interval "30m"
+       "date +\"%d\"")
+(defpoll time_month :interval "48h"
+      "date +\%m")
+(defpoll time_day_name :interval "30m"
+       "date +\"%A\"")
+(defpoll time_month_name :interval "48h"
+      "date +\%B")
+
+(defpoll song :interval "3s"  "~/.config/eww/bar/scripts/music_info --song")
+(defpoll song_artist :interval "3s"  "~/.config/eww/leftbar/scripts/music_info --artist")
+(defpoll song_status :interval "3s"  "~/.config/eww/leftbar/scripts/music_info --status")
+(defpoll loop_status :interval "5s"  "~/.config/eww/leftbar/scripts/music_info --loop_ic")
+(defpoll song_time :interval "1s"  "~/.config/eww/leftbar/scripts/music_info --time")
+
+(defpoll battery :interval "15s" "./scripts/battery --bat")
+(defpoll memory :interval "15s" "scripts/memory")
+(defpoll cpu :interval "17s" "scripts/cpu")
+
+
+(defpoll wifi_icon :interval "15s" "./scripts/wifi wifi")
+(defpoll wifi_col :interval "15s" "scripts/wifi wifi_col")
+(defpoll wifi_bg :interval "17s" "scripts/wifi wifi_bg")
+
+(defpoll notif_icon :interval "15s" "./scripts/notifs notifs")
+(defpoll notif_col :interval "15s" "scripts/notifs notifs_col")
+(defpoll notif_bg :interval "17s" "scripts/notifs notifs_bg")
+
+
+(defpoll vol_icon :interval "15s" "./scripts/vol vol")
+(defpoll vol_col :interval "15s" "scripts/vol vol_col")
+(defpoll vol_bg :interval "17s" "scripts/vol vol_bg")
+
+(defpoll volume_percent :interval "6s" "amixer -D pulse sget Master | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll mic_percent :interval "6s" "amixer -D pulse sget Capture | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll brightness :interval "6s" "brightnessctl -m -d intel_backlight | awk -F, '{print substr($4, 0, length($4)-1)}' | tr -d '%'")
+
+
+(defwidget profile []
+  (box :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false" 
+				(box :class "profile_picture" :halign "center" :style "background-image: url('${IMAGE});")))
+			;;	(label :class "profile_greeting" :halign "center" :wrap "true" :limit-width 25 :text username)))
+
+(defwidget time [] 
+		(box  
+             :orientation "v" 
+             :space-evenly "false" 
+             :vexpand "false" 
+             :hexpand "false" 
+             :spacing 0
+		(box  
+             :orientation "h" 
+             :space-evenly "false" 
+             :vexpand "false" 
+             :halign "start"
+             :hexpand "false" 
+             :spacing 0
+			 (label :class "hour_class" 
+                    :valign "start" 
+                    :halign "start"
+                    :wrap "true" 
+                    :limit-width 25 
+                    :text time_hour)
+			 (label :class "minute_class" 
+                    :valign "start" 
+                    :halign "start" 
+                    :wrap "true" 
+                    :limit-width 25 
+                    :text time_min)
+			 (label :class "mer_class" 
+                    :valign "start" 
+                    :halign "start" 
+                    :wrap "true" 
+                    :text time_mer))
+            (box :orientation "h" 
+              :spacing 0 
+              :space-evenly "false" 
+              :halign "start"
+              :vexpand "false" :hexpand "false" 
+			  (label :class "day_class" 
+                     :valign "start" 
+                     :text time_day)
+			  (label :class "time_sep"
+                     :valign "start" 
+                     :text " ")
+			  (label :class "month_class" 
+                     :valign "start" 
+                     :text time_month)
+			  (label :class "year_class" 
+                     :valign "start" 
+                     :text time_year))
+            (box :orientation "h" 
+              :spacing 0 
+              :space-evenly "false" 
+              :halign "start"
+              :vexpand "false" :hexpand "false" 
+			  (label :class "day_class_n" 
+                     :valign "start" 
+                     :text time_day_name)
+			  (label :class "time_sep_class"
+                     :valign "start" 
+                     :text ", ")
+			  (label :class "month_class_n" 
+                     :valign "start" 
+                     :text time_month_name))))
+
+(defwidget music []
+		(box :orientation "v" :space-evenly "false" :vexpand "false" :hexpand "false"
+			(box :orientation "v" :spacing 5 :space-evenly "false" :vexpand "false" :hexpand "false" :class "msc_bg"
+				(label :halign "start" :class "song" :wrap "false" :limit-width 12 :text song)
+				(label :halign "start" :class "song_artist" :wrap "true" :limit-width 15 :text song_artist))))
+
+(defwidget music_ctl []
+				(box :orientation "v" :spacing 1 :halign "center" :space-evenly "false" :vexpand "false" :hexpand "false" :class "msc_ctl_bg"
+					(button :class "song_btn_prev" :onclick "~/.config/eww/leftbar/scripts/music_info --prev" "")
+					(button :class "song_btn_play" :onclick "~/.config/eww/leftbar/scripts/music_info --toggle" song_status)
+					(button :class "song_btn_next" :onclick "~/.config/eww/leftbar/scripts/music_info --next" "")
+					(button :class "song_btn_loop" :onclick "~/.config/eww/leftbar/scripts/music_info --loop" loop_status)))
+
+
+(defwidget music_prog []
+			(box :orientation "v" :spacing 5 :space-evenly "false" :vexpand "false" :hexpand "false" :class "music_prog_bg"
+				(scale :value song_time :halign "start" :class "song_prog")))
+
+
+(defwidget main []
+  (box :class "bg" :orientation "h" :space-evenly "false"))
+
+
+(defwidget sep []
+  (box :class "sep" :orientation "h" :space-evenly "false"))
+
+
+(defwidget system []
+  (box :class "sys_win" :orientation "h" :space-evenly "false" :hexpand "false" :vexpand "false" :spacing 13 
+      (box :class "sys_bat_box" :orientation "v" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value battery
+                :class "sys_bat"
+                :thickness 100
+            (label :text " "
+                :class "cc_cc"
+                :limit-width 2
+                :show_truncated false
+                :wrap false))
+            (label :text "BAT"
+                :class "sys_icon_bat"
+                :limit-width 4
+                :show_truncated false
+                :wrap false))
+      (box :class "sys_cpu_box" :orientation "v" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value cpu
+                :class "sys_cpu"
+                :thickness 100
+            (label :text " "
+                :class "cc_cc"
+                :limit-width 2
+                :show_truncated false
+                :wrap false))
+            (label :text "CPU"
+                :class "sys_icon_cpu"
+                :limit-width 4
+                :show_truncated false
+                :wrap false))
+      (box :class "sys_mem_box" :orientation "v" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value memory
+                :class "sys_mem"
+                :thickness 100
+            (label :text " "
+                :class "cc_cc"
+                :limit-width 2
+                :show_truncated false
+                :wrap false
+                :angle 0.0))
+            (label :text "MEM"
+                :class "sys_icon_mem"
+                :limit-width 4
+                :show_truncated false
+                :wrap false))))
+
+
+		(defwidget audio []
+			(box :vexpand "false" :hexpand "false"
+				(box :orientation "h" :spacing 25 :halign "center" :valign "center" :space-evenly "false" :vexpand "false" :hexpand "false"
+					(box :class "volume_bar" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                            (scale :flipped "true" :orientation "v" :min 0 :max 101 :value volume_percent :onchange "amixer -D pulse sset Master {}%" )
+                            (label  :text "" :class "vol_icon"))
+					(box :class "mic_bar" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                            (scale :flipped "true" :orientation "v" :min 0 :max 101 :value mic_percent :active "false")
+                            (label  :text "" :class "mic_icon")))))
+
+
+
+(defwidget systray []
+  (box :class "sus_tray" :valign "center"  :space-evenly "false" :orientation "h"
+    (box :orientation "h" :hexpand "false" :vexpand "false" :space-evenly "false"
+      (button :class "wifi_but" :onclick "networkmanager_dmenu" :style "color: ${wifi_col}; background-color: ${wifi_bg};"  wifi_icon)
+      (button :class "notif_but" :onclick "dunstctl set-paused toggle" :style "color: ${notif_col}; background-color: ${notif_bg};"  notif_icon))
+    (box :orientation "h" :hexpand "false" :vexpand "false" :space-evenly "false"
+      (button :class "vol_but" :onclick "amixer -D pulse set Master toggle" :style "color: ${vol_col}; background-color: ${vol_bg};"  vol_icon)
+      (button :class "log_but" :onclick "bspc quit" "")
+      (button :class "log_but" :onclick "poweroff" ""))))
+
+
+(defwidget stats []
+  (box :orientation "h" :space-evenly "false" 
+;;    (label :class "br_icon" :text "")
+	  (box :class "bright" :orientation "h" :space-evenly "false" :vexpand "false" :hexpand "false"
+          (scale :orientation "h" :min 0 :max 100 :value brightness :onchange "brightnessctl set {}%" ))))
+
+
+
+
+
+
+
+
+
+
+(defwindow main
+  :geometry (geometry :anchor "left center"
+             :width "500px"
+             :height "90%"
+             :x "0px"
+             :y "20px")
+  (main))
+
+
+(defwindow pfp
+  :geometry (geometry :anchor "left top"
+             :width "190px"
+             :height "23"
+             :x "0px"
+             :y "65px")
+  (profile))
+
+
+(defwindow time
+  :geometry (geometry :anchor "left top"
+             :width "260px"
+             :height "100"
+             :x "220px"
+             :y "100px")
+  (time))
+
+
+(defwindow song :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "260px"
+             :height "140px"
+             :x "0px"
+             :y "300px")
+  (music))
+
+(defwindow song_ctl :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "70px"
+             :height "187px"
+             :x "270px"
+             :y "310px")
+  (music_ctl))
+
+
+(defwindow song_prog :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "250px"
+             :height "30px"
+             :x "10px"
+             :y "460px")
+  (music_prog))
+
+(defwindow seper :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "420px"
+             :height "2px"
+             :x "25px"
+             :y "270px")
+  (sep))
+
+
+(defwindow sys_usg
+  :geometry (geometry
+             :width "420px"
+             :height "160px"
+             :x "10px"
+             :y "510px")
+  (system))
+
+
+
+(defwindow audio
+  :geometry (geometry
+             :width "0px"
+             :height "160px"
+             :x "370px"
+             :y "307px")
+  (audio))
+
+
+(defwindow sys_tray
+  :geometry (geometry
+             :width "100px"
+             :height "120px"
+             :x "15px"
+             :y "730px")
+  (systray))
+
+
+(defwindow quote
+  :geometry (geometry
+             :width "295px"
+             :height "10px"
+             :x "5px"
+             :y "695px")
+  (stats))
+
+
+
+================================================
+FILE: eww/leftbar/launch_left
+================================================
+#!/bin/bash
+
+## Files and cmd
+FILE="$HOME/.cache/eww_launch_side.xyz"
+EWW="$HOME/.local/bin/eww/eww -c $HOME/.config/eww/leftbar"
+
+# windows not in use
+# separ
+
+## window list
+w_ls="
+    main \
+    pfp \
+    song \
+    sys_usg \
+    song_prog \
+    song_ctl \
+    audio \
+    quote \
+    sys_tray \
+    time
+"
+## Run eww daemon if not running already
+if [[ ! `pidof eww` ]]; then
+	${EWW} daemon
+	sleep 1
+fi
+
+# widgets not in use
+# apps
+# twitter
+# volume
+# fetch
+
+## Open widgets 
+run_eww() {
+    ${EWW} open-many $w_ls
+}
+
+## Launch or close widgets accordingly
+if [[ ! -f "$FILE" ]]; then
+	touch "$FILE"
+	run_eww 
+else
+    ${EWW} close $w_ls 
+	rm "$FILE"
+fi
+
+
+
+================================================
+FILE: eww/leftbar/scripts/battery
+================================================
+#!/bin/sh
+
+battery() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/capacity
+}
+battery_stat() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/status
+}
+
+if [[ "$1" == "--bat" ]]; then
+	battery
+elif [[ "$1" == "--bat-st" ]]; then
+	battery_stat
+fi
+
+
+
+
+================================================
+FILE: eww/leftbar/scripts/cpu
+================================================
+#!/bin/bash
+
+# credits to adi1090x
+
+PREV_TOTAL=0
+PREV_IDLE=0
+cpuFile="/tmp/.cpu_usage"
+
+get_cpu() {
+	if [[ -f "${cpuFile}" ]]; then
+		fileCont=$(cat "${cpuFile}")
+		PREV_TOTAL=$(echo "${fileCont}" | head -n 1)
+		PREV_IDLE=$(echo "${fileCont}" | tail -n 1)
+	fi
+
+	CPU=(`cat /proc/stat | grep '^cpu '`) # Get the total CPU statistics.
+	unset CPU[0]                          # Discard the "cpu" prefix.
+	IDLE=${CPU[4]}                        # Get the idle CPU time.
+
+	# Calculate the total CPU time.
+	TOTAL=0
+
+	for VALUE in "${CPU[@]:0:4}"; do
+		let "TOTAL=$TOTAL+$VALUE"
+	done
+
+	if [[ "${PREV_TOTAL}" != "" ]] && [[ "${PREV_IDLE}" != "" ]]; then
+		# Calculate the CPU usage since we last checked.
+		let "DIFF_IDLE=$IDLE-$PREV_IDLE"
+		let "DIFF_TOTAL=$TOTAL-$PREV_TOTAL"
+		let "DIFF_USAGE=(1000*($DIFF_TOTAL-$DIFF_IDLE)/$DIFF_TOTAL+5)/10"
+		echo "${DIFF_USAGE}"
+	else
+		echo "?"
+	fi
+
+	# Remember the total and idle CPU times for the next check.
+	echo "${TOTAL}" > "${cpuFile}"
+	echo "${IDLE}" >> "${cpuFile}"
+}
+get_cpu
+
+
+
+================================================
+FILE: eww/leftbar/scripts/mem-ad
+================================================
+#!/bin/sh
+
+
+total="$(free -m | grep Mem: | awk '{ print $2 }')"
+used="$(free -m | grep Mem: | awk '{ print $3 }')"
+
+free=$(expr $total - $used)
+
+if [ "$1" = "total" ]; then
+    echo $total
+elif [ "$1" = "used" ]; then
+    echo $used
+elif [ "$1" = "free" ]; then
+    echo $free
+fi
+
+
+
+================================================
+FILE: eww/leftbar/scripts/memory
+================================================
+#!/bin/sh
+
+printf "%.0f\n" $(free -m | grep Mem | awk '{print ($3/$2)*100}')
+
+
+
+================================================
+FILE: eww/leftbar/scripts/music_info
+================================================
+#!/bin/bash
+
+## Get data
+STATUS="$(mpc status)"
+COVER="/tmp/.music_cover.jpg"
+MUSIC_DIR="$HOME/Music"
+
+## Get status
+get_status() {
+	if [[ $STATUS == *"[playing]"* ]]; then
+		echo ""
+	else
+		echo "奈"
+	fi
+}
+
+## Get song
+get_song() {
+	song=`mpc -f %title% current`
+	if [[ -z "$song" ]]; then
+		echo "song"
+	else
+		echo "$song"
+	fi	
+}
+
+## Get artist
+get_artist() {
+	artist=`mpc -f %artist% current`
+	if [[ -z "$artist" ]]; then
+		echo "artist"
+	else
+		echo "$artist"
+	fi	
+}
+
+## Get time
+get_time() {
+	time=`mpc status | grep "%)" | awk '{print $4}' | tr -d '(%)'`
+	if [[ -z "$time" ]]; then
+		echo "0"
+	else
+		echo "$time"
+	fi	
+}
+get_ctime() {
+	ctime=`mpc status | grep "#" | awk '{print $3}' | sed 's|/.*||g'`
+	if [[ -z "$ctime" ]]; then
+		echo "0:00"
+	else
+		echo "$ctime"
+	fi	
+}
+get_ttime() {
+	ttime=`mpc -f %time% current`
+	if [[ -z "$ttime" ]]; then
+		echo "0:00"
+	else
+		echo "$ttime"
+	fi	
+}
+
+## Get cover
+get_cover() {
+	ffmpeg -i "${MUSIC_DIR}/$(mpc current -f %file%)" "${COVER}" -y &> /dev/null
+	STATUS=$?
+
+	# Check if the file has a embbeded album art
+	if [ "$STATUS" -eq 0 ];then
+		echo "$COVER"
+	else
+		echo "images/music.png"
+	fi
+}
+
+
+loop_st() {
+    LOOP="$(mpc status | grep "repeat:" | awk '{ print $3 }')"
+    if [[ $LOOP == *"on"* ]]; then
+        icon="凌"
+    else
+        icon="稜"
+    fi
+    echo $icon
+}
+
+## Execute accordingly
+if [[ "$1" == "--song" ]]; then
+	get_song
+elif [[ "$1" == "--artist" ]]; then
+	get_artist
+elif [[ "$1" == "--status" ]]; then
+	get_status
+elif [[ "$1" == "--time" ]]; then
+	get_time
+elif [[ "$1" == "--ctime" ]]; then
+	get_ctime
+elif [[ "$1" == "--ttime" ]]; then
+	get_ttime
+elif [[ "$1" == "--cover" ]]; then
+	get_cover
+elif [[ "$1" == "--toggle" ]]; then
+	mpc -q toggle
+elif [[ "$1" == "--next" ]]; then
+	{ mpc -q next; get_cover; }
+elif [[ "$1" == "--prev" ]]; then
+	{ mpc -q prev; get_cover; }
+elif [[ "$1" == "--loop" ]]; then
+    mpc -q repeat 
+elif [[ "$1" == "--loop_ic" ]]; then
+    loop_st
+fi
+
+
+
+================================================
+FILE: eww/leftbar/scripts/notifs
+================================================
+#!/bin/bash
+
+    count="$(dunstctl count history)"
+
+    if [ $count -gt 0 ]; then
+        col="#0f0f17"
+        bg="#bbc5d7"
+        icon=""
+    else
+        bg="#0f0f17"
+        col="#bbc5d7"
+        echo ""
+    fi
+
+
+
+    if [ "$(dunstctl is-paused)" == "true" ]; then
+        icon=""
+        col="#d78787"
+        bg="#0f0f17"
+    fi
+
+
+if [ $1 = "notifs" ]; then
+    echo $icon
+elif [ $1 = "notifs_col" ]; then
+    echo $col
+elif [ $1 = "notifs_bg" ]; then
+    echo $bg
+elif [ $1 = "toggle_notifs" ]; then
+    dunstctl set-paused toggle
+fi
+
+
+
+================================================
+FILE: eww/leftbar/scripts/vol
+================================================
+#!/bin/bash
+
+    cmd="$(amixer -D pulse sget Master | grep 'Front Left:' | awk '{ print $6 }')"
+
+
+    if [ "$cmd" == "[on]" ]; then
+        col="#0f0f17"
+        bg="#bbc5d7"
+        icon=""
+    else
+        bg="#0f0f17"
+        col="#bbc5d7"
+        icon=""
+    fi
+
+
+
+if [ $1 = "vol" ]; then
+    echo $icon
+elif [ $1 = "vol_col" ]; then
+    echo $col
+elif [ $1 = "vol_bg" ]; then
+    echo $bg
+fi
+
+
+
+================================================
+FILE: eww/leftbar/scripts/wifi
+================================================
+#!/bin/bash
+
+    if [ "$(systemctl status NetworkManager | grep 'inactive')" ]; then
+        icon=""
+        col="#d78787"
+        bg="#0f0f17"
+    fi
+    
+    if [ "$(nmcli g | grep -oE 'disconnected')" ]; then
+        icon="" # disconnected
+        col="#bfc9db"
+        bg="#0f0f17"
+    else
+        icon="" # connected
+        col="#0f0f17"
+        bg="#bfc9db"
+    fi
+
+
+if [ $1 = "wifi" ]; then
+    echo $icon
+elif [ $1 = "wifi_col"  ]; then
+    echo $col
+elif [ $1 = "wifi_bg" ]; then
+    echo $bg
+fi
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/eww.scss
+================================================
+*{
+	all: unset;
+	font-family: feather;
+	font-family: DaddyTimeMono NF;
+}
+
+
+/** tooltip!! **/
+tooltip.background {
+    background-color: #0f0f17;
+    font-size: 18;
+    border-radius: 10px;
+    color: #bfc9db;
+}
+
+tooltip label {
+    margin: 6px;
+}
+
+/** time **/
+.hour_class {
+    color: #bec8da;
+    font-size: 45px;
+    font-weight: bold;
+    margin: 15px 0px 0px 20px;
+}
+
+.minute_class {
+    color: #bec8da;
+    font-size: 45px;
+    margin: 15px 10px 0px 20px;
+}
+
+.meridiem_class {
+    color: #bec8da;
+    font-size: 30px;
+    margin: 30px 20px 0px 5px;
+}
+
+.day_class {
+    color: #767c88;
+    font-size: 30px;
+    margin: 0px 0px 10px 10px;
+}
+
+.month_class {
+    color: #767c88;
+    font-size: 30px;
+    margin: 0px 10px 10px 10px;
+}
+
+
+.time_sep_class {
+    color: #bec8da;
+    font-size: 30px;
+    margin: 10px 0px 0px 5px;
+}
+
+.day_class_n {
+    color: #767c88;
+    font-size: 18px;
+    margin: 10px 0px 10px 30px;
+}
+
+.month_class_n {
+    color: #767c88;
+    font-size: 18px;
+    margin: 0px 30px 0px 0px;
+}
+
+
+
+
+
+.profile_picture {
+	background-image: url('images/profile.png');
+	background-size: 175px;
+	background-position: 50% 35%;
+	min-height: 175px;
+	min-width: 175px;
+	margin: 20px 0px 0px 2px;
+	border-radius: 100%;
+}
+
+.profile_greeting {
+	color: #bbc6cb;
+	font-size : 30px;
+	font-weight : bold;
+}
+
+.profile_username {
+	color: #a1bdce;
+	font-size : 26px;
+	font-weight : bold;
+	margin : -15px 0px 0px 0px;
+}
+
+
+.bg {
+    background-color: #0f0f17;
+    border-radius: 20px;
+}
+
+.bg_alt {
+    background-color: #13141c;
+    border-radius: 20px 0px 40px 0px;
+}
+.close_btn {
+    font-size: 48px;
+    color: #767c88;
+    margin: 0px 0px 0px 10px;
+}
+.exit_btn {
+    font-size: 56px;
+    color: #d78787;
+}
+.close_bg {
+    background-color: #13141c;
+    border-radius: 0px 20px 0px 40px;
+}
+.win {
+    background-color: #13141c;
+    border-radius: 18px;
+}
+
+
+.sys_icon_bat, .sys_icon_mem, .sys_icon_cpu{
+    font-size: 34;
+    margin: 40px;
+}
+.sys_win {
+    background-color: #13141c;
+    border-radius: 18px;
+}
+.sys_cpu {
+  color: #d78787;
+    background-color: #232232;
+  border-radius: 10px;
+}
+.sys_bat {
+  color: #afbea2;
+    background-color: #232232;
+  border-radius: 10px;
+}
+.sys_mem {
+  color: #e0b089;
+    background-color: #232232;
+  border-radius: 10px;
+}
+.sys_icon_bat {
+    color: #afbea2;
+}
+.sys_icon_cpu {
+    color: #d78787;
+}
+.sys_icon_mem {
+    color: #e0b089;
+}
+.sys_bat_box {
+	border-radius: 16px;
+    margin: 10px 0px 10px 30px;
+  }
+.sys_cpu_box {
+	border-radius: 16px;
+    margin: 10px 30px 10px 30px;
+  }
+.sys_mem_box {
+	border-radius: 16px;
+    margin: 10px 30px 15px 0px;
+  }
+
+
+.storage_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #91ab7a 30%, #afbea2 50%, #ccefad 100% *50);
+	border-radius: 24px;
+}
+.bright_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #e0b089 30%, #e4c9af 50%, #ebd0b7 100% *50);
+	border-radius: 24px;
+}
+.volume_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #b893bd 30%,  #d7beda 50%, #e2c0e6 100% *50);
+	border-radius: 24px;
+}
+.mic_bar scale trough highlight {
+	all: unset;
+    background-image: linear-gradient(to top, #afcee0 30%, #a1bdce 50%, #77a5bf 100% *50);
+	border-radius: 24px;
+}
+scale trough {
+	all: unset;
+    box-shadow: 0 6px 5px 2px #06060b;
+	background-color: #232232;
+	border-radius: 24px;
+	min-height: 260px;
+	min-width: 16px;
+	margin : 10px 0px 0px 0px;
+}
+
+.vol_icon, .brg_icon, .stor_icon, .mic_icon {
+    font-size: 32;
+}
+.vol_icon {
+    color: #d7beda;
+}
+.mic_icon {
+    color: #a1bdce;
+}
+.brg_icon {
+    color: #e4c9af;
+}
+.stor_icon {
+    color: #afbea2;
+}
+
+.fetch_img {
+	background-size: cover;	
+	background-position: center;
+	min-height: 140px;
+	min-width: 100px;
+	margin: 13px;
+	border-radius: 16px;
+}
+
+
+.fetch_text_2 , .fetch_text_3 {
+    font-size: 20px;
+	font-weight : normal;
+	margin : 0px 35px 0px 0px;
+}
+
+.fetch_text_1 {
+    font-size: 20px;
+	font-weight : normal;
+	margin : 20px 35px 0px 0px;
+}
+.fetch_icon_2 , .fetch_icon_3 {
+    font-size: 24px;
+	font-weight : bold;
+	margin : 0px 0px 0px 35px;
+}
+.fetch_icon_1 {
+    font-size: 24px;
+	font-weight : bold;
+	margin : 20px 0px 0px 35px;
+}
+.fetch_sep_1 {
+    font-size: 24px;
+	font-weight : bold;
+    color: #95939f;
+	margin : 20px 0px 0px 0px;
+}
+.fetch_sep {
+    font-size: 24px;
+	font-weight : bold;
+    color: #95939f;
+	margin : 0px 0px 0px 0px;
+}
+.fetch_icon_1 {
+    color: #d7beda;
+}
+.fetch_text_1 {
+    color: #d7beda;
+}
+
+.fetch_icon_2 {
+    color: #e4c9af;
+}
+.fetch_text_2 {
+    color: #e4c9af;
+}
+
+.fetch_icon_3 {
+    color: #d78787;
+}
+.fetch_text_3 {
+    color: #d78787;
+}
+
+
+
+.msc_bg {
+	background-size: cover;	
+	background-position: center;
+    background-image: url("images/minimal.jpg");
+	min-height: 100px;
+	min-width: 100px;
+	margin: 0px;
+	border-radius: 16px;
+}
+
+.song {
+    font-size: 20px;
+	font-weight : bold;
+    color: #bfc9db;
+	margin : 10px 0px 0px 15px;
+}
+.song_artist {
+    font-size: 18px;
+	font-weight : bold;
+    color: #bfc9db;
+	margin : 0px 0px 0px 15px;
+}
+
+
+.song_btn_prev, .song_btn_next, .song_btn_loop {
+    font-size: 34px;
+    font-weight: normal;
+    color: #bfc9db;
+	margin : 6px 0px 0px 10px;
+}
+.song_btn_play {
+    font-weight: normal;
+    font-size: 42px;
+    color: #bfc9db;
+	margin : 6px 0px 0px 10px;
+}
+
+.msc_ctl_bg {
+    background-color: #13141c;
+	border-radius: 16px;
+}
+
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/eww.yuck
+================================================
+(defvar IMAGE "images/profile.png")
+(defvar greeting "Hey!")
+(defpoll username :interval "48h"  "whoami")
+
+(defpoll uptime :interval "50s" "uptime -p | sed -e 's/up //;s/ hours,/h/;s/ hour,/h/;s/ minutes/m/;s/ minute/m/'")
+(defpoll pkgs :interval "5h" "pacman -Qq | wc -l")
+
+(defpoll time_hour :interval "5m"
+       "date +\"%I\"")
+(defpoll time_min :interval "5s"
+       "date +\"%M\"")
+(defpoll time_day :interval "30m"
+       "date +\"%d\"")
+(defpoll time_month :interval "48h"
+      "date +\%m")
+(defpoll time_day_name :interval "30m"
+       "date +\"%A\"")
+(defpoll time_month_name :interval "48h"
+      "date +\%B")
+
+(defpoll song :interval "3s"  "~/.config/eww/bar/scripts/music_info --song")
+(defpoll song_artist :interval "3s"  "~/.config/eww/leftbar/scripts/music_info --artist")
+(defpoll song_status :interval "3s"  "~/.config/eww/leftbar/scripts/music_info --status")
+(defpoll loop_status :interval "5s"  "~/.config/eww/leftbar/scripts/music_info --loop_ic")
+
+(defpoll battery :interval "15s" "./scripts/battery --bat")
+(defpoll memory :interval "15s" "scripts/memory")
+(defpoll cpu :interval "17s" "scripts/cpu")
+
+
+(defpoll volume_percent :interval "6s" "amixer -D pulse sget Master | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll mic_percent :interval "6s" "amixer -D pulse sget Capture | grep 'Left:' | awk -F'[][]' '{ print $2 }' | tr -d '%'")
+(defpoll brightness :interval "6s" "brightnessctl -m -d intel_backlight | awk -F, '{print substr($4, 0, length($4)-1)}' | tr -d '%'")
+
+
+
+
+
+
+(defwidget profile []
+			(box :class "bg_alt" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+				(box :class "profile_picture" :halign "center" :style "background-image: url('${IMAGE});")
+				(label :class "profile_greeting" :halign "center" :wrap "true" :limit-width 25 :text username)))
+
+
+
+(defwidget close []
+			(box :orientation "h" :space-evenly "false" :vexpand "false" :hexpand "false" :spacing 10 
+				(button :class "close_btn" :halign "center" :tooltip "logout" :onclick "bspc quit" "")
+				(button :class "close_btn" :halign "center" :tooltip "sleep" :onclick "systemctl sleep" "")
+				(button :class "close_btn" :halign "center" :tooltip "reboot" :onclick "reboot" "")))
+
+
+(defwidget exit []
+			(box :orientation "h" :space-evenly "false" :vexpand "false" :hexpand "false" :spacing 10 
+				(button :class "exit_btn" :halign "center" :tooltip "close leftbar" :onclick "~/.config/eww/leftbar/launch_left" "")))
+
+
+(defwidget time [] 
+		(box :class "win" 
+             :orientation "v" 
+             :space-evenly "false" 
+             :vexpand "false" 
+             :hexpand "false" 
+             :spacing 0
+		(box  
+             :orientation "h" 
+             :space-evenly "false" 
+             :vexpand "false" 
+             :halign "center"
+             :hexpand "false" 
+             :spacing 0
+			 (label :class "hour_class" 
+                    :valign "start" 
+                    :wrap "true" 
+                    :limit-width 25 
+                    :text time_hour)
+			 (label :class "minute_class" 
+                    :valign "start" 
+                    :halign "start" 
+                    :wrap "true" 
+                    :limit-width 25 
+                    :text time_min))
+            (box :orientation "h" 
+              :spacing 0 
+              :space-evenly "false" 
+              :halign "center"
+              :vexpand "false" :hexpand "false" 
+			  (label :class "day_class" 
+                     :valign "start" 
+                     :text time_day)
+			  (label :class "time_sep"
+                     :valign "start" 
+                     :text " ")
+			  (label :class "month_class" 
+                     :valign "start" 
+                     :text time_month))))
+
+
+
+
+(defwidget day [] 
+            (box :orientation "h" 
+              :class "win"
+              :spacing 0 
+              :space-evenly "false" 
+              :halign "center"
+			  (label :class "day_class_n" 
+                     :text time_day_name)
+			  (label :class "time_sep"
+                     :text ", ")
+			  (label :class "month_class_n" 
+                     :text time_month_name)))
+
+
+
+(defwidget bg []
+  (box :class "bg"))
+
+(defwidget system []
+  (box :class "sys_win" :orientation "h" :space-evenly "false" :hexpand "false" :vexpand "false" :spacing 0 
+      (box :class "sys_bat_box" :orientation "h" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value battery
+                :class "sys_bat"
+                :thickness 11
+            (label :text ""
+                :class "sys_icon_bat"
+                :limit-width 2
+                :show_truncated false
+                :wrap false)))
+      (box :class "sys_cpu_box" :orientation "h" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value cpu
+                :class "sys_cpu"
+                :thickness 11
+            (label :text ""
+                :class "sys_icon_cpu"
+                :limit-width 2
+                :show_truncated false
+                :wrap false)))
+      (box :class "sys_mem_box" :orientation "h" :space-evenly "false" :hexpand "false" :vexpand "false"
+      (circular-progress :value memory
+                :class "sys_mem"
+                :thickness 11
+            (label :text ""
+                :class "sys_icon_mem"
+                :limit-width 2
+                :show_truncated false
+                :wrap false
+                :angle 0.0)))))
+
+
+
+
+
+
+;;  system
+		(defwidget stats []
+			(box :class "genwin" :vexpand "false" :hexpand "false"
+				(box :orientation "h" :spacing 25 :halign "center" :valign "center" :space-evenly "false" :vexpand "false" :hexpand "false"
+					(box :class "volume_bar" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                            (scale :flipped "true" :orientation "v" :min 0 :max 101 :value volume_percent :active "false" :onchange "amixer -D pulse sset Master {}%" )
+                            (label  :text "" :class "vol_icon"))
+					(box :class "mic_bar" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                            (scale :flipped "true" :orientation "v" :min 0 :max 101 :value mic_percent :active "false")
+                            (label  :text "" :class "mic_icon"))
+					(box :class "bright_bar" :onchange "brightnessctl set {}%" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                            (scale :flipped "true" :orientation "v" :min 0 :max 101 :value brightness :active "false")
+                            (label  :text "" :class "brg_icon"))
+					(box :class "storage_bar" :orientation "v" :spacing 20 :space-evenly "false" :vexpand "false" :hexpand "false"
+                        (scale :flipped "true" :orientation "v" :min 0 :max 101 :active "false" :value {round((1 - (EWW_DISK["/"].free / EWW_DISK["/"].total)) * 100, 0)})
+                        (label  :text ""
+                                :class "stor_icon")))))
+
+(defwidget fetch_sys [] 
+		(box :class "win" :halign "center" :vexpand "false" :hexpand "false" :orientation "v" :space-evenly "false" :spacing 3
+		(box :vexpand "false" :hexpand "false" :orientation "h" :space-evenly "false" :spacing 30
+				(label :class "fetch_icon_1" :text "os")
+				(label :class "fetch_sep_1" :text "" :halign "center")
+                (label :class "fetch_text_1" :text "arch"))
+		(box :vexpand "false" :hexpand "false" :orientation "h" :space-evenly "false" :spacing 30
+				(label :class "fetch_icon_2" :text "pk")
+				(label :class "fetch_sep" :text "" :valign "center")
+                (label :class "fetch_text_2" :text pkgs))
+		(box :vexpand "false" :hexpand "false" :orientation "h" :space-evenly "false" :spacing 30
+				(label :class "fetch_icon_3" :text "up")
+				(label :class "fetch_sep" :text "" :valign "center")
+				(label :class "fetch_text_3" :text uptime))))
+
+	;;  Music
+(defwidget music []
+		(box :class "msc_ctl_bg" :orientation "v" :space-evenly "false" :vexpand "false" :hexpand "false"
+			(box :orientation "v" :spacing 5 :space-evenly "false" :vexpand "false" :hexpand "false" :class "msc_bg"
+				(label :halign "start" :class "song" :wrap "false" :limit-width 15 :text song)
+				(label :halign "start" :class "song_artist" :wrap "true" :limit-width 15 :text song_artist))
+				(box :orientation "h" :spacing 8 :halign "center" :space-evenly "false" :vexpand "false" :hexpand "false"
+					(button :class "song_btn_prev" :onclick "~/.config/eww/leftbar/scripts/music_info --prev" "")
+					(button :class "song_btn_play" :onclick "~/.config/eww/leftbar/scripts/music_info --toggle" song_status)
+					(button :class "song_btn_next" :onclick "~/.config/eww/leftbar/scripts/music_info --next" "")
+					(button :class "song_btn_loop" :onclick "~/.config/eww/leftbar/scripts/music_info --loop" loop_status))))
+
+
+
+
+
+
+
+(defwindow back
+  :geometry (geometry :anchor "left center"
+             :width "500px"
+             :height "88%"
+             :x "20px"
+             :y "20px")
+  (bg))
+
+(defwindow pfp
+  :geometry (geometry 
+             :width "250px"
+             :height "260px"
+             :x "20px"
+             :y "74px")
+  (profile))
+
+
+(defwindow clse
+  :geometry (geometry 
+             :width "50px"
+             :height "50px"
+             :x "295px"
+             :y "90px")
+  (close))
+
+
+(defwindow exit
+  :geometry (geometry 
+             :width "50px"
+             :height "50px"
+             :x "465px"
+             :y "75px")
+  (exit))
+
+(defwindow time
+  :geometry (geometry 
+             :width "218px"
+             :height "90px"
+             :x "285px"
+             :y "155px")
+  (time))
+
+
+(defwindow day_dot
+  :geometry (geometry 
+             :width "250px"
+             :height "50px"
+             :x "270px"
+             :y "285px")
+  (day))
+
+
+(defwindow sys_usg
+  :geometry (geometry 
+             :width "420px"
+             :height "160px"
+             :x "40px"
+             :y "350px")
+  (system))
+
+
+
+(defwindow status
+  :geometry (geometry 
+             :width "220px"
+             :height "160px"
+             :x "40px"
+             :y "520px")
+  (stats))
+
+(defwindow fetch :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "260px"
+             :height "140px"
+             :x "255px"
+             :y "530px")
+  (fetch_sys))
+
+
+(defwindow song :stacking "fg" :focusable "false" :screen 1
+  :geometry (geometry 
+             :width "248px"
+             :height "180px"
+             :x "253px"
+             :y "670px")
+  (music))
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/launch_left
+================================================
+#!/bin/bash
+
+## Files and cmd
+FILE="$HOME/.cache/eww_launch_side.xyz"
+EWW="$HOME/.local/bin/eww/eww -c $HOME/.config/eww/leftbar"
+
+# windows not in use
+# exit
+
+## window list
+w_ls="
+    back \
+    status \
+    time \
+    clse \
+    day_dot \
+    sys_usg \
+    song \
+    fetch \
+    pfp
+"
+## Run eww daemon if not running already
+if [[ ! `pidof eww` ]]; then
+	${EWW} daemon
+	sleep 1
+fi
+
+
+## Open widgets 
+run_eww() {
+    ${EWW} open-many $w_ls
+}
+
+## Launch or close widgets accordingly
+if [[ ! -f "$FILE" ]]; then
+	touch "$FILE"
+	run_eww 
+else
+    ${EWW} close $w_ls 
+	rm "$FILE"
+fi
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/scripts/battery
+================================================
+#!/bin/bash
+
+battery() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/capacity
+}
+battery_stat() {
+	BAT=`ls /sys/class/power_supply | grep BAT | head -n 1`
+	cat /sys/class/power_supply/${BAT}/status
+}
+
+if [[ "$1" == "--bat" ]]; then
+	battery
+elif [[ "$1" == "--bat-st" ]]; then
+	battery_stat
+fi
+
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/scripts/cpu
+================================================
+#!/bin/bash
+
+# credits to adi1090x
+
+PREV_TOTAL=0
+PREV_IDLE=0
+cpuFile="/tmp/.cpu_usage"
+
+get_cpu() {
+	if [[ -f "${cpuFile}" ]]; then
+		fileCont=$(cat "${cpuFile}")
+		PREV_TOTAL=$(echo "${fileCont}" | head -n 1)
+		PREV_IDLE=$(echo "${fileCont}" | tail -n 1)
+	fi
+
+	CPU=(`cat /proc/stat | grep '^cpu '`) # Get the total CPU statistics.
+	unset CPU[0]                          # Discard the "cpu" prefix.
+	IDLE=${CPU[4]}                        # Get the idle CPU time.
+
+	# Calculate the total CPU time.
+	TOTAL=0
+
+	for VALUE in "${CPU[@]:0:4}"; do
+		let "TOTAL=$TOTAL+$VALUE"
+	done
+
+	if [[ "${PREV_TOTAL}" != "" ]] && [[ "${PREV_IDLE}" != "" ]]; then
+		# Calculate the CPU usage since we last checked.
+		let "DIFF_IDLE=$IDLE-$PREV_IDLE"
+		let "DIFF_TOTAL=$TOTAL-$PREV_TOTAL"
+		let "DIFF_USAGE=(1000*($DIFF_TOTAL-$DIFF_IDLE)/$DIFF_TOTAL+5)/10"
+		echo "${DIFF_USAGE}"
+	else
+		echo "?"
+	fi
+
+	# Remember the total and idle CPU times for the next check.
+	echo "${TOTAL}" > "${cpuFile}"
+	echo "${IDLE}" >> "${cpuFile}"
+}
+get_cpu
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/scripts/mem-ad
+================================================
+#!/bin/sh
+
+
+total="$(free -m | grep Mem: | awk '{ print $2 }')"
+used="$(free -m | grep Mem: | awk '{ print $3 }')"
+
+free=$(expr $total - $used)
+
+if [ "$1" = "total" ]; then
+    echo $total
+elif [ "$1" = "used" ]; then
+    echo $used
+elif [ "$1" = "free" ]; then
+    echo $free
+fi
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/scripts/memory
+================================================
+#!/bin/bash
+
+printf "%.0f\n" $(free -m | grep Mem | awk '{print ($3/$2)*100}')
+
+
+
+================================================
+FILE: eww/leftbar_old_pls_dont_use/scripts/music_info
+================================================
+#!/bin/bash
+
+## Get data
+STATUS="$(mpc status)"
+COVER="/tmp/.music_cover.jpg"
+MUSIC_DIR="$HOME/Music"
+
+## Get status
+get_status() {
+	if [[ $STATUS == *"[playing]"* ]]; then
+		echo ""
+	else
+		echo "奈"
+	fi
+}
+
+## Get song
+get_song() {
+	song=`mpc -f %title% current`
+	if [[ -z "$song" ]]; then
+		echo "Offline"
+	else
+		echo "$song"
+	fi	
+}
+
+## Get artist
+get_artist() {
+	artist=`mpc -f %artist% current`
+	if [[ -z "$artist" ]]; then
+		echo ""
+	else
+		echo "$artist"
+	fi	
+}
+
+## Get time
+get_time() {
+	time=`mpc status | grep "%)" | awk '{print $4}' | tr -d '(%)'`
+	if [[ -z "$time" ]]; then
+		echo "0"
+	else
+		echo "$time"
+	fi	
+}
+get_ctime() {
+	ctime=`mpc status | grep "#" | awk '{print $3}' | sed 's|/.*||g'`
+	if [[ -z "$ctime" ]]; then
+		echo "0:00"
+	else
+		echo "$ctime"
+	fi	
+}
+get_ttime() {
+	ttime=`mpc -f %time% current`
+	if [[ -z "$ttime" ]]; then
+		echo "0:00"
+	else
+		echo "$ttime"
+	fi	
+}
+
+## Get cover
+get_cover() {
+	ffmpeg -i "${MUSIC_DIR}/$(mpc current -f %file%)" "${COVER}" -y &> /dev/null
+	STATUS=$?
+
+	# Check if the file has a embbeded album art
+	if [ "$STATUS" -eq 0 ];then
+		echo "$COVER"
+	else
+		echo "images/music.png"
+	fi
+}
+
+
+loop_st() {
+    LOOP="$(mpc status | grep "repeat:" | awk '{ print $3 }')"
+    if [[ $LOOP == *"on"* ]]; then
+        icon="凌"
+    else
+        icon="稜"
+    fi
+    echo $icon
+}
+
+## Execute accordingly
+if [[ "$1" == "--song" ]]; then
+	get_song
+elif [[ "$1" == "--artist" ]]; then
+	get_artist
+elif [[ "$1" == "--status" ]]; then
+	get_status
+elif [[ "$1" == "--time" ]]; then
+	get_time
+elif [[ "$1" == "--ctime" ]]; then
+	get_ctime
+elif [[ "$1" == "--ttime" ]]; then
+	get_ttime
+elif [[ "$1" == "--cover" ]]; then
+	get_cover
+elif [[ "$1" == "--toggle" ]]; then
+	mpc -q toggle
+elif [[ "$1" == "--next" ]]; then
+	{ mpc -q next; get_cover; }
+elif [[ "$1" == "--prev" ]]; then
+	{ mpc -q prev; get_cover; }
+elif [[ "$1" == "--loop" ]]; then
+    mpc -q repeat 
+elif [[ "$1" == "--loop_ic" ]]; then
+    loop_st
+fi
+
+

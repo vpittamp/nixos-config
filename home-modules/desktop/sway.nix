@@ -148,12 +148,35 @@ let
   # Feature 001: Generate workspace-to-monitor assignments from app registry
   # This creates the declarative workspace-assignments.json that the daemon reads
   # to determine which monitor role (primary/secondary/tertiary) each workspace should use
-  workspaceAssignments = {
+  workspaceAssignments = let
+    clampWorkspace = ws:
+      if ws < 1 then 1
+      else if ws > 70 then 70
+      else ws;
+
+    # Map monitor roles → concrete outputs and include schema-required fields
+    monitorRoleToOutput = role:
+      if isHeadless then
+        if role == "primary" then "HEADLESS-1"
+        else if role == "secondary" then "HEADLESS-2"
+        else if role == "tertiary" then "HEADLESS-3"
+        else "HEADLESS-1"
+      else
+        # Laptop default mapping: keep everything on eDP-1; allow HDMI for secondary
+        if role == "secondary" then "HDMI-A-1" else "eDP-1";
+
+    # Fallback outputs (avoid including primary in the list)
+    fallbackOutputs = primary:
+      if isHeadless then
+        builtins.filter (o: o != primary) [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ]
+      else
+        builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
+  in {
     version = "1.0";
     assignments =
       # App registry assignments
       (map (app: {
-        workspace = app.preferred_workspace;
+        workspace_number = clampWorkspace app.preferred_workspace;
         app_name = app.name;
         monitor_role = if app ? preferred_monitor_role && app.preferred_monitor_role != null
                        then app.preferred_monitor_role
@@ -164,12 +187,33 @@ let
                          else if app.preferred_workspace <= 5 then "secondary"
                          else "tertiary"
                        );
-        source = "app-registry";
+        primary_output = monitorRoleToOutput (
+          if app ? preferred_monitor_role && app.preferred_monitor_role != null
+          then app.preferred_monitor_role
+          else (
+            if app.preferred_workspace <= 2 then "primary"
+            else if app.preferred_workspace <= 5 then "secondary"
+            else "tertiary"
+          )
+        );
+        fallback_outputs = fallbackOutputs (
+          monitorRoleToOutput (
+            if app ? preferred_monitor_role && app.preferred_monitor_role != null
+            then app.preferred_monitor_role
+            else (
+              if app.preferred_workspace <= 2 then "primary"
+              else if app.preferred_workspace <= 5 then "secondary"
+              else "tertiary"
+            )
+          )
+        );
+        auto_reassign = true;
+        source = "nix";
       }) appRegistryData)
       ++
       # PWA site assignments (Feature 001 US3: PWA-specific monitor preferences)
       (map (pwa: {
-        workspace = pwa.preferred_workspace;
+        workspace_number = clampWorkspace pwa.preferred_workspace;
         app_name = "${pwa.name}-pwa";  # Append -pwa for identification
         monitor_role = if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
                        then pwa.preferred_monitor_role
@@ -179,7 +223,28 @@ let
                          else if pwa.preferred_workspace <= 5 then "secondary"
                          else "tertiary"
                        );
-        source = "pwa-sites";
+        primary_output = monitorRoleToOutput (
+          if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
+          then pwa.preferred_monitor_role
+          else (
+            if pwa.preferred_workspace <= 2 then "primary"
+            else if pwa.preferred_workspace <= 5 then "secondary"
+            else "tertiary"
+          )
+        );
+        fallback_outputs = fallbackOutputs (
+          monitorRoleToOutput (
+            if pwa ? preferred_monitor_role && pwa.preferred_monitor_role != null
+            then pwa.preferred_monitor_role
+            else (
+              if pwa.preferred_workspace <= 2 then "primary"
+              else if pwa.preferred_workspace <= 5 then "secondary"
+              else "tertiary"
+            )
+          )
+        );
+        auto_reassign = true;
+        source = "nix";
       }) pwaSitesData.pwaSites);
   };
 in
@@ -309,7 +374,7 @@ in
 
           # Generate workspace assignment from app/PWA data
           assignmentToOutput = assignment: {
-            workspace = toString assignment.workspace;
+            workspace = toString assignment.workspace_number;
             output = roleToOutput assignment.monitor_role;
           };
         in
