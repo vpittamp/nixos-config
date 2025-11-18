@@ -66,7 +66,8 @@ in
     in
     {
       home-manager = {
-        backupFileExtension = "hm-bak";
+        # Disable home-manager automatic backups; we manage state with git instead
+        backupFileExtension = null;
         useGlobalPkgs = true;
         useUserPackages = true;
         extraSpecialArgs = {
