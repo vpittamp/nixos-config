@@ -375,11 +375,10 @@ in
                   (network-widget)
                   (wifi-widget)))
 
-           ;; Always-visible controls
-           (monitor-toggle-widget)
-           (volume-widget-enhanced)
-           (battery-widget)
-            (bluetooth-widget)
+          ;; Always-visible controls
+          (volume-widget-enhanced)
+          (battery-widget)
+           (bluetooth-widget)
 
            ;; Health widget stays visible with text
            (build-health-widget)))
@@ -398,6 +397,7 @@ in
          :space-evenly false
          :halign "end"
          :spacing 4
+          (monitor-toggle-widget)
           (datetime-widget)
           (systray-widget :is_primary is_primary))))
 
