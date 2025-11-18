@@ -36,8 +36,6 @@ let
   topBarOutputs =
     if isHeadless then [
       { name = "HEADLESS-1"; showTray = true; }
-      { name = "HEADLESS-2"; showTray = false; }
-      { name = "HEADLESS-3"; showTray = false; }
     ] else [
       # Only open on built-in display (eDP-1)
       # TODO: Auto-detect connected monitors and open windows dynamically
