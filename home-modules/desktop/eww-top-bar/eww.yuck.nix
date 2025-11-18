@@ -324,17 +324,17 @@ in
            (label :class "icon" :text "")
            ;; Buttons for 1/2/3 outputs
            (button :class "pill"
-                   :tooltip "Use 1 output"
-                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1'"
-                   (label :class "pill-text" :text "1"))
+                    :tooltip "Use 1 output"
+                    :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1'"
+                    (label :class "pill-text" :text "1"))
            (button :class "pill"
-                   :tooltip "Use 2 outputs"
-                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2'"
-                   (label :class "pill-text" :text "2"))
+                    :tooltip "Use 2 outputs"
+                    :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2'"
+                    (label :class "pill-text" :text "2"))
            (button :class "pill"
-                   :tooltip "Use 3 outputs"
-                   :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2 HEADLESS-3'"
-                   (label :class "pill-text" :text "3"))
+                    :tooltip "Use 3 outputs"
+                    :onclick "bash -lc '$HOME/.local/bin/active-monitors-safe HEADLESS-1 HEADLESS-2 HEADLESS-3'"
+                    (label :class "pill-text" :text "3"))
            ;; Active count badge
            (label :class "pill active-count"
                   :tooltip "Currently active outputs"
