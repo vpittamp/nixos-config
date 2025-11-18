@@ -191,7 +191,18 @@
     then /boot/asahi
     else
       builtins.trace "WARNING: /boot/asahi not found - using dummy for evaluation only (not deployable!)"
-        (pkgs.runCommand "dummy-asahi-firmware" { } "mkdir -p $out");
+        (pkgs.runCommand "dummy-asahi-firmware" { } ''
+          mkdir -p $out
+          cd $out
+          # Provide minimal structure so asahi-fwextract succeeds even without real firmware
+          mkdir -p firmware/bluetooth
+          touch firmware/bluetooth/placeholder
+          tar -czf all_firmware.tar.gz firmware
+        '');
+
+  # Skip peripheral firmware extraction when firmware payloads are unavailable
+  # (e.g., on CI or dev machines without the /boot/asahi contents mounted).
+  hardware.asahi.extractPeripheralFirmware = false;
 
   # Use NetworkManager with wpa_supplicant for WiFi (more stable on Apple Silicon)
   networking.networkmanager = {

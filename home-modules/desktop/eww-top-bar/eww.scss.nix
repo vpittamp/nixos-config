@@ -24,6 +24,26 @@
     margin: 0 3px;
   }
 
+  /* Compact metrics trigger (always visible) */
+  .compact-trigger {
+    background: rgba(69, 71, 90, 0.35);
+    border: 1px solid rgba(108, 112, 134, 0.45);
+    padding: 2px 6px;
+    border-radius: 7px;
+    min-width: 14px;
+    min-height: 14px;
+    margin-right: 2px;
+  }
+
+  .compact-trigger .compact-icon {
+    color: #a6adc8;
+    font-size: 10px;
+  }
+
+  .metrics-revealer {
+    transition: all 180ms ease;
+  }
+
   /* Pill foundation */
   .pill {
     background: rgba(49, 50, 68, 0.65);
@@ -102,6 +122,41 @@
   .health-healthy { color: #a6e3a1; }
   .health-warning { color: #f9e2af; }
   .health-error { color: #f38ba8; }
+
+  /* Bluetooth states */
+  .bluetooth-connected {
+    background: rgba(137, 180, 250, 0.16);
+    border-color: rgba(137, 180, 250, 0.55);
+  }
+
+  .bluetooth-connected .icon,
+  .bluetooth-connected .bluetooth-count { color: #89b4fa; }
+
+  .bluetooth-enabled {
+    background: rgba(108, 112, 134, 0.16);
+    border-color: rgba(108, 112, 134, 0.45);
+  }
+
+  .bluetooth-enabled .icon,
+  .bluetooth-enabled .bluetooth-count { color: #a6adc8; }
+
+  .bluetooth-disabled {
+    background: rgba(69, 71, 90, 0.24);
+    border-color: rgba(69, 71, 90, 0.45);
+  }
+
+  .bluetooth-disabled .icon { color: #6c7086; }
+
+  .bluetooth-count {
+    padding: 0 4px;
+    margin-left: 1px;
+    border-radius: 6px;
+    background: rgba(137, 180, 250, 0.12);
+    font-weight: 700;
+  }
+
+  .bluetooth-enabled .bluetooth-count,
+  .bluetooth-disabled .bluetooth-count { background: transparent; }
 
   .wifi-disconnected .icon { color: #6c7086; }
 

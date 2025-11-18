@@ -123,6 +123,7 @@ in
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
 (defvar show_volume_peek false)
+(defvar show_metrics false)
 
 ;; ============================================================================
 ;; Widgets
@@ -251,14 +252,19 @@ in
 ;; Bluetooth widget (conditional - only shown if bluetooth hardware present, with click handler)
 (defwidget bluetooth-widget []
   (eventbox :onclick "blueman-manager &"
-    (box :class "pill metric-pill bluetooth"
-         :spacing 2
+    (box :class {bluetooth.state == "connected" ? "pill metric-pill bluetooth bluetooth-connected" :
+                 bluetooth.state == "enabled" ? "pill metric-pill bluetooth bluetooth-enabled" :
+                 "pill metric-pill bluetooth bluetooth-disabled"}
+         :spacing 3
          :visible {hardware.bluetooth ?: false}
-         :tooltip "Bluetooth status"
-         (label :class {bluetooth.state == "connected" ? "icon bluetooth-icon bluetooth-connected" :
-                        bluetooth.state == "enabled" ? "icon bluetooth-icon bluetooth-enabled" :
-                        "icon bluetooth-icon bluetooth-disabled"}
-               :text ""))))
+         :tooltip {bluetooth.state == "connected"
+                    ? "Bluetooth: ''${bluetooth.device_count ?: 0} device(s) connected"
+                    : bluetooth.state == "enabled" ? "Bluetooth: on, not connected"
+                    : "Bluetooth: off"}
+         (label :class "icon bluetooth-icon" :text "")
+         (label :class "value bluetooth-count"
+                :visible {bluetooth.device_count > 0}
+                :text "''${bluetooth.device_count ?: 0}"))))
 
 ;; Active Project widget (with click handler to open project switcher)
 ;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
@@ -304,25 +310,47 @@ in
                 :prepend-new false)))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
+
 (defwidget main-bar [is_primary]
   (centerbox :orientation "h"
              :class "bar"
-    ;; Left: System metrics
-    (box :class "left"
-         :orientation "h"
-         :space-evenly false
-         :halign "start"
-         :spacing 3
-         (cpu-widget)
-         (memory-widget)
-         (disk-widget)
-         (temperature-widget)
-         (network-widget)
-         (wifi-widget)
-         (volume-widget-enhanced)
-         (battery-widget)
-         (bluetooth-widget)
-         (build-health-widget))
+    ;; Left: Collapsible system metrics (click or hover to open); build health always visible
+    (eventbox :onhover "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=true"
+              :onhoverlost "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=false"
+      (box :class "left"
+           :orientation "h"
+           :space-evenly false
+           :halign "start"
+           :spacing 3
+           ;; Compact trigger keeps footprint small when collapsed
+           (eventbox
+             :onclick "${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar update show_metrics=$( [ $(${pkgs.eww}/bin/eww --config $HOME/.config/eww/eww-top-bar get show_metrics) = true ] && echo false || echo true )"
+             (button :class "pill compact-trigger"
+                     :tooltip "Click to toggle system metrics"
+                     (label :class "icon compact-icon" :text "")))
+           ;; Expandable metrics
+           (revealer :class "metrics-revealer"
+                     :transition "slideleft"
+                     :reveal show_metrics
+             (box :class "metrics-expanded"
+                  :orientation "h"
+                  :space-evenly false
+                  :halign "start"
+                  :spacing 3
+                  (cpu-widget)
+                  (memory-widget)
+                  (disk-widget)
+                  (temperature-widget)
+                  (network-widget)
+                  (wifi-widget)))
+
+           ;; Always-visible controls
+           (volume-widget-enhanced)
+           (battery-widget)
+           (bluetooth-widget)
+
+           ;; Health widget stays visible with text
+           (build-health-widget)))
 
     ;; Center: Active Project
     (box :class "center"
