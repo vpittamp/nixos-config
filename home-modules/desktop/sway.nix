@@ -850,6 +850,12 @@ in
     pkgs.wireplumber  # Provides wpctl for default sink adjustments
   ];
 
+  # Runtime helper to pick which virtual outputs are active and sync wayvnc units
+  home.file.".local/bin/active-monitors" = {
+    source = ./scripts/active-monitors.sh;
+    executable = true;
+  };
+
 
   # wayvnc configuration for headless Sway (Feature 048)
   # Shared configuration for all three WayVNC instances

@@ -94,6 +94,9 @@
 
   # Core Nix configuration
   nix = {
+    # Pin the daemon/client to the latest stable Nix to avoid 2.31.2 crash bug
+    package = pkgs.nixVersions.latest;
+
     settings = {
       experimental-features = [ "nix-command" "flakes" ];
       trusted-users = [ "root" "vpittamp" "@wheel" ];
