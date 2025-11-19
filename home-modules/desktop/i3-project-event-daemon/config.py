@@ -303,16 +303,18 @@ class DebouncedReloadHandler(FileSystemEventHandler):
     to prevent excessive reload operations.
     """
 
-    def __init__(self, callback: Callable[[], None], debounce_ms: int = 100):
+    def __init__(self, callback: Callable[[], None], debounce_ms: int = 100, target_filename: Optional[str] = None):
         """Initialize debounced reload handler.
 
         Args:
             callback: Function to call after debounce period
             debounce_ms: Debounce timeout in milliseconds (default: 100ms)
+            target_filename: If set, only trigger on events for this filename
         """
         super().__init__()
         self.callback = callback
         self.debounce_seconds = debounce_ms / 1000
+        self.target_filename = target_filename
         self._debounce_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -338,13 +340,24 @@ class DebouncedReloadHandler(FileSystemEventHandler):
             logger.warning("No event loop set for debounced handler, calling immediately")
             self.callback()
 
+    def _should_trigger(self, event) -> bool:
+        """Check if event should trigger callback based on target filename filter."""
+        if event.is_directory:
+            return False
+        if self.target_filename:
+            # Get filename from event path
+            event_path = getattr(event, 'dest_path', None) or event.src_path
+            event_filename = Path(event_path).name
+            return event_filename == self.target_filename
+        return True
+
     def on_modified(self, event: FileModifiedEvent) -> None:
         """Handle file modification event.
 
         Args:
             event: File system event
         """
-        if event.is_directory:
+        if not self._should_trigger(event):
             return
         self._schedule_callback()
 
@@ -354,7 +367,7 @@ class DebouncedReloadHandler(FileSystemEventHandler):
         Args:
             event: File system event
         """
-        if event.is_directory:
+        if not self._should_trigger(event):
             return
         self._schedule_callback()
 
@@ -364,7 +377,7 @@ class DebouncedReloadHandler(FileSystemEventHandler):
         Args:
             event: File system event
         """
-        if event.is_directory:
+        if not self._should_trigger(event):
             return
         self._schedule_callback()
 
@@ -464,7 +477,8 @@ class OutputStatesWatcher:
         self.config_file = config_file
         self.reload_callback = reload_callback
         self.observer = Observer()
-        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms)
+        # Pass target filename to filter events - only trigger on output-states.json changes
+        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms, target_filename=config_file.name)
         self._started = False
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
