@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Toggle a single Sway output on/off and restart matching wayvnc
+# Toggle a single Sway output on/off via state file and restart matching wayvnc
+#
+# Uses ~/.config/sway/output-states.json to track enabled/disabled state
+# since headless outputs in Sway cannot be disabled via DPMS or power commands.
 
 set -euo pipefail
 
@@ -9,22 +12,41 @@ if [[ $# -ne 1 ]]; then
 fi
 
 OUT="$1"
+STATE_FILE="${HOME}/.config/sway/output-states.json"
 
-if [[ -z "${SWAYSOCK:-}" ]]; then
-  sock="$(sway --get-socketpath 2>/dev/null || true)"
-  [[ -n "$sock" ]] && export SWAYSOCK="$sock"
+# Ensure state file directory exists
+mkdir -p "$(dirname "$STATE_FILE")"
+
+# Initialize state file if it doesn't exist
+if [[ ! -f "$STATE_FILE" ]]; then
+  echo '{"version": "1.0", "outputs": {}, "last_updated": "'"$(date -Iseconds)"'"}' > "$STATE_FILE"
 fi
 
-state="$(swaymsg -t get_outputs | jq -r --arg o \"$OUT\" '.[] | select(.name==$o) | .active')"
+# Read current state (default to enabled if not present)
+# Note: Can't use // because it treats false as falsy. Use if-then-else instead.
+current_state=$(jq -r --arg o "$OUT" 'if .outputs[$o].enabled == null then true else .outputs[$o].enabled end' "$STATE_FILE")
 
-if [[ "$state" == "true" ]]; then
-  swaymsg "output $OUT disable" >/dev/null
-  systemctl --user stop "wayvnc@$OUT.service" 2>/dev/null || true
+# Toggle state
+if [[ "$current_state" == "true" ]]; then
+  new_state="false"
+  action="disabled"
 else
-  swaymsg "output $OUT enable" >/dev/null
-  swaymsg "output $OUT mode 1920x1200@60Hz" >/dev/null 2>&1 || true
-  swaymsg "output $OUT scale 1.0" >/dev/null 2>&1 || true
-  systemctl --user start "wayvnc@$OUT.service" 2>/dev/null || true
+  new_state="true"
+  action="enabled"
 fi
 
-echo "toggled $OUT"
+# Update state file atomically
+tmp_file=$(mktemp)
+jq --arg o "$OUT" --argjson enabled "$new_state" '
+  .outputs[$o] = {enabled: $enabled} |
+  .last_updated = (now | todate)
+' "$STATE_FILE" > "$tmp_file" && mv "$tmp_file" "$STATE_FILE"
+
+# Start/stop wayvnc service accordingly
+if [[ "$new_state" == "true" ]]; then
+  systemctl --user start "wayvnc@$OUT.service" 2>/dev/null || true
+else
+  systemctl --user stop "wayvnc@$OUT.service" 2>/dev/null || true
+fi
+
+echo "$OUT $action"

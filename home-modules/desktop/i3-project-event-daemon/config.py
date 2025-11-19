@@ -324,15 +324,8 @@ class DebouncedReloadHandler(FileSystemEventHandler):
         """
         self._loop = loop
 
-    def on_modified(self, event: FileModifiedEvent) -> None:
-        """Handle file modification event.
-
-        Args:
-            event: File system event
-        """
-        if event.is_directory:
-            return
-
+    def _schedule_callback(self) -> None:
+        """Schedule a debounced callback."""
         # Cancel existing debounce task
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
@@ -344,6 +337,36 @@ class DebouncedReloadHandler(FileSystemEventHandler):
             # Fallback: call immediately if no event loop
             logger.warning("No event loop set for debounced handler, calling immediately")
             self.callback()
+
+    def on_modified(self, event: FileModifiedEvent) -> None:
+        """Handle file modification event.
+
+        Args:
+            event: File system event
+        """
+        if event.is_directory:
+            return
+        self._schedule_callback()
+
+    def on_moved(self, event) -> None:
+        """Handle file moved event (atomic saves use temp file + rename).
+
+        Args:
+            event: File system event
+        """
+        if event.is_directory:
+            return
+        self._schedule_callback()
+
+    def on_created(self, event) -> None:
+        """Handle file creation event.
+
+        Args:
+            event: File system event
+        """
+        if event.is_directory:
+            return
+        self._schedule_callback()
 
     async def _debounced_callback(self) -> None:
         """Execute callback after debounce delay."""
@@ -394,6 +417,72 @@ class WindowRulesWatcher:
         """
         if self._started:
             logger.warning("Window rules watcher already started")
+            return
+
+        watch_dir = self.config_file.parent
+
+        # Ensure directory exists
+        watch_dir.mkdir(parents=True, exist_ok=True)
+
+        # Start watchdog observer
+        self.observer.schedule(self.handler, str(watch_dir), recursive=False)
+        self.observer.start()
+        self._started = True
+
+        logger.info(f"Started watching {self.config_file} for modifications")
+
+    def stop(self) -> None:
+        """Stop watching for file modifications."""
+        if not self._started:
+            return
+
+        self.observer.stop()
+        self.observer.join(timeout=5.0)
+        self._started = False
+
+        logger.info(f"Stopped watching {self.config_file}")
+
+
+class OutputStatesWatcher:
+    """File system watcher for output-states.json with auto-reload.
+
+    Watches for changes to the output states file and triggers a callback
+    to reassign workspaces when outputs are enabled/disabled.
+    """
+
+    def __init__(self,
+                 config_file: Path,
+                 reload_callback: Callable[[], None],
+                 debounce_ms: int = 200):
+        """Initialize output states file watcher.
+
+        Args:
+            config_file: Path to output-states.json
+            reload_callback: Function to call on file modification
+            debounce_ms: Debounce timeout in milliseconds (default: 200ms for state files)
+        """
+        self.config_file = config_file
+        self.reload_callback = reload_callback
+        self.observer = Observer()
+        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms)
+        self._started = False
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the asyncio event loop for debounced callbacks.
+
+        Args:
+            loop: Asyncio event loop
+        """
+        self.handler.set_event_loop(loop)
+
+    def start(self) -> None:
+        """Start watching output-states.json for modifications.
+
+        Watches the parent directory since some editors use atomic save
+        (create temp file + rename) which doesn't trigger inotify on the file itself.
+        """
+        if self._started:
+            logger.warning("Output states watcher already started")
             return
 
         watch_dir = self.config_file.parent

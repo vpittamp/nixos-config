@@ -2402,7 +2402,16 @@ async def on_output(
     try:
         # Re-query monitor/output configuration
         outputs = await conn.get_outputs()
-        active_outputs = [o for o in outputs if o.active]
+
+        # Use output-states.json to determine which outputs are "active"
+        # This works around the limitation that headless outputs can't be disabled via DPMS
+        from .output_state_manager import load_output_states
+        output_states = load_output_states()
+
+        active_outputs = [
+            o for o in outputs
+            if o.active and output_states.is_output_enabled(o.name)
+        ]
 
         # Feature 053 Phase 6: Comprehensive output event logging
         log_event_entry(
@@ -2426,12 +2435,14 @@ async def on_output(
 
         # Log configuration changes for debugging
         for output in outputs:
-            if output.active:
+            is_enabled = output_states.is_output_enabled(output.name)
+            is_active = output.active and is_enabled
+            if is_active:
                 logger.debug(
                     f"  Active output: {output.name} ({output.rect.width}x{output.rect.height})"
                 )
             else:
-                logger.debug(f"  Inactive output: {output.name}")
+                logger.debug(f"  Inactive output: {output.name} (sway_active={output.active}, state_enabled={is_enabled})")
 
         # Feature 042: Refresh workspace mode output cache on monitor changes
         if workspace_mode_manager:

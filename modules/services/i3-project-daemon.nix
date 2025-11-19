@@ -35,12 +35,12 @@ let
   # Daemon package (Feature 061: Unified mark format)
   daemonSrc = builtins.path {
     path = ../../home-modules/desktop/i3-project-event-daemon;
-    name = "i3pm-daemon-src";
+    name = "i3pm-daemon-src-v3-output-states";  # Force rebuild with output_state_manager module
   };
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.8.2-078";  # Feature 078: Fix timezone-naive datetime comparison
+    version = "1.8.4";  # v3 source with output_state_manager
     src = daemonSrc;
 
     installPhase = ''

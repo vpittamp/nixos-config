@@ -10,6 +10,8 @@ import logging
 import os
 import signal
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -26,7 +28,13 @@ from .config import (
     load_application_registry,  # Feature 037 T027
     load_active_project,
     reload_window_rules,
-    WindowRulesWatcher
+    WindowRulesWatcher,
+    OutputStatesWatcher,
+)
+from .output_state_manager import (
+    load_output_states,
+    initialize_output_states,
+    OUTPUT_STATES_PATH,
 )
 from .state import StateManager
 from .connection import ResilientI3Connection
@@ -164,6 +172,7 @@ class I3ProjectDaemon:
         self.shutdown_event = asyncio.Event()
         self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
+        self.output_states_watcher: Optional[OutputStatesWatcher] = None  # Output states file watcher
         self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
@@ -328,6 +337,34 @@ class I3ProjectDaemon:
         # Start watching
         self.rules_watcher.start()
 
+        # Setup output states file watcher
+        # When output-states.json changes, trigger workspace reassignment
+        def on_output_states_change():
+            """Callback for output states file changes."""
+            logger.info("Output states file changed, triggering workspace reassignment")
+            # Schedule async workspace reassignment
+            loop = asyncio.get_event_loop()
+            if self.connection and self.connection.conn:
+                loop.create_task(self._trigger_output_state_change())
+
+        self.output_states_watcher = OutputStatesWatcher(
+            config_file=OUTPUT_STATES_PATH,
+            reload_callback=on_output_states_change,
+            debounce_ms=200  # Slightly longer debounce for state file changes
+        )
+        self.output_states_watcher.set_event_loop(asyncio.get_event_loop())
+        self.output_states_watcher.start()
+
+        # Initialize output states file with current outputs
+        if self.connection and self.connection.conn:
+            try:
+                outputs = await self.connection.conn.get_outputs()
+                output_names = [o.name for o in outputs if o.active]
+                initialize_output_states(output_names)
+                logger.info(f"Initialized output states for {len(output_names)} outputs")
+            except Exception as e:
+                logger.warning(f"Failed to initialize output states: {e}")
+
         # Feature 029: T033 - Initialize process monitor
         self.proc_monitor = ProcessMonitor(poll_interval=0.5)
         logger.info("Process monitor initialized")
@@ -347,6 +384,54 @@ class I3ProjectDaemon:
             )
             await self.event_buffer.add_event(entry)
             logger.info(f"Logged daemon::start event (duration: {duration_ms:.2f}ms)")
+
+    async def _trigger_output_state_change(self) -> None:
+        """Trigger workspace reassignment after output states file change.
+
+        This is called when output-states.json is modified (e.g., by toggle-output.sh).
+        It performs the same workspace reassignment as the on_output handler.
+        """
+        from .workspace_manager import assign_workspaces_with_monitor_roles
+
+        if not self.connection or not self.connection.conn:
+            logger.warning("Cannot trigger output state change: not connected")
+            return
+
+        try:
+            # Get current outputs and enabled states
+            outputs = await self.connection.conn.get_outputs()
+            states = load_output_states()
+
+            # Filter to only enabled outputs
+            enabled_outputs = [
+                o for o in outputs
+                if o.active and states.is_output_enabled(o.name)
+            ]
+
+            enabled_count = len(enabled_outputs)
+            total_count = len([o for o in outputs if o.active])
+
+            logger.info(
+                f"Output state change detected: {enabled_count}/{total_count} outputs enabled"
+            )
+
+            # Use Feature 001's monitor role-based workspace assignment
+            # This uses workspace-assignments.json instead of legacy workspace-monitor-mapping.json
+            await assign_workspaces_with_monitor_roles(self.connection.conn)
+
+            # Log event
+            if self.event_buffer:
+                entry = EventEntry(
+                    event_id=self.event_buffer.event_counter,
+                    event_type="output::state_change",
+                    timestamp=datetime.now(),
+                    source="daemon",
+                    output_count=enabled_count,
+                )
+                await self.event_buffer.add_event(entry)
+
+        except Exception as e:
+            logger.error(f"Failed to trigger output state change: {e}")
 
     async def register_event_handlers(self) -> None:
         """Register all i3 event handlers."""

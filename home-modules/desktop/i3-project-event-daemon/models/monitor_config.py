@@ -87,8 +87,8 @@ class MonitorRoleConfig(BaseModel):
     preferred_monitor_role: Optional[MonitorRole] = Field(
         None, description="Desired monitor role (nullable)"
     )
-    source: Literal["app-registry", "pwa-sites"] = Field(
-        ..., description="Configuration source"
+    source: Literal["app-registry", "pwa-sites", "nix"] = Field(
+        ..., description="Configuration source (nix for Nix-generated configs)"
     )
 
     @validator("app_name")
@@ -206,3 +206,61 @@ class MonitorStateV2(BaseModel):
 
     class Config:
         json_encoders = {datetime: lambda dt: dt.isoformat()}
+
+
+class OutputState(BaseModel):
+    """State for a single output (enabled/disabled for workspace distribution).
+
+    This is used for headless/virtual outputs that can't be disabled via DPMS.
+    """
+
+    enabled: bool = Field(True, description="Whether output should receive workspaces")
+
+
+class OutputStatesFile(BaseModel):
+    """User-controlled output state file for dynamic workspace distribution.
+
+    File: ~/.config/sway/output-states.json
+
+    This allows users to toggle headless outputs as 'inactive' for workspace
+    distribution purposes, since headless outputs can't be disabled via DPMS.
+    """
+
+    version: Literal["1.0"] = Field("1.0", description="State file format version")
+    outputs: Dict[str, OutputState] = Field(
+        default_factory=dict,
+        description="Output states keyed by output name (e.g., HEADLESS-1)"
+    )
+    last_updated: datetime = Field(
+        default_factory=datetime.now, description="ISO 8601 timestamp of last update"
+    )
+
+    class Config:
+        json_encoders = {datetime: lambda dt: dt.isoformat()}
+
+    def get_enabled_outputs(self) -> list[str]:
+        """Return list of output names that are enabled."""
+        return [name for name, state in self.outputs.items() if state.enabled]
+
+    def is_output_enabled(self, output_name: str) -> bool:
+        """Check if an output is enabled (defaults to True if not in file)."""
+        if output_name not in self.outputs:
+            return True  # Default to enabled for new outputs
+        return self.outputs[output_name].enabled
+
+    def toggle_output(self, output_name: str) -> bool:
+        """Toggle output enabled state. Returns new state."""
+        if output_name not in self.outputs:
+            self.outputs[output_name] = OutputState(enabled=False)
+        else:
+            self.outputs[output_name].enabled = not self.outputs[output_name].enabled
+        self.last_updated = datetime.now()
+        return self.outputs[output_name].enabled
+
+    def set_output_enabled(self, output_name: str, enabled: bool) -> None:
+        """Set output enabled state explicitly."""
+        if output_name not in self.outputs:
+            self.outputs[output_name] = OutputState(enabled=enabled)
+        else:
+            self.outputs[output_name].enabled = enabled
+        self.last_updated = datetime.now()

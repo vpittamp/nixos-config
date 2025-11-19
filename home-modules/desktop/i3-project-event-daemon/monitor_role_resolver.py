@@ -122,7 +122,7 @@ class MonitorRoleResolver:
                                 role=role,
                                 output=matching_output.name,
                                 fallback_applied=False,
-                                preferred_output=True,
+                                preferred_output=matching_output.name,
                             )
                             assigned_outputs.add(matching_output.name)
                             logger.info(
@@ -151,7 +151,7 @@ class MonitorRoleResolver:
                     role=role,
                     output=output.name,
                     fallback_applied=False,
-                    preferred_output=False,
+                    preferred_output=None,
                 )
                 assigned_outputs.add(output.name)
                 logger.info(

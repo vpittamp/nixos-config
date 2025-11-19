@@ -130,8 +130,16 @@ async def get_monitor_configs(
         1
     """
     # Get active outputs from i3
+    # Use output-states.json to determine which outputs are "active"
+    # This works around the limitation that headless outputs can't be disabled via DPMS
+    from .output_state_manager import load_output_states
+    output_states = load_output_states()
+
     outputs = await i3.get_outputs()
-    active_outputs = [o for o in outputs if o.active]
+    active_outputs = [
+        o for o in outputs
+        if o.active and output_states.is_output_enabled(o.name)
+    ]
 
     if not active_outputs:
         raise RuntimeError("No active outputs found")
@@ -275,11 +283,17 @@ async def assign_workspaces_with_monitor_roles(
     configs = []
     for item in assignments_data:
         try:
+            # Support both "workspace" (legacy) and "workspace_number" (current) formats
+            workspace = item.get("workspace_number") or item.get("workspace")
+            if workspace is None:
+                logger.error(f"[Feature 001] Missing workspace for {item.get('app_name')}")
+                continue
+
             config = MonitorRoleConfig(
                 app_name=item["app_name"],
-                preferred_workspace=item["workspace"],
+                preferred_workspace=workspace,
                 preferred_monitor_role=item.get("monitor_role"),  # May be None (inferred)
-                source=item["source"]
+                source=item.get("source", "nix")
             )
             configs.append(config)
         except Exception as e:
@@ -289,8 +303,16 @@ async def assign_workspaces_with_monitor_roles(
     logger.info(f"[Feature 001] Loaded {len(configs)} workspace assignments")
 
     # Get active outputs from Sway IPC
+    # Use output-states.json to determine which outputs are "active"
+    # This works around the limitation that headless outputs can't be disabled via DPMS
+    from .output_state_manager import load_output_states
+    output_states = load_output_states()
+
     outputs_raw = await i3.get_outputs()
-    active_outputs_raw = [o for o in outputs_raw if o.active]
+    active_outputs_raw = [
+        o for o in outputs_raw
+        if o.active and output_states.is_output_enabled(o.name)
+    ]
 
     if not active_outputs_raw:
         logger.error("[Feature 001] No active outputs found - cannot assign workspaces")
@@ -359,12 +381,17 @@ async def assign_workspaces_with_monitor_roles(
 
         if output_name:
             try:
+                # Set preferred output for this workspace
                 await i3.command(f"workspace number {ws_num} output {output_name}")
                 assignments_applied += 1
                 logger.debug(
                     f"[Feature 001] Assigned workspace {ws_num} → {output_name} "
                     f"(app: {config.app_name}, source: {config.source})"
                 )
+
+                # Note: Sway workspaces cannot be moved between outputs once created.
+                # Setting preferred output ensures future switches go to the correct output.
+                # Existing workspaces on disabled outputs will remain until empty or user moves windows.
             except Exception as e:
                 logger.error(
                     f"[Feature 001] Failed to assign workspace {ws_num} to {output_name}: {e}"
@@ -377,7 +404,7 @@ async def assign_workspaces_with_monitor_roles(
 
     logger.info(
         f"[Feature 001] Applied {assignments_applied}/{len(workspace_to_config)} "
-        f"workspace assignments successfully"
+        f"workspace→output assignments"
     )
 
     # Feature 001 T036: Persist MonitorStateV2
@@ -446,7 +473,11 @@ async def persist_monitor_state_v2(
         state_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(state_path, "w") as f:
-            f.write(state.json(indent=2))
+            # Use model_dump_json for Pydantic v2 compatibility
+            if hasattr(state, 'model_dump_json'):
+                f.write(state.model_dump_json(indent=2))
+            else:
+                f.write(state.json(indent=2))  # Fallback for Pydantic v1
 
         logger.info(
             f"[Feature 001] Persisted MonitorStateV2 to {state_path} "
@@ -490,7 +521,13 @@ async def validate_target_workspace(
         outputs = await conn.get_outputs()
 
         # Build set of active output names
-        active_outputs = {o.name for o in outputs if o.active}
+        # Use output-states.json to determine which outputs are "active"
+        from .output_state_manager import load_output_states
+        output_states = load_output_states()
+        active_outputs = {
+            o.name for o in outputs
+            if o.active and output_states.is_output_enabled(o.name)
+        }
 
         if not active_outputs:
             return (False, "No active outputs detected")
