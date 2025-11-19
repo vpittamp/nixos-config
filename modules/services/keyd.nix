@@ -2,24 +2,23 @@
 
 {
   # keyd - Kernel-level key remapper for Wayland
-  # Maps CapsLock -> F9 for ergonomic workspace mode access
+  # Maps CapsLock -> Control+0 for ergonomic workspace mode access
   # Works at evdev/uinput layer, so applies before Sway sees events
   # Perfect for VNC/remote scenarios
 
   services.keyd = {
-    enable = true;  # Enabled for CapsLock -> F9 remapping
+    enable = true;  # Enabled for CapsLock -> Control+0 remapping
     keyboards = {
       default = {
         ids = [ "*" ];  # Apply to all keyboards
         settings = {
           main = {
-            # CapsLock becomes F9 (workspace mode trigger)
-            # F9 works reliably through VNC
-            capslock = "f9";
+            # CapsLock becomes Control+0 (workspace mode trigger)
+            # Matches the Sway keybinding in sway-keybindings.nix
+            capslock = "C-0";
 
-            # Optional: Make Shift+CapsLock actual CapsLock for rare usage
-            # Uncomment if needed:
-            # shift+capslock = "capslock";
+            # Shift+CapsLock becomes Control+Shift+0 (move mode)
+            "shift+capslock" = "C-S-0";
           };
         };
       };
