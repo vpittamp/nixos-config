@@ -250,12 +250,14 @@
       color: #cdd6f4;
       border: 1px solid rgba(137, 180, 250, 0.35);
       border-radius: 8px;
-      padding: 2px 8px;
-      font-weight: 600;
-      transition: all 0.15s ease;
+      padding: 3px 10px;
+      min-width: 40px;
+      font-weight: 700;
+      transition: background 0.15s ease, border 0.15s ease;
       &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
-    .pill-text { color: #cdd6f4; font-weight: 700; }
+    .pill-text { color: #cdd6f4; font-weight: 800; font-size: 11px; }
+    .pill-text.dim { color: #a6adc8; opacity: 0.7; }
   }
 ''
