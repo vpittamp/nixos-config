@@ -406,5 +406,4 @@ in
 
 ${lib.concatMapStrings mkWindowDef topBarOutputs}
 ${fallbackWindow}
-
 ''
