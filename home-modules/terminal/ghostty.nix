@@ -197,6 +197,9 @@ in
       # "single-instance" = reuses existing process (default)
       # "always" = uses cgroups for isolation
       linux-cgroup = "never";
+
+      # Make Shift+Enter send a newline (Claude CLI expects this)
+      keybind = "shift+enter=text:\\x1b\\r";
     };
   };
 

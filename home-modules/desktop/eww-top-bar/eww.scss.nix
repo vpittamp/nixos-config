@@ -257,7 +257,15 @@
       &:hover { background: rgba(137, 180, 250, 0.25); }
     }
     .pill + .pill { margin-left: 4px; }
-    .pill-text { color: #cdd6f4; font-weight: 800; font-size: 11px; }
-    .pill-text.dim { color: #a6adc8; opacity: 0.7; }
+    .pill-text {
+      color: #cdd6f4;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+    .pill-text.dim {
+      color: #6c7086;
+      opacity: 0.85;
+    }
   }
 ''

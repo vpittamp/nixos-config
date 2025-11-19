@@ -32,8 +32,8 @@ let
 
       cat > $out/bin/antigravity <<EOF
       #!${pkgs.runtimeShell}
-      # Prefer Chromium for OAuth/device login flows
-      export BROWSER=${pkgs.chromium}/bin/chromium
+      # Use Firefox for OAuth - handles custom URL schemes better than Chromium
+      export BROWSER=${pkgs.firefox}/bin/firefox
       exec "$out/opt/antigravity/antigravity" --no-sandbox "\$@"
       EOF
       chmod +x $out/bin/antigravity
@@ -46,6 +46,20 @@ let
       Type=Application
       Icon=antigravity
       Categories=Development;IDE;
+      MimeType=x-scheme-handler/antigravity;
+      EOF
+
+      # URL handler for OAuth callbacks
+      cat > $out/share/applications/antigravity-url-handler.desktop <<'EOF'
+      [Desktop Entry]
+      Name=Antigravity - URL Handler
+      Exec=antigravity %U
+      Terminal=false
+      Type=Application
+      Icon=antigravity
+      NoDisplay=true
+      MimeType=x-scheme-handler/antigravity;
+      StartupWMClass=Antigravity
       EOF
 
       cp source/resources/app/resources/linux/code.png \

@@ -104,7 +104,7 @@ in
 ;; Active outputs (poll swaymsg) - controls and reflects monitor state
 (defpoll active_outputs
   :interval "2s"
-  # Include a per-output map so the monitor pills render meaningful defaults
+  ;; Include a per-output map so the monitor pills render meaningful defaults
   :initial '{"active":[],"enabled":[],"all":[],"active_count":0,"map":{"HEADLESS-1":false,"HEADLESS-2":false,"HEADLESS-3":false}}'
   `/run/current-system/sw/bin/bash -lc '$HOME/.config/eww/eww-top-bar/scripts/active-outputs-status.sh'`)
 
@@ -323,39 +323,45 @@ in
        :spacing 6
        :visible true
        (box :orientation "h" :spacing 4
-           (button :class "pill"
-                   :tooltip "Toggle HEADLESS-1"
-                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
-                   :style (if (get (get active_outputs "map") "HEADLESS-1")
-                              "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                              "opacity:0.72; border:1px dashed #89b4fa;")
-                   (label :class "pill-text"
-                          :style (if (get (get active_outputs "map") "HEADLESS-1")
-                                     "color:#0b111f; font-weight:900; font-size:12px;"
-                                     "color:#ffffff; font-weight:900; font-size:12px;")
-                           :text (if (get (get active_outputs "map") "HEADLESS-1") "H1 ON" "H1 OFF")))
-           (button :class "pill"
-                   :tooltip "Toggle HEADLESS-2"
-                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
-                   :style (if (get (get active_outputs "map") "HEADLESS-2")
-                              "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                              "opacity:0.72; border:1px dashed #89b4fa;")
-                   (label :class "pill-text"
-                          :style (if (get (get active_outputs "map") "HEADLESS-2")
-                                     "color:#0b111f; font-weight:900; font-size:12px;"
-                                     "color:#ffffff; font-weight:900; font-size:12px;")
-                           :text (if (get (get active_outputs "map") "HEADLESS-2") "H2 ON" "H2 OFF")))
-           (button :class "pill"
-                   :tooltip "Toggle HEADLESS-3"
-                   :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
-                   :style (if (get (get active_outputs "map") "HEADLESS-3")
-                              "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                              "opacity:0.72; border:1px dashed #89b4fa;")
-                   (label :class "pill-text"
-                          :style (if (get (get active_outputs "map") "HEADLESS-3")
-                                     "color:#0b111f; font-weight:900; font-size:12px;"
-                                     "color:#ffffff; font-weight:900; font-size:12px;")
-                           :text (if (get (get active_outputs "map") "HEADLESS-3") "H3 ON" "H3 OFF"))))))
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-1"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
+                    :style (if (get (get active_outputs "map") "HEADLESS-1")
+                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
+                               "opacity:0.72; border:1px dashed #89b4fa;")
+                    (box :orientation "h" :spacing 4
+                         (label :class "pill-text"
+                                :visible (get (get active_outputs "map") "HEADLESS-1")
+                                :text "H1 ON")
+                         (label :class "pill-text dim"
+                                :visible (not (get (get active_outputs "map") "HEADLESS-1"))
+                                :text "H1 OFF")))
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-2"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
+                    :style (if (get (get active_outputs "map") "HEADLESS-2")
+                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
+                               "opacity:0.72; border:1px dashed #89b4fa;")
+                    (box :orientation "h" :spacing 4
+                         (label :class "pill-text"
+                                :visible (get (get active_outputs "map") "HEADLESS-2")
+                                :text "H2 ON")
+                         (label :class "pill-text dim"
+                                :visible (not (get (get active_outputs "map") "HEADLESS-2"))
+                                :text "H2 OFF")))
+            (button :class "pill"
+                    :tooltip "Toggle HEADLESS-3"
+                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
+                    :style (if (get (get active_outputs "map") "HEADLESS-3")
+                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
+                               "opacity:0.72; border:1px dashed #89b4fa;")
+                    (box :orientation "h" :spacing 4
+                         (label :class "pill-text"
+                                :visible (get (get active_outputs "map") "HEADLESS-3")
+                                :text "H3 ON")
+                         (label :class "pill-text dim"
+                                :visible (not (get (get active_outputs "map") "HEADLESS-3"))
+                                :text "H3 OFF"))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
