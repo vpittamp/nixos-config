@@ -104,6 +104,64 @@ let
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
+  headlessOutputStateDefaults = {
+    "HEADLESS-1" = true;
+    "HEADLESS-2" = false;
+    "HEADLESS-3" = false;
+  };
+  headlessPrimaryOutput = "HEADLESS-1";
+  headlessSecondaryOutput = "HEADLESS-2";
+  headlessTertiaryOutput = "HEADLESS-3";
+  headlessSingleOutputMode =
+    headlessOutputStateDefaults."HEADLESS-2" == false
+    && headlessOutputStateDefaults."HEADLESS-3" == false;
+  headlessRoleToOutput = role:
+    if headlessSingleOutputMode then headlessPrimaryOutput
+    else if role == "primary" then headlessPrimaryOutput
+    else if role == "secondary" then headlessSecondaryOutput
+    else headlessTertiaryOutput;
+  headlessFallbackOutputs = primary:
+    if headlessSingleOutputMode then [ ]
+    else builtins.filter (o: o != primary) [ headlessPrimaryOutput headlessSecondaryOutput headlessTertiaryOutput ];
+  headlessMonitorProfiles = {
+    single = {
+      name = "single";
+      description = "Single monitor workflow (HEADLESS-1 only)";
+      outputs = [ headlessPrimaryOutput ];
+      workspace_roles = {
+        primary = [ 1 2 3 4 5 6 7 8 9 ];
+        secondary = [ ];
+        tertiary = [ ];
+      };
+    };
+    dual = {
+      name = "dual";
+      description = "Dual monitor workflow (primary + secondary)";
+      outputs = [ headlessPrimaryOutput headlessSecondaryOutput ];
+      workspace_roles = {
+        primary = [ 1 2 6 7 8 9 ];
+        secondary = [ 3 4 5 ];
+        tertiary = [ ];
+      };
+    };
+    triple = {
+      name = "triple";
+      description = "Full triple-head workflow (HEADLESS-1/2/3)";
+      outputs = [ headlessPrimaryOutput headlessSecondaryOutput headlessTertiaryOutput ];
+      workspace_roles = {
+        primary = [ 1 2 ];
+        secondary = [ 3 4 5 ];
+        tertiary = [ 6 7 8 9 ];
+      };
+    };
+  };
+  headlessProfileDefault = if headlessSingleOutputMode then "single" else "triple";
+  monitorProfileFiles = lib.listToAttrs (map (name: {
+    name = "sway/monitor-profiles/${name}.json";
+    value = {
+      text = builtins.toJSON (headlessMonitorProfiles.${name});
+    };
+  }) (builtins.attrNames headlessMonitorProfiles));
   mkWayvncWrapper = output: port: socket:
     pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
       set -euo pipefail
@@ -156,11 +214,7 @@ let
 
     # Map monitor roles → concrete outputs and include schema-required fields
     monitorRoleToOutput = role:
-      if isHeadless then
-        if role == "primary" then "HEADLESS-1"
-        else if role == "secondary" then "HEADLESS-2"
-        else if role == "tertiary" then "HEADLESS-3"
-        else "HEADLESS-1"
+      if isHeadless then headlessRoleToOutput role
       else
         # Laptop default mapping: keep everything on eDP-1; allow HDMI for secondary
         if role == "secondary" then "HDMI-A-1" else "eDP-1";
@@ -168,7 +222,7 @@ let
     # Fallback outputs (avoid including primary in the list)
     fallbackOutputs = primary:
       if isHeadless then
-        builtins.filter (o: o != primary) [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ]
+        headlessFallbackOutputs primary
       else
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
   in {
@@ -366,11 +420,7 @@ in
       workspaceOutputAssign = if isHeadless then
         let
           # Map monitor roles to physical outputs
-          roleToOutput = role:
-            if role == "primary" then "HEADLESS-1"
-            else if role == "secondary" then "HEADLESS-2"
-            else if role == "tertiary" then "HEADLESS-3"
-            else "HEADLESS-1";  # Fallback to primary
+          roleToOutput = role: headlessRoleToOutput role;
 
           # Generate workspace assignment from app/PWA data
           assignmentToOutput = assignment: {
@@ -580,7 +630,7 @@ in
         # Apply desired active outputs (reads ~/.config/sway/active-outputs)
       ] ++ lib.optionals isHeadless [
         { command = "~/.local/bin/active-monitors-auto"; }
-      ] ++ [
+      ] ++ lib.optionals (!(isHeadless && headlessSingleOutputMode)) [
 
         # i3pm daemon (socket-activated system service)
         # Socket activation happens automatically on first IPC request
@@ -590,6 +640,7 @@ in
         # Monitor workspace distribution (wait for daemon to initialize)
         { command = "sleep 2 && ~/.config/i3/scripts/reassign-workspaces.sh"; }
 
+      ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
       ];
@@ -872,33 +923,134 @@ in
     source = ./scripts/active-monitors-auto.sh;
     executable = true;
   };
-
-  # Default active outputs list (user-editable)
-  xdg.configFile."sway/active-outputs".text =
-    if isHeadless then ''
-      HEADLESS-1
-      HEADLESS-2
-      HEADLESS-3
-    '' else ''
-      eDP-1
-    '';
-
-
-  # wayvnc configuration for headless Sway (Feature 048)
-  # Shared configuration for all three WayVNC instances
-  # Port specification removed - handled by individual systemd services
-  xdg.configFile."wayvnc/config" = lib.mkIf isHeadless {
-    text = ''
-      address=0.0.0.0
-      enable_auth=false
-    '';
+  home.file.".local/bin/set-monitor-profile" = {
+    source = ./scripts/set-monitor-profile.sh;
+    executable = true;
+  };
+  home.file.".local/bin/monitor-profile-menu" = {
+    source = ./scripts/monitor-profile-menu.sh;
+    executable = true;
   };
 
-  # Feature 001: Workspace-to-monitor assignments (declarative configuration)
-  # This file is read by workspace_assignment_manager.py on daemon startup
-  # to determine which monitor role each workspace should use based on app preferences
-  # Format: workspace-assignments.schema.json (v1.0)
-  xdg.configFile."sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
+  xdg.configFile =
+    (lib.optionalAttrs isHeadless monitorProfileFiles)
+    // (lib.optionalAttrs isHeadless {
+      "sway/monitor-profile.default".text = "${headlessProfileDefault}\n";
+      "wayvnc/config" = {
+        text = ''
+          address=0.0.0.0
+          enable_auth=false
+        '';
+      };
+    })
+    // {
+      "sway/active-outputs".text =
+        if isHeadless then
+          if headlessSingleOutputMode then ''
+            HEADLESS-1
+          '' else ''
+            HEADLESS-1
+            HEADLESS-2
+            HEADLESS-3
+          ''
+        else ''
+          eDP-1
+        '';
+      "sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
+    };
+
+  # Ensure default monitor profile is recorded for new systems
+  home.activation.ensureMonitorProfileCurrent = lib.mkIf isHeadless (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    set -euo pipefail
+
+    profile_dir="$HOME/.config/sway"
+    current_file="$profile_dir/monitor-profile.current"
+    default_file="$profile_dir/monitor-profile.default"
+
+    mkdir -p "$profile_dir/monitor-profiles"
+
+    if [ ! -f "$current_file" ]; then
+      if [ -f "$default_file" ]; then
+        install -m600 "$default_file" "$current_file"
+      else
+        echo "${headlessProfileDefault}" > "$current_file"
+        chmod 600 "$current_file"
+      fi
+    else
+      chmod u+rw "$current_file" >/dev/null 2>&1 || true
+    fi
+  '');
+
+  # Ensure output-states.json defaults keep only HEADLESS-1 active unless user opts out
+  home.activation.manageHeadlessOutputStates = lib.mkIf isHeadless (lib.hm.dag.entryAfter [ "ensureMonitorProfileCurrent" ] ''
+    set -euo pipefail
+
+    state_dir="$HOME/.config/sway"
+    opt_out_file="$state_dir/output-states.local"
+
+    if [ -e "$opt_out_file" ]; then
+      echo "[sway] Skipping managed output-states.json (opt-out file present at $opt_out_file)" >&2
+    else
+      mkdir -p "$state_dir"
+      export OUTPUT_STATE_DEFAULTS='${builtins.toJSON headlessOutputStateDefaults}'
+      update_result=$(${pkgs.python3}/bin/python - <<'PY'
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
+defaults = json.loads(os.environ["OUTPUT_STATE_DEFAULTS"])
+state_path = Path(os.environ["HOME"]) / ".config" / "sway" / "output-states.json"
+
+try:
+    data = json.loads(state_path.read_text())
+except Exception:
+    data = {}
+
+outputs = data.get("outputs")
+if not isinstance(outputs, dict):
+    outputs = {}
+data["outputs"] = outputs
+
+changed = False
+
+for name, enabled in defaults.items():
+    entry = outputs.get(name)
+    current = None
+    if isinstance(entry, dict):
+        current = entry.get("enabled")
+    elif isinstance(entry, bool):
+        current = entry
+    if current is None:
+        current = True
+    if bool(current) != bool(enabled):
+        changed = True
+    outputs[name] = {"enabled": bool(enabled)}
+
+if data.get("version") != "1.0":
+    data["version"] = "1.0"
+    changed = True
+
+managed_by = "nixos-headless-defaults"
+if data.get("managed_by") != managed_by:
+    data["managed_by"] = managed_by
+    changed = True
+
+if changed:
+    data["last_updated"] = datetime.now().isoformat()
+    state_path.write_text(json.dumps(data, indent=2))
+    print("changed")
+else:
+    print("unchanged")
+PY
+)
+      if [ "$update_result" = "changed" ]; then
+        if command -v systemctl >/dev/null 2>&1; then
+          systemctl --user try-restart i3-project-event-daemon.service >/dev/null 2>&1 || true
+        fi
+      fi
+    fi
+  '');
 
   # wayvnc systemd services for headless mode (Feature 048)
   # Three independent VNC instances for three virtual displays

@@ -4,7 +4,17 @@
 
 set -euo pipefail
 
-config="${HOME}/.config/sway/active-outputs"
+config_dir="${HOME}/.config/sway"
+profile_current="$config_dir/monitor-profile.current"
+
+if [[ -f "$profile_current" ]]; then
+  profile_name="$(tr -d '\r' < "$profile_current" | head -n1)"
+  if [[ -n "$profile_name" ]]; then
+    exec "${HOME}/.local/bin/set-monitor-profile" --apply-only "$profile_name"
+  fi
+fi
+
+config="$config_dir/active-outputs"
 
 if [[ -f "$config" ]]; then
   mapfile -t outputs < <(grep -v '^\s*$' "$config")
