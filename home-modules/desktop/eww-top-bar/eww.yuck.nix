@@ -108,6 +108,10 @@ in
   :initial '{"active":[],"enabled":[],"all":[],"active_count":0,"map":{"HEADLESS-1":false,"HEADLESS-2":false,"HEADLESS-3":false}}'
   `/run/current-system/sw/bin/bash -lc '$HOME/.config/eww/eww-top-bar/scripts/active-outputs-status.sh'`)
 
+;; Feature 083: Event-driven monitor state (pushed via eww update, <100ms latency)
+;; This replaces polling for profile switches - daemon pushes updates immediately
+(defvar monitor_state '{"profile_name":"unknown","outputs":[]}')
+
 ;; Active i3pm project monitoring (polling via deflisten)
 (deflisten active_project
   :initial '{\"project\":\"Global\",\"active\":false}'
@@ -316,52 +320,28 @@ in
                 :orientation "horizontal"
                 :prepend-new false)))
 
-;; Monitor toggle widget (one pill per output, toggles on/off)
-(defwidget monitor-toggle-widget []
-  (box :class "metric-block monitor-toggle"
-       :orientation "h"
-       :spacing 6
-       :visible true
-       (box :orientation "h" :spacing 4
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-1"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-1'"
-                    :style (if (get (get active_outputs "map") "HEADLESS-1")
-                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                               "opacity:0.72; border:1px dashed #89b4fa;")
-                    (box :orientation "h" :spacing 4
-                         (label :class "pill-text"
-                                :visible (get (get active_outputs "map") "HEADLESS-1")
-                                :text "H1 ON")
-                         (label :class "pill-text dim"
-                                :visible (not (get (get active_outputs "map") "HEADLESS-1"))
-                                :text "H1 OFF")))
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-2"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-2'"
-                    :style (if (get (get active_outputs "map") "HEADLESS-2")
-                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                               "opacity:0.72; border:1px dashed #89b4fa;")
-                    (box :orientation "h" :spacing 4
-                         (label :class "pill-text"
-                                :visible (get (get active_outputs "map") "HEADLESS-2")
-                                :text "H2 ON")
-                         (label :class "pill-text dim"
-                                :visible (not (get (get active_outputs "map") "HEADLESS-2"))
-                                :text "H2 OFF")))
-            (button :class "pill"
-                    :tooltip "Toggle HEADLESS-3"
-                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
-                    :style (if (get (get active_outputs "map") "HEADLESS-3")
-                               "background: linear-gradient(135deg,#b4befe,#89b4fa); box-shadow:0 0 0 1px rgba(137,180,250,0.55);"
-                               "opacity:0.72; border:1px dashed #89b4fa;")
-                    (box :orientation "h" :spacing 4
-                         (label :class "pill-text"
-                                :visible (get (get active_outputs "map") "HEADLESS-3")
-                                :text "H3 ON")
-                         (label :class "pill-text dim"
-                                :visible (not (get (get active_outputs "map") "HEADLESS-3"))
-                                :text "H3 OFF"))))))
+;; Feature 083: Consolidated monitor profile widget
+;; Shows profile name + visual output indicators (dots)
+;; Clicking opens Walker with ;m prefix for profile switching
+(defwidget monitor-profile-widget []
+  (eventbox :onclick "elephant --prefix ';m ' &"
+    (box :class "pill metric-pill monitor-profile"
+         :spacing 4
+         :tooltip "Click to switch monitor profile (;m)"
+         ;; Profile icon
+         (label :class "icon monitor-profile-icon" :text "󰍹")
+         ;; Profile name
+         (label :class "value monitor-profile-name"
+                :text {monitor_state.profile_name ?: "unknown"})
+         ;; Output indicators - visual dots for each output
+         (box :class "monitor-indicators"
+              :orientation "h"
+              :spacing 2
+              ;; Use for-loop to iterate outputs and show indicator per output
+              (for output in {monitor_state.outputs ?: []}
+                (label :class {output.active ? "monitor-dot monitor-dot-active" : "monitor-dot monitor-dot-inactive"}
+                       :tooltip {output.active ? "''${output.short_name} active" : "''${output.short_name} inactive"}
+                       :text "●"))))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
@@ -414,13 +394,13 @@ in
          :spacing 4
          (project-widget))
 
-    ;; Right: Date/Time and System Tray
+    ;; Right: Date/Time, Monitor Profile, and System Tray
     (box :class "right"
          :orientation "h"
          :space-evenly false
          :halign "end"
          :spacing 4
-          (monitor-toggle-widget)
+          (monitor-profile-widget)
           (datetime-widget)
           (systray-widget :is_primary is_primary))))
 

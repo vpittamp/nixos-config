@@ -69,56 +69,10 @@ fi
 # Apply via active-monitors (handles WayVNC + layout)
 "${HOME}/.local/bin/active-monitors" --profile "$PROFILE_NAME"
 
-# Update output-states.json so daemon respects the selection
-export PROFILE_OUTPUTS_JSON="$(jq -c '.outputs' "$PROFILE_PATH" 2>/dev/null)"
-export STATE_FILE
-export ALL_HEADLESS_OUTPUTS
-python3 - <<'PY'
-import json
-import os
-from datetime import datetime
-from pathlib import Path
-
-selected = json.loads(os.environ["PROFILE_OUTPUTS_JSON"])
-all_outputs = os.environ.get("ALL_HEADLESS_OUTPUTS", "").split()
-state_path = Path(os.environ["STATE_FILE"])
-state_path.parent.mkdir(parents=True, exist_ok=True)
-
-try:
-    data = json.loads(state_path.read_text())
-except Exception:
-    data = {}
-
-outputs = data.get("outputs")
-if not isinstance(outputs, dict):
-    outputs = {}
-    data["outputs"] = outputs
-
-changed = False
-for name in all_outputs:
-    should_enable = name in selected
-    entry = outputs.get(name, {})
-    current = None
-    if isinstance(entry, dict):
-        current = entry.get("enabled")
-    elif isinstance(entry, bool):
-        current = entry
-    if current is None or bool(current) != should_enable:
-        changed = True
-    outputs[name] = {"enabled": should_enable}
-
-if data.get("version") != "1.0":
-    data["version"] = "1.0"
-    changed = True
-
-if data.get("managed_by") != "monitor-profile":
-    data["managed_by"] = "monitor-profile"
-    changed = True
-
-if changed:
-    data["last_updated"] = datetime.now().isoformat()
-    state_path.write_text(json.dumps(data, indent=2))
-PY
+# Feature 083: The daemon now handles output-states.json updates.
+# The daemon watches monitor-profile.current for changes and automatically
+# updates output-states.json via MonitorProfileService.handle_profile_change().
+# This removes the need for embedded Python in this script.
 
 mkdir -p "$(dirname "$CURRENT_FILE")"
 if [[ -f "$CURRENT_FILE" && ! -w "$CURRENT_FILE" ]]; then

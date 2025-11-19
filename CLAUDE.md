@@ -517,6 +517,59 @@ Three virtual displays via WayVNC over Tailscale.
 
 **Docs**: `/etc/nixos/specs/048-multi-monitor-headless/quickstart.md`
 
+## 📺 Multi-Monitor Window Management (Feature 083)
+
+Event-driven monitor profile system with <100ms top bar updates.
+
+### Quick Commands
+
+```bash
+# Switch profiles
+set-monitor-profile single   # Single monitor (H1 only)
+set-monitor-profile dual     # Dual monitors (H1 + H2)
+set-monitor-profile triple   # All three monitors
+
+# Check status
+cat ~/.config/sway/monitor-profile.current
+cat ~/.config/sway/output-states.json | jq .
+```
+
+### Top Bar Integration
+
+The Eww top bar displays:
+- **Profile Name**: Current profile (single/dual/triple) in teal pill
+- **Output Indicators**: H1/H2/H3 toggle buttons
+
+Updates occur within 100ms of profile switch (event-driven, not polled).
+
+### Architecture
+
+```
+set-monitor-profile.sh → monitor-profile.current
+                              ↓
+                    MonitorProfileWatcher (daemon)
+                              ↓
+                    MonitorProfileService.handle_profile_change()
+                              ↓
+              ┌───────────────┼───────────────┐
+              ↓               ↓               ↓
+    output-states.json   ProfileEvents   EwwPublisher
+                                              ↓
+                                      eww update monitor_state
+```
+
+### Troubleshooting
+
+```bash
+# Check daemon logs for profile events
+journalctl --user -u i3-project-event-listener -f | grep "Feature 083"
+
+# Restart services if top bar not updating
+systemctl --user restart i3-project-event-listener eww-top-bar
+```
+
+**Docs**: `/etc/nixos/specs/083-multi-monitor-window-management/quickstart.md`
+
 ## 🤖 Claude Code Integration
 
 Bash history hook auto-registers all Claude Code commands to `~/.bash_history`.
@@ -563,6 +616,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON project files (`~/.config/i3/projects/*.json`), in-memory daemon state (078-eww-preview-improvement)
 - Python 3.11+ (i3-project-event-daemon), TypeScript/Deno 1.40+ (i3pm CLI), Nix (Eww widget generation) + i3ipc.aio (Sway IPC), Pydantic (data models), Eww (GTK widgets), asyncio (event handling), SwayNC (notifications) (079-preview-pane-user-experience)
 - JSON project files (`~/.config/i3/projects/`), in-memory daemon state (079-preview-pane-user-experience)
+- Python 3.11+ (daemon), Bash (profile scripts), Yuck/GTK (Eww widgets) + i3ipc.aio (Sway IPC), asyncio (event handling), Eww (top bar), systemd (service management) (083-multi-monitor-window-management)
+- JSON files (~/.config/sway/output-states.json, monitor-profile.current, monitor-profiles/*.json) (083-multi-monitor-window-management)
 
 ## Recent Changes
 - 079-preview-pane-user-experience: Enhanced project list with branch numbers ("079 - Display Name"), worktree hierarchy with indentation, space-to-hyphen filter matching, top bar peach accent styling, `i3pm worktree list` CLI command

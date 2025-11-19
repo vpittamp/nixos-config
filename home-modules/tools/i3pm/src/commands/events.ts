@@ -202,6 +202,15 @@ function formatEventRow(event: any, options: EventOptions): void {
   } else if (eventType.includes("output")) {
     typeColor = BOLD + GREEN;
     typeShort = "output";
+  } else if (eventType.includes("profile_switch_start")) {
+    typeColor = BOLD + CYAN;
+    typeShort = "profile:start";
+  } else if (eventType.includes("profile_switch_complete")) {
+    typeColor = BOLD + GREEN;
+    typeShort = "profile:done";
+  } else if (eventType.includes("profile_switch_failed")) {
+    typeColor = BOLD + RED;
+    typeShort = "profile:fail";
   }
 
   // Access fields directly from event (EventEntry is flat, not nested)
@@ -251,6 +260,31 @@ function formatEventRow(event: any, options: EventOptions): void {
     workspace = "";
     const names = d.output_names || d.output_name || event.output_name;
     details = names ? truncate(names, 30) : "";
+  } else if (eventType.includes("profile_switch")) {
+    // Feature 083: Profile switch events
+    const profileName = d.profile_name || event.profile_name || "unknown";
+    const prevProfile = d.previous_profile || event.previous_profile;
+    const durationMs = d.duration_ms || event.duration_ms;
+    const error = d.error || event.error;
+    const outputsChanged = d.outputs_changed || event.outputs_changed || [];
+
+    if (prevProfile) {
+      windowApp = `${prevProfile} → ${BOLD}${profileName}${RESET}`;
+    } else {
+      windowApp = `${BOLD}${profileName}${RESET}`;
+    }
+    workspace = "";
+
+    if (eventType.includes("complete") && durationMs) {
+      details = `${GREEN}✓${RESET} ${durationMs.toFixed(0)}ms`;
+      if (outputsChanged.length > 0) {
+        details += ` ${DIM}${outputsChanged.length} outputs${RESET}`;
+      }
+    } else if (eventType.includes("failed") && error) {
+      details = `${RED}✗${RESET} ${truncate(error, 25)}`;
+    } else if (eventType.includes("start")) {
+      details = outputsChanged.length > 0 ? `${DIM}${outputsChanged.join(",")}${RESET}` : "";
+    }
   } else if (eventType.includes("workspace::")) {
     const wsNum = d.workspace_num || d.num || event.workspace_name || "?";
     windowApp = `workspace ${wsNum}`;

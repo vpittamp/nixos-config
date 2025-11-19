@@ -521,3 +521,70 @@ class OutputStatesWatcher:
         self._started = False
 
         logger.info(f"Stopped watching {self.config_file}")
+
+
+class MonitorProfileWatcher:
+    """File system watcher for monitor-profile.current with auto-reload.
+
+    Feature 083: Watches for changes to the current profile file and triggers
+    a callback to update Eww with the new profile name.
+    """
+
+    def __init__(self,
+                 config_file: Path,
+                 reload_callback: Callable[[], None],
+                 debounce_ms: int = 100):
+        """Initialize monitor profile file watcher.
+
+        Args:
+            config_file: Path to monitor-profile.current
+            reload_callback: Function to call on file modification
+            debounce_ms: Debounce timeout in milliseconds (default: 100ms for fast UI updates)
+        """
+        self.config_file = config_file
+        self.reload_callback = reload_callback
+        self.observer = Observer()
+        # Pass target filename to filter events - only trigger on monitor-profile.current changes
+        self.handler = DebouncedReloadHandler(reload_callback, debounce_ms, target_filename=config_file.name)
+        self._started = False
+
+    def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Set the asyncio event loop for debounced callbacks.
+
+        Args:
+            loop: Asyncio event loop
+        """
+        self.handler.set_event_loop(loop)
+
+    def start(self) -> None:
+        """Start watching monitor-profile.current for modifications.
+
+        Watches the parent directory since some editors use atomic save
+        (create temp file + rename) which doesn't trigger inotify on the file itself.
+        """
+        if self._started:
+            logger.warning("Monitor profile watcher already started")
+            return
+
+        watch_dir = self.config_file.parent
+
+        # Ensure directory exists
+        watch_dir.mkdir(parents=True, exist_ok=True)
+
+        # Start watchdog observer
+        self.observer.schedule(self.handler, str(watch_dir), recursive=False)
+        self.observer.start()
+        self._started = True
+
+        logger.info(f"[Feature 083] Started watching {self.config_file} for profile changes")
+
+    def stop(self) -> None:
+        """Stop watching for file modifications."""
+        if not self._started:
+            return
+
+        self.observer.stop()
+        self.observer.join(timeout=5.0)
+        self._started = False
+
+        logger.info(f"[Feature 083] Stopped watching {self.config_file}")

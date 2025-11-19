@@ -30,6 +30,7 @@ from .config import (
     reload_window_rules,
     WindowRulesWatcher,
     OutputStatesWatcher,
+    MonitorProfileWatcher,  # Feature 083: Profile file watcher
 )
 from .output_state_manager import (
     load_output_states,
@@ -62,6 +63,8 @@ from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
 from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-raise-hide launching
 from .services.mark_manager import MarkManager  # Feature 076: Mark-based app identification
+from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
+from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
 from datetime import datetime
 import time
 
@@ -177,6 +180,9 @@ class I3ProjectDaemon:
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
+        self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
+        self.eww_publisher: Optional[EwwPublisher] = None  # Feature 083: Eww real-time updates
+        self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -310,6 +316,45 @@ class I3ProjectDaemon:
         self.ipc_server.mark_manager = self.mark_manager
         logger.info("Mark manager initialized")
 
+        # Feature 083: Initialize EwwPublisher and MonitorProfileService
+        self.eww_publisher = EwwPublisher()
+        self.monitor_profile_service = MonitorProfileService(self.eww_publisher)
+        logger.info(f"Monitor profile service initialized with {len(self.monitor_profile_service.list_profiles())} profiles")
+
+        # Feature 083: Setup monitor profile file watcher (T024)
+        # Watches monitor-profile.current and triggers Eww updates on profile change
+        from .monitor_profile_service import CURRENT_PROFILE_FILE
+
+        def on_profile_change():
+            """Callback for monitor-profile.current file changes."""
+            logger.info("[Feature 083] Profile file changed, triggering profile switch handling")
+            # Reload profile and schedule async profile change handling
+            self.monitor_profile_service.reload_profiles()
+            new_profile = self.monitor_profile_service.get_current_profile()
+            loop = asyncio.get_event_loop()
+            if self.connection and self.connection.conn and new_profile:
+                # Use handle_profile_change which updates output-states.json and Eww
+                loop.create_task(self._handle_profile_file_change(new_profile))
+
+        async def async_handle_profile_change(profile_name: str):
+            """Async wrapper for profile change handling."""
+            if self.monitor_profile_service and self.connection:
+                await self.monitor_profile_service.handle_profile_change(
+                    self.connection.conn,
+                    profile_name
+                )
+
+        # Store for later use in callback
+        self._handle_profile_file_change = async_handle_profile_change
+
+        self.monitor_profile_watcher = MonitorProfileWatcher(
+            config_file=CURRENT_PROFILE_FILE,
+            reload_callback=on_profile_change,
+            debounce_ms=100  # Fast response for UI updates
+        )
+        self.monitor_profile_watcher.set_event_loop(asyncio.get_event_loop())
+        self.monitor_profile_watcher.start()
+
         # Setup health monitor
         self.health_monitor = DaemonHealthMonitor()
 
@@ -390,6 +435,8 @@ class I3ProjectDaemon:
 
         This is called when output-states.json is modified (e.g., by toggle-output.sh).
         It performs the same workspace reassignment as the on_output handler.
+
+        Feature 083: Also publishes to Eww for real-time top bar updates.
         """
         from .workspace_manager import assign_workspaces_with_monitor_roles
 
@@ -410,6 +457,7 @@ class I3ProjectDaemon:
 
             enabled_count = len(enabled_outputs)
             total_count = len([o for o in outputs if o.active])
+            enabled_names = [o.name for o in enabled_outputs]
 
             logger.info(
                 f"Output state change detected: {enabled_count}/{total_count} outputs enabled"
@@ -418,6 +466,16 @@ class I3ProjectDaemon:
             # Use Feature 001's monitor role-based workspace assignment
             # This uses workspace-assignments.json instead of legacy workspace-monitor-mapping.json
             await assign_workspaces_with_monitor_roles(self.connection.conn)
+
+            # Feature 083: Publish to Eww for real-time top bar updates
+            if self.eww_publisher:
+                profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
+                await self.eww_publisher.publish_from_conn(
+                    self.connection.conn,
+                    profile_name or "unknown",
+                    enabled_names
+                )
+                logger.info(f"[Feature 083] Published monitor state to Eww: profile={profile_name}, outputs={enabled_names}")
 
             # Log event
             if self.event_buffer:
@@ -591,6 +649,25 @@ class I3ProjectDaemon:
     async def run(self) -> None:
         """Main event loop."""
         logger.info("Starting daemon event loop...")
+
+        # Feature 083: Publish initial monitor state to Eww
+        if self.eww_publisher and self.connection and self.connection.conn:
+            try:
+                outputs = await self.connection.conn.get_outputs()
+                states = load_output_states()
+                enabled_outputs = [
+                    o.name for o in outputs
+                    if o.active and states.is_output_enabled(o.name)
+                ]
+                profile_name = self.monitor_profile_service.get_current_profile() if self.monitor_profile_service else "unknown"
+                await self.eww_publisher.publish_from_conn(
+                    self.connection.conn,
+                    profile_name or "unknown",
+                    enabled_outputs
+                )
+                logger.info(f"[Feature 083] Published initial monitor state to Eww: profile={profile_name}, outputs={enabled_outputs}")
+            except Exception as e:
+                logger.warning(f"[Feature 083] Failed to publish initial monitor state: {e}")
 
         # Signal READY to systemd (after full initialization completes)
         if self.health_monitor:
@@ -846,3 +923,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+# Rebuild trigger

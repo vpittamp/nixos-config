@@ -533,6 +533,66 @@ PY
     ${pkgs.libnotify}/bin/notify-send "Window Action" "Executed: $SELECTED_ACTION"
   '';
 
+  # Feature 083: Walker monitor profile list script
+  walkerMonitorList = pkgs.writeShellScriptBin "walker-monitor-list" ''
+    #!/usr/bin/env bash
+    # List monitor profiles for Walker menu
+    set -euo pipefail
+
+    PROFILES_DIR="$HOME/.config/sway/monitor-profiles"
+    CURRENT_FILE="$HOME/.config/sway/monitor-profile.current"
+
+    # Get current profile
+    CURRENT=""
+    if [ -f "$CURRENT_FILE" ]; then
+      CURRENT=$(cat "$CURRENT_FILE" | tr -d '[:space:]')
+    fi
+
+    # List all profiles
+    if [ -d "$PROFILES_DIR" ]; then
+      for profile_file in "$PROFILES_DIR"/*.json; do
+        if [ -f "$profile_file" ]; then
+          name=$(basename "$profile_file" .json)
+          desc=$(${pkgs.jq}/bin/jq -r '.description // ""' "$profile_file")
+          outputs=$(${pkgs.jq}/bin/jq -r '.outputs | length' "$profile_file")
+
+          # Format display with monitor count and active indicator
+          if [ "$name" = "$CURRENT" ]; then
+            echo "🟢 $name ($outputs monitors) - $desc	$name"
+          else
+            echo "○ $name ($outputs monitors) - $desc	$name"
+          fi
+        fi
+      done
+    fi
+  '';
+
+  # Feature 083: Walker monitor profile switch script
+  walkerMonitorSwitch = pkgs.writeShellScriptBin "walker-monitor-switch" ''
+    #!/usr/bin/env bash
+    # Switch to selected monitor profile from Walker
+    set -euo pipefail
+
+    if [ $# -eq 0 ]; then
+      exit 0
+    fi
+
+    SELECTED="$1"
+
+    # Extract profile name (everything after the tab character)
+    PROFILE_NAME=$(echo "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+
+    if [ -z "$PROFILE_NAME" ]; then
+      exit 0
+    fi
+
+    # Switch profile using set-monitor-profile
+    set-monitor-profile "$PROFILE_NAME"
+  '';
+
+  walkerMonitorListCmd = lib.getExe walkerMonitorList;
+  walkerMonitorSwitchCmd = lib.getExe walkerMonitorSwitch;
+
   # Feature 034/035: Custom application directory for i3pm-managed apps
   # Desktop files are at ~/.local/share/i3pm-applications/applications/
   # Add to XDG_DATA_DIRS so Walker can find them
@@ -678,6 +738,8 @@ in
     walkerWindowInfo
     walkerWindowManager
     walkerClaudeSessions
+    walkerMonitorList
+    walkerMonitorSwitch
   ];
 
   # Desktop file for walker-open-in-nvim - manual creation
@@ -806,6 +868,11 @@ in
         [[providers.prefixes]]
         prefix = ";w "
         provider = "menus:window-actions"
+
+        # Feature 083: Monitor profile switcher
+        [[providers.prefixes]]
+        prefix = ";m "
+        provider = "menus:monitors"
 
         [[providers.actions.desktopapplications]]
         action = "open"
@@ -1038,6 +1105,50 @@ in
 
     # Icon for the provider
     icon = "preferences-system-windows"
+  '';
+
+  # Feature 083: Monitor profile switcher menu (Elephant Lua menu)
+  # Access: Meta+D → ;m → select profile
+  xdg.configFile."elephant/menus/monitors.lua".text = ''
+    Name = "monitors"
+    NamePretty = "Monitor Profiles"
+    Icon = "display"
+    Cache = false  -- Always refresh profile list
+    Action = "walker-monitor-switch '%VALUE%'"
+    HideFromProviderlist = false
+    Description = "Switch monitor profile (single/dual/triple)"
+    SearchName = true
+    GlobalSearch = false  -- Keep this local to ;m prefix
+
+    function GetEntries()
+        local entries = {}
+
+        -- Get profile list from walker-monitor-list
+        local handle = io.popen("walker-monitor-list 2>/dev/null")
+        if handle then
+            for line in handle:lines() do
+                -- Parse tab-separated format: "display\tprofile_name"
+                local display, profile_name = line:match("^(.+)\t(.+)$")
+                if display and profile_name then
+                    -- Determine icon based on current status
+                    local icon = "display"
+                    if display:match("^🟢") then
+                        icon = "display"  -- Current profile
+                    end
+
+                    table.insert(entries, {
+                        Text = display,
+                        Value = line,  -- Pass full line to walker-monitor-switch
+                        Icon = icon,
+                        Keywords = {"monitor", "profile", "display", profile_name}
+                    })
+                end
+            end
+            handle:close()
+        end
+
+        return entries
+    end
   '';
 
   # Create symlink to /etc/nixos in home directory for easy access

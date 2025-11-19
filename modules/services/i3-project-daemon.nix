@@ -35,12 +35,12 @@ let
   # Daemon package (Feature 061: Unified mark format)
   daemonSrc = builtins.path {
     path = ../../home-modules/desktop/i3-project-event-daemon;
-    name = "i3pm-daemon-src-v3-output-states";  # Force rebuild with output_state_manager module
+    name = "i3pm-daemon-src-v5-feature-083-perms";  # Force rebuild with correct file permissions
   };
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.8.4";  # v3 source with output_state_manager
+    version = "1.9.1";  # Feature 083: EwwPublisher and MonitorProfileService (rebuild)
     src = daemonSrc;
 
     installPhase = ''

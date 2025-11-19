@@ -268,4 +268,46 @@
       opacity: 0.85;
     }
   }
+
+  /* Feature 083: Consolidated monitor profile widget styling */
+  .monitor-profile {
+    background: rgba(148, 226, 213, 0.12);
+    border: 1px solid rgba(148, 226, 213, 0.35);
+  }
+
+  .monitor-profile:hover {
+    background: rgba(148, 226, 213, 0.18);
+    border-color: rgba(148, 226, 213, 0.5);
+  }
+
+  .monitor-profile .icon,
+  .monitor-profile-icon {
+    color: #94e2d5;
+    font-size: 10px;
+  }
+
+  .monitor-profile-name {
+    color: #94e2d5;
+    font-weight: 700;
+  }
+
+  /* Monitor output indicators */
+  .monitor-indicators {
+    margin-left: 4px;
+  }
+
+  .monitor-dot {
+    font-size: 8px;
+    transition: color 150ms ease;
+  }
+
+  .monitor-dot-active {
+    color: #89b4fa;
+    text-shadow: 0 0 4px rgba(137, 180, 250, 0.6);
+  }
+
+  .monitor-dot-inactive {
+    color: #45475a;
+    opacity: 0.6;
+  }
 ''
