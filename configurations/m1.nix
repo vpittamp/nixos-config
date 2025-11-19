@@ -187,9 +187,9 @@
   # Use firmware from boot partition (requires --impure flag)
   # Made conditional to allow evaluation on non-M1 systems (e.g., for CI/testing)
   hardware.asahi.peripheralFirmwareDirectory =
-    lib.assertMsg (builtins.pathExists /boot/asahi)
-      "Missing /boot/asahi; copy firmware with asahi-fwextract before building the M1 system" 
-      /boot/asahi;
+    let path = /boot/asahi; in
+    if builtins.pathExists path then path
+    else builtins.throw "Missing /boot/asahi; copy firmware with asahi-fwextract before building the M1 system";
 
   # Ensure the real firmware payloads are extracted so Wi-Fi/BT work on Apple Silicon.
   hardware.asahi.extractPeripheralFirmware = true;
@@ -367,6 +367,7 @@
 
     # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
+    remmina           # VNC/RDP client for connecting to Hetzner
 
     # 1Password GUI - needed for git-credential-1password helper
     _1password-gui    # Contains op-ssh-sign and git-credential-1password

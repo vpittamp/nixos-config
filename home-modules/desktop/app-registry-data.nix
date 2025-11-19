@@ -355,6 +355,21 @@ let
       description = "Open-source AI agent with desktop interface";
     })
 
+    # WS12: Remote Access (Primary: remmina)
+    (mkApp {
+      name = "remmina";
+      display_name = "Remmina";
+      command = "remmina";
+      parameters = "";
+      scope = "global";
+      expected_class = "org.remmina.Remmina";
+      preferred_workspace = 12;
+      icon = "org.remmina.Remmina";
+      nix_package = "pkgs.remmina";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      description = "Remote desktop client for VNC, RDP, SSH connections";
+    })
 
     # Scratchpad Terminal (Feature 062)
     # Special floating terminal for quick project access

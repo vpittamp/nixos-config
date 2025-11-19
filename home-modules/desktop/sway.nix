@@ -578,7 +578,9 @@ in
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
         # Apply desired active outputs (reads ~/.config/sway/active-outputs)
-        { command = lib.optionalString isHeadless "~/.local/bin/active-monitors-auto"; }
+      ] ++ lib.optionals isHeadless [
+        { command = "~/.local/bin/active-monitors-auto"; }
+      ] ++ [
 
         # i3pm daemon (socket-activated system service)
         # Socket activation happens automatically on first IPC request
@@ -872,11 +874,14 @@ in
   };
 
   # Default active outputs list (user-editable)
-  xdg.configFile."sway/active-outputs".text = lib.mkIf isHeadless ''
-    HEADLESS-1
-    HEADLESS-2
-    HEADLESS-3
-  '';
+  xdg.configFile."sway/active-outputs".text =
+    if isHeadless then ''
+      HEADLESS-1
+      HEADLESS-2
+      HEADLESS-3
+    '' else ''
+      eDP-1
+    '';
 
 
   # wayvnc configuration for headless Sway (Feature 048)

@@ -303,64 +303,64 @@
       preferred_workspace = 67;
     }
 
-    # Keycloak (Project)
+    # Keycloak (Tailscale)
     {
       name = "Keycloak";
-      url = "https://cnoe.localtest.me:8443/keycloak";
-      domain = "cnoe.localtest.me";
+      url = "https://keycloak.tail286401.ts.net";
+      domain = "keycloak.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/keycloak.svg";
-      description = "Keycloak identity and access management (project)";
+      description = "Keycloak identity and access management";
       categories = "Security;Network;";
-      keywords = "keycloak;iam;auth;openid;single-sign-on;";
-      scope = "https://cnoe.localtest.me:8443/keycloak/";
+      keywords = "keycloak;iam;auth;openid;single-sign-on;kubernetes;";
+      scope = "https://keycloak.tail286401.ts.net/";
       ulid = "01MD4CZ7H4KJ4TR0C2Q3C8ZQ9V";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 68;
     }
 
-    # Backstage (Project)
+    # Backstage (Tailscale)
     {
       name = "Backstage";
-      url = "https://cnoe.localtest.me:8443";
-      domain = "cnoe.localtest.me";
+      url = "https://cnoe.tail286401.ts.net";
+      domain = "cnoe.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/backstage.svg";
-      description = "Backstage developer portal (project)";
+      description = "Backstage developer portal";
       categories = "Development;Network;";
-      keywords = "backstage;developer-portal;sdp;platform;";
-      scope = "https://cnoe.localtest.me:8443/";
+      keywords = "backstage;developer-portal;sdp;platform;kubernetes;";
+      scope = "https://cnoe.tail286401.ts.net/";
       ulid = "01MD4D0A6S2CVXKNNY4EJ5PQ1G";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 69;
     }
 
-    # ArgoCD (Project)
+    # ArgoCD (Tailscale)
     {
       name = "ArgoCD";
-      url = "https://argocd.cnoe.localtest.me:8443";
-      domain = "argocd.cnoe.localtest.me";
+      url = "https://argocd.tail286401.ts.net";
+      domain = "argocd.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/argocd.svg";
-      description = "ArgoCD GitOps controller (project)";
+      description = "ArgoCD GitOps controller";
       categories = "Development;Network;System;";
       keywords = "argocd;gitops;cd;kubernetes;devops;";
-      scope = "https://argocd.cnoe.localtest.me:8443/";
+      scope = "https://argocd.tail286401.ts.net/";
       ulid = "01MD4D0N7A8F9P6QS0R1TV2WX3";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
       preferred_workspace = 70;
     }
 
-    # Gitea (Project)
+    # Gitea (Tailscale)
     {
       name = "Gitea";
-      url = "https://gitea.cnoe.localtest.me:8443";
-      domain = "gitea.cnoe.localtest.me";
+      url = "https://gitea.tail286401.ts.net";
+      domain = "gitea.tail286401.ts.net";
       icon = "/etc/nixos/assets/icons/gitea.svg";
-      description = "Gitea self-hosted git service (project)";
+      description = "Gitea self-hosted git service";
       categories = "Development;Network;";
-      keywords = "gitea;git;scm;code;devops;";
-      scope = "https://gitea.cnoe.localtest.me:8443/";
+      keywords = "gitea;git;scm;code;devops;kubernetes;";
+      scope = "https://gitea.tail286401.ts.net/";
       ulid = "01MD4D14BDS6Z4GMY3K9HFT8PA";  # Generated 2025-11-17
       # App registry metadata
       app_scope = "scoped";
@@ -381,6 +381,70 @@
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 72;
+    }
+
+    # Kargo (Tailscale)
+    {
+      name = "Kargo";
+      url = "https://kargo.tail286401.ts.net";
+      domain = "kargo.tail286401.ts.net";
+      icon = "/etc/nixos/assets/icons/kargo.png";
+      description = "Kargo continuous delivery and promotion engine for Kubernetes";
+      categories = "Development;Network;System;";
+      keywords = "kargo;kubernetes;cd;gitops;promotion;delivery;";
+      scope = "https://kargo.tail286401.ts.net/";
+      ulid = "01MEQFV8K4N3R7S2T5W9X0Y1Z6";  # Generated 2025-11-18
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 73;
+    }
+
+    # Headlamp (Tailscale)
+    {
+      name = "Headlamp";
+      url = "https://headlamp.tail286401.ts.net";
+      domain = "headlamp.tail286401.ts.net";
+      icon = "/etc/nixos/assets/icons/headlamp.svg";
+      description = "Headlamp Kubernetes dashboard";
+      categories = "Development;Network;System;";
+      keywords = "headlamp;kubernetes;dashboard;k8s;cluster;";
+      scope = "https://headlamp.tail286401.ts.net/";
+      ulid = "01MEQFVCK5P4S8T3V6X0Y2Z7A1";  # Generated 2025-11-18
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 74;
+    }
+
+    # Kagent (Tailscale)
+    {
+      name = "Kagent";
+      url = "https://kagent.tail286401.ts.net";
+      domain = "kagent.tail286401.ts.net";
+      icon = "/etc/nixos/assets/icons/kagent.svg";
+      description = "Kagent Kubernetes AI agent framework";
+      categories = "Development;Network;System;";
+      keywords = "kagent;kubernetes;ai;agent;llm;automation;";
+      scope = "https://kagent.tail286401.ts.net/";
+      ulid = "01MEQFVGM6Q5T9V4W7Y1Z3A2B8";  # Generated 2025-11-18
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 75;
+    }
+
+    # Agent Gateway (Tailscale)
+    {
+      name = "Agent Gateway";
+      url = "https://agentgateway.tail286401.ts.net";
+      domain = "agentgateway.tail286401.ts.net";
+      icon = "/etc/nixos/assets/icons/agent-gateway.svg";
+      description = "Agent Gateway API gateway for AI agents";
+      categories = "Development;Network;System;";
+      keywords = "agent;gateway;api;kubernetes;ai;routing;";
+      scope = "https://agentgateway.tail286401.ts.net/";
+      ulid = "01MEQFVKN7R6V0W5X8Z2A4B3C9";  # Generated 2025-11-18
+      # App registry metadata
+      app_scope = "scoped";
+      preferred_workspace = 76;
     }
   ];
 
