@@ -368,6 +368,7 @@
     # Remote access (rustdesk-flutter managed by service module)
     tailscale         # Zero-config VPN
     remmina           # VNC/RDP client for connecting to Hetzner
+    turbovnc          # High-performance VNC client with better keyboard handling
 
     # 1Password GUI - needed for git-credential-1password helper
     _1password-gui    # Contains op-ssh-sign and git-credential-1password
