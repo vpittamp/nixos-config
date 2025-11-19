@@ -336,7 +336,7 @@ in
                    :tooltip "Toggle HEADLESS-3"
                    :onclick "bash -lc '$HOME/.local/bin/toggle-output HEADLESS-3'"
                    (label :class "pill-text"
-                          :text (if (get (get active_outputs "map") "HEADLESS-3") "H3 ●" "H3 ○")))))))
+                          :text (if (get (get active_outputs "map") "HEADLESS-3") "H3 ●" "H3 ○")))))
 
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
