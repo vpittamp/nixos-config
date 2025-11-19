@@ -30,8 +30,8 @@
     ../modules/services/onepassword-automation.nix  # Service account automation
     ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
-    # ../modules/services/home-assistant.nix # DISABLED: gtts dependency issue with click 8.2.1
-    # ../modules/services/scrypted.nix # DISABLED: depends on home-assistant
+    ../modules/services/home-assistant.nix
+    ../modules/services/scrypted.nix
 
     # Browser integrations with 1Password
     ../modules/desktop/firefox-1password.nix

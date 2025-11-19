@@ -146,11 +146,16 @@ in
     # ========== WORKSPACE MODE (Feature 042 + 058 + 059) ==========
     # Platform-specific entry keybindings for workspace mode navigation
     # Visual feedback now via workspace bar (Feature 058), no more notifications
-    # Hetzner (VNC): Control+0 works through VNC, CapsLock doesn't
+    # Hetzner (VNC): Control+0 and F9 (via keyd CapsLock→F9 remap)
     # M1 (Physical): CapsLock is handled via bindcode in sway.nix extraConfig
     # Feature 072: Must call 'i3pm-workspace-mode enter' to trigger all-windows preview
     "Control+0" = "exec i3pm-workspace-mode enter; exec swaymsg 'mode \"→ WS\"'";
     "Control+Shift+0" = "exec swaymsg 'mode \"⇒ WS\"'";
+
+    # F9 keybindings for Hetzner VNC (keyd maps CapsLock→F9 at kernel level)
+    # This allows CapsLock to work when connecting via VNC from any client
+    "F9" = "exec i3pm-workspace-mode enter; exec swaymsg 'mode \"→ WS\"'";
+    "Shift+F9" = "exec swaymsg 'mode \"⇒ WS\"'";
 
     # ========== FEATURE 059: Interactive Workspace Menu Keybindings ==========
     # Arrow key navigation for workspace preview card (navigate through workspace list)

@@ -67,7 +67,6 @@
     extraPackages = python3Packages: with python3Packages; [
       # Additional Python packages for integrations
       psycopg2
-      gtts
       numpy
       pillow
       aiohttp-cors
@@ -80,7 +79,7 @@
       fnv-hash-fast
       pyqrcode
       base36
-      HAP-python
+      hap-python
       python-otbr-api  # Required for HomeKit controller
 
       # Apple ecosystem support
@@ -199,6 +198,7 @@
           filter = {
             include_domains = [
               "light"
+              "camera"
               "switch"
               "sensor"
               "binary_sensor"
@@ -268,16 +268,29 @@
           };
         }
       ];
+
+      # Tailscale integration - monitors Tailnet devices and exposes presence sensors
+      tailscale = {
+        # API key managed via 1Password service account (op://Employee/Tailscale Auth Key/credential)
+        api_key = "!env_var TAILSCALE_API_KEY";
+        tailnet = "vpittamp.tailnet.ts.net";
+      };
     };
+
+    # Environment file for Home Assistant (ensures TAILSCALE_API_KEY is available)
+    serviceConfig.EnvironmentFile = "/var/lib/hass/environment";
 
     # Open firewall for Home Assistant
     openFirewall = true;
   };
 
+  # Provision Home Assistant environment file with Tailscale API key from 1Password
+  environment.etc."hass/environment".text = ''
+    TAILSCALE_API_KEY=$(${pkgs._1password-cli}/bin/op read "op://Employee/Tailscale Auth Key/credential")
+  '';
   # Enable mDNS for device discovery
   services.avahi = {
     enable = true;
-    nssmdns = true;
     nssmdns4 = true;
     publish = {
       enable = true;
@@ -328,6 +341,14 @@
   };
 
   users.groups.hass = {};
+
+  # Ensure Home Assistant data directories exist
+  systemd.tmpfiles.rules = [
+    "d /var/lib/hass 0755 hass hass -"
+    "d /var/lib/hass/packages 0755 hass hass -"
+    "d /var/lib/hass/themes 0755 hass hass -"
+    "L+ /var/lib/hass/environment - - - - /etc/hass/environment"
+  ];
 
   # System packages for Home Assistant
   environment.systemPackages = with pkgs; [

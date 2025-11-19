@@ -81,6 +81,7 @@ in
     ../tools/vscode.nix
     ../tools/gitkraken.nix
     ../tools/kubernetes-apps.nix
+    ../tools/remote-kubeconfig.nix
     ../tools/konsole-profiles.nix
     ../tools/walker-commands.nix  # Dynamic command management for Walker (Feature 050)
 
@@ -106,6 +107,7 @@ in
   modules.tools.yazi.enable = true;
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
+  modules.tools.remoteKubeconfig.enable = true;
 
   # VSCode profile configuration
   # All VSCode instances (including activity-aware launchers) use this profile
