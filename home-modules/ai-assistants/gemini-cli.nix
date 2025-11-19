@@ -9,7 +9,7 @@ in
     enable = true;
     package = pkgs-unstable.gemini-cli or pkgs.gemini-cli;  # Use unstable if available, fallback to stable
 
-    # Default model to use (Gemini 2.5 Pro is now available)
+    # Default model to use (Gemini 2.5 Pro - upgrade to 3.0 when nixpkgs updates to v0.16.0+)
     defaultModel = "gemini-2.5-pro";
 
     # Settings for gemini-cli
@@ -18,6 +18,13 @@ in
       vimMode = false;
       preferredEditor = "nvim";
       autoAccept = false;
+
+      # Authentication - use OAuth personal for free tier access
+      security = {
+        auth = {
+          selectedType = "oauth-personal";
+        };
+      };
 
       # MCP Servers configuration
       mcpServers = {

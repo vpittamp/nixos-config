@@ -160,21 +160,23 @@ let
       description = "Visual Studio Code editor with project context";
     })
 
-    (mkApp {
-      name = "antigravity";
-      display_name = "Antigravity";
-      command = "antigravity";
-      parameters = "";
-      scope = "global";
-      expected_class = "Antigravity";
-      preferred_workspace = 2;
-      preferred_monitor_role = "secondary";
-      icon = "antigravity"; # installed by custom package
-      nix_package = "antigravity";
-      multi_instance = true;
-      fallback_behavior = "skip";
-      description = "Google Antigravity IDE with embedded agent tools";
-    })
+    # NOTE: Antigravity disabled - x86_64 only (no ARM64/aarch64 build available)
+    # Package defined in home-modules/hetzner-sway.nix for Hetzner Cloud only
+    # (mkApp {
+    #   name = "antigravity";
+    #   display_name = "Antigravity";
+    #   command = "antigravity";
+    #   parameters = "";
+    #   scope = "global";
+    #   expected_class = "Antigravity";
+    #   preferred_workspace = 2;
+    #   preferred_monitor_role = "secondary";
+    #   icon = "antigravity"; # installed by custom package
+    #   nix_package = "antigravity";
+    #   multi_instance = true;
+    #   fallback_behavior = "skip";
+    #   description = "Google Antigravity IDE with embedded agent tools";
+    # })
 
     (mkApp {
       name = "nvim";
