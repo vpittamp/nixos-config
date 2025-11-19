@@ -67,7 +67,7 @@ in
       mergeScript = pkgs.writeShellScriptBin "merge-remote-kubeconfig" ''
         set -euo pipefail
 
-        ITEM_NAME="${1:-${cfg.onePasswordItem}}"
+        ITEM_NAME="''${1:-${cfg.onePasswordItem}}"
         TARGET=${lib.escapeShellArg targetPath}
 
         for cmd in kubectl op; do

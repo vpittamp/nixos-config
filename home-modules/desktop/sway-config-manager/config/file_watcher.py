@@ -65,11 +65,13 @@ class ConfigFileHandler(FileSystemEventHandler):
         logger.debug(f"File modified: {path}")
         self.pending_events.add(str(path))
 
-        # Schedule debounced reload
+        # Schedule debounced reload (thread-safe from watchdog thread)
         if self.debounce_task:
             self.debounce_task.cancel()
 
-        self.debounce_task = self.loop.create_task(self._debounced_reload())
+        # Use run_coroutine_threadsafe since watchdog runs in a separate thread
+        future = asyncio.run_coroutine_threadsafe(self._debounced_reload(), self.loop)
+        self.debounce_task = asyncio.wrap_future(future, loop=self.loop)
 
     async def _debounced_reload(self):
         """Execute debounced reload after delay with optional validation (Feature 047 US5 T053)."""

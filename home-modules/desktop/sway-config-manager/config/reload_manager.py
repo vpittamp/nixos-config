@@ -276,7 +276,7 @@ class ReloadManager:
 
                 # Apply to rule engines
                 await self.daemon.window_rule_engine.load_rules(merged_rules)
-                await self.daemon.workspace_handler.load_assignments(merged_assignments)
+                # workspace_handler removed - i3-project-event-daemon is single source of truth
 
                 # NOTE: Keybinding generation disabled - keybindings now managed statically in sway-keybindings.nix
                 # # Generate keybinding config

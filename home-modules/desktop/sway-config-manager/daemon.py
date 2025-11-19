@@ -23,7 +23,7 @@ from sway_config_manager.rules import (
     AppearanceManager,
     KeybindingManager,
     WindowRuleEngine,
-    WorkspaceAssignmentHandler,
+    # WorkspaceAssignmentHandler removed - i3-project-event-daemon is single source of truth
 )
 from sway_config_manager.ipc_server import IPCServer
 from sway_config_manager.state import ConfigurationState
@@ -64,7 +64,7 @@ class SwayConfigDaemon:
         # Initialize rule engines
         self.keybinding_manager = KeybindingManager()
         self.window_rule_engine = WindowRuleEngine()
-        self.workspace_handler = WorkspaceAssignmentHandler()
+        # workspace_handler removed - i3-project-event-daemon is single source of truth
         self.appearance_manager = AppearanceManager()
         self.appearance_config = None
 
@@ -91,7 +91,7 @@ class SwayConfigDaemon:
             # Share connection with rule engines
             self.keybinding_manager.sway = self.sway
             self.window_rule_engine.sway = self.sway
-            self.workspace_handler.sway = self.sway
+            # workspace_handler removed - i3-project-event-daemon is single source of truth
             self.appearance_manager.sway = self.sway
 
             # Initialize reload manager
@@ -100,14 +100,15 @@ class SwayConfigDaemon:
             # Load initial configuration
             await self.load_configuration()
 
-            # Start file watcher
-            self.file_watcher = FileWatcher(
-                config_dir=self.config_dir,
-                reload_callback=self._on_config_file_changed,
-                debounce_ms=500
-            )
-            self.file_watcher.start()
-            self.state.file_watcher_active = True
+            # File watcher disabled - use swaymsg reload (Mod+Shift+C) for manual reload
+            # The auto-reload was causing feedback loops with monitor-state.json updates
+            # self.file_watcher = FileWatcher(
+            #     config_dir=self.config_dir,
+            #     reload_callback=self._on_config_file_changed,
+            #     debounce_ms=500
+            # )
+            # self.file_watcher.start()
+            self.state.file_watcher_active = False
 
             # Start IPC server
             self.ipc_server = IPCServer(self)
@@ -139,7 +140,7 @@ class SwayConfigDaemon:
             await self.ipc_server.stop()
 
         if self.sway:
-            await self.sway.main_quit()
+            self.sway.main_quit()
 
         logger.info("Daemon stopped")
 
@@ -152,12 +153,12 @@ class SwayConfigDaemon:
             # NOTE: Keybindings loading disabled - keybindings now managed statically in sway-keybindings.nix
             # keybindings = self.loader.load_keybindings_toml()
             window_rules = self.loader.load_window_rules_json()
-            workspace_assignments = self.loader.load_workspace_assignments_json()
+            # workspace_assignments removed - i3-project-event-daemon is single source of truth
             appearance_config = self.loader.load_appearance_json()
 
             # Validate
             errors = self.validator.validate_semantics(
-                [], window_rules, workspace_assignments, appearance_config
+                [], window_rules, [], appearance_config
             )
 
             if errors:
@@ -170,12 +171,12 @@ class SwayConfigDaemon:
             # Merge (for now, just use runtime config; Nix integration comes later)
             # merged_keybindings = self.merger.merge_keybindings([], keybindings)
             merged_rules = self.merger.merge_window_rules([], window_rules)
-            merged_assignments = self.merger.merge_workspace_assignments([], workspace_assignments)
+            # workspace_assignments removed - i3-project-event-daemon is single source of truth
             self.appearance_config = appearance_config
 
             # Apply to rule engines
             await self.window_rule_engine.load_rules(merged_rules)
-            await self.workspace_handler.load_assignments(merged_assignments)
+            # workspace_handler removed - i3-project-event-daemon is single source of truth
 
             # Feature 047 US3: Load active project and set context
             await self.load_active_project()
@@ -202,7 +203,7 @@ class SwayConfigDaemon:
         """
         try:
             import json
-            from .models import Project
+            from sway_config_manager.models import Project
 
             # Read active project file from i3pm
             active_project_file = self.config_dir.parent / "i3" / "active-project.json"
@@ -256,7 +257,7 @@ class SwayConfigDaemon:
         """Subscribe to Sway events."""
         # Subscribe to window events for dynamic rule application
         self.sway.on('window::new', self._on_window_new)
-        self.sway.on('output', self._on_output_change)
+        # output event removed - i3-project-event-daemon is single source of truth for workspace assignments
 
         logger.info("Subscribed to Sway events")
 
@@ -280,16 +281,7 @@ class SwayConfigDaemon:
         except Exception as e:
             logger.error(f"Error handling window::new event: {e}")
 
-    async def _on_output_change(self, sway, event):
-        """Handle output change event."""
-        try:
-            logger.info("Output configuration changed")
-
-            # Reapply workspace assignments
-            await self.workspace_handler.handle_output_change()
-
-        except Exception as e:
-            logger.error(f"Error handling output change: {e}")
+    # _on_output_change removed - i3-project-event-daemon is single source of truth for workspace assignments
 
     async def _on_config_file_changed(self, files: list):
         """

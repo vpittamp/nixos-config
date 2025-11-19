@@ -287,6 +287,8 @@ i3pm monitors reassign  # Force reassignment
 i3pm monitors config    # Show configuration
 ```
 
+**Single Source of Truth**: `i3-project-event-daemon` owns all workspace-to-monitor assignments. It respects `~/.config/sway/output-states.json` for headless output toggling. The `sway-config-manager` daemon handles only window rules and appearance.
+
 **Docs**: `/etc/nixos/specs/001-declarative-workspace-monitor/quickstart.md`
 
 ### Window Filtering & State Preservation (Features 037, 038)

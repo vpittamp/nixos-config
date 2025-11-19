@@ -16,9 +16,10 @@
             # CapsLock becomes Control+0 (workspace mode trigger)
             # Matches the Sway keybinding in sway-keybindings.nix
             capslock = "C-0";
-
-            # Shift+CapsLock becomes Control+Shift+0 (move mode)
-            "shift+capslock" = "C-S-0";
+          };
+          # Shift layer: CapsLock becomes Control+Shift+0 (move mode)
+          "main:S" = {
+            capslock = "C-S-0";
           };
         };
       };
