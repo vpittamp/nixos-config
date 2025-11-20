@@ -242,6 +242,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
+          :height "850px"
           (box
             :class "content-container"
             :orientation "v"
@@ -371,6 +372,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
+          :height "850px"
           (box
             :class "content-container"
             :orientation "v"
@@ -419,6 +421,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
+          :height "850px"
           (box
             :class "content-container"
             :orientation "v"
@@ -467,6 +470,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
+          :height "850px"
           (box
             :class "content-container"
             :orientation "v"
