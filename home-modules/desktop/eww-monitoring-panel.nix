@@ -492,8 +492,8 @@ in
               ;; Connection status
               (health-card
                 :title "Sway IPC"
-                :value "''${health_data.health.sway_ipc_connected ? 'Connected' : 'Disconnected'}"
-                :status {health_data.health.sway_ipc_connected ? "ok" : "error"})
+                :value "''${health_data.health.sway_ipc_connected ?: false ? 'Connected' : 'Disconnected'}"
+                :status {health_data.health.sway_ipc_connected ?: false ? "ok" : "error"})
               ;; Counts
               (health-card
                 :title "Windows"
