@@ -142,6 +142,18 @@
   # This disables power management features that can cause firmware crashes
   boot.kernelParams = [ "brcmfmac.feature_disable=0x82000" ];
 
+  # Fix intermittent home-manager activation failures during nixos-rebuild
+  # The checkLinkTargets phase occasionally fails with "broken pipe" errors
+  # due to race conditions in find/xargs pipelines. Retry automatically.
+  systemd.services.home-manager-vpittamp = {
+    serviceConfig = {
+      Restart = "on-failure";
+      RestartSec = "2s";
+      StartLimitBurst = 3;
+      StartLimitIntervalSec = 30;
+    };
+  };
+
   # WiFi recovery service - reload module if it fails on boot
   systemd.services.wifi-recovery = {
     description = "WiFi module recovery for BCM4378";
