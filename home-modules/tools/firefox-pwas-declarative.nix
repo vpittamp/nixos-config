@@ -219,19 +219,9 @@ PY
     echo ""
     echo "✓ Updated $count PWA profiles with Wayland dialog fixes"
     echo ""
-    echo "Reloading Sway to refresh i3pm daemon with new PWA configuration..."
-    sway_socket="$(${pkgs.sway}/bin/sway --get-socketpath 2>/dev/null || true)"
-    if [ -n "$sway_socket" ]; then
-      ${pkgs.sway}/bin/swaymsg -s "$sway_socket" reload >/dev/null 2>&1 || true
-    else
-      ${pkgs.sway}/bin/swaymsg reload >/dev/null 2>&1 || true
-    fi
-    echo ""
-    echo "✓ Sway reloaded - new PWAs are now registered"
-    echo ""
-    echo "Restart your PWAs for changes to take effect:"
-    echo "  1. Close all PWA windows"
-    echo "  2. Relaunch PWAs from Walker (Meta+D)"
+    echo "To apply changes:"
+    echo "  1. Reload Sway: swaymsg reload"
+    echo "  2. Restart PWAs (close and relaunch from Walker)"
   '';
 
   #
