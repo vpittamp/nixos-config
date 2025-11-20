@@ -141,7 +141,7 @@ in
           :x "0px"
           :y "0px"
           :width "350px"
-          :height "1000px")
+          :height "95%")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
         :focusable false
@@ -545,17 +545,16 @@ in
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.95); /* base with 95% opacity */
+        background-color: rgba(30, 30, 46, 0.85); /* base with 85% opacity - more transparent */
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        box-shadow: -4px 0px 20px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(137, 180, 250, 0.1);  /* Shadow + subtle inner glow */
+        box-shadow: -4px 0px 20px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(137, 180, 250, 0.05);  /* Shadow + very subtle inner glow */
       }
 
       /* Compact Panel Header */
       .panel-header {
         background-color: ${mocha.mantle};
-        border-bottom: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 8px 12px;
         margin-bottom: 8px;
@@ -591,7 +590,6 @@ in
         padding: 8px 16px;
         background-color: ${mocha.surface0};
         color: ${mocha.subtext0};
-        border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         transition: all 0.2s;
       }
@@ -599,13 +597,11 @@ in
       .tab:hover {
         background-color: ${mocha.surface1};
         color: ${mocha.text};
-        border-color: ${mocha.overlay0};
       }
 
       .tab.active {
         background-color: ${mocha.blue};
         color: ${mocha.base};
-        border-color: ${mocha.blue};
         font-weight: bold;
       }
 
@@ -626,7 +622,6 @@ in
         padding: 8px;
         background-color: ${mocha.surface0};
         border-radius: 8px;
-        border: 1px solid ${mocha.overlay0};
       }
 
       .scoped-project {
@@ -639,7 +634,6 @@ in
 
       .project-header {
         padding: 6px 8px;
-        border-bottom: 1px solid ${mocha.overlay0};
         margin-bottom: 6px;
       }
 
@@ -778,7 +772,6 @@ in
       /* Compact Panel Footer */
       .panel-footer {
         background-color: ${mocha.mantle};
-        border-top: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 6px 8px;
         margin-top: 8px;
@@ -809,14 +802,13 @@ in
       /* Project Card Styles */
       .project-card {
         background-color: ${mocha.surface0};
-        border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
         margin-bottom: 8px;
       }
 
       .project-card.active-project {
-        border-color: ${mocha.teal};
+        border-left: 3px solid ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.1);
       }
 
@@ -853,7 +845,6 @@ in
       /* App Card Styles */
       .app-card {
         background-color: ${mocha.surface0};
-        border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
         margin-bottom: 8px;
@@ -892,7 +883,6 @@ in
 
       .health-card {
         background-color: ${mocha.surface0};
-        border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         padding: 10px 12px;
         margin-bottom: 6px;
