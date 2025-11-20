@@ -211,7 +211,6 @@ in
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          :height "850px"
           ;; Windows view (real-time)
           (revealer
             :reveal {current_view == "windows"}
