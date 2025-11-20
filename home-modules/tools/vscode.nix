@@ -99,6 +99,7 @@ let
     # Container tools
     ms-azuretools.vscode-docker      # Docker extension for VS Code
     ms-azuretools.vscode-containers  # Newer Container Tools extension (includes Docker + Podman)
+    ms-kubernetes-tools.vscode-kubernetes-tools  # Kubernetes extension
 
     # Nix support
     bbenoist.nix
@@ -143,6 +144,7 @@ let
     "github.vscode-pull-request-github"
     "ms-azuretools.vscode-docker"
     "ms-azuretools.vscode-containers"
+    "ms-kubernetes-tools.vscode-kubernetes-tools"
     "bbenoist.nix"
     "jnoortheen.nix-ide"
     "esbenp.prettier-vscode"
@@ -410,6 +412,11 @@ let
 
     # Add Docker-related files to secret detection
     # (Already includes docker-compose.yml in the detection.filePatterns above)
+
+    # Kubernetes extension settings
+    "vs-kubernetes.kubeconfig" = "~/.kube/config";
+    "vs-kubernetes.kubectl-path" = "${pkgs.kubectl}/bin/kubectl";
+    "vs-kubernetes.helm-path" = "${pkgs.kubernetes-helm}/bin/helm";
   };
 
   baseKeybindings = [
