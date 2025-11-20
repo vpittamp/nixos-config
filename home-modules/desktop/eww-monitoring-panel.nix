@@ -144,7 +144,7 @@ in
           :height "1000px")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
-        :focusable false
+        :focusable true
         (monitoring-panel-content))
 
       ;; Main panel content widget
