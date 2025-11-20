@@ -94,7 +94,7 @@ in
     ];
 
     # Eww Yuck widget configuration (T009-T014)
-    # Version: v7-multiview-fixed (Build: 2025-11-20-15:55)
+    # Version: v8-focusable-shadow (Build: 2025-11-20-17:10)
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
