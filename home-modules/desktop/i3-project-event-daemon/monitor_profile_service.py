@@ -188,17 +188,18 @@ class MonitorProfileService:
 
             if output_config.enabled:
                 # Enable and configure the output
-                # Format: output NAME mode WIDTHxHEIGHT position X,Y scale SCALE
+                # Format: output NAME mode WIDTHxHEIGHT position X Y scale SCALE
                 if output_config.type == OutputType.PHYSICAL:
                     # Physical display (eDP-1) - use Retina resolution
-                    cmd = f"output {name} mode {pos.width}x{pos.height}@60Hz position {pos.x},{pos.y} scale {output_config.scale}"
+                    cmd = f"output {name} mode {pos.width}x{pos.height} position {pos.x} {pos.y} scale {output_config.scale}"
                 else:
                     # Virtual display - VNC resolution
-                    cmd = f"output {name} mode {pos.width}x{pos.height}@60Hz position {pos.x},{pos.y} scale {output_config.scale}"
+                    cmd = f"output {name} mode {pos.width}x{pos.height} position {pos.x} {pos.y} scale {output_config.scale}"
 
                 result = await conn.command(cmd)
                 if not result or not result[0].success:
-                    logger.error(f"Failed to configure output {name}: {result}")
+                    error_msg = result[0].error if result and hasattr(result[0], 'error') else str(result)
+                    logger.error(f"Failed to configure output {name}: {error_msg}")
                     return False
 
                 logger.debug(f"Feature 084: Configured output {name}: {pos.width}x{pos.height} at {pos.x},{pos.y} scale {output_config.scale}")
