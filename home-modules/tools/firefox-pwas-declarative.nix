@@ -85,6 +85,24 @@ user_pref("widget.use-xdg-desktop-portal.mime-handler", 1);
 user_pref("gfx.webrender.all", true);
 user_pref("gfx.webrender.enabled", true);
 
+// === Mesa/Asahi GPU Crash Workarounds ===
+// Fixes SIGSEGV crashes in libgallium on Apple Silicon
+// Bug: Use-after-free in Mesa GPU driver triggered by WebGL content
+
+// Disable WebGL to prevent GPU driver crashes
+user_pref("webgl.disabled", true);
+user_pref("webgl.enable-webgl2", false);
+
+// Use software rendering for canvas operations
+user_pref("gfx.canvas.accelerated", false);
+
+// Disable GPU process to reduce driver complexity
+user_pref("layers.gpu-process.enabled", false);
+user_pref("media.hardware-video-decoding.enabled", false);
+
+// Keep basic GPU compositing but avoid problematic features
+user_pref("gfx.webrender.compositor", false);
+
 // === 1Password Integration (Feature 056) ===
 // Enable 1Password extension and native messaging
 
