@@ -522,8 +522,12 @@ async def query_apps_data() -> Dict[str, Any]:
             # Fallback: return empty list (apps command might not have --json flag yet)
             apps = []
         else:
-            apps_data = json.loads(result.stdout)
-            apps = apps_data.get("apps", [])
+            try:
+                apps_data = json.loads(result.stdout)
+                apps = apps_data.get("apps", [])
+            except json.JSONDecodeError:
+                # Command output wasn't JSON, return empty list
+                apps = []
 
         # Enhance with runtime state (running instances)
         # Query current windows to match app names
@@ -605,11 +609,15 @@ async def query_health_data() -> Dict[str, Any]:
         )
 
         if result.returncode == 0:
-            daemon_data = json.loads(result.stdout)
-            health["daemon_status"] = daemon_data.get("status", "unknown")
-            health["daemon_uptime"] = daemon_data.get("uptime", 0)
-            health["daemon_pid"] = daemon_data.get("pid")
-            health["sway_ipc_connected"] = daemon_data.get("connected", False)
+            try:
+                daemon_data = json.loads(result.stdout)
+                health["daemon_status"] = daemon_data.get("status", "unknown")
+                health["daemon_uptime"] = daemon_data.get("uptime", 0)
+                health["daemon_pid"] = daemon_data.get("pid")
+                health["sway_ipc_connected"] = daemon_data.get("connected", False)
+            except json.JSONDecodeError:
+                # Command output wasn't JSON, skip daemon data
+                pass
 
         # Query window tree for counts
         try:
@@ -638,8 +646,12 @@ async def query_health_data() -> Dict[str, Any]:
         )
 
         if result.returncode == 0:
-            projects_data = json.loads(result.stdout)
-            health["project_count"] = len(projects_data.get("projects", []))
+            try:
+                projects_data = json.loads(result.stdout)
+                health["project_count"] = len(projects_data.get("projects", []))
+            except json.JSONDecodeError:
+                # Command output wasn't JSON, skip project count
+                pass
 
         return {
             "status": "ok",
