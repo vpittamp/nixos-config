@@ -599,7 +599,7 @@ in
       .tab:hover {
         background-color: ${mocha.surface1};
         color: ${mocha.text};
-        border-color: ${mocha.overlay1};
+        border-color: ${mocha.overlay0};
       }
 
       .tab.active {
