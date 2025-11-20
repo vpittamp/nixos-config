@@ -122,12 +122,12 @@ in
     "${modifier}+u" = "exec urlscan";
 
     # Monitor profile switcher (use Control modifier for Sway syntax)
-    "${modifier}+Control+m" = "exec ~/.local/bin/monitor-profile-menu";
+    "${modifier}+Control+m" = "exec sh -c '$HOME/.local/bin/monitor-profile-menu'";
 
     # Feature 084: Cycle monitor profiles with Mod+Shift+M
     # Cycles: local-only → local+1vnc → local+2vnc → local-only (M1)
     #         single → dual → triple → single (Hetzner)
-    "${modifier}+Shift+m" = "exec ~/.local/bin/cycle-monitor-profile";
+    "${modifier}+Shift+m" = "exec sh -c '$HOME/.local/bin/cycle-monitor-profile'";
 
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
