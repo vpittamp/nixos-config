@@ -135,7 +135,7 @@ in
 
       ;; Main monitoring panel window - Sidebar layout
       (defwindow monitoring-panel
-        :monitor 0
+        :monitor 1
         :geometry (geometry
           :anchor "right center"
           :x "0px"
