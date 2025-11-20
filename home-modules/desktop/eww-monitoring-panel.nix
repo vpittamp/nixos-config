@@ -241,7 +241,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :vexpand true
+          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -371,7 +371,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :vexpand true
+          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -420,7 +420,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :vexpand true
+          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -469,7 +469,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :vexpand true
+          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
