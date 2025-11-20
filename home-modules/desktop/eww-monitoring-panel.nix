@@ -169,22 +169,22 @@ in
             :orientation "h"
             :space-evenly true
             (button
-              :class "tab ''${current_view == 'windows' ? 'active' : ''''}"
+              :class "tab ''${current_view == 'windows' ? 'active' : \"\"}"
               :onclick "eww update current_view=windows"
               :tooltip "Windows (Alt+1)"
               "󰖯")
             (button
-              :class "tab ''${current_view == 'projects' ? 'active' : ''''}"
+              :class "tab ''${current_view == 'projects' ? 'active' : \"\"}"
               :onclick "eww update current_view=projects"
               :tooltip "Projects (Alt+2)"
               "󱂬")
             (button
-              :class "tab ''${current_view == 'apps' ? 'active' : ''''}"
+              :class "tab ''${current_view == 'apps' ? 'active' : \"\"}"
               :onclick "eww update current_view=apps"
               :tooltip "Apps (Alt+3)"
               "󰀻")
             (button
-              :class "tab ''${current_view == 'health' ? 'active' : ''''}"
+              :class "tab ''${current_view == 'health' ? 'active' : \"\"}"
               :onclick "eww update current_view=health"
               :tooltip "Health (Alt+4)"
               ""))
@@ -387,7 +387,7 @@ in
 
       (defwidget project-card [project]
         (box
-          :class "project-card ''${project.is_active ? 'active-project' : ''''}"
+          :class "project-card ''${project.is_active ? 'active-project' : \"\"}"
           :orientation "v"
           :space-evenly false
           (box
