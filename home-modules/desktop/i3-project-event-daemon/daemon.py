@@ -316,10 +316,14 @@ class I3ProjectDaemon:
         self.ipc_server.mark_manager = self.mark_manager
         logger.info("Mark manager initialized")
 
-        # Feature 083: Initialize EwwPublisher and MonitorProfileService
+        # Feature 083/084: Initialize EwwPublisher and MonitorProfileService
         self.eww_publisher = EwwPublisher()
         self.monitor_profile_service = MonitorProfileService(self.eww_publisher)
-        logger.info(f"Monitor profile service initialized with {len(self.monitor_profile_service.list_profiles())} profiles")
+        profile_count = len(self.monitor_profile_service.list_profiles())
+        if self.monitor_profile_service.is_hybrid_mode:
+            logger.info(f"Feature 084: Monitor profile service initialized in hybrid mode with {profile_count} profiles")
+        else:
+            logger.info(f"Monitor profile service initialized with {profile_count} profiles")
 
         # Feature 083: Setup monitor profile file watcher (T024)
         # Watches monitor-profile.current and triggers Eww updates on profile change

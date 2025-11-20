@@ -95,19 +95,41 @@ if [[ -z "$SWAYMSG_BIN" ]]; then
   exit 1
 fi
 
+# Feature 084: Detect hybrid mode (M1 with physical + virtual displays)
+is_hybrid_mode=0
+if [[ "$(hostname)" == "nixos-m1" ]]; then
+  is_hybrid_mode=1
+fi
+
 if [[ -n "$profile_name" ]]; then
   profile_path="$profile_dir/${profile_name%.json}.json"
   if [[ ! -f "$profile_path" ]]; then
     echo "active-monitors: profile '$profile_name' not found in $profile_dir" >&2
     exit 1
   fi
-  mapfile -t want < <(jq -r '.outputs[]' "$profile_path" 2>/dev/null)
+
+  # Feature 084: Handle both simple (headless) and nested (hybrid) profile formats
+  # Simple format: outputs: ["HEADLESS-1", "HEADLESS-2"]
+  # Hybrid format: outputs: [{name: "eDP-1", type: "physical", ...}, ...]
+  first_output=$(jq -r '.outputs[0]' "$profile_path" 2>/dev/null)
+  if [[ "$first_output" == "{"* ]] || jq -e '.outputs[0].name' "$profile_path" >/dev/null 2>&1; then
+    # Hybrid mode profile - extract output names from nested objects
+    mapfile -t want < <(jq -r '.outputs[] | .name' "$profile_path" 2>/dev/null)
+    # Also extract virtual outputs for create_output
+    mapfile -t virtual_outputs < <(jq -r '.outputs[] | select(.type == "virtual") | .name' "$profile_path" 2>/dev/null)
+  else
+    # Simple headless profile - outputs are just strings
+    mapfile -t want < <(jq -r '.outputs[]' "$profile_path" 2>/dev/null)
+    virtual_outputs=()
+  fi
+
   if [[ ${#want[@]} -eq 0 ]]; then
     echo "active-monitors: profile '$profile_name' has no outputs" >&2
     exit 1
   fi
 elif [[ ${#positional[@]} -gt 0 ]]; then
   want=(${positional[@]})
+  virtual_outputs=()
 else
   usage
   exit 1
@@ -141,13 +163,51 @@ for out in "${active_outputs[@]}"; do
   fi
 done
 
-# Enable requested outputs and position them horizontally (1920x1200 @60Hz)
+# Feature 084: Create virtual outputs dynamically for hybrid mode
+if (( is_hybrid_mode )); then
+  # Check which virtual outputs need to be created
+  for vout in "${virtual_outputs[@]}"; do
+    output_exists=false
+    for existing in "${all_outputs[@]}"; do
+      if [[ "$existing" == "$vout" ]]; then
+        output_exists=true
+        break
+      fi
+    done
+    if ! $output_exists; then
+      # Create the virtual output
+      "$SWAYMSG_BIN" create_output >/dev/null 2>&1 || true
+      echo "Created virtual output: $vout"
+    fi
+  done
+  # Refresh output list after creation
+  outputs_json="$("$SWAYMSG_BIN" -t get_outputs)"
+  mapfile -t all_outputs < <(printf '%s' "$outputs_json" | jq -r '.[] | .name')
+fi
+
+# Enable requested outputs and configure them
+# Feature 084: Use different settings for physical vs virtual displays
 pos_x=0
 for out in "${want[@]}"; do
   "$SWAYMSG_BIN" "output $out enable" >/dev/null || true
-  "$SWAYMSG_BIN" "output $out mode 1920x1200@60Hz position ${pos_x},0 scale 1.0" >/dev/null || true
-  systemctl --user start "wayvnc@$out.service" 2>/dev/null || true
-  pos_x=$((pos_x + 1920))
+
+  if (( is_hybrid_mode )); then
+    if [[ "$out" == "eDP-1" ]]; then
+      # Physical display - Retina resolution with 2x scaling
+      "$SWAYMSG_BIN" "output $out mode 2560x1600@60Hz position 0,0 scale 2.0" >/dev/null || true
+      pos_x=1280  # Account for logical width (2560/2)
+    else
+      # Virtual display - VNC resolution
+      "$SWAYMSG_BIN" "output $out mode 1920x1080@60Hz position ${pos_x},0 scale 1.0" >/dev/null || true
+      systemctl --user start "wayvnc@$out.service" 2>/dev/null || true
+      pos_x=$((pos_x + 1920))
+    fi
+  else
+    # Headless mode - all outputs are virtual
+    "$SWAYMSG_BIN" "output $out mode 1920x1200@60Hz position ${pos_x},0 scale 1.0" >/dev/null || true
+    systemctl --user start "wayvnc@$out.service" 2>/dev/null || true
+    pos_x=$((pos_x + 1920))
+  fi
 done
 
 echo "Active outputs set to: ${want[*]}"

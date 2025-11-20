@@ -1,16 +1,18 @@
-"""Monitor profile models for Feature 083.
+"""Monitor profile models for Feature 083 and Feature 084.
 
 This module defines Pydantic models for:
-- Monitor profile configuration (single/dual/triple)
+- Monitor profile configuration (single/dual/triple for headless)
+- Hybrid mode profiles (local-only/local+1vnc/local+2vnc for M1)
 - Profile events for observability
 - Eww widget state for real-time updates
 
-Version: 1.0.0 (2025-11-19)
+Version: 1.1.0 (2025-11-19)
+- Added Feature 084: Hybrid mode models for M1 physical+virtual displays
 """
 
 from enum import Enum
 from datetime import datetime
-from typing import Optional, List, Union, Any
+from typing import Optional, List, Union, Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -182,18 +184,29 @@ class OutputDisplayState(BaseModel):
     """
 
     name: str = Field(..., description="Output name (e.g., HEADLESS-1)")
-    short_name: str = Field(..., description="Display abbreviation (e.g., H1)")
+    short_name: str = Field(..., description="Display abbreviation (e.g., H1, L, V1)")
     active: bool = Field(..., description="Output is enabled and connected")
     workspace_count: int = Field(0, ge=0, description="Number of workspaces on this output")
 
     @classmethod
-    def from_output_name(cls, name: str, active: bool, workspace_count: int = 0) -> "OutputDisplayState":
-        """Create from output name with auto-generated short name."""
-        # Generate short name: HEADLESS-1 -> H1, eDP-1 -> eDP1
-        if name.startswith("HEADLESS-"):
-            short_name = f"H{name[-1]}"
-        else:
-            short_name = name.replace("-", "")
+    def from_output_name(
+        cls,
+        name: str,
+        active: bool,
+        workspace_count: int = 0,
+        is_hybrid_mode: bool = False
+    ) -> "OutputDisplayState":
+        """Create from output name with auto-generated short name.
+
+        Feature 084 T026: Generate L/V1/V2 for hybrid mode, H1/H2/H3 for headless.
+
+        Args:
+            name: Output name (e.g., HEADLESS-1, eDP-1)
+            active: Whether output is enabled
+            workspace_count: Number of workspaces on output
+            is_hybrid_mode: If True, use L/V1/V2 naming convention
+        """
+        short_name = get_short_name(name, is_hybrid_mode)
 
         return cls(
             name=name,
@@ -203,14 +216,203 @@ class OutputDisplayState(BaseModel):
         )
 
 
+def get_short_name(output_name: str, is_hybrid_mode: bool = False) -> str:
+    """Get short display name for an output.
+
+    Feature 084 T026: Visual indicators for hybrid mode.
+
+    Args:
+        output_name: Full output name (e.g., HEADLESS-1, eDP-1)
+        is_hybrid_mode: If True, use hybrid naming (L/V1/V2)
+
+    Returns:
+        Short display name for top bar
+    """
+    if is_hybrid_mode:
+        # Hybrid mode: eDP-1 -> L (Local), HEADLESS-N -> VN (Virtual N)
+        if output_name == "eDP-1":
+            return "L"
+        elif output_name.startswith("HEADLESS-"):
+            return f"V{output_name[-1]}"
+        else:
+            return output_name.replace("-", "")
+    else:
+        # Headless mode: HEADLESS-N -> HN
+        if output_name.startswith("HEADLESS-"):
+            return f"H{output_name[-1]}"
+        else:
+            return output_name.replace("-", "")
+
+
 class MonitorState(BaseModel):
     """Monitor state pushed to Eww for top bar display.
 
     Contains profile name and output status for real-time updates.
+    Feature 084 T027: Added mode field for hybrid mode detection.
     """
 
     profile_name: str = Field(..., description="Current active profile name")
     outputs: List[OutputDisplayState] = Field(..., description="Per-output display state")
+    mode: Literal["headless", "hybrid"] = Field("headless", description="Display mode")
+
+    def to_eww_json(self) -> str:
+        """Serialize to JSON string for eww update command."""
+        if hasattr(self, 'model_dump_json'):
+            return self.model_dump_json()
+        else:
+            return self.json()
+
+
+# =============================================================================
+# Feature 084: Hybrid Mode Models (M1 physical + virtual displays)
+# =============================================================================
+
+
+class OutputType(str, Enum):
+    """Type of display output.
+
+    Feature 084: Distinguishes physical displays from virtual VNC outputs.
+    """
+    PHYSICAL = "physical"
+    VIRTUAL = "virtual"
+
+
+class HybridOutputConfig(BaseModel):
+    """Configuration for a single output in hybrid mode.
+
+    Feature 084: Extends ProfileOutput with output type and VNC port.
+    """
+
+    name: str = Field(..., pattern=r"^(eDP-1|HEADLESS-[12])$",
+                      description="Output identifier")
+    type: OutputType = Field(..., description="Physical or virtual output")
+    enabled: bool = Field(True, description="Whether output is active")
+    position: OutputPosition = Field(default_factory=OutputPosition,
+                                     description="Screen position")
+    scale: float = Field(1.0, ge=1.0, le=2.0, description="Display scaling factor")
+    vnc_port: Optional[int] = Field(None, ge=5900, le=5901,
+                                    description="VNC port for virtual outputs")
+
+    @field_validator("vnc_port")
+    @classmethod
+    def validate_vnc_port(cls, v: Optional[int], info) -> Optional[int]:
+        """Ensure VNC port is only set for virtual outputs."""
+        # Get output_type from values if available
+        values = info.data if hasattr(info, 'data') else {}
+        output_type = values.get("type")
+
+        if output_type == OutputType.PHYSICAL and v is not None:
+            raise ValueError("Physical outputs cannot have VNC port")
+        if output_type == OutputType.VIRTUAL and v is None:
+            raise ValueError("Virtual outputs must have VNC port")
+        return v
+
+
+class WorkspaceAssignment(BaseModel):
+    """Maps workspaces to an output.
+
+    Feature 084: Defines workspace-to-output mapping for profile.
+    """
+
+    output: str = Field(..., description="Target output name")
+    workspaces: List[int] = Field(..., min_length=1,
+                                   description="Workspace numbers (1-100+)")
+
+    @field_validator("workspaces")
+    @classmethod
+    def validate_workspaces(cls, v: List[int]) -> List[int]:
+        """Ensure workspaces are positive integers."""
+        for ws in v:
+            if ws < 1:
+                raise ValueError(f"Workspace number must be >= 1, got {ws}")
+        return v
+
+
+class HybridMonitorProfile(BaseModel):
+    """Monitor profile for M1 hybrid mode.
+
+    Feature 084: Defines physical + virtual display configuration.
+    Stored in ~/.config/sway/monitor-profiles/{name}.json
+    """
+
+    name: str = Field(..., pattern=r"^(local-only|local\+[12]vnc)$",
+                      description="Profile identifier")
+    description: str = Field("", max_length=200,
+                            description="Human-readable description")
+    outputs: List[HybridOutputConfig] = Field(..., min_length=1, max_length=3,
+                                              description="Output configurations")
+    default: bool = Field(False, description="Whether this is the default profile")
+    workspace_assignments: List[WorkspaceAssignment] = Field(
+        default_factory=list,
+        description="Workspace-to-output mappings"
+    )
+
+    def get_enabled_outputs(self) -> List[str]:
+        """Return list of enabled output names."""
+        return [o.name for o in self.outputs if o.enabled]
+
+    def get_virtual_outputs(self) -> List[str]:
+        """Return list of virtual (VNC) output names."""
+        return [o.name for o in self.outputs
+                if o.type == OutputType.VIRTUAL and o.enabled]
+
+    def get_physical_output(self) -> Optional[str]:
+        """Return the physical output name (eDP-1 for M1)."""
+        for o in self.outputs:
+            if o.type == OutputType.PHYSICAL:
+                return o.name
+        return None
+
+
+class OutputRuntimeState(BaseModel):
+    """Runtime state for a single output.
+
+    Feature 084: Tracks enabled status and VNC port.
+    """
+
+    enabled: bool = Field(..., description="Currently enabled")
+    type: OutputType = Field(..., description="Physical or virtual")
+    vnc_port: Optional[int] = Field(None, description="VNC port if virtual")
+    workspace_count: int = Field(0, ge=0, description="Workspaces on this output")
+
+
+class HybridOutputState(BaseModel):
+    """Runtime state for M1 hybrid monitor system.
+
+    Feature 084: Persisted to ~/.config/sway/output-states.json
+    """
+
+    version: str = Field("1.0", description="State format version")
+    mode: Literal["headless", "hybrid"] = Field(...,
+                                                 description="System mode")
+    current_profile: str = Field(..., description="Active profile name")
+    outputs: dict[str, OutputRuntimeState] = Field(...,
+                                                    description="Per-output state")
+    last_updated: datetime = Field(default_factory=datetime.utcnow,
+                                   description="Last state change")
+
+    def to_json_file(self, path: str) -> None:
+        """Save state to JSON file."""
+        import json
+        with open(path, 'w') as f:
+            if hasattr(self, 'model_dump'):
+                data = self.model_dump(mode='json')
+            else:
+                data = self.dict()
+            # Convert datetime to ISO format
+            data['last_updated'] = self.last_updated.isoformat()
+            json.dump(data, f, indent=2)
+
+
+class M1MonitorState(BaseModel):
+    """Monitor state for M1 Eww top bar display.
+
+    Feature 084: Extends MonitorState with hybrid mode.
+    """
+
+    profile_name: str = Field(..., description="Current active profile")
+    mode: Literal["headless", "hybrid"] = Field(..., description="System mode")
+    outputs: List[OutputDisplayState] = Field(..., description="Output states")
 
     def to_eww_json(self) -> str:
         """Serialize to JSON string for eww update command."""

@@ -95,14 +95,18 @@ def publish_monitor_state(state: MonitorState, config_dir: Optional[Path] = None
 def build_monitor_state(profile_name: str,
                         enabled_outputs: List[str],
                         all_outputs: List[str],
-                        workspace_counts: Optional[dict] = None) -> MonitorState:
+                        workspace_counts: Optional[dict] = None,
+                        is_hybrid_mode: bool = False) -> MonitorState:
     """Build MonitorState from current system state.
+
+    Feature 084 T028: Extended for hybrid mode support.
 
     Args:
         profile_name: Current profile name
         enabled_outputs: List of enabled output names
         all_outputs: List of all output names (for ordering)
         workspace_counts: Optional dict of output_name -> workspace count
+        is_hybrid_mode: If True, use L/V1/V2 naming convention
 
     Returns:
         MonitorState ready for publishing
@@ -115,24 +119,30 @@ def build_monitor_state(profile_name: str,
     for name in sorted(all_outputs):
         active = name in enabled_set
         count = workspace_counts.get(name, 0)
-        outputs.append(OutputDisplayState.from_output_name(name, active, count))
+        outputs.append(OutputDisplayState.from_output_name(
+            name, active, count, is_hybrid_mode=is_hybrid_mode
+        ))
 
     return MonitorState(
         profile_name=profile_name,
-        outputs=outputs
+        outputs=outputs,
+        mode="hybrid" if is_hybrid_mode else "headless"
     )
 
 
 async def publish_from_sway_state(conn, profile_name: str,
-                                  enabled_outputs: List[str]) -> bool:
+                                  enabled_outputs: List[str],
+                                  is_hybrid_mode: bool = False) -> bool:
     """Build and publish monitor state from live Sway state.
 
     Queries Sway for workspace counts and publishes to Eww.
+    Feature 084 T028: Extended for hybrid mode support.
 
     Args:
         conn: i3ipc.aio.Connection
         profile_name: Current profile name
         enabled_outputs: List of enabled output names
+        is_hybrid_mode: If True, use L/V1/V2 naming convention
 
     Returns:
         True if published successfully
@@ -154,7 +164,8 @@ async def publish_from_sway_state(conn, profile_name: str,
             profile_name=profile_name,
             enabled_outputs=enabled_outputs,
             all_outputs=all_output_names,
-            workspace_counts=workspace_counts
+            workspace_counts=workspace_counts,
+            is_hybrid_mode=is_hybrid_mode
         )
 
         return publish_monitor_state(state)
@@ -200,18 +211,24 @@ class EwwPublisher:
         return success
 
     async def publish_from_conn(self, conn, profile_name: str,
-                                enabled_outputs: List[str]) -> bool:
+                                enabled_outputs: List[str],
+                                is_hybrid_mode: bool = False) -> bool:
         """Build and publish state from Sway connection.
+
+        Feature 084 T028: Extended for hybrid mode support.
 
         Args:
             conn: i3ipc.aio.Connection
             profile_name: Current profile name
             enabled_outputs: List of enabled output names
+            is_hybrid_mode: If True, use L/V1/V2 naming convention
 
         Returns:
             True if published successfully
         """
-        return await publish_from_sway_state(conn, profile_name, enabled_outputs)
+        return await publish_from_sway_state(
+            conn, profile_name, enabled_outputs, is_hybrid_mode
+        )
 
     @staticmethod
     def _states_equal(a: MonitorState, b: MonitorState) -> bool:

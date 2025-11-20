@@ -101,6 +101,10 @@
 let
   # Detect headless Sway configuration (Feature 046)
   isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "nixos-hetzner-sway";
+  # Feature 084: Detect M1 hybrid mode (physical + virtual displays)
+  isHybridMode = osConfig != null && (osConfig.networking.hostName or "") == "nixos-m1";
+  # Check if virtual outputs are supported (either headless or hybrid mode)
+  hasVirtualOutputs = isHeadless || isHybridMode;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
   tailscaleAudioEnabled = tailscaleAudioCfg.enable or false;
   tailscaleSinkName = tailscaleAudioCfg.sinkName or "tailscale-rtp";
@@ -156,12 +160,79 @@ let
     };
   };
   headlessProfileDefault = if headlessSingleOutputMode then "single" else "triple";
-  monitorProfileFiles = lib.listToAttrs (map (name: {
-    name = "sway/monitor-profiles/${name}.json";
-    value = {
-      text = builtins.toJSON (headlessMonitorProfiles.${name});
+
+  # Feature 084: M1 hybrid mode profiles (physical + virtual displays)
+  m1HybridMonitorProfiles = {
+    "local-only" = {
+      name = "local-only";
+      description = "Physical display only (eDP-1)";
+      outputs = [
+        { name = "eDP-1"; type = "physical"; enabled = true;
+          position = { x = 0; y = 0; width = 2560; height = 1600; };
+          scale = 2.0; }
+      ];
+      default = true;
+      workspace_assignments = [
+        { output = "eDP-1"; workspaces = [ 1 2 3 4 5 6 7 8 9 ]; }
+      ];
     };
-  }) (builtins.attrNames headlessMonitorProfiles));
+    "local+1vnc" = {
+      name = "local+1vnc";
+      description = "Physical display plus one VNC output";
+      outputs = [
+        { name = "eDP-1"; type = "physical"; enabled = true;
+          position = { x = 0; y = 0; width = 2560; height = 1600; };
+          scale = 2.0; }
+        { name = "HEADLESS-1"; type = "virtual"; enabled = true;
+          position = { x = 1280; y = 0; width = 1920; height = 1080; };
+          scale = 1.0; vnc_port = 5900; }
+      ];
+      default = false;
+      workspace_assignments = [
+        { output = "eDP-1"; workspaces = [ 1 2 3 4 ]; }
+        { output = "HEADLESS-1"; workspaces = [ 5 6 7 8 9 ]; }
+      ];
+    };
+    "local+2vnc" = {
+      name = "local+2vnc";
+      description = "Physical display plus two VNC outputs";
+      outputs = [
+        { name = "eDP-1"; type = "physical"; enabled = true;
+          position = { x = 0; y = 0; width = 2560; height = 1600; };
+          scale = 2.0; }
+        { name = "HEADLESS-1"; type = "virtual"; enabled = true;
+          position = { x = 1280; y = 0; width = 1920; height = 1080; };
+          scale = 1.0; vnc_port = 5900; }
+        { name = "HEADLESS-2"; type = "virtual"; enabled = true;
+          position = { x = 3200; y = 0; width = 1920; height = 1080; };
+          scale = 1.0; vnc_port = 5901; }
+      ];
+      default = false;
+      workspace_assignments = [
+        { output = "eDP-1"; workspaces = [ 1 2 3 ]; }
+        { output = "HEADLESS-1"; workspaces = [ 4 5 6 ]; }
+        { output = "HEADLESS-2"; workspaces = [ 7 8 9 ]; }
+      ];
+    };
+  };
+  m1HybridProfileDefault = "local-only";
+
+  # Generate profile files based on mode
+  monitorProfileFiles =
+    if isHybridMode then
+      lib.listToAttrs (map (name: {
+        name = "sway/monitor-profiles/${name}.json";
+        value = {
+          text = builtins.toJSON (m1HybridMonitorProfiles.${name});
+        };
+      }) (builtins.attrNames m1HybridMonitorProfiles))
+    else
+      lib.listToAttrs (map (name: {
+        name = "sway/monitor-profiles/${name}.json";
+        value = {
+          text = builtins.toJSON (headlessMonitorProfiles.${name});
+        };
+      }) (builtins.attrNames headlessMonitorProfiles));
   mkWayvncWrapper = output: port: socket:
     pkgs.writeShellScript ("wayvnc-" + lib.strings.toLower output + "-wrapper") ''
       set -euo pipefail
@@ -927,15 +998,32 @@ in
     source = ./scripts/set-monitor-profile.sh;
     executable = true;
   };
+  # Feature 084: Cycle monitor profiles with Mod+Shift+M
+  home.file.".local/bin/cycle-monitor-profile" = {
+    source = ./scripts/cycle-monitor-profile.sh;
+    executable = true;
+  };
   home.file.".local/bin/monitor-profile-menu" = {
     source = ./scripts/monitor-profile-menu.sh;
     executable = true;
   };
 
   xdg.configFile =
+    # Monitor profile files for headless or hybrid mode
     (lib.optionalAttrs isHeadless monitorProfileFiles)
+    // (lib.optionalAttrs isHybridMode monitorProfileFiles)
     // (lib.optionalAttrs isHeadless {
       "sway/monitor-profile.default".text = "${headlessProfileDefault}\n";
+      "wayvnc/config" = {
+        text = ''
+          address=0.0.0.0
+          enable_auth=false
+        '';
+      };
+    })
+    # Feature 084: M1 hybrid mode default profile
+    // (lib.optionalAttrs isHybridMode {
+      "sway/monitor-profile.default".text = "${m1HybridProfileDefault}\n";
       "wayvnc/config" = {
         text = ''
           address=0.0.0.0
@@ -1052,52 +1140,69 @@ PY
     fi
   '');
 
-  # wayvnc systemd services for headless mode (Feature 048)
-  # Three independent VNC instances for three virtual displays
+  # wayvnc systemd services for headless and hybrid modes (Features 048, 084)
+  # Headless: Three independent VNC instances (auto-started)
+  # Hybrid: Two VNC instances for virtual displays (manually started by profile switch)
 
-  # HEADLESS-1 (Primary display, workspaces 1-2, port 5900)
-  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf isHeadless {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-1";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
+  # HEADLESS-1 (Port 5900)
+  systemd.user.services."wayvnc@HEADLESS-1" = lib.mkIf (isHeadless || isHybridMode) (lib.mkMerge [
+    {
+      Unit = {
+        Description = if isHybridMode then "wayvnc VNC server for virtual display V1" else "wayvnc VNC server for HEADLESS-1";
+        Documentation = "https://github.com/any1/wayvnc";
+        After = [ "sway-session.target" ];
+        Requires = [ "sway-session.target" ];
+        PartOf = [ "sway-session.target" ];
+      };
 
-    Service = {
-      Type = "simple";
-      ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 "/run/user/1000/wayvnc-headless-1.sock";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
+      Service = {
+        Type = "simple";
+        ExecStart = mkWayvncWrapper "HEADLESS-1" 5900 (if isHybridMode then "/run/user/1000/wayvnc-v1.sock" else "/run/user/1000/wayvnc-headless-1.sock");
+        Restart = "on-failure";
+        RestartSec = "1";
+      };
+    }
+    # Headless mode: auto-start with session
+    (lib.mkIf isHeadless {
+      Install = {
+        WantedBy = [ "sway-session.target" ];
+      };
+    })
+    # Hybrid mode: manually started by set-monitor-profile
+    (lib.mkIf isHybridMode {
+      Install = { };
+    })
+  ]);
 
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+  # HEADLESS-2 (Port 5901)
+  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf (isHeadless || isHybridMode) (lib.mkMerge [
+    {
+      Unit = {
+        Description = if isHybridMode then "wayvnc VNC server for virtual display V2" else "wayvnc VNC server for HEADLESS-2";
+        Documentation = "https://github.com/any1/wayvnc";
+        After = [ "sway-session.target" ];
+        Requires = [ "sway-session.target" ];
+        PartOf = [ "sway-session.target" ];
+      };
 
-  # HEADLESS-2 (Secondary display, workspaces 3-5, port 5901)
-  systemd.user.services."wayvnc@HEADLESS-2" = lib.mkIf isHeadless {
-    Unit = {
-      Description = "wayvnc VNC server for HEADLESS-2";
-      Documentation = "https://github.com/any1/wayvnc";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 "/run/user/1000/wayvnc-headless-2.sock";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+      Service = {
+        Type = "simple";
+        ExecStart = mkWayvncWrapper "HEADLESS-2" 5901 (if isHybridMode then "/run/user/1000/wayvnc-v2.sock" else "/run/user/1000/wayvnc-headless-2.sock");
+        Restart = "on-failure";
+        RestartSec = "1";
+      };
+    }
+    # Headless mode: auto-start with session
+    (lib.mkIf isHeadless {
+      Install = {
+        WantedBy = [ "sway-session.target" ];
+      };
+    })
+    # Hybrid mode: manually started by set-monitor-profile
+    (lib.mkIf isHybridMode {
+      Install = { };
+    })
+  ]);
 
   # HEADLESS-3 (Tertiary display, workspaces 6-9, port 5902)
   systemd.user.services."wayvnc@HEADLESS-3" = lib.mkIf isHeadless {
@@ -1120,6 +1225,8 @@ PY
       WantedBy = [ "sway-session.target" ];
     };
   };
+
+  # Feature 084: M1 hybrid mode WayVNC services are merged into HEADLESS-1 and HEADLESS-2 above
 
   systemd.user.services."tailscale-rtp-default-sink" = lib.mkIf (isHeadless && tailscaleAudioEnabled) {
     Unit = {

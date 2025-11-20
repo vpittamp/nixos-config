@@ -27,6 +27,7 @@
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/i3-project-daemon.nix       # Feature 037: Project management daemon
+    ../modules/desktop/wayvnc.nix                   # Feature 084: VNC for virtual displays
     ../modules/services/onepassword-automation.nix  # Service account automation
     ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
@@ -413,6 +414,8 @@
     allowedTCPPorts = [ 22 ];  # SSH (RustDesk ports managed by rustdesk service)
     # Tailscale
     checkReversePath = "loose";
+    # Feature 084: VNC ports restricted to Tailscale network only
+    interfaces."tailscale0".allowedTCPPorts = [ 5900 5901 ];
   };
 
   # System state version

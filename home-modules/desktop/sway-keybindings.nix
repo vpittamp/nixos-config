@@ -124,6 +124,11 @@ in
     # Monitor profile switcher (use Control modifier for Sway syntax)
     "${modifier}+Control+m" = "exec monitor-profile-menu";
 
+    # Feature 084: Cycle monitor profiles with Mod+Shift+M
+    # Cycles: local-only → local+1vnc → local+2vnc → local-only (M1)
+    #         single → dual → triple → single (Hetzner)
+    "${modifier}+Shift+m" = "exec cycle-monitor-profile";
+
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
     "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";

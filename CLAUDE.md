@@ -570,6 +570,65 @@ systemctl --user restart i3-project-event-listener eww-top-bar
 
 **Docs**: `/etc/nixos/specs/083-multi-monitor-window-management/quickstart.md`
 
+## 📱 M1 Hybrid Multi-Monitor Management (Feature 084)
+
+Extend M1 MacBook Pro with VNC-accessible virtual displays while keeping the physical Retina display active.
+
+### Quick Commands
+
+```bash
+# Cycle profiles with keyboard
+Mod+Shift+M              # Cycle: local-only → local+1vnc → local+2vnc
+
+# Switch to specific profile
+set-monitor-profile local-only   # Physical display only
+set-monitor-profile local+1vnc   # Physical + 1 VNC display
+set-monitor-profile local+2vnc   # Physical + 2 VNC displays
+
+# Check status
+cat ~/.config/sway/monitor-profile.current
+```
+
+### Profile Overview
+
+| Profile | Displays | VNC Ports |
+|---------|----------|-----------|
+| local-only | L | - |
+| local+1vnc | L, V1 | 5900 |
+| local+2vnc | L, V1, V2 | 5900, 5901 |
+
+### Connecting via VNC
+
+```bash
+# Find M1 Tailscale IP
+tailscale status | grep nixos-m1
+
+# Connect (Tailscale network only)
+vnc://<tailscale-ip>:5900  # V1
+vnc://<tailscale-ip>:5901  # V2
+```
+
+### Workspace Distribution
+
+- **local-only**: WS 1-9 on L
+- **local+1vnc**: WS 1-4 on L, WS 5-9 on V1, PWAs (50+) on V1
+- **local+2vnc**: WS 1-3 on L, WS 4-6 on V1, WS 7-9 on V2
+
+### Troubleshooting
+
+```bash
+# Check WayVNC service
+systemctl --user status wayvnc@HEADLESS-1.service
+
+# Check daemon logs
+journalctl --user -u i3-project-event-listener -f | grep "Feature 084"
+
+# Restart services
+systemctl --user restart i3-project-event-listener eww-top-bar
+```
+
+**Docs**: `/etc/nixos/specs/084-monitor-management-solution/quickstart.md`
+
 ## 🤖 Claude Code Integration
 
 Bash history hook auto-registers all Claude Code commands to `~/.bash_history`.
@@ -618,6 +677,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON project files (`~/.config/i3/projects/`), in-memory daemon state (079-preview-pane-user-experience)
 - Python 3.11+ (daemon), Bash (profile scripts), Yuck/GTK (Eww widgets) + i3ipc.aio (Sway IPC), asyncio (event handling), Eww (top bar), systemd (service management) (083-multi-monitor-window-management)
 - JSON files (~/.config/sway/output-states.json, monitor-profile.current, monitor-profiles/*.json) (083-multi-monitor-window-management)
+- Python 3.11+ (daemon extensions), Nix (system/home-manager config), Bash (profile scripts) + i3ipc.aio (Sway IPC), Pydantic (data models), WayVNC (VNC server), asyncio (event handling), Eww (top bar) (084-monitor-management-solution)
+- JSON files (`~/.config/sway/monitor-profiles/*.json`, `output-states.json`, `monitor-profile.current`) (084-monitor-management-solution)
 
 ## Recent Changes
 - 079-preview-pane-user-experience: Enhanced project list with branch numbers ("079 - Display Name"), worktree hierarchy with indentation, space-to-hyphen filter matching, top bar peach accent styling, `i3pm worktree list` CLI command
