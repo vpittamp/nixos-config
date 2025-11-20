@@ -546,10 +546,10 @@ in
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
         background-color: rgba(30, 30, 46, 0.95); /* base with 95% opacity */
-        border: 2px solid ${mocha.overlay0};
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
+        box-shadow: -4px 0px 20px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(137, 180, 250, 0.1);  /* Shadow + subtle inner glow */
       }
 
       /* Compact Panel Header */
@@ -613,6 +613,7 @@ in
       .panel-body {
         background-color: ${mocha.base};
         padding: 4px;
+        min-height: 0;  /* Enable proper flex shrinking for scrolling */
       }
 
       .content-container {
