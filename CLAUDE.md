@@ -679,6 +679,7 @@ gh auth status               # Auto-uses 1Password token
 - JSON files (~/.config/sway/output-states.json, monitor-profile.current, monitor-profiles/*.json) (083-multi-monitor-window-management)
 - Python 3.11+ (daemon extensions), Nix (system/home-manager config), Bash (profile scripts) + i3ipc.aio (Sway IPC), Pydantic (data models), WayVNC (VNC server), asyncio (event handling), Eww (top bar) (084-monitor-management-solution)
 - JSON files (`~/.config/sway/monitor-profiles/*.json`, `output-states.json`, `monitor-profile.current`) (084-monitor-management-solution)
+- Python 3.11+ (backend data script), Yuck/GTK (Eww widget UI), Nix (module configuration) (085-sway-monitoring-widget)
 
 ## Recent Changes
 - 079-preview-pane-user-experience: Enhanced project list with branch numbers ("079 - Display Name"), worktree hierarchy with indentation, space-to-hyphen filter matching, top bar peach accent styling, `i3pm worktree list` CLI command

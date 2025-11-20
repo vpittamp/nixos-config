@@ -65,6 +65,7 @@ from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-rais
 from .services.mark_manager import MarkManager  # Feature 076: Mark-based app identification
 from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
 from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
+from .monitoring_panel_publisher import MonitoringPanelPublisher  # Feature 085: Monitoring panel updates
 from datetime import datetime
 import time
 
@@ -182,6 +183,7 @@ class I3ProjectDaemon:
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
         self.eww_publisher: Optional[EwwPublisher] = None  # Feature 083: Eww real-time updates
+        self.monitoring_panel_publisher: Optional[MonitoringPanelPublisher] = None  # Feature 085: Monitoring panel updates
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
 
     async def initialize(self) -> None:
@@ -324,6 +326,10 @@ class I3ProjectDaemon:
             logger.info(f"Feature 084: Monitor profile service initialized in hybrid mode with {profile_count} profiles")
         else:
             logger.info(f"Monitor profile service initialized with {profile_count} profiles")
+
+        # Feature 085: Initialize MonitoringPanelPublisher
+        self.monitoring_panel_publisher = MonitoringPanelPublisher()
+        logger.info("Feature 085: Monitoring panel publisher initialized")
 
         # Feature 083: Setup monitor profile file watcher (T024)
         # Watches monitor-profile.current and triggers Eww updates on profile change
@@ -573,6 +579,19 @@ class I3ProjectDaemon:
         # USER STORY 2: Title change re-classification (T033)
         self.connection.subscribe("window::title", get_window_rules_wrapper_title)
 
+        # Feature 085: Monitoring panel event-driven updates (T020)
+        # Subscribe to window events for monitoring panel state updates
+        async def publish_monitoring_panel_update(conn, event):
+            """Publish monitoring panel state on window events."""
+            if self.monitoring_panel_publisher:
+                await self.monitoring_panel_publisher.publish(conn)
+
+        self.connection.subscribe("window::new", publish_monitoring_panel_update)
+        self.connection.subscribe("window::close", publish_monitoring_panel_update)
+        self.connection.subscribe("window::move", publish_monitoring_panel_update)
+        self.connection.subscribe("window::floating", publish_monitoring_panel_update)
+        logger.info("Feature 085: Monitoring panel subscribed to window events")
+
         # USER STORY 3: Workspace monitoring
         self.connection.subscribe(
             "workspace::init",
@@ -591,6 +610,15 @@ class I3ProjectDaemon:
             "workspace::focus",
             partial(on_workspace_focus, state_manager=self.state_manager)
         )
+
+        # Feature 085: Monitoring panel workspace event updates (T020)
+        async def publish_monitoring_panel_workspace_update(conn, event):
+            """Publish monitoring panel state on workspace events."""
+            if self.monitoring_panel_publisher:
+                await self.monitoring_panel_publisher.publish(conn)
+
+        self.connection.subscribe("workspace::focus", publish_monitoring_panel_workspace_update)
+        logger.info("Feature 085: Monitoring panel subscribed to workspace events")
 
         # Feature 024: R013 - Multi-monitor output event handling
         # Feature 042: Also refresh workspace mode cache on output changes

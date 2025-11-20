@@ -6,11 +6,16 @@ let
   isWSL = builtins.pathExists /proc/sys/fs/binfmt_misc/WSLInterop;
 
   # Check for QEMU/KVM (used by Hetzner)
+  # Use tryEval to handle potential read errors from sysfs files
+  readSysFile = path:
+    let result = builtins.tryEval (builtins.readFile path);
+    in if result.success then result.value else "";
+
   isVirtualMachine =
     (builtins.pathExists /sys/devices/virtual/dmi/id/sys_vendor &&
-     builtins.elem (builtins.readFile /sys/devices/virtual/dmi/id/sys_vendor) ["QEMU\n" "KVM\n"]) ||
+     builtins.elem (readSysFile /sys/devices/virtual/dmi/id/sys_vendor) ["QEMU\n" "KVM\n"]) ||
     (builtins.pathExists /sys/devices/virtual/dmi/id/product_name &&
-     (let product = builtins.readFile /sys/devices/virtual/dmi/id/product_name;
+     (let product = readSysFile /sys/devices/virtual/dmi/id/product_name;
       in builtins.elem product [
         "Standard PC (Q35 + ICH9, 2009)\n"
         "Standard PC (i440FX + PIIX, 1996)\n"

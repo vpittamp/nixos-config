@@ -129,6 +129,10 @@ in
     #         single → dual → triple → single (Hetzner)
     "${modifier}+Shift+m" = "exec sh -c '$HOME/.local/bin/cycle-monitor-profile'";
 
+    # Feature 085: Toggle monitoring panel (T017)
+    # Use toggle-monitoring-panel from PATH (installed by eww-monitoring-panel module)
+    "${modifier}+m" = "exec toggle-monitoring-panel";
+
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
     "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";

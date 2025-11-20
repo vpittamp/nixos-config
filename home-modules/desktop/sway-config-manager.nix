@@ -171,6 +171,21 @@ let
             "move position center",
             "move scratchpad"
           ]
+        },
+        {
+          "id": "monitoring-panel",
+          "source": "nix",
+          "scope": "global",
+          "priority": 60,
+          "criteria": {
+            "app_id": "^eww-monitoring-panel$"
+          },
+          "actions": [
+            "floating enable",
+            "resize set width 800 px height 600 px",
+            "move position center",
+            "sticky enable"
+          ]
         }
       ]
     }
