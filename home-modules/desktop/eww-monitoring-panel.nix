@@ -211,6 +211,7 @@ in
           :class "panel-body"
           :orientation "v"
           :vexpand true
+          :height "850px"
           ;; Windows view (real-time)
           (revealer
             :reveal {current_view == "windows"}
@@ -241,7 +242,6 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -371,7 +371,6 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -420,7 +419,6 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
@@ -469,7 +467,6 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "800px"
           (box
             :class "content-container"
             :orientation "v"
