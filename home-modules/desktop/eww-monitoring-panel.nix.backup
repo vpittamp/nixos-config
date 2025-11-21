@@ -94,13 +94,11 @@ in
     ];
 
     # Eww Yuck widget configuration (T009-T014)
-    # Version: v8-focusable-shadow (Build: 2025-11-20-17:10)
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
-      ;; Live Window/Project Monitoring Panel - Multi-View Edition
+      ;; Live Window/Project Monitoring Panel
       ;; Feature 085: Sway Monitoring Widget
-      ;; Build: 2025-11-20 15:55 UTC
 
-      ;; Deflisten: Real-time event stream for Windows view (<100ms latency)
+      ;; Deflisten: Real-time event stream (<100ms latency)
       ;; Backend subscribes to Sway window/workspace/output events
       ;; Automatic reconnection with exponential backoff
       ;; Heartbeat every 5s to detect stale connections
@@ -108,40 +106,19 @@ in
         :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
         `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
 
-      ;; Defpoll: Projects view data (5s refresh)
-      (defpoll projects_data
-        :interval "5s"
-        :initial "{\"status\":\"loading\",\"projects\":[],\"project_count\":0,\"active_project\":null}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode projects`)
-
-      ;; Defpoll: Apps view data (5s refresh)
-      (defpoll apps_data
-        :interval "5s"
-        :initial "{\"status\":\"loading\",\"apps\":[],\"app_count\":0}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode apps`)
-
-      ;; Defpoll: Health view data (5s refresh)
-      (defpoll health_data
-        :interval "5s"
-        :initial "{\"status\":\"loading\",\"health\":{}}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
-
-      ;; Current view state (windows, projects, apps, health)
-      (defvar current_view "windows")
-
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
 
 
       ;; Main monitoring panel window - Sidebar layout
       (defwindow monitoring-panel
-        :monitor 1
+        :monitor 0
         :geometry (geometry
           :anchor "right center"
           :x "0px"
           :y "0px"
           :width "350px"
-          :height "650px")
+          :height "1000px")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
         :focusable false
@@ -153,95 +130,47 @@ in
           :class "panel-container"
           :orientation "v"
           :space-evenly false
-          :valign "start"
           (panel-header)
           (panel-body)
           (panel-footer)))
 
-      ;; Panel header with tab navigation
+      ;; Compact panel header for sidebar
       (defwidget panel-header []
         (box
           :class "panel-header"
           :orientation "v"
           :space-evenly false
-          ;; Tab navigation bar
-          (box
-            :class "tabs"
-            :orientation "h"
-            :space-evenly true
-            (button
-              :class "tab ''${current_view == 'windows' ? 'active' : ""}"
-              :onclick "eww update current_view=windows"
-              :tooltip "Windows (Alt+1)"
-              "󰖯")
-            (button
-              :class "tab ''${current_view == 'projects' ? 'active' : ""}"
-              :onclick "eww update current_view=projects"
-              :tooltip "Projects (Alt+2)"
-              "󱂬")
-            (button
-              :class "tab ''${current_view == 'apps' ? 'active' : ""}"
-              :onclick "eww update current_view=apps"
-              :tooltip "Apps (Alt+3)"
-              "󰀻")
-            (button
-              :class "tab ''${current_view == 'health' ? 'active' : ""}"
-              :onclick "eww update current_view=health"
-              :tooltip "Health (Alt+4)"
-              ""))
-          ;; Summary counts (dynamic based on view)
+          (label
+            :class "panel-title"
+            :text "󱂬 Projects")
           (box
             :class "summary-counts"
             :orientation "h"
             :space-evenly true
             (label
               :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.project_count ?: 0 : current_view == 'projects' ? projects_data.project_count ?: 0 : current_view == 'apps' ? apps_data.app_count ?: 0 : 0} ''${current_view == 'windows' || current_view == 'projects' ? 'PRJ' : current_view == 'apps' ? 'APPS' : 'ITEMS'}")
+              :text "''${monitoring_data.project_count ?: 0} PRJ")
             (label
               :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.workspace_count ?: 0 : 0} WS"
-              :visible {current_view == "windows"})
+              :text "''${monitoring_data.workspace_count ?: 0} WS")
             (label
               :class "count-badge"
-              :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
-              :visible {current_view == "windows"}))))
+              :text "''${monitoring_data.window_count ?: 0} WIN"))))
 
-      ;; Panel body with multi-view container
+      ;; Panel body with scrollable content (T014)
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
-          ;; Windows view (real-time)
-          (revealer
-            :reveal {current_view == "windows"}
-            :transition "crossfade"
-            :duration "200ms"
-            (windows-view))
-          ;; Projects view
-          (revealer
-            :reveal {current_view == "projects"}
-            :transition "crossfade"
-            :duration "200ms"
-            (projects-view))
-          ;; Apps view
-          (revealer
-            :reveal {current_view == "apps"}
-            :transition "crossfade"
-            :duration "200ms"
-            (apps-view))
-          ;; Health view
-          (revealer
-            :reveal {current_view == "health"}
-            :transition "crossfade"
-            :duration "200ms"
-            (health-view))))
+          :vexpand true
+          (scrollable-content)))
 
-      ;; Windows View - Project-based hierarchy with real-time updates
-      (defwidget windows-view []
+      ;; Scrollable content container - Project-based view
+      (defwidget scrollable-content []
         (scroll
           :vscroll true
           :hscroll false
-          :height "500px"
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -366,167 +295,6 @@ in
             :class "empty-message"
             :text "No windows open")))
 
-      ;; Projects View - Project list with metadata
-      (defwidget projects-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :height "500px"
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {projects_data.status == "error"}
-              (label :text "⚠ ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Project list
-            (for project in {projects_data.projects ?: []}
-              (project-card :project project)))))
-
-      (defwidget project-card [project]
-        (box
-          :class "project-card ''${project.is_active ? 'active-project' : ""}"
-          :orientation "v"
-          :space-evenly false
-          (box
-            :class "project-card-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "project-icon"
-              :text "''${project.icon ?: '󱂬'}")
-            (box
-              :class "project-info"
-              :orientation "v"
-              :space-evenly false
-              :hexpand true
-              (label
-                :class "project-card-name"
-                :halign "start"
-                :text "''${project.display_name ?: project.name}")
-              (label
-                :class "project-card-path"
-                :halign "start"
-                :text "''${project.directory}"))
-            (label
-              :class "active-indicator"
-              :visible {project.is_active}
-              :text "●"))))
-
-      ;; Apps View - Application registry browser
-      (defwidget apps-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :height "500px"
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {apps_data.status == "error"}
-              (label :text "⚠ ''${apps_data.error ?: 'Unknown error'}"))
-            ;; Apps list
-            (for app in {apps_data.apps ?: []}
-              (app-card :app app)))))
-
-      (defwidget app-card [app]
-        (box
-          :class "app-card"
-          :orientation "v"
-          :space-evenly false
-          (box
-            :class "app-card-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "app-icon"
-              :text "''${app.scope == 'scoped' ? '󱂬' : '󰞇'}")
-            (box
-              :class "app-info"
-              :orientation "v"
-              :space-evenly false
-              :hexpand true
-              (label
-                :class "app-card-name"
-                :halign "start"
-                :text "''${app.display_name ?: app.name}")
-              (label
-                :class "app-card-details"
-                :halign "start"
-                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running"))
-            (label
-              :class "app-running-indicator"
-              :visible {app.running_instances > 0}
-              :text "●"))))
-
-      ;; Health View - System diagnostics
-      (defwidget health-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :height "500px"
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {health_data.status == "error"}
-              (label :text "⚠ ''${health_data.error ?: 'Unknown error'}"))
-            ;; Health cards
-            (box
-              :class "health-cards"
-              :orientation "v"
-              :space-evenly false
-              ;; Daemon status
-              (health-card
-                :title "Daemon Status"
-                :value "''${health_data.health.daemon_status ?: 'unknown'}"
-                :status {health_data.health.daemon_status == "healthy" ? "ok" : "error"})
-              ;; Connection status
-              (health-card
-                :title "Sway IPC"
-                :value "''${health_data.health.sway_ipc_connected ?: false ? 'Connected' : 'Disconnected'}"
-                :status {health_data.health.sway_ipc_connected ?: false ? "ok" : "error"})
-              ;; Counts
-              (health-card
-                :title "Windows"
-                :value "''${health_data.health.window_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Workspaces"
-                :value "''${health_data.health.workspace_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Projects"
-                :value "''${health_data.health.project_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Monitors"
-                :value "''${health_data.health.monitor_count ?: 0}"
-                :status "ok")))))
-
-      (defwidget health-card [title value status]
-        (box
-          :class "health-card health-''${status}"
-          :orientation "h"
-          :space-evenly false
-          (label
-            :class "health-card-title"
-            :halign "start"
-            :hexpand true
-            :text title)
-          (label
-            :class "health-card-value"
-            :halign "end"
-            :text value)))
-
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
         (box
@@ -541,20 +309,37 @@ in
     # Eww SCSS styling (T015)
     xdg.configFile."eww-monitoring-panel/eww.scss".text = ''
       /* Feature 085: Sway Monitoring Widget - Catppuccin Mocha Theme */
-      /* Direct color interpolation from Nix - Eww doesn't support CSS variables */
+
+      /* Color Variables (Catppuccin Mocha) - CSS Custom Properties */
+      * {
+        --base: ${mocha.base};
+        --mantle: ${mocha.mantle};
+        --surface0: ${mocha.surface0};
+        --surface1: ${mocha.surface1};
+        --overlay0: ${mocha.overlay0};
+        --text: ${mocha.text};
+        --subtext0: ${mocha.subtext0};
+        --blue: ${mocha.blue};
+        --teal: ${mocha.teal};
+        --green: ${mocha.green};
+        --yellow: ${mocha.yellow};
+        --red: ${mocha.red};
+        --mauve: ${mocha.mauve};
+      }
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.85); /* base with 85% opacity - more transparent */
+        background-color: rgba(30, 30, 46, 0.95); /* $base with 95% opacity */
+        border: 2px solid $overlay0;
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        box-shadow: -4px 0px 20px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(137, 180, 250, 0.05);  /* Shadow + very subtle inner glow */
       }
 
       /* Compact Panel Header */
       .panel-header {
-        background-color: ${mocha.mantle};
+        background-color: $mantle;
+        border-bottom: 1px solid $overlay0;
         border-radius: 8px;
         padding: 8px 12px;
         margin-bottom: 8px;
@@ -563,53 +348,27 @@ in
       .panel-title {
         font-size: 14px;
         font-weight: bold;
-        color: ${mocha.text};
+        color: $text;
         margin-bottom: 4px;
       }
 
       .summary-counts {
         font-size: 11px;
-        color: ${mocha.subtext0};
+        color: $subtext0;
       }
 
       .count-badge {
         font-size: 10px;
-        color: ${mocha.teal};
+        color: $teal;
         background-color: rgba(148, 226, 213, 0.15);
         padding: 2px 6px;
         border-radius: 3px;
       }
 
-      /* Tab Navigation */
-      .tabs {
-        margin-bottom: 8px;
-      }
-
-      .tab {
-        font-size: 16px;
-        padding: 8px 16px;
-        background-color: ${mocha.surface0};
-        color: ${mocha.subtext0};
-        border-radius: 6px;
-        transition: all 0.2s;
-      }
-
-      .tab:hover {
-        background-color: ${mocha.surface1};
-        color: ${mocha.text};
-      }
-
-      .tab.active {
-        background-color: ${mocha.blue};
-        color: ${mocha.base};
-        font-weight: bold;
-      }
-
       /* Panel Body - Compact */
       .panel-body {
-        background-color: ${mocha.base};
+        background-color: $base;
         padding: 4px;
-        min-height: 0;  /* Enable proper flex shrinking for scrolling */
       }
 
       .content-container {
@@ -620,35 +379,38 @@ in
       .project {
         margin-bottom: 12px;
         padding: 8px;
-        background-color: ${mocha.surface0};
+        background-color: $surface0;
         border-radius: 8px;
+        border: 1px solid $overlay0;
       }
 
       .scoped-project {
-        border-left: 3px solid ${mocha.teal};
+        border-left: 3px solid $teal;
       }
 
       .global-project {
-        border-left: 3px solid ${mocha.mauve};
+        border-left: 3px solid $mauve;
       }
 
       .project-header {
         padding: 6px 8px;
+        border-bottom: 1px solid $overlay0;
         margin-bottom: 6px;
       }
 
       .project-name {
         font-size: 13px;
         font-weight: bold;
-        color: ${mocha.text};
+        color: $text;
       }
 
       .window-count-badge {
         font-size: 10px;
-        color: ${mocha.teal};
+        color: $teal;
         background-color: rgba(148, 226, 213, 0.2);
         padding: 1px 5px;
         border-radius: 3px;
+        margin-left: auto;
         min-width: 18px;
       }
 
@@ -662,17 +424,17 @@ in
         padding: 4px 8px;
         margin-bottom: 1px;
         border-radius: 2px;
-        background-color: ${mocha.base};
+        background-color: $base;
         border-left: 2px solid transparent;
       }
 
       .window-focused {
         background-color: rgba(137, 180, 250, 0.1);
-        border-left-color: ${mocha.blue};
+        border-left-color: $blue;
       }
 
       .window-floating {
-        border-right: 2px solid ${mocha.yellow};
+        border-right: 2px solid $yellow;
       }
 
       .window-hidden {
@@ -682,23 +444,23 @@ in
 
       /* Project Scope - Subtle border */
       .scoped-window {
-        border-left-color: ${mocha.teal};
+        border-left-color: $teal;
       }
 
       .global-window {
-        border-left-color: ${mocha.overlay0};
+        border-left-color: $overlay0;
       }
 
       .window-icon {
         font-size: 11px;
-        color: ${mocha.subtext0};
+        color: $subtext0;
         min-width: 18px;
       }
 
       .window-app-name {
         font-size: 11px;
         font-weight: 500;
-        color: ${mocha.text};
+        color: $text;
         margin-left: 6px;
       }
 
@@ -716,17 +478,17 @@ in
       }
 
       .badge-pwa {
-        color: ${mocha.mauve};
+        color: $mauve;
         background-color: rgba(203, 166, 247, 0.2);
       }
 
       .badge-project {
-        color: ${mocha.teal};
+        color: $teal;
         background-color: rgba(148, 226, 213, 0.15);
       }
 
       .badge-workspace {
-        color: ${mocha.blue};
+        color: $blue;
         background-color: rgba(137, 180, 250, 0.15);
       }
 
@@ -737,13 +499,13 @@ in
 
       .error-icon {
         font-size: 48px;
-        color: ${mocha.red};
+        color: $red;
         margin-bottom: 16px;
       }
 
       .error-message {
         font-size: 14px;
-        color: ${mocha.text};
+        color: $text;
       }
 
       /* Empty State (T041) */
@@ -753,25 +515,26 @@ in
 
       .empty-icon {
         font-size: 48px;
-        color: ${mocha.subtext0};
+        color: $subtext0;
         margin-bottom: 16px;
       }
 
       .empty-title {
         font-size: 16px;
         font-weight: bold;
-        color: ${mocha.text};
+        color: $text;
         margin-bottom: 8px;
       }
 
       .empty-message {
         font-size: 14px;
-        color: ${mocha.subtext0};
+        color: $subtext0;
       }
 
       /* Compact Panel Footer */
       .panel-footer {
-        background-color: ${mocha.mantle};
+        background-color: $mantle;
+        border-top: 1px solid $overlay0;
         border-radius: 8px;
         padding: 6px 8px;
         margin-top: 8px;
@@ -779,7 +542,7 @@ in
 
       .timestamp {
         font-size: 10px;
-        color: ${mocha.subtext0};
+        color: $subtext0;
         font-style: italic;
       }
 
@@ -790,121 +553,13 @@ in
       }
 
       scrollbar slider {
-        background-color: ${mocha.overlay0};
+        background-color: $overlay0;
         border-radius: 4px;
         min-width: 6px;
       }
 
       scrollbar slider:hover {
-        background-color: ${mocha.surface1};
-      }
-
-      /* Project Card Styles */
-      .project-card {
-        background-color: ${mocha.surface0};
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 8px;
-      }
-
-      .project-card.active-project {
-        border-left: 3px solid ${mocha.teal};
-        background-color: rgba(148, 226, 213, 0.1);
-      }
-
-      .project-card-header {
-        margin-bottom: 4px;
-      }
-
-      .project-icon {
-        font-size: 20px;
-        margin-right: 8px;
-      }
-
-      .project-info {
-        margin-right: 8px;
-      }
-
-      .project-card-name {
-        font-size: 13px;
-        font-weight: bold;
-        color: ${mocha.text};
-        margin-bottom: 2px;
-      }
-
-      .project-card-path {
-        font-size: 10px;
-        color: ${mocha.subtext0};
-      }
-
-      .active-indicator {
-        color: ${mocha.teal};
-        font-size: 14px;
-      }
-
-      /* App Card Styles */
-      .app-card {
-        background-color: ${mocha.surface0};
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 8px;
-      }
-
-      .app-card-header {
-        margin-bottom: 4px;
-      }
-
-      .app-icon {
-        font-size: 18px;
-        margin-right: 8px;
-      }
-
-      .app-card-name {
-        font-size: 13px;
-        font-weight: bold;
-        color: ${mocha.text};
-        margin-bottom: 2px;
-      }
-
-      .app-card-details {
-        font-size: 10px;
-        color: ${mocha.subtext0};
-      }
-
-      .app-running-indicator {
-        color: ${mocha.green};
-        font-size: 14px;
-      }
-
-      /* Health Card Styles */
-      .health-cards {
-        padding: 4px;
-      }
-
-      .health-card {
-        background-color: ${mocha.surface0};
-        border-radius: 6px;
-        padding: 10px 12px;
-        margin-bottom: 6px;
-      }
-
-      .health-card.health-ok {
-        border-left: 3px solid ${mocha.green};
-      }
-
-      .health-card.health-error {
-        border-left: 3px solid ${mocha.red};
-      }
-
-      .health-card-title {
-        font-size: 12px;
-        color: ${mocha.subtext0};
-      }
-
-      .health-card-value {
-        font-size: 13px;
-        font-weight: bold;
-        color: ${mocha.text};
+        background-color: $surface1;
       }
     '';
 

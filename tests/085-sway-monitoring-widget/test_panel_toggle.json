@@ -1,0 +1,117 @@
+{
+  "name": "Monitoring Panel Toggle Test",
+  "description": "Verify Mod+m keybinding toggles monitoring panel visibility",
+  "setup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "systemctl --user restart eww-monitoring-panel",
+        "description": "Ensure Eww daemon is running fresh"
+      },
+      {
+        "action": "wait_sync",
+        "description": "Wait for service to start"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close-all",
+        "description": "Ensure panel is closed at start"
+      },
+      {
+        "action": "wait_sync",
+        "description": "Wait for close to complete"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Panel opens on first keybinding press",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "window_count",
+            "count": 0,
+            "filter": {
+              "app_id": "eww-monitoring-panel"
+            }
+          },
+          "description": "Panel should not exist initially"
+        },
+        {
+          "action": "key",
+          "keys": "Mod+m",
+          "description": "Press toggle keybinding"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to open"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "contains": "monitoring-panel",
+            "description": "Panel should be listed in active windows"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Panel closes on second keybinding press",
+      "steps": [
+        {
+          "action": "key",
+          "keys": "Mod+m",
+          "description": "Press toggle keybinding again"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to close"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "not_contains": "monitoring-panel",
+            "description": "Panel should not be in active windows"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Panel reopens on third press (toggle cycle)",
+      "steps": [
+        {
+          "action": "key",
+          "keys": "Mod+m",
+          "description": "Press toggle keybinding third time"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to open"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "contains": "monitoring-panel",
+            "description": "Panel should be open again"
+          }
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close-all",
+        "description": "Close panel after test"
+      }
+    ]
+  }
+}

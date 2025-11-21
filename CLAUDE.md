@@ -96,6 +96,67 @@ Visual schematic layout of all workspaces with app names.
 
 **Keys**: `Mod+Tab` (show) | `Mod+Shift+Tab` (hide)
 
+## 📊 Live Window/Project Monitoring Panel (Feature 085)
+
+**Status**: ✅ COMPLETE (2025-11-20)
+
+Real-time hierarchical view of all windows, workspaces, and monitors with project associations.
+
+**Key**: `Mod+M` (toggle panel visibility)
+
+**Features**:
+- **Hierarchical Display**: Monitors → Workspaces → Windows with project labels
+- **Real-Time Updates**: <100ms latency via event-driven streaming (deflisten)
+- **Project Tracking**: Shows which windows belong to which projects (scoped vs global)
+- **Window States**: Visual indicators for floating, hidden, focused, and scratchpad windows
+- **PWA Detection**: Badge for windows on workspaces 50+
+- **Global Scope**: Panel remains visible when switching projects
+- **Summary Metrics**: Monitor/workspace/window counts in header
+
+**Visual Indicators**:
+- **Scoped windows**: Teal border with (project-name) label
+- **Global windows**: Gray border, no project label
+- **Floating windows**: ⚓ icon, yellow border
+- **Hidden windows**: 50% opacity, italic text
+- **Focused window**: Blue border
+- **Workspace number**: [WS N] for each window
+
+**Commands**:
+```bash
+systemctl --user {status|restart} eww-monitoring-panel
+journalctl --user -u eww-monitoring-panel -f  # Follow logs
+```
+
+**Technical Details**:
+- **Backend**: Python 3.11+ with i3ipc.aio event subscriptions (window/workspace/output events)
+- **Frontend**: Eww (GTK3) with deflisten for real-time streaming
+- **Data Source**: i3pm daemon via DaemonClient
+- **Update Mechanism**: Event-driven (not polling), automatic reconnection with exponential backoff
+- **Performance**: 26-28ms toggle latency, <100ms update latency, ~51MB memory
+
+**Architecture**:
+```
+Sway IPC Events → i3ipc.aio → monitoring_data.py --listen
+                                        ↓
+                              JSON stream (stdout)
+                                        ↓
+                    Eww deflisten → monitoring-panel window
+```
+
+**Troubleshooting**:
+```bash
+# Check if backend is streaming
+ps aux | grep "monitoring_data.*--listen"
+
+# Restart panel if not updating
+systemctl --user restart eww-monitoring-panel
+
+# Check for errors
+journalctl --user -u eww-monitoring-panel --since "5 minutes ago"
+```
+
+**Docs**: `/etc/nixos/specs/085-sway-monitoring-widget/quickstart.md`
+
 ## 🎨 Unified Bar System (Feature 057)
 
 Centralized theming with Catppuccin Mocha across top bar (Eww), bottom bar (Eww), and notification center (SwayNC).
@@ -650,6 +711,9 @@ gh auth status               # Auto-uses 1Password token
 ## ⚠️ Recent Updates (2025-11)
 
 **Key Features**:
+- **Feature 085**: Live window/project monitoring panel with real-time event streaming (deflisten). See `/etc/nixos/specs/085-sway-monitoring-widget/`
+- **Feature 084**: M1 hybrid multi-monitor management (local + VNC virtual displays). See `/etc/nixos/specs/084-monitor-management-solution/`
+- **Feature 083**: Multi-monitor window management with event-driven profile switching. See `/etc/nixos/specs/083-multi-monitor-window-management/`
 - **Feature 079**: Preview pane UX enhancements - branch number display, worktree hierarchy, space-to-hyphen matching. See `/etc/nixos/specs/079-preview-pane-user-experience/`
 - **Feature 078**: Enhanced project selection with fuzzy search and visual feedback. See `/etc/nixos/specs/078-eww-preview-improvement/`
 - **Feature 073**: Eww interactive menu stabilization (M/F key actions, Delete key close, keyboard hints). See `/etc/nixos/specs/073-eww-menu-stabilization/`
@@ -682,6 +746,9 @@ gh auth status               # Auto-uses 1Password token
 - Python 3.11+ (backend data script), Yuck/GTK (Eww widget UI), Nix (module configuration) (085-sway-monitoring-widget)
 
 ## Recent Changes
+- 085-sway-monitoring-widget: Real-time monitoring panel with hierarchical window/workspace/project view, event-driven streaming via deflisten (<100ms latency), automatic reconnection, i3ipc.aio subscriptions, Catppuccin Mocha styling
+- 084-monitor-management-solution: M1 hybrid multi-monitor profiles (local-only/local+1vnc/local+2vnc), WayVNC integration, keyboard cycling (Mod+Shift+M)
+- 083-multi-monitor-window-management: Event-driven monitor profile system with Eww top bar integration, profile watcher daemon, <100ms UI updates
 - 079-preview-pane-user-experience: Enhanced project list with branch numbers ("079 - Display Name"), worktree hierarchy with indentation, space-to-hyphen filter matching, top bar peach accent styling, `i3pm worktree list` CLI command
 - 078-eww-preview-improvement: Added enhanced project selection with fuzzy matching, Pydantic models, Eww project list widget (MVP complete)
 - 074-session-management: Added Python 3.11+ (existing daemon standard per Constitution Principle X)
