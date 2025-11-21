@@ -2,9 +2,16 @@
 
 let
   modifier = config.wayland.windowManager.sway.config.modifier;
+  rawToggleKey = config.programs.eww-monitoring-panel.toggleKey;
+  toggleKeyList =
+    let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
+    in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
+  monitoringPanelBindings =
+    lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList));
 in
 {
-  wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault {
+  wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
+    {
     # ========== WORKSPACE NAVIGATION ==========
     # Mode-based system with visual feedback in status bar
     # Platform-specific workspace mode entry keybindings are managed in sway.nix:
@@ -130,8 +137,7 @@ in
     "${modifier}+Shift+m" = "exec sh -c '$HOME/.local/bin/cycle-monitor-profile'";
 
     # Feature 085: Toggle monitoring panel (T017)
-    # Use toggle-monitoring-panel from PATH (installed by eww-monitoring-panel module)
-    "${modifier}+m" = "exec toggle-monitoring-panel";
+    # Additional bindings injected via monitoringPanelBindings below
 
     # Feature 085: Switch monitoring panel tabs (non-focusable widget, keyboard-only navigation)
     "Mod1+1" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows";
@@ -193,5 +199,6 @@ in
     # Return executes navigation to selected workspace/window (US2)
     # Delete closes selected window (US3)
     # Escape cancels and exits mode
-  };
+  }
+  // monitoringPanelBindings);
 }
