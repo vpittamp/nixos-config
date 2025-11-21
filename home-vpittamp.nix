@@ -82,5 +82,25 @@
   programs.eww-top-bar.enable = true;  # ✅ Enabled - all features implemented (Phases 1-10)
 
   # Feature 085: Live window/project monitoring panel
-  programs.eww-monitoring-panel.enable = true;  # Toggle with Mod+m
+  # Feature 086: Monitor focus enhancement
+  programs.eww-monitoring-panel = {
+    enable = true;  # Toggle with Mod+m, F10 for focus mode
+  };
+
+  # Monitor configuration for both M1 and Hetzner
+  # Passed to eww-monitoring-panel for correct display output
+  _module.args.monitorConfig = {
+    "nixos-hetzner-sway" = {
+      primary = "HEADLESS-1";
+      secondary = "HEADLESS-2";
+      tertiary = "HEADLESS-3";
+      outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
+    };
+    "nixos-m1" = {
+      primary = "eDP-1";
+      secondary = "HEADLESS-1";
+      tertiary = "HEADLESS-2";
+      outputs = [ "eDP-1" "HEADLESS-1" "HEADLESS-2" ];
+    };
+  };
 }

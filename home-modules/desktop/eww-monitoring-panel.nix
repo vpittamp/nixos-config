@@ -80,10 +80,10 @@ let
   # Feature 086: Toggle script for explicit panel focus (US2)
   # Allows user to lock/unlock keyboard focus to panel with Mod+Shift+M
   # Now uses Sway mode for comprehensive keyboard capture
+  # Note: Eww windows are layer-shell surfaces and can't be focused via swaymsg
   toggleFocusScript = pkgs.writeShellScriptBin "toggle-panel-focus" ''
     #!${pkgs.bash}/bin/bash
     # Feature 086: Enter monitoring focus mode
-    PANEL_APP_ID="eww-monitoring-panel"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
     # Check if panel is visible first
@@ -92,9 +92,6 @@ let
       exit 0
     fi
 
-    # Focus the panel window
-    ${pkgs.sway}/bin/swaymsg "[app_id=\"$PANEL_APP_ID\"] focus" 2>/dev/null
-
     # Update eww variable to show focus indicator
     $EWW_CMD update panel_focused=true
 
@@ -102,7 +99,8 @@ let
     $EWW_CMD update selected_index=0
 
     # Enter Sway monitoring mode (captures all keys)
-    ${pkgs.sway}/bin/swaymsg 'mode "📊 Monitor"'
+    # This provides keyboard capture - eww layer-shell handles the rest
+    ${pkgs.sway}/bin/swaymsg 'mode "📊 Panel"'
   '';
 
   # Feature 086: Exit monitoring mode script
@@ -132,11 +130,13 @@ let
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
     # Get current state
-    current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "-1")
+    current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "0")
     current_view=$($EWW_CMD get current_view 2>/dev/null || echo "windows")
+    selected_window=$($EWW_CMD get selected_window_id 2>/dev/null || echo "0")
 
-    # Get max items based on current view (simplified - expand later)
-    max_items=10  # Placeholder - would need to query actual data
+    # Get window count from monitoring data
+    window_count=$($EWW_CMD get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r '.window_count // 10')
+    max_items=$((window_count > 0 ? window_count : 10))
 
     case "$ACTION" in
       down)
@@ -160,14 +160,25 @@ let
         $EWW_CMD update selected_index=$((max_items - 1))
         ;;
       select)
-        # When select is pressed, set selected_window_id based on current selection
-        # This would need actual window data - placeholder for now
-        echo "Select action at index $current_index" | ${pkgs.systemd}/bin/systemd-cat -t monitor-panel-nav
-        # For now, just log - will expand when we have window list data
+        # Get window ID at current index and show detail view
+        window_id=$($EWW_CMD get monitoring_data 2>/dev/null | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '
+          [.projects[].workspaces[].windows[]] | .[$idx].id // 0
+        ')
+        if [ "$window_id" != "0" ] && [ "$window_id" != "null" ] && [ -n "$window_id" ]; then
+          $EWW_CMD update selected_window_id=$window_id
+        fi
         ;;
       back)
-        # Clear selection or go back in detail view
+        # Clear selection - go back to list view
         $EWW_CMD update selected_window_id=0
+        ;;
+      focus)
+        # Focus the selected window in Sway
+        if [ "$selected_window" != "0" ] && [ "$selected_window" != "null" ]; then
+          ${pkgs.sway}/bin/swaymsg "[con_id=$selected_window] focus"
+          # Exit panel mode after focusing
+          exit-monitor-mode
+        fi
         ;;
     esac
   '';
@@ -287,10 +298,10 @@ in
           :width "450px"
           :height "1000px")
         :namespace "eww-monitoring-panel"
-        :stacking "overlay"
+        :stacking "fg"
         :focusable "ondemand"
         :exclusive false
-        :windowtype "normal"
+        :windowtype "dock"
         (monitoring-panel-content))
 
       ;; Main panel content widget with keyboard navigation
@@ -839,13 +850,10 @@ in
         transition: all 200ms ease-in-out;
       }
 
-      /* Feature 086: Focused state with glowing border effect */
+      /* Feature 086: Focused state with prominent border */
       .panel-container.focused {
-        border: 2px solid ${mocha.mauve};
-        box-shadow: 0 0 20px rgba(203, 166, 247, 0.4),
-                    0 0 40px rgba(203, 166, 247, 0.2),
-                    inset 0 0 15px rgba(203, 166, 247, 0.05);
-        background-color: rgba(30, 30, 46, 0.95);
+        border: 3px solid ${mocha.mauve};
+        background-color: rgba(49, 50, 68, 0.98);
       }
 
       /* Focus mode indicator badge */

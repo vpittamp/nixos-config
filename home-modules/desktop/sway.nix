@@ -952,34 +952,50 @@ in
 
       # Feature 086: Monitoring panel focus mode
       # Captures all keys when panel has explicit focus
-      # Enter via Mod+Shift+M, exit via Escape or Mod+Shift+M again
-      mode "📊 Monitor" {
-          # Tab switching (1-4)
+      # Simple keys for convenient navigation
+      mode "📊 Panel" {
+          # Tab switching - simple number keys
           bindsym 1 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows
           bindsym 2 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects
           bindsym 3 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps
           bindsym 4 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=health
 
-          # Navigation (vim-style and arrows)
-          bindsym j exec monitor-panel-nav down
-          bindsym k exec monitor-panel-nav up
-          bindsym Down exec monitor-panel-nav down
-          bindsym Up exec monitor-panel-nav up
-          bindsym Home exec monitor-panel-nav first
-          bindsym End exec monitor-panel-nav last
+          # Also support 'w', 'p', 'a', 'h' for tabs (mnemonic)
+          bindsym w exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows
+          bindsym p exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects
+          bindsym a exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps
 
-          # Selection/action
-          bindsym Return exec monitor-panel-nav select
-          bindsym l exec monitor-panel-nav select
-          bindsym Right exec monitor-panel-nav select
-          bindsym h exec monitor-panel-nav back
-          bindsym Left exec monitor-panel-nav back
-          bindsym BackSpace exec monitor-panel-nav back
+          # Navigation - arrow keys and vim keys (use sh -c for PATH resolution)
+          bindsym j exec sh -c 'monitor-panel-nav down'
+          bindsym k exec sh -c 'monitor-panel-nav up'
+          bindsym Down exec sh -c 'monitor-panel-nav down'
+          bindsym Up exec sh -c 'monitor-panel-nav up'
+          bindsym g exec sh -c 'monitor-panel-nav first'
+          bindsym Shift+g exec sh -c 'monitor-panel-nav last'
+          bindsym Home exec sh -c 'monitor-panel-nav first'
+          bindsym End exec sh -c 'monitor-panel-nav last'
 
-          # Exit monitoring mode
-          bindsym Escape exec exit-monitor-mode
-          bindsym q exec exit-monitor-mode
-          bindsym Mod4+Shift+m exec exit-monitor-mode
+          # Selection - Enter or Space to view detail
+          bindsym Return exec sh -c 'monitor-panel-nav select'
+          bindsym space exec sh -c 'monitor-panel-nav select'
+          bindsym l exec sh -c 'monitor-panel-nav select'
+          bindsym Right exec sh -c 'monitor-panel-nav select'
+
+          # Back - go back from detail view
+          bindsym h exec sh -c 'monitor-panel-nav back'
+          bindsym Left exec sh -c 'monitor-panel-nav back'
+          bindsym BackSpace exec sh -c 'monitor-panel-nav back'
+          bindsym b exec sh -c 'monitor-panel-nav back'
+
+          # Focus selected window (jump to it)
+          bindsym f exec sh -c 'monitor-panel-nav focus'
+          bindsym o exec sh -c 'monitor-panel-nav focus'
+
+          # Exit panel mode - multiple options
+          bindsym Escape exec sh -c 'exit-monitor-mode'
+          bindsym q exec sh -c 'exit-monitor-mode'
+          bindsym F10 exec sh -c 'exit-monitor-mode'
+          bindsym Mod4+Shift+m exec sh -c 'exit-monitor-mode'
       }
 
       # Platform-conditional workspace mode keybindings

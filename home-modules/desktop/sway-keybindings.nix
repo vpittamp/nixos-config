@@ -136,6 +136,9 @@ in
     # Press again to return focus to previous window
     "${modifier}+Shift+m" = "exec toggle-panel-focus";
 
+    # Feature 086: Alternative binding (F10) for VNC users
+    "F10" = "exec toggle-panel-focus";
+
     # Feature 085: Toggle monitoring panel (T017)
     # Additional bindings injected via monitoringPanelBindings below
 
