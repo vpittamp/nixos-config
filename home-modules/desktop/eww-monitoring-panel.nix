@@ -174,7 +174,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "350px"
+          :width "500px"
           :height "85%")
         :namespace "eww-monitoring-panel"
         :windowtype "dialog"
