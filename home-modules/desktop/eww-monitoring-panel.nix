@@ -853,16 +853,10 @@ in
         font-size: 10px;
         font-weight: bold;
         color: ${mocha.base};
-        background: linear-gradient(135deg, ${mocha.mauve}, ${mocha.blue});
+        background-image: linear-gradient(135deg, ${mocha.mauve}, ${mocha.blue});
         padding: 2px 8px;
         border-radius: 4px;
         margin-left: 8px;
-        animation: pulse 2s ease-in-out infinite;
-      }
-
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
       }
 
 
