@@ -26,7 +26,8 @@ let
   };
 
   # Python with required packages for both modes (one-shot and streaming)
-  pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ]);
+  # pyxdg required for XDG icon theme lookup (resolves icon names like "firefox" to paths)
+  pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ]);
 
   # Python backend script for monitoring data
   # Supports both one-shot mode (no args) and stream mode (--listen)
@@ -305,28 +306,40 @@ in
           :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
           :cursor "pointer"
           (box
-            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes}"
+            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
             :orientation "h"
             :space-evenly false
-            ; Window icon shows state
-            (label
-              :class "window-icon"
-              :text "''${window.floating ? '⚓' : '󱂬'}")
-            ; App name and PID
+            ; App icon (image if available, fallback emoji otherwise)
+            (box
+              :class "window-icon-container"
+              :valign "center"
+              (image :class "window-icon-image"
+                     :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
+                     :image-width 20
+                     :image-height 20
+                     :visible {strlength(window.icon_path) > 0})
+              (label
+                :class "window-icon-fallback"
+                :text "''${window.floating ? '⚓' : '󱂬'}"
+                :visible {strlength(window.icon_path) == 0}))
+            ; App name and truncated title
             (box
               :class "window-info"
               :orientation "v"
               :space-evenly false
+              :hexpand true
               (label
                 :class "window-app-name"
                 :halign "start"
-                :text "''${window.app_name}"
-                :limit-width 20
+                :text "''${window.display_name}"
+                :limit-width 25
                 :truncate true)
               (label
-                :class "window-pid"
+                :class "window-title"
                 :halign "start"
-                :text "PID: ''${window.pid}"))
+                :text "''${window.title ?: '#' + window.id}"
+                :limit-width 35
+                :truncate true))
             ; Compact badges for states
             (box
               :class "window-badges"
@@ -819,10 +832,21 @@ in
         border-left-color: ${mocha.overlay0};
       }
 
-      .window-icon {
-        font-size: 11px;
+      .window-icon-container {
+        min-width: 24px;
+        min-height: 24px;
+        margin-right: 6px;
+      }
+
+      .window-icon-image {
+        min-width: 20px;
+        min-height: 20px;
+      }
+
+      .window-icon-fallback {
+        font-size: 14px;
         color: ${mocha.subtext0};
-        min-width: 18px;
+        min-width: 20px;
       }
 
       .window-app-name {
@@ -1131,10 +1155,9 @@ in
         margin-left: 6px;
       }
 
-      .window-pid {
-        font-size: 9px;
+      .window-title {
+        font-size: 10px;
         color: ${mocha.subtext0};
-        font-family: monospace;
       }
 
       .window:hover {

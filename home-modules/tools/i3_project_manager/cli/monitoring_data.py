@@ -44,6 +44,131 @@ try:
 except ImportError:
     I3Connection = None  # Gracefully handle missing i3ipc in one-shot mode
 
+# Icon resolution - loads from application-registry.json and pwa-registry.json
+# Uses XDG icon theme lookup for icon names (like "firefox" -> /usr/share/icons/.../firefox.png)
+_icon_registry: Optional[Dict[str, str]] = None
+_icon_cache: Dict[str, str] = {}
+APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
+PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
+
+# Icon search directories for manual fallback
+ICON_SEARCH_DIRS = [
+    Path.home() / ".local/share/icons",
+    Path.home() / ".icons",
+    Path("/usr/share/icons"),
+    Path("/usr/share/pixmaps"),
+]
+ICON_EXTENSIONS = (".svg", ".png", ".xpm")
+
+# Try to import XDG icon theme lookup
+try:
+    from xdg.IconTheme import getIconPath
+except ImportError:
+    getIconPath = None
+
+
+def _resolve_icon_name(icon_name: str) -> str:
+    """Resolve icon name to full file path using XDG lookup."""
+    if not icon_name:
+        return ""
+
+    # Check cache first
+    cache_key = icon_name.lower()
+    if cache_key in _icon_cache:
+        return _icon_cache[cache_key]
+
+    # If it's already an absolute path, verify it exists
+    candidate = Path(icon_name)
+    if candidate.is_absolute() and candidate.exists():
+        _icon_cache[cache_key] = str(candidate)
+        return str(candidate)
+
+    # Try XDG icon theme lookup (resolves names like "firefox")
+    if getIconPath:
+        themed = getIconPath(icon_name, 48)
+        if themed:
+            resolved = str(Path(themed))
+            _icon_cache[cache_key] = resolved
+            return resolved
+
+    # Manual search through icon directories as fallback
+    for directory in ICON_SEARCH_DIRS:
+        if not directory.exists():
+            continue
+        for ext in ICON_EXTENSIONS:
+            probe = directory / f"{icon_name}{ext}"
+            if probe.exists():
+                resolved = str(probe)
+                _icon_cache[cache_key] = resolved
+                return resolved
+
+    # Not found - cache empty string
+    _icon_cache[cache_key] = ""
+    return ""
+
+
+def get_icon_registry() -> Dict[str, str]:
+    """Get or load the icon registry mapping app names to resolved icon paths."""
+    global _icon_registry
+    if _icon_registry is not None:
+        return _icon_registry
+
+    _icon_registry = {}
+
+    # Load from application-registry.json
+    if APP_REGISTRY_PATH.exists():
+        try:
+            with open(APP_REGISTRY_PATH) as f:
+                data = json.load(f)
+                for app in data.get("applications", []):
+                    name = app.get("name", "").lower()
+                    icon = app.get("icon", "")
+                    if name and icon:
+                        # Resolve icon name to full path
+                        _icon_registry[name] = _resolve_icon_name(icon)
+        except Exception:
+            pass
+
+    # Load from pwa-registry.json
+    if PWA_REGISTRY_PATH.exists():
+        try:
+            with open(PWA_REGISTRY_PATH) as f:
+                data = json.load(f)
+                for pwa in data.get("pwas", []):
+                    # PWAs use ULID-based app_id (e.g., "FFPWA-01JCYF8Z2M")
+                    ulid = pwa.get("ulid", "")
+                    icon = pwa.get("icon", "")
+                    if ulid and icon:
+                        _icon_registry[f"ffpwa-{ulid}".lower()] = _resolve_icon_name(icon)
+        except Exception:
+            pass
+
+    return _icon_registry
+
+
+def resolve_icon(app_id: str, window_class: str = "") -> str:
+    """Resolve icon path for an app_id or window class."""
+    registry = get_icon_registry()
+
+    # Try exact app_id match first
+    if app_id:
+        app_id_lower = app_id.lower()
+        if app_id_lower in registry:
+            return registry[app_id_lower]
+
+        # Extract base app name (e.g., "terminal-nixos-123456" -> "terminal")
+        base_name = app_id.split("-")[0].lower() if "-" in app_id else app_id_lower
+        if base_name in registry:
+            return registry[base_name]
+
+    # Try window_class as fallback
+    if window_class:
+        class_lower = window_class.lower()
+        if class_lower in registry:
+            return registry[class_lower]
+
+    return ""
+
 # Configure logging (stderr only - stdout is for JSON)
 logging.basicConfig(
     level=logging.INFO,
@@ -109,10 +234,16 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         WindowInfo dict matching data-model.md specification
     """
-    # Extract app_name from class (preferred) or app_id
-    app_name = window.get("class", "")
-    if not app_name:
-        app_name = window.get("app_id", "unknown")
+    app_id = window.get("app_id", "")
+    window_class = window.get("class", "")
+
+    app_name = window_class if window_class else app_id if app_id else "unknown"
+
+    # Use full app_id as display_name (user preference)
+    display_name = app_id if app_id else window_class if window_class else "unknown"
+
+    # Resolve icon from app registry
+    icon_path = resolve_icon(app_id, window_class)
 
     # Derive scope from marks - check if any mark starts with "scoped:"
     marks = window.get("marks", [])
@@ -137,8 +268,9 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": window.get("id", 0),
         "pid": window.get("pid", 0),
-        "app_id": window.get("app_id", ""),
+        "app_id": app_id,
         "app_name": app_name,
+        "display_name": display_name,
         "class": window.get("class", ""),
         "instance": window.get("instance", ""),
         # Truncate title to 50 chars for display performance
@@ -146,7 +278,7 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
         "full_title": window.get("title", ""),  # Keep full title for detail view
         "project": window.get("project", ""),
         "scope": scope,
-        "icon_path": window.get("icon_path", ""),
+        "icon_path": icon_path,
         "workspace": workspace_raw,  # Keep original value ("scratchpad", "1", etc.)
         "output": window.get("output", ""),
         "marks": window.get("marks", []),
