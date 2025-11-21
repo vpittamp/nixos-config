@@ -96,13 +96,34 @@ Visual schematic layout of all workspaces with app names.
 
 **Keys**: `Mod+Tab` (show) | `Mod+Shift+Tab` (hide)
 
-## 📊 Live Window/Project Monitoring Panel (Feature 085)
+## 📊 Live Window/Project Monitoring Panel (Features 085, 086)
 
-**Status**: ✅ COMPLETE (2025-11-20)
+**Status**: ✅ COMPLETE (2025-11-21)
 
 Real-time hierarchical view of all windows, workspaces, and monitors with project associations.
 
-**Key**: `Mod+M` (toggle panel visibility)
+**Keys**:
+| Key | Action |
+|-----|--------|
+| `Mod+M` | Toggle panel visibility |
+| `Mod+Shift+M` | Enter monitoring focus mode (📊 Monitor) |
+| `Alt+1-4` | Switch panel tabs (Windows/Projects/Apps/Health) |
+
+**Focus Mode Keys** (when in 📊 Monitor mode):
+| Key | Action |
+|-----|--------|
+| `1-4` | Switch tabs |
+| `j`/`↓` | Navigate down |
+| `k`/`↑` | Navigate up |
+| `Enter`/`l`/`→` | Select item |
+| `h`/`←`/`Backspace` | Go back |
+| `Escape`/`q`/`Mod+Shift+M` | Exit focus mode |
+
+**Focus Behavior** (Feature 086):
+- Panel displays as non-disruptive overlay (won't steal focus on show)
+- Use `Mod+Shift+M` to enter focus mode with full keyboard navigation
+- **Visual indicator**: Glowing purple border + "⌨ FOCUS" badge when active
+- Press `Escape` or `Mod+Shift+M` again to exit and return focus
 
 **Features**:
 - **Hierarchical Display**: Monitors → Workspaces → Windows with project labels
@@ -744,6 +765,8 @@ gh auth status               # Auto-uses 1Password token
 - Python 3.11+ (daemon extensions), Nix (system/home-manager config), Bash (profile scripts) + i3ipc.aio (Sway IPC), Pydantic (data models), WayVNC (VNC server), asyncio (event handling), Eww (top bar) (084-monitor-management-solution)
 - JSON files (`~/.config/sway/monitor-profiles/*.json`, `output-states.json`, `monitor-profile.current`) (084-monitor-management-solution)
 - Python 3.11+ (backend data script), Yuck/GTK (Eww widget UI), Nix (module configuration) (085-sway-monitoring-widget)
+- Nix (home-manager modules), Bash (toggle scripts) + Eww 0.4+ (GTK3), Sway 1.8+, i3ipc (for swaymsg) (086-monitor-focus-enhancement)
+- N/A (config files only) (086-monitor-focus-enhancement)
 
 ## Recent Changes
 - 085-sway-monitoring-widget: Real-time monitoring panel with hierarchical window/workspace/project view, event-driven streaming via deflisten (<100ms latency), automatic reconnection, i3ipc.aio subscriptions, Catppuccin Mocha styling

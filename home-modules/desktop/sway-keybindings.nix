@@ -131,19 +131,13 @@ in
     # Monitor profile switcher (use Control modifier for Sway syntax)
     "${modifier}+Control+m" = "exec sh -c '$HOME/.local/bin/monitor-profile-menu'";
 
-    # Feature 084: Cycle monitor profiles with Mod+Shift+M
-    # Cycles: local-only → local+1vnc → local+2vnc → local-only (M1)
-    #         single → dual → triple → single (Hetzner)
-    "${modifier}+Shift+m" = "exec sh -c '$HOME/.local/bin/cycle-monitor-profile'";
+    # Feature 086: Toggle keyboard focus to/from monitoring panel
+    # Press once to focus panel (enables keyboard navigation)
+    # Press again to return focus to previous window
+    "${modifier}+Shift+m" = "exec toggle-panel-focus";
 
     # Feature 085: Toggle monitoring panel (T017)
     # Additional bindings injected via monitoringPanelBindings below
-
-    # Feature 085: Switch monitoring panel tabs (non-focusable widget, keyboard-only navigation)
-    "Mod1+1" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows";
-    "Mod1+2" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects";
-    "Mod1+3" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps";
-    "Mod1+4" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=health";
 
     # Feature 085: Monitoring panel view switching (Alt+1-4)
     "Alt+1" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows";

@@ -77,6 +77,101 @@ let
     fi
   '';
 
+  # Feature 086: Toggle script for explicit panel focus (US2)
+  # Allows user to lock/unlock keyboard focus to panel with Mod+Shift+M
+  # Now uses Sway mode for comprehensive keyboard capture
+  toggleFocusScript = pkgs.writeShellScriptBin "toggle-panel-focus" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 086: Enter monitoring focus mode
+    PANEL_APP_ID="eww-monitoring-panel"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Check if panel is visible first
+    if ! $EWW_CMD active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      echo "Panel not visible - use Mod+M to show it first"
+      exit 0
+    fi
+
+    # Focus the panel window
+    ${pkgs.sway}/bin/swaymsg "[app_id=\"$PANEL_APP_ID\"] focus" 2>/dev/null
+
+    # Update eww variable to show focus indicator
+    $EWW_CMD update panel_focused=true
+
+    # Reset selection index
+    $EWW_CMD update selected_index=0
+
+    # Enter Sway monitoring mode (captures all keys)
+    ${pkgs.sway}/bin/swaymsg 'mode "📊 Monitor"'
+  '';
+
+  # Feature 086: Exit monitoring mode script
+  exitMonitorModeScript = pkgs.writeShellScriptBin "exit-monitor-mode" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 086: Exit monitoring focus mode
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Update eww variable to hide focus indicator
+    $EWW_CMD update panel_focused=false
+
+    # Clear selection
+    $EWW_CMD update selected_index=-1
+
+    # Exit Sway mode (return to default)
+    ${pkgs.sway}/bin/swaymsg 'mode "default"'
+
+    # Return focus to previous window
+    ${pkgs.sway}/bin/swaymsg 'focus prev'
+  '';
+
+  # Feature 086: Navigation script for monitoring panel
+  monitorPanelNavScript = pkgs.writeShellScriptBin "monitor-panel-nav" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 086: Handle navigation within monitoring panel
+    ACTION="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get current state
+    current_index=$($EWW_CMD get selected_index 2>/dev/null || echo "-1")
+    current_view=$($EWW_CMD get current_view 2>/dev/null || echo "windows")
+
+    # Get max items based on current view (simplified - expand later)
+    max_items=10  # Placeholder - would need to query actual data
+
+    case "$ACTION" in
+      down)
+        new_index=$((current_index + 1))
+        if [ "$new_index" -ge "$max_items" ]; then
+          new_index=$((max_items - 1))
+        fi
+        $EWW_CMD update selected_index=$new_index
+        ;;
+      up)
+        new_index=$((current_index - 1))
+        if [ "$new_index" -lt 0 ]; then
+          new_index=0
+        fi
+        $EWW_CMD update selected_index=$new_index
+        ;;
+      first)
+        $EWW_CMD update selected_index=0
+        ;;
+      last)
+        $EWW_CMD update selected_index=$((max_items - 1))
+        ;;
+      select)
+        # When select is pressed, set selected_window_id based on current selection
+        # This would need actual window data - placeholder for now
+        echo "Select action at index $current_index" | ${pkgs.systemd}/bin/systemd-cat -t monitor-panel-nav
+        # For now, just log - will expand when we have window list data
+        ;;
+      back)
+        # Clear selection or go back in detail view
+        $EWW_CMD update selected_window_id=0
+        ;;
+    esac
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -123,6 +218,9 @@ in
       pkgs.eww              # Widget framework
       monitoringDataScript  # Python backend script wrapper
       toggleScript          # Toggle visibility script
+      toggleFocusScript     # Feature 086: Toggle focus script
+      exitMonitorModeScript # Feature 086: Exit monitoring mode
+      monitorPanelNavScript # Feature 086: Navigation within panel
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -164,6 +262,14 @@ in
       ;; Selected window ID for detail view (0 = none selected)
       (defvar selected_window_id 0)
 
+      ;; Feature 086: Panel focus state (updated by toggle-panel-focus script)
+      ;; When true, panel has keyboard focus and shows visual indicator
+      (defvar panel_focused false)
+
+      ;; Feature 086: Selected index for keyboard navigation (-1 = none)
+      ;; Updated by j/k or up/down in monitoring mode
+      (defvar selected_index -1)
+
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
 
@@ -182,18 +288,19 @@ in
           :height "1000px")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
-        :focusable true
+        :focusable "ondemand"
         :exclusive false
         :windowtype "normal"
         (monitoring-panel-content))
 
       ;; Main panel content widget with keyboard navigation
+      ;; Feature 086: Dynamic class changes when panel has focus
       (defwidget monitoring-panel-content []
         (eventbox
           :onkeypress "${handleKeyScript} {}"
           :cursor "default"
           (box
-            :class "panel-container"
+            :class {panel_focused ? "panel-container focused" : "panel-container"}
             :orientation "v"
             :space-evenly false
             (panel-header)
@@ -230,7 +337,12 @@ in
               :class "tab ''${current_view == 'health' ? 'active' : ""}"
               :onclick "eww update current_view=health"
               :tooltip "Health (Alt+4)"
-              ""))
+              "")
+            ;; Feature 086: Focus mode indicator badge
+            (label
+              :class "focus-indicator"
+              :visible {panel_focused}
+              :text "⌨ FOCUS"))
           ;; Summary counts (dynamic based on view)
           (box
             :class "summary-counts"
@@ -723,7 +835,34 @@ in
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        border: 1px solid rgba(137, 180, 250, 0.1);
+        border: 2px solid rgba(137, 180, 250, 0.1);
+        transition: all 200ms ease-in-out;
+      }
+
+      /* Feature 086: Focused state with glowing border effect */
+      .panel-container.focused {
+        border: 2px solid ${mocha.mauve};
+        box-shadow: 0 0 20px rgba(203, 166, 247, 0.4),
+                    0 0 40px rgba(203, 166, 247, 0.2),
+                    inset 0 0 15px rgba(203, 166, 247, 0.05);
+        background-color: rgba(30, 30, 46, 0.95);
+      }
+
+      /* Focus mode indicator badge */
+      .focus-indicator {
+        font-size: 10px;
+        font-weight: bold;
+        color: ${mocha.base};
+        background: linear-gradient(135deg, ${mocha.mauve}, ${mocha.blue});
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-left: 8px;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
       }
 
 

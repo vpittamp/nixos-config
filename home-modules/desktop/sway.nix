@@ -687,6 +687,12 @@ in
           criteria = { app_id = "org.gnome.Calendar"; };
           command = "floating enable";
         }
+
+        # Feature 086: Prevent monitoring panel from stealing focus on creation/updates
+        {
+          criteria = { app_id = "eww-monitoring-panel"; };
+          command = "no_focus";
+        }
       ];
 
       # Startup commands (FR-015)
@@ -942,6 +948,38 @@ in
           bindsym Return exec "i3pm-workspace-mode execute"
           bindsym KP_Enter exec "i3pm-workspace-mode execute"
           bindsym Escape exec "i3pm-workspace-mode cancel"
+      }
+
+      # Feature 086: Monitoring panel focus mode
+      # Captures all keys when panel has explicit focus
+      # Enter via Mod+Shift+M, exit via Escape or Mod+Shift+M again
+      mode "📊 Monitor" {
+          # Tab switching (1-4)
+          bindsym 1 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows
+          bindsym 2 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects
+          bindsym 3 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps
+          bindsym 4 exec eww --config $HOME/.config/eww-monitoring-panel update current_view=health
+
+          # Navigation (vim-style and arrows)
+          bindsym j exec monitor-panel-nav down
+          bindsym k exec monitor-panel-nav up
+          bindsym Down exec monitor-panel-nav down
+          bindsym Up exec monitor-panel-nav up
+          bindsym Home exec monitor-panel-nav first
+          bindsym End exec monitor-panel-nav last
+
+          # Selection/action
+          bindsym Return exec monitor-panel-nav select
+          bindsym l exec monitor-panel-nav select
+          bindsym Right exec monitor-panel-nav select
+          bindsym h exec monitor-panel-nav back
+          bindsym Left exec monitor-panel-nav back
+          bindsym BackSpace exec monitor-panel-nav back
+
+          # Exit monitoring mode
+          bindsym Escape exec exit-monitor-mode
+          bindsym q exec exit-monitor-mode
+          bindsym Mod4+Shift+m exec exit-monitor-mode
       }
 
       # Platform-conditional workspace mode keybindings
