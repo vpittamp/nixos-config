@@ -9,6 +9,7 @@ Feature: 085-sway-monitoring-widget
 
 import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -68,7 +69,7 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
     but pushes updates via event-driven mechanism instead of polling.
 
     Args:
-        conn: i3ipc.aio.Connection to Sway IPC
+        conn: Not used (kept for API compatibility) - queries daemon directly
         config_dir: Optional Eww config directory
 
     Returns:
@@ -77,31 +78,31 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
     try:
         import time
         from typing import Any, Dict, List
+        from i3_project_manager.core.daemon_client import DaemonClient
 
         # Helper functions (same as monitoring_data.py)
         def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
-            """Transform Sway window to Eww-friendly schema."""
-            props = window.get("window_properties", {}) or {}
+            """Transform daemon window to Eww-friendly schema."""
             return {
                 "id": window.get("id", 0),
-                "app_name": props.get("class", props.get("instance", "unknown")),
-                "title": window.get("name", "")[:50],  # Truncate to 50 chars
-                "project": window.get("marks", [""])[0].split("i3pm_project:")[1] if any("i3pm_project:" in m for m in window.get("marks", [])) else "",
-                "scope": "scoped" if any("i3pm_scope:scoped" in m for m in window.get("marks", [])) else "global",
-                "icon_path": "",
-                "workspace": window.get("workspace", {}).get("num", 1) if isinstance(window.get("workspace"), dict) else 1,
-                "floating": window.get("type") == "floating_con",
-                "hidden": not window.get("visible", True),
+                "app_name": window.get("class", window.get("app_id", "unknown")),
+                "title": window.get("title", "")[:50],  # Truncate to 50 chars
+                "project": window.get("project", ""),
+                "scope": "scoped" if any(str(m).startswith("scoped:") for m in window.get("marks", [])) else "global",
+                "icon_path": window.get("icon_path", ""),
+                "workspace": window.get("workspace", 1),
+                "floating": window.get("floating", False),
+                "hidden": window.get("hidden", False),
                 "focused": window.get("focused", False),
             }
 
         def transform_workspace(workspace: Dict[str, Any], monitor_name: str) -> Dict[str, Any]:
-            """Transform Sway workspace to Eww-friendly schema."""
-            windows = [w for w in workspace.get("nodes", []) if w.get("type") in ("con", "floating_con")]
+            """Transform daemon workspace to Eww-friendly schema."""
+            windows = workspace.get("windows", [])
             transformed_windows = [transform_window(w) for w in windows]
 
             return {
-                "number": workspace.get("num", 1),
+                "number": workspace.get("num", workspace.get("number", 1)),
                 "name": workspace.get("name", ""),
                 "visible": workspace.get("visible", False),
                 "focused": workspace.get("focused", False),
@@ -111,16 +112,10 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
             }
 
         def transform_monitor(output: Dict[str, Any]) -> Dict[str, Any]:
-            """Transform Sway output to Eww-friendly schema."""
+            """Transform daemon output to Eww-friendly schema."""
             monitor_name = output.get("name", "unknown")
-
-            # Get workspaces from output's workspace nodes
-            workspace_nodes = []
-            for node in output.get("nodes", []):
-                if node.get("type") == "workspace":
-                    workspace_nodes.append(node)
-
-            transformed_workspaces = [transform_workspace(ws, monitor_name) for ws in workspace_nodes]
+            workspaces = output.get("workspaces", [])
+            transformed_workspaces = [transform_workspace(ws, monitor_name) for ws in workspaces]
             has_focused = any(ws["focused"] for ws in transformed_workspaces)
 
             return {
@@ -130,11 +125,16 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
                 "workspaces": transformed_workspaces,
             }
 
-        # Query Sway tree
-        tree = await conn.get_tree()
+        # Query daemon for window tree (returns dict structures, not Con objects)
+        socket_path_str = os.environ.get("I3PM_DAEMON_SOCKET")
+        socket_path = Path(socket_path_str) if socket_path_str else None
+        client = DaemonClient(socket_path=socket_path, timeout=2.0)
+        await client.connect()
+        tree_data = await client.get_window_tree()
+        await client.close()
 
         # Extract outputs from tree
-        outputs = [node for node in tree.get("nodes", []) if node.get("type") == "output" and node.get("name") not in ("__i3", "__i3_scratch")]
+        outputs = tree_data.get("outputs", [])
         monitors = [transform_monitor(output) for output in outputs]
 
         # Calculate summary counts
