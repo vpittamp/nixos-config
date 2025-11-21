@@ -965,6 +965,7 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
+        ExecStartPost = "${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel";
         Restart = "on-failure";
         RestartSec = "3s";
       };
