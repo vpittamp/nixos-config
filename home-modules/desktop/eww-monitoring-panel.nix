@@ -141,7 +141,7 @@ in
           :x "0px"
           :y "0px"
           :width "350px"
-          :height "90%")
+          :height "85%")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
         :focusable false
