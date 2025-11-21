@@ -235,7 +235,7 @@ in
     ];
 
     # Eww Yuck widget configuration (T009-T014)
-    # Version: v8-focusable-shadow (Build: 2025-11-20-17:10)
+    # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
@@ -289,6 +289,7 @@ in
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
       ;; Tab switching via global Sway keybindings (Alt+1-4) since widget doesn't capture input
       ;; Use output name directly since monitor indices vary by platform
+      ;; Dynamic sizing: 90% height adapts to different screen sizes (M1: 720px, Hetzner: ~972px)
       (defwindow monitoring-panel
         :monitor "${primaryOutput}"
         :geometry (geometry
@@ -296,7 +297,7 @@ in
           :x "0px"
           :y "0px"
           :width "450px"
-          :height "1000px")
+          :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
         :focusable "ondemand"
@@ -840,20 +841,32 @@ in
       /* Feature 085: Sway Monitoring Widget - Catppuccin Mocha Theme */
       /* Direct color interpolation from Nix - Eww doesn't support CSS variables */
 
+      /* Window base - must be transparent for see-through effect on Wayland */
+      * {
+        all: unset;
+      }
+
+      window {
+        background-color: transparent;
+      }
+
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.85);
+        background-color: rgba(30, 30, 46, 0.50);
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        border: 2px solid rgba(137, 180, 250, 0.1);
+        border: 2px solid rgba(137, 180, 250, 0.2);
         transition: all 200ms ease-in-out;
       }
 
-      /* Feature 086: Focused state with prominent border */
+      /* Feature 086: Focused state with glowing border effect */
       .panel-container.focused {
-        border: 3px solid ${mocha.mauve};
-        background-color: rgba(49, 50, 68, 0.98);
+        border: 2px solid ${mocha.mauve};
+        box-shadow: 0 0 20px rgba(203, 166, 247, 0.4),
+                    0 0 40px rgba(203, 166, 247, 0.2),
+                    inset 0 0 15px rgba(203, 166, 247, 0.05);
+        background-color: rgba(30, 30, 46, 0.70);
       }
 
       /* Focus mode indicator badge */
@@ -865,11 +878,18 @@ in
         padding: 2px 8px;
         border-radius: 4px;
         margin-left: 8px;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
       }
 
 
       .panel-header {
-        background-color: ${mocha.mantle};
+        background-color: rgba(24, 24, 37, 0.4);
         border-bottom: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 8px 12px;
@@ -904,20 +924,20 @@ in
       .tab {
         font-size: 16px;
         padding: 8px 16px;
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         color: ${mocha.subtext0};
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
       }
 
       .tab:hover {
-        background-color: ${mocha.surface1};
+        background-color: rgba(69, 71, 90, 0.5);
         color: ${mocha.text};
         border-color: ${mocha.overlay0};
       }
 
       .tab.active {
-        background-color: ${mocha.blue};
+        background-color: rgba(137, 180, 250, 0.6);
         color: ${mocha.base};
         border-color: ${mocha.blue};
         font-weight: bold;
@@ -925,7 +945,7 @@ in
 
       /* Panel Body - Compact */
       .panel-body {
-        background-color: ${mocha.base};
+        background-color: rgba(30, 30, 46, 0.3);
         padding: 4px;
         min-height: 0;  /* Enable proper flex shrinking for scrolling */
       }
@@ -938,7 +958,7 @@ in
       .project {
         margin-bottom: 12px;
         padding: 8px;
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border-radius: 8px;
         border: 1px solid ${mocha.overlay0};
       }
@@ -982,7 +1002,7 @@ in
         padding: 4px 8px;
         margin-bottom: 1px;
         border-radius: 2px;
-        background-color: ${mocha.base};
+        background-color: transparent;
         border-left: 2px solid transparent;
       }
 
@@ -1102,7 +1122,7 @@ in
 
       /* Compact Panel Footer */
       .panel-footer {
-        background-color: ${mocha.mantle};
+        background-color: rgba(24, 24, 37, 0.4);
         border-top: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 6px 8px;
@@ -1133,7 +1153,7 @@ in
 
       /* Project Card Styles */
       .project-card {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
@@ -1177,7 +1197,7 @@ in
 
       /* App Card Styles */
       .app-card {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
@@ -1216,7 +1236,7 @@ in
       }
 
       .health-card {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         padding: 10px 12px;
@@ -1244,12 +1264,12 @@ in
 
       /* Window Detail View Styles */
       .detail-view {
-        background-color: ${mocha.base};
+        background-color: transparent;
         padding: 8px;
       }
 
       .detail-header {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border-radius: 8px;
         padding: 8px 12px;
         margin-bottom: 8px;
@@ -1258,14 +1278,14 @@ in
       .detail-back-btn {
         font-size: 12px;
         padding: 6px 12px;
-        background-color: ${mocha.surface1};
+        background-color: rgba(69, 71, 90, 0.5);
         color: ${mocha.text};
         border: 1px solid ${mocha.overlay0};
         border-radius: 4px;
       }
 
       .detail-back-btn:hover {
-        background-color: ${mocha.blue};
+        background-color: rgba(137, 180, 250, 0.6);
         color: ${mocha.base};
         border-color: ${mocha.blue};
       }
@@ -1281,7 +1301,7 @@ in
       }
 
       .detail-section {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.4);
         border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 10px 12px;
@@ -1338,7 +1358,7 @@ in
       }
 
       .window:hover {
-        background-color: ${mocha.surface0};
+        background-color: rgba(49, 50, 68, 0.3);
       }
     '';
 
