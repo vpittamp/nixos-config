@@ -310,4 +310,65 @@
     color: #45475a;
     opacity: 0.6;
   }
+
+  /* Feature 085: Monitoring panel toggle button styling */
+  .monitoring-toggle {
+    background: linear-gradient(135deg, rgba(69, 71, 90, 0.5), rgba(49, 50, 68, 0.6));
+    border: 1px solid rgba(108, 112, 134, 0.4);
+    padding: 2px 6px;
+    transition: all 200ms ease;
+  }
+
+  .monitoring-toggle:hover {
+    background: linear-gradient(135deg, rgba(203, 166, 247, 0.15), rgba(137, 180, 250, 0.12));
+    border-color: rgba(203, 166, 247, 0.6);
+    box-shadow: 0 2px 8px rgba(203, 166, 247, 0.3);
+  }
+
+  .monitoring-toggle-active {
+    background: linear-gradient(135deg, rgba(203, 166, 247, 0.35), rgba(137, 180, 250, 0.25));
+    border: 1px solid rgba(203, 166, 247, 0.8);
+    box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
+                inset 0 0 8px rgba(203, 166, 247, 0.2);
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+
+  .monitoring-toggle-active:hover {
+    background: linear-gradient(135deg, rgba(203, 166, 247, 0.45), rgba(137, 180, 250, 0.35));
+    border-color: rgba(203, 166, 247, 0.95);
+    box-shadow: 0 0 16px rgba(203, 166, 247, 0.7),
+                0 4px 12px rgba(203, 166, 247, 0.4),
+                inset 0 0 12px rgba(203, 166, 247, 0.3);
+  }
+
+  .monitoring-toggle-icon {
+    color: #a6adc8;
+    font-size: 12px;
+    transition: all 200ms ease;
+  }
+
+  .monitoring-toggle:hover .monitoring-toggle-icon {
+    color: #cba6f7;
+  }
+
+  .monitoring-toggle-active .monitoring-toggle-icon {
+    color: #cba6f7;
+    text-shadow: 0 0 8px rgba(203, 166, 247, 0.9),
+                 0 0 4px rgba(203, 166, 247, 0.6);
+  }
+
+  @keyframes pulse-glow {
+    0% {
+      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
+                  inset 0 0 8px rgba(203, 166, 247, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 18px rgba(203, 166, 247, 0.7),
+                  inset 0 0 12px rgba(203, 166, 247, 0.3);
+    }
+    100% {
+      box-shadow: 0 0 12px rgba(203, 166, 247, 0.5),
+                  inset 0 0 8px rgba(203, 166, 247, 0.2);
+    }
+  }
 ''

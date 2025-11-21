@@ -330,26 +330,34 @@ in
             :class "tabs"
             :orientation "h"
             :space-evenly true
-            (button
-              :class "tab ''${current_view == 'windows' ? 'active' : ""}"
-              :onclick "eww update current_view=windows"
-              :tooltip "Windows (Alt+1)"
-              "󰖯")
-            (button
-              :class "tab ''${current_view == 'projects' ? 'active' : ""}"
-              :onclick "eww update current_view=projects"
-              :tooltip "Projects (Alt+2)"
-              "󱂬")
-            (button
-              :class "tab ''${current_view == 'apps' ? 'active' : ""}"
-              :onclick "eww update current_view=apps"
-              :tooltip "Apps (Alt+3)"
-              "󰀻")
-            (button
-              :class "tab ''${current_view == 'health' ? 'active' : ""}"
-              :onclick "eww update current_view=health"
-              :tooltip "Health (Alt+4)"
-              "")
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=windows"
+              (button
+                :class "tab ''${current_view == 'windows' ? 'active' : ""}"
+                :tooltip "Windows (Alt+1)"
+                "󰖯"))
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=projects"
+              (button
+                :class "tab ''${current_view == 'projects' ? 'active' : ""}"
+                :tooltip "Projects (Alt+2)"
+                "󱂬"))
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=apps"
+              (button
+                :class "tab ''${current_view == 'apps' ? 'active' : ""}"
+                :tooltip "Apps (Alt+3)"
+                "󰀻"))
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=health"
+              (button
+                :class "tab ''${current_view == 'health' ? 'active' : ""}"
+                :tooltip "Health (Alt+4)"
+                ""))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -928,12 +936,14 @@ in
         color: ${mocha.subtext0};
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
+        transition: all 150ms ease;
       }
 
       .tab:hover {
         background-color: rgba(69, 71, 90, 0.5);
         color: ${mocha.text};
         border-color: ${mocha.overlay0};
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
       }
 
       .tab.active {
@@ -941,6 +951,12 @@ in
         color: ${mocha.base};
         border-color: ${mocha.blue};
         font-weight: bold;
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
+      }
+
+      .tab.active:hover {
+        background-color: rgba(137, 180, 250, 0.7);
+        box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
       }
 
       /* Panel Body - Compact */

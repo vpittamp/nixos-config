@@ -130,6 +130,12 @@ in
   :initial '{"status":"unknown","os_generation":"--","hm_generation":"--","error_count":0,"details":"..."}'
   `bash ~/.config/eww/eww-top-bar/scripts/build-health.sh`)
 
+;; Monitoring panel visibility status (Feature 085)
+(defpoll monitoring_panel_visible
+  :interval "1s"
+  :initial "false"
+  `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
+
 ;; Interactions / popups
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
@@ -343,6 +349,16 @@ in
                        :tooltip {output.active ? "''${output.short_name} active" : "''${output.short_name} inactive"}
                        :text "●"))))))
 
+;; Feature 085: Monitoring panel toggle widget
+;; Shows current panel visibility and allows clicking to toggle
+(defwidget monitoring-panel-toggle []
+  (eventbox :onclick "toggle-monitoring-panel &"
+    (box :class {monitoring_panel_visible == "true" ? "pill metric-pill monitoring-toggle monitoring-toggle-active" : "pill metric-pill monitoring-toggle"}
+         :spacing 2
+         :tooltip {monitoring_panel_visible == "true" ? "Hide monitoring panel (Mod+M)" : "Show monitoring panel (Mod+M)"}
+         (label :class "icon monitoring-toggle-icon"
+                :text {monitoring_panel_visible == "true" ? "󰍉" : "󰍜"}))))
+
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
 (defwidget main-bar [is_primary]
@@ -394,13 +410,14 @@ in
          :spacing 4
          (project-widget))
 
-    ;; Right: Date/Time, Monitor Profile, and System Tray
+    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, and System Tray
     (box :class "right"
          :orientation "h"
          :space-evenly false
          :halign "end"
          :spacing 4
           (monitor-profile-widget)
+          (monitoring-panel-toggle)
           (datetime-widget)
           (systray-widget :is_primary is_primary))))
 
