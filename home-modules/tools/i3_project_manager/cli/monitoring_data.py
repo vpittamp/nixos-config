@@ -131,20 +131,36 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     # Generate composite state classes (floating, hidden, focused)
     state_classes = get_window_state_classes(window)
 
+    # Get geometry for detail view
+    geometry = window.get("geometry", {})
+
     return {
         "id": window.get("id", 0),
+        "pid": window.get("pid", 0),
+        "app_id": window.get("app_id", ""),
         "app_name": app_name,
+        "class": window.get("class", ""),
+        "instance": window.get("instance", ""),
         # Truncate title to 50 chars for display performance
         "title": window.get("title", "")[:50],
+        "full_title": window.get("title", ""),  # Keep full title for detail view
         "project": window.get("project", ""),
         "scope": scope,
         "icon_path": window.get("icon_path", ""),
         "workspace": workspace_raw,  # Keep original value ("scratchpad", "1", etc.)
+        "output": window.get("output", ""),
+        "marks": window.get("marks", []),
         "floating": window.get("floating", False),
         "hidden": window.get("hidden", False),
         "focused": window.get("focused", False),
+        "fullscreen": window.get("fullscreen", False),
         "is_pwa": is_pwa,
         "state_classes": state_classes,
+        # Geometry for detail view
+        "geometry_x": geometry.get("x", 0),
+        "geometry_y": geometry.get("y", 0),
+        "geometry_width": geometry.get("width", 0),
+        "geometry_height": geometry.get("height", 0),
     }
 
 
@@ -373,6 +389,11 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Transform to project-based view (default view)
         projects = transform_to_project_view(monitors)
 
+        # Create flat list of all windows for easy ID lookup in detail view
+        all_windows = []
+        for project in projects:
+            all_windows.extend(project.get("windows", []))
+
         # Get current timestamp for friendly formatting
         current_timestamp = time.time()
         friendly_time = format_friendly_timestamp(current_timestamp)
@@ -381,6 +402,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         return {
             "status": "ok",
             "projects": projects,
+            "all_windows": all_windows,  # Flat list for detail view lookup
             "project_count": len(projects),
             "monitor_count": counts["monitor_count"],
             "workspace_count": counts["workspace_count"],

@@ -1,18 +1,9 @@
-{ config, lib, pkgs, osConfig ? null, ... }:
+{ config, lib, pkgs, ... }:
 
 with lib;
 
 let
   cfg = config.programs.eww-monitoring-panel;
-  hostName = if osConfig != null then (osConfig.networking.hostName or "") else "";
-  isHeadlessHost = hostName == "nixos-hetzner-sway";
-  resolvedPanelMonitor =
-    if cfg.panelMonitor != null then cfg.panelMonitor
-    else if isHeadlessHost then "HEADLESS-1" else "eDP-1";
-  panelMonitorLiteral =
-    if builtins.isInt resolvedPanelMonitor
-    then builtins.toString resolvedPanelMonitor
-    else "\"${resolvedPanelMonitor}\"";
 
   # Feature 057: Catppuccin Mocha theme colors (consistent with unified bar system)
   mocha = {
@@ -59,22 +50,13 @@ let
   # Use eww active-windows to check if panel is actually open (not just defined)
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
-    set -euo pipefail
-
-    log() {
-      ${pkgs.util-linux}/bin/logger -t toggle-monitoring-panel "$1"
-    }
-
-    CONFIG_DIR="$HOME/.config/eww-monitoring-panel"
-    EWW_BIN=${pkgs.eww}/bin/eww
-
     # Check if panel is in active windows (actually open, not just defined)
-    if $EWW_BIN --config "$CONFIG_DIR" active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      log "Closing monitoring panel on ${resolvedPanelMonitor}"
-      $EWW_BIN --config "$CONFIG_DIR" close monitoring-panel
+    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      # Panel is open - close it
+      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
     else
-      log "Opening monitoring panel on ${resolvedPanelMonitor}"
-      $EWW_BIN --config "$CONFIG_DIR" open monitoring-panel
+      # Panel is closed - open it
+      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
     fi
   '';
 
@@ -84,27 +66,11 @@ in
     enable = mkEnableOption "Eww monitoring panel for window/project state visualization";
 
     toggleKey = mkOption {
-      type = with types; either str (listOf str);
-      default = [ "$mod+m" "Mod1+m" ];
+      type = types.str;
+      default = "$mod+m";
       description = ''
-        Keybinding(s) that toggle the monitoring panel. Accepts a single
-        string (``"Mod4+m"``) or a list for multiple bindings. ``$mod``
-        placeholders are replaced with the configured Sway modifier at build
-        time. The default offers both Super+M and Alt+M so VNC clients that
-        cannot forward the Super key still have a shortcut.
-      '';
-    };
-
-    panelMonitor = mkOption {
-      type = types.nullOr (types.either types.int types.str);
-      default = null;
-      example = "HEADLESS-2";
-      description = ''
-        Preferred monitor for the panel. When set to an integer, Eww uses the
-        corresponding monitor index. When set to a string, it targets the named
-        output (e.g., ``"HEADLESS-1"`` or ``"eDP-1"``). If left ``null``, the
-        module auto-selects ``HEADLESS-1`` on the Hetzner headless host and
-        ``eDP-1`` elsewhere.
+        Keybinding to toggle monitoring panel visibility.
+        Uses Sway mod variable (typically Super/Win key).
       '';
     };
 
@@ -163,32 +129,36 @@ in
       ;; Current view state (windows, projects, apps, health)
       (defvar current_view "windows")
 
+      ;; Selected window ID for detail view (0 = none selected)
+      (defvar selected_window_id 0)
+
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
 
 
       ;; Main monitoring panel window - Sidebar layout
+      ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
+      ;; Tab switching via global Sway keybindings (Alt+1-4) since widget doesn't capture input
       (defwindow monitoring-panel
-        :monitor ${panelMonitorLiteral}
+        :monitor 1
         :geometry (geometry
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "500px"
-          :height "85%")
+          :width "450px"
+          :height "1000px")
         :namespace "eww-monitoring-panel"
-        :windowtype "dialog"
         :stacking "overlay"
         :focusable false
+        :exclusive false
+        :windowtype "dock"
         (monitoring-panel-content))
 
-      ;; Main panel content widget
       (defwidget monitoring-panel-content []
         (box
           :class "panel-container"
           :orientation "v"
           :space-evenly false
-          :valign "start"
           (panel-header)
           (panel-body)
           (panel-footer)))
@@ -247,60 +217,61 @@ in
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          ;; Windows view (real-time)
-          (revealer
-            :reveal {current_view == "windows"}
-            :transition "crossfade"
-            :duration "200ms"
+          ;; Stack layout - only show one view at a time, each taking full height
+          (box
             :vexpand true
+            :visible {current_view == "windows"}
             (windows-view))
-          ;; Projects view
-          (revealer
-            :reveal {current_view == "projects"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
             :vexpand true
+            :visible {current_view == "projects"}
             (projects-view))
-          ;; Apps view
-          (revealer
-            :reveal {current_view == "apps"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
             :vexpand true
+            :visible {current_view == "apps"}
             (apps-view))
-          ;; Health view
-          (revealer
-            :reveal {current_view == "health"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
             :vexpand true
+            :visible {current_view == "health"}
             (health-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
+      ;; Shows detail view when a window is selected, otherwise shows list
       (defwidget windows-view []
-        (scroll
-          :vscroll true
-          :hscroll false
-          :height 1000
+        (box
+          :class "windows-view-container"
+          :orientation "v"
+          :vexpand true
+          ;; Show detail view when window is selected
+          (box
+            :visible {selected_window_id != 0}
+            :vexpand true
+            (window-detail-view))
+          ;; Show list view when no window is selected
+          (scroll
+            :vscroll true
+            :hscroll false
+            :vexpand true
+            :visible {selected_window_id == 0}
             (box
               :class "content-container"
               :orientation "v"
               :space-evenly false
               ; Show error state when status is "error"
               (box
-              :visible {monitoring_data.status == "error"}
-              (error-state))
-            ; Show empty state when no windows and no error
-            (box
-              :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) == 0}
-              (empty-state))
-            ; Show projects when no error and has windows
-            (box
-              :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
-              :orientation "v"
-              :space-evenly false
-              (for project in {monitoring_data.projects ?: []}
-                (project-widget :project project))))))
+                :visible "''${monitoring_data.status == 'error'}"
+                (error-state))
+              ; Show empty state when no windows and no error
+              (box
+                :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) == 0}"
+                (empty-state))
+              ; Show projects when no error and has windows
+              (box
+                :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) > 0}"
+                :orientation "v"
+                :space-evenly false
+                (for project in {monitoring_data.projects ?: []}
+                  (project-widget :project project)))))))
 
       ;; Project display widget
       (defwidget project-widget [project]
@@ -328,35 +299,48 @@ in
               (window-widget :window window)))))
 
       ;; Compact window widget for sidebar - Single line with badges
+      ;; Click to show detail view (stores window ID)
       (defwidget window-widget [window]
-        (box
-          :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes}"
-          :orientation "h"
-          :space-evenly false
-          ; Window icon shows state
-          (label
-            :class "window-icon"
-            :text "''${window.floating ? '⚓' : '󱂬'}")
-          ; App name (truncate to fit sidebar)
-          (label
-            :class "window-app-name"
-            :text "''${window.app_name}"
-            :limit-width 16
-            :truncate true)
-          ; Compact badges for states
+        (eventbox
+          :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
+          :cursor "pointer"
           (box
-            :class "window-badges"
+            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes}"
             :orientation "h"
             :space-evenly false
-            :hexpand true
-            :halign "end"
+            ; Window icon shows state
             (label
-              :class "badge badge-workspace"
-              :text "WS''${window.workspace_number}")
-            (label
-              :class "badge badge-pwa"
-              :text "PWA"
-              :visible {window.is_pwa ?: false}))))
+              :class "window-icon"
+              :text "''${window.floating ? '⚓' : '󱂬'}")
+            ; App name and PID
+            (box
+              :class "window-info"
+              :orientation "v"
+              :space-evenly false
+              (label
+                :class "window-app-name"
+                :halign "start"
+                :text "''${window.app_name}"
+                :limit-width 20
+                :truncate true)
+              (label
+                :class "window-pid"
+                :halign "start"
+                :text "PID: ''${window.pid}"))
+            ; Compact badges for states
+            (box
+              :class "window-badges"
+              :orientation "h"
+              :space-evenly false
+              :hexpand true
+              :halign "end"
+              (label
+                :class "badge badge-workspace"
+                :text "WS''${window.workspace_number}")
+              (label
+                :class "badge badge-pwa"
+                :text "PWA"
+                :visible "''${window.is_pwa ?: false}")))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
@@ -391,27 +375,128 @@ in
             :class "error-message"
             :text "''${monitoring_data.error ?: 'Unknown error'}")))
 
-      ;; Empty state display (T041)
-      (defwidget empty-state []
+      ;; Window Detail View - Shows comprehensive info when window is selected
+      ;; Iterates through all_windows to find the matching ID
+      (defwidget window-detail-view []
         (box
-          :class "empty-state"
+          :class "detail-view"
           :orientation "v"
-          :valign "center"
-          :halign "center"
+          :space-evenly false
           :vexpand true
+          ;; Header with back button
+          (box
+            :class "detail-header"
+            :orientation "h"
+            :space-evenly false
+            (button
+              :class "detail-back-btn"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=0"
+              :tooltip "Back to window list"
+              "󰁍 Back")
+            (label
+              :class "detail-title"
+              :hexpand true
+              :halign "center"
+              :text "Window Details"))
+          ;; Detail content - iterate through all_windows and show the matching one
+          (scroll
+            :vscroll true
+            :hscroll false
+            :vexpand true
+            (box
+              :class "detail-content"
+              :orientation "v"
+              :space-evenly false
+              (for win in {monitoring_data.all_windows ?: []}
+                (box
+                  :visible {win.id == selected_window_id}
+                  :orientation "v"
+                  :space-evenly false
+                  ;; Identity section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "Identity")
+                    (detail-row :label "ID" :value "''${win.id}")
+                    (detail-row :label "PID" :value "''${win.pid ?: '-'}")
+                    (detail-row :label "App ID" :value "''${win.app_id ?: '-'}")
+                    (detail-row :label "Class" :value "''${win.class ?: '-'}")
+                    (detail-row :label "Instance" :value "''${win.instance ?: '-'}"))
+                  ;; Title section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "Title")
+                    (label
+                      :class "detail-full-title"
+                      :halign "start"
+                      :wrap true
+                      :text "''${win.full_title ?: win.title ?: '-'}"))
+                  ;; Location section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "Location")
+                    (detail-row :label "Workspace" :value "''${win.workspace ?: '-'}")
+                    (detail-row :label "Output" :value "''${win.output ?: '-'}")
+                    (detail-row :label "Project" :value "''${win.project ?: '-'}")
+                    (detail-row :label "Scope" :value "''${win.scope ?: '-'}"))
+                  ;; State section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "State")
+                    (detail-row :label "Floating" :value "''${win.floating}")
+                    (detail-row :label "Focused" :value "''${win.focused}")
+                    (detail-row :label "Hidden" :value "''${win.hidden}")
+                    (detail-row :label "Fullscreen" :value "''${win.fullscreen ?: false}")
+                    (detail-row :label "PWA" :value "''${win.is_pwa}"))
+                  ;; Geometry section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "Geometry")
+                    (detail-row :label "Position" :value "''${win.geometry_x}, ''${win.geometry_y}")
+                    (detail-row :label "Size" :value "''${win.geometry_width} × ''${win.geometry_height}"))
+                  ;; Marks section
+                  (box
+                    :class "detail-section"
+                    :orientation "v"
+                    :space-evenly false
+                    (label :class "detail-section-title" :halign "start" :text "Marks")
+                    (label
+                      :class "detail-marks"
+                      :halign "start"
+                      :wrap true
+                      :text "''${arraylength(win.marks ?: []) > 0 ? win.marks : 'None'}"))))))))
+
+      ;; Detail row widget - key/value pair
+      (defwidget detail-row [label value]
+        (box
+          :class "detail-row"
+          :orientation "h"
+          :space-evenly false
           (label
-            :class "empty-icon"
-            :text "󱂬")
+            :class "detail-label"
+            :halign "start"
+            :text label)
           (label
-            :class "empty-message"
-            :text "No windows open")))
+            :class "detail-value"
+            :halign "end"
+            :hexpand true
+            :text value)))
 
       ;; Projects View - Project list with metadata
       (defwidget projects-view []
         (scroll
           :vscroll true
           :hscroll false
-          :height 600
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -460,7 +545,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height 1000
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -470,11 +555,6 @@ in
               :class "error-message"
               :visible {apps_data.status == "error"}
               (label :text "⚠ ''${apps_data.error ?: 'Unknown error'}"))
-            ;; Empty state when registry has no apps configured
-            (box
-              :class "empty-message"
-              :visible {apps_data.status != "error" && (apps_data.app_count ?: 0) == 0}
-              (label :text "No registered apps yet"))
             ;; Apps list
             (for app in {apps_data.apps ?: []}
               (app-card :app app)))))
@@ -590,16 +670,17 @@ in
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.85); /* base with 85% opacity - more transparent */
+        background-color: rgba(30, 30, 46, 0.85);
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        box-shadow: -4px 0px 20px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(137, 180, 250, 0.05);  /* Shadow + very subtle inner glow */
+        border: 1px solid rgba(137, 180, 250, 0.1);
       }
 
-      /* Compact Panel Header */
+
       .panel-header {
         background-color: ${mocha.mantle};
+        border-bottom: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 8px 12px;
         margin-bottom: 8px;
@@ -635,18 +716,20 @@ in
         padding: 8px 16px;
         background-color: ${mocha.surface0};
         color: ${mocha.subtext0};
+        border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
-        transition: all 0.2s;
       }
 
       .tab:hover {
         background-color: ${mocha.surface1};
         color: ${mocha.text};
+        border-color: ${mocha.overlay0};
       }
 
       .tab.active {
         background-color: ${mocha.blue};
         color: ${mocha.base};
+        border-color: ${mocha.blue};
         font-weight: bold;
       }
 
@@ -667,6 +750,7 @@ in
         padding: 8px;
         background-color: ${mocha.surface0};
         border-radius: 8px;
+        border: 1px solid ${mocha.overlay0};
       }
 
       .scoped-project {
@@ -679,6 +763,7 @@ in
 
       .project-header {
         padding: 6px 8px;
+        border-bottom: 1px solid ${mocha.overlay0};
         margin-bottom: 6px;
       }
 
@@ -817,6 +902,7 @@ in
       /* Compact Panel Footer */
       .panel-footer {
         background-color: ${mocha.mantle};
+        border-top: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 6px 8px;
         margin-top: 8px;
@@ -847,13 +933,14 @@ in
       /* Project Card Styles */
       .project-card {
         background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
         margin-bottom: 8px;
       }
 
       .project-card.active-project {
-        border-left: 3px solid ${mocha.teal};
+        border-color: ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.1);
       }
 
@@ -890,6 +977,7 @@ in
       /* App Card Styles */
       .app-card {
         background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
         margin-bottom: 8px;
@@ -928,6 +1016,7 @@ in
 
       .health-card {
         background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         padding: 10px 12px;
         margin-bottom: 6px;
@@ -951,6 +1040,106 @@ in
         font-weight: bold;
         color: ${mocha.text};
       }
+
+      /* Window Detail View Styles */
+      .detail-view {
+        background-color: ${mocha.base};
+        padding: 8px;
+      }
+
+      .detail-header {
+        background-color: ${mocha.surface0};
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+      }
+
+      .detail-back-btn {
+        font-size: 12px;
+        padding: 6px 12px;
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+      }
+
+      .detail-back-btn:hover {
+        background-color: ${mocha.blue};
+        color: ${mocha.base};
+        border-color: ${mocha.blue};
+      }
+
+      .detail-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: ${mocha.text};
+      }
+
+      .detail-content {
+        padding: 4px;
+      }
+
+      .detail-section {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+      }
+
+      .detail-section-title {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.teal};
+        margin-bottom: 8px;
+      }
+
+      .detail-row {
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(108, 112, 134, 0.2);
+      }
+
+      .detail-row:last-child {
+        border-bottom: none;
+      }
+
+      .detail-label {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+        min-width: 80px;
+      }
+
+      .detail-value {
+        font-size: 11px;
+        color: ${mocha.text};
+        font-family: monospace;
+      }
+
+      .detail-full-title {
+        font-size: 12px;
+        color: ${mocha.text};
+      }
+
+      .detail-marks {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        font-family: monospace;
+      }
+
+      /* Window info in list view */
+      .window-info {
+        margin-left: 6px;
+      }
+
+      .window-pid {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+        font-family: monospace;
+      }
+
+      .window:hover {
+        background-color: ${mocha.surface0};
+      }
     '';
 
     # Systemd user service for Eww monitoring panel (T018)
@@ -965,7 +1154,6 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
-        ExecStartPost = "${pkgs.coreutils}/bin/sleep 2 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel";
         Restart = "on-failure";
         RestartSec = "3s";
       };
