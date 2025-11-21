@@ -246,7 +246,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height 600
+          :height 1000
           (box
             :class "content-container"
             :orientation "v"
@@ -425,7 +425,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height 600
+          :height 1000
           (box
             :class "content-container"
             :orientation "v"
