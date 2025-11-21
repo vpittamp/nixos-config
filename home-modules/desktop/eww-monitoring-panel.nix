@@ -171,15 +171,15 @@ in
       (defwindow monitoring-panel
         :monitor ${panelMonitorLiteral}
         :geometry (geometry
-          :anchor "center center"
+          :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "800px"
-          :height "600px")
+          :width "350px"
+          :height "85%")
         :namespace "eww-monitoring-panel"
         :windowtype "dialog"
         :stacking "overlay"
-        :focusable true
+        :focusable false
         (monitoring-panel-content))
 
       ;; Main panel content widget
