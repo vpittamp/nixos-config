@@ -177,6 +177,7 @@ in
           :width "800px"
           :height "600px")
         :namespace "eww-monitoring-panel"
+        :windowtype "dialog"
         :stacking "overlay"
         :focusable true
         (monitoring-panel-content))
