@@ -1,0 +1,587 @@
+{ config, lib, pkgs, ... }:
+
+with lib;
+
+let
+  cfg = config.programs.eww-monitoring-panel;
+
+  # Feature 057: Catppuccin Mocha theme colors (consistent with unified bar system)
+  mocha = {
+    base = "#1e1e2e";      # Background base
+    mantle = "#181825";    # Darker background
+    surface0 = "#313244";  # Surface layer 1
+    surface1 = "#45475a";  # Surface layer 2
+    overlay0 = "#6c7086";  # Overlay/border
+    text = "#cdd6f4";      # Primary text
+    subtext0 = "#a6adc8";  # Dimmed text
+    blue = "#89b4fa";      # Focused workspace
+    sapphire = "#74c7ec";  # Secondary accent
+    sky = "#89dceb";       # Tertiary accent
+    teal = "#94e2d5";      # Active monitor indicator
+    green = "#a6e3a1";     # Success/healthy
+    yellow = "#f9e2af";    # Floating window indicator
+    peach = "#fab387";     # Warning
+    red = "#f38ba8";       # Urgent/critical
+    mauve = "#cba6f7";     # Border accent
+  };
+
+  # Python with required packages for both modes (one-shot and streaming)
+  pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ]);
+
+  # Python backend script for monitoring data
+  # Supports both one-shot mode (no args) and stream mode (--listen)
+  # Version: 2025-11-20-v5 (use pythonWithPackages correctly)
+  monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
+    #!${pkgs.bash}/bin/bash
+    # Version: 2025-11-20-v5
+
+    # Set PYTHONPATH to tools directory for i3_project_manager imports
+    export PYTHONPATH="${../tools}"
+
+    # Set daemon socket path (system service location, not user service)
+    export I3PM_DAEMON_SOCKET="/run/i3-project-daemon/ipc.sock"
+
+    # Use Python with i3ipc package included
+    # Pass through all arguments (e.g., --listen flag)
+    exec ${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} "$@"
+  '';
+
+  # Toggle script for panel visibility
+  # Use eww active-windows to check if panel is actually open (not just defined)
+  toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+    #!${pkgs.bash}/bin/bash
+    # Check if panel is in active windows (actually open, not just defined)
+    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      # Panel is open - close it
+      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
+    else
+      # Panel is closed - open it
+      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
+    fi
+  '';
+
+in
+{
+  options.programs.eww-monitoring-panel = {
+    enable = mkEnableOption "Eww monitoring panel for window/project state visualization";
+
+    toggleKey = mkOption {
+      type = types.str;
+      default = "$mod+m";
+      description = ''
+        Keybinding to toggle monitoring panel visibility.
+        Uses Sway mod variable (typically Super/Win key).
+      '';
+    };
+
+    updateInterval = mkOption {
+      type = types.int;
+      default = 10;
+      description = ''
+        DEPRECATED: This option is no longer used since migrating to deflisten.
+        Kept for backward compatibility but has no effect.
+        Updates are now real-time via event stream (<100ms latency).
+      '';
+    };
+  };
+
+  config = mkIf cfg.enable {
+    # Add required packages
+    home.packages = [
+      pkgs.eww              # Widget framework
+      monitoringDataScript  # Python backend script wrapper
+      toggleScript          # Toggle visibility script
+    ];
+
+    # Eww Yuck widget configuration (T009-T014)
+    xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
+      ;; Live Window/Project Monitoring Panel
+      ;; Feature 085: Sway Monitoring Widget
+
+      ;; Deflisten: Real-time event stream (<100ms latency)
+      ;; Backend subscribes to Sway window/workspace/output events
+      ;; Automatic reconnection with exponential backoff
+      ;; Heartbeat every 5s to detect stale connections
+      (deflisten monitoring_data
+        :initial "{\"status\":\"connecting\",\"projects\":[],\"project_count\":0,\"monitor_count\":0,\"workspace_count\":0,\"window_count\":0,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\",\"error\":null}"
+        `${monitoringDataScript}/bin/monitoring-data-backend --listen`)
+
+      ;; Event-driven state variable (updated by daemon publisher)
+      (defvar panel_state "{}")
+
+
+      ;; Main monitoring panel window - Sidebar layout
+      (defwindow monitoring-panel
+        :monitor 0
+        :geometry (geometry
+          :anchor "right center"
+          :x "0px"
+          :y "0px"
+          :width "350px"
+          :height "1000px")
+        :namespace "eww-monitoring-panel"
+        :stacking "overlay"
+        :focusable false
+        (monitoring-panel-content))
+
+      ;; Main panel content widget
+      (defwidget monitoring-panel-content []
+        (box
+          :class "panel-container"
+          :orientation "v"
+          :space-evenly false
+          (panel-header)
+          (panel-body)
+          (panel-footer)))
+
+      ;; Compact panel header for sidebar
+      (defwidget panel-header []
+        (box
+          :class "panel-header"
+          :orientation "v"
+          :space-evenly false
+          (label
+            :class "panel-title"
+            :text "󱂬 Projects")
+          (box
+            :class "summary-counts"
+            :orientation "h"
+            :space-evenly true
+            (label
+              :class "count-badge"
+              :text "''${monitoring_data.project_count ?: 0} PRJ")
+            (label
+              :class "count-badge"
+              :text "''${monitoring_data.workspace_count ?: 0} WS")
+            (label
+              :class "count-badge"
+              :text "''${monitoring_data.window_count ?: 0} WIN"))))
+
+      ;; Panel body with scrollable content (T014)
+      (defwidget panel-body []
+        (box
+          :class "panel-body"
+          :orientation "v"
+          :vexpand true
+          (scrollable-content)))
+
+      ;; Scrollable content container - Project-based view
+      (defwidget scrollable-content []
+        (scroll
+          :vscroll true
+          :hscroll false
+          :vexpand true
+          (box
+            :class "content-container"
+            :orientation "v"
+            :space-evenly false
+            ; Show error state when status is "error"
+            (box
+              :visible "''${monitoring_data.status == 'error'}"
+              (error-state))
+            ; Show empty state when no windows and no error
+            (box
+              :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) == 0}"
+              (empty-state))
+            ; Show projects when no error and has windows
+            (box
+              :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) > 0}"
+              :orientation "v"
+              :space-evenly false
+              (for project in {monitoring_data.projects ?: []}
+                (project-widget :project project))))))
+
+      ;; Project display widget
+      (defwidget project-widget [project]
+        (box
+          :class "project ''${project.scope == 'scoped' ? 'scoped-project' : 'global-project'}"
+          :orientation "v"
+          :space-evenly false
+          ; Project header
+          (box
+            :class "project-header"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "project-name"
+              :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
+            (label
+              :class "window-count-badge"
+              :text "''${project.window_count}"))
+          ; Windows list
+          (box
+            :class "windows-container"
+            :orientation "v"
+            :space-evenly false
+            (for window in {project.windows ?: []}
+              (window-widget :window window)))))
+
+      ;; Compact window widget for sidebar - Single line with badges
+      (defwidget window-widget [window]
+        (box
+          :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes}"
+          :orientation "h"
+          :space-evenly false
+          ; Window icon shows state
+          (label
+            :class "window-icon"
+            :text "''${window.floating ? '⚓' : '󱂬'}")
+          ; App name (truncate to fit sidebar)
+          (label
+            :class "window-app-name"
+            :text "''${window.app_name}"
+            :limit-width 16
+            :truncate true)
+          ; Compact badges for states
+          (box
+            :class "window-badges"
+            :orientation "h"
+            :space-evenly false
+            :hexpand true
+            :halign "end"
+            (label
+              :class "badge badge-workspace"
+              :text "WS''${window.workspace_number}")
+            (label
+              :class "badge badge-pwa"
+              :text "PWA"
+              :visible "''${window.is_pwa ?: false}"))))
+
+      ;; Empty state display (T041)
+      (defwidget empty-state []
+        (box
+          :class "empty-state"
+          :orientation "v"
+          :valign "center"
+          :halign "center"
+          :vexpand true
+          (label
+            :class "empty-icon"
+            :text "󰝧")
+          (label
+            :class "empty-title"
+            :text "No Windows Open")
+          (label
+            :class "empty-message"
+            :text "Open a window to see it here")))
+
+      ;; Error state display (T042)
+      (defwidget error-state []
+        (box
+          :class "error-state"
+          :orientation "v"
+          :valign "center"
+          :halign "center"
+          :vexpand true
+          (label
+            :class "error-icon"
+            :text "󰀪")
+          (label
+            :class "error-message"
+            :text "''${monitoring_data.error ?: 'Unknown error'}")))
+
+      ;; Empty state display (T041)
+      (defwidget empty-state []
+        (box
+          :class "empty-state"
+          :orientation "v"
+          :valign "center"
+          :halign "center"
+          :vexpand true
+          (label
+            :class "empty-icon"
+            :text "󱂬")
+          (label
+            :class "empty-message"
+            :text "No windows open")))
+
+      ;; Panel footer with friendly timestamp
+      (defwidget panel-footer []
+        (box
+          :class "panel-footer"
+          :orientation "h"
+          :halign "center"
+          (label
+            :class "timestamp"
+            :text "''${monitoring_data.timestamp_friendly ?: 'Initializing...'}")))
+    '';
+
+    # Eww SCSS styling (T015)
+    xdg.configFile."eww-monitoring-panel/eww.scss".text = ''
+      /* Feature 085: Sway Monitoring Widget - Catppuccin Mocha Theme */
+
+      /* Color Variables (Catppuccin Mocha) - CSS Custom Properties */
+      * {
+        --base: ${mocha.base};
+        --mantle: ${mocha.mantle};
+        --surface0: ${mocha.surface0};
+        --surface1: ${mocha.surface1};
+        --overlay0: ${mocha.overlay0};
+        --text: ${mocha.text};
+        --subtext0: ${mocha.subtext0};
+        --blue: ${mocha.blue};
+        --teal: ${mocha.teal};
+        --green: ${mocha.green};
+        --yellow: ${mocha.yellow};
+        --red: ${mocha.red};
+        --mauve: ${mocha.mauve};
+      }
+
+      /* Panel Container - Sidebar Style with rounded corners and transparency */
+      .panel-container {
+        background-color: rgba(30, 30, 46, 0.95); /* $base with 95% opacity */
+        border: 2px solid $overlay0;
+        border-radius: 12px;
+        padding: 8px;
+        margin: 8px;
+      }
+
+      /* Compact Panel Header */
+      .panel-header {
+        background-color: $mantle;
+        border-bottom: 1px solid $overlay0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+      }
+
+      .panel-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: $text;
+        margin-bottom: 4px;
+      }
+
+      .summary-counts {
+        font-size: 11px;
+        color: $subtext0;
+      }
+
+      .count-badge {
+        font-size: 10px;
+        color: $teal;
+        background-color: rgba(148, 226, 213, 0.15);
+        padding: 2px 6px;
+        border-radius: 3px;
+      }
+
+      /* Panel Body - Compact */
+      .panel-body {
+        background-color: $base;
+        padding: 4px;
+      }
+
+      .content-container {
+        padding: 0;
+      }
+
+      /* Project Widget */
+      .project {
+        margin-bottom: 12px;
+        padding: 8px;
+        background-color: $surface0;
+        border-radius: 8px;
+        border: 1px solid $overlay0;
+      }
+
+      .scoped-project {
+        border-left: 3px solid $teal;
+      }
+
+      .global-project {
+        border-left: 3px solid $mauve;
+      }
+
+      .project-header {
+        padding: 6px 8px;
+        border-bottom: 1px solid $overlay0;
+        margin-bottom: 6px;
+      }
+
+      .project-name {
+        font-size: 13px;
+        font-weight: bold;
+        color: $text;
+      }
+
+      .window-count-badge {
+        font-size: 10px;
+        color: $teal;
+        background-color: rgba(148, 226, 213, 0.2);
+        padding: 1px 5px;
+        border-radius: 3px;
+        margin-left: auto;
+        min-width: 18px;
+      }
+
+      /* Windows Container */
+      .windows-container {
+        margin-left: 8px;
+        margin-top: 2px;
+      }
+
+      .window {
+        padding: 4px 8px;
+        margin-bottom: 1px;
+        border-radius: 2px;
+        background-color: $base;
+        border-left: 2px solid transparent;
+      }
+
+      .window-focused {
+        background-color: rgba(137, 180, 250, 0.1);
+        border-left-color: $blue;
+      }
+
+      .window-floating {
+        border-right: 2px solid $yellow;
+      }
+
+      .window-hidden {
+        opacity: 0.5;
+        font-style: italic;
+      }
+
+      /* Project Scope - Subtle border */
+      .scoped-window {
+        border-left-color: $teal;
+      }
+
+      .global-window {
+        border-left-color: $overlay0;
+      }
+
+      .window-icon {
+        font-size: 11px;
+        color: $subtext0;
+        min-width: 18px;
+      }
+
+      .window-app-name {
+        font-size: 11px;
+        font-weight: 500;
+        color: $text;
+        margin-left: 6px;
+      }
+
+      /* Compact badges for states */
+      .window-badges {
+        margin-left: 4px;
+      }
+
+      .badge {
+        font-size: 9px;
+        font-weight: 600;
+        padding: 1px 4px;
+        border-radius: 2px;
+        margin-left: 4px;
+      }
+
+      .badge-pwa {
+        color: $mauve;
+        background-color: rgba(203, 166, 247, 0.2);
+      }
+
+      .badge-project {
+        color: $teal;
+        background-color: rgba(148, 226, 213, 0.15);
+      }
+
+      .badge-workspace {
+        color: $blue;
+        background-color: rgba(137, 180, 250, 0.15);
+      }
+
+      /* Error State (T042) */
+      .error-state {
+        padding: 32px;
+      }
+
+      .error-icon {
+        font-size: 48px;
+        color: $red;
+        margin-bottom: 16px;
+      }
+
+      .error-message {
+        font-size: 14px;
+        color: $text;
+      }
+
+      /* Empty State (T041) */
+      .empty-state {
+        padding: 32px;
+      }
+
+      .empty-icon {
+        font-size: 48px;
+        color: $subtext0;
+        margin-bottom: 16px;
+      }
+
+      .empty-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: $text;
+        margin-bottom: 8px;
+      }
+
+      .empty-message {
+        font-size: 14px;
+        color: $subtext0;
+      }
+
+      /* Compact Panel Footer */
+      .panel-footer {
+        background-color: $mantle;
+        border-top: 1px solid $overlay0;
+        border-radius: 8px;
+        padding: 6px 8px;
+        margin-top: 8px;
+      }
+
+      .timestamp {
+        font-size: 10px;
+        color: $subtext0;
+        font-style: italic;
+      }
+
+      /* Compact Scrollbar */
+      scrollbar {
+        background-color: transparent;
+        border-radius: 4px;
+      }
+
+      scrollbar slider {
+        background-color: $overlay0;
+        border-radius: 4px;
+        min-width: 6px;
+      }
+
+      scrollbar slider:hover {
+        background-color: $surface1;
+      }
+    '';
+
+    # Systemd user service for Eww monitoring panel (T018)
+    systemd.user.services.eww-monitoring-panel = {
+      Unit = {
+        Description = "Eww Monitoring Panel for Window/Project State";
+        Documentation = "file:///etc/nixos/specs/085-sway-monitoring-widget/quickstart.md";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+
+      Service = {
+        Type = "simple";
+        ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
+        Restart = "on-failure";
+        RestartSec = "3s";
+      };
+
+      Install = {
+        WantedBy = [ "graphical-session.target" ];
+      };
+    };
+  };
+}

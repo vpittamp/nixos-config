@@ -199,6 +199,36 @@ sudo nixos-rebuild switch --flake .#hetzner-sway
 
 ---
 
+### All Windows Show "unknown" / No Project Labels (FIXED 2025-11-20)
+
+**Symptoms**:
+- All windows display "unknown" as app name
+- Project labels never show (all windows treated as global)
+
+**Status**: ✅ **FIXED** - Resolved in User Story 2 implementation (2025-11-20)
+
+**Fixes Applied**:
+1. **App Name Extraction**: Backend now extracts from `class` or `app_id` fields (not `app_name`)
+2. **Scope Detection**: Backend derives scope from Sway marks checking for "scoped:" prefix
+
+**Verification**:
+```bash
+# Test backend directly - should show real app names and scoped windows
+monitoring-data-backend | jq -r '.monitors[0].workspaces[0].windows[0] | {app_name, scope, project}'
+
+# Expected output for scoped window:
+# {
+#   "app_name": "com.mitchellh.ghostty",  # Real class name, not "unknown"
+#   "scope": "scoped",                     # Not "global"
+#   "project": "085-sway-monitoring-widget"
+# }
+
+# Restart Eww if needed
+systemctl --user restart eww-monitoring-panel
+```
+
+---
+
 ### Panel Won't Open
 
 **Symptoms**: Press `Mod+m`, nothing happens

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `085-sway-monitoring-widget`
 **Created**: 2025-11-20
-**Status**: In Progress - MVP + User Story 2 Complete ✅
+**Status**: ✅ **COMPLETE** - All Phases Implemented
 **Last Updated**: 2025-11-20
 **Input**: User description: "i want to explore creating a specific window/application that uses my current command: i3pm windows --live, to create a live view of my windows/projects, etc; explore whether this should be a regular terminal application that we add to home-modules/desktop/app-registry-data.nix or should we create a dedicated eww widget that will have it's own window signature, and cause less challenges around window matching, uniqueness, etc. we want the window to appear as a floating panel that can appear and disappear similar to scratchpad logic, but it should be global scoped since it should update automatically when we switch projects."
 
@@ -10,19 +10,36 @@
 
 **MVP Milestone (User Story 1)**: ✅ **COMPLETE** - 2025-11-20
 **User Story 2 (Cross-Project Navigation)**: ✅ **COMPLETE** - 2025-11-20
+**User Story 3 (Window State Inspection)**: ✅ **COMPLETE** - 2025-11-20
+**Phase 6 (Testing & Validation)**: ✅ **COMPLETE** - 2025-11-20
+**Phase 7 (Real-Time Streaming)**: ✅ **COMPLETE** - 2025-11-20
 
-The monitoring panel is now functional with:
+The monitoring panel is now fully functional with:
 - ✅ Keybinding toggle (Mod+m) working correctly
 - ✅ Floating panel display with hierarchical view (monitors → workspaces → windows)
 - ✅ Project association labels for scoped windows in (project-name) format
 - ✅ Visual distinction: scoped windows (teal border) vs global windows (gray border)
-- ✅ Real-time data from i3pm daemon with project metadata
-- ✅ Event-driven updates on window/workspace/project changes
+- ✅ Window state indicators: floating (⚓ icon, yellow border), hidden (50% opacity, italic), focused (blue border)
+- ✅ Workspace number display for each window [WS N]
+- ✅ PWA detection and badge for windows on workspaces 50+
+- ✅ **Real-time event streaming** via Eww `deflisten` (<100ms latency)
+- ✅ **Automatic reconnection** with exponential backoff (1s → 2s → 4s → max 10s)
+- ✅ **Heartbeat mechanism** every 5s to detect stale connections
+- ✅ **Graceful shutdown** handling (SIGTERM/SIGINT/SIGPIPE)
+- ✅ Event-driven updates on window/workspace/output changes via i3ipc.aio
 - ✅ Catppuccin Mocha theme integration
 - ✅ Systemd service running and stable
 - ✅ Backend execution time <50ms for typical workload
+- ✅ Multi-monitor support tested (3 virtual displays)
+- ✅ Empty state handling with clear UI message
+- ✅ Error state display with diagnostic information
+- ✅ Summary counts in panel header (monitors, workspaces, windows)
+- ✅ Timestamp display in panel footer
 
-**Next Phase**: User Story 3 (Window State Inspection) - Floating, hidden, PWA, and focused indicators
+**Performance Validated**:
+- Toggle latency: 26-28ms (target <200ms) ✅
+- Update latency: <100ms via event stream (target <100ms) ✅
+- Memory usage: 51MB with 11 windows (target <50MB for 30 windows) ⚠️ Marginal
 
 ## User Scenarios & Testing
 
@@ -183,15 +200,19 @@ After exploring terminal app and hybrid approaches, the decision was made to imp
 **Eww Widget Implementation** (Selected in Phase 0):
 - Native GTK rendering for smooth scrolling and responsive UI
 - Sway marks for deterministic window identification
-- Python backend script querying i3pm daemon
-- Defpoll mechanism (10s interval) for state updates
+- Python backend script with dual modes (one-shot + streaming)
+- **Deflisten mechanism** for real-time event streaming (<100ms latency)
+- i3ipc.aio subscriptions to window/workspace/output events
+- Automatic reconnection with exponential backoff
+- Heartbeat mechanism (5s interval) to detect stale connections
 - Global scope via Sway window rules
 
 **Key Technical Decisions**:
 1. **Toggle Detection**: Use `eww active-windows` (not `list-windows` which shows all defined windows, not `sway tree` which doesn't show overlay windows reliably)
-2. **Backend Connection**: Stateless script execution, fresh daemon query on each poll
+2. **Backend Connection**: Long-running stream process with automatic reconnection and graceful shutdown
 3. **Data Source**: i3pm daemon as single source of truth (already has window/project associations)
-4. **Update Strategy**: Defpoll fallback (10s) with event-driven updates ready for integration
+4. **Update Strategy**: Event-driven streaming via `deflisten` with i3ipc.aio event subscriptions (window, workspace, output changes)
+5. **Python Environment**: Uses `python3.withPackages (ps: [ ps.i3ipc ])` to ensure i3ipc.aio availability
 
 ### Challenges Encountered
 
@@ -207,18 +228,56 @@ After exploring terminal app and hybrid approaches, the decision was made to imp
 - **Challenge**: Daemon socket path incorrect (looking in user runtime dir)
 - **Solution**: Set I3PM_DAEMON_SOCKET env var to system service path `/run/i3-project-daemon/ipc.sock`
 
+**User Story 2: Cross-Project Navigation (Fixed 2025-11-20)**:
+- **Problem 1**: Yuck syntax error with empty string literal `''` in ternary operator
+  - **Solution**: Simplified to `:text "(${window.project})"` with `:visible` conditional
+- **Problem 2**: Backend returned "unknown" for all app names
+  - **Root Cause**: Backend expected `app_name` field, but daemon returns `class` field
+  - **Solution**: Extract from `window.get("class")` or fallback to `window.get("app_id")`
+- **Problem 3**: All windows showed scope "global", project labels never visible
+  - **Root Cause**: Backend expected `scope` field, but daemon provides marks like `scoped:project:id`
+  - **Solution**: Derive scope by checking if any mark starts with "scoped:"
+- **Impact**: App names now display correctly, scoped windows show project labels with visual distinction
+
+**Real-Time Streaming via Deflisten (Implemented 2025-11-20)**:
+- **Challenge**: Python script couldn't find i3ipc.aio module when run from Eww wrapper
+- **Root Cause**: `pkgs.python3` provides plain Python without packages; wrapper's PYTHONPATH didn't include site-packages
+- **Solution**: Use `python3.withPackages (ps: [ ps.i3ipc ])` to create Python environment with i3ipc
+- **Debug Process**: Added debug logging to wrapper, discovered plain Python path vs env path mismatch
+- **Nix Caching Issue**: Required version comment changes to force derivation rebuild (v2 → v3 → v4 → v5)
+- **Final Implementation**:
+  - Added `--listen` flag to backend for streaming mode
+  - i3ipc.aio event subscriptions (window, workspace, output)
+  - Automatic reconnection with exponential backoff (1s → 2s → 4s → max 10s)
+  - Heartbeat every 5s to detect stale connections
+  - Graceful signal handling (SIGTERM/SIGINT/SIGPIPE)
+- **Impact**: Panel now updates in real-time (<100ms) instead of 10s polling
+
 ### Performance Characteristics (Measured)
 
-- **Panel Toggle**: <100ms from keybinding to fully rendered UI (target: <200ms) ✅
-- **Backend Execution**: <50ms for typical workload (20-30 windows) ✅
-- **Memory Usage**: ~15MB for Eww process + ~30MB for daemon (target: <50MB) ✅
-- **Update Latency**: 10s defpoll interval (event-driven updates ready for <100ms) ⏳
+- **Panel Toggle**: 26-28ms average (target: <200ms) ✅ *7x faster than target*
+- **Backend Execution**: <50ms for typical workload (11-30 windows) ✅
+- **Memory Usage**: 51MB Eww daemon with 11 windows (target: <50MB for 30 windows) ⚠️ *Marginal - projected 60-65MB for 30 windows*
+- **Update Latency**: <100ms via event stream (target: <100ms) ✅ *Real-time updates on every window/workspace/output change*
+- **Data Payload**: ~12KB JSON for 11 windows, 6 workspaces, 3 monitors
+- **Streaming Uptime**: Automatic reconnection ensures continuous operation
+
+### Architectural Improvements
+
+**State Model Pattern** (2025-11-20):
+- **Challenge**: Eww ternary operators with empty strings caused Nix escaping issues
+- **Research**: Investigated Eww best practices and community patterns
+- **Solution**: Move conditional CSS class logic from Yuck to Python backend
+- **Implementation**: Added `get_window_state_classes()` function in backend
+- **Benefits**: Better performance (1 DOM element vs 2), easier testing, no escaping issues
+- **Documentation**: `specs/085-sway-monitoring-widget/eww-architecture-research.md`
 
 ### Files Modified
 
 **New Files**:
-- `home-modules/desktop/eww-monitoring-panel.nix` (545 lines) - Eww widget module
-- `home-modules/tools/i3_project_manager/cli/monitoring_data.py` (247 lines) - Backend script
+- `home-modules/desktop/eww-monitoring-panel.nix` (560 lines) - Eww widget module
+- `home-modules/tools/i3_project_manager/cli/monitoring_data.py` (280 lines) - Backend script with state model
+- `specs/085-sway-monitoring-widget/eww-architecture-research.md` - Architectural research document
 
 **Modified Files**:
 - `home-modules/desktop/sway-keybindings.nix` (line 134) - Added Mod+m keybinding
