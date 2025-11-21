@@ -40,12 +40,7 @@ in
           };
         };
       }));
-      default = [
-        {
-          from = "kind-operator-113";
-          to = "kind-operator-3";
-        }
-      ];
+      default = [];  # Dynamic detection handles hostname/protocol/port automatically
       example = [
         { from = "cluster-old"; to = "cluster-new"; }
       ];
@@ -86,13 +81,43 @@ in
         trap cleanup EXIT
 
         echo "Fetching '$ITEM_NAME' from 1Password..."
-        if ! op document get "$ITEM_NAME" --out-file "$temp_kubeconfig"; then
+        if ! op document get "$ITEM_NAME" --out-file "$temp_kubeconfig" --force; then
           echo "Failed to download kubeconfig from 1Password" >&2
           exit 1
         fi
 
+        # Auto-detect online Tailscale API proxy hostname
+        if command -v tailscale >/dev/null 2>&1; then
+          BASE_HOSTNAME="kind-api"
+          ONLINE_PROXY=$(tailscale status | grep -E '^[0-9.]+\s+'"$BASE_HOSTNAME" | grep -v 'offline' | awk '{print $2}' | head -1)
+
+          if [ -n "$ONLINE_PROXY" ]; then
+            # Extract current hostname from kubeconfig
+            CURRENT_HOSTNAME=$(grep -oE '(kind-operator|kind-api)[^.]*' "$temp_kubeconfig" | head -1)
+
+            if [ -n "$CURRENT_HOSTNAME" ] && [ "$CURRENT_HOSTNAME" != "$ONLINE_PROXY" ]; then
+              # Replace hostname
+              sed -i "s/$CURRENT_HOSTNAME/$ONLINE_PROXY/g" "$temp_kubeconfig"
+              echo "✓ Updated hostname: $CURRENT_HOSTNAME -> $ONLINE_PROXY"
+
+              # Fix protocol if needed (kind-api uses HTTP:8001, kind-operator uses HTTPS:443)
+              if echo "$ONLINE_PROXY" | grep -q "kind-api"; then
+                sed -i 's|https://|http://|g' "$temp_kubeconfig"
+                sed -i 's|:443|:8001|g' "$temp_kubeconfig"
+                echo "✓ Updated protocol: HTTPS:443 -> HTTP:8001"
+              fi
+            else
+              echo "✓ Hostname already correct: $ONLINE_PROXY"
+            fi
+          else
+            echo "WARNING: No online $BASE_HOSTNAME found in Tailscale"
+          fi
+        else
+          echo "WARNING: tailscale command not found, skipping hostname detection"
+        fi
+
         ${lib.optionalString (replacementsFile != null) ''
-          # Apply hostname replacements to keep local cluster identifiers aligned
+          # Apply additional static hostname replacements if configured
           ${pkgs.python3}/bin/python3 ${replacementsFile} "$temp_kubeconfig" <<'PY'
 import json
 import pathlib
@@ -120,7 +145,8 @@ PY
 
         if [ -s "$TARGET" ]; then
           echo "Merging into $TARGET..."
-          KUBECONFIG="$TARGET:$temp_kubeconfig" kubectl config view --flatten > "$merged_config"
+          # Put temp file FIRST so its cluster definition takes precedence
+          KUBECONFIG="$temp_kubeconfig:$TARGET" kubectl config view --flatten > "$merged_config"
           mv "$merged_config" "$TARGET"
         else
           echo "No existing kubeconfig found at $TARGET. Using remote copy."

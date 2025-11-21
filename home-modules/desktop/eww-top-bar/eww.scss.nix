@@ -371,4 +371,65 @@
                   inset 0 0 8px rgba(203, 166, 247, 0.2);
     }
   }
+
+  /* Notification center toggle button styling (SwayNC) */
+  .notification-toggle {
+    background: linear-gradient(135deg, rgba(69, 71, 90, 0.5), rgba(49, 50, 68, 0.6));
+    border: 1px solid rgba(108, 112, 134, 0.4);
+    padding: 2px 6px;
+    transition: all 200ms ease;
+  }
+
+  .notification-toggle:hover {
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.15), rgba(166, 227, 161, 0.12));
+    border-color: rgba(137, 180, 250, 0.6);
+    box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
+  }
+
+  .notification-toggle-active {
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.35), rgba(166, 227, 161, 0.25));
+    border: 1px solid rgba(137, 180, 250, 0.8);
+    box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
+                inset 0 0 8px rgba(137, 180, 250, 0.2);
+    animation: pulse-notification 3s ease-in-out infinite;
+  }
+
+  .notification-toggle-active:hover {
+    background: linear-gradient(135deg, rgba(137, 180, 250, 0.45), rgba(166, 227, 161, 0.35));
+    border-color: rgba(137, 180, 250, 0.95);
+    box-shadow: 0 0 16px rgba(137, 180, 250, 0.7),
+                0 4px 12px rgba(137, 180, 250, 0.4),
+                inset 0 0 12px rgba(137, 180, 250, 0.3);
+  }
+
+  .notification-toggle-icon {
+    color: #a6adc8;
+    font-size: 12px;
+    transition: all 200ms ease;
+  }
+
+  .notification-toggle:hover .notification-toggle-icon {
+    color: #89b4fa;
+  }
+
+  .notification-toggle-active .notification-toggle-icon {
+    color: #89b4fa;
+    text-shadow: 0 0 8px rgba(137, 180, 250, 0.9),
+                 0 0 4px rgba(137, 180, 250, 0.6);
+  }
+
+  @keyframes pulse-notification {
+    0% {
+      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
+                  inset 0 0 8px rgba(137, 180, 250, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 18px rgba(137, 180, 250, 0.7),
+                  inset 0 0 12px rgba(137, 180, 250, 0.3);
+    }
+    100% {
+      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5),
+                  inset 0 0 8px rgba(137, 180, 250, 0.2);
+    }
+  }
 ''

@@ -65,6 +65,7 @@ let
 
   # Toggle script for panel visibility
   # Use eww active-windows to check if panel is actually open (not just defined)
+  # Closes SwayNC notification center if open (mutual exclusivity)
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
     # Check if panel is in active windows (actually open, not just defined)
@@ -72,6 +73,9 @@ let
       # Panel is open - close it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
     else
+      # Close SwayNC notification center if it's open (mutual exclusivity)
+      # Always try to close it - skip-wait flag makes it safe even if not open
+      ${pkgs.swaynotificationcenter}/bin/swaync-client -cp -sw >/dev/null 2>&1
       # Panel is closed - open it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
     fi
@@ -120,6 +124,18 @@ let
 
     # Return focus to previous window
     ${pkgs.sway}/bin/swaymsg 'focus prev'
+  '';
+
+  # SwayNC toggle wrapper with mutual exclusivity
+  # Closes monitoring panel if it's open before opening notification center
+  swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
+    #!${pkgs.bash}/bin/bash
+    # Close monitoring panel if it's open (mutual exclusivity)
+    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
+    fi
+    # Toggle SwayNC notification center
+    ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
   '';
 
   # Feature 086: Navigation script for monitoring panel
@@ -232,6 +248,7 @@ in
       toggleFocusScript     # Feature 086: Toggle focus script
       exitMonitorModeScript # Feature 086: Exit monitoring mode
       monitorPanelNavScript # Feature 086: Navigation within panel
+      swayNCToggleScript    # SwayNC toggle with mutual exclusivity
     ];
 
     # Eww Yuck widget configuration (T009-T014)

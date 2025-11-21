@@ -6,8 +6,11 @@ let
     then osConfig.networking.hostName
     else "";
   isM1 = hostname == "nixos-m1";
-  controlCenterHeight = if isM1 then 760 else 1000;
-  controlCenterWidth = if isM1 then 460 else 500;
+  # Match monitoring widget dimensions (450px width, 90% height)
+  # M1: 800px logical height * 0.9 = 720px
+  # Hetzner: 1080px height * 0.9 = 972px
+  controlCenterHeight = if isM1 then 720 else 972;
+  controlCenterWidth = 450;
   arinAssets = builtins.path { path = ../../assets/swaync/arin; name = "swaync-arin-assets"; };
   dashboardAssets = builtins.path { path = ../../assets/swaync/dashboard/images; name = "swaync-dashboard-images"; };
   configDir = "${config.home.homeDirectory}/.config";
@@ -25,6 +28,8 @@ let
     text = "#cdd6f4";
     subtext0 = "#a6adc8";
     blue = "#89b4fa";
+    sapphire = "#74c7ec";
+    sky = "#89dceb";
     mauve = "#cba6f7";
     yellow = "#f9e2af";
     red = "#f38ba8";
@@ -171,52 +176,70 @@ let
 
   # Catppuccin Mocha CSS for SwayNC
   # Feature 057: User Story 1 - Unified Theming
+  # Updated to match eww-monitoring-panel transparency and styling
   swayNcStyle = ''
     /* Feature 057: Unified Bar System - Catppuccin Mocha Theme */
+    /* Styled to match eww-monitoring-panel appearance */
 
     * {
+      all: unset;
       font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", "Ubuntu Nerd Font", sans-serif;
-      font-size: 10pt;
     }
 
     .notification-window {
-      background-color: ${mocha.base};
-      border: 1px solid ${mocha.blue};
-      border-radius: 6px;
+      background-color: rgba(30, 30, 46, 0.50);
+      border: 2px solid rgba(137, 180, 250, 0.2);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .notification {
-      background-color: ${mocha.surface0};
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
       padding: 10px;
       margin: 5px;
-      border-radius: 4px;
+      border-radius: 8px;
+      border: 1px solid ${mocha.overlay0};
+      transition: all 150ms ease;
+    }
+
+    .notification:hover {
+      background-color: rgba(69, 71, 90, 0.5);
+      border-color: ${mocha.overlay0};
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     }
 
     .notification-default-action {
-      background-color: ${mocha.surface0};
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
+      transition: all 150ms ease;
     }
 
     .notification-default-action:hover {
-      background-color: ${mocha.blue};
+      background-color: rgba(137, 180, 250, 0.6);
+      color: ${mocha.base};
+      box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
     }
 
     .notification-close-button {
       background-color: ${mocha.red};
       color: ${mocha.text};
       border-radius: 50%;
+      transition: all 150ms ease;
     }
 
     .notification-close-button:hover {
       background-color: #ff0000;
+      box-shadow: 0 0 8px rgba(243, 139, 168, 0.6);
     }
 
     .control-center {
-      background-color: ${mocha.base};
-      border: 1px solid ${mocha.blue};
-      border-radius: 6px;
-      padding-bottom: 8px;
+      background-color: rgba(30, 30, 46, 0.70);
+      border: 2px solid rgba(137, 180, 250, 0.2);
+      border-radius: 12px;
+      padding: 8px;
+      margin: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .control-center-list {
@@ -226,27 +249,43 @@ let
     .widget-title {
       color: ${mocha.text};
       font-weight: bold;
+      font-size: 14px;
       margin: 10px;
     }
 
     .widget-dnd {
-      background-color: ${mocha.surface0};
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
-      padding: 5px;
+      padding: 8px 12px;
       margin: 5px;
-      border-radius: 4px;
+      border-radius: 8px;
+      border: 1px solid ${mocha.overlay0};
+      transition: all 150ms ease;
+    }
+
+    .widget-dnd:hover {
+      background-color: rgba(69, 71, 90, 0.5);
+      border-color: ${mocha.overlay0};
     }
 
     .widget-label {
       color: ${mocha.subtext0};
+      font-size: 12px;
     }
 
     .widget-mpris {
-      background-color: ${mocha.surface0};
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
       padding: 10px;
       margin: 5px;
-      border-radius: 4px;
+      border-radius: 8px;
+      border: 1px solid ${mocha.overlay0};
+      transition: all 150ms ease;
+    }
+
+    .widget-mpris:hover {
+      background-color: rgba(69, 71, 90, 0.5);
+      border-color: ${mocha.overlay0};
     }
 
     .widget-buttons-grid flowboxchild {
@@ -256,12 +295,12 @@ let
     }
 
     .widget-buttons-grid flowboxchild > button {
-      background-color: ${mocha.surface0};
+      background-color: rgba(49, 50, 68, 0.4);
       color: ${mocha.text};
-      border-radius: 9px;
-      border: 1px solid ${mocha.surface1};
-      padding: 4px;
-      margin: 1px;
+      border-radius: 8px;
+      border: 1px solid ${mocha.overlay0};
+      padding: 6px;
+      margin: 2px;
       min-width: 44px;
       min-height: 44px;
       font-weight: 600;
@@ -270,17 +309,65 @@ let
       align-items: center;
       justify-content: center;
       background-image: none;
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      transition: all 150ms ease;
     }
 
     .widget-buttons-grid flowboxchild > button:hover {
+      background-color: rgba(137, 180, 250, 0.6);
       border-color: ${mocha.blue};
-      color: ${mocha.blue};
-      box-shadow: 0 3px 9px rgba(137, 180, 250, 0.35);
+      color: ${mocha.base};
+      box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
+      transform: scale(1.05);
     }
 
     .widget-backlight slider, .widget-backlight scale {
       min-height: 24px;
+    }
+
+    .widget-backlight scale trough {
+      background-color: rgba(49, 50, 68, 0.9);
+      border-radius: 8px;
+    }
+
+    .widget-backlight scale highlight {
+      background: linear-gradient(90deg, ${mocha.blue}, ${mocha.sapphire});
+      border-radius: 8px;
+    }
+
+    .widget-backlight scale slider {
+      background-color: ${mocha.text};
+      border-radius: 50%;
+      min-height: 16px;
+      min-width: 16px;
+    }
+
+    /* Scrollbar styling to match monitoring widget */
+    scrollbar {
+      background-color: transparent;
+      border-radius: 4px;
+    }
+
+    scrollbar slider {
+      background-color: ${mocha.overlay0};
+      border-radius: 4px;
+      min-width: 6px;
+    }
+
+    scrollbar slider:hover {
+      background-color: ${mocha.surface1};
+    }
+
+    /* Section headers */
+    .widget-label {
+      background-color: rgba(24, 24, 37, 0.4);
+      border-bottom: 1px solid ${mocha.overlay0};
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: bold;
+      color: ${mocha.teal};
     }
   '';
 
@@ -324,15 +411,16 @@ in {
   # Notification center shows transient info (CPU, memory, network, disk) when toggled open
   xdg.configFile."swaync/config.json".text = builtins.toJSON {
     # Core notification settings
+    # Match monitoring widget positioning (right center, 8px margin)
     positionX = "right";
-    positionY = "top";
+    positionY = "center";
     layer = "overlay";
     control-center-layer = "overlay";
     layer-shell = true;
     cssPriority = "user";
-    control-center-margin-top = 10;
-    control-center-margin-bottom = 10;
-    control-center-margin-right = 10;
+    control-center-margin-top = 8;
+    control-center-margin-bottom = 8;
+    control-center-margin-right = 8;
     control-center-margin-left = 0;
     notification-2fa-action = false;
     notification-inline-replies = false;

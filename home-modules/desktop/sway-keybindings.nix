@@ -115,7 +115,7 @@ in
 
     # ========== NOTIFICATIONS (SwayNC) ==========
     "${modifier}+i" = "exec toggle-quick-panel";  # Toggle Eww quick settings panel
-    "${modifier}+Shift+i" = "exec swaync-client -t -sw";  # Toggle notification center
+    "${modifier}+Shift+i" = "exec toggle-swaync";  # Toggle notification center (mutually exclusive with monitoring panel)
     "${modifier}+Ctrl+Shift+i" = "exec swaync-client -d -sw";  # Toggle Do Not Disturb
 
     # ========== ADDITIONAL UTILITIES ==========

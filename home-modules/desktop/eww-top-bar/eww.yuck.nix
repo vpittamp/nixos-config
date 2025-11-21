@@ -136,6 +136,14 @@ in
   :initial "false"
   `${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | grep -q 'monitoring-panel' && echo true || echo false`)
 
+;; Notification center visibility status (SwayNC)
+;; Uses swaync-client's built-in status API for accurate state
+;; 2s interval to avoid race conditions with 1s timeout
+(defpoll notification_center_visible
+  :interval "2s"
+  :initial "false"
+  `${pkgs.coreutils}/bin/timeout 1 ${pkgs.swaynotificationcenter}/bin/swaync-client --subscribe 2>/dev/null | ${pkgs.coreutils}/bin/head -1 | ${pkgs.jq}/bin/jq -r '.visible' 2>/dev/null || echo false`)
+
 ;; Interactions / popups
 (defvar volume_popup_visible false)
 (defvar show_wifi_details false)
@@ -359,6 +367,17 @@ in
          (label :class "icon monitoring-toggle-icon"
                 :text {monitoring_panel_visible == "true" ? "󰍉" : "󰍜"}))))
 
+;; Notification center toggle widget (SwayNC)
+;; Shows current notification center visibility and allows clicking to toggle
+;; Uses toggle-swaync wrapper for mutual exclusivity with monitoring panel
+(defwidget notification-center-toggle []
+  (eventbox :onclick "toggle-swaync &"
+    (box :class {notification_center_visible == "true" ? "pill metric-pill notification-toggle notification-toggle-active" : "pill metric-pill notification-toggle"}
+         :spacing 2
+         :tooltip {notification_center_visible == "true" ? "Hide notifications (Mod+Shift+I)" : "Show notifications (Mod+Shift+I)"}
+         (label :class "icon notification-toggle-icon"
+                :text {notification_center_visible == "true" ? "󰂚" : "󰂜"}))))
+
 ;; Main bar layout - upgraded pill layout with reveals/hover states
 
 (defwidget main-bar [is_primary]
@@ -410,7 +429,7 @@ in
          :spacing 4
          (project-widget))
 
-    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, and System Tray
+    ;; Right: Date/Time, Monitor Profile, Monitoring Panel Toggle, Notification Center, and System Tray
     (box :class "right"
          :orientation "h"
          :space-evenly false
@@ -418,6 +437,7 @@ in
          :spacing 4
           (monitor-profile-widget)
           (monitoring-panel-toggle)
+          (notification-center-toggle)
           (datetime-widget)
           (systray-widget :is_primary is_primary))))
 
