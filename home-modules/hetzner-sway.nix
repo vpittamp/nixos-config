@@ -85,6 +85,7 @@ in
     ./desktop/eww-workspace-bar.nix  # SVG workspace bar replacing bottom swaybar
     ./desktop/eww-quick-panel.nix     # Feature 057: Quick settings panel (network, apps, system controls)
     ./desktop/eww-top-bar.nix  # Feature 060: Eww top bar with system metrics
+    ./desktop/eww-monitoring-panel.nix  # Feature 085: Live window/project monitoring panel
     ./desktop/swaync.nix       # Feature 057: SwayNC notification center
     ./desktop/sway-config-manager.nix  # Feature 047: Dynamic configuration management
 
@@ -168,6 +169,9 @@ in
 
   # Eww top bar with system metrics (Feature 060)
   programs.eww-top-bar.enable = true;
+
+  # Live window/project monitoring panel (Feature 085)
+  programs.eww-monitoring-panel.enable = true;  # Toggle with Mod+m
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {
