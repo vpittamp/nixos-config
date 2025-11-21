@@ -60,6 +60,19 @@ let
     fi
   '';
 
+  # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
+  handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
+    KEY="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    case "$KEY" in
+      1|Alt+1) $EWW_CMD update current_view=windows ;;
+      2|Alt+2) $EWW_CMD update current_view=projects ;;
+      3|Alt+3) $EWW_CMD update current_view=apps ;;
+      4|Alt+4) $EWW_CMD update current_view=health ;;
+      Escape|q) $EWW_CMD close monitoring-panel ;;
+    esac
+  '';
+
 in
 {
   options.programs.eww-monitoring-panel = {
@@ -147,15 +160,17 @@ in
         :focusable true
         (monitoring-panel-content))
 
-      ;; Main panel content widget
+      ;; Main panel content widget with keyboard navigation
       (defwidget monitoring-panel-content []
-        (box
-          :class "panel-container"
-          :orientation "v"
-          :space-evenly false
-          (panel-header)
-          (panel-body)
-          (panel-footer)))
+        (eventbox
+          :onkeypress "${handleKeyScript}"
+          (box
+            :class "panel-container"
+            :orientation "v"
+            :space-evenly false
+            (panel-header)
+            (panel-body)
+            (panel-footer))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
