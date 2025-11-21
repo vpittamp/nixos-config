@@ -64,6 +64,8 @@ let
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    # Debug: log the key to journal
+    echo "Monitoring panel key pressed: '$KEY'" | ${pkgs.systemd}/bin/systemd-cat -t eww-keyhandler
     case "$KEY" in
       1|Alt+1) $EWW_CMD update current_view=windows ;;
       2|Alt+2) $EWW_CMD update current_view=projects ;;
@@ -158,12 +160,15 @@ in
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
         :focusable true
+        :exclusive false
+        :windowtype "normal"
         (monitoring-panel-content))
 
       ;; Main panel content widget with keyboard navigation
       (defwidget monitoring-panel-content []
         (eventbox
-          :onkeypress "${handleKeyScript}"
+          :onkeypress "${handleKeyScript} {}"
+          :cursor "default"
           (box
             :class "panel-container"
             :orientation "v"

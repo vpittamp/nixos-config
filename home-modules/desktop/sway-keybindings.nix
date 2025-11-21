@@ -133,6 +133,12 @@ in
     # Use toggle-monitoring-panel from PATH (installed by eww-monitoring-panel module)
     "${modifier}+m" = "exec toggle-monitoring-panel";
 
+    # Feature 085: Monitoring panel view switching (Alt+1-4)
+    "Alt+1" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=windows";
+    "Alt+2" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=projects";
+    "Alt+3" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps";
+    "Alt+4" = "exec eww --config $HOME/.config/eww-monitoring-panel update current_view=health";
+
     # Internal display brightness
     "XF86MonBrightnessUp" = "exec brightnessctl set +5%";
     "XF86MonBrightnessDown" = "exec brightnessctl set 5%-";
