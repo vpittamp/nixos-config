@@ -34,8 +34,8 @@ in
         mgr = {
           prepend_keymap = [
             # Zoxide integration
-            { on = ["z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -l | ${pkgs.fzf}/bin/fzf --prompt \"Zoxide > \" --height=40% --reverse --preview \"${pkgs.eza}/bin/eza -la --color=always {}\" --preview-window=right:60%); if [ -n \"$zoxide_dir\" ]; then printf \"cd \\\"%s\\\"\\n\" \"$zoxide_dir\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya; fi' --block"; desc = "Jump to frecent directory with zoxide"; }
-            { on = ["Z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -i); if [ -n \"$zoxide_dir\" ]; then printf \"cd \\\"%s\\\"\\n\" \"$zoxide_dir\" | ${pkgs.yazi}/bin/yazi-msg --id=$ya; fi' --block"; desc = "Jump with zoxide query"; }
+            { on = ["z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -l | ${pkgs.fzf}/bin/fzf --prompt \"Zoxide > \" --height=40% --reverse --preview \"${pkgs.eza}/bin/eza -la --color=always {}\" --preview-window=right:60%); if [ -n \"$zoxide_dir\" ]; then ${pkgs.yazi}/bin/ya emit-to \"$ya\" cd \"$zoxide_dir\"; fi' --block"; desc = "Jump to frecent directory with zoxide"; }
+            { on = ["Z"]; run = "shell 'PATH=${zoxideToolsPath}:$PATH; ya=$YAZI_ID; zoxide_dir=$(${pkgs.zoxide}/bin/zoxide query -i); if [ -n \"$zoxide_dir\" ]; then ${pkgs.yazi}/bin/ya emit-to \"$ya\" cd \"$zoxide_dir\"; fi' --block"; desc = "Jump with zoxide query"; }
             
             # Smart find
             { on = ["/"]; run = "find --smart"; desc = "Smart find with highlighting"; }
@@ -206,7 +206,7 @@ in
         };
         
         log = {
-          enabled = false;
+          enabled = true;
         };
       };
       
