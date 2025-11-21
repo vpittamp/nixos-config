@@ -231,29 +231,22 @@ in
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          ;; Windows view (real-time)
-          (revealer
-            :reveal {current_view == "windows"}
-            :transition "crossfade"
-            :duration "200ms"
+          ;; Stack layout - only show one view at a time, each taking full height
+          (box
+            :vexpand true
+            :visible {current_view == "windows"}
             (windows-view))
-          ;; Projects view
-          (revealer
-            :reveal {current_view == "projects"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
+            :vexpand true
+            :visible {current_view == "projects"}
             (projects-view))
-          ;; Apps view
-          (revealer
-            :reveal {current_view == "apps"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
+            :vexpand true
+            :visible {current_view == "apps"}
             (apps-view))
-          ;; Health view
-          (revealer
-            :reveal {current_view == "health"}
-            :transition "crossfade"
-            :duration "200ms"
+          (box
+            :vexpand true
+            :visible {current_view == "health"}
             (health-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
