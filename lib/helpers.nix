@@ -53,8 +53,28 @@ let
     inherit system;
     config.allowUnfree = true;
   };
+
+  # Monitor role definitions per hostname
+  # Role indices: primary=0, secondary=1, tertiary=2
+  # Widgets should reference roles, not hardcoded output names
+  monitorConfig = {
+    "nixos-hetzner-sway" = {
+      outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
+      primary = "HEADLESS-1";
+      secondary = "HEADLESS-2";
+      tertiary = "HEADLESS-3";
+    };
+    "nixos-m1" = {
+      outputs = [ "eDP-1" "HDMI-A-1" ];
+      primary = "eDP-1";
+      secondary = "HDMI-A-1";
+      tertiary = "HDMI-A-1";  # Fallback to secondary if no tertiary
+    };
+  };
 in
 {
+  # Export monitor configuration for use in home-manager modules
+  inherit monitorConfig;
   # Create a standardized Home Manager configuration for NixOS modules
   # This ensures consistency across all NixOS configurations
   mkHomeManagerConfig = { system, user, modules, osConfig ? null }:
@@ -71,7 +91,7 @@ in
         useGlobalPkgs = true;
         useUserPackages = true;
         extraSpecialArgs = {
-          inherit inputs self pkgs-unstable;
+          inherit inputs self pkgs-unstable monitorConfig;
         } // (if osConfig != null then { inherit osConfig; } else { });
         users.${user} = {
           imports = modules;

@@ -146,9 +146,8 @@ in
       # NOTE: partOf/PartOf not working in NixOS system services (Feature 046)
       # Attempted: partOf = [ "graphical.target" ]; and unitConfig.PartOf
       # Neither generated PartOf directive in systemd unit file
-      # Workaround: Manual restart after greetd/Sway restart:
-      #   sudo systemctl restart i3-project-daemon
-      # Future: Consider socket reconnection detection in daemon code
+      # FIX: Daemon implements socket validation with auto-reconnection (see connection.py)
+      # The wrapper script discovers new sockets, and the daemon validates connectivity
 
       # Unit-level configuration ([Unit] section)
       unitConfig = {

@@ -745,6 +745,28 @@ class I3ProjectDaemon:
             correlation_task = asyncio.create_task(run_correlation_detection())
             logger.info("Correlation detection started")
 
+        # Socket validation task - detect stale sockets after Sway restart
+        socket_validation_task = None
+        if self.connection:
+            async def run_socket_validation():
+                """Periodically validate Sway socket and reconnect if needed."""
+                while True:
+                    try:
+                        await asyncio.sleep(30)  # Check every 30 seconds
+                        if self.connection and not self.connection.is_shutting_down:
+                            reconnected = await self.connection.validate_and_reconnect_if_needed()
+                            if reconnected and self.ipc_server:
+                                # Update IPC server with new connection
+                                self.ipc_server.i3_connection = self.connection
+                                logger.info("IPC server updated after socket reconnection")
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        logger.warning(f"Error in socket validation: {e}")
+
+            socket_validation_task = asyncio.create_task(run_socket_validation())
+            logger.info("Socket validation task started (30s interval)")
+
         try:
             # Run i3 event loop (blocks until shutdown)
             if self.connection:
@@ -768,6 +790,15 @@ class I3ProjectDaemon:
                 except asyncio.CancelledError:
                     pass
                 logger.info("Correlation detection stopped")
+
+            # Stop socket validation task
+            if socket_validation_task:
+                socket_validation_task.cancel()
+                try:
+                    await socket_validation_task
+                except asyncio.CancelledError:
+                    pass
+                logger.info("Socket validation stopped")
 
             # Cancel watchdog task
             if watchdog_task:

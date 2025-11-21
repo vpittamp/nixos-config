@@ -1,9 +1,25 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, monitorConfig ? {}, ... }:
 
 with lib;
 
 let
   cfg = config.programs.eww-monitoring-panel;
+
+  # Get hostname for monitor config lookup
+  hostname = osConfig.networking.hostName or "nixos-hetzner-sway";
+
+  # Get monitor configuration for this host (with fallback)
+  hostMonitors = monitorConfig.${hostname} or {
+    primary = "HEADLESS-1";
+    secondary = "HEADLESS-2";
+    tertiary = "HEADLESS-3";
+    outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
+  };
+
+  # Export role-based outputs for use in widget config
+  primaryOutput = hostMonitors.primary;
+  secondaryOutput = hostMonitors.secondary;
+  tertiaryOutput = hostMonitors.tertiary;
 
   # Feature 057: Catppuccin Mocha theme colors (consistent with unified bar system)
   mocha = {
@@ -155,8 +171,9 @@ in
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
       ;; Tab switching via global Sway keybindings (Alt+1-4) since widget doesn't capture input
+      ;; Use output name directly since monitor indices vary by platform
       (defwindow monitoring-panel
-        :monitor 1
+        :monitor "${primaryOutput}"
         :geometry (geometry
           :anchor "right center"
           :x "0px"

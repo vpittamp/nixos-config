@@ -1,10 +1,13 @@
 """i3 IPC connection manager with resilient reconnection.
 
 Handles i3 IPC connection, automatic reconnection, and state rebuilding.
+Includes socket discovery for handling Sway restarts with new socket paths.
 """
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 from typing import Optional, Callable, Awaitable
 from i3ipc import aio
 from i3ipc.events import IpcBaseEvent
@@ -12,6 +15,34 @@ from i3ipc.events import IpcBaseEvent
 from .state import StateManager
 
 logger = logging.getLogger(__name__)
+
+
+def discover_sway_socket() -> Optional[str]:
+    """Discover current Sway IPC socket path.
+
+    Scans /run/user/{uid} for sway-ipc.*.sock files.
+    Returns the most recently modified socket if multiple exist.
+
+    Returns:
+        Socket path string or None if not found
+    """
+    uid = os.getuid()
+    runtime_dir = Path(f"/run/user/{uid}")
+
+    if not runtime_dir.exists():
+        return None
+
+    # Find all sway sockets
+    sockets = list(runtime_dir.glob("sway-ipc.*.sock"))
+    if not sockets:
+        # Fallback: check for i3 socket
+        sockets = list(runtime_dir.glob("i3-ipc.*.sock"))
+
+    if not sockets:
+        return None
+
+    # Return most recent socket (by mtime)
+    return str(max(sockets, key=lambda p: p.stat().st_mtime))
 
 
 def get_window_class(container) -> str:
@@ -67,6 +98,59 @@ class ResilientI3Connection:
             True if connected to i3, False otherwise
         """
         return self.conn is not None and not self.is_shutting_down
+
+    async def validate_and_reconnect_if_needed(self) -> bool:
+        """Validate socket is still valid and reconnect if a new one is available.
+
+        This handles the case where Sway restarts with a new socket path
+        (e.g., after nixos-rebuild). The daemon's initial socket becomes stale.
+
+        Returns:
+            True if connection is valid or reconnection succeeded, False otherwise
+        """
+        if self.is_shutting_down:
+            return False
+
+        # Get current socket from environment
+        current_socket = os.environ.get("SWAYSOCK") or os.environ.get("I3SOCK")
+
+        # Check if socket file still exists
+        if current_socket and Path(current_socket).exists():
+            # Socket exists, try a simple health check
+            try:
+                if self.conn:
+                    await self.conn.get_version()
+                    return True
+            except Exception as e:
+                logger.warning(f"Socket exists but connection failed: {e}")
+
+        # Socket is stale or connection failed - discover new socket
+        new_socket = discover_sway_socket()
+        if not new_socket:
+            logger.error("No Sway/i3 socket found for reconnection")
+            return False
+
+        if new_socket == current_socket:
+            logger.debug("Socket unchanged, no reconnection needed")
+            return self.is_connected
+
+        # New socket found - update environment and reconnect
+        logger.info(f"Sway socket changed: {current_socket} -> {new_socket}")
+        os.environ["SWAYSOCK"] = new_socket
+        os.environ["I3SOCK"] = new_socket
+
+        # Close old connection
+        if self.conn:
+            self.close()
+
+        # Reconnect with new socket
+        try:
+            await self.connect_with_retry(max_attempts=5)
+            logger.info(f"Successfully reconnected to new Sway socket: {new_socket}")
+            return True
+        except ConnectionError as e:
+            logger.error(f"Failed to reconnect to new socket: {e}")
+            return False
 
     async def connect_with_retry(self, max_attempts: int = 10) -> aio.Connection:
         """Connect to i3 with exponential backoff retry.
