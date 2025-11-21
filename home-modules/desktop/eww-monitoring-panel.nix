@@ -1,9 +1,18 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, ... }:
 
 with lib;
 
 let
   cfg = config.programs.eww-monitoring-panel;
+  hostName = if osConfig != null then (osConfig.networking.hostName or "") else "";
+  isHeadlessHost = hostName == "nixos-hetzner-sway";
+  resolvedPanelMonitor =
+    if cfg.panelMonitor != null then cfg.panelMonitor
+    else if isHeadlessHost then "HEADLESS-1" else "eDP-1";
+  panelMonitorLiteral =
+    if builtins.isInt resolvedPanelMonitor
+    then builtins.toString resolvedPanelMonitor
+    else "\"${resolvedPanelMonitor}\"";
 
   # Feature 057: Catppuccin Mocha theme colors (consistent with unified bar system)
   mocha = {
@@ -50,13 +59,22 @@ let
   # Use eww active-windows to check if panel is actually open (not just defined)
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+
+    log() {
+      ${pkgs.util-linux}/bin/logger -t toggle-monitoring-panel "$1"
+    }
+
+    CONFIG_DIR="$HOME/.config/eww-monitoring-panel"
+    EWW_BIN=${pkgs.eww}/bin/eww
+
     # Check if panel is in active windows (actually open, not just defined)
-    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      # Panel is open - close it
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
+    if $EWW_BIN --config "$CONFIG_DIR" active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+      log "Closing monitoring panel on ${resolvedPanelMonitor}"
+      $EWW_BIN --config "$CONFIG_DIR" close monitoring-panel
     else
-      # Panel is closed - open it
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
+      log "Opening monitoring panel on ${resolvedPanelMonitor}"
+      $EWW_BIN --config "$CONFIG_DIR" open monitoring-panel
     fi
   '';
 
@@ -66,11 +84,27 @@ in
     enable = mkEnableOption "Eww monitoring panel for window/project state visualization";
 
     toggleKey = mkOption {
-      type = types.str;
-      default = "$mod+m";
+      type = with types; either str (listOf str);
+      default = [ "$mod+m" "Mod1+m" ];
       description = ''
-        Keybinding to toggle monitoring panel visibility.
-        Uses Sway mod variable (typically Super/Win key).
+        Keybinding(s) that toggle the monitoring panel. Accepts a single
+        string (``"Mod4+m"``) or a list for multiple bindings. ``$mod``
+        placeholders are replaced with the configured Sway modifier at build
+        time. The default offers both Super+M and Alt+M so VNC clients that
+        cannot forward the Super key still have a shortcut.
+      '';
+    };
+
+    panelMonitor = mkOption {
+      type = types.nullOr (types.either types.int types.str);
+      default = null;
+      example = "HEADLESS-2";
+      description = ''
+        Preferred monitor for the panel. When set to an integer, Eww uses the
+        corresponding monitor index. When set to a string, it targets the named
+        output (e.g., ``"HEADLESS-1"`` or ``"eDP-1"``). If left ``null``, the
+        module auto-selects ``HEADLESS-1`` on the Hetzner headless host and
+        ``eDP-1`` elsewhere.
       '';
     };
 
@@ -135,7 +169,7 @@ in
 
       ;; Main monitoring panel window - Sidebar layout
       (defwindow monitoring-panel
-        :monitor 1
+        :monitor ${panelMonitorLiteral}
         :geometry (geometry
           :anchor "right center"
           :x "0px"
@@ -247,21 +281,21 @@ in
           :vscroll true
           :hscroll false
           :height 1000
-          (box
-            :class "content-container"
-            :orientation "v"
-            :space-evenly false
-            ; Show error state when status is "error"
             (box
-              :visible "''${monitoring_data.status == 'error'}"
+              :class "content-container"
+              :orientation "v"
+              :space-evenly false
+              ; Show error state when status is "error"
+              (box
+              :visible {monitoring_data.status == "error"}
               (error-state))
             ; Show empty state when no windows and no error
             (box
-              :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) == 0}"
+              :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) == 0}
               (empty-state))
             ; Show projects when no error and has windows
             (box
-              :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) > 0}"
+              :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
               :orientation "v"
               :space-evenly false
               (for project in {monitoring_data.projects ?: []}
@@ -321,7 +355,7 @@ in
             (label
               :class "badge badge-pwa"
               :text "PWA"
-              :visible "''${window.is_pwa ?: false}"))))
+              :visible {window.is_pwa ?: false}))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
@@ -435,6 +469,11 @@ in
               :class "error-message"
               :visible {apps_data.status == "error"}
               (label :text "⚠ ''${apps_data.error ?: 'Unknown error'}"))
+            ;; Empty state when registry has no apps configured
+            (box
+              :class "empty-message"
+              :visible {apps_data.status != "error" && (apps_data.app_count ?: 0) == 0}
+              (label :text "No registered apps yet"))
             ;; Apps list
             (for app in {apps_data.apps ?: []}
               (app-card :app app)))))
