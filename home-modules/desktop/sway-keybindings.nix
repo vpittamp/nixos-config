@@ -2,12 +2,17 @@
 
 let
   modifier = config.wayland.windowManager.sway.config.modifier;
-  rawToggleKey = config.programs.eww-monitoring-panel.toggleKey;
+  # Conditionally access monitoring panel config (may not be imported)
+  monitoringPanelCfg = config.programs.eww-monitoring-panel or null;
+  hasMonitoringPanel = monitoringPanelCfg != null && (monitoringPanelCfg.enable or false);
+  rawToggleKey = if hasMonitoringPanel then monitoringPanelCfg.toggleKey else "$mod+m";
   toggleKeyList =
     let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
-    lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList));
+    if hasMonitoringPanel
+    then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList))
+    else {};
 in
 {
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
