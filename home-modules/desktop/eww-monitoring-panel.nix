@@ -141,7 +141,7 @@ in
           :x "0px"
           :y "0px"
           :width "350px"
-          :height "650px")
+          :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "overlay"
         :focusable false
@@ -211,29 +211,34 @@ in
         (box
           :class "panel-body"
           :orientation "v"
+          :vexpand true
           ;; Windows view (real-time)
           (revealer
             :reveal {current_view == "windows"}
             :transition "crossfade"
             :duration "200ms"
+            :vexpand true
             (windows-view))
           ;; Projects view
           (revealer
             :reveal {current_view == "projects"}
             :transition "crossfade"
             :duration "200ms"
+            :vexpand true
             (projects-view))
           ;; Apps view
           (revealer
             :reveal {current_view == "apps"}
             :transition "crossfade"
             :duration "200ms"
+            :vexpand true
             (apps-view))
           ;; Health view
           (revealer
             :reveal {current_view == "health"}
             :transition "crossfade"
             :duration "200ms"
+            :vexpand true
             (health-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
@@ -241,7 +246,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "500px"
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -371,7 +376,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "500px"
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -420,7 +425,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "500px"
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
@@ -469,7 +474,7 @@ in
         (scroll
           :vscroll true
           :hscroll false
-          :height "500px"
+          :vexpand true
           (box
             :class "content-container"
             :orientation "v"
