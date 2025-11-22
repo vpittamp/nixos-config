@@ -176,195 +176,346 @@ let
 
   # Catppuccin Mocha CSS for SwayNC
   # Feature 057: User Story 1 - Unified Theming
-  # Updated to match eww-monitoring-panel transparency and styling
+  # Feature 090: Enhanced styling based on official Catppuccin SwayNC theme
+  # Updated to match eww-monitoring-panel transparency and modern design practices
   swayNcStyle = ''
-    /* Feature 057: Unified Bar System - Catppuccin Mocha Theme */
-    /* Styled to match eww-monitoring-panel appearance */
+    /* Feature 057/090: Enhanced Catppuccin Mocha Theme for SwayNC */
+    /* Based on official catppuccin/swaync design with custom improvements */
 
     * {
       all: unset;
       font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", "Ubuntu Nerd Font", sans-serif;
+      font-size: 14px;
+      transition: 200ms ease;
     }
 
-    .notification-window {
-      background-color: rgba(30, 30, 46, 0.50);
-      border: 2px solid rgba(137, 180, 250, 0.2);
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    /* Notification Popup Styling */
+    .notification-row {
+      outline: none;
+    }
+
+    .notification-row:focus,
+    .notification-row:hover {
+      background-color: rgba(69, 71, 90, 0.3);
     }
 
     .notification {
-      background-color: rgba(49, 50, 68, 0.4);
+      background-color: transparent;
+      padding: 0;
+      margin: 0;
+    }
+
+    .notification-content {
+      background-color: rgba(30, 30, 46, 0.90);
       color: ${mocha.text};
-      padding: 10px;
-      margin: 5px;
-      border-radius: 8px;
-      border: 1px solid ${mocha.overlay0};
-      transition: all 150ms ease;
-    }
-
-    .notification:hover {
-      background-color: rgba(69, 71, 90, 0.5);
-      border-color: ${mocha.overlay0};
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    }
-
-    .notification-default-action {
-      background-color: rgba(49, 50, 68, 0.4);
-      color: ${mocha.text};
-      transition: all 150ms ease;
-    }
-
-    .notification-default-action:hover {
-      background-color: rgba(137, 180, 250, 0.6);
-      color: ${mocha.base};
-      box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
-    }
-
-    .notification-close-button {
-      background-color: ${mocha.red};
-      color: ${mocha.text};
-      border-radius: 50%;
-      transition: all 150ms ease;
-    }
-
-    .notification-close-button:hover {
-      background-color: #ff0000;
-      box-shadow: 0 0 8px rgba(243, 139, 168, 0.6);
-    }
-
-    .control-center {
-      background-color: rgba(30, 30, 46, 0.70);
-      border: 2px solid rgba(137, 180, 250, 0.2);
-      border-radius: 12px;
-      padding: 8px;
+      padding: 12px;
       margin: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      border: 2px solid rgba(137, 180, 250, 0.3);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      transition: all 200ms ease;
+    }
+
+    .notification-content:hover {
+      background-color: rgba(30, 30, 46, 0.95);
+      border-color: rgba(137, 180, 250, 0.5);
+      box-shadow: 0 6px 20px rgba(137, 180, 250, 0.3);
+    }
+
+    .close-button {
+      background-color: ${mocha.red};
+      color: ${mocha.base};
+      border-radius: 50%;
+      padding: 4px;
+      margin: 4px;
+      min-width: 24px;
+      min-height: 24px;
+      transition: all 200ms ease;
+    }
+
+    .close-button:hover {
+      background-color: #e64553;
+      box-shadow: 0 0 10px rgba(243, 139, 168, 0.6);
+      transform: scale(1.1);
+    }
+
+    .close-button:active {
+      background-color: #ff6b7a;
+    }
+
+    /* Critical Notification Styling */
+    .notification.critical .notification-content {
+      border-color: ${mocha.red};
+      box-shadow: inset 0 0 8px rgba(243, 139, 168, 0.3), 0 4px 16px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Notification Text Elements */
+    .summary {
+      font-size: 16px;
+      font-weight: bold;
+      color: ${mocha.text};
+      margin-bottom: 4px;
+    }
+
+    .time {
+      font-size: 11px;
+      color: ${mocha.subtext0};
+      margin-top: 4px;
+    }
+
+    .body {
+      font-size: 13px;
+      color: ${mocha.subtext1};
+      margin-top: 6px;
+    }
+
+    /* Notification Image Styling */
+    .notification-content image {
+      margin-right: 8px;
+      border-radius: 8px;
+    }
+
+    /* Action Buttons - Enhanced for Feature 090 Callback */
+    .notification-action,
+    .notification-default-action {
+      background-color: rgba(137, 180, 250, 0.15);
+      color: ${mocha.blue};
+      border: 1px solid ${mocha.blue};
+      border-radius: 8px;
+      padding: 8px 16px;
+      margin: 4px;
+      font-weight: 600;
+      transition: all 200ms ease;
+    }
+
+    .notification-action:hover,
+    .notification-default-action:hover {
+      background-color: ${mocha.blue};
+      color: ${mocha.base};
+      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5);
+      transform: translateY(-1px);
+    }
+
+    .notification-action:active,
+    .notification-default-action:active {
+      background-color: ${mocha.sapphire};
+      transform: translateY(0);
+    }
+
+    /* Control Center Panel */
+    .control-center {
+      background-color: rgba(30, 30, 46, 0.85);
+      border: 2px solid rgba(137, 180, 250, 0.3);
+      border-radius: 16px;
+      padding: 12px;
+      margin: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     }
 
     .control-center-list {
       background-color: transparent;
+      padding: 4px;
     }
 
+    .control-center-list-placeholder {
+      color: ${mocha.overlay0};
+      font-size: 16px;
+      padding: 20px;
+    }
+
+    /* Widget Titles */
     .widget-title {
       color: ${mocha.text};
       font-weight: bold;
-      font-size: 14px;
-      margin: 10px;
+      font-size: 15px;
+      padding: 10px;
+      margin-top: 8px;
     }
 
-    .widget-dnd {
-      background-color: rgba(49, 50, 68, 0.4);
+    .widget-title > button {
+      background-color: transparent;
       color: ${mocha.text};
-      padding: 8px 12px;
-      margin: 5px;
       border-radius: 8px;
+      padding: 6px;
+      transition: all 200ms ease;
+    }
+
+    .widget-title > button:hover {
+      background-color: rgba(137, 180, 250, 0.2);
+      color: ${mocha.blue};
+    }
+
+    /* Do Not Disturb Widget */
+    .widget-dnd {
+      background-color: rgba(49, 50, 68, 0.5);
+      color: ${mocha.text};
+      padding: 10px 14px;
+      margin: 8px;
+      border-radius: 10px;
       border: 1px solid ${mocha.overlay0};
-      transition: all 150ms ease;
+      transition: all 200ms ease;
     }
 
     .widget-dnd:hover {
-      background-color: rgba(69, 71, 90, 0.5);
-      border-color: ${mocha.overlay0};
+      background-color: rgba(69, 71, 90, 0.6);
+      border-color: ${mocha.mauve};
     }
 
-    .widget-label {
-      color: ${mocha.subtext0};
-      font-size: 12px;
-    }
-
-    .widget-mpris {
-      background-color: rgba(49, 50, 68, 0.4);
-      color: ${mocha.text};
-      padding: 10px;
-      margin: 5px;
-      border-radius: 8px;
+    .widget-dnd > switch {
+      background-color: ${mocha.surface0};
+      border-radius: 12px;
       border: 1px solid ${mocha.overlay0};
-      transition: all 150ms ease;
+      transition: all 200ms ease;
+    }
+
+    .widget-dnd > switch:checked {
+      background-color: ${mocha.blue};
+    }
+
+    .widget-dnd > switch slider {
+      background-color: ${mocha.text};
+      border-radius: 50%;
+    }
+
+    /* Media Player (MPRIS) Widget */
+    .widget-mpris {
+      background-color: rgba(49, 50, 68, 0.5);
+      color: ${mocha.text};
+      padding: 12px;
+      margin: 8px;
+      border-radius: 10px;
+      border: 1px solid ${mocha.overlay0};
+      transition: all 200ms ease;
     }
 
     .widget-mpris:hover {
-      background-color: rgba(69, 71, 90, 0.5);
-      border-color: ${mocha.overlay0};
+      background-color: rgba(69, 71, 90, 0.6);
+      border-color: ${mocha.mauve};
+    }
+
+    .widget-mpris-player {
+      background-color: rgba(49, 50, 68, 0.6);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .widget-mpris-album-art {
+      border-radius: 8px;
+    }
+
+    .widget-mpris-title {
+      font-weight: bold;
+      font-size: 14px;
+      color: ${mocha.text};
+    }
+
+    .widget-mpris-subtitle {
+      font-size: 12px;
+      color: ${mocha.subtext0};
+    }
+
+    /* Button Grid Widget */
+    .widget-buttons-grid {
+      padding: 4px;
+      margin: 8px;
     }
 
     .widget-buttons-grid flowboxchild {
-      min-width: 48px;
+      min-width: 52px;
       padding: 0;
-      margin: 1px;
+      margin: 2px;
     }
 
     .widget-buttons-grid flowboxchild > button {
-      background-color: rgba(49, 50, 68, 0.4);
+      background-color: rgba(49, 50, 68, 0.5);
       color: ${mocha.text};
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid ${mocha.overlay0};
-      padding: 6px;
-      margin: 2px;
-      min-width: 44px;
-      min-height: 44px;
+      padding: 8px;
+      margin: 0;
+      min-width: 48px;
+      min-height: 48px;
       font-weight: 600;
-      font-size: 1.15em;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background-image: none;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-      transition: all 150ms ease;
+      font-size: 1.2em;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: all 200ms ease;
     }
 
     .widget-buttons-grid flowboxchild > button:hover {
-      background-color: rgba(137, 180, 250, 0.6);
+      background-color: rgba(137, 180, 250, 0.5);
       border-color: ${mocha.blue};
       color: ${mocha.base};
-      box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
-      transform: scale(1.05);
+      box-shadow: 0 0 12px rgba(137, 180, 250, 0.5);
+      transform: scale(1.08);
     }
 
-    .widget-backlight slider, .widget-backlight scale {
-      min-height: 24px;
+    .widget-buttons-grid flowboxchild > button:active {
+      background-color: ${mocha.blue};
+      transform: scale(1.0);
     }
 
-    .widget-backlight scale trough {
-      background-color: rgba(49, 50, 68, 0.9);
-      border-radius: 8px;
+    /* Backlight/Volume Sliders */
+    .widget-backlight slider,
+    .widget-backlight scale,
+    .widget-volume slider,
+    .widget-volume scale {
+      min-height: 28px;
+    }
+
+    .widget-backlight scale trough,
+    .widget-volume scale trough {
+      background-color: rgba(49, 50, 68, 0.8);
+      border-radius: 10px;
+      min-height: 12px;
     }
 
     .widget-backlight scale highlight {
-      background: linear-gradient(90deg, ${mocha.blue}, ${mocha.sapphire});
-      border-radius: 8px;
+      background: linear-gradient(90deg, ${mocha.yellow}, #fab387);
+      border-radius: 10px;
     }
 
-    .widget-backlight scale slider {
+    .widget-volume scale highlight {
+      background: linear-gradient(90deg, ${mocha.blue}, ${mocha.sapphire});
+      border-radius: 10px;
+    }
+
+    .widget-backlight scale slider,
+    .widget-volume scale slider {
       background-color: ${mocha.text};
       border-radius: 50%;
-      min-height: 16px;
-      min-width: 16px;
+      min-height: 20px;
+      min-width: 20px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
 
-    /* Scrollbar styling to match monitoring widget */
+    /* Scrollbar Styling */
     scrollbar {
       background-color: transparent;
-      border-radius: 4px;
+      border-radius: 6px;
     }
 
     scrollbar slider {
       background-color: ${mocha.overlay0};
-      border-radius: 4px;
-      min-width: 6px;
+      border-radius: 6px;
+      min-width: 8px;
+      transition: all 200ms ease;
     }
 
     scrollbar slider:hover {
       background-color: ${mocha.surface1};
     }
 
-    /* Section headers */
+    scrollbar slider:active {
+      background-color: ${mocha.overlay1};
+    }
+
+    /* Section Headers/Labels */
     .widget-label {
-      background-color: rgba(24, 24, 37, 0.4);
-      border-bottom: 1px solid ${mocha.overlay0};
-      border-radius: 8px;
-      padding: 8px 12px;
-      margin-bottom: 8px;
+      background-color: rgba(24, 24, 37, 0.5);
+      border-left: 3px solid ${mocha.teal};
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin: 8px 4px;
       font-size: 12px;
       font-weight: bold;
       color: ${mocha.teal};
