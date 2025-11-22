@@ -1,0 +1,141 @@
+{
+  "profiles": {
+    "local-only": {
+      "name": "local-only",
+      "description": "M1 local display only (no VNC)",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov"
+      ],
+      "conditional_disabled": [
+        "wayvnc@HEADLESS-1",
+        "wayvnc@HEADLESS-2",
+        "wayvnc@HEADLESS-3",
+        "tailscale-rtp-default-sink"
+      ]
+    },
+    "local+1vnc": {
+      "name": "local+1vnc",
+      "description": "M1 local display + 1 VNC virtual display",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov",
+        "wayvnc@HEADLESS-1"
+      ],
+      "conditional_disabled": [
+        "wayvnc@HEADLESS-2",
+        "wayvnc@HEADLESS-3",
+        "tailscale-rtp-default-sink"
+      ]
+    },
+    "local+2vnc": {
+      "name": "local+2vnc",
+      "description": "M1 local display + 2 VNC virtual displays",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov",
+        "wayvnc@HEADLESS-1",
+        "wayvnc@HEADLESS-2"
+      ],
+      "conditional_disabled": [
+        "wayvnc@HEADLESS-3",
+        "tailscale-rtp-default-sink"
+      ]
+    },
+    "single": {
+      "name": "single",
+      "description": "Hetzner single monitor (headless)",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov",
+        "wayvnc@HEADLESS-1",
+        "tailscale-rtp-default-sink"
+      ],
+      "conditional_disabled": [
+        "wayvnc@HEADLESS-2",
+        "wayvnc@HEADLESS-3"
+      ]
+    },
+    "dual": {
+      "name": "dual",
+      "description": "Hetzner dual monitor (headless)",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov",
+        "wayvnc@HEADLESS-1",
+        "wayvnc@HEADLESS-2",
+        "tailscale-rtp-default-sink"
+      ],
+      "conditional_disabled": [
+        "wayvnc@HEADLESS-3"
+      ]
+    },
+    "triple": {
+      "name": "triple",
+      "description": "Hetzner triple monitor (headless)",
+      "active_services": [
+        "eww-top-bar",
+        "eww-workspace-bar",
+        "eww-monitoring-panel",
+        "eww-quick-panel",
+        "swaync",
+        "elephant",
+        "workspace-preview-daemon",
+        "sway-tree-monitor",
+        "sway-config-manager",
+        "i3wsr",
+        "sov",
+        "wayvnc@HEADLESS-1",
+        "wayvnc@HEADLESS-2",
+        "wayvnc@HEADLESS-3",
+        "tailscale-rtp-default-sink"
+      ],
+      "conditional_disabled": []
+    }
+  }
+}

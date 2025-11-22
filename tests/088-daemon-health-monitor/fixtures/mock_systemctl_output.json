@@ -1,0 +1,76 @@
+{
+  "active_user_service": {
+    "LoadState": "loaded",
+    "ActiveState": "active",
+    "SubState": "running",
+    "UnitFileState": "enabled",
+    "MainPID": "4351",
+    "MemoryCurrent": "165249024",
+    "ActiveEnterTimestamp": "Sat 2025-11-22 10:54:38 EST",
+    "NRestarts": "0",
+    "TriggeredBy": ""
+  },
+  "failed_user_service": {
+    "LoadState": "loaded",
+    "ActiveState": "failed",
+    "SubState": "failed",
+    "UnitFileState": "enabled",
+    "MainPID": "0",
+    "MemoryCurrent": "0",
+    "ActiveEnterTimestamp": "",
+    "NRestarts": "2",
+    "TriggeredBy": ""
+  },
+  "disabled_user_service": {
+    "LoadState": "loaded",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+    "UnitFileState": "disabled",
+    "MainPID": "0",
+    "MemoryCurrent": "0",
+    "ActiveEnterTimestamp": "",
+    "NRestarts": "0",
+    "TriggeredBy": ""
+  },
+  "socket_activated_service": {
+    "LoadState": "loaded",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+    "UnitFileState": "static",
+    "MainPID": "0",
+    "MemoryCurrent": "0",
+    "ActiveEnterTimestamp": "",
+    "NRestarts": "0",
+    "TriggeredBy": "i3-project-daemon.socket"
+  },
+  "socket_active": {
+    "LoadState": "loaded",
+    "ActiveState": "active",
+    "SubState": "listening",
+    "UnitFileState": "enabled",
+    "ListenStream": "/run/i3-project-daemon/ipc.sock",
+    "Accept": "no"
+  },
+  "not_found_service": {
+    "LoadState": "not-found",
+    "ActiveState": "inactive",
+    "SubState": "dead",
+    "UnitFileState": "not-found",
+    "MainPID": "0",
+    "MemoryCurrent": "0",
+    "ActiveEnterTimestamp": "",
+    "NRestarts": "0",
+    "TriggeredBy": ""
+  },
+  "degraded_service": {
+    "LoadState": "loaded",
+    "ActiveState": "active",
+    "SubState": "running",
+    "UnitFileState": "enabled",
+    "MainPID": "1234",
+    "MemoryCurrent": "52428800",
+    "ActiveEnterTimestamp": "Sat 2025-11-22 09:00:00 EST",
+    "NRestarts": "5",
+    "TriggeredBy": ""
+  }
+}

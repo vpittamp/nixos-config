@@ -47,10 +47,10 @@ let
 
   # Python backend script for monitoring data
   # Supports both one-shot mode (no args) and stream mode (--listen)
-  # Version: 2025-11-20-v5 (use pythonWithPackages correctly)
+  # Version: 2025-11-22-v10 (Feature 088: Added Health tab icon)
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-11-20-v5
+    # Version: 2025-11-22-v10 (Feature 088: Added Health tab icon)
 
     # Set PYTHONPATH to tools directory for i3_project_manager imports
     export PYTHONPATH="${../tools}"
@@ -136,6 +136,52 @@ let
     fi
     # Toggle SwayNC notification center
     ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
+  '';
+
+  # Feature 088 US3: Service restart script with sudo handling (T025)
+  # Usage: restart-service <service_name> <is_user_service>
+  # Example: restart-service eww-top-bar true
+  # Example: restart-service tailscaled.service false
+  restartServiceScript = pkgs.writeShellScriptBin "restart-service" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 088 US3: Service restart script with sudo handling and notifications
+    set -euo pipefail
+
+    SERVICE_NAME="''${1:-}"
+    IS_USER_SERVICE="''${2:-false}"
+
+    # Validate arguments
+    if [[ -z "$SERVICE_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Service Restart Failed" "No service name provided"
+        echo "Error: Service name required" >&2
+        echo "Usage: restart-service <service_name> <is_user_service>" >&2
+        exit 1
+    fi
+
+    # Build systemctl command
+    SYSTEMCTL_CMD=("${pkgs.systemd}/bin/systemctl")
+
+    if [[ "$IS_USER_SERVICE" == "true" ]]; then
+        SYSTEMCTL_CMD+=("--user")
+    else
+        # System service - use sudo
+        SYSTEMCTL_CMD=(${pkgs.sudo}/bin/sudo ${pkgs.systemd}/bin/systemctl)
+    fi
+
+    SYSTEMCTL_CMD+=("restart" "$SERVICE_NAME")
+
+    # Execute restart
+    echo "Restarting service: $SERVICE_NAME (user service: $IS_USER_SERVICE)"
+    if "''${SYSTEMCTL_CMD[@]}"; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "Service Restarted" "Successfully restarted $SERVICE_NAME"
+        echo "Success: $SERVICE_NAME restarted" >&2
+        exit 0
+    else
+        EXIT_CODE=$?
+        ${pkgs.libnotify}/bin/notify-send -u critical "Service Restart Failed" "Failed to restart $SERVICE_NAME (exit code: $EXIT_CODE)"
+        echo "Error: Failed to restart $SERVICE_NAME (exit code: $EXIT_CODE)" >&2
+        exit $EXIT_CODE
+    fi
   '';
 
   # Feature 086: Navigation script for monitoring panel
@@ -249,6 +295,7 @@ in
       exitMonitorModeScript # Feature 086: Exit monitoring mode
       monitorPanelNavScript # Feature 086: Navigation within panel
       swayNCToggleScript    # SwayNC toggle with mutual exclusivity
+      restartServiceScript  # Feature 088 US3: Service restart script
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -374,7 +421,7 @@ in
               (button
                 :class "tab ''${current_view == 'health' ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
-                ""))
+                "󰓙"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -787,7 +834,7 @@ in
               :visible {app.running_instances > 0}
               :text "●"))))
 
-      ;; Health View - System diagnostics
+      ;; Health View - System diagnostics (Feature 088)
       (defwidget health-view []
         (scroll
           :vscroll true
@@ -802,53 +849,120 @@ in
               :class "error-message"
               :visible {health_data.status == "error"}
               (label :text "⚠ ''${health_data.error ?: 'Unknown error'}"))
-            ;; Health cards
+            ;; System health summary
             (box
-              :class "health-cards"
+              :class "health-summary"
               :orientation "v"
               :space-evenly false
-              ;; Daemon status
-              (health-card
-                :title "Daemon Status"
-                :value "''${health_data.health.daemon_status ?: 'unknown'}"
-                :status {health_data.health.daemon_status == "healthy" ? "ok" : "error"})
-              ;; Connection status
-              (health-card
-                :title "Sway IPC"
-                :value "''${health_data.health.sway_ipc_connected ?: false ? 'Connected' : 'Disconnected'}"
-                :status {health_data.health.sway_ipc_connected ?: false ? "ok" : "error"})
-              ;; Counts
-              (health-card
-                :title "Windows"
-                :value "''${health_data.health.window_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Workspaces"
-                :value "''${health_data.health.workspace_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Projects"
-                :value "''${health_data.health.project_count ?: 0}"
-                :status "ok")
-              (health-card
-                :title "Monitors"
-                :value "''${health_data.health.monitor_count ?: 0}"
-                :status "ok")))))
+              :visible {health_data.status == "ok"}
+              (label
+                :class "health-summary-title"
+                :text "System Health: ''${health_data.health.system_health ?: 'unknown'}")
+              (label
+                :class "health-summary-counts"
+                :text "''${health_data.health.healthy_count ?: 0}/''${health_data.health.total_services ?: 0} services healthy"))
+            ;; Service categories
+            (box
+              :class "health-categories"
+              :orientation "v"
+              :space-evenly false
+              :visible {health_data.status == "ok"}
+              (for category in {health_data.health.categories ?: []}
+                (service-category
+                  :category category))))))
 
-      (defwidget health-card [title value status]
+      ;; Service category widget (Feature 088)
+      (defwidget service-category [category]
         (box
-          :class "health-card health-''${status}"
+          :class "service-category"
+          :orientation "v"
+          :space-evenly false
+          ;; Category header
+          (box
+            :class "category-header"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "category-title"
+              :halign "start"
+              :hexpand true
+              :text "''${category.display_name ?: 'Services'}")
+            (label
+              :class "category-counts"
+              :halign "end"
+              :text "''${category.healthy_count ?: 0}/''${category.total_count ?: 0}"))
+          ;; Service health cards
+          (box
+            :class "service-list"
+            :orientation "v"
+            :space-evenly false
+            (for service in {category.services ?: []}
+              (service-health-card
+                :service service)))))
+
+      ;; Service health card widget (Feature 088 US2)
+      (defwidget service-health-card [service]
+        (box
+          :class "service-health-card health-''${service.health_state ?: 'unknown'}"
           :orientation "h"
           :space-evenly false
+          ;; Status icon
           (label
-            :class "health-card-title"
-            :halign "start"
+            :class "service-icon"
+            :text "''${service.status_icon ?: '?'}")
+          ;; Service info
+          (box
+            :class "service-info"
+            :orientation "v"
             :hexpand true
-            :text title)
-          (label
-            :class "health-card-value"
+            (label
+              :class "service-name"
+              :halign "start"
+              :text "''${service.display_name ?: 'Unknown Service'}")
+            (label
+              :class "service-status"
+              :halign "start"
+              :text "''${service.active_state ?: 'unknown'}")
+            ;; T022: Display uptime for active services
+            (label
+              :class "service-uptime"
+              :halign "start"
+              :visible {service.health_state == "healthy" || service.health_state == "degraded"}
+              :text "Uptime: ''${service.uptime_friendly ?: 'N/A'}")
+            ;; Display memory usage for active services
+            (label
+              :class "service-memory"
+              :halign "start"
+              :visible {service.memory_usage_mb > 0}
+              :text "Memory: ''${service.memory_usage_mb} MB")
+            ;; T023: Display last active time for failed/stopped services
+            (label
+              :class "service-last-active"
+              :halign "start"
+              :visible {service.health_state == "critical" || service.health_state == "disabled"}
+              :text "Last active: ''${service.last_active_time ?: 'Never'}"))
+          ;; Health state indicator with restart count and restart button
+          (box
+            :class "health-indicator-box"
+            :orientation "v"
             :halign "end"
-            :text value)))
+            :space-evenly false
+            (label
+              :class "health-indicator"
+              :text "''${service.health_state ?: 'unknown'}")
+            ;; T033: Show restart count if > 0 with tooltip
+            (label
+              :class "restart-count''${service.restart_count >= 3 ? ' restart-warning' : ' '}"
+              :visible {service.restart_count > 0}
+              :tooltip "Service has restarted ''${service.restart_count} time(s)"
+              :text "↻ ''${service.restart_count}")
+            ;; T028-T030: Restart button (only shown when service can be restarted)
+            (button
+              :class "restart-button"
+              :visible {service.can_restart ?: false}
+              :onclick "restart-service ''${service.service_name} ''${service.is_user_service ? 'true' : 'false'} &"
+              :tooltip "Restart ''${service.display_name}"
+              "⟳"))))
 
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
@@ -882,7 +996,7 @@ in
         padding: 8px;
         margin: 8px;
         border: 2px solid rgba(137, 180, 250, 0.2);
-        transition: all 200ms ease-in-out;
+        /* transition not supported in GTK CSS */
       }
 
       /* Feature 086: Focused state with glowing border effect */
@@ -953,7 +1067,7 @@ in
         color: ${mocha.subtext0};
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
-        transition: all 150ms ease;
+        /* transition not supported in GTK CSS */
       }
 
       .tab:hover {
@@ -1293,6 +1407,204 @@ in
         font-size: 13px;
         font-weight: bold;
         color: ${mocha.text};
+      }
+
+      /* Feature 088: Service Health Card Styles */
+      .health-summary {
+        background-color: rgba(49, 50, 68, 0.3);
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+      }
+
+      .health-summary-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: ${mocha.text};
+        margin-bottom: 4px;
+      }
+
+      .health-summary-counts {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+      }
+
+      .health-categories {
+        padding: 4px;
+      }
+
+      .service-category {
+        margin-bottom: 12px;
+      }
+
+      .category-header {
+        background-color: rgba(69, 71, 90, 0.5);
+        border-radius: 4px;
+        padding: 6px 10px;
+        margin-bottom: 6px;
+      }
+
+      .category-title {
+        font-size: 13px;
+        font-weight: bold;
+        color: ${mocha.text};
+      }
+
+      .category-counts {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+      }
+
+      .service-list {
+        padding-left: 4px;
+      }
+
+      .service-health-card {
+        background-color: rgba(49, 50, 68, 0.4);
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 4px;
+        /* transition not supported in GTK CSS */
+      }
+
+      .service-health-card:hover {
+        background-color: rgba(69, 71, 90, 0.6);
+      }
+
+      /* Health state colors (Feature 088) */
+      .service-health-card.health-healthy {
+        border-left: 3px solid ${mocha.green};  /* #a6e3a1 */
+      }
+
+      /* T034: Enhanced visual differentiation for degraded services */
+      .service-health-card.health-degraded {
+        border-left: 3px solid ${mocha.yellow};  /* #f9e2af */
+        background-color: rgba(249, 226, 175, 0.1);  /* Subtle yellow tint */
+      }
+
+      .service-health-card.health-degraded .service-icon {
+        color: ${mocha.yellow};
+      }
+
+      /* T024: Enhanced visual differentiation for critical services */
+      .service-health-card.health-critical {
+        border-left: 4px solid ${mocha.red};  /* #f38ba8 - thicker border */
+        border: 1px solid ${mocha.red};  /* Red border all around */
+        background-color: rgba(243, 139, 168, 0.15);  /* More prominent background */
+        box-shadow: 0 0 8px rgba(243, 139, 168, 0.3);  /* Subtle glow effect */
+      }
+
+      .service-health-card.health-critical .service-name {
+        color: ${mocha.red};  /* Red service name for critical */
+        font-weight: 600;
+      }
+
+      .service-health-card.health-critical .service-icon {
+        color: ${mocha.red};
+      }
+
+      .service-health-card.health-disabled {
+        border-left: 3px solid ${mocha.overlay0};  /* #6c7086 */
+        opacity: 0.7;
+      }
+
+      .service-health-card.health-unknown {
+        border-left: 3px solid ${mocha.peach};  /* #fab387 */
+      }
+
+      .service-icon {
+        font-size: 16px;
+        min-width: 24px;
+        margin-right: 8px;
+      }
+
+      .service-info {
+        /* GTK CSS uses box model, not flexbox - widget expands automatically */
+      }
+
+      .service-name {
+        font-size: 12px;
+        font-weight: 500;
+        color: ${mocha.text};
+      }
+
+      .service-status {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        margin-top: 2px;
+      }
+
+      /* Feature 088 US2: Uptime and last active time (T022, T023) */
+      .service-uptime {
+        font-size: 9px;
+        color: ${mocha.green};
+        margin-top: 2px;
+      }
+
+      .service-memory {
+        font-size: 9px;
+        color: ${mocha.blue};
+        margin-top: 2px;
+      }
+
+      .service-last-active {
+        font-size: 9px;
+        color: ${mocha.red};
+        margin-top: 2px;
+        font-style: italic;
+      }
+
+      .health-indicator-box {
+        min-width: 80px;
+      }
+
+      .health-indicator {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        /* text-transform not supported in GTK CSS */
+        padding: 2px 6px;
+        border-radius: 3px;
+        background-color: rgba(69, 71, 90, 0.5);
+      }
+
+      /* Feature 088 US2: Restart count indicator (T022, T032, T033) */
+      .restart-count {
+        font-size: 9px;
+        color: ${mocha.yellow};
+        margin-top: 2px;
+        font-weight: bold;
+      }
+
+      /* T032: High restart count warning (>= 3 restarts) */
+      .restart-count.restart-warning {
+        color: ${mocha.red};
+        font-size: 10px;
+        /* GTK CSS doesn't support @keyframes animations */
+      }
+
+      /* Feature 088 US3: Restart button (T028-T030) */
+      .restart-button {
+        background-color: ${mocha.blue};
+        color: ${mocha.base};
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin-top: 4px;
+        font-size: 14px;
+        font-weight: bold;
+        /* cursor and transition not supported in GTK CSS */
+      }
+
+      .restart-button:hover {
+        background-color: ${mocha.sapphire};
+        /* transform not supported in GTK CSS */
+      }
+
+      .restart-button:active {
+        background-color: ${mocha.sky};
+        /* transform not supported in GTK CSS */
       }
 
       /* Window Detail View Styles */

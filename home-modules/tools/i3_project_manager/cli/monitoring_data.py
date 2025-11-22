@@ -67,6 +67,146 @@ except ImportError:
     getIconPath = None
 
 
+# Service Registry for Health Monitoring (Feature 088)
+# Defines all monitored systemd services categorized by functional role
+SERVICE_REGISTRY = {
+    "core": [
+        {
+            "name": "i3-project-daemon",
+            "display_name": "i3 Project Daemon",
+            "is_user_service": False,
+            "socket_activated": True,
+            "socket_name": "i3-project-daemon.socket",
+            "conditional": False,
+            "description": "Window management and project context daemon",
+        },
+        {
+            "name": "workspace-preview-daemon",
+            "display_name": "Workspace Preview Daemon",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Workspace preview data provider for Eww workspace bar",
+        },
+        {
+            "name": "sway-tree-monitor",
+            "display_name": "Sway Tree Monitor",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Real-time Sway tree diff monitoring daemon",
+        },
+    ],
+    "ui": [
+        {
+            "name": "eww-top-bar",
+            "display_name": "Eww Top Bar",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "System metrics and status bar",
+        },
+        {
+            "name": "eww-workspace-bar",
+            "display_name": "Eww Workspace Bar",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Workspace navigation and project preview bar",
+        },
+        {
+            "name": "eww-monitoring-panel",
+            "display_name": "Eww Monitoring Panel",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Window/project/health monitoring panel",
+        },
+        {
+            "name": "eww-quick-panel",
+            "display_name": "Eww Quick Panel",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Quick settings panel",
+        },
+        {
+            "name": "swaync",
+            "display_name": "SwayNC",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Notification center",
+        },
+        {
+            "name": "sov",
+            "display_name": "Sway Overview (sov)",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Workspace overview visualization",
+        },
+        {
+            "name": "elephant",
+            "display_name": "Elephant Launcher",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Application launcher (Walker backend)",
+        },
+    ],
+    # T039: Removed i3wsr (legacy service - not installed/used)
+    "system": [
+        {
+            "name": "sway-config-manager",
+            "display_name": "Sway Config Manager",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": False,
+            "description": "Hot-reloadable Sway configuration manager",
+        },
+    ],
+    "optional": [
+        {
+            "name": "wayvnc@HEADLESS-1",
+            "display_name": "WayVNC (Display 1)",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": True,
+            "condition_profiles": ["single", "dual", "triple", "local+1vnc", "local+2vnc"],
+            "description": "VNC server for virtual display 1",
+        },
+        {
+            "name": "wayvnc@HEADLESS-2",
+            "display_name": "WayVNC (Display 2)",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": True,
+            "condition_profiles": ["dual", "triple", "local+2vnc"],
+            "description": "VNC server for virtual display 2",
+        },
+        {
+            "name": "wayvnc@HEADLESS-3",
+            "display_name": "WayVNC (Display 3)",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": True,
+            "condition_profiles": ["triple"],
+            "description": "VNC server for virtual display 3 (Hetzner only)",
+        },
+        {
+            "name": "tailscale-rtp-default-sink",
+            "display_name": "Tailscale RTP Audio Sink",
+            "is_user_service": True,
+            "socket_activated": False,
+            "conditional": True,
+            "condition_profiles": ["single", "dual", "triple"],
+            "description": "Set PipeWire default sink to Tailscale RTP (headless only)",
+        },
+    ],
+}
+
+
 def _resolve_icon_name(icon_name: str) -> str:
     """Resolve icon name to full file path using XDG lookup."""
     if not icon_name:
@@ -730,97 +870,596 @@ async def query_apps_data() -> Dict[str, Any]:
         }
 
 
-async def query_health_data() -> Dict[str, Any]:
-    """
-    Query system health view data.
+# Health Monitoring Helper Functions (Feature 088)
 
-    Returns daemon status, connection health, and performance metrics.
+def read_monitor_profile() -> str:
+    """
+    Read current monitor profile from ~/.config/sway/monitor-profile.current.
+
+    Returns:
+        Current profile name (e.g., "local-only", "dual", "triple") or "unknown"
+    """
+    profile_file = Path.home() / ".config/sway/monitor-profile.current"
+    try:
+        if profile_file.exists():
+            return profile_file.read_text().strip()
+    except Exception as e:
+        logging.warning(f"Failed to read monitor profile: {e}")
+    return "unknown"
+
+
+def get_monitored_services(monitor_profile: str) -> List[Dict[str, Any]]:
+    """
+    Get list of services to monitor based on current monitor profile.
+
+    Filters conditional services based on their condition_profiles list.
+
+    Args:
+        monitor_profile: Current monitor profile name
+
+    Returns:
+        Flat list of service definitions to monitor
+    """
+    services = []
+
+    for category, service_list in SERVICE_REGISTRY.items():
+        for service_def in service_list:
+            # Include non-conditional services always
+            if not service_def.get("conditional", False):
+                services.append({**service_def, "category": category})
+                continue
+
+            # For conditional services, check if profile matches
+            condition_profiles = service_def.get("condition_profiles", [])
+            if monitor_profile in condition_profiles:
+                services.append({**service_def, "category": category})
+
+    return services
+
+
+def classify_health_state(
+    load_state: str,
+    active_state: str,
+    sub_state: str,
+    unit_file_state: str,
+    restart_count: int,
+    is_conditional: bool,
+    should_be_active: bool
+) -> str:
+    """
+    Classify service health state based on systemd properties.
+
+    Args:
+        load_state: Service load state (loaded/not-found/error/masked)
+        active_state: Service active state (active/inactive/failed/etc.)
+        sub_state: Service sub-state (running/dead/exited/failed/etc.)
+        unit_file_state: Service unit file state (enabled/disabled/static/masked)
+        restart_count: Number of service restarts (NRestarts)
+        is_conditional: Whether service is mode-dependent
+        should_be_active: Whether service should be active in current profile
+
+    Returns:
+        Health state: healthy/degraded/critical/disabled/unknown
+    """
+    # Not found or load error
+    if load_state in ["not-found", "error"]:
+        return "unknown"
+
+    # Intentionally disabled or masked
+    if unit_file_state in ["disabled", "masked"]:
+        return "disabled"
+
+    # Conditional service not active in current profile
+    if is_conditional and not should_be_active:
+        return "disabled"
+
+    # Failed state
+    if active_state == "failed":
+        return "critical"
+
+    # Active and running normally
+    if active_state == "active" and sub_state == "running":
+        # Check for excessive restarts (degraded health indicator)
+        if restart_count >= 3:
+            return "degraded"
+        return "healthy"
+
+    # Active but not running (e.g., oneshot completed, socket listening)
+    if active_state == "active" and sub_state in ["exited", "dead", "listening"]:
+        return "healthy"  # Normal for oneshot services and sockets
+
+    # Inactive (not started yet or stopped)
+    if active_state == "inactive":
+        return "disabled"
+
+    # Activating or deactivating (transient state)
+    if active_state in ["activating", "deactivating"]:
+        return "degraded"
+
+    # Unknown state
+    return "unknown"
+
+
+def format_uptime(uptime_seconds: int) -> str:
+    """
+    Convert uptime in seconds to human-friendly format.
+
+    Args:
+        uptime_seconds: Uptime in seconds
+
+    Returns:
+        Human-friendly string (e.g., "5h 23m", "2d 3h", "45s")
+    """
+    if uptime_seconds <= 0:
+        return "not running"
+
+    if uptime_seconds < 60:
+        return f"{uptime_seconds}s"
+    elif uptime_seconds < 3600:
+        minutes = uptime_seconds // 60
+        return f"{minutes}m"
+    elif uptime_seconds < 86400:
+        hours = uptime_seconds // 3600
+        minutes = (uptime_seconds % 3600) // 60
+        return f"{hours}h {minutes}m"
+    else:
+        days = uptime_seconds // 86400
+        hours = (uptime_seconds % 86400) // 3600
+        return f"{days}d {hours}h"
+
+
+def get_status_icon(health_state: str) -> str:
+    """
+    Map health state to status icon for UI display.
+
+    Args:
+        health_state: Health state (healthy/degraded/critical/disabled/unknown)
+
+    Returns:
+        Status icon (✓/⚠/✗/○/?)
+    """
+    icon_map = {
+        "healthy": "✓",
+        "degraded": "⚠",
+        "critical": "✗",
+        "disabled": "○",
+        "unknown": "?"
+    }
+    return icon_map.get(health_state, "?")
+
+
+def parse_systemctl_output(stdout: str) -> Dict[str, str]:
+    """
+    Parse KEY=VALUE format from systemctl show command into dict.
+
+    Args:
+        stdout: Output from systemctl show command
+
+    Returns:
+        Dictionary of property key-value pairs
+    """
+    properties = {}
+    for line in stdout.strip().split("\n"):
+        if "=" in line:
+            key, value = line.split("=", 1)
+            properties[key] = value
+    return properties
+
+
+def safe_int(value: str, default: int = 0) -> int:
+    """
+    Safely convert a string to int, handling systemctl's '[not set]' values.
+
+    Args:
+        value: String value from systemctl (may be '[not set]')
+        default: Default value if conversion fails
+
+    Returns:
+        Integer value or default
+    """
+    if not value or value == "[not set]" or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def calculate_uptime(active_enter_timestamp: str) -> int:
+    """
+    Calculate service uptime in seconds from ActiveEnterTimestamp.
+
+    Args:
+        active_enter_timestamp: Timestamp string from systemctl (e.g., "Sat 2025-11-22 10:54:38 EST")
+
+    Returns:
+        Uptime in seconds (0 if service not active or timestamp invalid)
+    """
+    if not active_enter_timestamp or active_enter_timestamp == "":
+        return 0
+
+    try:
+        # Parse timestamp - format: "Day YYYY-MM-DD HH:MM:SS TZ"
+        # Note: This is a simplified parser - may need adjustment for locale variations
+        from datetime import datetime
+        import re
+
+        # Remove day of week and timezone for simpler parsing
+        # Example: "Sat 2025-11-22 10:54:38 EST" -> "2025-11-22 10:54:38"
+        match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', active_enter_timestamp)
+        if not match:
+            return 0
+
+        timestamp_str = match.group(1)
+        start_time = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+        current_time = datetime.now()
+
+        uptime_seconds = int((current_time - start_time).total_seconds())
+        return max(0, uptime_seconds)  # Ensure non-negative
+
+    except Exception as e:
+        logging.warning(f"Failed to parse timestamp '{active_enter_timestamp}': {e}")
+        return 0
+
+
+def query_service_health(
+    service_name: str,
+    is_user_service: bool,
+    socket_name: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Query systemctl for service properties and return health data.
+
+    Queries: LoadState, ActiveState, SubState, UnitFileState, MainPID, TriggeredBy,
+             MemoryCurrent, NRestarts, ActiveEnterTimestamp (Feature 088 US2)
+
+    Args:
+        service_name: Service name (e.g., "eww-top-bar.service")
+        is_user_service: True for user services (--user flag)
+        socket_name: Socket unit name if socket-activated
+
+    Returns:
+        Dictionary of systemctl properties
+    """
+    # Add .service suffix if not present
+    if not service_name.endswith(".service"):
+        service_name = f"{service_name}.service"
+
+    # Build systemctl command (Feature 088: Added MemoryCurrent, NRestarts, ActiveEnterTimestamp for US2)
+    cmd = ["systemctl"]
+    if is_user_service:
+        cmd.append("--user")
+
+    cmd.extend([
+        "show",
+        service_name,
+        "-p", "LoadState,ActiveState,SubState,UnitFileState,MainPID,TriggeredBy,MemoryCurrent,NRestarts,ActiveEnterTimestamp",
+        "--no-pager"
+    ])
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+
+        properties = parse_systemctl_output(result.stdout)
+
+        # If socket-activated and service is inactive, check socket status
+        if socket_name and properties.get("TriggeredBy") == socket_name:
+            socket_cmd = ["systemctl"]
+            if is_user_service:
+                socket_cmd.append("--user")
+
+            socket_cmd.extend([
+                "show",
+                socket_name,
+                "-p", "LoadState,ActiveState,SubState",
+                "--no-pager"
+            ])
+
+            socket_result = subprocess.run(
+                socket_cmd,
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+
+            socket_props = parse_systemctl_output(socket_result.stdout)
+
+            # If socket is active, service is healthy (even if inactive)
+            if socket_props.get("ActiveState") == "active":
+                properties["_socket_active"] = "true"
+
+        return properties
+
+    except subprocess.TimeoutExpired:
+        logging.error(f"Timeout querying {service_name}")
+        return {
+            "LoadState": "error",
+            "ActiveState": "unknown",
+            "SubState": "unknown",
+            "UnitFileState": "unknown",
+            "MainPID": "0",
+            "TriggeredBy": ""
+        }
+    except Exception as e:
+        logging.error(f"Error querying {service_name}: {e}")
+        return {
+            "LoadState": "not-found",
+            "ActiveState": "inactive",
+            "SubState": "dead",
+            "UnitFileState": "not-found",
+            "MainPID": "0",
+            "TriggeredBy": ""
+        }
+
+
+def build_service_health(
+    service_def: Dict[str, Any],
+    systemctl_props: Dict[str, str],
+    monitor_profile: str
+) -> Dict[str, Any]:
+    """
+    Construct ServiceHealth object from service definition and systemctl properties.
+
+    Args:
+        service_def: Service definition from registry (includes category)
+        systemctl_props: Properties from systemctl show command
+        monitor_profile: Current monitor profile
+
+    Returns:
+        ServiceHealth dictionary matching data-model.md schema
+    """
+    # Extract systemctl properties with defaults
+    load_state = systemctl_props.get("LoadState", "unknown")
+    active_state = systemctl_props.get("ActiveState", "unknown")
+    sub_state = systemctl_props.get("SubState", "unknown")
+    unit_file_state = systemctl_props.get("UnitFileState", "unknown")
+    main_pid = safe_int(systemctl_props.get("MainPID", "0"), 0)
+    restart_count = safe_int(systemctl_props.get("NRestarts", "0"), 0)
+
+    # Feature 088 US2: Calculate uptime and memory usage
+    active_enter_timestamp = systemctl_props.get("ActiveEnterTimestamp", "")
+    uptime_seconds = calculate_uptime(active_enter_timestamp)
+    uptime_friendly = format_uptime(uptime_seconds)
+
+    # Convert memory from bytes to MB (handle [not set] gracefully)
+    memory_bytes = safe_int(systemctl_props.get("MemoryCurrent", "0"), 0)
+    memory_usage_mb = round(memory_bytes / 1024 / 1024, 1) if memory_bytes > 0 else 0.0
+
+    # Determine if service should be active in current profile
+    is_conditional = service_def.get("conditional", False)
+    condition_profiles = service_def.get("condition_profiles", [])
+    should_be_active = monitor_profile in condition_profiles if is_conditional else True
+
+    # Classify health state
+    health_state = classify_health_state(
+        load_state=load_state,
+        active_state=active_state,
+        sub_state=sub_state,
+        unit_file_state=unit_file_state,
+        restart_count=restart_count,
+        is_conditional=is_conditional,
+        should_be_active=should_be_active
+    )
+
+    # Build ServiceHealth object
+    service_health = {
+        "service_name": service_def["name"],
+        "display_name": service_def["display_name"],
+        "category": service_def["category"],
+        "description": service_def["description"],
+        "is_user_service": service_def["is_user_service"],
+        "is_socket_activated": service_def.get("socket_activated", False),
+        "socket_name": service_def.get("socket_name"),
+        "is_conditional": is_conditional,
+        "condition_profiles": condition_profiles if is_conditional else None,
+        "load_state": load_state,
+        "active_state": active_state,
+        "sub_state": sub_state,
+        "unit_file_state": unit_file_state,
+        "health_state": health_state,
+        "main_pid": main_pid,
+        "uptime_seconds": uptime_seconds,  # Feature 088 US2
+        "memory_usage_mb": memory_usage_mb,  # Feature 088 US2
+        "restart_count": restart_count,
+        "last_active_time": active_enter_timestamp if active_enter_timestamp else None,  # Feature 088 US2
+        "status_icon": get_status_icon(health_state),
+        "uptime_friendly": uptime_friendly,  # Feature 088 US2
+        "can_restart": health_state not in ["disabled"] and load_state != "not-found"
+    }
+
+    return service_health
+
+
+def build_system_health(
+    categories: List[Dict[str, Any]],
+    monitor_profile: str
+) -> Dict[str, Any]:
+    """
+    Aggregate category health into SystemHealth response with timestamp.
+
+    Args:
+        categories: List of ServiceCategory dicts
+        monitor_profile: Current monitor profile
+
+    Returns:
+        SystemHealth dictionary matching data-model.md schema
     """
     current_timestamp = time.time()
     friendly_time = format_friendly_timestamp(current_timestamp)
 
-    health = {
-        "daemon_status": "unknown",
-        "daemon_uptime": 0,
-        "daemon_pid": None,
-        "sway_ipc_connected": False,
-        "monitor_count": 0,
-        "workspace_count": 0,
-        "window_count": 0,
-        "project_count": 0,
-        "errors_24h": 0,
-        "warnings_24h": 0,
-        "last_error": None
+    # Calculate aggregate counts
+    total_services = 0
+    healthy_count = 0
+    degraded_count = 0
+    critical_count = 0
+    disabled_count = 0
+    unknown_count = 0
+
+    for category in categories:
+        total_services += category["total_count"]
+        healthy_count += category["healthy_count"]
+        degraded_count += category["degraded_count"]
+        critical_count += category["critical_count"]
+        disabled_count += category["disabled_count"]
+        unknown_count += category["unknown_count"]
+
+    # Determine overall system health
+    if critical_count > 0:
+        system_health = "critical"
+    elif degraded_count > 0:
+        system_health = "degraded"
+    elif unknown_count > 0:
+        system_health = "mixed"
+    elif total_services == disabled_count:
+        system_health = "mixed"
+    else:
+        system_health = "healthy"
+
+    return {
+        "timestamp": current_timestamp,
+        "timestamp_friendly": friendly_time,
+        "monitoring_functional": True,
+        "current_monitor_profile": monitor_profile,
+        "total_services": total_services,
+        "healthy_count": healthy_count,
+        "degraded_count": degraded_count,
+        "critical_count": critical_count,
+        "disabled_count": disabled_count,
+        "unknown_count": unknown_count,
+        "categories": categories,
+        "system_health": system_health,
+        "error": None
     }
 
+
+async def query_health_data() -> Dict[str, Any]:
+    """
+    Query system health view data.
+
+    Returns comprehensive service health monitoring data (Feature 088).
+    Queries all systemd services from SERVICE_REGISTRY and returns structured health data.
+    """
     try:
-        # Query daemon status
-        result = subprocess.run(
-            ["i3pm", "daemon", "status", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
+        # T036: Log health query start
+        logging.info("Feature 088: Starting health query")
 
-        if result.returncode == 0:
-            try:
-                daemon_data = json.loads(result.stdout)
-                health["daemon_status"] = daemon_data.get("status", "unknown")
-                health["daemon_uptime"] = daemon_data.get("uptime", 0)
-                health["daemon_pid"] = daemon_data.get("pid")
-                health["sway_ipc_connected"] = daemon_data.get("connected", False)
-            except json.JSONDecodeError:
-                # Command output wasn't JSON, skip daemon data
-                pass
+        # Read current monitor profile
+        monitor_profile = read_monitor_profile()
+        logging.info(f"Feature 088: Monitor profile: {monitor_profile}")
 
-        # Query window tree for counts
-        try:
-            client = DaemonClient()
-            tree_data = await client.get_window_tree()
-            await client.close()
+        # Get list of services to monitor based on profile
+        monitored_services = get_monitored_services(monitor_profile)
 
-            outputs = tree_data.get("outputs", [])
-            health["monitor_count"] = len(outputs)
+        # Query health for each service
+        service_health_list = []
+        for service_def in monitored_services:
+            systemctl_props = query_service_health(
+                service_name=service_def["name"],
+                is_user_service=service_def["is_user_service"],
+                socket_name=service_def.get("socket_name")
+            )
 
-            for output in outputs:
-                workspaces = output.get("workspaces", [])
-                health["workspace_count"] += len(workspaces)
-                for workspace in workspaces:
-                    health["window_count"] += len(workspace.get("windows", []))
+            service_health = build_service_health(
+                service_def=service_def,
+                systemctl_props=systemctl_props,
+                monitor_profile=monitor_profile
+            )
 
-        except Exception as e:
-            logger.warning(f"Could not query window tree for health: {e}")
+            service_health_list.append(service_health)
 
-        # Query projects count
-        result = subprocess.run(
-            ["i3pm", "project", "list", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
+        # Group services by category
+        categories_dict = {
+            "core": {"category_name": "core", "display_name": "Core Daemons", "services": []},
+            "ui": {"category_name": "ui", "display_name": "UI Services", "services": []},
+            "system": {"category_name": "system", "display_name": "System Services", "services": []},
+            "optional": {"category_name": "optional", "display_name": "Optional Services", "services": []}
+        }
 
-        if result.returncode == 0:
-            try:
-                projects_data = json.loads(result.stdout)
-                health["project_count"] = len(projects_data.get("projects", []))
-            except json.JSONDecodeError:
-                # Command output wasn't JSON, skip project count
-                pass
+        for service_health in service_health_list:
+            category_name = service_health["category"]
+            categories_dict[category_name]["services"].append(service_health)
+
+        # Calculate category-level health metrics
+        categories = []
+        for category_name, category_data in categories_dict.items():
+            services = category_data["services"]
+
+            # Count health states
+            healthy_count = sum(1 for s in services if s["health_state"] == "healthy")
+            degraded_count = sum(1 for s in services if s["health_state"] == "degraded")
+            critical_count = sum(1 for s in services if s["health_state"] == "critical")
+            disabled_count = sum(1 for s in services if s["health_state"] == "disabled")
+            unknown_count = sum(1 for s in services if s["health_state"] == "unknown")
+
+            # Determine category health
+            if critical_count > 0:
+                category_health = "critical"
+            elif degraded_count > 0:
+                category_health = "degraded"
+            elif unknown_count > 0:
+                category_health = "mixed"
+            elif len(services) == disabled_count:
+                category_health = "disabled"
+            elif len(services) == healthy_count:
+                category_health = "healthy"
+            else:
+                category_health = "mixed"
+
+            categories.append({
+                "category_name": category_name,
+                "display_name": category_data["display_name"],
+                "services": services,
+                "total_count": len(services),
+                "healthy_count": healthy_count,
+                "degraded_count": degraded_count,
+                "critical_count": critical_count,
+                "disabled_count": disabled_count,
+                "unknown_count": unknown_count,
+                "category_health": category_health
+            })
+
+        # Build system health response
+        system_health = build_system_health(categories, monitor_profile)
+
+        # T036: Log successful health query
+        logging.info(f"Feature 088: Health query complete - {system_health['total_services']} services, system health: {system_health['system_health']}")
 
         return {
             "status": "ok",
-            "health": health,
-            "timestamp": current_timestamp,
-            "timestamp_friendly": friendly_time,
+            "health": system_health,
+            "timestamp": system_health["timestamp"],
+            "timestamp_friendly": system_health["timestamp_friendly"],
             "error": None
         }
 
     except Exception as e:
+        # T035: Error handling with logging
+        logging.error(f"Feature 088: Health query failed: {type(e).__name__}: {e}")
+        current_timestamp = time.time()
         return {
             "status": "error",
-            "health": health,
+            "health": {
+                "timestamp": current_timestamp,
+                "timestamp_friendly": format_friendly_timestamp(current_timestamp),
+                "monitoring_functional": False,
+                "current_monitor_profile": "unknown",
+                "total_services": 0,
+                "healthy_count": 0,
+                "degraded_count": 0,
+                "critical_count": 0,
+                "disabled_count": 0,
+                "unknown_count": 0,
+                "categories": [],
+                "system_health": "critical",
+                "error": f"Health query failed: {type(e).__name__}: {e}"
+            },
             "timestamp": current_timestamp,
-            "timestamp_friendly": friendly_time,
+            "timestamp_friendly": format_friendly_timestamp(current_timestamp),
             "error": f"Health query failed: {type(e).__name__}: {e}"
         }
 
