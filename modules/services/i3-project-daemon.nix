@@ -35,12 +35,12 @@ let
   # Daemon package (Feature 061: Unified mark format)
   daemonSrc = builtins.path {
     path = ../../home-modules/desktop/i3-project-event-daemon;
-    name = "i3pm-daemon-src-v5-feature-083-perms";  # Force rebuild with correct file permissions
+    name = "i3pm-daemon-src-v6-feature-087-remote";  # Force rebuild with RemoteConfig model
   };
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.9.1";  # Feature 083: EwwPublisher and MonitorProfileService (rebuild)
+    version = "1.10.0";  # Feature 087: RemoteConfig Pydantic model for SSH projects
     src = daemonSrc;
 
     installPhase = ''

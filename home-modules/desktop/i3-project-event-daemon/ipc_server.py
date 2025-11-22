@@ -680,12 +680,18 @@ class IPCServer:
             }
 
         project = projects[project_name]
-        return {
+        result = {
             "name": project.name,
             "display_name": project.display_name,
             "icon": project.icon or "",
             "directory": str(project.directory),
         }
+
+        # Feature 087: Include remote configuration if present
+        if project.remote is not None:
+            result["remote"] = project.remote.model_dump()
+
+        return result
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts."""
@@ -5324,7 +5330,7 @@ class IPCServer:
             )
 
             # Return project data
-            return {
+            result = {
                 "name": project.name,
                 "directory": project.directory,
                 "display_name": project.display_name,
@@ -5332,6 +5338,12 @@ class IPCServer:
                 "created_at": project.created_at.isoformat(),
                 "updated_at": project.updated_at.isoformat()
             }
+
+            # Feature 087: Include remote configuration if present
+            if project.remote is not None:
+                result["remote"] = project.remote.model_dump()
+
+            return result
 
         except FileExistsError as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
@@ -5450,7 +5462,7 @@ class IPCServer:
                 params={"name": name}
             )
 
-            return {
+            result = {
                 "name": project.name,
                 "directory": project.directory,
                 "display_name": project.display_name,
@@ -5458,6 +5470,12 @@ class IPCServer:
                 "created_at": project.created_at.isoformat(),
                 "updated_at": project.updated_at.isoformat()
             }
+
+            # Feature 087: Include remote configuration if present
+            if project.remote is not None:
+                result["remote"] = project.remote.model_dump()
+
+            return result
 
         except FileNotFoundError as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
@@ -5530,7 +5548,7 @@ class IPCServer:
                 params={"name": name}
             )
 
-            return {
+            result = {
                 "name": project.name,
                 "directory": project.directory,
                 "display_name": project.display_name,
@@ -5538,6 +5556,12 @@ class IPCServer:
                 "created_at": project.created_at.isoformat(),
                 "updated_at": project.updated_at.isoformat()
             }
+
+            # Feature 087: Include remote configuration if present
+            if project.remote is not None:
+                result["remote"] = project.remote.model_dump()
+
+            return result
 
         except FileNotFoundError as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
