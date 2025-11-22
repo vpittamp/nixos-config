@@ -25,18 +25,15 @@
     # Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
-    ../modules/services/onepassword.nix
+    ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
     ../modules/services/i3-project-daemon.nix       # Feature 037: Project management daemon
     ../modules/desktop/wayvnc.nix                   # Feature 084: VNC for virtual displays
-    ../modules/services/onepassword-automation.nix  # Service account automation
-    ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix # Safe version without network dependencies
     ../modules/services/home-assistant.nix
     ../modules/services/scrypted.nix
 
     # Browser integrations with 1Password
-    ../modules/desktop/firefox-1password.nix
-    ../modules/desktop/firefox-pwa-1password.nix
+    ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
   ];
 
   # Provide DisplayLink binaries automatically by fetching from Synaptics.
@@ -303,20 +300,38 @@
   };
 
   # Enable 1Password password management
-  services.onepassword-password-management = {
-    enable = false;
-    users.vpittamp = {
-      enable = true;
-      passwordReference = "op://CLI/NixOS User Password/password";
-    };
-    updateInterval = "hourly";  # Check for password changes hourly
-  };
-
-  # 1Password Automation for service account operations
-  services.onepassword-automation = {
+  # Consolidated 1Password configuration
+  services.onepassword = {
     enable = true;
     user = "vpittamp";
-    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
+
+    # GUI enabled for M1 desktop
+    gui.enable = true;
+
+    # Enable automation for service account operations
+    automation = {
+      enable = true;
+      tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
+    };
+
+    # Password management disabled (using initialPassword for now)
+    passwordManagement = {
+      enable = false;
+      users.vpittamp = {
+        enable = true;
+        passwordReference = "op://CLI/NixOS User Password/password";
+      };
+      updateInterval = "hourly";
+    };
+
+    # SSH agent integration
+    ssh.enable = true;
+  };
+
+  # Firefox with 1Password and PWA support
+  programs.firefox-1password = {
+    enable = true;
+    enablePWA = true;  # Enable PWA support
   };
 
   # Fallback password for initial setup before 1Password is configured

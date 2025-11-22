@@ -16,7 +16,7 @@
     # Phase 1: Core Services
     ../modules/services/development.nix
     ../modules/services/networking.nix
-    ../modules/services/onepassword.nix
+    ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
     ../modules/services/i3-project-daemon.nix
     ../modules/services/keyd.nix
     ../modules/services/sway-tree-monitor.nix
@@ -24,12 +24,9 @@
     # Phase 2: Wayland/Sway Desktop Environment
     ../modules/desktop/sway.nix
     ../modules/desktop/wayvnc.nix
-    ../modules/desktop/firefox-1password.nix
-    ../modules/desktop/firefox-pwa-1password.nix
+    ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
 
     # Services
-    ../modules/services/onepassword-automation.nix
-    ../modules/services/onepassword-password-management.nix
     ../modules/services/speech-to-text-safe.nix
     ../modules/services/tailscale-audio.nix
   ];
@@ -157,15 +154,38 @@
     checkReversePath = "loose";
   };
 
-  # Enable 1Password password management
-  services.onepassword-password-management = {
+  # Consolidated 1Password configuration
+  services.onepassword = {
     enable = true;
-    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
-    users.vpittamp = {
+    user = "vpittamp";
+
+    # GUI disabled for headless server
+    gui.enable = false;
+
+    # Enable automation for service account operations
+    automation = {
       enable = true;
-      passwordReference = "op://CLI/NixOS User Password/password";
+      tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
     };
-    updateInterval = "hourly";  # Check for password changes hourly
+
+    # Enable automatic password management
+    passwordManagement = {
+      enable = true;
+      users.vpittamp = {
+        enable = true;
+        passwordReference = "op://CLI/NixOS User Password/password";
+      };
+      updateInterval = "hourly";
+    };
+
+    # SSH agent integration
+    ssh.enable = true;
+  };
+
+  # Firefox with 1Password and PWA support
+  programs.firefox-1password = {
+    enable = true;
+    enablePWA = true;  # Enable PWA support
   };
 
   # SSH settings for initial access
@@ -201,13 +221,6 @@
 
   # Display manager: greetd (already configured above, no SDDM needed)
   services.displayManager.sddm.enable = lib.mkForce false;
-
-  # Enable 1Password automation with service account
-  services.onepassword-automation = {
-    enable = true;
-    user = "vpittamp";
-    tokenReference = "op://Employee/kzfqt6yulhj6glup3w22eupegu/credential";
-  };
 
   # Enable Speech-to-Text services using safe module
   services.speech-to-text = {
