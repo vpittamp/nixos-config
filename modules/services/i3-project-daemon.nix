@@ -40,12 +40,16 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.10.0";  # Feature 087: RemoteConfig Pydantic model for SSH projects
+    version = "1.10.1";  # Feature 085: Include i3_project_manager module for monitoring panel
     src = daemonSrc;
 
     installPhase = ''
       mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon
       cp -r $src/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_daemon/
+
+      # Feature 085: Copy i3_project_manager module for monitoring panel publisher
+      mkdir -p $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager
+      cp -r ${../../home-modules/tools/i3_project_manager}/* $out/lib/python${pkgs.python3.pythonVersion}/site-packages/i3_project_manager/
     '';
   };
 
