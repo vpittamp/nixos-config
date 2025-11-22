@@ -29,18 +29,18 @@
           case "$host" in
             github.com)
               # Get GitHub credentials from 1Password CLI vault
-              username=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              username=$(${pkgs._1password-cli}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password-cli}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
             gitlab.com)
               # Get GitLab credentials from 1Password CLI vault if available
-              username=$(${pkgs._1password}/bin/op item get "gitlab.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "gitlab.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              username=$(${pkgs._1password-cli}/bin/op item get "gitlab.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password-cli}/bin/op item get "gitlab.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
             *)
               # Fallback to github for unknown hosts
-              username=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
-              password=$(${pkgs._1password}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              username=$(${pkgs._1password-cli}/bin/op item get "github.com" --vault CLI --fields username --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
+              password=$(${pkgs._1password-cli}/bin/op item get "github.com" --vault CLI --fields credential --format json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.value // empty')
               ;;
           esac
 
@@ -63,7 +63,7 @@
 
   # Add helper script to initialize 1Password service account
   home.packages = with pkgs; [
-    _1password  # 1Password CLI
+    _1password-cli  # 1Password CLI
 
     (writeShellScriptBin "op-sa-init" ''
       #!/usr/bin/env bash
@@ -94,9 +94,9 @@
 
       # Test the token
       echo "Testing 1Password CLI connection..."
-      if ${_1password}/bin/op whoami >/dev/null 2>&1; then
+      if ${_1password-cli}/bin/op whoami >/dev/null 2>&1; then
         echo "✅ Successfully authenticated with 1Password"
-        ${_1password}/bin/op whoami
+        ${_1password-cli}/bin/op whoami
         echo ""
         echo "Git credential helper is configured and ready to use!"
         echo ""
@@ -125,7 +125,7 @@
       fi
 
       echo "Fetching GitHub token..."
-      TOKEN=$(${_1password}/bin/op item get "Github Personal Access Token" --fields token 2>&1)
+      TOKEN=$(${_1password-cli}/bin/op item get "Github Personal Access Token" --fields token 2>&1)
 
       if [ $? -eq 0 ]; then
         echo "✅ Successfully retrieved GitHub token"
