@@ -454,19 +454,25 @@ let
       transform: scale(1.0);
     }
 
-    /* Backlight/Volume Sliders */
+    /* Backlight/Volume Sliders - Compact for Feature 090 */
+    .widget-backlight,
+    .widget-volume {
+      margin: 2px 4px;
+      padding: 4px 8px;
+    }
+
     .widget-backlight slider,
     .widget-backlight scale,
     .widget-volume slider,
     .widget-volume scale {
-      min-height: 28px;
+      min-height: 20px;
     }
 
     .widget-backlight scale trough,
     .widget-volume scale trough {
       background-color: rgba(49, 50, 68, 0.8);
-      border-radius: 10px;
-      min-height: 12px;
+      border-radius: 8px;
+      min-height: 8px;
     }
 
     .widget-backlight scale highlight {
@@ -483,9 +489,9 @@ let
     .widget-volume scale slider {
       background-color: ${mocha.text};
       border-radius: 50%;
-      min-height: 20px;
-      min-width: 20px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+      min-height: 14px;
+      min-width: 14px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
     }
 
     /* Scrollbar Styling */
@@ -609,33 +615,24 @@ in {
     };
 
     # Widget layout for control center
-    # Feature 057: User Story 5 - Transient information (CPU, memory, network, disk)
+    # Feature 090: Notification-focused layout
     widgets =
       [
         "title"
         "dnd"
-        "label#monitors-header"
+        "notifications"
+        "mpris"
       ]
-      ++ buttonWidgetNames
       ++ [
         "label#brightness-header"
       ]
-      ++ brightnessWidgetNames
-      ++ [
-        "notifications"
-        "mpris"
-      ];
+      ++ brightnessWidgetNames;
 
     # Widget configuration for all widgets
     widget-config = (
       {
-      "label#monitors-header" = {
-        text = "━━━ System Monitors & Shortcuts ━━━";
-        max-lines = 1;
-      };
-
       "label#brightness-header" = {
-        text = "━━━ Brightness Controls ━━━";
+        text = "Brightness";
         max-lines = 1;
       };
       }
