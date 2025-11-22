@@ -485,13 +485,12 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
 
         log "INFO" "Feature 087: SSH command: ${SSH_CMD:0:200}..."
 
-        # Rebuild ARGS array with SSH wrapper
-        # Format: ghostty -e bash -c "<SSH_CMD>"
-        # Use printf %q to properly escape the SSH command for shell execution
-        SSH_CMD_ESCAPED=$(printf '%q' "$SSH_CMD")
-        ARGS=("${ARGS[0]}" "-e" "bash" "-c" "$SSH_CMD_ESCAPED")
+        # For remote execution, we need to bypass the normal ARGS-based command construction
+        # and build a properly-quoted command string directly.
+        # This is set as a flag that will be checked in the APP_CMD construction below.
+        REMOTE_TERMINAL_CMD="${ARGS[0]} -e bash -c $(printf '%q' "$SSH_CMD")"
 
-        log "DEBUG" "Feature 087: Rebuilt ARGS for SSH: ${ARGS[*]:0:200}"
+        log "DEBUG" "Feature 087: Remote terminal command: ${REMOTE_TERMINAL_CMD:0:200}"
     fi
 
 elif [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
@@ -508,10 +507,12 @@ elif [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
 fi
 
 # Build application command with working directory
+# Feature 087: For remote terminals, use the pre-built REMOTE_TERMINAL_CMD
+if [[ -n "$REMOTE_TERMINAL_CMD" ]]; then
+    APP_CMD="cd '$HOME' && $REMOTE_TERMINAL_CMD"
 # For scoped apps: use project directory (if available)
 # For global apps: always use HOME to avoid AppImage/bubblewrap sandbox issues
-# For remote projects: working directory handling is done via SSH wrapper above
-if [ "$SCOPE" = "scoped" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ] && [ "$REMOTE_ENABLED" != "true" ]; then
+elif [ "$SCOPE" = "scoped" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
     APP_CMD="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
 else
     APP_CMD="cd '$HOME' && ${ARGS[*]}"
