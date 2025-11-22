@@ -448,6 +448,15 @@ in {
     # - Delete/Backspace: Close notification
     keyboard-shortcuts = true;  # Enable keyboard shortcuts (default behavior)
 
+    # Feature 090: Scripts - Execute commands when notification actions are triggered
+    scripts = {
+      "claude-code-callback" = {
+        exec = "${pkgs.bash}/bin/bash /etc/nixos/scripts/claude-hooks/swaync-action-callback.sh";
+        run-on = "action";
+        summary = "Claude Code Ready";  # Match Claude Code notifications
+      };
+    };
+
     # Widget layout for control center
     # Feature 057: User Story 5 - Transient information (CPU, memory, network, disk)
     widgets =
