@@ -682,6 +682,20 @@ class I3ProjectDaemon:
         """Main event loop."""
         logger.info("Starting daemon event loop...")
 
+        # Feature 083: Sync output-states.json with current profile on startup
+        # This ensures output-states.json matches the profile if daemon starts after profile was set
+        if self.monitor_profile_service and self.connection and self.connection.conn:
+            try:
+                profile_name = self.monitor_profile_service.get_current_profile()
+                if profile_name:
+                    logger.info(f"[Feature 083] Syncing output-states.json with current profile: {profile_name}")
+                    await self.monitor_profile_service.handle_profile_change(
+                        self.connection.conn,
+                        profile_name
+                    )
+            except Exception as e:
+                logger.warning(f"[Feature 083] Failed to sync output states on startup: {e}")
+
         # Feature 083: Publish initial monitor state to Eww
         if self.eww_publisher and self.connection and self.connection.conn:
             try:
