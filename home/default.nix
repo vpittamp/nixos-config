@@ -19,8 +19,16 @@ in
     modules = [ ../home-darwin.nix ];
   };
 
-  # REMOVED: vpittamp and code standalone configurations
-  # Rationale: These were redundant with nixosConfigurations.*.home-manager
+  # Codespaces/Container Home Manager configuration
+  # Usage: home-manager switch --flake .#code
+  code = helpers.mkHomeConfiguration {
+    system = "x86_64-linux";
+    username = "code";
+    modules = [ ../home-code.nix ];
+  };
+
+  # REMOVED: vpittamp standalone configuration
+  # Rationale: This was redundant with nixosConfigurations.*.home-manager
   # For NixOS systems, use:
   #   sudo nixos-rebuild switch --flake .#hetzner-sway
   #   sudo nixos-rebuild switch --flake .#m1
