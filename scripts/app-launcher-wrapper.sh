@@ -508,7 +508,7 @@ fi
 
 # Build application command with working directory
 # Feature 087: For remote terminals, use the pre-built REMOTE_TERMINAL_CMD
-if [[ -n "$REMOTE_TERMINAL_CMD" ]]; then
+if [[ -n "${REMOTE_TERMINAL_CMD:-}" ]]; then
     APP_CMD="cd '$HOME' && $REMOTE_TERMINAL_CMD"
 # For scoped apps: use project directory (if available)
 # For global apps: always use HOME to avoid AppImage/bubblewrap sandbox issues
