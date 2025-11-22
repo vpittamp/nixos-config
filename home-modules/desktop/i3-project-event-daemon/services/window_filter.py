@@ -464,7 +464,11 @@ async def filter_windows_by_project(
                 if workspace_tracker and workspace:
                     # Get current window state
                     workspace_num = workspace.num if workspace.num is not None else 1
-                    is_original_scratchpad = workspace.name == "__i3_scratch"
+
+                    # Feature 062: Scratchpad terminals should NEVER be marked as original_scratchpad
+                    # They're project-scoped and must be restored when switching to their project
+                    has_scratchpad_mark = any(mark.startswith("scratchpad:") for mark in window.marks)
+                    is_original_scratchpad = (workspace.name == "__i3_scratch") and not has_scratchpad_mark
 
                     # Feature 038 FIX: Check if we already have saved state for this window
                     # If so, preserve the ORIGINAL floating state (don't re-capture after scratchpad moves)

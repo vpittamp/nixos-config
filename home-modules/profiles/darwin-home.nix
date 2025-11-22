@@ -73,7 +73,7 @@ in
       packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib; };
       basePackages = lib.filter (pkg: pkg.meta.available or true) (packageConfig.getProfile.user);
       darwinSpecificPackages = [
-        pkgs._1password  # 1Password CLI for macOS
+        pkgs._1password-cli  # 1Password CLI for macOS
       ];
     in
     basePackages ++ darwinSpecificPackages;

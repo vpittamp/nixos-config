@@ -125,7 +125,7 @@ in
     home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
       extraSpecialArgs = {
-        inherit inputs pkgs-unstable;
+        inherit inputs self pkgs-unstable monitorConfig;
         # Note: osConfig intentionally omitted for standalone configs
         # to avoid circular dependencies
       };

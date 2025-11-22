@@ -32,7 +32,7 @@ nix profile list 2>/dev/null || echo "  (empty profile - good!)"
 # Run home-manager activation
 echo ""
 echo "🏠 Activating home-manager configuration..."
-home-manager switch --flake github:vpittamp/nixos-config#code --impure
+nix run home-manager/master -- switch --flake github:vpittamp/nixos-config#code --impure
 
 echo ""
 echo "✅ Setup complete! You may need to restart your shell or source ~/.profile"
