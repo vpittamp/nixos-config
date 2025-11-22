@@ -155,7 +155,7 @@ Phase 1 (Setup) → Phase 2 (Foundational) → Phase 3 (User Story 1 - P1)
 - [X] T027 [US1] Run validation script at specs/089-nixos-home-manager-cleanup/contracts/validation.sh
 - [X] T028 [US1] Run hardware validation script at specs/089-nixos-home-manager-cleanup/contracts/hardware-validation.sh
 - [X] T029 [US1] Verify zero backup files remain (`find . -name "*.backup*" | wc -l` returns 0)
-- [ ] T030 [US1] Commit Phase 1 changes with message: "feat(089): Phase 1 - Remove deprecated legacy modules"
+- [X] T030 [US1] Commit Phase 1 changes with message: "feat(089): Phase 1 - Remove deprecated legacy modules"
 
 **User Story 1 Acceptance**: All deprecated modules deleted, backup files removed, flake inputs cleaned up, both configurations build successfully, hardware features validated
 
