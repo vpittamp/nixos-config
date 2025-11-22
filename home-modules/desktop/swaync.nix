@@ -441,11 +441,12 @@ in {
     script-fail-notify = true;
 
     # Feature 090: Notification callback keybindings
-    # Ctrl+R - Return to Claude Code terminal (primary action)
+    # Return/Enter - Return to Claude Code terminal (primary action)
+    # Ctrl+Enter - Alternative shortcut for return action
     # Escape - Dismiss notification or close notification center
     keyboard-shortcuts = {
       notification-close = [ "Escape" ];
-      notification-action-0 = [ "ctrl+r" "Return" ];
+      notification-action-0 = [ "Return" "ctrl+Return" ];  # Removed ctrl+r (conflicts with fzf history)
       notification-action-1 = [ "Escape" ];
     };
 

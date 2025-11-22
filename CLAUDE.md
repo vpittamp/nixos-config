@@ -838,12 +838,12 @@ Bash history hook auto-registers all Claude Code commands to `~/.bash_history`.
 Smart notification system that allows returning to Claude Code terminal from any workspace or project.
 
 **How It Works**:
-When Claude Code completes a task and waits for input, it triggers a SwayNC notification with rich context about the completed work. Click "Return to Window" (or press Ctrl+R) to instantly return to the Claude Code terminal, even if you've switched to a different project or workspace.
+When Claude Code completes a task and waits for input, it triggers a SwayNC notification with rich context about the completed work. Click "Return to Window" (or press Enter) to instantly return to the Claude Code terminal, even if you've switched to a different project or workspace.
 
 **Keyboard Shortcuts**:
 | Key | Action |
 |-----|--------|
-| `Ctrl+R` | Return to Claude Code terminal (focuses window, switches project, selects tmux pane) |
+| `Enter` / `Ctrl+Enter` | Return to Claude Code terminal (focuses window, switches project, selects tmux pane) |
 | `Escape` | Dismiss notification without changing focus |
 
 **Notification Content**:
@@ -895,7 +895,7 @@ systemctl --user status swaync
 journalctl --user -u swaync -f
 
 # Test notification manually
-notify-send -A "test=Test Action" "Test" "Press Ctrl+R"
+notify-send -A "test=Test Action" "Test" "Press Enter to test"
 
 # Verify Claude Code hooks are installed
 ls -la ~/.config/claude-code/hooks/
