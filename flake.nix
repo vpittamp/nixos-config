@@ -13,11 +13,6 @@
     };
 
     # Platform support
-    nixos-wsl = {
-      url = "github:nix-community/NixOS-WSL";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     nixos-apple-silicon = {
       url = "github:tpwrules/nixos-apple-silicon";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -47,16 +42,6 @@
 
     disko = {
       url = "github:nix-community/disko";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    flake-utils.url = "github:numtide/flake-utils";
-
-    # Plasma (KDE) user configuration via Home Manager
-    # ARCHIVED: KDE Plasma removed in Feature 009 (i3wm migration)
-    # M1 configuration still uses this temporarily
-    plasma-manager = {
-      url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
