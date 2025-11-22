@@ -506,7 +506,7 @@ let
     }
 
     scrollbar slider:active {
-      background-color: ${mocha.overlay1};
+      background-color: ${mocha.surface1};
     }
 
     /* Section Headers/Labels */

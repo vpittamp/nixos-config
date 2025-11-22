@@ -3,13 +3,13 @@ set -e
 
 echo "Setting up 1Password service account token..."
 
-# Check if already logged in to personal account
+# Check if already logged in
 if ! op account list | grep -q "vinod@pittampalli.com"; then
   echo "Please sign in to your personal 1Password account first:"
   eval $(op signin)
 fi
 
-# Fetch the service account token using secret reference
+# Fetch token
 echo "Fetching service account token from 1Password..."
 TOKEN=$(op read 'op://Employee/kzfqt6yulhj6glup3w22eupegu/credential')
 
