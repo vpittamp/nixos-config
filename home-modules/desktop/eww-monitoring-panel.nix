@@ -1407,6 +1407,9 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel daemon --no-daemonize";
+        # Open the monitoring panel window after daemon starts
+        # This is required for deflisten to start streaming window data
+        ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel'";
         Restart = "on-failure";
         RestartSec = "3s";
       };
