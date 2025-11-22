@@ -441,14 +441,12 @@ in {
     script-fail-notify = true;
 
     # Feature 090: Notification callback keybindings
-    # Return/Enter - Return to Claude Code terminal (primary action)
-    # Ctrl+Enter - Alternative shortcut for return action
-    # Escape - Dismiss notification or close notification center
-    keyboard-shortcuts = {
-      notification-close = [ "Escape" ];
-      notification-action-0 = [ "Return" "ctrl+Return" ];  # Removed ctrl+r (conflicts with fzf history)
-      notification-action-1 = [ "Escape" ];
-    };
+    # SwayNC has hardcoded keyboard shortcuts (cannot be customized):
+    # - Return/Enter: Execute default action (notification-action-0)
+    # - 1-9: Execute alternative actions (notification-action-1 through 9)
+    # - Escape: Close notification
+    # - Delete/Backspace: Close notification
+    keyboard-shortcuts = true;  # Enable keyboard shortcuts (default behavior)
 
     # Widget layout for control center
     # Feature 057: User Story 5 - Transient information (CPU, memory, network, disk)

@@ -840,11 +840,12 @@ Smart notification system that allows returning to Claude Code terminal from any
 **How It Works**:
 When Claude Code completes a task and waits for input, it triggers a SwayNC notification with rich context about the completed work. Click "Return to Window" (or press Enter) to instantly return to the Claude Code terminal, even if you've switched to a different project or workspace.
 
-**Keyboard Shortcuts**:
+**Keyboard Shortcuts** (hardcoded in SwayNC, cannot be customized):
 | Key | Action |
 |-----|--------|
-| `Enter` / `Ctrl+Enter` | Return to Claude Code terminal (focuses window, switches project, selects tmux pane) |
+| `Enter` / `Return` | Return to Claude Code terminal (focuses window, switches project, selects tmux pane) |
 | `Escape` | Dismiss notification without changing focus |
+| `Delete` / `Backspace` | Dismiss notification without changing focus |
 
 **Notification Content**:
 - **Message Preview**: First 80 characters of Claude's last message
