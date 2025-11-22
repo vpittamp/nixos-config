@@ -265,7 +265,7 @@ let
 
     .body {
       font-size: 13px;
-      color: ${mocha.subtext1};
+      color: ${mocha.subtext0};
       margin-top: 6px;
     }
 
