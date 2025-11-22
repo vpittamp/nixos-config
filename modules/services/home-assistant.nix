@@ -38,7 +38,7 @@
 
       # Common integrations
       "mqtt"
-      "zha"
+      # "zha"  # Disabled due to flaky test in universal-silabs-flasher dependency
       "zwave_js"
 
       # Bluetooth devices
