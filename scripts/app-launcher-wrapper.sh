@@ -487,7 +487,9 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
 
         # Rebuild ARGS array with SSH wrapper
         # Format: ghostty -e bash -c "<SSH_CMD>"
-        ARGS=("${ARGS[0]}" "-e" "bash" "-c" "$SSH_CMD")
+        # Use printf %q to properly escape the SSH command for shell execution
+        SSH_CMD_ESCAPED=$(printf '%q' "$SSH_CMD")
+        ARGS=("${ARGS[0]}" "-e" "bash" "-c" "$SSH_CMD_ESCAPED")
 
         log "DEBUG" "Feature 087: Rebuilt ARGS for SSH: ${ARGS[*]:0:200}"
     fi
