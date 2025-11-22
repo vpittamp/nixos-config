@@ -1,0 +1,46 @@
+# NixOS Configuration Project - Generated Ignore Patterns
+
+# Nix build artifacts
+result
+result-*
+
+# Python cache and virtual environments (for Python daemon extensions)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Bash/Shell artifacts
+*.swp
+*.swo
+*~
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+
+# Environment and secrets
+.env
+.env.*
+*.secret
+
+# Test artifacts
+coverage/
+.coverage
+htmlcov/
+
+# sway-test framework outputs (if JSON test results generated)
+test-results/
+*.test-result.json

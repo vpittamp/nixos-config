@@ -434,12 +434,20 @@ in {
     control-center-height = controlCenterHeight;
     notification-window-width = 400;
     fit-to-screen = true;
-    keyboard-shortcuts = true;
     image-visibility = "when-available";
     transition-time = 200;
     hide-on-clear = false;
     hide-on-action = false;
     script-fail-notify = true;
+
+    # Feature 090: Notification callback keybindings
+    # Ctrl+R - Return to Claude Code terminal (primary action)
+    # Escape - Dismiss notification or close notification center
+    keyboard-shortcuts = {
+      notification-close = [ "Escape" ];
+      notification-action-0 = [ "ctrl+r" "Return" ];
+      notification-action-1 = [ "Escape" ];
+    };
 
     # Widget layout for control center
     # Feature 057: User Story 5 - Transient information (CPU, memory, network, disk)

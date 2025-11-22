@@ -1,22 +1,5 @@
 #!/usr/bin/env bash
-# Claude Code Stop Hook - Enhanced notification with context and callback
-#
-# Feature 090: Enhanced Notification Callback for Claude Code
-#
-# WORKFLOW:
-# 1. Claude Code stops and triggers this hook
-# 2. Hook captures notification context:
-#    - Terminal window ID (via Sway IPC)
-#    - tmux session/window (via tmux display-message)
-#    - i3pm project name (via I3PM_PROJECT_NAME env var) - Feature 090
-#    - Notification content (message preview, tool summary, files modified)
-# 3. Hook spawns background notification handler (non-blocking)
-# 4. Handler displays SwayNC notification with action buttons
-# 5. User clicks "Return to Window" (or presses Ctrl+R)
-# 6. Handler executes callback:
-#    - Switch to i3pm project (if PROJECT_NAME set) - Feature 090
-#    - Focus terminal window (via Sway IPC)
-#    - Select tmux window (if session exists)
+# Claude Code Stop Hook - Enhanced notification with context
 #
 # This hook runs when Claude Code stops and is waiting for the next user message.
 # It provides rich notification content: last message preview, tool summary, files modified.
@@ -139,24 +122,14 @@ if [ -n "$WORKING_DIR" ]; then
     NOTIFICATION_BODY="${NOTIFICATION_BODY}\n\n📁 ${DIR_NAME}"
 fi
 
-# Feature 090: T016 - Capture i3pm project name from environment
-PROJECT_NAME="${I3PM_PROJECT_NAME:-}"
-
-# Feature 090: T035 - Add project name to notification body (if set)
-if [ -n "$PROJECT_NAME" ]; then
-    NOTIFICATION_BODY="${NOTIFICATION_BODY}\n\n🔖 Project: ${PROJECT_NAME}"
-fi
-
 # Call notification handler in background (non-blocking)
 # This allows the hook to return immediately while the notification waits for user action
 # Feature 079: T066 - Pass TMUX_SESSION and TMUX_WINDOW to handler script
-# Feature 090: T017 - Pass PROJECT_NAME as 5th argument
 nohup "${BASH_SOURCE%/*}/stop-notification-handler.sh" \
     "$WINDOW_ID" \
     "$NOTIFICATION_BODY" \
     "$TMUX_SESSION" \
     "$TMUX_WINDOW" \
-    "$PROJECT_NAME" \
     >/dev/null 2>&1 &
 
 # Exit immediately (don't block Claude Code)

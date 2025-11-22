@@ -825,9 +825,91 @@ systemctl --user restart i3-project-event-listener eww-top-bar
 
 ## 🤖 Claude Code Integration
 
+### Command History
+
 Bash history hook auto-registers all Claude Code commands to `~/.bash_history`.
 
 **Access**: Ctrl+R (fzf search), Up/Down arrows
+
+### Notification Callback (Feature 090)
+
+**Status**: ✅ IMPLEMENTED (2025-11-22)
+
+Smart notification system that allows returning to Claude Code terminal from any workspace or project.
+
+**How It Works**:
+When Claude Code completes a task and waits for input, it triggers a SwayNC notification with rich context about the completed work. Click "Return to Window" (or press Ctrl+R) to instantly return to the Claude Code terminal, even if you've switched to a different project or workspace.
+
+**Keyboard Shortcuts**:
+| Key | Action |
+|-----|--------|
+| `Ctrl+R` | Return to Claude Code terminal (focuses window, switches project, selects tmux pane) |
+| `Escape` | Dismiss notification without changing focus |
+
+**Notification Content**:
+- **Message Preview**: First 80 characters of Claude's last message
+- **Activity Summary**: Tool usage counts (e.g., "2 bash, 3 edits, 1 writes")
+- **Modified Files**: Up to 3 recently modified files
+- **Working Directory**: Current project directory name
+- **Project Name**: i3pm project name (if in scoped project)
+- **Tmux Context**: Session and window identifier (if running in tmux)
+
+**Cross-Project Navigation**:
+The notification captures the originating project context. When you click "Return to Window", the system:
+1. Switches to the original i3pm project (if needed)
+2. Focuses the terminal window via Sway IPC
+3. Selects the correct tmux window (if applicable)
+
+**Use Cases**:
+- **Long-running tasks**: Start Claude Code working on a complex task, switch to another project to continue other work, get notified when ready
+- **Multi-project workflow**: Run Claude Code in project A, switch to project B for testing, return to project A when Claude finishes
+- **Deferred response**: Dismiss notification and manually return to Claude Code later when ready
+
+**Example Notification**:
+```
+Claude Code Ready
+──────────────────────────────────────────────────
+I've completed updating your NixOS configuration
+with the new module...
+
+📊 Activity: 1 bash, 2 edits, 1 writes, 2 reads
+
+📝 Modified:
+  • /etc/nixos/configuration.nix
+  • /etc/nixos/modules/services/daemon.nix
+  • /etc/nixos/modules/tools/helper.nix
+
+📁 nixos-090-notification-callback
+
+🔖 Project: 090-notification-callback
+
+Source: tmux-session:0
+```
+
+**Troubleshooting**:
+```bash
+# Check SwayNC is running
+systemctl --user status swaync
+
+# View notification logs
+journalctl --user -u swaync -f
+
+# Test notification manually
+notify-send -A "test=Test Action" "Test" "Press Ctrl+R"
+
+# Verify Claude Code hooks are installed
+ls -la ~/.config/claude-code/hooks/
+
+# Check hook scripts syntax
+bash -n ~/.config/claude-code/hooks/stop-notification.sh
+```
+
+**Requirements**:
+- SwayNC installed and running
+- i3pm daemon active (for cross-project navigation)
+- Claude Code hooks configured in `~/.config/claude-code/`
+
+**Docs**: `/etc/nixos/specs/090-notification-callback/quickstart.md`
 
 ## 🔐 1Password
 
@@ -881,6 +963,8 @@ gh auth status               # Auto-uses 1Password token
 - N/A (config files only) (086-monitor-focus-enhancement)
 - Python 3.11+ (daemon/models), Bash 5.0+ (launcher), TypeScript/Deno 1.40+ (CLI) (087-ssh-projects)
 - JSON files in `~/.config/i3/projects/*.json` (Project definitions with optional remote field) (087-ssh-projects)
+- Bash 5.0+ (notification hooks), Python 3.11+ (optional i3pm daemon enhancements for project context tracking) + SwayNC 0.10+ (notification daemon with action buttons), Sway 1.8+ (window manager IPC), i3pm (project management system), tmux/sesh (session manager), jq (JSON parsing), Ghostty (terminal emulator) (090-notification-callback)
+- JSON project files in `~/.config/i3/projects/*.json` (i3pm project definitions), notification handler passes project context via command-line arguments (ephemeral) (090-notification-callback)
 
 ## Recent Changes
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)
