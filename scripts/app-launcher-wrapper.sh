@@ -462,11 +462,14 @@ if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
         warn "Feature 087: Terminal app without -e flag, cannot apply SSH wrapping"
         # Fall through to normal execution
     else
-        # Substitute $PROJECT_DIR with remote working directory in terminal command
-        TERMINAL_CMD_REMOTE="${TERMINAL_CMD//\$PROJECT_DIR/$REMOTE_WORKING_DIR}"
+        # Substitute local PROJECT_DIR with remote working directory in terminal command
+        # Note: $PROJECT_DIR has already been substituted with the local path earlier
+        # So we need to replace the local path with the remote path
+        TERMINAL_CMD_REMOTE="${TERMINAL_CMD//$PROJECT_DIR/$REMOTE_WORKING_DIR}"
 
         log "DEBUG" "Feature 087: Original terminal command: $TERMINAL_CMD"
         log "DEBUG" "Feature 087: Remote terminal command: $TERMINAL_CMD_REMOTE"
+        log "DEBUG" "Feature 087: Substituted local path ($PROJECT_DIR) with remote path ($REMOTE_WORKING_DIR)"
 
         # Build SSH command with proper escaping
         # Single quotes around remote command prevent local shell expansion
