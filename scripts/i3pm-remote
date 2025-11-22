@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Wrapper script for i3pm remote project management (Feature 087)
+# This is a temporary wrapper until the new commands are integrated into the main i3pm CLI
+
+set -euo pipefail
+
+# Get the repository root (where this script is located)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CLI_PATH="$REPO_ROOT/home-modules/tools/i3pm-cli/main.ts"
+
+# Check if Deno is available
+if ! command -v deno &> /dev/null; then
+    echo "Error: deno is not available in PATH" >&2
+    echo "Please ensure Deno is installed and accessible" >&2
+    exit 1
+fi
+
+# Check if CLI exists
+if [[ ! -f "$CLI_PATH" ]]; then
+    echo "Error: i3pm CLI not found at $CLI_PATH" >&2
+    exit 1
+fi
+
+# Run the Deno CLI with all arguments
+exec deno run --allow-read --allow-write --allow-env "$CLI_PATH" "$@"
