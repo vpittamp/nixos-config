@@ -73,7 +73,21 @@ let
     };
   };
 
-  marketplaceExtensions = [ playwrightExtension chatgptExtension gitlensExtension ];
+  # Claude Code extension with corrected hash (upstream changed)
+  claudeCodeExtension = pkgs.vscode-utils.buildVscodeMarketplaceExtension {
+    mktplcRef = {
+      name = "claude-code";
+      publisher = "anthropic";
+      version = "2.0.47";
+      sha256 = "sha256-Do9fXSw7nK7Rk1qGyTceFUDLWnlmCiHYnqxTBnY6feY=";
+    };
+    meta = {
+      description = "Claude Code - AI coding assistant";
+      license = lib.licenses.unfree;
+    };
+  };
+
+  marketplaceExtensions = [ playwrightExtension chatgptExtension gitlensExtension claudeCodeExtension ];
 
   baseExtensions = (with pkgs.vscode-extensions; [
     # Development essentials
@@ -86,7 +100,7 @@ let
     tailscale.vscode-tailscale
 
     # AI Assistants
-    anthropic.claude-code
+    # anthropic.claude-code  # Using marketplace version instead (hash mismatch in nixpkgs)
     github.copilot
     github.copilot-chat
     Google.gemini-cli-vscode-ide-companion
