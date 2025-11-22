@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "i3pm project test-remote",
+  "description": "Test SSH connectivity and remote directory existence for project",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "i3pm project test-remote <name>"
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "description": "Existing remote project name"
+        }
+      },
+      "required": ["name"]
+    },
+    "flags": {
+      "type": "object",
+      "properties": {
+        "--timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 5,
+          "description": "SSH connection timeout in seconds (default: 5)"
+        },
+        "--verbose": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show detailed SSH connection logs"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Overall test success"
+        },
+        "connectivity": {
+          "type": "object",
+          "properties": {
+            "reachable": {
+              "type": "boolean",
+              "description": "SSH host is reachable"
+            },
+            "authenticated": {
+              "type": "boolean",
+              "description": "SSH key authentication succeeded"
+            },
+            "latency_ms": {
+              "type": "number",
+              "description": "Connection establishment time in milliseconds"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if connection failed"
+            }
+          }
+        },
+        "remote_directory": {
+          "type": "object",
+          "properties": {
+            "exists": {
+              "type": "boolean",
+              "description": "Remote working directory exists"
+            },
+            "path": {
+              "type": "string",
+              "description": "Full path to remote directory"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if directory check failed"
+            }
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Troubleshooting suggestions if test failed"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "command": "i3pm project test-remote hetzner-dev",
+      "response": {
+        "success": true,
+        "connectivity": {
+          "reachable": true,
+          "authenticated": true,
+          "latency_ms": 87
+        },
+        "remote_directory": {
+          "exists": true,
+          "path": "/home/vpittamp/dev/my-app"
+        },
+        "suggestions": []
+      }
+    },
+    {
+      "command": "i3pm project test-remote hetzner-dev",
+      "response": {
+        "success": false,
+        "connectivity": {
+          "reachable": false,
+          "authenticated": false,
+          "error": "ssh: connect to host hetzner-sway.tailnet port 22: Connection refused"
+        },
+        "remote_directory": {
+          "exists": false
+        },
+        "suggestions": [
+          "Check Tailscale is running: tailscale status",
+          "Verify host is online: ping hetzner-sway.tailnet",
+          "Check firewall allows SSH (port 22)"
+        ]
+      }
+    },
+    {
+      "command": "i3pm project test-remote hetzner-dev",
+      "response": {
+        "success": false,
+        "connectivity": {
+          "reachable": true,
+          "authenticated": true,
+          "latency_ms": 92
+        },
+        "remote_directory": {
+          "exists": false,
+          "path": "/home/vpittamp/dev/my-app",
+          "error": "Directory does not exist"
+        },
+        "suggestions": [
+          "Create directory: ssh vpittamp@hetzner-sway.tailnet 'mkdir -p /home/vpittamp/dev/my-app'",
+          "Or clone project: ssh vpittamp@hetzner-sway.tailnet 'git clone <repo> /home/vpittamp/dev/my-app'"
+        ]
+      }
+    }
+  ]
+}

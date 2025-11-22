@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "i3pm project create-remote",
+  "description": "Create a new remote project with SSH configuration",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "i3pm project create-remote <name>"
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "description": "Project name (alphanumeric, hyphens, underscores only)"
+        }
+      },
+      "required": ["name"]
+    },
+    "flags": {
+      "type": "object",
+      "properties": {
+        "--local-dir": {
+          "type": "string",
+          "description": "Local project directory (absolute path)"
+        },
+        "--remote-host": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SSH hostname (Tailscale FQDN or IP)",
+          "examples": ["hetzner-sway.tailnet", "192.168.1.100", "server.example.com"]
+        },
+        "--remote-user": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SSH username",
+          "examples": ["vpittamp", "deploy", "developer"]
+        },
+        "--remote-dir": {
+          "type": "string",
+          "pattern": "^/.*",
+          "description": "Remote working directory (absolute path)",
+          "examples": ["/home/vpittamp/dev/my-app", "/opt/applications/staging"]
+        },
+        "--port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 22,
+          "description": "SSH port (default: 22)"
+        },
+        "--display-name": {
+          "type": "string",
+          "description": "Human-readable project name (optional, defaults to <name>)"
+        },
+        "--icon": {
+          "type": "string",
+          "default": "🌐",
+          "description": "Project icon emoji (optional, defaults to 🌐)"
+        }
+      },
+      "required": ["--local-dir", "--remote-host", "--remote-user", "--remote-dir"]
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "directory": { "type": "string" },
+            "display_name": { "type": "string" },
+            "icon": { "type": "string" },
+            "remote": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "const": true },
+                "host": { "type": "string" },
+                "user": { "type": "string" },
+                "working_dir": { "type": "string" },
+                "port": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "file_path": {
+          "type": "string",
+          "description": "Path to created project JSON file"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "command": "i3pm project create-remote hetzner-dev --local-dir ~/projects/hetzner-dev --remote-host hetzner-sway.tailnet --remote-user vpittamp --remote-dir /home/vpittamp/dev/my-app",
+      "response": {
+        "success": true,
+        "project": {
+          "name": "hetzner-dev",
+          "directory": "/home/vpittamp/projects/hetzner-dev",
+          "display_name": "hetzner-dev",
+          "icon": "🌐",
+          "remote": {
+            "enabled": true,
+            "host": "hetzner-sway.tailnet",
+            "user": "vpittamp",
+            "working_dir": "/home/vpittamp/dev/my-app",
+            "port": 22
+          }
+        },
+        "file_path": "/home/vpittamp/.config/i3/projects/hetzner-dev.json"
+      }
+    }
+  ]
+}

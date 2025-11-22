@@ -10,12 +10,17 @@ Feature 001: Declarative Workspace-to-Monitor Assignment
 - Added floating window configuration models (floating_config.py)
 - New models will replace legacy Feature 049 models in Phase 8 (T070)
 
-Version: 1.1.0 - Added Feature 001 models
+Feature 087: Remote Project Environment Support
+- Added RemoteConfig model for SSH-based remote projects
+- Extended Project model with optional remote configuration
+
+Version: 1.2.0 - Added Feature 087 models
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
 from .layout import WindowSnapshot, Layout
 from .project import Project, ActiveProjectState
+from .remote_config import RemoteConfig
 
 # Feature 001: Declarative workspace-to-monitor assignment
 from .monitor_config import (
@@ -96,6 +101,8 @@ __all__ = [
     "Layout",
     "Project",
     "ActiveProjectState",
+    # Feature 087: Remote Project Environment Support
+    "RemoteConfig",
     # Feature 058: Workspace Mode Visual Feedback
     "PendingWorkspaceState",
     # Feature 078: Enhanced Project Selection

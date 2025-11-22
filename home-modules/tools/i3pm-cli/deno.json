@@ -1,0 +1,24 @@
+{
+  "tasks": {
+    "test": "deno test --allow-read --allow-write --allow-env",
+    "test:unit": "deno test tests/unit/ --allow-read --allow-write --allow-env",
+    "test:integration": "deno test tests/integration/ --allow-read --allow-write --allow-env"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "deno.unstable"]
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "preserve"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  }
+}

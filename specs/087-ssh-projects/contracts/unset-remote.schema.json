@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "i3pm project unset-remote",
+  "description": "Remove remote configuration from project (revert to local)",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "i3pm project unset-remote <name>"
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "description": "Existing project name with remote configuration"
+        }
+      },
+      "required": ["name"]
+    },
+    "flags": {
+      "type": "object",
+      "properties": {},
+      "description": "No flags required"
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "directory": { "type": "string" },
+            "display_name": { "type": "string" },
+            "icon": { "type": "string" },
+            "scoped_classes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "remote": {
+              "type": "null",
+              "description": "Remote field removed (null or absent)"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "description": "Success message"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "command": "i3pm project unset-remote hetzner-dev",
+      "response": {
+        "success": true,
+        "project": {
+          "name": "hetzner-dev",
+          "directory": "/home/vpittamp/projects/hetzner-dev",
+          "display_name": "Hetzner Development",
+          "icon": "🌐",
+          "scoped_classes": ["Ghostty"],
+          "remote": null
+        },
+        "message": "Remote configuration removed from project 'hetzner-dev'"
+      }
+    }
+  ]
+}

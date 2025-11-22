@@ -2,6 +2,7 @@
 Project and ActiveProjectState Pydantic models for project management.
 
 Feature 058: Python Backend Consolidation
+Feature 087: Remote Project Environment Support
 Provides data validation and JSON serialization for project state.
 """
 
@@ -11,6 +12,7 @@ from pathlib import Path
 from typing import Optional, List
 import json
 import logging
+from .remote_config import RemoteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,12 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     scoped_classes: List[str] = Field(default_factory=list, description="App classes scoped to this project")
+
+    # Feature 087: Optional remote configuration
+    remote: Optional[RemoteConfig] = Field(
+        default=None,
+        description="Remote environment config (SSH-based)"
+    )
 
     @field_validator('directory', mode='before')
     @classmethod
@@ -46,6 +54,16 @@ class Project(BaseModel):
             raise ValueError(f"path is not a directory: {v}")
 
         return str(path)
+
+    def is_remote(self) -> bool:
+        """Check if this is a remote project."""
+        return self.remote is not None and self.remote.enabled
+
+    def get_effective_directory(self) -> str:
+        """Get directory path (remote working_dir if remote, else local directory)."""
+        if self.is_remote():
+            return self.remote.working_dir
+        return self.directory
 
     def save_to_file(self, config_dir: Path) -> None:
         """Save project to JSON file."""

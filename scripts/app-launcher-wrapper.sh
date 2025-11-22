@@ -95,6 +95,8 @@ FALLBACK_BEHAVIOR=$(echo "$APP_JSON" | jq -r '.fallback_behavior // "skip"')
 PREFERRED_WORKSPACE=$(echo "$APP_JSON" | jq -r '.preferred_workspace // ""')
 SCOPE=$(echo "$APP_JSON" | jq -r '.scope // "global"')
 EXPECTED_CLASS=$(echo "$APP_JSON" | jq -r '.expected_class // ""')
+# Feature 087: Terminal app detection for SSH wrapping
+IS_TERMINAL=$(echo "$APP_JSON" | jq -r '.terminal // false')
 
 log "DEBUG" "Command: $COMMAND"
 log "DEBUG" "Parameters: $PARAMETERS"
@@ -112,8 +114,19 @@ PROJECT_ICON=$(echo "$PROJECT_JSON" | jq -r '.icon // ""')
 SESSION_NAME="$PROJECT_NAME"
 USER_HOME="${HOME}"
 
+# Feature 087: Extract remote project configuration
+REMOTE_ENABLED=$(echo "$PROJECT_JSON" | jq -r '.remote.enabled // false')
+REMOTE_HOST=$(echo "$PROJECT_JSON" | jq -r '.remote.host // ""')
+REMOTE_USER=$(echo "$PROJECT_JSON" | jq -r '.remote.user // ""')
+REMOTE_WORKING_DIR=$(echo "$PROJECT_JSON" | jq -r '.remote.working_dir // ""')
+REMOTE_PORT=$(echo "$PROJECT_JSON" | jq -r '.remote.port // 22')
+
 log "DEBUG" "Project name: ${PROJECT_NAME:-<none>}"
 log "DEBUG" "Project directory: ${PROJECT_DIR:-<none>}"
+log "DEBUG" "Feature 087: Remote enabled: $REMOTE_ENABLED"
+if [[ "$REMOTE_ENABLED" == "true" ]]; then
+    log "DEBUG" "Feature 087: Remote host: $REMOTE_USER@$REMOTE_HOST:$REMOTE_WORKING_DIR (port $REMOTE_PORT)"
+fi
 
 # Validate project directory if present
 if [[ -n "$PROJECT_DIR" ]]; then
@@ -418,10 +431,82 @@ fi
 
 ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")
 
+# ============================================================================
+# Feature 087: SSH WRAPPING FOR REMOTE PROJECTS
+# ============================================================================
+# If this is a remote project AND a terminal application, wrap command with SSH
+# This enables terminal-based apps to run on remote hosts while maintaining
+# the same launch workflow (keybindings, project context, etc.)
+
+if [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "true" ]]; then
+    log "INFO" "Feature 087: Applying SSH wrapping for remote terminal app"
+
+    # Extract command after -e flag for terminal applications
+    # Terminal commands typically follow the pattern: ghostty -e <command>
+    # We need to extract everything after -e to wrap it in SSH
+
+    # Find the position of -e in ARGS array
+    TERMINAL_CMD=""
+    FOUND_E_FLAG=false
+    for ((i=0; i<${#ARGS[@]}; i++)); do
+        if [[ "${ARGS[$i]}" == "-e" ]]; then
+            FOUND_E_FLAG=true
+            # Everything after -e is the terminal command
+            TERMINAL_CMD_ARRAY=("${ARGS[@]:$((i+1))}")
+            TERMINAL_CMD="${TERMINAL_CMD_ARRAY[*]}"
+            break
+        fi
+    done
+
+    if [[ "$FOUND_E_FLAG" == "false" ]]; then
+        warn "Feature 087: Terminal app without -e flag, cannot apply SSH wrapping"
+        # Fall through to normal execution
+    else
+        # Substitute $PROJECT_DIR with remote working directory in terminal command
+        TERMINAL_CMD_REMOTE="${TERMINAL_CMD//\$PROJECT_DIR/$REMOTE_WORKING_DIR}"
+
+        log "DEBUG" "Feature 087: Original terminal command: $TERMINAL_CMD"
+        log "DEBUG" "Feature 087: Remote terminal command: $TERMINAL_CMD_REMOTE"
+
+        # Build SSH command with proper escaping
+        # Single quotes around remote command prevent local shell expansion
+        SSH_PORT_FLAG=""
+        if [[ "$REMOTE_PORT" != "22" ]]; then
+            SSH_PORT_FLAG="-p $REMOTE_PORT"
+        fi
+
+        # Escape single quotes in terminal command for safe nesting
+        TERMINAL_CMD_ESCAPED="${TERMINAL_CMD_REMOTE//\'/\'\\\'\'}"
+
+        SSH_CMD="ssh -t $SSH_PORT_FLAG $REMOTE_USER@$REMOTE_HOST 'cd $REMOTE_WORKING_DIR && $TERMINAL_CMD_ESCAPED'"
+
+        log "INFO" "Feature 087: SSH command: ${SSH_CMD:0:200}..."
+
+        # Rebuild ARGS array with SSH wrapper
+        # Format: ghostty -e bash -c "<SSH_CMD>"
+        ARGS=("${ARGS[0]}" "-e" "bash" "-c" "$SSH_CMD")
+
+        log "DEBUG" "Feature 087: Rebuilt ARGS for SSH: ${ARGS[*]:0:200}"
+    fi
+
+elif [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
+    # GUI app in remote project - reject with clear error
+    error "Feature 087: Cannot launch GUI application '$APP_NAME' in remote project '$PROJECT_NAME'.
+  Remote projects only support terminal-based applications.
+
+  GUI apps require X11 forwarding or local execution, which is out of scope.
+
+  Workarounds:
+  - Use VS Code Remote-SSH extension for GUI editor access
+  - Run GUI apps locally in global mode (i3pm project switch --clear)
+  - Use VNC/RDP to access full remote desktop (see WayVNC setup)"
+fi
+
 # Build application command with working directory
 # For scoped apps: use project directory (if available)
 # For global apps: always use HOME to avoid AppImage/bubblewrap sandbox issues
-if [ "$SCOPE" = "scoped" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ]; then
+# For remote projects: working directory handling is done via SSH wrapper above
+if [ "$SCOPE" = "scoped" ] && [ -n "$I3PM_PROJECT_DIR" ] && [ "$I3PM_PROJECT_DIR" != "" ] && [ "$REMOTE_ENABLED" != "true" ]; then
     APP_CMD="cd '$I3PM_PROJECT_DIR' && ${ARGS[*]}"
 else
     APP_CMD="cd '$HOME' && ${ARGS[*]}"

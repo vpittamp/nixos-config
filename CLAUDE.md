@@ -342,6 +342,118 @@ i3pm diagnose {health|window <id>|validate|events}
 i3pm monitors {status|reassign|config}
 ```
 
+### Remote Project Environment Support (Feature 087)
+
+**Status**: ✅ IMPLEMENTED (2025-11-22)
+
+SSH-based remote project support enabling terminal applications to run on remote hosts while maintaining local workflow integration.
+
+**Quick Start**:
+```bash
+# Create a remote project
+i3pm project create-remote hetzner-dev \
+  --local-dir ~/projects/hetzner-dev \
+  --remote-host hetzner-sway.tailnet \
+  --remote-user vpittamp \
+  --remote-dir /home/vpittamp/dev/my-app
+
+# Switch to remote project (same as local)
+i3pm project switch hetzner-dev
+
+# Launch terminal apps - automatically run on remote host via SSH
+# Win+T → Terminal on remote host in /home/vpittamp/dev/my-app
+# Win+G → Lazygit on remote host
+# Win+Y → Yazi file manager on remote host
+```
+
+**Features**:
+- **Automatic SSH Wrapping**: Terminal apps automatically execute on remote host via SSH
+- **Project Context Preservation**: Same keybindings, same workflow, remote execution
+- **Tailscale Support**: Works seamlessly with Tailscale hostnames (e.g., `hetzner-sway.tailnet`)
+- **Custom Ports**: Support for non-standard SSH ports
+- **Terminal-Only**: Only terminal-based apps supported (terminal, lazygit, yazi, btop, htop, k9s, sesh)
+- **GUI Rejection**: Clear error messages when attempting to launch GUI apps in remote projects
+
+**CLI Commands**:
+```bash
+# Create new remote project
+i3pm project create-remote <name> \
+  --local-dir <path>         # Local project directory (required)
+  --remote-host <host>       # SSH hostname or Tailscale FQDN (required)
+  --remote-user <user>       # SSH username (required)
+  --remote-dir <path>        # Remote working directory, must be absolute (required)
+  --port <number>            # SSH port (default: 22)
+  --display-name <name>      # Display name (default: project name)
+  --icon <emoji>             # Project icon (default: 🌐)
+
+# Convert existing local project to remote (NOT YET IMPLEMENTED)
+# i3pm project set-remote <name> --host <host> --user <user> --working-dir <path> [--port <number>]
+
+# Remove remote configuration (NOT YET IMPLEMENTED)
+# i3pm project unset-remote <name>
+
+# Test SSH connectivity (NOT YET IMPLEMENTED)
+# i3pm project test-remote <name>
+```
+
+**How It Works**:
+1. Remote projects store SSH connection parameters in `~/.config/i3/projects/<name>.json`
+2. When you launch a terminal app in a remote project context, the launcher wrapper detects:
+   - Remote project is active (`remote.enabled: true`)
+   - Application is terminal-based (`terminal: true` in registry)
+3. The launcher extracts the terminal command after `-e` flag
+4. Wraps it with SSH: `ssh -t user@host 'cd /remote/path && <command>'`
+5. Terminal window appears locally, but executes on remote host
+
+**Example SSH-Wrapped Command**:
+```bash
+# Original local command:
+ghostty -e sesh connect my-project
+
+# Wrapped for remote execution:
+ghostty -e bash -c "ssh -t vpittamp@hetzner-sway.tailnet 'cd /home/vpittamp/dev/my-app && sesh connect my-project'"
+```
+
+**Requirements**:
+- SSH key-based authentication configured between local and remote hosts
+- Identical terminal applications installed on remote host (ghostty, lazygit, yazi, etc.)
+- Tailscale (optional, for Tailscale hostname support)
+- `sesh` session manager on remote host (for terminal session persistence)
+
+**Limitations**:
+- **Terminal-Only**: Cannot launch GUI applications (VS Code, Firefox, PWAs) in remote projects
+- **SSH Connection Time**: Terminal launches take 1-3s longer (SSH connection establishment)
+- **Manual Setup**: User must configure SSH keys and install required apps on remote host
+- **No Auto-Reconnect**: SSH connection drops require manual re-launch
+
+**Workarounds for GUI Apps**:
+- Use VS Code Remote-SSH extension for GUI editor access
+- Run GUI apps locally in global mode (`i3pm project switch --clear`)
+- Use VNC/RDP for full remote desktop access (see WayVNC setup)
+
+**Troubleshooting**:
+```bash
+# Check project configuration
+cat ~/.config/i3/projects/<name>.json | jq .remote
+
+# Test SSH connection manually
+ssh -t user@host 'cd /remote/path && pwd'
+
+# View launcher logs for SSH command construction
+tail -f ~/.local/state/app-launcher.log | grep "Feature 087"
+
+# Verify terminal app registry has "terminal": true flag
+jq '.applications[] | select(.name=="terminal")' ~/.config/i3/application-registry.json
+```
+
+**Technical Details**:
+- **Data Models**: Python `RemoteConfig` Pydantic model, TypeScript Zod schema
+- **SSH Wrapping**: Bash script in `scripts/app-launcher-wrapper.sh` (lines 434-503)
+- **Validation**: Absolute path for remote working directory, port range 1-65535
+- **Security**: Uses single-quote escaping to prevent shell injection
+
+**Docs**: `/etc/nixos/specs/087-ssh-projects/quickstart.md`
+
 ### Declarative Workspace-to-Monitor Assignment (Feature 001)
 
 Assign workspaces to monitor roles (primary/secondary/tertiary) declaratively.
@@ -767,8 +879,11 @@ gh auth status               # Auto-uses 1Password token
 - Python 3.11+ (backend data script), Yuck/GTK (Eww widget UI), Nix (module configuration) (085-sway-monitoring-widget)
 - Nix (home-manager modules), Bash (toggle scripts) + Eww 0.4+ (GTK3), Sway 1.8+, i3ipc (for swaymsg) (086-monitor-focus-enhancement)
 - N/A (config files only) (086-monitor-focus-enhancement)
+- Python 3.11+ (daemon/models), Bash 5.0+ (launcher), TypeScript/Deno 1.40+ (CLI) (087-ssh-projects)
+- JSON files in `~/.config/i3/projects/*.json` (Project definitions with optional remote field) (087-ssh-projects)
 
 ## Recent Changes
+- 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)
 - 085-sway-monitoring-widget: Real-time monitoring panel with hierarchical window/workspace/project view, event-driven streaming via deflisten (<100ms latency), automatic reconnection, i3ipc.aio subscriptions, Catppuccin Mocha styling
 - 084-monitor-management-solution: M1 hybrid multi-monitor profiles (local-only/local+1vnc/local+2vnc), WayVNC integration, keyboard cycling (Mod+Shift+M)
 - 083-multi-monitor-window-management: Event-driven monitor profile system with Eww top bar integration, profile watcher daemon, <100ms UI updates

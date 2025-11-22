@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "i3pm project set-remote",
+  "description": "Add or update remote configuration on existing project",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "i3pm project set-remote <name>"
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "description": "Existing project name"
+        }
+      },
+      "required": ["name"]
+    },
+    "flags": {
+      "type": "object",
+      "properties": {
+        "--host": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SSH hostname (Tailscale FQDN or IP)"
+        },
+        "--user": {
+          "type": "string",
+          "minLength": 1,
+          "description": "SSH username"
+        },
+        "--working-dir": {
+          "type": "string",
+          "pattern": "^/.*",
+          "description": "Remote working directory (absolute path)"
+        },
+        "--port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 22,
+          "description": "SSH port (default: 22)"
+        }
+      },
+      "required": ["--host", "--user", "--working-dir"]
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "directory": { "type": "string" },
+            "display_name": { "type": "string" },
+            "icon": { "type": "string" },
+            "scoped_classes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "remote": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "const": true },
+                "host": { "type": "string" },
+                "user": { "type": "string" },
+                "working_dir": { "type": "string" },
+                "port": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "description": "Success message"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "command": "i3pm project set-remote my-app --host hetzner-sway.tailnet --user vpittamp --working-dir /home/vpittamp/dev/my-app",
+      "response": {
+        "success": true,
+        "project": {
+          "name": "my-app",
+          "directory": "/home/vpittamp/projects/my-app",
+          "display_name": "My Application",
+          "icon": "📦",
+          "scoped_classes": ["Ghostty", "Code"],
+          "remote": {
+            "enabled": true,
+            "host": "hetzner-sway.tailnet",
+            "user": "vpittamp",
+            "working_dir": "/home/vpittamp/dev/my-app",
+            "port": 22
+          }
+        },
+        "message": "Remote configuration added to project 'my-app'"
+      }
+    }
+  ]
+}
