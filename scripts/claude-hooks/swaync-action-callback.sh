@@ -17,28 +17,38 @@ set -euo pipefail
 # Fix PATH for systemd service execution (SwayNC may have limited PATH)
 export PATH="/run/current-system/sw/bin:/etc/profiles/per-user/$USER/bin:$PATH"
 
-# Parse notification metadata from SWAYNC_BODY
-# The stop-notification.sh script embeds metadata in the body as:
-# WINDOW_ID:PROJECT_NAME:TMUX_SESSION:TMUX_WINDOW
+# Feature 090: Support two notification callback methods
+# Method 1: Environment variables (preferred - set by stop-notification.sh)
+# Method 2: Metadata files (fallback - for manual testing)
 
-# Extract metadata file path from notification ID
-STATE_FILE="/tmp/claude-code-notification-${SWAYNC_ID}.meta"
+if [ -n "${CALLBACK_WINDOW_ID:-}" ]; then
+    # Method 1: stop-notification.sh passed metadata via environment variables
+    WINDOW_ID="${CALLBACK_WINDOW_ID}"
+    PROJECT_NAME="${CALLBACK_PROJECT_NAME:-}"
+    TMUX_SESSION="${CALLBACK_TMUX_SESSION:-}"
+    TMUX_WINDOW="${CALLBACK_TMUX_WINDOW:-}"
+elif [ -n "${SWAYNC_ID:-}" ]; then
+    # Method 2: Metadata file from manual testing or SwayNC script system
+    STATE_FILE="/tmp/claude-code-notification-${SWAYNC_ID}.meta"
 
-if [ ! -f "$STATE_FILE" ]; then
-    # No metadata file - try to extract from notification body
-    # This is a fallback in case the state file was cleaned up
-    notify-send -u low "Claude Code" "Window context lost - please return to terminal manually"
-    exit 0
+    if [ ! -f "$STATE_FILE" ]; then
+        notify-send -u low "Claude Code" "Window context lost - please return to terminal manually"
+        exit 0
+    fi
+
+    # Read metadata from file
+    WINDOW_ID=$(grep "^WINDOW_ID=" "$STATE_FILE" | cut -d= -f2)
+    PROJECT_NAME=$(grep "^PROJECT_NAME=" "$STATE_FILE" | cut -d= -f2)
+    TMUX_SESSION=$(grep "^TMUX_SESSION=" "$STATE_FILE" | cut -d= -f2)
+    TMUX_WINDOW=$(grep "^TMUX_WINDOW=" "$STATE_FILE" | cut -d= -f2)
+
+    # Clean up state file
+    rm -f "$STATE_FILE"
+else
+    # No metadata available
+    notify-send -u critical "Claude Code" "No window context available - callback failed"
+    exit 1
 fi
-
-# Read metadata
-WINDOW_ID=$(grep "^WINDOW_ID=" "$STATE_FILE" | cut -d= -f2)
-PROJECT_NAME=$(grep "^PROJECT_NAME=" "$STATE_FILE" | cut -d= -f2)
-TMUX_SESSION=$(grep "^TMUX_SESSION=" "$STATE_FILE" | cut -d= -f2)
-TMUX_WINDOW=$(grep "^TMUX_WINDOW=" "$STATE_FILE" | cut -d= -f2)
-
-# Clean up state file
-rm -f "$STATE_FILE"
 
 # Check if window still exists
 WINDOW_EXISTS=$(swaymsg -t get_tree | jq -r --arg id "$WINDOW_ID" '
