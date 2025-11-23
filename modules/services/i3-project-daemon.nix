@@ -36,7 +36,7 @@ let
   daemonSrc = ../../home-modules/desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon";
+    name = "i3-project-event-daemon-fixed";
     version = "1.11.2";  # Fix: Removed Feature 029 Event Correlator stale references (force rebuild)
     src = daemonSrc;
 
