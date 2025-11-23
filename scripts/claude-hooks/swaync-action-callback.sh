@@ -30,24 +30,24 @@ fi
 # The i3pm daemon will handle ALL window restoration and focusing
 if [ -n "$PROJECT_NAME" ]; then
     if systemctl --user is-active i3-project-event-listener >/dev/null 2>&1; then
-        # Switch project - i3pm daemon will handle window restoration asynchronously
+        # Feature 091 US3 T033: Log project switch timing
+        SWITCH_START=$(date +%s%N)
+
         i3pm project switch "$PROJECT_NAME" 2>/dev/null || true
 
-        # Wait for i3pm daemon to complete window restoration
-        # The daemon performs these operations asynchronously:
-        # 1. Hide windows from old project (move to scratchpad)
-        # 2. Restore windows for new project (from scratchpad to their workspaces)
-        # 3. Unfloat and reposition windows
-        # 4. Focus the first restored window or primary workspace
-        #
-        # We DO NOT manually focus the window because that would bring it to
-        # the CURRENT workspace instead of its original workspace.
-        # The daemon will handle focusing automatically.
-        #
-        # NOTE: Current project switching takes ~5.3s (benchmarked 2025-11-22).
-        # This is a known performance issue tracked in a separate optimization feature.
-        # We wait 6s to ensure the switch completes reliably.
-        sleep 6
+        # Feature 091: Wait for project switch to complete
+        # With Feature 091 optimizations, project switching completes in <200ms.
+        # We wait 1 second to ensure the switch is fully complete before focusing.
+        # Previous requirement: Would have been 6s for 5.3s baseline performance.
+        # Current requirement: 1s is sufficient with <200ms optimized switching.
+        sleep 1
+
+        # Feature 091 US3 T033: Calculate total callback time
+        SWITCH_END=$(date +%s%N)
+        SWITCH_DURATION_MS=$(( (SWITCH_END - SWITCH_START) / 1000000 ))
+
+        # Log to systemd journal (visible with: journalctl --user -t claude-callback)
+        logger -t claude-callback "[Feature 091] Notification callback completed in ${SWITCH_DURATION_MS}ms (project: $PROJECT_NAME)"
     fi
 fi
 

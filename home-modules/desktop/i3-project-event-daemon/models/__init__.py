@@ -14,13 +14,25 @@ Feature 087: Remote Project Environment Support
 - Added RemoteConfig model for SSH-based remote projects
 - Extended Project model with optional remote configuration
 
-Version: 1.2.0 - Added Feature 087 models
+Feature 091: Optimize i3pm Project Switching Performance
+- Added WindowCommand and CommandBatch models for parallel command execution
+- Added PerformanceMetrics models for tracking switch performance
+
+Version: 1.3.0 - Added Feature 091 models
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
 from .layout import WindowSnapshot, Layout
 from .project import Project, ActiveProjectState
 from .remote_config import RemoteConfig
+
+# Feature 091: Performance optimization models
+from .window_command import WindowCommand, CommandBatch, CommandType
+from .performance_metrics import (
+    OperationMetrics,
+    ProjectSwitchMetrics,
+    PerformanceSnapshot,
+)
 
 # Feature 001: Declarative workspace-to-monitor assignment
 from .monitor_config import (
@@ -103,6 +115,13 @@ __all__ = [
     "ActiveProjectState",
     # Feature 087: Remote Project Environment Support
     "RemoteConfig",
+    # Feature 091: Performance optimization models
+    "WindowCommand",
+    "CommandBatch",
+    "CommandType",
+    "OperationMetrics",
+    "ProjectSwitchMetrics",
+    "PerformanceSnapshot",
     # Feature 058: Workspace Mode Visual Feedback
     "PendingWorkspaceState",
     # Feature 078: Enhanced Project Selection
