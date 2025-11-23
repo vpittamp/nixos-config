@@ -35,12 +35,12 @@ let
   # Daemon package (Feature 061: Unified mark format)
   daemonSrc = builtins.path {
     path = ../../home-modules/desktop/i3-project-event-daemon;
-    name = "i3pm-daemon-src-v7-feature-091-parallel";  # Force rebuild with Feature 091 parallel execution
+    name = "i3pm-daemon-src-v7-feature-091-no-correlator-${builtins.substring 0 11 (builtins.hashString "sha256" (builtins.readDir ../../home-modules/desktop/i3-project-event-daemon))}";  # Force rebuild after removing Event Correlator
   };
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon";
-    version = "1.11.0";  # Feature 091: Parallel execution with tree caching and performance tracking
+    version = "1.11.1";  # Fix: Removed Feature 029 Event Correlator stale references
     src = daemonSrc;
 
     installPhase = ''
