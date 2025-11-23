@@ -182,10 +182,22 @@ class CommandBatchService:
     async def execute_batch(
         self, batch: CommandBatch
     ) -> tuple[CommandResult, OperationMetrics]:
-        """Execute a command batch as single Sway IPC call.
+        """Execute a command batch as sequential separate IPC calls.
 
-        Combines multiple commands targeting the same window into a single IPC message
-        using semicolon chaining. This reduces round-trip latency for sequential operations.
+        IMPORTANT: Changed from semicolon-batched commands to sequential separate calls
+        to fix floating window restoration issue (see FLOATING_WINDOW_FIX_RESEARCH.md).
+
+        When restoring windows from scratchpad, semicolon-batched commands like:
+            [con_id=X] move workspace 1; floating disable
+
+        Don't work reliably because:
+        1. Scratchpad windows are always floating (Sway enforces this)
+        2. The 'move workspace' exits scratchpad but window retains floating state
+        3. The 'floating disable' executes too quickly (before window settles)
+        4. Result: Floating state change is ignored
+
+        Solution: Execute each command as a separate IPC call with proper sequencing.
+        Performance impact: +10-20ms per window (still meets <200ms target across all windows).
 
         Args:
             batch: CommandBatch instance with commands to execute
@@ -194,48 +206,57 @@ class CommandBatchService:
             Tuple of (result, operation metrics)
 
         Example:
-            >>> # Batch: move + floating + resize in single IPC call
+            >>> # Sequential execution: move, then floating, then resize, then position
             >>> batch = CommandBatch.from_window_state(
             ...     window_id=123,
             ...     workspace_num=3,
-            ...     is_floating=True,
-            ...     geometry={"x": 100, "y": 200, "width": 800, "height": 600}
+            ...     is_floating=False,  # Will execute 'floating disable' separately
+            ...     geometry=None
             ... )
             >>> result, metrics = await service.execute_batch(batch)
         """
-        if not batch.can_batch or len(batch.commands) == 0:
-            raise ValueError("Cannot batch these commands")
+        if len(batch.commands) == 0:
+            raise ValueError("Cannot execute empty command batch")
 
         start_time = datetime.now()
         start_perf = asyncio.get_event_loop().time()
 
-        batched_command = batch.to_batched_command()
+        # Execute commands sequentially (separate IPC calls)
+        command_results: list[CommandResult] = []
+        all_success = True
+        combined_error = None
 
-        try:
-            await self.conn.command(batched_command)
-            success = True
-            error = None
-        except Exception as e:
-            success = False
-            error = str(e)
-            logger.error(
-                f"[Feature 091] Batch execution failed: {batched_command[:100]}... Error: {error}"
-            )
+        for cmd in batch.commands:
+            cmd_result = await self._execute_single_command(cmd)
+            command_results.append(cmd_result)
+
+            if not cmd_result.success:
+                all_success = False
+                if combined_error is None:
+                    combined_error = cmd_result.error
+                else:
+                    combined_error += f"; {cmd_result.error}"
+
+                logger.warning(
+                    f"[Feature 091] Command failed in sequence: {cmd.to_sway_command()} - {cmd_result.error}"
+                )
 
         end_perf = asyncio.get_event_loop().time()
         end_time = datetime.now()
         duration_ms = (end_perf - start_perf) * 1000
 
+        # Create summary result for the entire batch
+        command_summary = f"[Sequential: {len(batch.commands)} commands for window {batch.window_id}]"
         result = CommandResult(
-            success=success,
-            command=batched_command,
+            success=all_success,
+            command=command_summary,
             window_id=batch.window_id,
-            error=error,
+            error=combined_error,
             duration_ms=duration_ms,
         )
 
         metrics = OperationMetrics(
-            operation_type="batch",
+            operation_type="batch_sequential",
             start_time=start_time,
             end_time=end_time,
             duration_ms=duration_ms,
@@ -244,6 +265,11 @@ class CommandBatchService:
             parallel_batches=1,
             cache_hits=0,
             cache_misses=0,
+        )
+
+        logger.debug(
+            f"[Feature 091] Sequential batch complete: {len(batch.commands)} commands "
+            f"for window {batch.window_id} in {duration_ms:.1f}ms (success={all_success})"
         )
 
         return result, metrics
