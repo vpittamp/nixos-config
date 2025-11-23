@@ -185,7 +185,7 @@ let
     * {
       all: unset;
       font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", "Ubuntu Nerd Font", sans-serif;
-      font-size: 14px;
+      font-size: 11px;
       transition: 200ms ease;
     }
 
@@ -208,11 +208,11 @@ let
     .notification-content {
       background-color: rgba(30, 30, 46, 0.90);
       color: ${mocha.text};
-      padding: 12px;
-      margin: 8px;
-      border-radius: 12px;
-      border: 2px solid rgba(137, 180, 250, 0.3);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      padding: 6px 8px;
+      margin: 4px;
+      border-radius: 8px;
+      border: 1px solid rgba(137, 180, 250, 0.3);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
       transition: all 200ms ease;
     }
 
@@ -226,10 +226,10 @@ let
       background-color: ${mocha.red};
       color: ${mocha.base};
       border-radius: 50%;
-      padding: 4px;
-      margin: 4px;
-      min-width: 24px;
-      min-height: 24px;
+      padding: 2px;
+      margin: 2px;
+      min-width: 18px;
+      min-height: 18px;
       transition: all 200ms ease;
     }
 
@@ -251,22 +251,22 @@ let
 
     /* Notification Text Elements */
     .summary {
-      font-size: 16px;
+      font-size: 12px;
       font-weight: bold;
       color: ${mocha.text};
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
 
     .time {
-      font-size: 11px;
+      font-size: 9px;
       color: ${mocha.subtext0};
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     .body {
-      font-size: 13px;
+      font-size: 11px;
       color: ${mocha.subtext0};
-      margin-top: 6px;
+      margin-top: 3px;
     }
 
     /* Notification Image Styling */
@@ -281,9 +281,10 @@ let
       background-color: rgba(137, 180, 250, 0.15);
       color: ${mocha.blue};
       border: 1px solid ${mocha.blue};
-      border-radius: 8px;
-      padding: 8px 16px;
-      margin: 4px;
+      border-radius: 6px;
+      padding: 4px 10px;
+      margin: 2px;
+      font-size: 10px;
       font-weight: 600;
       transition: all 200ms ease;
     }
@@ -302,14 +303,14 @@ let
       transform: translateY(0);
     }
 
-    /* Control Center Panel */
+    /* Control Center Panel - Feature 090: Match eww monitoring panel styling */
     .control-center {
-      background-color: rgba(30, 30, 46, 0.85);
-      border: 2px solid rgba(137, 180, 250, 0.3);
-      border-radius: 16px;
-      padding: 12px;
-      margin: 12px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      background-color: rgba(30, 30, 46, 0.50);
+      border: 1px solid rgba(137, 180, 250, 0.2);
+      border-radius: 12px;
+      padding: 8px;
+      margin: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     }
 
     .control-center-list {
@@ -606,14 +607,12 @@ in {
     # - Delete/Backspace: Close notification
     keyboard-shortcuts = true;  # Enable keyboard shortcuts (default behavior)
 
-    # Feature 090: Scripts - Execute commands when notification actions are triggered
-    scripts = {
-      "claude-code-callback" = {
-        exec = "${pkgs.bash}/bin/bash /etc/nixos/scripts/claude-hooks/swaync-action-callback.sh";
-        run-on = "action";
-        summary = "Claude Code Ready";  # Match Claude Code notifications
-      };
-    };
+    # Feature 090: Notification Action Callbacks
+    # NOTE: We do NOT use SwayNC's built-in script system (run-on: "action")
+    # because it doesn't reliably pass notification metadata to scripts.
+    # Instead, stop-notification.sh uses notify-send -w to wait for action
+    # responses and executes the callback directly with environment variables.
+    # This is simpler and more reliable.
 
     # Widget layout for control center
     # Feature 090: Notification-focused layout

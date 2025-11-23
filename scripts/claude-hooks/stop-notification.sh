@@ -7,11 +7,12 @@
 # terminal window and switches to the correct project/tmux context.
 #
 # Architecture:
-# 1. This script sends notification with action button
-# 2. SwayNC stores the notification
-# 3. User clicks button or presses Enter
-# 4. SwayNC triggers swaync-action-callback.sh with SWAYNC_* env vars
-# 5. Callback script reads metadata file and focuses window
+# 1. This script sends notification with action button using notify-send -w
+# 2. notify-send blocks until user clicks button or dismisses notification
+# 3. If user clicks "Return to Window" button, we get action ID back
+# 4. Script then directly executes the callback logic (focus window, switch project)
+#
+# This approach is simpler and more reliable than using SwayNC's script system.
 
 set -euo pipefail
 
@@ -42,30 +43,28 @@ if [ -n "$TMUX_SESSION" ] && [ -n "$TMUX_WINDOW" ]; then
     MESSAGE="${MESSAGE}\n\nSource: ${TMUX_SESSION}:${TMUX_WINDOW}"
 fi
 
-# Send notification with action button
-# The notification ID will be captured via SwayNC's response
-# We'll use a predictable pattern for the state file
-NOTIFICATION_OUTPUT=$(notify-send \
+# Send notification with action button and wait for response
+# The -w flag makes notify-send wait until user interacts with notification
+# It will return the action ID if an action was clicked, or empty string if dismissed
+RESPONSE=$(notify-send \
     -i "robot" \
     -u normal \
-    -p \
+    -w \
     -A "focus=🖥️  Return to Window" \
     "Claude Code Ready" \
-    "$MESSAGE" 2>&1)
+    "$MESSAGE" 2>&1 || echo "")
 
-# Extract notification ID from output (notify-send -p prints the ID)
-NOTIFICATION_ID="$NOTIFICATION_OUTPUT"
+# If user clicked the "Return to Window" button, execute callback
+if [ "$RESPONSE" = "focus" ]; then
+    # Call the callback script directly, passing metadata via environment variables
+    # This bypasses SwayNC's script system entirely
+    export CALLBACK_WINDOW_ID="$WINDOW_ID"
+    export CALLBACK_PROJECT_NAME="$PROJECT_NAME"
+    export CALLBACK_TMUX_SESSION="$TMUX_SESSION"
+    export CALLBACK_TMUX_WINDOW="$TMUX_WINDOW"
 
-# Store metadata in a temporary file that the callback script will read
-STATE_FILE="/tmp/claude-code-notification-${NOTIFICATION_ID}.meta"
-cat > "$STATE_FILE" << METADATA
-WINDOW_ID=$WINDOW_ID
-PROJECT_NAME=$PROJECT_NAME
-TMUX_SESSION=$TMUX_SESSION
-TMUX_WINDOW=$TMUX_WINDOW
-METADATA
-
-# Set a timeout to clean up the state file if notification is never acted upon
-(sleep 300 && rm -f "$STATE_FILE" 2>/dev/null) &
+    # Execute callback script
+    /etc/nixos/scripts/claude-hooks/swaync-action-callback.sh
+fi
 
 exit 0
