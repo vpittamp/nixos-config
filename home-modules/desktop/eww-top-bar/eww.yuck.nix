@@ -300,7 +300,10 @@ in
          ;; T052: Project icon from metadata
          (label :class "icon project-icon"
                 :text {active_project.icon ?: ""})
+         ;; Truncate long project names to prevent top bar overflow
          (label :class "value project-value"
+                :limit-width 30
+                :truncate true
                 :text {active_project.formatted_label ?: "Global"}))))
 
 ;; Build health widget (shows generations + status)

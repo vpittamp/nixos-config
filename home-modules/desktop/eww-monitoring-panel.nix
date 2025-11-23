@@ -41,6 +41,37 @@ let
     mauve = "#cba6f7";     # Border accent
   };
 
+  # Clipboard sync script - fully parameterized with nix store paths
+  clipboardSyncScript = pkgs.writeShellScript "clipboard-sync" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    tmp=$(${pkgs.coreutils}/bin/mktemp -t clipboard-sync-XXXXXX)
+    cleanup() {
+      ${pkgs.coreutils}/bin/rm -f "$tmp"
+    }
+    trap cleanup EXIT
+
+    ${pkgs.coreutils}/bin/cat >"$tmp"
+
+    # Exit cleanly on empty input
+    if [[ ! -s "$tmp" ]]; then
+      exit 0
+    fi
+
+    # Copy to Wayland clipboard
+    if [[ -n "''${WAYLAND_DISPLAY:-}" ]]; then
+      ${pkgs.wl-clipboard}/bin/wl-copy <"$tmp"
+      ${pkgs.wl-clipboard}/bin/wl-copy --primary <"$tmp"
+    fi
+
+    # Copy to X11 clipboard
+    if command -v ${pkgs.xclip}/bin/xclip >/dev/null 2>&1; then
+      ${pkgs.xclip}/bin/xclip -selection clipboard <"$tmp"
+      ${pkgs.xclip}/bin/xclip -selection primary <"$tmp"
+    fi
+  '';
+
   # Python with required packages for both modes (one-shot and streaming)
   # pyxdg required for XDG icon theme lookup (resolves icon names like "firefox" to paths)
   pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ]);
@@ -65,7 +96,6 @@ let
 
   # Toggle script for panel visibility
   # Use eww active-windows to check if panel is actually open (not just defined)
-  # Closes SwayNC notification center if open (mutual exclusivity)
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
     # Check if panel is in active windows (actually open, not just defined)
@@ -73,9 +103,6 @@ let
       # Panel is open - close it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
     else
-      # Close SwayNC notification center if it's open (mutual exclusivity)
-      # Always try to close it - skip-wait flag makes it safe even if not open
-      ${pkgs.swaynotificationcenter}/bin/swaync-client -cp -sw >/dev/null 2>&1
       # Panel is closed - open it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
     fi
@@ -126,14 +153,9 @@ let
     ${pkgs.sway}/bin/swaymsg 'focus prev'
   '';
 
-  # SwayNC toggle wrapper with mutual exclusivity
-  # Closes monitoring panel if it's open before opening notification center
+  # SwayNC toggle wrapper
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
-    # Close monitoring panel if it's open (mutual exclusivity)
-    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
-    fi
     # Toggle SwayNC notification center
     ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
   '';
@@ -345,6 +367,14 @@ in
       ;; Updated by j/k or up/down in monitoring mode
       (defvar selected_index -1)
 
+      ;; Hover tooltip state - Window ID being hovered (0 = none)
+      ;; Updated by onhover/onhoverlost events on window items
+      (defvar hover_window_id 0)
+
+      ;; Copy state - Window ID that was just copied (0 = none)
+      ;; Set when copy button clicked, auto-resets after 2 seconds
+      (defvar copied_window_id 0)
+
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
 
@@ -445,28 +475,31 @@ in
               :visible {current_view == "windows"}))))
 
       ;; Panel body with multi-view container
+      ;; Uses overlay to ensure only one view is visible at a time (no stacking)
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          ;; Stack layout - only show one view at a time, each taking full height
-          (box
+          (overlay
             :vexpand true
-            :visible {current_view == "windows"}
-            (windows-view))
-          (box
-            :vexpand true
-            :visible {current_view == "projects"}
-            (projects-view))
-          (box
-            :vexpand true
-            :visible {current_view == "apps"}
-            (apps-view))
-          (box
-            :vexpand true
-            :visible {current_view == "health"}
-            (health-view))))
+            ;; Only one of these will be visible at a time
+            (box
+              :vexpand true
+              :visible {current_view == "windows"}
+              (windows-view))
+            (box
+              :vexpand true
+              :visible {current_view == "projects"}
+              (projects-view))
+            (box
+              :vexpand true
+              :visible {current_view == "apps"}
+              (apps-view))
+            (box
+              :vexpand true
+              :visible {current_view == "health"}
+              (health-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -531,61 +564,116 @@ in
             (for window in {project.windows ?: []}
               (window-widget :window window)))))
 
-      ;; Compact window widget for sidebar - Single line with badges
+      ;; Compact window widget for sidebar - Single line with badges + JSON hover tooltip
       ;; Click to show detail view (stores window ID)
+      ;; Hover to show syntax-highlighted JSON with copy button
+      ;; Fixed: Entire widget wrapped in eventbox so tooltip stays open when hovering over JSON
       (defwidget window-widget [window]
         (eventbox
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
-          :cursor "pointer"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=0"
           (box
-            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
-            :orientation "h"
+            :class "window-container"
+            :orientation "v"
             :space-evenly false
-            ; App icon (image if available, fallback emoji otherwise)
-            (box
-              :class "window-icon-container"
-              :valign "center"
-              (image :class "window-icon-image"
-                     :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
-                     :image-width 20
-                     :image-height 20
-                     :visible {strlength(window.icon_path) > 0})
-              (label
-                :class "window-icon-fallback"
-                :text "''${window.floating ? '⚓' : '󱂬'}"
-                :visible {strlength(window.icon_path) == 0}))
-            ; App name and truncated title
-            (box
-              :class "window-info"
-              :orientation "v"
-              :space-evenly false
-              :hexpand true
-              (label
-                :class "window-app-name"
-                :halign "start"
-                :text "''${window.display_name}"
-                :limit-width 25
-                :truncate true)
-              (label
-                :class "window-title"
-                :halign "start"
-                :text "''${window.title ?: '#' + window.id}"
-                :limit-width 35
-                :truncate true))
-            ; Compact badges for states
-            (box
-              :class "window-badges"
-              :orientation "h"
-              :space-evenly false
-              :hexpand true
-              :halign "end"
-              (label
-                :class "badge badge-workspace"
-                :text "WS''${window.workspace_number}")
-              (label
-                :class "badge badge-pwa"
-                :text "PWA"
-                :visible "''${window.is_pwa ?: false}")))))
+            ;; Main window item (clickable)
+            (eventbox
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
+              :cursor "pointer"
+              (box
+                :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+                :orientation "h"
+                :space-evenly false
+                ; App icon (image if available, fallback emoji otherwise)
+                (box
+                  :class "window-icon-container"
+                  :valign "center"
+                  (image :class "window-icon-image"
+                         :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
+                         :image-width 20
+                         :image-height 20
+                         :visible {strlength(window.icon_path) > 0})
+                  (label
+                    :class "window-icon-fallback"
+                    :text "''${window.floating ? '⚓' : '󱂬'}"
+                    :visible {strlength(window.icon_path) == 0}))
+                ; App name and truncated title
+                (box
+                  :class "window-info"
+                  :orientation "v"
+                  :space-evenly false
+                  :hexpand true
+                  (label
+                    :class "window-app-name"
+                    :halign "start"
+                    :text "''${window.display_name}"
+                    :limit-width 25
+                    :truncate true)
+                  (label
+                    :class "window-title"
+                    :halign "start"
+                    :text "''${window.title ?: '#' + window.id}"
+                    :limit-width 35
+                    :truncate true))
+                ; Compact badges for states
+                (box
+                  :class "window-badges"
+                  :orientation "h"
+                  :space-evenly false
+                  :hexpand true
+                  :halign "end"
+                  (label
+                    :class "badge badge-workspace"
+                    :text "WS''${window.workspace_number}")
+                  (label
+                    :class "badge badge-pwa"
+                    :text "PWA"
+                    :visible "''${window.is_pwa ?: false}"))))
+            ;; JSON hover tooltip (slides down on hover)
+            (revealer
+              :reveal {hover_window_id == window.id}
+              :transition "slidedown"
+              :duration "150ms"
+              (box
+                :class "window-json-tooltip"
+                :orientation "v"
+                :space-evenly false
+                ;; Header with title and copy button
+                (box
+                  :class "json-tooltip-header"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "json-tooltip-title"
+                    :halign "start"
+                    :hexpand true
+                    :text "Window JSON (ID: ''${window.id})")
+                  (eventbox
+                    :cursor "pointer"
+                    :onclick "${pkgs.writeShellScript "copy-json" ''
+                      EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+                      # Copy JSON to clipboard
+                      ${pkgs.coreutils}/bin/echo -n "$1" | ${pkgs.coreutils}/bin/base64 -d | ${pkgs.wl-clipboard}/bin/wl-copy
+                      # Show visual feedback by setting copied state
+                      $EWW_CMD update copied_window_id=$2
+                      # Auto-reset after 2 seconds
+                      (sleep 2 && $EWW_CMD update copied_window_id=0) &
+                    ''} ''${window.json_base64} ''${window.id} &"
+                    :tooltip "Copy JSON to clipboard"
+                    (label
+                      :class "json-copy-btn''${copied_window_id == window.id ? ' copied' : ""}"
+                      :text "''${copied_window_id == window.id ? '󰄬' : '󰆏'}")))
+                ;; Scrollable JSON content with syntax highlighting
+                (scroll
+                  :vscroll true
+                  :hscroll false
+                  :vexpand false
+                  :height 200
+                  (label
+                    :class "json-content"
+                    :halign "start"
+                    :markup "''${window.json_repr}"
+                    :wrap false)))))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
@@ -1226,6 +1314,72 @@ in
       .badge-workspace {
         color: ${mocha.blue};
         background-color: rgba(137, 180, 250, 0.15);
+      }
+
+      /* JSON Hover Tooltip */
+      .window-json-tooltip {
+        background-color: rgba(24, 24, 37, 0.98);
+        border: 2px solid ${mocha.blue};
+        border-radius: 8px;
+        padding: 0;
+        margin: 4px 0 8px 0;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(137, 180, 250, 0.3);
+      }
+
+      .json-tooltip-header {
+        background-color: rgba(137, 180, 250, 0.15);
+        border-bottom: 1px solid ${mocha.blue};
+        padding: 8px 12px;
+        border-radius: 6px 6px 0 0;
+      }
+
+      .json-tooltip-title {
+        font-size: 11px;
+        font-weight: bold;
+        color: ${mocha.blue};
+      }
+
+      .json-copy-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.blue};
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        min-width: 32px;
+      }
+
+      .json-copy-btn:hover {
+        background-color: rgba(137, 180, 250, 0.3);
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
+      }
+
+      .json-copy-btn:active {
+        background-color: rgba(137, 180, 250, 0.5);
+        box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+      }
+
+      /* Success state when JSON is copied */
+      .json-copy-btn.copied {
+        background-color: rgba(166, 227, 161, 0.3);  /* Green with transparency */
+        color: ${mocha.green};  /* #a6e3a1 */
+        border: 1px solid ${mocha.green};
+        box-shadow: 0 0 12px rgba(166, 227, 161, 0.5),
+                    inset 0 0 8px rgba(166, 227, 161, 0.2);
+        font-weight: bold;
+      }
+
+      .json-copy-btn.copied:hover {
+        background-color: rgba(166, 227, 161, 0.4);
+        box-shadow: 0 0 16px rgba(166, 227, 161, 0.6);
+      }
+
+      .json-content {
+        font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+        font-size: 10px;
+        padding: 10px 12px;
+        background-color: rgba(30, 30, 46, 0.4);
       }
 
       /* Error State (T042) */
