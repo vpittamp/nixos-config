@@ -365,6 +365,7 @@ async def filter_windows_by_project(
         for mark in window.marks:
             if mark.startswith("scratchpad:"):
                 # Feature 062: Scratchpad terminals are project-scoped
+                # Extract project from scratchpad:PROJECT mark for hide/show logic
                 mark_parts = mark.split(":")
                 window_project = mark_parts[1] if len(mark_parts) >= 2 else None
                 window_scope = "scoped"

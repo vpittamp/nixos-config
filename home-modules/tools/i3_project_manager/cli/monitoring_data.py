@@ -484,9 +484,11 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     # Resolve icon from app registry
     icon_path = resolve_icon(app_id, window_class)
 
-    # Derive scope from marks - check if any mark starts with "scoped:"
+    # Derive scope from marks - check if any mark starts with "scoped:" OR "scratchpad:"
+    # Feature 062: Scratchpad terminals are project-scoped (scoped not global)
     marks = window.get("marks", [])
-    scope = "scoped" if any(str(m).startswith("scoped:") for m in marks) else "global"
+    is_scoped_window = any(str(m).startswith("scoped:") or str(m).startswith("scratchpad:") for m in marks)
+    scope = "scoped" if is_scoped_window else "global"
 
     # PWA detection - workspaces 50+ are PWAs per CLAUDE.md specification
     # Note: workspace field may be string (including "scratchpad") or int from daemon

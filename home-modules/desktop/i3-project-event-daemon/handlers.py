@@ -827,7 +827,8 @@ async def on_window_new(
                     )
 
                     # Feature 076 T014-T015: Inject marks for app identification
-                    if mark_manager and window_env.app_name:
+                    # Feature 062: Skip mark injection for scratchpad terminals (managed by ScratchpadManager)
+                    if mark_manager and window_env.app_name and not is_scratchpad_terminal:
                         try:
                             mark_metadata = await mark_manager.inject_marks(
                                 window_id=window_id,
@@ -845,6 +846,11 @@ async def on_window_new(
                             logger.warning(
                                 f"Failed to inject marks for window {window_id} ({window_env.app_name}): {e}"
                             )
+                    elif is_scratchpad_terminal and mark_manager and window_env and window_env.app_name:
+                        logger.info(
+                            f"Skipping Feature 076 mark injection for scratchpad terminal {window_id} "
+                            f"(will be marked by scratchpad manager with 'scratchpad:{window_env.project_name}')"
+                        )
             except (PermissionError, FileNotFoundError):
                 logger.debug(f"Cannot read environment for PID {window_pid}, assuming global scope")
         else:
