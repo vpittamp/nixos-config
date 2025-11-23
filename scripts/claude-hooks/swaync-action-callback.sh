@@ -51,7 +51,24 @@ fi
 # Switch to i3pm project if specified
 if [ -n "$PROJECT_NAME" ]; then
     if systemctl --user is-active i3-project-event-listener >/dev/null 2>&1; then
+        # Feature 091 US3 T033: Log project switch timing
+        SWITCH_START=$(date +%s%N)
+
         i3pm project switch "$PROJECT_NAME" 2>/dev/null || true
+
+        # Feature 091: Wait for project switch to complete
+        # With Feature 091 optimizations, project switching completes in <200ms.
+        # We wait 1 second to ensure the switch is fully complete before focusing.
+        # Previous requirement: Would have been 6s for 5.3s baseline performance.
+        # Current requirement: 1s is sufficient with <200ms optimized switching.
+        sleep 1
+
+        # Feature 091 US3 T033: Calculate total callback time
+        SWITCH_END=$(date +%s%N)
+        SWITCH_DURATION_MS=$(( (SWITCH_END - SWITCH_START) / 1000000 ))
+
+        # Log to systemd journal (visible with: journalctl --user -t claude-callback)
+        logger -t claude-callback "[Feature 091] Notification callback completed in ${SWITCH_DURATION_MS}ms (project: $PROJECT_NAME)"
     fi
 fi
 

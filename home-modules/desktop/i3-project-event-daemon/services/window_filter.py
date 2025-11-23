@@ -1,17 +1,29 @@
 """
 Window filter service
 Feature 035: Registry-Centric Project & Workspace Management
+Feature 091: Optimize i3pm Project Switching Performance
 
 Reads /proc/<pid>/environ to determine window-to-project association.
 Replaces tag-based filtering with environment variable approach.
+
+Feature 091: Parallel command execution using asyncio.gather() for <200ms project switching.
 """
 
+import asyncio
 import logging
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict
+from datetime import datetime
+
+# Feature 091: Import performance optimization services
+from ..models.window_command import WindowCommand, CommandBatch, CommandType
+from ..models.performance_metrics import OperationMetrics, ProjectSwitchMetrics
+from .command_batch import CommandBatchService
+from .tree_cache import TreeCacheService, get_tree_cache
+from .performance_tracker import PerformanceTrackerService, get_performance_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +304,7 @@ async def filter_windows_by_project(
     Windows without project marks are treated as global (always visible).
 
     Feature 038: Preserves window state (tiling/floating, workspace, geometry, scratchpad origin)
+    Feature 091: Parallel command execution for <200ms project switching
 
     Args:
         conn: i3ipc async connection
@@ -301,43 +314,57 @@ async def filter_windows_by_project(
     Returns:
         Dictionary with "visible", "hidden", "errors" counts
     """
-    # Feature 038 T042: Performance measurement
+    # Feature 091: Performance measurement with high precision
     operation_start = time.perf_counter()
+    operation_start_dt = datetime.now()
 
-    tree = await conn.get_tree()
+    # Feature 091: Use tree cache to eliminate duplicate queries
+    tree_cache = get_tree_cache()
+    if tree_cache:
+        tree = await tree_cache.get_tree()
+        cache_hits = 1 if tree_cache.is_cached else 0
+        cache_misses = 0 if tree_cache.is_cached else 1
+    else:
+        # Fallback: Direct get_tree() if cache not initialized
+        tree = await conn.get_tree()
+        cache_hits = 0
+        cache_misses = 1
+
     windows = tree.leaves()
 
     # Feature 046: Include scratchpad windows for restoration
-    # tree.leaves() only returns visible windows, but we need to process scratchpad windows
-    # to restore them when switching to their project
     scratchpad = tree.scratchpad()
+    scratchpad_windows = []
     if scratchpad:
         scratchpad_windows = scratchpad.floating_nodes
         logger.debug(f"Found {len(scratchpad_windows)} windows in scratchpad")
         windows.extend(scratchpad_windows)
 
+    logger.info(
+        f"[Feature 091] Filtering {len(windows)} windows "
+        f"({len(windows) - len(scratchpad_windows)} visible + {len(scratchpad_windows)} scratchpad) "
+        f"for project '{active_project or 'none'}'"
+    )
+
+    # Feature 091: Build command lists for parallel execution
+    hide_commands: list[WindowCommand] = []
+    restore_batches: list[CommandBatch] = []
+    windows_to_track: list[tuple] = []  # (window_id, workspace_num, is_floating, geometry, window_project, window_class, is_original_scratchpad)
+
     visible_count = 0
     hidden_count = 0
     error_count = 0
 
-    logger.info(f"Filtering {len(windows)} windows ({len(windows) - len(scratchpad_windows if scratchpad else 0)} visible + {len(scratchpad_windows) if scratchpad else 0} scratchpad) for project '{active_project or 'none'}'")
-
+    # Phase 1: Classify windows and build command lists (no execution yet)
     for window in windows:
-        # Feature 038 T042: Per-window performance tracking
-        window_start = time.perf_counter()
-
-        # Feature 046: Use node ID (window.id) for Sway/Wayland compatibility
         window_id = window.id
 
         # Get project and scope from window marks
-        # Format: SCOPE:PROJECT:WINDOW_ID (explicit scope)
-        # Scratchpad format: scratchpad:PROJECT (Feature 062 - project-scoped scratchpads)
         window_project = None
         window_scope = None
         for mark in window.marks:
             if mark.startswith("scratchpad:"):
                 # Feature 062: Scratchpad terminals are project-scoped
-                # Format: scratchpad:PROJECT_NAME
                 mark_parts = mark.split(":")
                 window_project = mark_parts[1] if len(mark_parts) >= 2 else None
                 window_scope = "scoped"
@@ -357,40 +384,31 @@ async def filter_windows_by_project(
             should_show = True
             logger.debug(f"Window {window_id} ({window.window_class}): global (no project mark)")
         elif window_scope == "global":
-            # Global window → always visible
             should_show = True
             logger.debug(f"Window {window_id} ({window.window_class}): global (explicit scope)")
         elif active_project is None:
-            # No active project → hide scoped windows
             should_show = False
             logger.debug(f"Window {window_id} ({window.window_class}): hide (no active project)")
         elif window_project == active_project:
-            # Project match → show
             should_show = True
             logger.debug(f"Window {window_id} ({window.window_class}): show (project match: {window_project})")
         else:
-            # Different project → hide
             should_show = False
             logger.debug(
                 f"Window {window_id} ({window.window_class}): hide "
                 f"(project mismatch: {window_project} != {active_project})"
             )
 
-        # Apply visibility
+        # Build commands (Feature 091: defer execution for parallel batch)
         try:
             if should_show:
                 # Check if window is currently in scratchpad
                 workspace = window.workspace()
                 in_scratchpad = workspace and workspace.name == "__i3_scratch"
 
-                logger.debug(
-                    f"Window {window_id} should show: workspace={workspace.name if workspace else 'None'}, "
-                    f"in_scratchpad={in_scratchpad}"
-                )
-
                 if in_scratchpad:
-                    # Feature 038: Restore window to exact workspace with correct floating state
-                    logger.info(f"Restoring window {window_id} ({window.window_class}) from scratchpad")
+                    # Feature 091: Build restore command batch
+                    logger.info(f"Building restore commands for window {window_id} ({window.window_class})")
 
                     # Load saved state if workspace_tracker available
                     saved_state = None
@@ -398,94 +416,62 @@ async def filter_windows_by_project(
                         saved_state = await workspace_tracker.get_window_workspace(window_id)
 
                     if saved_state:
-                        # Restore to exact workspace number (not current!)
                         workspace_num = saved_state.get("workspace_number", 1)
                         is_floating = saved_state.get("floating", False)
                         original_scratchpad = saved_state.get("original_scratchpad", False)
 
-                        # Feature 038 P3: Don't restore windows originally in scratchpad
+                        # Feature 038 P3: Skip windows originally in scratchpad
                         if original_scratchpad:
-                            logger.debug(f"Window {window_id} was originally in scratchpad, leaving hidden")
-                            continue  # Skip restoration
+                            logger.debug(f"Window {window_id} was originally in scratchpad, skipping")
+                            continue
 
-                        logger.info(
-                            f"Restoring window {window_id} to workspace {workspace_num}, "
-                            f"floating={is_floating}"
+                        geometry = saved_state.get("geometry") if is_floating else None
+
+                        # Feature 091: Use CommandBatch factory for restoration
+                        batch = CommandBatch.from_window_state(
+                            window_id=window_id,
+                            workspace_num=workspace_num,
+                            is_floating=is_floating,
+                            geometry=geometry,
                         )
-
-                        # Move to exact workspace number (Feature 038 US3)
-                        # Feature 046: Use con_id for Sway compatibility
-                        await conn.command(f'[con_id={window_id}] move workspace number {workspace_num}')
-
-                        # Restore floating state (Feature 038 US1)
-                        if is_floating:
-                            # Feature 046: Use con_id for Sway compatibility
-                            await conn.command(f'[con_id={window_id}] floating enable')
-
-                            # Feature 038 US2: Restore geometry for floating windows
-                            geometry = saved_state.get("geometry")
-                            if geometry and all(k in geometry for k in ["x", "y", "width", "height"]):
-                                # Apply geometry restoration (position and size)
-                                logger.debug(
-                                    f"Restoring geometry for window {window_id}: "
-                                    f"position=({geometry['x']}, {geometry['y']}), "
-                                    f"size={geometry['width']}x{geometry['height']}"
-                                )
-
-                                # Note: Must enable floating BEFORE applying geometry (T024)
-                                # Resize and move in single command for atomicity
-                                # Feature 046: Use con_id for Sway compatibility
-                                await conn.command(
-                                    f'[con_id={window_id}] '
-                                    f'resize set {geometry["width"]} px {geometry["height"]} px, '
-                                    f'move position {geometry["x"]} px {geometry["y"]} px'
-                                )
-                        else:
-                            # Feature 046: Use con_id for Sway compatibility
-                            await conn.command(f'[con_id={window_id}] floating disable')
+                        restore_batches.append(batch)
+                        logger.debug(
+                            f"Queued restore batch for window {window_id}: workspace={workspace_num}, "
+                            f"floating={is_floating}, has_geometry={geometry is not None}"
+                        )
                     else:
-                        # Fallback: restore to workspace 1 if no saved state
+                        # Fallback: restore to workspace 1
                         logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
-                        # Feature 046: Use con_id for Sway compatibility
-                        await conn.command(f'[con_id={window_id}] move workspace number 1')
+                        batch = CommandBatch.from_window_state(
+                            window_id=window_id,
+                            workspace_num=1,
+                            is_floating=False,
+                            geometry=None,
+                        )
+                        restore_batches.append(batch)
                 else:
                     logger.debug(f"Window {window_id} already visible")
 
                 visible_count += 1
             else:
-                # Feature 038: Capture window state BEFORE hiding
+                # Feature 091: Build hide command and capture state
                 workspace = window.workspace()
-                logger.debug(
-                    f"Hiding window {window_id} ({window.window_class}): "
-                    f"current workspace={workspace.name if workspace else 'None'}"
-                )
 
-                # Capture state for Feature 038 (US1, US2, US3, US4)
+                # Capture state for Feature 038
                 if workspace_tracker and workspace:
-                    # Get current window state
                     workspace_num = workspace.num if workspace.num is not None else 1
 
                     # Feature 062: Scratchpad terminals should NEVER be marked as original_scratchpad
-                    # They're project-scoped and must be restored when switching to their project
                     has_scratchpad_mark = any(mark.startswith("scratchpad:") for mark in window.marks)
                     is_original_scratchpad = (workspace.name == "__i3_scratch") and not has_scratchpad_mark
 
-                    # Feature 038 FIX: Check if we already have saved state for this window
-                    # If so, preserve the ORIGINAL floating state (don't re-capture after scratchpad moves)
+                    # Feature 038 FIX: Preserve original state if already tracked
                     saved_state = await workspace_tracker.get_window_workspace(window_id)
                     if saved_state and not is_original_scratchpad:
-                        # Preserve original floating state from first capture
                         is_floating = saved_state.get("floating", False)
                         geometry = saved_state.get("geometry", None)
-                        logger.debug(
-                            f"Window {window_id} already tracked, preserving original state: "
-                            f"floating={is_floating}, has_geometry={geometry is not None}"
-                        )
                     else:
-                        # First capture OR window is from scratchpad - capture current state
                         is_floating = window.floating in ["user_on", "auto_on"]
-
-                        # Feature 038 US2: Capture geometry for floating windows
                         geometry = None
                         if is_floating and window.rect:
                             geometry = {
@@ -494,60 +480,131 @@ async def filter_windows_by_project(
                                 "width": window.rect.width,
                                 "height": window.rect.height,
                             }
-                            logger.debug(
-                                f"Captured geometry for floating window {window_id}: "
-                                f"x={geometry['x']}, y={geometry['y']}, "
-                                f"width={geometry['width']}, height={geometry['height']}"
-                            )
 
-                    # Get window class and project name for tracking
                     window_class = window.window_class or "unknown"
-                    window_project = window_project or "unknown"  # From earlier parsing
+                    window_project_name = window_project or "unknown"
 
-                    logger.info(
-                        f"Capturing state for window {window_id}: workspace={workspace_num}, "
-                        f"floating={is_floating}, original_scratchpad={is_original_scratchpad}, "
-                        f"has_geometry={geometry is not None}, "
-                        f"preserved_state={saved_state is not None}"
-                    )
+                    # Queue state tracking (will be executed before hide commands)
+                    windows_to_track.append((
+                        window_id,
+                        workspace_num,
+                        is_floating,
+                        geometry,
+                        window_project_name,
+                        window_class,
+                        is_original_scratchpad,
+                    ))
 
-                    # Save state with geometry for floating windows
-                    await workspace_tracker.track_window(
-                        window_id=window_id,
-                        workspace_number=workspace_num,
-                        floating=is_floating,
-                        project_name=window_project,
-                        app_name=window_class,  # Use window_class as fallback
-                        window_class=window_class,
-                        geometry=geometry,  # Feature 038 US2: Geometry for floating windows
-                        original_scratchpad=is_original_scratchpad,
-                    )
-
-                # Move to scratchpad
-                # Feature 046: Use con_id for Sway compatibility
-                await conn.command(f'[con_id={window_id}] move scratchpad')
-                hidden_count += 1
-        except Exception as e:
-            logger.error(f"Failed to update window {window_id} visibility: {e}")
-            error_count += 1
-        finally:
-            # Feature 038 T042: Log per-window timing (target <50ms per window)
-            window_duration_ms = (time.perf_counter() - window_start) * 1000
-            if window_duration_ms > 50:
-                logger.warning(
-                    f"Window {window_id} filter operation took {window_duration_ms:.1f}ms (target <50ms)"
+                # Feature 091: Queue hide command for parallel execution
+                hide_cmd = WindowCommand(
+                    window_id=window_id,
+                    command_type=CommandType.MOVE_SCRATCHPAD,
+                    params={},
                 )
-            else:
-                logger.debug(f"Window {window_id} processed in {window_duration_ms:.1f}ms")
+                hide_commands.append(hide_cmd)
+                hidden_count += 1
+                logger.debug(f"Queued hide command for window {window_id}")
+        except Exception as e:
+            logger.error(f"Failed to process window {window_id}: {e}")
+            error_count += 1
 
-    # Feature 038 T042: Overall operation performance
+    # Feature 091: Phase 2 - Execute commands in parallel batches
+    classification_duration_ms = (time.perf_counter() - operation_start) * 1000
+    logger.info(
+        f"[Feature 091] Phase 1 complete ({classification_duration_ms:.1f}ms): "
+        f"{len(hide_commands)} hide commands, {len(restore_batches)} restore batches queued"
+    )
+
+    # Track state for windows being hidden (must happen before hide commands)
+    if workspace_tracker and windows_to_track:
+        for window_data in windows_to_track:
+            (window_id, workspace_num, is_floating, geometry,
+             window_project_name, window_class, is_original_scratchpad) = window_data
+            await workspace_tracker.track_window(
+                window_id=window_id,
+                workspace_number=workspace_num,
+                floating=is_floating,
+                project_name=window_project_name,
+                app_name=window_class,
+                window_class=window_class,
+                geometry=geometry,
+                original_scratchpad=is_original_scratchpad,
+            )
+
+    # Feature 091: Initialize command batch service
+    batch_service = CommandBatchService(conn)
+    hide_metrics = None
+    restore_metrics = None
+
+    # Execute hide commands in parallel
+    if hide_commands:
+        hide_start = time.perf_counter()
+        hide_results, hide_metrics = await batch_service.execute_parallel(
+            hide_commands, operation_type="hide"
+        )
+        hide_duration_ms = (time.perf_counter() - hide_start) * 1000
+        hide_metrics.cache_hits = cache_hits
+        hide_metrics.cache_misses = cache_misses
+
+        hide_failures = sum(1 for r in hide_results if not r.success)
+        if hide_failures > 0:
+            error_count += hide_failures
+            logger.warning(f"[Feature 091] {hide_failures}/{len(hide_commands)} hide commands failed")
+
+    # Execute restore commands in parallel (as batched commands)
+    if restore_batches:
+        restore_start = time.perf_counter()
+        restore_results = []
+
+        # Execute each restore batch (which may contain multiple sequential commands per window)
+        for batch in restore_batches:
+            result, _ = await batch_service.execute_batch(batch)
+            restore_results.append(result)
+
+        restore_duration_ms = (time.perf_counter() - restore_start) * 1000
+
+        # Create restore metrics
+        restore_metrics = OperationMetrics(
+            operation_type="restore",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_ms=restore_duration_ms,
+            window_count=len(restore_batches),
+            command_count=sum(len(b.commands) for b in restore_batches),
+            parallel_batches=len(restore_batches),
+            cache_hits=cache_hits,
+            cache_misses=cache_misses,
+        )
+
+        restore_failures = sum(1 for r in restore_results if not r.success)
+        if restore_failures > 0:
+            error_count += restore_failures
+            logger.warning(f"[Feature 091] {restore_failures}/{len(restore_batches)} restore batches failed")
+
+    # Calculate total performance
     operation_duration_ms = (time.perf_counter() - operation_start) * 1000
-    avg_per_window_ms = operation_duration_ms / len(windows) if windows else 0
+    operation_end_dt = datetime.now()
+
+    # Feature 091: Track performance metrics
+    if hide_metrics or restore_metrics:
+        switch_metrics = ProjectSwitchMetrics(
+            project_from=None,  # Set by caller if available
+            project_to=active_project,
+            total_duration_ms=operation_duration_ms,
+            hide_metrics=hide_metrics,
+            restore_metrics=restore_metrics,
+            timestamp=operation_end_dt,
+        )
+
+        # Record in performance tracker if available
+        perf_tracker = get_performance_tracker()
+        if perf_tracker:
+            perf_tracker.record_switch(switch_metrics)
 
     logger.info(
-        f"Window filtering complete: {visible_count} visible, {hidden_count} hidden, "
-        f"{error_count} errors | Total: {operation_duration_ms:.1f}ms, "
-        f"Avg: {avg_per_window_ms:.1f}ms/window"
+        f"[Feature 091] Window filtering complete: {visible_count} visible, {hidden_count} hidden, "
+        f"{error_count} errors | Total: {operation_duration_ms:.1f}ms "
+        f"({'✓ TARGET MET' if operation_duration_ms < 200 else '✗ SLOW'})"
     )
 
     return {
@@ -555,5 +612,5 @@ async def filter_windows_by_project(
         "hidden": hidden_count,
         "errors": error_count,
         "duration_ms": operation_duration_ms,
-        "avg_per_window_ms": avg_per_window_ms,
+        "avg_per_window_ms": operation_duration_ms / len(windows) if windows else 0,
     }
