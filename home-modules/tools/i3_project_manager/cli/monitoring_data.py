@@ -364,6 +364,105 @@ def get_window_state_classes(window: Dict[str, Any]) -> str:
     return " ".join(classes)
 
 
+def escape_pango(text: str) -> str:
+    """
+    Escape special characters for Pango markup.
+
+    Args:
+        text: Raw text string
+
+    Returns:
+        Pango-safe string with escaped special chars
+    """
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;"))
+
+
+def colorize_json_value(value: Any, indent_level: int = 1) -> str:
+    """
+    Recursively colorize a JSON value with Pango markup.
+
+    Color scheme (Catppuccin Mocha):
+    - Keys: Blue (#89b4fa)
+    - Strings: Green (#a6e3a1)
+    - Numbers: Peach (#fab387)
+    - Booleans: Yellow (#f9e2af)
+    - Null: Gray (#6c7086)
+    - Punctuation: Subtext (#a6adc8)
+
+    Args:
+        value: Python value to colorize (dict, list, str, int, bool, None)
+        indent_level: Current indentation level
+
+    Returns:
+        Pango markup string
+    """
+    indent = "  " * indent_level
+
+    if isinstance(value, dict):
+        if not value:
+            return '<span foreground="#a6adc8">{}</span>'
+
+        lines = ['<span foreground="#a6adc8">{</span>']
+        items = list(value.items())
+        for i, (key, val) in enumerate(items):
+            key_colored = f'<span foreground="#89b4fa">"{escape_pango(key)}"</span>'
+            value_colored = colorize_json_value(val, indent_level + 1)
+            comma = '<span foreground="#a6adc8">,</span>' if i < len(items) - 1 else ''
+            lines.append(f'{indent}{key_colored}<span foreground="#a6adc8">: </span>{value_colored}{comma}')
+
+        lines.append(("  " * (indent_level - 1)) + '<span foreground="#a6adc8">}</span>')
+        return '\n'.join(lines)
+
+    elif isinstance(value, list):
+        if not value:
+            return '<span foreground="#a6adc8">[]</span>'
+
+        lines = ['<span foreground="#a6adc8">[</span>']
+        for i, item in enumerate(value):
+            value_colored = colorize_json_value(item, indent_level + 1)
+            comma = '<span foreground="#a6adc8">,</span>' if i < len(value) - 1 else ''
+            lines.append(f'{indent}{value_colored}{comma}')
+
+        lines.append(("  " * (indent_level - 1)) + '<span foreground="#a6adc8">]</span>')
+        return '\n'.join(lines)
+
+    elif isinstance(value, str):
+        return f'<span foreground="#a6e3a1">"{escape_pango(value)}"</span>'
+
+    elif isinstance(value, bool):
+        return f'<span foreground="#f9e2af">{str(value).lower()}</span>'
+
+    elif value is None:
+        return '<span foreground="#6c7086">null</span>'
+
+    elif isinstance(value, (int, float)):
+        return f'<span foreground="#fab387">{value}</span>'
+
+    else:
+        # Fallback for unknown types
+        return f'<span foreground="#cdd6f4">{escape_pango(str(value))}</span>'
+
+
+def colorize_json_pango(data: Dict[str, Any]) -> str:
+    """
+    Generate Pango markup for syntax-highlighted JSON representation.
+
+    Uses Catppuccin Mocha color scheme for consistent theming with the panel.
+
+    Args:
+        data: Dictionary to colorize as JSON
+
+    Returns:
+        Pango markup string with syntax highlighting
+    """
+    return colorize_json_value(data, indent_level=1)
+
+
 def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
@@ -405,7 +504,8 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     # Get geometry for detail view
     geometry = window.get("geometry", {})
 
-    return {
+    # Build window data dict
+    window_data = {
         "id": window.get("id", 0),
         "pid": window.get("pid", 0),
         "app_id": app_id,
@@ -420,6 +520,7 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
         "scope": scope,
         "icon_path": icon_path,
         "workspace": workspace_raw,  # Keep original value ("scratchpad", "1", etc.)
+        "workspace_number": workspace_num,  # Numeric workspace for badges
         "output": window.get("output", ""),
         "marks": window.get("marks", []),
         "floating": window.get("floating", False),
@@ -434,6 +535,41 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
         "geometry_width": geometry.get("width", 0),
         "geometry_height": geometry.get("height", 0),
     }
+
+    # Generate Pango-markup colorized JSON for hover tooltip
+    # Include all fields except redundant/computed ones
+    json_data = {
+        "id": window_data["id"],
+        "pid": window_data["pid"],
+        "app_id": window_data["app_id"],
+        "class": window_data["class"],
+        "instance": window_data["instance"],
+        "title": window_data["full_title"],
+        "project": window_data["project"],
+        "scope": window_data["scope"],
+        "workspace": window_data["workspace"],
+        "output": window_data["output"],
+        "floating": window_data["floating"],
+        "focused": window_data["focused"],
+        "hidden": window_data["hidden"],
+        "fullscreen": window_data["fullscreen"],
+        "is_pwa": window_data["is_pwa"],
+        "geometry": {
+            "x": window_data["geometry_x"],
+            "y": window_data["geometry_y"],
+            "width": window_data["geometry_width"],
+            "height": window_data["geometry_height"]
+        },
+        "marks": window_data["marks"]
+    }
+
+    # Generate colorized JSON (Pango markup)
+    window_data["json_repr"] = colorize_json_pango(json_data)
+
+    # Also generate plain JSON for clipboard copy
+    window_data["json_plain"] = json.dumps(json_data, indent=2)
+
+    return window_data
 
 
 def transform_workspace(workspace: Dict[str, Any], monitor_name: str) -> Dict[str, Any]:

@@ -568,16 +568,17 @@ in {
   # Notification center shows transient info (CPU, memory, network, disk) when toggled open
   xdg.configFile."swaync/config.json".text = builtins.toJSON {
     # Core notification settings
-    # Match monitoring widget positioning (right center, 8px margin)
+    # Position to the left of monitoring panel (450px + 8px gap = 458px from right edge)
+    # Match monitoring panel positioning exactly (right center, 90% height, no top/bottom margins)
     positionX = "right";
     positionY = "center";
     layer = "overlay";
     control-center-layer = "overlay";
     layer-shell = true;
     cssPriority = "user";
-    control-center-margin-top = 8;
-    control-center-margin-bottom = 8;
-    control-center-margin-right = 8;
+    control-center-margin-top = 0;  # Match monitoring panel (no vertical margins)
+    control-center-margin-bottom = 0;  # Match monitoring panel (no vertical margins)
+    control-center-margin-right = 458;  # 450px (monitoring panel) + 8px gap
     control-center-margin-left = 0;
     notification-2fa-action = false;
     notification-inline-replies = false;

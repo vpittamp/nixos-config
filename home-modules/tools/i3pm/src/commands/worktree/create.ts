@@ -70,6 +70,17 @@ NOTES:
 }
 
 /**
+ * Truncate display name to a reasonable length for UI display
+ * Limits to 60 characters to prevent overflow in top bar
+ */
+function truncateDisplayName(displayName: string, maxLength = 60): string {
+  if (displayName.length <= maxLength) {
+    return displayName;
+  }
+  return displayName.substring(0, maxLength - 3) + "...";
+}
+
+/**
  * Generate a unique project name if there's a conflict
  */
 async function resolveProjectNameConflict(
@@ -160,7 +171,9 @@ export async function createWorktreeCommand(args: string[]): Promise<void> {
   }
 
   const worktreeName = parsed.name || branchName;
-  const displayName = parsed["display-name"] || featureDescription || branchName;
+  // Truncate display name to 60 characters to prevent UI overflow
+  const rawDisplayName = parsed["display-name"] || featureDescription || branchName;
+  const displayName = truncateDisplayName(rawDisplayName);
   const icon = parsed.icon || "🌿";
   const shouldCheckout = parsed.checkout || false;
   const customBasePath = parsed["base-path"];
