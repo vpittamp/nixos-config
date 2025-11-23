@@ -14,6 +14,9 @@
 
 set -euo pipefail
 
+# Fix PATH for systemd service execution (SwayNC may have limited PATH)
+export PATH="/run/current-system/sw/bin:/etc/profiles/per-user/$USER/bin:$PATH"
+
 # Parse notification metadata from SWAYNC_BODY
 # The stop-notification.sh script embeds metadata in the body as:
 # WINDOW_ID:PROJECT_NAME:TMUX_SESSION:TMUX_WINDOW
@@ -50,7 +53,8 @@ fi
 
 # Switch to i3pm project if specified
 if [ -n "$PROJECT_NAME" ]; then
-    if systemctl --user is-active i3-project-event-listener >/dev/null 2>&1; then
+    # Check if i3pm daemon is available (command exists and daemon is responding)
+    if command -v i3pm >/dev/null 2>&1 && i3pm project current >/dev/null 2>&1; then
         # Feature 091 US3 T033: Log project switch timing
         SWITCH_START=$(date +%s%N)
 

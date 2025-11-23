@@ -554,12 +554,24 @@ async def filter_windows_by_project(
     # Execute restore commands in parallel (as batched commands)
     if restore_batches:
         restore_start = time.perf_counter()
-        restore_results = []
 
-        # Execute each restore batch (which may contain multiple sequential commands per window)
-        for batch in restore_batches:
-            result, _ = await batch_service.execute_batch(batch)
-            restore_results.append(result)
+        # Feature 091: Execute all restore batches in parallel using asyncio.gather()
+        # Each batch contains sequential commands for ONE window (move, floating, resize, position)
+        # But we execute ALL window batches concurrently for maximum performance
+        restore_tasks = [batch_service.execute_batch(batch) for batch in restore_batches]
+        restore_results_with_metrics = await asyncio.gather(*restore_tasks, return_exceptions=True)
+
+        # Extract results and handle exceptions
+        restore_results = []
+        for i, result_tuple in enumerate(restore_results_with_metrics):
+            if isinstance(result_tuple, Exception):
+                logger.error(f"[Feature 091] Restore batch {i} failed: {result_tuple}")
+                restore_results.append(
+                    type('Result', (), {'success': False, 'error': str(result_tuple)})()
+                )
+            else:
+                result, _ = result_tuple
+                restore_results.append(result)
 
         restore_duration_ms = (time.perf_counter() - restore_start) * 1000
 
