@@ -1973,8 +1973,10 @@ class IPCServer:
                             project = i3pm_env.get("I3PM_PROJECT_NAME")
 
                         # Build marks list (include project mark for consistency)
+                        # Feature 062: Don't add synthetic marks to scratchpad terminals
                         marks = list(window.marks)
-                        if project and not any(m.startswith("scoped:") or m.startswith("global:") for m in marks):
+                        has_project_mark = any(m.startswith("scoped:") or m.startswith("global:") or m.startswith("scratchpad:") for m in marks)
+                        if project and not has_project_mark:
                             # Default to scoped if we don't have scope info
                             marks.append(f"{scope or 'scoped'}:{project}")
 
@@ -1992,7 +1994,7 @@ class IPCServer:
                         app_id = i3pm_env.get("I3PM_APP_ID")
 
                         # Format workspace field - only show tracked workspace if valid (> 0)
-                        if tracked_workspace > 0:
+                        if tracked_workspace is not None and tracked_workspace > 0:
                             workspace_str = f"scratchpad (tracked: WS {tracked_workspace})"
                         else:
                             workspace_str = "scratchpad"
@@ -3529,6 +3531,19 @@ class IPCServer:
             # Phase 1: Hide windows from old project (if any)
             windows_hidden = 0
             if old_project:
+                # Feature 062: Hide scratchpad terminal if visible
+                if self.scratchpad_manager:
+                    try:
+                        terminal = self.scratchpad_manager.get_terminal(old_project)
+                        if terminal:
+                            state = await self.scratchpad_manager.get_terminal_state(old_project)
+                            if state == "visible":
+                                await self.scratchpad_manager.toggle_terminal(old_project)
+                                logger.info(f"Hid scratchpad terminal for project '{old_project}' during project switch")
+                    except Exception as e:
+                        logger.warning(f"Failed to hide scratchpad terminal for project '{old_project}': {e}")
+                        all_errors.append(f"Scratchpad hide failed: {e}")
+
                 hide_result = await self._hide_windows({"project_name": old_project})
                 windows_hidden = hide_result["windows_hidden"]
                 all_errors.extend(hide_result.get("errors", []))
