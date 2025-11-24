@@ -994,14 +994,14 @@ in
                 :orientation "v"
                 :space-evenly false
                 ;; Main project card
-                (project-card :project project :is-worktree false)
+                (project-card :project project)
                 ;; Worktrees for this main project
                 (for worktree in {projects_data.worktrees ?: []}
                   (box
                     :visible {worktree.parent_project == project.name}
                     (worktree-card :project worktree))))))))
 
-      (defwidget project-card [project ?is-worktree]
+      (defwidget project-card [project]
         (eventbox
           :onhover "eww update hover_project_name=''${project.name}"
           :onhoverlost "eww update hover_project_name=''"
