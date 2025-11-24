@@ -930,6 +930,85 @@ def format_friendly_timestamp(timestamp: float) -> str:
         return f"{days} day{'s' if days > 1 else ''} ago"
 
 
+def _format_json_with_syntax_highlighting(data: Dict[str, Any]) -> str:
+    """
+    Format JSON with syntax highlighting using Pango markup (Feature 094: T021).
+
+    Uses Catppuccin Mocha colors:
+    - Keys: Blue (#89b4fa)
+    - Strings: Green (#a6e3a1)
+    - Numbers: Peach (#fab387)
+    - Booleans: Yellow (#f9e2af)
+    - Null: Subtext (#a6adc8)
+
+    Args:
+        data: Dictionary to format
+
+    Returns:
+        Pango markup string with syntax-highlighted JSON
+    """
+    import re
+
+    # Pretty-print JSON with indentation
+    json_str = json.dumps(data, indent=2, ensure_ascii=False)
+
+    # Catppuccin Mocha colors
+    COLOR_KEY = "#89b4fa"      # Blue
+    COLOR_STRING = "#a6e3a1"   # Green
+    COLOR_NUMBER = "#fab387"   # Peach
+    COLOR_BOOLEAN = "#f9e2af"  # Yellow
+    COLOR_NULL = "#a6adc8"     # Subtext
+
+    # Escape XML special characters first
+    json_str = json_str.replace("&", "&amp;")
+    json_str = json_str.replace("<", "&lt;")
+    json_str = json_str.replace(">", "&gt;")
+
+    # Color JSON keys (property names in quotes before colon)
+    json_str = re.sub(
+        r'"([^"]+)"\s*:',
+        rf'<span foreground="{COLOR_KEY}">"\1"</span>:',
+        json_str
+    )
+
+    # Color string values (quotes not followed by colon)
+    # This matches strings that are not keys
+    def color_string_value(match):
+        # Check if this string is followed by a colon (would be a key)
+        full_text = match.string
+        end_pos = match.end()
+        # Look ahead to see if there's a colon after whitespace
+        remaining = full_text[end_pos:].lstrip()
+        if remaining.startswith(':'):
+            return match.group(0)  # Don't color keys again
+        return f'<span foreground="{COLOR_STRING}">{match.group(0)}</span>'
+
+    json_str = re.sub(r'"[^"]*"', color_string_value, json_str)
+
+    # Color numbers
+    json_str = re.sub(
+        r'\b(\d+\.?\d*)\b',
+        rf'<span foreground="{COLOR_NUMBER}">\1</span>',
+        json_str
+    )
+
+    # Color booleans
+    json_str = re.sub(
+        r'\b(true|false)\b',
+        rf'<span foreground="{COLOR_BOOLEAN}">\1</span>',
+        json_str
+    )
+
+    # Color null
+    json_str = re.sub(
+        r'\bnull\b',
+        rf'<span foreground="{COLOR_NULL}">null</span>',
+        json_str
+    )
+
+    return json_str
+
+
 def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Transform monitor-based hierarchy to project-based view.
@@ -1108,7 +1187,13 @@ async def query_monitoring_data() -> Dict[str, Any]:
 
 async def query_projects_data() -> Dict[str, Any]:
     """
-    Query projects view data.
+    Query projects view data (Feature 094: Enhanced Projects Tab).
+
+    Reads directly from ~/.config/i3/projects/*.json files and returns:
+    - Grouped by main_projects and worktrees
+    - Full JSON representation for hover tooltips
+    - Local vs remote indicators
+    - Active project highlighting
 
     Returns project list with metadata and current active project.
     """
@@ -1116,27 +1201,14 @@ async def query_projects_data() -> Dict[str, Any]:
     friendly_time = format_friendly_timestamp(current_timestamp)
 
     try:
-        # Query projects via i3pm CLI
-        result = subprocess.run(
-            ["i3pm", "project", "list", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        # Feature 094: Read projects directly from JSON files
+        from i3_project_manager.services.project_editor import ProjectEditor
 
-        if result.returncode != 0:
-            return {
-                "status": "error",
-                "projects": [],
-                "project_count": 0,
-                "active_project": None,
-                "timestamp": current_timestamp,
-                "timestamp_friendly": friendly_time,
-                "error": f"i3pm project list failed: {result.stderr}"
-            }
+        editor = ProjectEditor()
+        projects_list = editor.list_projects()
 
-        projects_data = json.loads(result.stdout)
-        projects = projects_data.get("projects", [])
+        main_projects = projects_list.get("main_projects", [])
+        worktrees = projects_list.get("worktrees", [])
 
         # Get active project
         result = subprocess.run(
@@ -1147,14 +1219,37 @@ async def query_projects_data() -> Dict[str, Any]:
         )
         active_project = result.stdout.strip() if result.returncode == 0 else None
 
-        # Mark active project
-        for project in projects:
-            project["is_active"] = (project["name"] == active_project)
+        # Enhance each project with additional metadata for UI
+        def enhance_project(project: Dict[str, Any]) -> Dict[str, Any]:
+            """Add UI-specific metadata to project"""
+            # Check if active
+            project["is_active"] = (project.get("name") == active_project)
+
+            # Check if remote
+            project["is_remote"] = bool(project.get("remote", {}).get("enabled", False))
+
+            # Generate syntax-highlighted JSON for hover tooltip (Feature 094)
+            project["json_repr"] = _format_json_with_syntax_highlighting(project)
+
+            # Add directory display (shortened for UI)
+            working_dir = project.get("working_dir", "")
+            project["directory"] = working_dir.replace(str(Path.home()), "~")
+
+            return project
+
+        # Enhance all projects
+        main_projects_enhanced = [enhance_project(p) for p in main_projects]
+        worktrees_enhanced = [enhance_project(w) for w in worktrees]
+
+        # Combine for total count
+        all_projects = main_projects_enhanced + worktrees_enhanced
 
         return {
             "status": "ok",
-            "projects": projects,
-            "project_count": len(projects),
+            "projects": all_projects,  # Combined list for backward compatibility
+            "main_projects": main_projects_enhanced,
+            "worktrees": worktrees_enhanced,
+            "project_count": len(all_projects),
             "active_project": active_project,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
@@ -1165,16 +1260,21 @@ async def query_projects_data() -> Dict[str, Any]:
         return {
             "status": "error",
             "projects": [],
+            "main_projects": [],
+            "worktrees": [],
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
-            "error": "i3pm project list timeout"
+            "error": "Active project query timeout"
         }
     except Exception as e:
+        logger.error(f"Error querying projects data: {e}", exc_info=True)
         return {
             "status": "error",
             "projects": [],
+            "main_projects": [],
+            "worktrees": [],
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,

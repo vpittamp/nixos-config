@@ -509,32 +509,9 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
-      ;; Feature 092: Event filter state (all enabled by default)
-      ;; Individual event type filters (true = show, false = hide)
-      (defvar filter_window_new true)
-      (defvar filter_window_close true)
-      (defvar filter_window_focus true)
-      (defvar filter_window_move true)
-      (defvar filter_window_floating true)
-      (defvar filter_window_fullscreen_mode true)
-      (defvar filter_window_title true)
-      (defvar filter_window_mark true)
-      (defvar filter_window_urgent true)
-      (defvar filter_workspace_focus true)
-      (defvar filter_workspace_init true)
-      (defvar filter_workspace_empty true)
-      (defvar filter_workspace_move true)
-      (defvar filter_workspace_rename true)
-      (defvar filter_workspace_urgent true)
-      (defvar filter_workspace_reload true)
-      (defvar filter_output_unspecified true)
-      (defvar filter_binding_run true)
-      (defvar filter_mode_change true)
-      (defvar filter_shutdown_exit true)
-      (defvar filter_tick_manual true)
-
-      ;; Filter panel visibility (false = collapsed, true = expanded)
-      (defvar filter_panel_expanded false)
+      ;; Feature 094: Project hover and copy state
+      (defvar hover_project_name "")
+      (defvar copied_project_name "")
 
 
       ;; Main monitoring panel window - Sidebar layout
@@ -674,25 +651,26 @@ in
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
       (defwidget windows-view []
-        (box
-          :class "windows-view-container"
-          :orientation "v"
+        (scroll
+          :vscroll true
+          :hscroll false
           :vexpand true
-          ;; Show detail view when window is selected
           (box
-            :visible {selected_window_id != 0}
+            :class "content-container"
+            :orientation "v"
+            :space-evenly false
             :vexpand true
-            (window-detail-view))
-          ;; Show list view when no window is selected
-          (scroll
-            :vscroll true
-            :hscroll false
-            :vexpand true
-            :visible {selected_window_id == 0}
+            ;; Show detail view when window is selected
             (box
-              :class "content-container"
+              :visible {selected_window_id != 0}
+              :vexpand true
+              (window-detail-view))
+            ;; Show list view when no window is selected
+            (box
+              :visible {selected_window_id == 0}
               :orientation "v"
               :space-evenly false
+              :vexpand true
               ; Show error state when status is "error"
               (box
                 :visible "''${monitoring_data.status == 'error'}"
@@ -799,13 +777,7 @@ in
                   (label
                     :class "badge badge-pwa"
                     :text "PWA"
-                    :visible "''${window.is_pwa ?: false}")
-                  ;; Feature 095: Notification badge (bell icon + count)
-                  (label
-                    :class "badge badge-notification"
-                    :text "🔔''${window.badge.count}"
-                    :tooltip "''${window.badge.count} notification(s) from ''${window.badge.source}"
-                    :visible "''${window.badge != null}"))))
+                    :visible "''${window.is_pwa ?: false}"))))
             ;; JSON hover tooltip (slides down on hover)
             (revealer
               :reveal {hover_window_id == window.id}
@@ -1235,108 +1207,6 @@ in
           :class "events-view-container"
           :orientation "v"
           :vexpand true
-          :space-evenly false
-          ;; Filter panel (collapsible)
-          (box
-            :class "filter-panel"
-            :orientation "v"
-            :space-evenly false
-            :visible "''${events_data.status == 'ok'}"
-            ;; Filter header (always visible)
-            (eventbox
-              :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_panel_expanded=''${!filter_panel_expanded}"
-              (box
-                :class "filter-header"
-                :orientation "h"
-                :space-evenly false
-                (label
-                  :class "filter-title"
-                  :halign "start"
-                  :hexpand true
-                  :text "󰈙 Filter Events")
-                (label
-                  :class "filter-toggle"
-                  :text "''${filter_panel_expanded ? '▼' : '▶'}")))
-            ;; Filter controls (expandable)
-            (box
-              :class "filter-controls"
-              :orientation "v"
-              :space-evenly false
-              :visible filter_panel_expanded
-              ;; Global controls
-              (box
-                :class "filter-global-controls"
-                :orientation "h"
-                :space-evenly false
-                (button
-                  :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=true filter_window_close=true filter_window_focus=true filter_window_move=true filter_window_floating=true filter_window_fullscreen_mode=true filter_window_title=true filter_window_mark=true filter_window_urgent=true filter_workspace_focus=true filter_workspace_init=true filter_workspace_empty=true filter_workspace_move=true filter_workspace_rename=true filter_workspace_urgent=true filter_workspace_reload=true filter_output_unspecified=true filter_binding_run=true filter_mode_change=true filter_shutdown_exit=true filter_tick_manual=true"
-                  "Select All")
-                (button
-                  :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false"
-                  "Clear All"))
-              ;; Window events category
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Window Events (9)")
-                (box
-                  :class "filter-checkboxes"
-                  :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "new" :var "filter_window_new" :value filter_window_new)
-                  (filter-checkbox :label "close" :var "filter_window_close" :value filter_window_close)
-                  (filter-checkbox :label "focus" :var "filter_window_focus" :value filter_window_focus)
-                  (filter-checkbox :label "move" :var "filter_window_move" :value filter_window_move)
-                  (filter-checkbox :label "floating" :var "filter_window_floating" :value filter_window_floating)
-                  (filter-checkbox :label "fullscreen" :var "filter_window_fullscreen_mode" :value filter_window_fullscreen_mode)
-                  (filter-checkbox :label "title" :var "filter_window_title" :value filter_window_title)
-                  (filter-checkbox :label "mark" :var "filter_window_mark" :value filter_window_mark)
-                  (filter-checkbox :label "urgent" :var "filter_window_urgent" :value filter_window_urgent)))
-              ;; Workspace events category
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Workspace Events (7)")
-                (box
-                  :class "filter-checkboxes"
-                :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "focus" :var "filter_workspace_focus" :value filter_workspace_focus)
-                  (filter-checkbox :label "init" :var "filter_workspace_init" :value filter_workspace_init)
-                  (filter-checkbox :label "empty" :var "filter_workspace_empty" :value filter_workspace_empty)
-                  (filter-checkbox :label "move" :var "filter_workspace_move" :value filter_workspace_move)
-                  (filter-checkbox :label "rename" :var "filter_workspace_rename" :value filter_workspace_rename)
-                  (filter-checkbox :label "urgent" :var "filter_workspace_urgent" :value filter_workspace_urgent)
-                  (filter-checkbox :label "reload" :var "filter_workspace_reload" :value filter_workspace_reload)))
-              ;; Output/Binding/Mode/System events
-              (box
-                :class "filter-category-group"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "filter-category-title"
-                  :halign "start"
-                  :text "Other Events (5)")
-                (box
-                  :class "filter-checkboxes"
-                  :orientation "h"
-                  :space-evenly false
-                  (filter-checkbox :label "output" :var "filter_output_unspecified" :value filter_output_unspecified)
-                  (filter-checkbox :label "binding" :var "filter_binding_run" :value filter_binding_run)
-                  (filter-checkbox :label "mode" :var "filter_mode_change" :value filter_mode_change)
-                  (filter-checkbox :label "shutdown" :var "filter_shutdown_exit" :value filter_shutdown_exit)
-                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))))
           ;; Error state
           (box
             :visible "''${events_data.status == 'error'}"
@@ -1365,7 +1235,7 @@ in
             (label
               :class "empty-help"
               :text "Waiting for Sway window/workspace events..."))
-          ;; Events list (scroll container) with filtering
+          ;; Events list (scroll container)
           (scroll
             :vscroll true
             :hscroll false
@@ -1375,34 +1245,9 @@ in
               :class "events-list"
               :orientation "v"
               :space-evenly false
-              ;; Iterate through events with filter logic
+              ;; Iterate through events (newest last for auto-scroll)
               (for event in {events_data.events ?: []}
-                (box
-                  :visible {
-                    event.event_type == "window::new" ? filter_window_new :
-                    event.event_type == "window::close" ? filter_window_close :
-                    event.event_type == "window::focus" ? filter_window_focus :
-                    event.event_type == "window::move" ? filter_window_move :
-                    event.event_type == "window::floating" ? filter_window_floating :
-                    event.event_type == "window::fullscreen_mode" ? filter_window_fullscreen_mode :
-                    event.event_type == "window::title" ? filter_window_title :
-                    event.event_type == "window::mark" ? filter_window_mark :
-                    event.event_type == "window::urgent" ? filter_window_urgent :
-                    event.event_type == "workspace::focus" ? filter_workspace_focus :
-                    event.event_type == "workspace::init" ? filter_workspace_init :
-                    event.event_type == "workspace::empty" ? filter_workspace_empty :
-                    event.event_type == "workspace::move" ? filter_workspace_move :
-                    event.event_type == "workspace::rename" ? filter_workspace_rename :
-                    event.event_type == "workspace::urgent" ? filter_workspace_urgent :
-                    event.event_type == "workspace::reload" ? filter_workspace_reload :
-                    event.event_type == "output::unspecified" ? filter_output_unspecified :
-                    event.event_type == "binding::run" ? filter_binding_run :
-                    event.event_type == "mode::change" ? filter_mode_change :
-                    event.event_type == "shutdown::exit" ? filter_shutdown_exit :
-                    event.event_type == "tick::manual" ? filter_tick_manual :
-                    true
-                  }
-                  (event-card :event event)))))))
+                (event-card :event event))))))
 
       ;; Feature 092: Event card widget - Single event display (T025)
       (defwidget event-card [event]
@@ -1441,22 +1286,6 @@ in
               :halign "start"
               :limit-width 60
               :text "''${event.searchable_text}"))))
-
-      ;; Feature 092: Filter checkbox widget - single checkbox for an event type
-      (defwidget filter-checkbox [label var value]
-        (eventbox
-          :cursor "pointer"
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update ''${var}=''${!value}"
-          (box
-            :class "filter-checkbox-item"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "filter-checkbox-icon"
-              :text "''${value ? '☑' : '☐'}")
-            (label
-              :class "filter-checkbox-label"
-              :text label))))
 
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
@@ -1733,20 +1562,6 @@ in
       .badge-workspace {
         color: ${mocha.blue};
         background-color: rgba(137, 180, 250, 0.15);
-      }
-
-      /* Feature 095: Notification badge styling */
-      .badge-notification {
-        color: ${mocha.peach};
-        background-color: rgba(250, 179, 135, 0.2);
-        font-weight: bold;
-        border: 1px solid rgba(250, 179, 135, 0.4);
-        animation: pulse-notification 2s ease-in-out infinite;
-      }
-
-      @keyframes pulse-notification {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
       }
 
       /* JSON Hover Tooltip */
@@ -2295,12 +2110,11 @@ in
 
       /* Feature 092: Event Logging - Logs View Styling (T027) */
       .events-view-container {
-        padding: 0 8px 8px 8px;
+        padding: 8px;
       }
 
       .events-list {
         padding: 4px;
-        margin-top: 4px;
       }
 
       .event-card {
@@ -2372,111 +2186,6 @@ in
         font-size: 10px;
         color: ${mocha.subtext0};
         /* GTK CSS doesn't support white-space property */
-      }
-
-      /* Feature 092: Event Filter Panel Styling */
-      .filter-panel {
-        background-color: transparent;
-        padding: 0;
-        margin: 0 4px 0 4px;
-      }
-
-      .filter-header {
-        padding: 6px 8px;
-        background-color: ${mocha.surface0};
-        border-radius: 4px;
-        border: 1px solid ${mocha.overlay0};
-        margin-bottom: 0;
-      }
-
-      .filter-header:hover {
-        background-color: ${mocha.surface1};
-        border-color: ${mocha.blue};
-      }
-
-      .filter-title {
-        font-size: 11px;
-        font-weight: 600;
-        color: ${mocha.blue};
-      }
-
-      .filter-toggle {
-        font-size: 9px;
-        color: ${mocha.subtext0};
-        margin-left: 8px;
-      }
-
-      .filter-controls {
-        padding: 8px 4px;
-        background-color: ${mocha.mantle};
-        border-radius: 6px;
-        margin-top: 4px;
-        border: 1px solid ${mocha.overlay0};
-      }
-
-      .filter-global-controls {
-        padding: 6px 4px;
-        margin-bottom: 8px;
-      }
-
-      .filter-button {
-        background-color: ${mocha.surface0};
-        color: ${mocha.text};
-        border: 1px solid ${mocha.overlay0};
-        border-radius: 3px;
-        padding: 4px 10px;
-        margin-right: 6px;
-        font-size: 10px;
-        font-weight: 500;
-      }
-
-      .filter-button:hover {
-        background-color: ${mocha.surface1};
-        border-color: ${mocha.blue};
-      }
-
-      .filter-category-group {
-        background-color: ${mocha.base};
-        border-radius: 4px;
-        padding: 6px;
-        margin-bottom: 6px;
-        border: 1px solid ${mocha.surface0};
-      }
-
-      .filter-category-title {
-        font-size: 10px;
-        font-weight: 600;
-        color: ${mocha.teal};
-        margin-bottom: 4px;
-        padding: 2px 0;
-        border-bottom: 1px solid ${mocha.surface0};
-      }
-
-      .filter-checkboxes {
-        padding: 2px 0;
-      }
-
-      .filter-checkbox-item {
-        padding: 2px 6px;
-        margin-right: 8px;
-        border-radius: 3px;
-        background-color: transparent;
-      }
-
-      .filter-checkbox-item:hover {
-        background-color: ${mocha.surface0};
-      }
-
-      .filter-checkbox-icon {
-        font-size: 12px;
-        color: ${mocha.blue};
-        margin-right: 3px;
-      }
-
-      .filter-checkbox-label {
-        font-size: 9px;
-        color: ${mocha.text};
-        font-family: monospace;
       }
     '';
 
