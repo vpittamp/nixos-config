@@ -1003,7 +1003,7 @@ in
 
       (defwidget project-card [project ?is-worktree]
         (eventbox
-          :onhover "eww update hover_project_name='${project.name}'"
+          :onhover "eww update hover_project_name=''${project.name}"
           :onhoverlost "eww update hover_project_name=''"
           (box
             :class "project-card"
@@ -1067,7 +1067,7 @@ in
 
       (defwidget worktree-card [project]
         (eventbox
-          :onhover "eww update hover_project_name='${project.name}'"
+          :onhover "eww update hover_project_name=''${project.name}"
           :onhoverlost "eww update hover_project_name=''"
           (box
             :class "worktree-card"
