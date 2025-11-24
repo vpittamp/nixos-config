@@ -988,39 +988,150 @@ in
               :class "error-message"
               :visible {projects_data.status == "error"}
               (label :text "⚠ ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Project list
-            (for project in {projects_data.projects ?: []}
-              (project-card :project project)))))
+            ;; Main projects
+            (for project in {projects_data.main_projects ?: []}
+              (box
+                :orientation "v"
+                :space-evenly false
+                ;; Main project card
+                (project-card :project project :is-worktree false)
+                ;; Worktrees for this main project
+                (for worktree in {projects_data.worktrees ?: []}
+                  (box
+                    :visible {worktree.parent_project == project.name}
+                    (worktree-card :project worktree))))))))
 
-      (defwidget project-card [project]
-        (box
-          :class "project-card ''${project.is_active ? 'active-project' : ""}"
-          :orientation "v"
-          :space-evenly false
+      (defwidget project-card [project ?is-worktree]
+        (eventbox
+          :onhover "eww update hover_project_name='${project.name}'"
+          :onhoverlost "eww update hover_project_name=''"
           (box
-            :class "project-card-header"
-            :orientation "h"
+            :class "project-card"
+            :orientation "v"
             :space-evenly false
-            (label
-              :class "project-icon"
-              :text "''${project.icon ?: '󱂬'}")
             (box
-              :class "project-info"
-              :orientation "v"
+              :class "project-card-header"
+              :orientation "h"
               :space-evenly false
-              :hexpand true
+              ;; Icon
+              (box
+                :class "project-icon-container"
+                :orientation "v"
+                :valign "center"
+                (label
+                  :class "project-icon"
+                  :text "''${project.icon}"))
+              ;; Project info
+              (box
+                :class "project-info"
+                :orientation "v"
+                :space-evenly false
+                :hexpand true
+                (box
+                  :class "project-name-row"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "project-card-name"
+                    :halign "start"
+                    :text "''${project.display_name ?: project.name}")
+                  ;; Remote indicator
+                  (label
+                    :class "remote-indicator"
+                    :visible {project.is_remote}
+                    :text "󰒍"))
+                (label
+                  :class "project-card-path"
+                  :halign "start"
+                  :text "''${project.directory}"))
+              ;; Active indicator
               (label
-                :class "project-card-name"
-                :halign "start"
-                :text "''${project.display_name ?: project.name}")
+                :class "active-indicator"
+                :visible {project.is_active}
+                :text "●"))
+            ;; Hover detail tooltip
+            (revealer
+              :reveal {hover_project_name == project.name}
+              :transition "slidedown"
+              :duration "200ms"
+              (box
+                :class "project-detail-tooltip"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "json-detail"
+                  :halign "start"
+                  :wrap true
+                  :markup "''${project.json_repr}"
+                  :text ""))))))
+
+      (defwidget worktree-card [project]
+        (eventbox
+          :onhover "eww update hover_project_name='${project.name}'"
+          :onhoverlost "eww update hover_project_name=''"
+          (box
+            :class "worktree-card"
+            :orientation "v"
+            :space-evenly false
+            (box
+              :class "project-card-header"
+              :orientation "h"
+              :space-evenly false
+              ;; Worktree tree indicator
               (label
-                :class "project-card-path"
-                :halign "start"
-                :text "''${project.directory}"))
-            (label
-              :class "active-indicator"
-              :visible {project.is_active}
-              :text "●"))))
+                :class "worktree-tree"
+                :text "''${"├─"}")
+              ;; Icon
+              (box
+                :class "project-icon-container"
+                :orientation "v"
+                :valign "center"
+                (label
+                  :class "project-icon worktree-icon"
+                  :text "''${project.icon}"))
+              ;; Project info
+              (box
+                :class "project-info"
+                :orientation "v"
+                :space-evenly false
+                :hexpand true
+                (box
+                  :class "project-name-row"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "project-card-name worktree-name"
+                    :halign "start"
+                    :text "''${project.display_name ?: project.name}")
+                  ;; Remote indicator
+                  (label
+                    :class "remote-indicator"
+                    :visible {project.is_remote}
+                    :text "󰒍"))
+                (label
+                  :class "project-card-path"
+                  :halign "start"
+                  :text "''${project.directory}"))
+              ;; Active indicator
+              (label
+                :class "active-indicator"
+                :visible {project.is_active}
+                :text "●"))
+            ;; Hover detail tooltip
+            (revealer
+              :reveal {hover_project_name == project.name}
+              :transition "slidedown"
+              :duration "200ms"
+              (box
+                :class "project-detail-tooltip"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "json-detail"
+                  :halign "start"
+                  :wrap true
+                  :markup "''${project.json_repr}"
+                  :text ""))))))
 
       ;; Apps View - Application registry browser
       (defwidget apps-view []
@@ -1742,6 +1853,59 @@ in
       .active-indicator {
         color: ${mocha.teal};
         font-size: 14px;
+      }
+
+      .remote-indicator {
+        color: ${mocha.peach};
+        font-size: 12px;
+        margin-left: 6px;
+      }
+
+      .project-name-row {
+        margin-bottom: 2px;
+      }
+
+      .project-detail-tooltip {
+        background-color: rgba(24, 24, 37, 0.95);
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 8px;
+        max-width: 100%;
+      }
+
+      .json-detail {
+        font-family: "JetBrainsMono Nerd Font", monospace;
+        font-size: 9px;
+        line-height: 1.4;
+        color: ${mocha.text};
+      }
+
+      /* Worktree Card Styles */
+      .worktree-card {
+        background-color: rgba(49, 50, 68, 0.3);
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 6px;
+        padding: 10px;
+        margin-left: 20px;
+        margin-bottom: 6px;
+        margin-top: 4px;
+      }
+
+      .worktree-tree {
+        color: ${mocha.overlay0};
+        font-size: 12px;
+        margin-right: 4px;
+        font-family: monospace;
+      }
+
+      .worktree-icon {
+        font-size: 16px;
+      }
+
+      .worktree-name {
+        font-size: 12px;
+        color: ${mocha.subtext0};
       }
 
       /* App Card Styles */
