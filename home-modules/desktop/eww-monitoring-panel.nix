@@ -509,6 +509,10 @@ in
       ;; True if a click action is currently executing (lock file exists)
       (defvar click_in_progress false)
 
+      ;; Feature 094: Project hover and copy state
+      (defvar hover_project_name "")
+      (defvar copied_project_name "")
+
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -647,25 +651,26 @@ in
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
       (defwidget windows-view []
-        (box
-          :class "windows-view-container"
-          :orientation "v"
+        (scroll
+          :vscroll true
+          :hscroll false
           :vexpand true
-          ;; Show detail view when window is selected
           (box
-            :visible {selected_window_id != 0}
+            :class "content-container"
+            :orientation "v"
+            :space-evenly false
             :vexpand true
-            (window-detail-view))
-          ;; Show list view when no window is selected
-          (scroll
-            :vscroll true
-            :hscroll false
-            :vexpand true
-            :visible {selected_window_id == 0}
+            ;; Show detail view when window is selected
             (box
-              :class "content-container"
+              :visible {selected_window_id != 0}
+              :vexpand true
+              (window-detail-view))
+            ;; Show list view when no window is selected
+            (box
+              :visible {selected_window_id == 0}
               :orientation "v"
               :space-evenly false
+              :vexpand true
               ; Show error state when status is "error"
               (box
                 :visible "''${monitoring_data.status == 'error'}"
