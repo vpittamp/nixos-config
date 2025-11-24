@@ -32,8 +32,12 @@ import signal
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
+
+# Pydantic for data validation (Feature 092)
+from pydantic import BaseModel, Field
 
 # Import daemon client from core module
 from i3_project_manager.core.daemon_client import DaemonClient, DaemonError
@@ -204,6 +208,239 @@ SERVICE_REGISTRY = {
             "description": "Set PipeWire default sink to Tailscale RTP (headless only)",
         },
     ],
+}
+
+
+# =============================================================================
+# Feature 092: Event Logging - Data Models
+# =============================================================================
+
+# Event type literals for Sway IPC events
+EventType = Literal[
+    "window::new",
+    "window::close",
+    "window::focus",
+    "window::move",
+    "window::floating",
+    "window::fullscreen_mode",
+    "window::title",
+    "window::mark",
+    "window::urgent",
+    "workspace::focus",
+    "workspace::init",
+    "workspace::empty",
+    "workspace::move",
+    "workspace::rename",
+    "workspace::urgent",
+    "workspace::reload",
+    "output::unspecified",
+    "binding::run",
+    "mode::change",
+    "shutdown::exit",
+    "tick::manual",
+]
+
+
+class SwayEventPayload(BaseModel):
+    """
+    Raw Sway IPC event payload (varies by event type).
+
+    Common fields:
+    - container: Window/workspace/output container data
+    - change: Type of change that occurred
+    - current: Current state (for workspace/output focus events)
+    - old: Previous state (for workspace/output focus events)
+    """
+    # Window events
+    container: Optional[Dict[str, Any]] = None
+
+    # Workspace events
+    current: Optional[Dict[str, Any]] = None
+    old: Optional[Dict[str, Any]] = None
+
+    # Binding events
+    binding: Optional[Dict[str, Any]] = None
+
+    # Mode events
+    change: Optional[str] = None
+    pango_markup: Optional[bool] = None
+
+    # Raw event data (catch-all)
+    raw: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EventEnrichment(BaseModel):
+    """
+    i3pm daemon metadata enrichment for window-related events.
+
+    Only populated for window::* events when i3pm daemon is available.
+    """
+    # Window identification
+    window_id: Optional[int] = None
+    pid: Optional[int] = None
+
+    # App registry metadata
+    app_name: Optional[str] = None  # From I3PM_APP_NAME or app registry
+    app_id: Optional[str] = None    # Full app ID with instance suffix
+    icon_path: Optional[str] = None  # Resolved icon file path
+
+    # Project association
+    project_name: Optional[str] = None  # i3pm project name
+    scope: Optional[Literal["scoped", "global"]] = None
+
+    # Workspace context
+    workspace_number: Optional[int] = None
+    workspace_name: Optional[str] = None
+    output_name: Optional[str] = None
+
+    # PWA detection
+    is_pwa: bool = False  # True if workspace >= 50
+
+    # Enrichment metadata
+    daemon_available: bool = True  # False if i3pm daemon unreachable
+    enrichment_latency_ms: Optional[float] = None  # Time to query daemon
+
+
+class Event(BaseModel):
+    """
+    Complete event record with timestamp, type, payload, and enrichment.
+
+    This is the primary data structure stored in the event buffer and
+    sent to the Eww UI for display.
+    """
+    # Core event data
+    timestamp: float  # Unix timestamp (seconds since epoch)
+    timestamp_friendly: str  # Human-friendly relative time ("5s ago")
+    event_type: EventType  # Sway event type (e.g., "window::new")
+    change_type: Optional[str] = None  # Sub-type for some events
+
+    # Event payload
+    payload: SwayEventPayload
+
+    # i3pm enrichment (optional)
+    enrichment: Optional[EventEnrichment] = None
+
+    # Display metadata
+    icon: str  # Nerd Font icon for event type
+    color: str  # Catppuccin Mocha color hex code
+
+    # Categorization
+    category: Literal["window", "workspace", "output", "binding", "mode", "system"]
+
+    # Filtering support
+    searchable_text: str  # Concatenated text for search
+
+
+class EventsViewData(BaseModel):
+    """
+    Complete response for events view mode.
+
+    Sent from Python backend to Eww frontend via deflisten streaming.
+    """
+    # Response status
+    status: Literal["ok", "error"]
+    error: Optional[str] = None
+
+    # Event data
+    events: List[Event] = Field(default_factory=list)
+
+    # Metadata
+    event_count: int = 0  # Total events in buffer
+    filtered_count: Optional[int] = None  # Count after filtering
+    oldest_timestamp: Optional[float] = None
+    newest_timestamp: Optional[float] = None
+
+    # System state
+    daemon_available: bool = True  # i3pm daemon reachability
+    ipc_connected: bool = True  # Sway IPC connection status
+
+    # Timestamps
+    timestamp: float  # Query execution time
+    timestamp_friendly: str  # Human-friendly time
+
+
+class EventBuffer:
+    """
+    Circular buffer for event storage with automatic FIFO eviction.
+
+    Uses Python deque with maxlen for O(1) append and automatic eviction.
+    Thread-safe for single-writer scenarios (event loop).
+    """
+
+    def __init__(self, max_size: int = 500):
+        """
+        Initialize event buffer.
+
+        Args:
+            max_size: Maximum number of events to retain (default 500)
+        """
+        self._buffer: deque[Event] = deque(maxlen=max_size)
+        self._max_size = max_size
+
+    def append(self, event: Event) -> None:
+        """
+        Add event to buffer (automatically evicts oldest if full).
+
+        Args:
+            event: Event to append
+        """
+        self._buffer.append(event)
+
+    def get_all(self) -> List[Event]:
+        """
+        Get all buffered events (oldest first, newest last).
+
+        Returns:
+            List of events in chronological order
+        """
+        return list(self._buffer)
+
+    def clear(self) -> None:
+        """Clear all events from buffer."""
+        self._buffer.clear()
+
+    def size(self) -> int:
+        """Get current buffer size."""
+        return len(self._buffer)
+
+    @property
+    def max_size(self) -> int:
+        """Get maximum buffer capacity."""
+        return self._max_size
+
+
+# Event icon mapping with Nerd Font icons and Catppuccin Mocha colors
+EVENT_ICONS = {
+    # Window events
+    "window::new": {"icon": "󰖲", "color": "#89b4fa"},  # Blue
+    "window::close": {"icon": "󰖶", "color": "#f38ba8"},  # Red
+    "window::focus": {"icon": "󰋁", "color": "#74c7ec"},  # Sapphire
+    "window::move": {"icon": "󰁔", "color": "#fab387"},  # Peach
+    "window::floating": {"icon": "󰉈", "color": "#f9e2af"},  # Yellow
+    "window::fullscreen_mode": {"icon": "󰊓", "color": "#cba6f7"},  # Mauve
+    "window::title": {"icon": "󰓹", "color": "#a6adc8"},  # Subtext
+    "window::mark": {"icon": "󰃀", "color": "#94e2d5"},  # Teal
+    "window::urgent": {"icon": "󰀪", "color": "#f38ba8"},  # Red
+
+    # Workspace events
+    "workspace::focus": {"icon": "󱂬", "color": "#94e2d5"},  # Teal
+    "workspace::init": {"icon": "󰐭", "color": "#a6e3a1"},  # Green
+    "workspace::empty": {"icon": "󰭀", "color": "#6c7086"},  # Overlay
+    "workspace::move": {"icon": "󰁔", "color": "#fab387"},  # Peach
+    "workspace::rename": {"icon": "󰑕", "color": "#89dceb"},  # Sky
+    "workspace::urgent": {"icon": "󰀪", "color": "#f38ba8"},  # Red
+    "workspace::reload": {"icon": "󰑓", "color": "#a6e3a1"},  # Green
+
+    # Output events
+    "output::unspecified": {"icon": "󰍹", "color": "#cba6f7"},  # Mauve
+
+    # Binding/mode events
+    "binding::run": {"icon": "󰌌", "color": "#f9e2af"},  # Yellow
+    "mode::change": {"icon": "󰘧", "color": "#89dceb"},  # Sky
+
+    # System events
+    "shutdown::exit": {"icon": "󰚌", "color": "#f38ba8"},  # Red
+    "tick::manual": {"icon": "󰥔", "color": "#6c7086"},  # Overlay
 }
 
 
@@ -1701,6 +1938,237 @@ async def stream_monitoring_data():
     sys.exit(0)
 
 
+# =============================================================================
+# Feature 092: Event Logging - Backend Implementation
+# =============================================================================
+
+# Global event buffer (initialized on first stream)
+_event_buffer: Optional[EventBuffer] = None
+
+
+async def query_events_data() -> Dict[str, Any]:
+    """
+    Query events data (one-shot mode).
+
+    Returns current event buffer state. Buffer must be initialized by stream mode first.
+
+    Returns:
+        EventsViewData as dict (Pydantic model_dump)
+    """
+    global _event_buffer
+
+    current_time = time.time()
+
+    # If buffer not initialized, return empty state
+    if _event_buffer is None:
+        view_data = EventsViewData(
+            status="ok",
+            events=[],
+            event_count=0,
+            oldest_timestamp=None,
+            newest_timestamp=None,
+            daemon_available=True,
+            ipc_connected=False,
+            timestamp=current_time,
+            timestamp_friendly=format_friendly_timestamp(current_time),
+        )
+        return view_data.model_dump(mode="json")
+
+    # Get all events from buffer
+    events = _event_buffer.get_all()
+
+    view_data = EventsViewData(
+        status="ok",
+        events=events,
+        event_count=len(events),
+        oldest_timestamp=events[0].timestamp if events else None,
+        newest_timestamp=events[-1].timestamp if events else None,
+        daemon_available=True,
+        ipc_connected=True,
+        timestamp=current_time,
+        timestamp_friendly=format_friendly_timestamp(current_time),
+    )
+
+    return view_data.model_dump(mode="json")
+
+
+async def stream_events():
+    """
+    Stream events (deflisten mode) - Feature 092.
+
+    Subscribes to Sway IPC window/workspace/output events and outputs JSON to stdout.
+    Similar architecture to stream_monitoring_data() but focused on event logging.
+    """
+    global _event_buffer
+
+    # Initialize buffer
+    _event_buffer = EventBuffer(max_size=500)
+
+    # Setup signal handlers for graceful shutdown
+    shutdown_event = asyncio.Event()
+
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating shutdown")
+        shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # Connect to Sway IPC
+    try:
+        conn = await I3Connection(auto_reconnect=True).connect()
+        logger.info("Connected to Sway IPC for event streaming")
+    except Exception as e:
+        logger.critical(f"Failed to connect to Sway IPC: {e}")
+        error_time = time.time()
+        error_data = EventsViewData(
+            status="error",
+            error=f"Sway IPC connection failed: {e}",
+            events=[],
+            event_count=0,
+            daemon_available=False,
+            ipc_connected=False,
+            timestamp=error_time,
+            timestamp_friendly=format_friendly_timestamp(error_time),
+        )
+        print(json.dumps(error_data.model_dump(mode="json"), separators=(",", ":")))
+        sys.exit(1)
+
+    # Event handlers
+    def create_event_from_sway(event_type: EventType, change_type: str, sway_payload: Dict[str, Any]) -> Event:
+        """Helper to create Event from Sway IPC event."""
+        current_time = time.time()
+
+        # Get icon and color
+        icon_data = EVENT_ICONS.get(event_type, {"icon": "󰀄", "color": "#a6adc8"})
+        icon = icon_data["icon"]
+        color = icon_data["color"]
+
+        # Determine category
+        if event_type.startswith("window::"):
+            category = "window"
+        elif event_type.startswith("workspace::"):
+            category = "workspace"
+        elif event_type.startswith("output::"):
+            category = "output"
+        elif event_type.startswith("binding::"):
+            category = "binding"
+        elif event_type.startswith("mode::"):
+            category = "mode"
+        else:
+            category = "system"
+
+        # Build searchable text (basic version)
+        searchable_parts = [event_type, change_type]
+        if "container" in sway_payload and sway_payload["container"]:
+            container = sway_payload["container"]
+            searchable_parts.append(container.get("app_id", ""))
+            searchable_parts.append(container.get("name", ""))
+        if "current" in sway_payload and sway_payload["current"]:
+            searchable_parts.append(str(sway_payload["current"].get("num", "")))
+
+        searchable_text = " ".join(filter(None, searchable_parts))
+
+        # Create payload model
+        payload = SwayEventPayload(**sway_payload)
+
+        return Event(
+            timestamp=current_time,
+            timestamp_friendly=format_friendly_timestamp(current_time),
+            event_type=event_type,
+            change_type=change_type,
+            payload=payload,
+            enrichment=None,  # TODO: Add daemon enrichment in future iteration
+            icon=icon,
+            color=color,
+            category=category,
+            searchable_text=searchable_text,
+        )
+
+    def on_window_event(conn, event):
+        """Handle window events."""
+        try:
+            change = event.change
+            event_type = f"window::{change}"
+
+            # Extract payload
+            sway_payload = {
+                "container": event.container.ipc_data if hasattr(event, "container") else None,
+                "change": change,
+            }
+
+            # Create and buffer event
+            evt = create_event_from_sway(event_type, change, sway_payload)
+            _event_buffer.append(evt)
+
+            # Output immediately
+            view_data = EventsViewData(
+                status="ok",
+                events=_event_buffer.get_all(),
+                event_count=_event_buffer.size(),
+                oldest_timestamp=_event_buffer.get_all()[0].timestamp if _event_buffer.size() > 0 else None,
+                newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
+                daemon_available=True,
+                ipc_connected=True,
+                timestamp=time.time(),
+                timestamp_friendly="Just now",
+            )
+            print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
+
+        except Exception as e:
+            logger.error(f"Error handling window event: {e}", exc_info=True)
+
+    def on_workspace_event(conn, event):
+        """Handle workspace events."""
+        try:
+            change = event.change
+            event_type = f"workspace::{change}"
+
+            # Extract payload
+            sway_payload = {
+                "current": event.current.ipc_data if hasattr(event, "current") else None,
+                "old": event.old.ipc_data if hasattr(event, "old") else None,
+                "change": change,
+            }
+
+            # Create and buffer event
+            evt = create_event_from_sway(event_type, change, sway_payload)
+            _event_buffer.append(evt)
+
+            # Output immediately
+            view_data = EventsViewData(
+                status="ok",
+                events=_event_buffer.get_all(),
+                event_count=_event_buffer.size(),
+                oldest_timestamp=_event_buffer.get_all()[0].timestamp if _event_buffer.size() > 0 else None,
+                newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
+                daemon_available=True,
+                ipc_connected=True,
+                timestamp=time.time(),
+                timestamp_friendly="Just now",
+            )
+            print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
+
+        except Exception as e:
+            logger.error(f"Error handling workspace event: {e}", exc_info=True)
+
+    # Subscribe to events
+    conn.on("window", on_window_event)
+    conn.on("workspace", on_workspace_event)
+
+    logger.info("Event subscriptions active, streaming to stdout")
+
+    # Keep running until shutdown
+    try:
+        await shutdown_event.wait()
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
+    finally:
+        logger.info("Shutting down event stream")
+        await conn.close()
+        sys.exit(0)
+
+
 async def main():
     """
     Main entry point for backend script.
@@ -1710,6 +2178,7 @@ async def main():
     - projects: Project list view
     - apps: Application registry view
     - health: System health view
+    - events: Sway IPC event log view (Feature 092)
     - Stream (--listen): Continuous event stream (deflisten mode)
 
     Exit codes:
@@ -1720,24 +2189,28 @@ async def main():
     parser = argparse.ArgumentParser(description="Monitoring panel data backend")
     parser.add_argument(
         "--mode",
-        choices=["windows", "projects", "apps", "health"],
+        choices=["windows", "projects", "apps", "health", "events"],
         default="windows",
         help="View mode (default: windows)"
     )
     parser.add_argument(
         "--listen",
         action="store_true",
-        help="Stream mode (deflisten) - only works with windows mode"
+        help="Stream mode (deflisten) - works with windows and events modes"
     )
     args = parser.parse_args()
 
-    # Stream mode (only for windows view)
+    # Stream mode (for windows or events view)
     if args.listen:
-        if args.mode != "windows":
-            logger.error("--listen flag only works with windows mode")
+        if args.mode == "windows":
+            await stream_monitoring_data()
+            return
+        elif args.mode == "events":
+            await stream_events()
+            return
+        else:
+            logger.error(f"--listen flag only works with windows or events mode, got: {args.mode}")
             sys.exit(1)
-        await stream_monitoring_data()
-        return
 
     # One-shot mode - route to appropriate query function
     try:
@@ -1749,6 +2222,8 @@ async def main():
             data = await query_apps_data()
         elif args.mode == "health":
             data = await query_health_data()
+        elif args.mode == "events":
+            data = await query_events_data()
         else:
             raise ValueError(f"Unknown mode: {args.mode}")
 
