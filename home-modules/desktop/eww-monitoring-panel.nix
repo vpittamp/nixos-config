@@ -1271,41 +1271,65 @@ in
                   :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false"
                   "Clear All"))
               ;; Window events category
-              (filter-category
-                :title "Window Events (9)"
-                :filters "[
-                  {\"label\": \"new\", \"var\": \"filter_window_new\", \"value\": filter_window_new},
-                  {\"label\": \"close\", \"var\": \"filter_window_close\", \"value\": filter_window_close},
-                  {\"label\": \"focus\", \"var\": \"filter_window_focus\", \"value\": filter_window_focus},
-                  {\"label\": \"move\", \"var\": \"filter_window_move\", \"value\": filter_window_move},
-                  {\"label\": \"floating\", \"var\": \"filter_window_floating\", \"value\": filter_window_floating},
-                  {\"label\": \"fullscreen\", \"var\": \"filter_window_fullscreen_mode\", \"value\": filter_window_fullscreen_mode},
-                  {\"label\": \"title\", \"var\": \"filter_window_title\", \"value\": filter_window_title},
-                  {\"label\": \"mark\", \"var\": \"filter_window_mark\", \"value\": filter_window_mark},
-                  {\"label\": \"urgent\", \"var\": \"filter_window_urgent\", \"value\": filter_window_urgent}
-                ]")
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Window Events (9)")
+                (box
+                  :class "filter-checkboxes"
+                  :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "new" :var "filter_window_new" :value filter_window_new)
+                  (filter-checkbox :label "close" :var "filter_window_close" :value filter_window_close)
+                  (filter-checkbox :label "focus" :var "filter_window_focus" :value filter_window_focus)
+                  (filter-checkbox :label "move" :var "filter_window_move" :value filter_window_move)
+                  (filter-checkbox :label "floating" :var "filter_window_floating" :value filter_window_floating)
+                  (filter-checkbox :label "fullscreen" :var "filter_window_fullscreen_mode" :value filter_window_fullscreen_mode)
+                  (filter-checkbox :label "title" :var "filter_window_title" :value filter_window_title)
+                  (filter-checkbox :label "mark" :var "filter_window_mark" :value filter_window_mark)
+                  (filter-checkbox :label "urgent" :var "filter_window_urgent" :value filter_window_urgent)))
               ;; Workspace events category
-              (filter-category
-                :title "Workspace Events (7)"
-                :filters "[
-                  {\"label\": \"focus\", \"var\": \"filter_workspace_focus\", \"value\": filter_workspace_focus},
-                  {\"label\": \"init\", \"var\": \"filter_workspace_init\", \"value\": filter_workspace_init},
-                  {\"label\": \"empty\", \"var\": \"filter_workspace_empty\", \"value\": filter_workspace_empty},
-                  {\"label\": \"move\", \"var\": \"filter_workspace_move\", \"value\": filter_workspace_move},
-                  {\"label\": \"rename\", \"var\": \"filter_workspace_rename\", \"value\": filter_workspace_rename},
-                  {\"label\": \"urgent\", \"var\": \"filter_workspace_urgent\", \"value\": filter_workspace_urgent},
-                  {\"label\": \"reload\", \"var\": \"filter_workspace_reload\", \"value\": filter_workspace_reload}
-                ]")
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Workspace Events (7)")
+                (box
+                  :class "filter-checkboxes"
+                :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "focus" :var "filter_workspace_focus" :value filter_workspace_focus)
+                  (filter-checkbox :label "init" :var "filter_workspace_init" :value filter_workspace_init)
+                  (filter-checkbox :label "empty" :var "filter_workspace_empty" :value filter_workspace_empty)
+                  (filter-checkbox :label "move" :var "filter_workspace_move" :value filter_workspace_move)
+                  (filter-checkbox :label "rename" :var "filter_workspace_rename" :value filter_workspace_rename)
+                  (filter-checkbox :label "urgent" :var "filter_workspace_urgent" :value filter_workspace_urgent)
+                  (filter-checkbox :label "reload" :var "filter_workspace_reload" :value filter_workspace_reload)))
               ;; Output/Binding/Mode/System events
-              (filter-category
-                :title "Other Events (5)"
-                :filters "[
-                  {\"label\": \"output\", \"var\": \"filter_output_unspecified\", \"value\": filter_output_unspecified},
-                  {\"label\": \"binding\", \"var\": \"filter_binding_run\", \"value\": filter_binding_run},
-                  {\"label\": \"mode\", \"var\": \"filter_mode_change\", \"value\": filter_mode_change},
-                  {\"label\": \"shutdown\", \"var\": \"filter_shutdown_exit\", \"value\": filter_shutdown_exit},
-                  {\"label\": \"tick\", \"var\": \"filter_tick_manual\", \"value\": filter_tick_manual}
-                ]")))
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Other Events (5)")
+                (box
+                  :class "filter-checkboxes"
+                  :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "output" :var "filter_output_unspecified" :value filter_output_unspecified)
+                  (filter-checkbox :label "binding" :var "filter_binding_run" :value filter_binding_run)
+                  (filter-checkbox :label "mode" :var "filter_mode_change" :value filter_mode_change)
+                  (filter-checkbox :label "shutdown" :var "filter_shutdown_exit" :value filter_shutdown_exit)
+                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))))
           ;; Error state
           (box
             :visible "''${events_data.status == 'error'}"
@@ -1411,34 +1435,21 @@ in
               :limit-width 60
               :text "''${event.searchable_text}"))))
 
-      ;; Feature 092: Filter category widget for grouping checkboxes
-      (defwidget filter-category [title filters]
-        (box
-          :class "filter-category-group"
-          :orientation "v"
-          :space-evenly false
-          (label
-            :class "filter-category-title"
-            :halign "start"
-            :text title)
+      ;; Feature 092: Filter checkbox widget - single checkbox for an event type
+      (defwidget filter-checkbox [label var value]
+        (eventbox
+          :cursor "pointer"
+          :onclick "eww --config $HOME/.config/eww-monitoring-panel update ''${var}=''${!value}"
           (box
-            :class "filter-checkboxes"
+            :class "filter-checkbox-item"
             :orientation "h"
             :space-evenly false
-            (for filter in {filters}
-              (eventbox
-                :cursor "pointer"
-                :onclick "eww --config $HOME/.config/eww-monitoring-panel update ''${filter.var}=''${!filter.value}"
-                (box
-                  :class "filter-checkbox-item"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "filter-checkbox-icon"
-                    :text "''${filter.value ? '☑' : '☐'}")
-                  (label
-                    :class "filter-checkbox-label"
-                    :text filter.label)))))))
+            (label
+              :class "filter-checkbox-icon"
+              :text "''${value ? '☑' : '☐'}")
+            (label
+              :class "filter-checkbox-label"
+              :text label))))
 
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
