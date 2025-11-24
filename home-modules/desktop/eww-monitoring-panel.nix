@@ -2354,53 +2354,56 @@ in
 
       /* Feature 092: Event Filter Panel Styling */
       .filter-panel {
-        background-color: ${mocha.mantle};
-        border-radius: 8px;
-        padding: 8px;
-        margin: 8px 4px;
-        border: 1px solid ${mocha.overlay0};
+        background-color: transparent;
+        padding: 0;
+        margin: 0 4px 4px 4px;
       }
 
       .filter-header {
-        padding: 8px;
+        padding: 6px 8px;
         background-color: ${mocha.surface0};
-        border-radius: 6px;
-        margin-bottom: 4px;
+        border-radius: 4px;
+        border: 1px solid ${mocha.overlay0};
       }
 
       .filter-header:hover {
         background-color: ${mocha.surface1};
+        border-color: ${mocha.blue};
       }
 
       .filter-title {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: ${mocha.blue};
       }
 
       .filter-toggle {
-        font-size: 10px;
+        font-size: 9px;
         color: ${mocha.subtext0};
         margin-left: 8px;
       }
 
       .filter-controls {
         padding: 8px 4px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-top: 4px;
+        border: 1px solid ${mocha.overlay0};
       }
 
       .filter-global-controls {
-        padding: 8px;
-        margin-bottom: 12px;
+        padding: 6px 4px;
+        margin-bottom: 8px;
       }
 
       .filter-button {
         background-color: ${mocha.surface0};
         color: ${mocha.text};
         border: 1px solid ${mocha.overlay0};
-        border-radius: 4px;
-        padding: 6px 12px;
-        margin-right: 8px;
-        font-size: 11px;
+        border-radius: 3px;
+        padding: 4px 10px;
+        margin-right: 6px;
+        font-size: 10px;
         font-weight: 500;
       }
 
@@ -2411,29 +2414,29 @@ in
 
       .filter-category-group {
         background-color: ${mocha.base};
-        border-radius: 6px;
-        padding: 8px;
-        margin-bottom: 8px;
+        border-radius: 4px;
+        padding: 6px;
+        margin-bottom: 6px;
         border: 1px solid ${mocha.surface0};
       }
 
       .filter-category-title {
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         color: ${mocha.teal};
-        margin-bottom: 8px;
-        padding: 4px 0;
+        margin-bottom: 4px;
+        padding: 2px 0;
         border-bottom: 1px solid ${mocha.surface0};
       }
 
       .filter-checkboxes {
-        padding: 4px 0;
+        padding: 2px 0;
       }
 
       .filter-checkbox-item {
-        padding: 4px 8px;
-        margin-right: 12px;
-        border-radius: 4px;
+        padding: 2px 6px;
+        margin-right: 8px;
+        border-radius: 3px;
         background-color: transparent;
       }
 
@@ -2442,13 +2445,13 @@ in
       }
 
       .filter-checkbox-icon {
-        font-size: 14px;
+        font-size: 12px;
         color: ${mocha.blue};
-        margin-right: 4px;
+        margin-right: 3px;
       }
 
       .filter-checkbox-label {
-        font-size: 10px;
+        font-size: 9px;
         color: ${mocha.text};
         font-family: monospace;
       }
