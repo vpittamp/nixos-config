@@ -74,6 +74,7 @@ let
 
   # Python with required packages for both modes (one-shot and streaming)
   # pyxdg required for XDG icon theme lookup (resolves icon names like "firefox" to paths)
+  # pydantic required for data models in monitoring_data.py (Feature 092)
   pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ps.pydantic ]);
 
   # Python backend script for monitoring data
@@ -151,6 +152,117 @@ let
 
     # Return focus to previous window
     ${pkgs.sway}/bin/swaymsg 'focus prev'
+  '';
+
+  # Feature 093: Focus window action script (T009-T015)
+  # Focuses a window with automatic project switching if needed
+  focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 093: Focus window with automatic project switching
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+    WINDOW_ID="''${2:-}"
+
+    # Validate inputs (T010)
+    if [[ -z "$PROJECT_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No project name provided"
+        exit 1
+    fi
+
+    if [[ -z "$WINDOW_ID" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No window ID provided"
+        exit 1
+    fi
+
+    # Lock file mechanism for debouncing (T011)
+    LOCK_FILE="/tmp/eww-monitoring-focus-''${WINDOW_ID}.lock"
+
+    if [[ -f "$LOCK_FILE" ]]; then
+        # Silently ignore if previous action still in progress
+        exit 1
+    fi
+
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get current project (T012)
+    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+
+    # Conditional project switch (T013)
+    if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
+        if ! i3pm project switch "$PROJECT_NAME"; then
+            EXIT_CODE=$?
+            ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
+                "Failed to switch to project $PROJECT_NAME (exit code: $EXIT_CODE)"
+            exit 1
+        fi
+    fi
+
+    # Focus window (T014)
+    if ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus"; then
+        # Success path (T015) - Visual feedback only, no notification
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=$WINDOW_ID
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0) &
+        exit 0
+    else
+        # Failure path - Keep critical notification for actual errors
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "Window no longer available"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0
+        exit 1
+    fi
+  '';
+
+  # Feature 093: Switch project action script (T016-T020)
+  # Switches to a different project context by name
+  switchProjectScript = pkgs.writeShellScriptBin "switch-project-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 093: Switch to a different project context
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+
+    # Validate input (T017)
+    if [[ -z "$PROJECT_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "No project name provided"
+        exit 1
+    fi
+
+    # Lock file mechanism for debouncing (T018)
+    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME}.lock"
+
+    if [[ -f "$LOCK_FILE" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Project Switch" "Previous action still in progress"
+        exit 1
+    fi
+
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get current project (T019)
+    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+
+    # Check if already in target project
+    if [[ "$PROJECT_NAME" == "$CURRENT_PROJECT" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Already in project $PROJECT_NAME"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
+        exit 0
+    fi
+
+    # Execute project switch (T020)
+    if i3pm project switch "$PROJECT_NAME"; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
+        exit 0
+    else
+        EXIT_CODE=$?
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
+            "Failed to switch to $PROJECT_NAME (exit code: $EXIT_CODE)"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project=""
+        exit 1
+    fi
   '';
 
   # SwayNC toggle wrapper
@@ -278,7 +390,6 @@ let
       2|Alt+2) $EWW_CMD update current_view=projects ;;
       3|Alt+3) $EWW_CMD update current_view=apps ;;
       4|Alt+4) $EWW_CMD update current_view=health ;;
-      5|Alt+5) $EWW_CMD update current_view=events ;;
       Escape|q) $EWW_CMD close monitoring-panel ;;
     esac
   '';
@@ -319,6 +430,8 @@ in
       monitorPanelNavScript # Feature 086: Navigation within panel
       swayNCToggleScript    # SwayNC toggle with mutual exclusivity
       restartServiceScript  # Feature 088 US3: Service restart script
+      focusWindowScript     # Feature 093: Focus window action
+      switchProjectScript   # Feature 093: Switch project action
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -354,14 +467,7 @@ in
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
 
-      ;; Feature 092: Deflisten: Real-time Sway event log stream
-      ;; Subscribes to window/workspace/output IPC events with <100ms latency
-      ;; Maintains circular buffer of 500 most recent events (FIFO eviction)
-      (deflisten events_data
-        :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
-        `${monitoringDataScript}/bin/monitoring-data-backend --mode events --listen`)
-
-      ;; Current view state (windows, projects, apps, health, events)
+      ;; Current view state (windows, projects, apps, health)
       (defvar current_view "windows")
 
       ;; Selected window ID for detail view (0 = none selected)
@@ -385,6 +491,16 @@ in
 
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
+
+      ;; Feature 093: Click interaction state variables (T021-T023)
+      ;; Window ID of last clicked window (0 = no window clicked or auto-reset after 2s)
+      (defvar clicked_window_id 0)
+
+      ;; Project name of last clicked project header ("" = no project clicked or auto-reset after 2s)
+      (defvar clicked_project "")
+
+      ;; True if a click action is currently executing (lock file exists)
+      (defvar click_in_progress false)
 
 
       ;; Main monitoring panel window - Sidebar layout
@@ -460,14 +576,6 @@ in
                 :class "tab ''${current_view == 'health' ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
                 "󰓙"))
-            ;; Feature 092: Logs tab (5th tab)
-            (eventbox
-              :cursor "pointer"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=events"
-              (button
-                :class "tab ''${current_view == 'events' ? 'active' : ""}"
-                :tooltip "Logs (Alt+5)"
-                "󰌱"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -515,11 +623,7 @@ in
             (box
               :vexpand true
               :visible {current_view == "health"}
-              (health-view))
-            ;; Feature 092: Events/Logs View - Real-time Sway IPC event log
-            (box
-              :visible {current_view == "events"}
-              (events-view)))))
+              (health-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -588,6 +692,7 @@ in
       ;; Click to show detail view (stores window ID)
       ;; Hover to show syntax-highlighted JSON with copy button
       ;; Fixed: Entire widget wrapped in eventbox so tooltip stays open when hovering over JSON
+      ;; Feature 093: Added click handler for window focus with project switching
       (defwidget window-widget [window]
         (eventbox
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
@@ -598,10 +703,10 @@ in
             :space-evenly false
             ;; Main window item (clickable)
             (eventbox
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
+              :onclick "focus-window-action ''${window.project} ''${window.id} &"
               :cursor "pointer"
               (box
-                :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+                :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
                 :orientation "h"
                 :space-evenly false
                 ; App icon (image if available, fallback emoji otherwise)
@@ -1072,92 +1177,6 @@ in
               :tooltip "Restart ''${service.display_name}"
               "⟳"))))
 
-      ;; Feature 092: Events/Logs View - Real-time Sway IPC event log (T024)
-      (defwidget events-view []
-        (box
-          :class "events-view-container"
-          :orientation "v"
-          :vexpand true
-          ;; Error state
-          (box
-            :visible "''${events_data.status == 'error'}"
-            :class "error-state"
-            :orientation "v"
-            :valign "center"
-            :halign "center"
-            :vexpand true
-            (label
-              :class "error-message"
-              :text "󰀦 Error: ''${events_data.error ?: 'Unknown error'}")
-            (label
-              :class "error-help"
-              :text "Check i3pm daemon and Sway IPC connection"))
-          ;; Empty state (no events yet)
-          (box
-            :visible "''${events_data.status == 'ok' && events_data.event_count == 0}"
-            :class "empty-state"
-            :orientation "v"
-            :valign "center"
-            :halign "center"
-            :vexpand true
-            (label
-              :class "empty-message"
-              :text "󰌱 No events yet")
-            (label
-              :class "empty-help"
-              :text "Waiting for Sway window/workspace events..."))
-          ;; Events list (scroll container)
-          (scroll
-            :vscroll true
-            :hscroll false
-            :vexpand true
-            :visible "''${events_data.status == 'ok' && events_data.event_count > 0}"
-            (box
-              :class "events-list"
-              :orientation "v"
-              :space-evenly false
-              ;; Iterate through events (newest last for auto-scroll)
-              (for event in {events_data.events ?: []}
-                (event-card :event event))))))
-
-      ;; Feature 092: Event card widget - Single event display (T025)
-      (defwidget event-card [event]
-        (box
-          :class "event-card event-category-''${event.category}"
-          :orientation "h"
-          :space-evenly false
-          ;; Event icon with category color
-          (label
-            :class "event-icon"
-            :style "color: ''${event.color};"
-            :text "''${event.icon}")
-          ;; Event details
-          (box
-            :class "event-details"
-            :orientation "v"
-            :space-evenly false
-            :hexpand true
-            ;; Event type and timestamp
-            (box
-              :class "event-header"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "event-type"
-                :halign "start"
-                :hexpand true
-                :text "''${event.event_type}")
-              (label
-                :class "event-timestamp"
-                :halign "end"
-                :text "''${event.timestamp_friendly}"))
-            ;; Event payload info (window/workspace details)
-            (label
-              :class "event-payload"
-              :halign "start"
-              :limit-width 60
-              :text "''${event.searchable_text}"))))
-
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
         (box
@@ -1345,6 +1364,19 @@ in
         border-radius: 2px;
         background-color: transparent;
         border-left: 2px solid transparent;
+      }
+
+      /* Feature 093: Hover state for clickable window rows (T029) */
+      .window:hover {
+        background-color: rgba(69, 71, 90, 0.5);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Feature 093: Clicked state for visual feedback (T030) */
+      .window.clicked {
+        background-color: rgba(137, 180, 250, 0.3);
+        border-left-color: ${mocha.blue};
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
       }
 
       .window-focused {
@@ -1960,90 +1992,6 @@ in
       .window-title {
         font-size: 10px;
         color: ${mocha.subtext0};
-      }
-
-      .window:hover {
-        background-color: rgba(49, 50, 68, 0.3);
-      }
-
-      /* Feature 092: Event Logging - Logs View Styling (T027) */
-      .events-view-container {
-        padding: 8px;
-      }
-
-      .events-list {
-        padding: 4px;
-      }
-
-      .event-card {
-        background-color: ${mocha.surface0};
-        border-left: 3px solid ${mocha.overlay0};
-        border-radius: 4px;
-        padding: 8px;
-        margin-bottom: 6px;
-        transition: background-color 0.2s ease;
-      }
-
-      .event-card:hover {
-        background-color: ${mocha.surface1};
-      }
-
-      /* Category-specific border colors */
-      .event-card.event-category-window {
-        border-left-color: ${mocha.blue};
-      }
-
-      .event-card.event-category-workspace {
-        border-left-color: ${mocha.teal};
-      }
-
-      .event-card.event-category-output {
-        border-left-color: ${mocha.mauve};
-      }
-
-      .event-card.event-category-binding {
-        border-left-color: ${mocha.yellow};
-      }
-
-      .event-card.event-category-mode {
-        border-left-color: ${mocha.sky};
-      }
-
-      .event-card.event-category-system {
-        border-left-color: ${mocha.red};
-      }
-
-      .event-icon {
-        font-size: 20px;
-        margin-right: 12px;
-        min-width: 28px;
-      }
-
-      .event-details {
-        /* GTK CSS doesn't support flex property - layout handled by box widget */
-      }
-
-      .event-header {
-        margin-bottom: 4px;
-      }
-
-      .event-type {
-        font-size: 11px;
-        font-weight: 600;
-        color: ${mocha.text};
-        font-family: monospace;
-      }
-
-      .event-timestamp {
-        font-size: 10px;
-        color: ${mocha.subtext0};
-        font-style: italic;
-      }
-
-      .event-payload {
-        font-size: 10px;
-        color: ${mocha.subtext0};
-        /* GTK CSS doesn't support white-space property */
       }
     '';
 

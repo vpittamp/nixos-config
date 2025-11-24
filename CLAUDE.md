@@ -1032,8 +1032,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON project files in `~/.config/i3/projects/*.json` (i3pm project definitions), notification handler passes project context via command-line arguments (ephemeral) (090-notification-callback)
 - Python 3.11+ (existing daemon standard per Constitution Principle X) + i3ipc.aio (async Sway IPC client), asyncio (parallelization), Pydantic (data validation) (091-optimize-i3pm-project)
 - In-memory daemon state (no persistence changes required) (091-optimize-i3pm-project)
-- Python 3.11+ (backend event streaming), Yuck/GTK (Eww widget UI), Nix (module configuration) + i3ipc.aio (Sway IPC event subscriptions), asyncio (event loop), Eww 0.4+ (GTK3), Sway 1.8+ (092-logs-events-tab)
-- In-memory circular buffer (500 events max, FIFO eviction), no persistent storage (092-logs-events-tab)
+- Bash 5.0+ (shell scripts), Yuck/GTK3 CSS (Eww widget definition), Nix 2.18+ (build system) (093-actions-window-widget)
+- Eww runtime state (in-memory variables), no persistence required (093-actions-window-widget)
 
 ## Recent Changes
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)

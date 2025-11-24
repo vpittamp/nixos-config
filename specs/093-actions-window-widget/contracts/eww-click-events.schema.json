@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://nixos-config/schemas/eww-click-events.schema.json",
+  "title": "Eww Click Events State Schema",
+  "description": "Schema for Eww monitoring panel click interaction state variables",
+  "version": "1.0.0",
+  "type": "object",
+  "properties": {
+    "clicked_window_id": {
+      "type": "integer",
+      "description": "Window ID (Sway con_id) of last clicked window. 0 = no window clicked or auto-reset after 2s timeout.",
+      "minimum": 0,
+      "default": 0,
+      "examples": [0, 94638583398848, 12345678901234]
+    },
+    "clicked_project": {
+      "type": "string",
+      "description": "Project name of last clicked project header. Empty string = no project clicked or auto-reset after 2s timeout.",
+      "default": "",
+      "pattern": "^[a-z0-9-]*$",
+      "maxLength": 100,
+      "examples": ["", "nixos", "webapp", "dotfiles", "global"]
+    },
+    "click_in_progress": {
+      "type": "boolean",
+      "description": "True if a click action is currently executing (lock file exists). Prevents duplicate rapid clicks.",
+      "default": false,
+      "examples": [false, true]
+    }
+  },
+  "required": ["clicked_window_id", "clicked_project", "click_in_progress"],
+  "additionalProperties": false,
+  "definitions": {
+    "EwwDefvar": {
+      "description": "Eww variable declaration pattern",
+      "type": "object",
+      "properties": {
+        "variable_name": {
+          "type": "string",
+          "enum": ["clicked_window_id", "clicked_project", "click_in_progress"]
+        },
+        "initial_value": {
+          "oneOf": [
+            {"type": "integer", "const": 0},
+            {"type": "string", "const": ""},
+            {"type": "boolean", "const": false}
+          ]
+        },
+        "eww_syntax": {
+          "type": "string",
+          "examples": [
+            "(defvar clicked_window_id 0)",
+            "(defvar clicked_project \"\")",
+            "(defvar click_in_progress false)"
+          ]
+        }
+      }
+    },
+    "EwwUpdate": {
+      "description": "Eww variable update command pattern",
+      "type": "object",
+      "properties": {
+        "variable_name": {
+          "type": "string",
+          "enum": ["clicked_window_id", "clicked_project", "click_in_progress"]
+        },
+        "new_value": {
+          "description": "New value to set. Type must match variable type.",
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "string", "pattern": "^[a-z0-9-]*$"},
+            {"type": "boolean"}
+          ]
+        },
+        "command_syntax": {
+          "type": "string",
+          "examples": [
+            "eww --config ~/.config/eww-monitoring-panel update clicked_window_id=12345",
+            "eww --config ~/.config/eww-monitoring-panel update clicked_project=\"nixos\"",
+            "eww --config ~/.config/eww-monitoring-panel update click_in_progress=true"
+          ]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "clicked_window_id": 0,
+      "clicked_project": "",
+      "click_in_progress": false,
+      "$comment": "Initial state - no clicks"
+    },
+    {
+      "clicked_window_id": 94638583398848,
+      "clicked_project": "",
+      "click_in_progress": true,
+      "$comment": "Window focus action in progress"
+    },
+    {
+      "clicked_window_id": 0,
+      "clicked_project": "webapp",
+      "click_in_progress": true,
+      "$comment": "Project switch action in progress"
+    },
+    {
+      "clicked_window_id": 94638583398848,
+      "clicked_project": "",
+      "click_in_progress": false,
+      "$comment": "Window focus completed, visual highlight still active (2s timeout)"
+    }
+  ],
+  "notes": {
+    "mutual_exclusivity": "Only one of clicked_window_id or clicked_project should be non-default at any given time. Both being non-default indicates a race condition or bug.",
+    "auto_reset": "Both clicked_window_id and clicked_project auto-reset to defaults after 2 seconds via background shell script: (sleep 2 && eww update VAR=DEFAULT) &",
+    "css_binding": "CSS classes use these variables for visual feedback:\n  - .window-row.clicked: Applied when clicked_window_id == window.id\n  - .project-header.clicked: Applied when clicked_project == project.name",
+    "performance": "Eww variable updates are in-memory and complete within <10ms. No persistence across panel restarts.",
+    "concurrency": "click_in_progress prevents UI-level duplicate clicks, but lock files in bash scripts provide the true synchronization mechanism."
+  },
+  "validation_rules": {
+    "clicked_window_id": [
+      "Must be 0 or match an existing Sway window container ID",
+      "Auto-resets to 0 after 2s timeout",
+      "Set by focus-window-action.sh on successful click"
+    ],
+    "clicked_project": [
+      "Must be empty string or match an existing i3pm project name",
+      "Auto-resets to empty string after 2s timeout",
+      "Set by switch-project-action.sh on successful click"
+    ],
+    "click_in_progress": [
+      "Set to true at start of click action",
+      "Set to false on action completion or error",
+      "Used for UI-level feedback (disable buttons, show spinner, etc.)"
+    ]
+  },
+  "integration": {
+    "eww_config": {
+      "location": "home-modules/desktop/eww-monitoring-panel.nix",
+      "defvar_declarations": [
+        "(defvar clicked_window_id 0)",
+        "(defvar clicked_project \"\")",
+        "(defvar click_in_progress false)"
+      ]
+    },
+    "bash_scripts": {
+      "focus-window-action.sh": {
+        "reads": ["clicked_window_id"],
+        "writes": ["clicked_window_id", "click_in_progress"],
+        "reset_commands": [
+          "eww --config ~/.config/eww-monitoring-panel update clicked_window_id=0",
+          "(sleep 2 && eww --config ~/.config/eww-monitoring-panel update clicked_window_id=0) &"
+        ]
+      },
+      "switch-project-action.sh": {
+        "reads": ["clicked_project"],
+        "writes": ["clicked_project", "click_in_progress"],
+        "reset_commands": [
+          "eww --config ~/.config/eww-monitoring-panel update clicked_project=\"\"",
+          "(sleep 2 && eww --config ~/.config/eww-monitoring-panel update clicked_project=\"\") &"
+        ]
+      }
+    },
+    "yuck_widgets": {
+      "window_row": {
+        "class_binding": ":class \"window-row''${clicked_window_id == window.id ? ' clicked' : \"\"}\"",
+        "onclick": ":onclick \"focus-window-action ''${window.project_name} ''${window.id} &\""
+      },
+      "project_header": {
+        "class_binding": ":class \"project-header''${clicked_project == project.name ? ' clicked' : \"\"}\"",
+        "onclick": ":onclick \"switch-project-action ''${project.name} &\""
+      }
+    }
+  }
+}
