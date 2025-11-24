@@ -1062,8 +1062,7 @@ in
                   :class "json-detail"
                   :halign "start"
                   :wrap true
-                  :markup "''${project.json_repr}"
-                  :text ""))))))
+                  :text "''${project.directory}"))))))
 
       (defwidget worktree-card [project]
         (eventbox
@@ -1130,8 +1129,7 @@ in
                   :class "json-detail"
                   :halign "start"
                   :wrap true
-                  :markup "''${project.json_repr}"
-                  :text ""))))))
+                  :text "''${project.directory}"))))))
 
       ;; Apps View - Application registry browser
       (defwidget apps-view []
