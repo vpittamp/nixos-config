@@ -1229,6 +1229,7 @@ in
           :class "events-view-container"
           :orientation "v"
           :vexpand true
+          :space-evenly false
           ;; Filter panel (collapsible)
           (box
             :class "filter-panel"
