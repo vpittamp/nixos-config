@@ -386,14 +386,24 @@ class EventBuffer:
         """
         self._buffer.append(event)
 
-    def get_all(self) -> List[Event]:
+    def get_all(self, refresh_timestamps: bool = False) -> List[Event]:
         """
         Get all buffered events (oldest first, newest last).
+
+        Args:
+            refresh_timestamps: If True, recalculate timestamp_friendly for all events
 
         Returns:
             List of events in chronological order
         """
-        return list(self._buffer)
+        events = list(self._buffer)
+
+        if refresh_timestamps:
+            # Refresh timestamp_friendly for all events based on current time
+            for event in events:
+                event.timestamp_friendly = format_friendly_timestamp(event.timestamp)
+
+        return events
 
     def clear(self) -> None:
         """Clear all events from buffer."""
@@ -1974,8 +1984,8 @@ async def query_events_data() -> Dict[str, Any]:
         )
         return view_data.model_dump(mode="json")
 
-    # Get all events from buffer
-    events = _event_buffer.get_all()
+    # Get all events from buffer (refresh timestamps for accurate display)
+    events = _event_buffer.get_all(refresh_timestamps=True)
 
     view_data = EventsViewData(
         status="ok",
@@ -2101,17 +2111,19 @@ async def stream_events():
             evt = create_event_from_sway(event_type, change, sway_payload)
             _event_buffer.append(evt)
 
-            # Output immediately
+            # Output immediately (refresh timestamps for accurate display)
+            current_output_time = time.time()
+            events_with_fresh_timestamps = _event_buffer.get_all(refresh_timestamps=True)
             view_data = EventsViewData(
                 status="ok",
-                events=_event_buffer.get_all(),
+                events=events_with_fresh_timestamps,
                 event_count=_event_buffer.size(),
-                oldest_timestamp=_event_buffer.get_all()[0].timestamp if _event_buffer.size() > 0 else None,
-                newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
+                oldest_timestamp=events_with_fresh_timestamps[0].timestamp if _event_buffer.size() > 0 else None,
+                newest_timestamp=events_with_fresh_timestamps[-1].timestamp if _event_buffer.size() > 0 else None,
                 daemon_available=True,
                 ipc_connected=True,
-                timestamp=time.time(),
-                timestamp_friendly="Just now",
+                timestamp=current_output_time,
+                timestamp_friendly=format_friendly_timestamp(current_output_time),
             )
             print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
 
@@ -2135,17 +2147,19 @@ async def stream_events():
             evt = create_event_from_sway(event_type, change, sway_payload)
             _event_buffer.append(evt)
 
-            # Output immediately
+            # Output immediately (refresh timestamps for accurate display)
+            current_output_time = time.time()
+            events_with_fresh_timestamps = _event_buffer.get_all(refresh_timestamps=True)
             view_data = EventsViewData(
                 status="ok",
-                events=_event_buffer.get_all(),
+                events=events_with_fresh_timestamps,
                 event_count=_event_buffer.size(),
-                oldest_timestamp=_event_buffer.get_all()[0].timestamp if _event_buffer.size() > 0 else None,
-                newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
+                oldest_timestamp=events_with_fresh_timestamps[0].timestamp if _event_buffer.size() > 0 else None,
+                newest_timestamp=events_with_fresh_timestamps[-1].timestamp if _event_buffer.size() > 0 else None,
                 daemon_available=True,
                 ipc_connected=True,
-                timestamp=time.time(),
-                timestamp_friendly="Just now",
+                timestamp=current_output_time,
+                timestamp_friendly=format_friendly_timestamp(current_output_time),
             )
             print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
 
