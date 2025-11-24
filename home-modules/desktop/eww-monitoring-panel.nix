@@ -467,7 +467,14 @@ in
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
 
-      ;; Current view state (windows, projects, apps, health)
+      ;; Feature 092: Deflisten: Real-time Sway event log stream
+      ;; Subscribes to window/workspace/output IPC events with <100ms latency
+      ;; Maintains circular buffer of 500 most recent events (FIFO eviction)
+      (deflisten events_data
+        :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
+        `${monitoringDataScript}/bin/monitoring-data-backend --mode events --listen`)
+
+      ;; Current view state (windows, projects, apps, health, events)
       (defvar current_view "windows")
 
       ;; Selected window ID for detail view (0 = none selected)
@@ -514,7 +521,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "450px"
+          :width "500px"
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
@@ -576,6 +583,14 @@ in
                 :class "tab ''${current_view == 'health' ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
                 "󰓙"))
+            ;; Feature 092: Logs tab (5th tab)
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=events"
+              (button
+                :class "tab ''${current_view == 'events' ? 'active' : ""}"
+                :tooltip "Logs (Alt+5)"
+                "󰌱"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -597,6 +612,92 @@ in
               :class "count-badge"
               :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
               :visible {current_view == "windows"}))))
+
+      ;; Feature 092: Events/Logs View - Real-time Sway IPC event log (T024)
+      (defwidget events-view []
+        (box
+          :class "events-view-container"
+          :orientation "v"
+          :vexpand true
+          ;; Error state
+          (box
+            :visible "''${events_data.status == 'error'}"
+            :class "error-state"
+            :orientation "v"
+            :valign "center"
+            :halign "center"
+            :vexpand true
+            (label
+              :class "error-message"
+              :text "󰀦 Error: ''${events_data.error ?: 'Unknown error'}")
+            (label
+              :class "error-help"
+              :text "Check i3pm daemon and Sway IPC connection"))
+          ;; Empty state (no events yet)
+          (box
+            :visible "''${events_data.status == 'ok' && events_data.event_count == 0}"
+            :class "empty-state"
+            :orientation "v"
+            :valign "center"
+            :halign "center"
+            :vexpand true
+            (label
+              :class "empty-message"
+              :text "󰌱 No events yet")
+            (label
+              :class "empty-help"
+              :text "Waiting for Sway window/workspace events..."))
+          ;; Events list (scroll container)
+          (scroll
+            :vscroll true
+            :hscroll false
+            :vexpand true
+            :visible "''${events_data.status == 'ok' && events_data.event_count > 0}"
+            (box
+              :class "events-list"
+              :orientation "v"
+              :space-evenly false
+              ;; Iterate through events (newest last for auto-scroll)
+              (for event in {events_data.events ?: []}
+                (event-card :event event))))))
+
+      ;; Feature 092: Event card widget - Single event display (T025)
+      (defwidget event-card [event]
+        (box
+          :class "event-card event-category-''${event.category}"
+          :orientation "h"
+          :space-evenly false
+          ;; Event icon with category color
+          (label
+            :class "event-icon"
+            :style "color: ''${event.color};"
+            :text "''${event.icon}")
+          ;; Event details
+          (box
+            :class "event-details"
+            :orientation "v"
+            :space-evenly false
+            :hexpand true
+            ;; Event type and timestamp
+            (box
+              :class "event-header"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "event-type"
+                :halign "start"
+                :hexpand true
+                :text "''${event.event_type}")
+              (label
+                :class "event-timestamp"
+                :halign "end"
+                :text "''${event.timestamp_friendly}"))
+            ;; Event payload info (window/workspace details)
+            (label
+              :class "event-payload"
+              :halign "start"
+              :limit-width 60
+              :text "''${event.searchable_text}"))))
 
       ;; Panel body with multi-view container
       ;; Uses overlay to ensure only one view is visible at a time (no stacking)
@@ -623,7 +724,11 @@ in
             (box
               :vexpand true
               :visible {current_view == "health"}
-              (health-view)))))
+              (health-view))
+            ;; Feature 092: Events/Logs View - Real-time Sway IPC event log
+            (box
+              :visible {current_view == "events"}
+              (events-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -745,7 +850,6 @@ in
                   :class "window-badges"
                   :orientation "h"
                   :space-evenly false
-                  :hexpand true
                   :halign "end"
                   (label
                     :class "badge badge-workspace"
@@ -1177,6 +1281,7 @@ in
               :tooltip "Restart ''${service.display_name}"
               "⟳"))))
 
+
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
         (box
@@ -1209,6 +1314,7 @@ in
         padding: 8px;
         margin: 8px;
         border: 2px solid rgba(137, 180, 250, 0.2);
+        min-width: 400px;
         /* transition not supported in GTK CSS */
       }
 
@@ -1992,6 +2098,81 @@ in
       .window-title {
         font-size: 10px;
         color: ${mocha.subtext0};
+      }
+
+      /* Feature 092: Events/Logs View CSS */
+      .events-list {
+        padding: 4px;
+      }
+
+      .event-card {
+        background-color: ${mocha.surface0};
+        border-left: 3px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 8px;
+        margin-bottom: 6px;
+      }
+
+      .event-card:hover {
+        background-color: ${mocha.surface1};
+      }
+
+      /* Category-specific border colors */
+      .event-card.event-category-window {
+        border-left-color: ${mocha.blue};
+      }
+
+      .event-card.event-category-workspace {
+        border-left-color: ${mocha.teal};
+      }
+
+      .event-card.event-category-output {
+        border-left-color: ${mocha.mauve};
+      }
+
+      .event-card.event-category-binding {
+        border-left-color: ${mocha.yellow};
+      }
+
+      .event-card.event-category-mode {
+        border-left-color: ${mocha.sky};
+      }
+
+      .event-card.event-category-system {
+        border-left-color: ${mocha.red};
+      }
+
+      .event-icon {
+        font-size: 20px;
+        margin-right: 12px;
+        min-width: 28px;
+      }
+
+      .event-details {
+        /* GTK CSS doesn't support flex property - layout handled by box widget */
+      }
+
+      .event-header {
+        margin-bottom: 4px;
+      }
+
+      .event-type {
+        font-size: 11px;
+        font-weight: 600;
+        color: ${mocha.text};
+        font-family: monospace;
+      }
+
+      .event-timestamp {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        font-style: italic;
+      }
+
+      .event-payload {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        /* GTK CSS doesn't support white-space property */
       }
     '';
 

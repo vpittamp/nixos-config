@@ -888,36 +888,46 @@ def validate_and_count(monitors: List[Dict[str, Any]]) -> Dict[str, int]:
     }
 
 
-def format_friendly_timestamp(timestamp: float) -> str:
+def format_friendly_timestamp(timestamp: float, current_time: float = None) -> str:
     """
-    Format Unix timestamp as friendly relative time.
+    Format Unix timestamp as hybrid relative/absolute time with user-friendly intervals.
 
     Args:
         timestamp: Unix timestamp (seconds since epoch)
+        current_time: Current time for relative calculation (defaults to time.time())
 
     Returns:
-        Human-friendly string like "Just now", "5 seconds ago", "2 minutes ago"
+        Human-friendly string:
+        - "5s ago", "45s ago" for events < 60s old (immediate feedback)
+        - "2 mins ago", "30 mins ago" for events 1-60 mins old (easy to understand)
+        - "09:39" for events > 1 hour today (absolute time, no seconds)
+        - "Nov 24 09:39" for other days (date + time)
     """
-    now = time.time()
-    diff = int(now - timestamp)
+    from datetime import datetime
 
-    if diff < 5:
-        return "Just now"
-    elif diff < 60:
-        return f"{diff} seconds ago"
-    elif diff < 120:
-        return "1 minute ago"
-    elif diff < 3600:
-        minutes = diff // 60
-        return f"{minutes} minutes ago"
-    elif diff < 7200:
-        return "1 hour ago"
-    elif diff < 86400:
-        hours = diff // 3600
-        return f"{hours} hours ago"
+    if current_time is None:
+        current_time = time.time()
+
+    diff = int(current_time - timestamp)
+    event_dt = datetime.fromtimestamp(timestamp)
+    now_dt = datetime.fromtimestamp(current_time)
+
+    # Very recent events (< 60s): show seconds
+    if diff < 60:
+        return f"{diff}s ago" if diff > 0 else "just now"
+
+    # Recent events (1-60 minutes): show minutes
+    if diff < 3600:  # 3600s = 60 minutes
+        mins = diff // 60
+        return f"{mins} min ago" if mins == 1 else f"{mins} mins ago"
+
+    # Check if event is from today
+    if now_dt.date() == event_dt.date():
+        # Today, > 1 hour: show time without seconds (HH:MM)
+        return event_dt.strftime("%H:%M")
     else:
-        days = diff // 86400
-        return f"{days} day{'s' if days > 1 else ''} ago"
+        # Other days: show date and time without seconds (Mon DD HH:MM)
+        return event_dt.strftime("%b %d %H:%M")
 
 
 def transform_to_project_view(monitors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -2074,7 +2084,7 @@ async def stream_events():
 
         return Event(
             timestamp=current_time,
-            timestamp_friendly=format_friendly_timestamp(current_time),
+            timestamp_friendly=format_friendly_timestamp(current_time, current_time),
             event_type=event_type,
             change_type=change_type,
             payload=payload,
@@ -2102,6 +2112,7 @@ async def stream_events():
             _event_buffer.append(evt)
 
             # Output immediately
+            current_time = time.time()
             view_data = EventsViewData(
                 status="ok",
                 events=_event_buffer.get_all(),
@@ -2110,8 +2121,8 @@ async def stream_events():
                 newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
                 daemon_available=True,
                 ipc_connected=True,
-                timestamp=time.time(),
-                timestamp_friendly="Just now",
+                timestamp=current_time,
+                timestamp_friendly=format_friendly_timestamp(current_time, current_time),
             )
             print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
 
@@ -2136,6 +2147,7 @@ async def stream_events():
             _event_buffer.append(evt)
 
             # Output immediately
+            current_time = time.time()
             view_data = EventsViewData(
                 status="ok",
                 events=_event_buffer.get_all(),
@@ -2144,8 +2156,8 @@ async def stream_events():
                 newest_timestamp=_event_buffer.get_all()[-1].timestamp if _event_buffer.size() > 0 else None,
                 daemon_available=True,
                 ipc_connected=True,
-                timestamp=time.time(),
-                timestamp_friendly="Just now",
+                timestamp=current_time,
+                timestamp_friendly=format_friendly_timestamp(current_time, current_time),
             )
             print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
 
@@ -2158,6 +2170,57 @@ async def stream_events():
 
     logger.info("Event subscriptions active, streaming to stdout")
 
+    # Periodic timestamp updater for relative times (Feature 093 - Option 3)
+    async def periodic_timestamp_update():
+        """Update timestamps for recent events every 5 seconds."""
+        while not shutdown_event.is_set():
+            try:
+                await asyncio.sleep(5)
+
+                if shutdown_event.is_set():
+                    break
+
+                # Get current time once
+                current_time = time.time()
+
+                # Get all events
+                events = _event_buffer.get_all()
+
+                # Recalculate timestamps for events < 60 minutes old (includes transition window)
+                # We update up to 3605s (60 mins + 5s) to ensure smooth transitions:
+                # - "59s ago" → "1 min ago" (at 60s)
+                # - "59 mins ago" → "09:39" (at 60 mins)
+                updated = False
+                for event in events:
+                    age = current_time - event.timestamp
+                    if age <= 3605:  # 60 minutes + 5 second buffer
+                        # Recalculate timestamp (handles seconds → minutes → absolute transitions)
+                        event.timestamp_friendly = format_friendly_timestamp(event.timestamp, current_time)
+                        updated = True
+
+                # Only emit if we updated any timestamps
+                if updated and events:
+                    view_data = EventsViewData(
+                        status="ok",
+                        events=events,
+                        event_count=len(events),
+                        oldest_timestamp=events[0].timestamp if events else None,
+                        newest_timestamp=events[-1].timestamp if events else None,
+                        daemon_available=True,
+                        ipc_connected=True,
+                        timestamp=current_time,
+                        timestamp_friendly=format_friendly_timestamp(current_time),
+                    )
+                    print(json.dumps(view_data.model_dump(mode="json"), separators=(",", ":")), flush=True)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic timestamp update: {e}")
+
+    # Start periodic updater task
+    updater_task = asyncio.create_task(periodic_timestamp_update())
+
     # Keep running until shutdown
     try:
         await shutdown_event.wait()
@@ -2165,6 +2228,11 @@ async def stream_events():
         logger.info("Keyboard interrupt received")
     finally:
         logger.info("Shutting down event stream")
+        updater_task.cancel()
+        try:
+            await updater_task
+        except asyncio.CancelledError:
+            pass
         await conn.close()
         sys.exit(0)
 
