@@ -1414,7 +1414,10 @@ in
 
       /* Window base - must be transparent for see-through effect on Wayland */
       * {
-        all: unset;
+        /* Removed 'all: unset' as it was resetting colors to black/white */
+        /* Only reset margins and padding */
+        margin: 0;
+        padding: 0;
       }
 
       window {
