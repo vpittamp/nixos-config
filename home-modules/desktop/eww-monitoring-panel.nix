@@ -673,15 +673,15 @@ in
               :vexpand true
               ; Show error state when status is "error"
               (box
-                :visible "''${monitoring_data.status == 'error'}"
+                :visible {monitoring_data.status == "error"}
                 (error-state))
               ; Show empty state when no windows and no error
               (box
-                :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) == 0}"
+                :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) == 0}
                 (empty-state))
               ; Show projects when no error and has windows
               (box
-                :visible "''${monitoring_data.status != 'error' && (monitoring_data.window_count ?: 0) > 0}"
+                :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
                 :orientation "v"
                 :space-evenly false
                 (for project in {monitoring_data.projects ?: []}
@@ -777,7 +777,7 @@ in
                   (label
                     :class "badge badge-pwa"
                     :text "PWA"
-                    :visible "''${window.is_pwa ?: false}"))))
+                    :visible {window.is_pwa ?: false}))))
             ;; JSON hover tooltip (slides down on hover)
             (revealer
               :reveal {hover_window_id == window.id}
@@ -1209,7 +1209,7 @@ in
           :vexpand true
           ;; Error state
           (box
-            :visible "''${events_data.status == 'error'}"
+            :visible {events_data.status == "error"}
             :class "error-state"
             :orientation "v"
             :valign "center"
@@ -1223,7 +1223,7 @@ in
               :text "Check i3pm daemon and Sway IPC connection"))
           ;; Empty state (no events yet)
           (box
-            :visible "''${events_data.status == 'ok' && events_data.event_count == 0}"
+            :visible {events_data.status == "ok" && events_data.event_count == 0}
             :class "empty-state"
             :orientation "v"
             :valign "center"
@@ -1240,7 +1240,7 @@ in
             :vscroll true
             :hscroll false
             :vexpand true
-            :visible "''${events_data.status == 'ok' && events_data.event_count > 0}"
+            :visible {events_data.status == "ok" && events_data.event_count > 0}
             (box
               :class "events-list"
               :orientation "v"
