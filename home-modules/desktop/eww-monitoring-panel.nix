@@ -2274,11 +2274,12 @@ in
 
       /* Feature 092: Event Logging - Logs View Styling (T027) */
       .events-view-container {
-        padding: 8px;
+        padding: 0 8px 8px 8px;
       }
 
       .events-list {
         padding: 4px;
+        margin-top: 4px;
       }
 
       .event-card {
@@ -2356,7 +2357,7 @@ in
       .filter-panel {
         background-color: transparent;
         padding: 0;
-        margin: 0 4px 4px 4px;
+        margin: 0 4px 0 4px;
       }
 
       .filter-header {
@@ -2364,6 +2365,7 @@ in
         background-color: ${mocha.surface0};
         border-radius: 4px;
         border: 1px solid ${mocha.overlay0};
+        margin-bottom: 0;
       }
 
       .filter-header:hover {
