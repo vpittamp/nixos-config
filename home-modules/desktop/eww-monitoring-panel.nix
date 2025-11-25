@@ -799,7 +799,13 @@ in
                   (label
                     :class "badge badge-pwa"
                     :text "PWA"
-                    :visible "''${window.is_pwa ?: false}"))))
+                    :visible "''${window.is_pwa ?: false}")
+                  ;; Feature 095: Notification badge (bell icon + count)
+                  (label
+                    :class "badge badge-notification"
+                    :text "🔔''${window.badge.count}"
+                    :tooltip "''${window.badge.count} notification(s) from ''${window.badge.source}"
+                    :visible "''${window.badge != null}"))))
             ;; JSON hover tooltip (slides down on hover)
             (revealer
               :reveal {hover_window_id == window.id}
@@ -1727,6 +1733,20 @@ in
       .badge-workspace {
         color: ${mocha.blue};
         background-color: rgba(137, 180, 250, 0.15);
+      }
+
+      /* Feature 095: Notification badge styling */
+      .badge-notification {
+        color: ${mocha.peach};
+        background-color: rgba(250, 179, 135, 0.2);
+        font-weight: bold;
+        border: 1px solid rgba(250, 179, 135, 0.4);
+        animation: pulse-notification 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse-notification {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
       }
 
       /* JSON Hover Tooltip */

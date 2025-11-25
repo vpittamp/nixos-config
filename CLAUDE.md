@@ -1034,6 +1034,8 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state (no persistence changes required) (091-optimize-i3pm-project)
 - Bash 5.0+ (shell scripts), Yuck/GTK3 CSS (Eww widget definition), Nix 2.18+ (build system) (093-actions-window-widget)
 - Eww runtime state (in-memory variables), no persistence required (093-actions-window-widget)
+- Python 3.11+ (existing i3pm daemon standard per Constitution Principle X) (095-visual-notification-badges)
+- In-memory daemon state (BadgeState dict), no persistent storage (Constitution Principle XII: Forward-Only Development - optimal solution without legacy compatibility) (095-visual-notification-badges)
 
 ## Recent Changes
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)

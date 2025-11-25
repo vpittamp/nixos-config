@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING, List, Dict
+from typing import Optional, TYPE_CHECKING, List, Dict, Any
 from i3ipc import aio, TickEvent, WindowEvent, WorkspaceEvent, OutputEvent
 
 from .state import StateManager
@@ -1907,6 +1907,7 @@ async def on_window_focus(
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
     ipc_server: Optional["IPCServer"] = None,
+    monitoring_panel_publisher: Optional[Any] = None,
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
@@ -1915,6 +1916,8 @@ async def on_window_focus(
         event: Window event
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
+        ipc_server: IPC server for badge state access (Feature 095)
+        monitoring_panel_publisher: Publisher for monitoring panel updates (Feature 095)
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -1944,6 +1947,16 @@ async def on_window_focus(
         # Feature 074 T066 (US4): Track focused window per workspace
         if current_ws and hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
             await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
+
+        # Feature 095 (T024-T027): Auto-clear notification badge on window focus
+        if ipc_server and hasattr(ipc_server, 'badge_state') and ipc_server.badge_state:
+            cleared_count = ipc_server.badge_state.clear_badge(window_id)
+            if cleared_count > 0:
+                logger.info(f"[Feature 095] Cleared badge for window {window_id} (count was {cleared_count})")
+                # Trigger monitoring panel update after badge clear (T027)
+                if monitoring_panel_publisher:
+                    await monitoring_panel_publisher.publish(conn)
+                    logger.debug(f"[Feature 095] Triggered monitoring panel update after badge clear")
 
     except Exception as e:
         error_msg = str(e)

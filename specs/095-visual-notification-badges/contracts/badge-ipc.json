@@ -1,0 +1,316 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Badge IPC API Specification",
+  "description": "JSON-RPC methods for notification badge management over Unix socket",
+  "version": "1.0.0",
+  "methods": [
+    {
+      "name": "create_badge",
+      "description": "Create a new badge for a window or increment existing badge count",
+      "params": {
+        "type": "object",
+        "properties": {
+          "window_id": {
+            "type": "integer",
+            "description": "Sway window container ID (must exist in current tree)",
+            "minimum": 1
+          },
+          "source": {
+            "type": "string",
+            "description": "Notification source identifier (claude-code, build, test, generic)",
+            "default": "generic",
+            "minLength": 1,
+            "maxLength": 50
+          }
+        },
+        "required": ["window_id"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether badge was created/updated successfully"
+          },
+          "badge": {
+            "type": "object",
+            "description": "Badge state after operation",
+            "properties": {
+              "window_id": {
+                "type": "integer",
+                "description": "Sway window container ID"
+              },
+              "count": {
+                "type": "integer",
+                "description": "Badge count (1-9999)",
+                "minimum": 1,
+                "maximum": 9999
+              },
+              "timestamp": {
+                "type": "number",
+                "description": "Unix timestamp when badge was created (float)"
+              },
+              "source": {
+                "type": "string",
+                "description": "Notification source identifier"
+              }
+            },
+            "required": ["window_id", "count", "timestamp", "source"]
+          }
+        },
+        "required": ["success", "badge"]
+      },
+      "errors": [
+        {
+          "code": -32602,
+          "message": "Invalid params - window_id not found in Sway tree"
+        },
+        {
+          "code": -32603,
+          "message": "Internal error - failed to create badge"
+        }
+      ],
+      "examples": [
+        {
+          "description": "Create first badge for window",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "create_badge",
+            "params": {
+              "window_id": 12345,
+              "source": "claude-code"
+            },
+            "id": 1
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "success": true,
+              "badge": {
+                "window_id": 12345,
+                "count": 1,
+                "timestamp": 1732450000.5,
+                "source": "claude-code"
+              }
+            },
+            "id": 1
+          }
+        },
+        {
+          "description": "Increment existing badge",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "create_badge",
+            "params": {
+              "window_id": 12345,
+              "source": "claude-code"
+            },
+            "id": 2
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "success": true,
+              "badge": {
+                "window_id": 12345,
+                "count": 2,
+                "timestamp": 1732450000.5,
+                "source": "claude-code"
+              }
+            },
+            "id": 2
+          }
+        },
+        {
+          "description": "Error - window not found",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "create_badge",
+            "params": {
+              "window_id": 99999
+            },
+            "id": 3
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "error": {
+              "code": -32602,
+              "message": "Invalid params - window_id 99999 not found in Sway tree"
+            },
+            "id": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "clear_badge",
+      "description": "Remove badge from a window (usually triggered by focus event)",
+      "params": {
+        "type": "object",
+        "properties": {
+          "window_id": {
+            "type": "integer",
+            "description": "Sway window container ID",
+            "minimum": 1
+          }
+        },
+        "required": ["window_id"],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Always true (clearing non-existing badge is no-op)"
+          },
+          "cleared_count": {
+            "type": "integer",
+            "description": "Badge count that was cleared (0 if no badge existed)",
+            "minimum": 0
+          }
+        },
+        "required": ["success", "cleared_count"]
+      },
+      "examples": [
+        {
+          "description": "Clear existing badge",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "clear_badge",
+            "params": {
+              "window_id": 12345
+            },
+            "id": 4
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "success": true,
+              "cleared_count": 2
+            },
+            "id": 4
+          }
+        },
+        {
+          "description": "Clear non-existing badge (no-op)",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "clear_badge",
+            "params": {
+              "window_id": 67890
+            },
+            "id": 5
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "success": true,
+              "cleared_count": 0
+            },
+            "id": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "get_badge_state",
+      "description": "Retrieve all current badge state for diagnostics/monitoring",
+      "params": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "badges": {
+            "type": "object",
+            "description": "Map of window_id (string) to badge metadata",
+            "patternProperties": {
+              "^[0-9]+$": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9999
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                },
+                "required": ["count", "timestamp", "source"]
+              }
+            }
+          }
+        },
+        "required": ["badges"]
+      },
+      "examples": [
+        {
+          "description": "Get all badges",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "get_badge_state",
+            "params": {},
+            "id": 6
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "badges": {
+                "12345": {
+                  "count": 2,
+                  "timestamp": 1732450000.5,
+                  "source": "claude-code"
+                },
+                "67890": {
+                  "count": 1,
+                  "timestamp": 1732450100.0,
+                  "source": "build"
+                }
+              }
+            },
+            "id": 6
+          }
+        },
+        {
+          "description": "Get badges when none exist",
+          "request": {
+            "jsonrpc": "2.0",
+            "method": "get_badge_state",
+            "params": {},
+            "id": 7
+          },
+          "response": {
+            "jsonrpc": "2.0",
+            "result": {
+              "badges": {}
+            },
+            "id": 7
+          }
+        }
+      ]
+    }
+  ],
+  "socket": {
+    "path": "/run/user/$UID/i3pm-daemon.sock",
+    "permissions": "0600",
+    "protocol": "JSON-RPC 2.0 over Unix stream socket"
+  },
+  "security": {
+    "authentication": "Unix socket permissions (owner-only access)",
+    "authorization": "No additional authorization - socket access implies permission",
+    "validation": "Window ID existence validated against Sway IPC GET_TREE"
+  },
+  "performance": {
+    "create_badge_latency": "<10ms (in-memory dict operation + IPC round-trip)",
+    "clear_badge_latency": "<5ms (dict delete + IPC round-trip)",
+    "get_badge_state_latency": "<5ms (dict serialization + IPC round-trip)"
+  }
+}

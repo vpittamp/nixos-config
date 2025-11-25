@@ -81,8 +81,16 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
         from i3_project_manager.core.daemon_client import DaemonClient
 
         # Helper functions (same as monitoring_data.py)
-        def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
-            """Transform daemon window to Eww-friendly schema."""
+        def transform_window(window: Dict[str, Any], badge_state: Dict[str, Any]) -> Dict[str, Any]:
+            """Transform daemon window to Eww-friendly schema.
+
+            Args:
+                window: Window data from daemon
+                badge_state: Badge state mapping window IDs to badge info (Feature 095)
+            """
+            window_id = str(window.get("id", 0))
+            badge = badge_state.get(window_id, {})
+
             return {
                 "id": window.get("id", 0),
                 "app_name": window.get("class", window.get("app_id", "unknown")),
@@ -94,12 +102,20 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
                 "floating": window.get("floating", False),
                 "hidden": window.get("hidden", False),
                 "focused": window.get("focused", False),
+                # Feature 095: Visual notification badges
+                "badge": badge if badge else None,
             }
 
-        def transform_workspace(workspace: Dict[str, Any], monitor_name: str) -> Dict[str, Any]:
-            """Transform daemon workspace to Eww-friendly schema."""
+        def transform_workspace(workspace: Dict[str, Any], monitor_name: str, badge_state: Dict[str, Any]) -> Dict[str, Any]:
+            """Transform daemon workspace to Eww-friendly schema.
+
+            Args:
+                workspace: Workspace data from daemon
+                monitor_name: Name of the monitor this workspace belongs to
+                badge_state: Badge state mapping window IDs to badge info (Feature 095)
+            """
             windows = workspace.get("windows", [])
-            transformed_windows = [transform_window(w) for w in windows]
+            transformed_windows = [transform_window(w, badge_state) for w in windows]
 
             return {
                 "number": workspace.get("num", workspace.get("number", 1)),
@@ -111,11 +127,16 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
                 "windows": transformed_windows,
             }
 
-        def transform_monitor(output: Dict[str, Any]) -> Dict[str, Any]:
-            """Transform daemon output to Eww-friendly schema."""
+        def transform_monitor(output: Dict[str, Any], badge_state: Dict[str, Any]) -> Dict[str, Any]:
+            """Transform daemon output to Eww-friendly schema.
+
+            Args:
+                output: Output data from daemon
+                badge_state: Badge state mapping window IDs to badge info (Feature 095)
+            """
             monitor_name = output.get("name", "unknown")
             workspaces = output.get("workspaces", [])
-            transformed_workspaces = [transform_workspace(ws, monitor_name) for ws in workspaces]
+            transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state) for ws in workspaces]
             has_focused = any(ws["focused"] for ws in transformed_workspaces)
 
             return {
@@ -131,11 +152,16 @@ async def publish_monitoring_state(conn, config_dir: Optional[Path] = None) -> b
         client = DaemonClient(socket_path=socket_path, timeout=2.0)
         await client.connect()
         tree_data = await client.get_window_tree()
+
+        # Feature 095: Query badge state for visual notification badges
+        badge_state = await client.get_badge_state()
+        logger.debug(f"[Feature 095] Retrieved badge state: {len(badge_state)} badges")
+
         await client.close()
 
-        # Extract outputs from tree
+        # Extract outputs from tree and transform with badge state
         outputs = tree_data.get("outputs", [])
-        monitors = [transform_monitor(output) for output in outputs]
+        monitors = [transform_monitor(output, badge_state) for output in outputs]
 
         # Calculate summary counts
         monitor_count = len(monitors)

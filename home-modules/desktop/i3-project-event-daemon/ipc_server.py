@@ -52,7 +52,8 @@ class IPCServer:
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
         scratchpad_manager: Optional[Any] = None,
         run_raise_manager: Optional[Any] = None,
-        mark_manager: Optional[Any] = None
+        mark_manager: Optional[Any] = None,
+        badge_state: Optional[Any] = None
     ) -> None:
         """Initialize IPC server.
 
@@ -65,6 +66,7 @@ class IPCServer:
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
             run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
             mark_manager: MarkManager instance for mark-based app identification (Feature 076)
+            badge_state: BadgeState instance for notification badge management (Feature 095)
         """
         self.state_manager = state_manager
         self.event_buffer = event_buffer
@@ -74,6 +76,7 @@ class IPCServer:
         self.scratchpad_manager = scratchpad_manager
         self.run_raise_manager = run_raise_manager
         self.mark_manager = mark_manager
+        self.badge_state = badge_state
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
@@ -88,7 +91,8 @@ class IPCServer:
         workspace_tracker: Optional[window_filtering.WorkspaceTracker] = None,
         scratchpad_manager: Optional[Any] = None,
         run_raise_manager: Optional[Any] = None,
-        mark_manager: Optional[Any] = None
+        mark_manager: Optional[Any] = None,
+        badge_state: Optional[Any] = None
     ) -> "IPCServer":
         """Create IPC server using systemd socket activation.
 
@@ -101,11 +105,12 @@ class IPCServer:
             scratchpad_manager: ScratchpadManager instance for terminal management (Feature 062)
             run_raise_manager: RunRaiseManager instance for run-raise-hide operations (Feature 051)
             mark_manager: MarkManager instance for mark-based app identification (Feature 076)
+            badge_state: BadgeState instance for visual notification badges (Feature 095)
 
         Returns:
             IPCServer instance with inherited socket
         """
-        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager, run_raise_manager, mark_manager)
+        server = cls(state_manager, event_buffer, i3_connection, window_rules_getter, workspace_tracker, scratchpad_manager, run_raise_manager, mark_manager, badge_state)
 
         # Check if systemd passed us a socket
         listen_fds = int(os.environ.get("LISTEN_FDS", 0))
@@ -481,6 +486,14 @@ class IPCServer:
             # Feature 051: Run-raise-hide application launching
             elif method == "app.run":
                 result = await self._app_run(params)
+
+            # Feature 095: Visual notification badges
+            elif method == "create_badge":
+                result = await self._create_badge(params)
+            elif method == "clear_badge":
+                result = await self._clear_badge(params)
+            elif method == "get_badge_state":
+                result = await self._get_badge_state()
 
             else:
                 return {
@@ -6110,3 +6123,81 @@ class IPCServer:
 
         # Fallback to home directory
         return Path.home()
+
+    # Feature 095: Visual notification badge management methods
+
+    async def _create_badge(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create badge or increment existing badge count.
+        
+        Args:
+            params: {"window_id": int, "source": str (optional, defaults to "generic")}
+            
+        Returns:
+            {"success": bool, "badge": {window_id, count, timestamp, source}}
+        """
+        if not self.badge_state:
+            raise ValueError("Badge state not initialized")
+            
+        window_id = params["window_id"]
+        source = params.get("source", "generic")
+        
+        # Validate window exists via i3 IPC
+        if self.i3_connection and self.i3_connection.conn:
+            tree = await self.i3_connection.conn.get_tree()
+            window = tree.find_by_id(window_id)
+            if not window:
+                raise ValueError(f"Window ID {window_id} not found in Sway tree")
+        
+        # Create or increment badge
+        badge = self.badge_state.create_badge(window_id=window_id, source=source)
+        
+        logger.info(f"[Feature 095] Created/incremented badge for window {window_id}, count={badge.count}, source={source}")
+        
+        return {
+            "success": True,
+            "badge": {
+                "window_id": badge.window_id,
+                "count": badge.count,
+                "timestamp": badge.timestamp,
+                "source": badge.source
+            }
+        }
+    
+    async def _clear_badge(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clear badge for window.
+        
+        Args:
+            params: {"window_id": int}
+            
+        Returns:
+            {"success": bool, "cleared_count": int}
+        """
+        if not self.badge_state:
+            raise ValueError("Badge state not initialized")
+            
+        window_id = params["window_id"]
+        cleared_count = self.badge_state.clear_badge(window_id)
+        
+        logger.info(f"[Feature 095] Cleared badge for window {window_id}, count was {cleared_count}")
+        
+        return {
+            "success": True,
+            "cleared_count": cleared_count
+        }
+    
+    async def _get_badge_state(self) -> Dict[str, Any]:
+        """Get all badge state.
+        
+        Returns:
+            {"badges": {str(window_id): {count, timestamp, source}}}
+        """
+        if not self.badge_state:
+            raise ValueError("Badge state not initialized")
+            
+        badges_dict = self.badge_state.to_eww_format()
+        
+        logger.debug(f"[Feature 095] Retrieved badge state: {len(badges_dict)} badges")
+        
+        return {
+            "badges": badges_dict
+        }

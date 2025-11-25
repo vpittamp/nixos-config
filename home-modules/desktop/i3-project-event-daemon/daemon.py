@@ -67,6 +67,7 @@ from .services.performance_tracker import initialize_performance_tracker  # Feat
 from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
 from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
 from .monitoring_panel_publisher import MonitoringPanelPublisher  # Feature 085: Monitoring panel updates
+from .badge_service import BadgeState  # Feature 095: Visual notification badges
 from datetime import datetime
 import time
 
@@ -187,6 +188,7 @@ class I3ProjectDaemon:
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
         self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
+        self.badge_state: BadgeState = BadgeState()  # Feature 095: Visual notification badges
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -204,11 +206,13 @@ class I3ProjectDaemon:
         # Create IPC server first (needed for event buffer callback)
         # Pass window_rules_getter for Feature 021: T025, T026
         # Pass workspace_tracker for Feature 037: Window filtering
+        # Pass badge_state for Feature 095: Visual notification badges
         self.ipc_server = await IPCServer.from_systemd_socket(
             self.state_manager,
             event_buffer=None,
             window_rules_getter=lambda: self.window_rules,
-            workspace_tracker=self.workspace_tracker
+            workspace_tracker=self.workspace_tracker,
+            badge_state=self.badge_state
         )
 
         # Create event buffer with broadcast callback (Feature 017: T019)
@@ -570,7 +574,7 @@ class I3ProjectDaemon:
         )
         self.connection.subscribe(
             "window::focus",
-            partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server)
+            partial(on_window_focus, state_manager=self.state_manager, event_buffer=self.event_buffer, ipc_server=self.ipc_server, monitoring_panel_publisher=self.monitoring_panel_publisher)
         )
 
         # Feature 037 T020: Window move tracking for workspace persistence

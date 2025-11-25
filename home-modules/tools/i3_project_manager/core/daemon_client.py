@@ -247,6 +247,29 @@ class DaemonClient:
         """
         return await self.call("get_window_tree")
 
+    async def get_badge_state(self) -> Dict[str, Any]:
+        """Get badge state for all windows (Feature 095).
+
+        Returns:
+            Badge state dict mapping window IDs to badge metadata:
+                {
+                    "12345": {"count": "1", "timestamp": 1732450000.5, "source": "claude-code"},
+                    "67890": {"count": "2", "timestamp": 1732450100.0, "source": "build"}
+                }
+
+        Raises:
+            DaemonError: If request fails
+
+        Example:
+            ```python
+            async with DaemonClient() as client:
+                badges = await client.get_badge_state()
+                for window_id, badge_info in badges.items():
+                    print(f"Window {window_id}: {badge_info['count']} notifications")
+            ```
+        """
+        return await self.call("get_badge_state")
+
     async def subscribe_window_events(self):
         """Subscribe to real-time window events from daemon.
 
