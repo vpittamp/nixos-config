@@ -2092,6 +2092,16 @@ async def stream_monitoring_data():
             # Subscribe to relevant events
             def on_window_event(ipc, event):
                 """Handle window events (new, close, focus, etc.)"""
+                # Feature 095: Clear badge when window with badge gets focused
+                if event.change == "focus" and event.container:
+                    window_id = str(event.container.id)
+                    badge_file = BADGE_STATE_DIR / f"{window_id}.json"
+                    if badge_file.exists():
+                        try:
+                            badge_file.unlink()
+                            logger.debug(f"Feature 095: Cleared badge for focused window {window_id}")
+                        except OSError as e:
+                            logger.warning(f"Feature 095: Failed to clear badge file: {e}")
                 asyncio.create_task(refresh_and_output())
 
             def on_workspace_event(ipc, event):
