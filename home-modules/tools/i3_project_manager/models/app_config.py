@@ -59,6 +59,9 @@ class ApplicationConfig(BaseModel):
     @classmethod
     def validate_workspace_range(cls, v: int) -> int:
         """Per spec.md FR-A-007: Enforce workspace range 1-50 for regular apps"""
+        # Skip validation for PWAConfig (will be validated by PWAConfig.validate_pwa_workspace_range)
+        if cls.__name__ == "PWAConfig":
+            return v
         if not (1 <= v <= 50):
             raise ValueError(f"Regular applications must use workspaces 1-50, got: {v}")
         return v

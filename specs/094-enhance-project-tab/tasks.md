@@ -149,7 +149,7 @@ Paths follow single project structure with home-modules integration:
 
 ### Tests for User Story 7 ⚠️
 
-- [ ] T042 [P] [US7] Unit test for application validation rules in tests/094-enhance-project-tab/unit/test_form_validator.py (workspace ranges, ULID format, URL validation)
+- [X] T042 [P] [US7] Unit test for application validation rules in tests/094-enhance-project-tab/unit/test_form_validator.py (workspace ranges, ULID format, URL validation)
 - [ ] T043 [P] [US7] Unit test for Nix file editing in tests/094-enhance-project-tab/unit/test_app_registry_editor.py (edit operations, field parsing, backup/restore)
 - [ ] T044 [P] [US7] Integration test for edit workflow in tests/094-enhance-project-tab/integration/test_app_edit_workflow.py
 - [ ] T045 [P] [US7] Sway test for inline edit form in tests/094-enhance-project-tab/sway-tests/test_app_edit_form.json

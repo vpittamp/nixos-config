@@ -1,120 +1,45 @@
-# NixOS Configuration Repository - Git Ignore Patterns
-# Feature 070 Implementation
-
-# =============================================================================
-# Nix Build Artifacts
-# =============================================================================
-result
-result-*
-*.drv
-/nix/store
-
-# =============================================================================
-# TypeScript/JavaScript/Deno (sway-test framework)
-# =============================================================================
-node_modules/
-dist/
-build/
-*.log
-.env
-.env.*
-!.env.example
-coverage/
-*.lcov
-.cache/
-.parcel-cache/
-
-# Deno specific
-.deno/
-deno.lock
-
-# =============================================================================
-# Python (i3pm daemon, monitoring tools)
-# =============================================================================
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-.venv/
-venv/
-ENV/
-env/
+*.so
 *.egg
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.coverage
+htmlcov/
 
-# =============================================================================
-# Editor & IDE
-# =============================================================================
+# NixOS
+result
+result-*
+.direnv/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
 Thumbs.db
 
-# =============================================================================
-# Runtime & Temporary Files
-# =============================================================================
-*.tmp
-*.temp
-*.pid
-*.sock
-*.lock
-!flake.lock
-
-# =============================================================================
 # Logs
-# =============================================================================
 *.log
-logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# =============================================================================
-# Test Coverage & Reports
-# =============================================================================
-coverage/
-.nyc_output/
-*.lcov
-htmlcov/
-.coverage
-.coverage.*
+# Environment
+.env
+.env.*
+!.env.example
 
-# =============================================================================
-# Documentation Build
-# =============================================================================
-docs/_build/
-docs/.doctrees/
-site/
-
-# =============================================================================
-# Secrets & Credentials
-# =============================================================================
-*.pem
-*.key
-*.crt
-*.p12
-credentials.json
-secrets/
-.secrets/
-*.secret.*
-
-# =============================================================================
-# Project Specific
-# =============================================================================
-# Rebuild logs (user-generated)
-/tmp/rebuild*.log
-
-# Local configuration overrides
-local.nix
-*-local.nix
+# Temporary
+*.tmp
+*.bak
+*.backup
