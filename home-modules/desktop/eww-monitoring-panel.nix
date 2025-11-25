@@ -1240,7 +1240,7 @@ in
                 :valign "center"
                 (label
                   :class "app-running-indicator"
-                  :visible {app.running_instances > 0}
+                  :visible {(app.running_instances ?: 0) > 0}
                   :text "●")))
             ;; Details row
             (box
@@ -2031,7 +2031,6 @@ in
         font-size: 12px;
         font-weight: bold;
         color: ${mocha.subtext0};
-        text-transform: uppercase;
         letter-spacing: 0.5px;
         margin-bottom: 8px;
         margin-left: 4px;
@@ -2051,7 +2050,7 @@ in
 
       .app-card-command {
         font-size: 9px;
-        color: ${mocha.overlay2};
+        color: ${mocha.subtext0};
         font-family: "JetBrainsMono Nerd Font", monospace;
       }
 
