@@ -182,28 +182,19 @@ let
     REMOTE_DIR=$($EWW get edit_form_remote_dir)
     REMOTE_PORT=$($EWW get edit_form_remote_port)
 
-    # Build JSON update object
-    UPDATES=$(${pkgs.jq}/bin/jq -n \
-      --arg display_name "$DISPLAY_NAME" \
-      --arg icon "$ICON" \
-      --arg scope "$SCOPE" \
-      --argjson remote_enabled "$REMOTE_ENABLED" \
-      --arg remote_host "$REMOTE_HOST" \
-      --arg remote_user "$REMOTE_USER" \
-      --arg remote_dir "$REMOTE_DIR" \
-      --arg remote_port "$REMOTE_PORT" \
-      '{
-        display_name: $display_name,
-        icon: $icon,
-        scope: $scope,
-        remote: {
-          enabled: $remote_enabled,
-          host: $remote_host,
-          user: $remote_user,
-          remote_dir: $remote_dir,
-          port: ($remote_port | tonumber)
-        }
-      }')
+    # Build JSON update object (using printf to avoid quote issues)
+    UPDATES=$(printf '%s\n' "{" \
+      "  \"display_name\": \"$DISPLAY_NAME\"," \
+      "  \"icon\": \"$ICON\"," \
+      "  \"scope\": \"$SCOPE\"," \
+      "  \"remote\": {" \
+      "    \"enabled\": $REMOTE_ENABLED," \
+      "    \"host\": \"$REMOTE_HOST\"," \
+      "    \"user\": \"$REMOTE_USER\"," \
+      "    \"remote_dir\": \"$REMOTE_DIR\"," \
+      "    \"port\": $REMOTE_PORT" \
+      "  }" \
+      "}")
 
     # Call CRUD handler
     export PYTHONPATH="${../tools}"
