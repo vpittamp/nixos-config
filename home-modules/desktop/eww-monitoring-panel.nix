@@ -5077,7 +5077,7 @@ in
         font-size: 12px;
         color: ${mocha.subtext0};
         margin-bottom: 12px;
-        line-height: 1.4;
+        
       }
 
       .delete-confirmation-dialog .worktree-warning {
@@ -5099,7 +5099,7 @@ in
         font-size: 11px;
         color: ${mocha.subtext0};
         margin-bottom: 8px;
-        line-height: 1.4;
+        
       }
 
       .delete-confirmation-dialog .force-delete-option {
@@ -5161,7 +5161,6 @@ in
       .delete-confirmation-dialog .confirm-delete-button.disabled {
         background-color: ${mocha.surface1};
         color: ${mocha.overlay0};
-        cursor: not-allowed;
       }
 
       .delete-confirmation-dialog .confirm-delete-button.disabled:hover {
@@ -5211,7 +5210,7 @@ in
         font-size: 12px;
         color: ${mocha.subtext0};
         margin-bottom: 12px;
-        line-height: 1.4;
+        
       }
 
       .app-delete-confirmation-dialog .pwa-warning {
@@ -5232,7 +5231,7 @@ in
       .app-delete-confirmation-dialog .pwa-warning .warning-detail {
         font-size: 11px;
         color: ${mocha.subtext0};
-        line-height: 1.4;
+        
       }
 
       .app-delete-confirmation-dialog .error-message {
@@ -5247,7 +5246,6 @@ in
 
       .app-delete-confirmation-dialog .dialog-actions {
         margin-top: 8px;
-        gap: 8px;
       }
 
       .app-delete-confirmation-dialog .cancel-delete-app-button {
@@ -5307,17 +5305,12 @@ in
 
       /* Feature 094 Phase 12 T099: Success notification toast */
       .success-notification-toast {
-        position: absolute;
-        top: 60px;
-        left: 50%;
-        transform: translateX(-50%);
         background-color: rgba(166, 227, 161, 0.95);
         border: 1px solid ${mocha.green};
         border-radius: 8px;
         padding: 10px 16px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 1000;
-        gap: 8px;
+        margin-top: 10px;
       }
 
       .success-notification-toast .success-icon {
@@ -5349,17 +5342,10 @@ in
       /* Feature 094 Phase 12 T098: Loading spinner styles */
       .save-in-progress {
         opacity: 0.6;
-        pointer-events: none;
       }
 
       .loading-spinner {
         font-size: 14px;
-        animation: spin 1s linear infinite;
-      }
-
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
       }
 
       .edit-form {
