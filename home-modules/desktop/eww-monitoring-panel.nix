@@ -1418,15 +1418,23 @@ in
         /* Only reset margins and padding */
         margin: 0;
         padding: 0;
+        /* Force Catppuccin text color on all elements */
+        color: ${mocha.text};
       }
 
       window {
         background-color: transparent;
       }
 
+      /* Explicit GTK widget styling to override theme */
+      label, box, button {
+        color: ${mocha.text};
+        background-color: transparent;
+      }
+
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: rgba(30, 30, 46, 0.50) !important;
+        background-color: ${mocha.base} !important;
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
