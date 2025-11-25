@@ -163,6 +163,39 @@ let
     exec ${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler "$@"
   '';
 
+  # Feature 094: Project edit form opener (T038)
+  projectEditOpenScript = pkgs.writeShellScriptBin "project-edit-open" ''
+    #!${pkgs.bash}/bin/bash
+    # Open edit form by loading project data into eww variables
+    # Usage: project-edit-open <name> <display_name> <icon> <directory> <scope> <remote_enabled> <remote_host> <remote_user> <remote_dir> <remote_port>
+
+    NAME="$1"
+    DISPLAY_NAME="$2"
+    ICON="$3"
+    DIRECTORY="$4"
+    SCOPE="$5"
+    REMOTE_ENABLED="$6"
+    REMOTE_HOST="$7"
+    REMOTE_USER="$8"
+    REMOTE_DIR="$9"
+    REMOTE_PORT="''${10}"
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Update all eww variables
+    $EWW_CMD update editing_project_name="$NAME"
+    $EWW_CMD update edit_form_display_name="$DISPLAY_NAME"
+    $EWW_CMD update edit_form_icon="$ICON"
+    $EWW_CMD update edit_form_directory="$DIRECTORY"
+    $EWW_CMD update edit_form_scope="$SCOPE"
+    $EWW_CMD update edit_form_remote_enabled="$REMOTE_ENABLED"
+    $EWW_CMD update edit_form_remote_host="$REMOTE_HOST"
+    $EWW_CMD update edit_form_remote_user="$REMOTE_USER"
+    $EWW_CMD update edit_form_remote_dir="$REMOTE_DIR"
+    $EWW_CMD update edit_form_remote_port="$REMOTE_PORT"
+    $EWW_CMD update edit_form_error=""
+  '';
+
   # Feature 094: Project edit form save handler (T038)
   projectEditSaveScript = pkgs.writeShellScriptBin "project-edit-save" ''
     #!${pkgs.bash}/bin/bash
@@ -547,6 +580,7 @@ in
       focusWindowScript     # Feature 093: Focus window action
       switchProjectScript   # Feature 093: Switch project action
       projectCrudScript     # Feature 094: Project CRUD handler (T037)
+      projectEditOpenScript # Feature 094: Project edit form opener (T038)
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
     ];
 
@@ -1150,7 +1184,7 @@ in
                 :class "project-info"
                 :orientation "v"
                 :space-evenly false
-                :hexpand true
+                :hexpand false
                 (box
                   :class "project-name-row"
                   :orientation "h"
@@ -1158,6 +1192,7 @@ in
                   (label
                     :class "project-card-name"
                     :halign "start"
+                    :truncate true
                     :text "''${project.display_name ?: project.name}")
                   ;; Remote indicator
                   (label
@@ -1167,6 +1202,7 @@ in
                 (label
                   :class "project-card-path"
                   :halign "start"
+                  :truncate true
                   :text "''${project.directory}"))
               ;; Active indicator
               (label
@@ -1177,7 +1213,7 @@ in
               (button
                 :class "edit-button"
                 :visible {editing_project_name != project.name}
-                :onclick "eww update editing_project_name='''''${project.name}' && eww update edit_form_display_name='''''${project.display_name ?: project.name}' && eww update edit_form_icon='''''${project.icon}' && eww update edit_form_directory='''''${project.directory}' && eww update edit_form_scope='''''${project.scope ?: 'scoped'}' && eww update edit_form_remote_enabled='''''${project.remote.enabled}' && eww update edit_form_remote_host='''''${project.remote.host}' && eww update edit_form_remote_user='''''${project.remote.user}' && eww update edit_form_remote_dir='''''${project.remote.remote_dir}' && eww update edit_form_remote_port='''''${project.remote.port}' && eww update edit_form_error='''"
+                :onclick "project-edit-open ''${project.name} ''${project.display_name ?: project.name} ''${project.icon} ''${project.directory} ''${project.scope ?: 'scoped'} ''${project.remote.enabled} ''${project.remote.host} ''${project.remote.user} ''${project.remote.remote_dir} ''${project.remote.port}"
                 "✏"))
             ;; Hover detail tooltip
             (revealer
@@ -1229,7 +1265,7 @@ in
                 :class "project-info"
                 :orientation "v"
                 :space-evenly false
-                :hexpand true
+                :hexpand false
                 (box
                   :class "project-name-row"
                   :orientation "h"
@@ -1246,6 +1282,7 @@ in
                 (label
                   :class "project-card-path"
                   :halign "start"
+                  :truncate true
                   :text "''${project.directory}"))
               ;; Active indicator
               (label
@@ -1435,7 +1472,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww update editing_project_name=''' && eww update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name='''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''''"
               "Cancel")
             (button
               :class "save-button"
@@ -1884,11 +1921,19 @@ in
         /* transition not supported in GTK CSS */
       }
 
+      .tab label {
+        color: ${mocha.subtext0};
+      }
+
       .tab:hover {
         background-color: rgba(69, 71, 90, 0.5);
         color: ${mocha.text};
         border-color: ${mocha.overlay0};
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      }
+
+      .tab:hover label {
+        color: ${mocha.text};
       }
 
       .tab.active {
@@ -1899,9 +1944,17 @@ in
         box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
       }
 
+      .tab.active label {
+        color: ${mocha.base};
+      }
+
       .tab.active:hover {
         background-color: rgba(137, 180, 250, 0.7);
         box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+      }
+
+      .tab.active:hover label {
+        color: ${mocha.base};
       }
 
       /* Panel Body - Compact */
@@ -2210,34 +2263,35 @@ in
       }
 
       .project-icon {
-        font-size: 20px;
+        font-size: 16px;
         margin-right: 8px;
       }
 
       .project-info {
         margin-right: 8px;
+        min-width: 0;
       }
 
       .project-card-name {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: bold;
         color: ${mocha.text};
         margin-bottom: 2px;
       }
 
       .project-card-path {
-        font-size: 10px;
+        font-size: 9px;
         color: ${mocha.subtext0};
       }
 
       .active-indicator {
         color: ${mocha.teal};
-        font-size: 14px;
+        font-size: 12px;
       }
 
       .remote-indicator {
         color: ${mocha.peach};
-        font-size: 12px;
+        font-size: 10px;
         margin-left: 6px;
       }
 
@@ -2291,14 +2345,22 @@ in
         background-color: transparent;
         border: none;
         color: ${mocha.blue};
-        padding: 4px 8px;
+        padding: 3px 6px;
         border-radius: 4px;
-        font-size: 12px;
-        margin-left: 8px;
+        font-size: 11px;
+        margin-left: 6px;
+      }
+
+      .edit-button label {
+        color: ${mocha.blue};
       }
 
       .edit-button:hover {
         background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .edit-button:hover label {
+        color: ${mocha.blue};
       }
 
       .edit-form {
