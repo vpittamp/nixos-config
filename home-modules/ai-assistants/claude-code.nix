@@ -93,12 +93,26 @@ lib.mkIf enableClaudeCode {
           }];
         }];
 
+        # UserPromptSubmit hook - Feature 095: Activity indicator for Claude Code
+        # Creates "working" badge in monitoring panel when user submits a prompt
+        # Shows spinner animation indicating Claude Code is processing
+        UserPromptSubmit = [{
+          hooks = [{
+            type = "command";
+            # Hook script creates "working" badge via daemon IPC
+            command = "${self}/scripts/claude-hooks/prompt-submit-notification.sh";
+            # Short timeout - IPC call is quick
+            timeout = 3;
+          }];
+        }];
+
         # Stop hook - Notify when Claude Code finishes and awaits input
+        # Feature 095: Changes badge state from "working" to "stopped"
         # Sends desktop notification with limited output preview and action to return to terminal
         Stop = [{
           hooks = [{
             type = "command";
-            # Hook script extracts last message, finds terminal window, sends notification
+            # Hook script changes badge to "stopped" state (bell icon) and sends notification
             # Notification handler runs in background with "Return to Terminal" action button
             command = "${self}/scripts/claude-hooks/stop-notification.sh";
             # Short timeout - script spawns background handler and exits immediately

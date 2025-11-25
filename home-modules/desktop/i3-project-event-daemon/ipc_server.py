@@ -6127,39 +6127,49 @@ class IPCServer:
     # Feature 095: Visual notification badge management methods
 
     async def _create_badge(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Create badge or increment existing badge count.
-        
+        """Create badge or update existing badge state.
+
         Args:
-            params: {"window_id": int, "source": str (optional, defaults to "generic")}
-            
+            params: {
+                "window_id": int,
+                "source": str (optional, defaults to "generic"),
+                "state": str (optional, "working" or "stopped", defaults to "stopped")
+            }
+
         Returns:
-            {"success": bool, "badge": {window_id, count, timestamp, source}}
+            {"success": bool, "badge": {window_id, count, timestamp, source, state}}
         """
         if not self.badge_state:
             raise ValueError("Badge state not initialized")
-            
+
         window_id = params["window_id"]
         source = params.get("source", "generic")
-        
+        state = params.get("state", "stopped")
+
+        # Validate state parameter
+        if state not in ("working", "stopped"):
+            raise ValueError(f"Invalid badge state '{state}', must be 'working' or 'stopped'")
+
         # Validate window exists via i3 IPC
         if self.i3_connection and self.i3_connection.conn:
             tree = await self.i3_connection.conn.get_tree()
             window = tree.find_by_id(window_id)
             if not window:
                 raise ValueError(f"Window ID {window_id} not found in Sway tree")
-        
-        # Create or increment badge
-        badge = self.badge_state.create_badge(window_id=window_id, source=source)
-        
-        logger.info(f"[Feature 095] Created/incremented badge for window {window_id}, count={badge.count}, source={source}")
-        
+
+        # Create or update badge with state
+        badge = self.badge_state.create_badge(window_id=window_id, source=source, state=state)
+
+        logger.info(f"[Feature 095] Created/updated badge for window {window_id}, count={badge.count}, source={source}, state={state}")
+
         return {
             "success": True,
             "badge": {
                 "window_id": badge.window_id,
                 "count": badge.count,
                 "timestamp": badge.timestamp,
-                "source": badge.source
+                "source": badge.source,
+                "state": badge.state
             }
         }
     

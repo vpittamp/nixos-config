@@ -1948,12 +1948,15 @@ async def on_window_focus(
         if current_ws and hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
             await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
 
-        # Feature 095 (T024-T027): Auto-clear notification badge on window focus
+        # Feature 095: Auto-clear notification badge on window focus
+        # Use min_age_seconds=2.0 to ensure badge is visible for at least 2 seconds
+        # This prevents immediate clearing when badge is created on an already-focused window
+        # but still clears the badge when user returns to the window after seeing the notification
         if ipc_server and hasattr(ipc_server, 'badge_state') and ipc_server.badge_state:
-            cleared_count = ipc_server.badge_state.clear_badge(window_id)
+            cleared_count = ipc_server.badge_state.clear_badge(window_id, min_age_seconds=2.0)
             if cleared_count > 0:
                 logger.info(f"[Feature 095] Cleared badge for window {window_id} (count was {cleared_count})")
-                # Trigger monitoring panel update after badge clear (T027)
+                # Trigger monitoring panel update after badge clear
                 if monitoring_panel_publisher:
                     await monitoring_panel_publisher.publish(conn)
                     logger.debug(f"[Feature 095] Triggered monitoring panel update after badge clear")

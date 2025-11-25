@@ -19,6 +19,16 @@ set -euo pipefail
 # Get window ID of current terminal
 WINDOW_ID=$(swaymsg -t get_tree | jq -r '.. | objects | select(.type=="con") | select(.focused==true) | .id' | head -1)
 
+# Feature 095: Create/update badge in monitoring panel daemon with state="stopped"
+# This changes the spinner to a bell icon indicating Claude is waiting for input
+DAEMON_SOCKET="/run/i3-project-daemon/ipc.sock"
+if [ -S "$DAEMON_SOCKET" ] && [ -n "$WINDOW_ID" ]; then
+    # Send JSON-RPC request to create badge with state="stopped"
+    # Using timeout to prevent hanging if daemon is unresponsive
+    echo "{\"jsonrpc\":\"2.0\",\"method\":\"create_badge\",\"params\":{\"window_id\":$WINDOW_ID,\"source\":\"claude-code\",\"state\":\"stopped\"},\"id\":1}" | \
+        timeout 2 socat - UNIX-CONNECT:"$DAEMON_SOCKET" >/dev/null 2>&1 || true
+fi
+
 # Get project name from environment
 PROJECT_NAME="${I3PM_PROJECT_NAME:-}"
 
