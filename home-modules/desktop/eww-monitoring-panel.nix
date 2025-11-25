@@ -2160,6 +2160,7 @@ in
       .tab {
         font-size: 16px;
         padding: 8px 16px;
+        min-width: 60px;
         background-color: rgba(49, 50, 68, 0.4);
         color: ${mocha.subtext0};
         border: 1px solid ${mocha.overlay0};
