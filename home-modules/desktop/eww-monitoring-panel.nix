@@ -2366,7 +2366,7 @@ in
 
       .cancel-button:hover {
         background-color: ${mocha.surface1};
-        border-color: ${mocha.overlay1};
+        border-color: ${mocha.overlay0};
       }
 
       .save-button {
