@@ -1,0 +1,254 @@
+{
+  "name": "Projects Tab Hover Detail Interaction Test",
+  "description": "Verify Projects tab data loading and hover variable interaction (Feature 094 - T019)",
+  "setup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "systemctl --user restart eww-monitoring-panel",
+        "description": "Restart Eww service with updated Projects tab"
+      },
+      {
+        "action": "wait_sync"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close-all",
+        "description": "Ensure panel is closed"
+      },
+      {
+        "action": "wait_sync"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Panel opens and Projects tab is accessible",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel",
+          "description": "Open monitoring panel"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to open"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "contains": "monitoring-panel",
+            "description": "Panel should be open"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects data loads successfully",
+      "steps": [
+        {
+          "action": "wait",
+          "duration_ms": 500,
+          "description": "Wait for Projects tab data to load via deflisten"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.status'",
+            "equals": "success",
+            "description": "Projects data status should be 'success'"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects data contains main_projects array",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq 'has(\"main_projects\")'",
+            "equals": "true",
+            "description": "Projects data should have main_projects field"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq 'has(\"worktrees\")'",
+            "equals": "true",
+            "description": "Projects data should have worktrees field"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hover variable exists and can be updated",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get hover_project_name 2>&1",
+            "not_contains": "error",
+            "description": "hover_project_name variable should exist"
+          }
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='test-project'",
+          "description": "Simulate hover by updating variable"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get hover_project_name",
+            "equals": "test-project",
+            "description": "hover_project_name should be updated"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hover variable can be cleared",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''",
+          "description": "Simulate hover lost by clearing variable"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get hover_project_name",
+            "equals": "",
+            "description": "hover_project_name should be empty"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects tab can be switched to via Alt+2",
+      "steps": [
+        {
+          "action": "key",
+          "keys": "Alt+2",
+          "description": "Switch to Projects tab (tab 2)"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for tab switch"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get selected_tab",
+            "equals": "1",
+            "description": "selected_tab should be 1 (Projects tab, 0-indexed)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Project data includes required fields",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_success",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -e '.main_projects[0] | has(\"name\") and has(\"display_name\") and has(\"directory\") and has(\"icon\") and has(\"is_active\") and has(\"is_remote\") and has(\"json_repr\")'",
+            "description": "First project should have all required fields"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Remote project indicator works",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].is_remote'",
+            "matches": "^(true|false)$",
+            "description": "is_remote should be boolean"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Active project indicator works",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].is_active'",
+            "matches": "^(true|false)$",
+            "description": "is_active should be boolean"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree parent_project field exists",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq '.worktrees | length'",
+          "save_output": "worktree_count",
+          "description": "Get worktree count"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "skip_if_zero",
+            "value": "$worktree_count",
+            "description": "Skip if no worktrees exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_success",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -e '.worktrees[0] | has(\"parent_project\")'",
+            "description": "First worktree should have parent_project field"
+          }
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''",
+        "description": "Clear hover state"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel",
+        "description": "Close panel"
+      }
+    ]
+  }
+}
