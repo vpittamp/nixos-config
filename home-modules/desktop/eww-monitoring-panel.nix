@@ -502,7 +502,7 @@ in
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
     ];
 
-    xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
+    home.file.".config/eww-monitoring-panel/eww.yuck".text = ''
       # Eww Yuck widget configuration (T009-T014)
       # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
@@ -1737,7 +1737,7 @@ in
     '';
 
     # Eww SCSS styling (T015)
-    xdg.configFile."eww-monitoring-panel/eww.scss".text = ''
+    home.file.".config/eww-monitoring-panel/eww.scss".text = ''
       /* Feature 085: Sway Monitoring Widget - Catppuccin Mocha Theme */
       /* Direct color interpolation from Nix - Eww doesn't support CSS variables */
 
