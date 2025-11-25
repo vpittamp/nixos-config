@@ -323,3 +323,77 @@ class AppCRUDHandler:
             errors.append(f"Validation error: {e}")
 
         return errors
+
+
+# CLI interface for shell script usage
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Application CRUD Handler CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Edit command
+    edit_parser = subparsers.add_parser("edit", help="Edit an application")
+    edit_parser.add_argument("app_name", help="Application name")
+    edit_parser.add_argument("--updates", required=True, help="JSON object of updates")
+
+    # List command
+    list_parser = subparsers.add_parser("list", help="List all applications")
+
+    # Delete command
+    delete_parser = subparsers.add_parser("delete", help="Delete an application")
+    delete_parser.add_argument("app_name", help="Application name")
+
+    args = parser.parse_args()
+
+    handler = AppCRUDHandler()
+
+    if args.command == "edit":
+        try:
+            updates = json.loads(args.updates)
+            request = {
+                "action": "edit_app",
+                "app_name": args.app_name,
+                "updates": updates
+            }
+            result = asyncio.run(handler.handle_request(request))
+
+            # Return status for shell script
+            if result.get("success"):
+                print(json.dumps({"status": "success", "backup_path": result.get("backup_path")}))
+            else:
+                print(json.dumps({
+                    "status": "error",
+                    "error": result.get("error_message", "Unknown error"),
+                    "validation_errors": result.get("validation_errors", [])
+                }))
+                sys.exit(1)
+
+        except json.JSONDecodeError as e:
+            print(json.dumps({"status": "error", "error": f"Invalid JSON: {e}"}))
+            sys.exit(1)
+
+    elif args.command == "list":
+        request = {"action": "list_apps"}
+        result = asyncio.run(handler.handle_request(request))
+        print(json.dumps(result))
+
+    elif args.command == "delete":
+        request = {
+            "action": "delete_app",
+            "app_name": args.app_name
+        }
+        result = asyncio.run(handler.handle_request(request))
+
+        if result.get("success"):
+            print(json.dumps({
+                "status": "success",
+                "pwa_warning": result.get("pwa_warning"),
+                "rebuild_required": result.get("rebuild_required", True)
+            }))
+        else:
+            print(json.dumps({
+                "status": "error",
+                "error": result.get("error_message", "Unknown error")
+            }))
+            sys.exit(1)

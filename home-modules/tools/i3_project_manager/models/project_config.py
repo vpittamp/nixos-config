@@ -53,8 +53,12 @@ class ProjectConfig(BaseModel):
     @classmethod
     def validate_name_format(cls, v: str) -> str:
         """Per spec.md FR-P-007: lowercase, hyphens only, no spaces"""
+        if not v:
+            raise ValueError("Project name cannot be empty")
         if not re.match(r'^[a-z0-9-]+$', v):
             raise ValueError("Project name must be lowercase alphanumeric with hyphens only (no spaces)")
+        if v.startswith('-') or v.endswith('-'):
+            raise ValueError("Project name cannot start or end with a hyphen")
         return v
 
     @field_validator("name")
@@ -160,7 +164,9 @@ class WorktreeConfig(ProjectConfig):
     @classmethod
     def validate_branch_name_format(cls, v: str) -> str:
         """Validate Git branch name format (no spaces, valid Git ref)"""
-        if not re.match(r'^[a-zA-Z0-9/_-]+$', v):
+        # Allow alphanumeric, forward slashes, underscores, hyphens, and dots
+        # Examples: main, feature-123, feat/new-feature, release/v1.0.0
+        if not re.match(r'^[a-zA-Z0-9/_.-]+$', v):
             raise ValueError(f"Invalid Git branch name format: {v}")
         return v
 

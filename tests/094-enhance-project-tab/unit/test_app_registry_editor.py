@@ -496,12 +496,255 @@ class TestMultipleFieldEdits:
     def test_edit_preserves_unchanged_fields(self, editor):
         """Should preserve fields not included in updates"""
         updates = {"display_name": "New Firefox"}
-        
+
         result = editor.edit_application("firefox", updates)
-        
+
         assert result.success is True
         content = editor.read_file()
         # These fields should remain unchanged
         assert "command = \"firefox\"" in content
         assert "scope = \"global\"" in content
         assert "expected_class = \"firefox\"" in content
+
+
+# =============================================================================
+# User Story 8 (T071): ULID Generation Tests
+# =============================================================================
+
+
+class TestULIDGeneration:
+    """Test ULID generation for PWAs"""
+
+    def test_generate_ulid_returns_valid_format(self, editor):
+        """Generated ULID should have valid format"""
+        ulid = editor._generate_ulid()
+
+        # ULID should be 26 characters
+        assert len(ulid) == 26
+
+        # First character must be 0-7 (timestamp constraint)
+        assert ulid[0] in "01234567"
+
+        # All characters must be Crockford Base32 (no I, L, O, U)
+        valid_chars = set("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+        assert all(c in valid_chars for c in ulid)
+
+    def test_generate_ulid_is_unique(self, editor):
+        """Each generated ULID should be unique"""
+        ulids = set()
+        for _ in range(100):
+            ulid = editor._generate_ulid()
+            assert ulid not in ulids, f"Duplicate ULID generated: {ulid}"
+            ulids.add(ulid)
+
+    def test_ulid_format_regex_validation(self, editor):
+        """ULID should match expected regex pattern"""
+        import re
+        ulid = editor._generate_ulid()
+
+        # Pattern: first char 0-7, rest is Crockford Base32
+        pattern = r'^[0-7][0-9A-HJKMNP-TV-Z]{25}$'
+        assert re.match(pattern, ulid), f"ULID {ulid} doesn't match expected pattern"
+
+    def test_ulid_excludes_invalid_characters(self, editor):
+        """ULID should not contain I, L, O, U characters"""
+        for _ in range(50):
+            ulid = editor._generate_ulid()
+            assert 'I' not in ulid, "ULID should not contain 'I'"
+            assert 'L' not in ulid, "ULID should not contain 'L'"
+            assert 'O' not in ulid, "ULID should not contain 'O'"
+            assert 'U' not in ulid, "ULID should not contain 'U'"
+
+
+class TestPWACreationWithULID:
+    """Test PWA creation with ULID handling"""
+
+    def test_create_pwa_with_valid_ulid(self, editor):
+        """Creating PWA with valid ULID should succeed"""
+        # Generate a valid ULID for the test
+        test_ulid = editor._generate_ulid()
+        config = PWAConfig(
+            name="test-pwa",
+            display_name="Test PWA",
+            command="firefoxpwa",
+            parameters=["site", "launch", test_ulid],
+            expected_class=f"FFPWA-{test_ulid}",
+            preferred_workspace=50,
+            ulid=test_ulid,
+            start_url="https://test.example.com",
+            scope_url="https://test.example.com/"
+        )
+
+        result = editor.add_application(config)
+
+        assert result["status"] == "success"
+        assert result["ulid"] is not None
+        assert len(result["ulid"]) == 26
+
+    def test_create_pwa_with_provided_ulid(self, editor):
+        """Creating PWA with provided ULID should use it"""
+        provided_ulid = "01JCYF8Z2M0N3P4Q5R6S7T8V9W"
+        config = PWAConfig(
+            name="custom-pwa",
+            display_name="Custom PWA",
+            command="firefoxpwa",
+            parameters=["site", "launch", provided_ulid],
+            expected_class=f"FFPWA-{provided_ulid}",
+            preferred_workspace=51,
+            ulid=provided_ulid,
+            start_url="https://custom.example.com",
+            scope_url="https://custom.example.com/"
+        )
+
+        result = editor.add_application(config)
+
+        assert result["status"] == "success"
+        content = editor.read_file()
+        assert provided_ulid in content
+
+    def test_pwa_expected_class_pattern_enforced(self, editor):
+        """PWA expected_class must match FFPWA-{ULID} pattern"""
+        test_ulid = editor._generate_ulid()
+
+        # Try creating PWA with invalid expected_class (missing ULID)
+        with pytest.raises(Exception) as exc_info:
+            PWAConfig(
+                name="invalid-class-pwa",
+                display_name="Invalid Class PWA",
+                command="firefoxpwa",
+                parameters=["site", "launch", test_ulid],
+                expected_class="FFPWA",  # Invalid - missing ULID suffix
+                preferred_workspace=52,
+                ulid=test_ulid,
+                start_url="https://test.example.com",
+                scope_url="https://test.example.com/"
+            )
+
+        # Should fail validation at model level
+        assert "expected_class" in str(exc_info.value).lower() or "pattern" in str(exc_info.value).lower()
+
+
+class TestULIDUniquenessValidation:
+    """Test ULID uniqueness validation"""
+
+    def test_duplicate_app_name_rejected(self, editor):
+        """Should reject PWA with duplicate name"""
+        test_ulid1 = editor._generate_ulid()
+        test_ulid2 = editor._generate_ulid()
+
+        # First PWA
+        config1 = PWAConfig(
+            name="first-pwa",
+            display_name="First PWA",
+            command="firefoxpwa",
+            parameters=["site", "launch", test_ulid1],
+            expected_class=f"FFPWA-{test_ulid1}",
+            preferred_workspace=50,
+            ulid=test_ulid1,
+            start_url="https://first.example.com",
+            scope_url="https://first.example.com/"
+        )
+        result1 = editor.add_application(config1)
+        assert result1["status"] == "success"
+
+        # Second PWA with same name (different ULID)
+        config2 = PWAConfig(
+            name="first-pwa",  # Same name as first
+            display_name="First PWA Again",
+            command="firefoxpwa",
+            parameters=["site", "launch", test_ulid2],
+            expected_class=f"FFPWA-{test_ulid2}",
+            preferred_workspace=51,
+            ulid=test_ulid2,
+            start_url="https://first-again.example.com",
+            scope_url="https://first-again.example.com/"
+        )
+
+        # Should fail due to duplicate name
+        with pytest.raises(ValueError) as exc_info:
+            editor.add_application(config2)
+
+        assert "already exists" in str(exc_info.value).lower()
+
+
+class TestApplicationDeletion:
+    """Feature 094 US9 T090: Tests for application deletion from Nix file"""
+
+    def test_delete_regular_app_success(self, editor, temp_nix_file):
+        """Deleting a regular app should remove its mkApp block"""
+        # Terminal app exists in fixture
+        result = editor.delete_application("terminal")
+
+        assert result["status"] == "success"
+
+        # Verify it's removed from Nix file
+        content = temp_nix_file.read_text()
+        assert "name = \"terminal\"" not in content
+        assert 'display_name = "Terminal"' not in content
+
+        # Verify other apps still exist
+        assert "name = \"firefox\"" in content
+        assert "name = \"youtube-pwa\"" in content
+
+    def test_delete_pwa_success(self, editor, temp_nix_file):
+        """Deleting a PWA should remove its mkApp block"""
+        result = editor.delete_application("youtube-pwa")
+
+        assert result["status"] == "success"
+
+        # Verify it's removed
+        content = temp_nix_file.read_text()
+        assert "name = \"youtube-pwa\"" not in content
+        assert "01JCYF8Z2M0N3P4Q5R6S7T8V9W" not in content
+
+        # Verify other apps still exist
+        assert "name = \"firefox\"" in content
+        assert "name = \"terminal\"" in content
+
+    def test_delete_nonexistent_app_fails(self, editor):
+        """Deleting a nonexistent app should fail with ValueError"""
+        with pytest.raises(ValueError) as exc_info:
+            editor.delete_application("nonexistent-app")
+
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_delete_app_preserves_nix_syntax(self, editor, temp_nix_file):
+        """After deletion, Nix file should have valid syntax"""
+        # Delete an app
+        result = editor.delete_application("terminal")
+        assert result["status"] == "success"
+
+        # Verify file can still be parsed (basic syntax check)
+        content = temp_nix_file.read_text()
+        # Check balanced brackets
+        assert content.count("[") == content.count("]")
+        assert content.count("(") == content.count(")")
+        # Check it still has the array structure
+        assert "[" in content
+        assert "mkApp" in content
+
+    def test_delete_returns_pwa_warning(self, editor, temp_nix_file):
+        """Deleting a PWA should return warning with ULID for uninstall"""
+        result = editor.delete_application("youtube-pwa")
+
+        assert result["status"] == "success"
+        # For PWA, should include pwa_warning with ULID
+        assert "pwa_warning" in result
+        assert "01JCYF8Z2M0N3P4Q5R6S7T8V9W" in result["pwa_warning"]
+        assert "pwa-uninstall" in result["pwa_warning"]
+
+    def test_delete_all_apps_leaves_valid_empty_list(self, editor, temp_nix_file):
+        """Deleting all apps should leave valid empty list structure"""
+        # Delete all three apps
+        editor.delete_application("firefox")
+        editor.delete_application("terminal")
+        editor.delete_application("youtube-pwa")
+
+        # Verify file structure is still valid
+        content = temp_nix_file.read_text()
+        assert "[" in content
+        assert "]" in content
+        # Should have no mkApp blocks left (or just the empty list)
+        assert "name = \"firefox\"" not in content
+        assert "name = \"terminal\"" not in content
+        assert "name = \"youtube-pwa\"" not in content

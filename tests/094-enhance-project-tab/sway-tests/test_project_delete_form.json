@@ -1,0 +1,378 @@
+{
+  "name": "test_project_delete_form",
+  "description": "Feature 094 US4 T085: Test project delete confirmation dialog UI functionality",
+  "setup": {
+    "wait_for_services": ["eww-monitoring-panel"],
+    "open_panel": true,
+    "switch_to_tab": "projects"
+  },
+  "tests": [
+    {
+      "name": "delete_button_visible_on_project",
+      "description": "Delete button should be visible on each project entry",
+      "precondition": {
+        "eww_variable": "panel_visible",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".project-card .delete-button",
+          "expected": true,
+          "note": "Delete button should be visible on project cards"
+        }
+      ]
+    },
+    {
+      "name": "click_delete_shows_confirmation",
+      "description": "Clicking Delete button should show confirmation dialog",
+      "steps": [
+        {
+          "action": "click",
+          "selector": ".project-card:first-child .delete-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".delete-confirmation-dialog",
+          "expected": true
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "project_deleting",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_shows_project_name",
+      "description": "Confirmation dialog should display the project name being deleted",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_visible",
+          "selector": ".delete-confirmation-dialog .project-name-display",
+          "expected": true
+        },
+        {
+          "action": "verify_element_not_empty",
+          "selector": ".delete-confirmation-dialog .project-name-display",
+          "note": "Project name should be displayed"
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_shows_warning",
+      "description": "Confirmation dialog should show warning about permanent deletion",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_visible",
+          "selector": ".delete-confirmation-dialog .warning-message",
+          "expected": true,
+          "note": "Warning about permanent deletion"
+        },
+        {
+          "action": "verify_element_contains",
+          "selector": ".delete-confirmation-dialog .warning-message",
+          "contains": "permanent",
+          "case_insensitive": true
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_has_confirm_cancel_buttons",
+      "description": "Confirmation dialog should have Confirm and Cancel buttons",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button",
+          "expected": true,
+          "note": "Confirm button"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".delete-confirmation-dialog .cancel-delete-button",
+          "expected": true,
+          "note": "Cancel button"
+        }
+      ]
+    },
+    {
+      "name": "cancel_closes_confirmation",
+      "description": "Clicking Cancel should close confirmation dialog without deleting",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_name",
+          "value": "test-project"
+        },
+        {
+          "action": "click",
+          "selector": ".delete-confirmation-dialog .cancel-delete-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "project_deleting",
+          "expected": false
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "delete_project_name",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "name": "worktree_warning_shown_when_applicable",
+      "description": "When project has worktrees, show warning about them",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_has_worktrees",
+          "value": true
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".delete-confirmation-dialog .worktree-warning",
+          "expected": true,
+          "note": "Warning about existing worktrees"
+        }
+      ]
+    },
+    {
+      "name": "force_delete_checkbox_for_worktrees",
+      "description": "Force delete checkbox should appear when project has worktrees",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_has_worktrees",
+          "value": true
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".delete-confirmation-dialog .force-delete-checkbox",
+          "expected": true,
+          "note": "Force delete checkbox"
+        },
+        {
+          "action": "verify_element_contains",
+          "selector": ".delete-confirmation-dialog .force-delete-label",
+          "contains": "force",
+          "case_insensitive": true
+        }
+      ]
+    },
+    {
+      "name": "confirm_disabled_when_worktrees_without_force",
+      "description": "Confirm button should be disabled when project has worktrees and force is not checked",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_has_worktrees",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_force",
+          "value": false
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_has_class",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button",
+          "class": "disabled",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "confirm_enabled_when_worktrees_with_force",
+      "description": "Confirm button should be enabled when force is checked",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_has_worktrees",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_force",
+          "value": true
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_has_class",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button",
+          "class": "disabled",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "successful_delete_shows_success_message",
+      "description": "Successfully deleting a project should show success message",
+      "setup": {
+        "create_test_project": "delete-test-$$"
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "project_deleting",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_name",
+          "value": "delete-test-$$"
+        },
+        {
+          "action": "click",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "project_deleting",
+          "expected": false
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".delete-success-message",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "deleted_project_removed_from_list",
+      "description": "Deleted project should disappear from project list",
+      "setup": {
+        "create_test_project": "remove-test-$$"
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".project-card[data-name='remove-test-$$']",
+          "expected": true,
+          "note": "Project should exist before deletion"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "project_deleting",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_name",
+          "value": "remove-test-$$"
+        },
+        {
+          "action": "click",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1500
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".project-card[data-name='remove-test-$$']",
+          "expected": false,
+          "note": "Project should be removed from list"
+        }
+      ]
+    },
+    {
+      "name": "error_message_on_delete_failure",
+      "description": "Failed delete should show error message",
+      "precondition": {
+        "eww_variable": "project_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_project_name",
+          "value": "nonexistent-project-xyz"
+        },
+        {
+          "action": "click",
+          "selector": ".delete-confirmation-dialog .confirm-delete-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".delete-confirmation-dialog .error-message",
+          "expected": true,
+          "note": "Error message should be displayed"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "close_panel": true,
+    "reset_variables": [
+      "project_deleting",
+      "delete_project_name",
+      "delete_project_has_worktrees",
+      "delete_force"
+    ]
+  }
+}

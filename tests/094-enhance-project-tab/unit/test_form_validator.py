@@ -852,3 +852,426 @@ class TestTerminalAppValidation:
                 preferred_workspace=1
             )
         assert "command" in str(exc_info.value).lower()
+
+
+# =============================================================================
+# User Story 3 (T062): Project Creation Validation Tests
+# =============================================================================
+
+
+class TestProjectNameValidation:
+    """Test project name format validation for create forms"""
+
+    def test_valid_lowercase_name(self, temp_dir):
+        """Lowercase alphanumeric names should be accepted"""
+        config = ProjectConfig(
+            name="my-project",
+            display_name="My Project",
+            working_dir=str(temp_dir)
+        )
+        assert config.name == "my-project"
+
+    def test_name_with_numbers_accepted(self, temp_dir):
+        """Names with numbers should be accepted"""
+        config = ProjectConfig(
+            name="project-123",
+            display_name="Project 123",
+            working_dir=str(temp_dir)
+        )
+        assert config.name == "project-123"
+
+    def test_name_with_hyphens_accepted(self, temp_dir):
+        """Names with hyphens should be accepted"""
+        config = ProjectConfig(
+            name="my-awesome-project",
+            display_name="My Awesome Project",
+            working_dir=str(temp_dir)
+        )
+        assert config.name == "my-awesome-project"
+
+    def test_uppercase_name_rejected(self, temp_dir):
+        """Uppercase characters should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="MyProject",  # Uppercase not allowed
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "lowercase" in str(exc_info.value).lower()
+
+    def test_name_with_spaces_rejected(self, temp_dir):
+        """Spaces in name should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="my project",  # Spaces not allowed
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+    def test_name_with_underscores_rejected(self, temp_dir):
+        """Underscores in name should be rejected (use hyphens instead)"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="my_project",  # Underscores not allowed
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+    def test_name_with_dots_rejected(self, temp_dir):
+        """Dots in project name should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="my.project",  # Dots not allowed
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+    def test_empty_name_rejected(self, temp_dir):
+        """Empty name should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="",
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+    def test_name_starting_with_hyphen_rejected(self, temp_dir):
+        """Name starting with hyphen should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="-my-project",  # Cannot start with hyphen
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+    def test_name_ending_with_hyphen_rejected(self, temp_dir):
+        """Name ending with hyphen should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProjectConfig(
+                name="my-project-",  # Cannot end with hyphen
+                display_name="My Project",
+                working_dir=str(temp_dir)
+            )
+        assert "name" in str(exc_info.value).lower()
+
+
+class TestProjectNameUniqueness:
+    """Test project name uniqueness validation for create forms"""
+
+    def test_duplicate_name_detection(self, temp_projects_dir):
+        """Creating project with existing name should be detected"""
+        # Create a project file to simulate existing project
+        existing_project = temp_projects_dir / "existing-project.json"
+        existing_project.write_text('{"name": "existing-project", "display_name": "Existing"}')
+
+        # The uniqueness check is done at the service layer, not model level
+        # This test verifies the validation helper can check existing files
+        # Add monitoring-panel to path for import
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "home-modules/tools/monitoring-panel"))
+        from project_crud_handler import check_project_name_exists
+
+        assert check_project_name_exists("existing-project", temp_projects_dir) is True
+        assert check_project_name_exists("new-project", temp_projects_dir) is False
+
+
+class TestProjectCreationDefaults:
+    """Test default values for project creation"""
+
+    def test_default_scope_is_scoped(self, temp_dir):
+        """Default scope should be 'scoped'"""
+        config = ProjectConfig(
+            name="test-project",
+            display_name="Test Project",
+            working_dir=str(temp_dir)
+        )
+        assert config.scope == "scoped"
+
+    def test_default_icon(self, temp_dir):
+        """Default icon should be provided"""
+        config = ProjectConfig(
+            name="test-project",
+            display_name="Test Project",
+            working_dir=str(temp_dir)
+        )
+        assert config.icon is not None
+        assert len(config.icon) > 0
+
+    def test_default_remote_disabled(self, temp_dir):
+        """Remote should be disabled by default"""
+        config = ProjectConfig(
+            name="test-project",
+            display_name="Test Project",
+            working_dir=str(temp_dir)
+        )
+        assert config.remote is None or config.remote.enabled is False
+
+
+# =============================================================================
+# User Story 8 (T070): Application Creation Validation Tests
+# =============================================================================
+
+
+class TestApplicationCreationValidation:
+    """Test application creation validation rules"""
+
+    def test_regular_app_creation_valid(self):
+        """Valid regular application should be accepted"""
+        config = ApplicationConfig(
+            name="new-app",
+            display_name="New Application",
+            command="new-app",
+            expected_class="new-app",
+            preferred_workspace=5
+        )
+        assert config.name == "new-app"
+        assert config.preferred_workspace == 5
+
+    def test_regular_app_workspace_must_be_1_to_50(self):
+        """Regular app workspace must be between 1-50"""
+        # Valid workspace
+        config = ApplicationConfig(
+            name="app",
+            display_name="App",
+            command="app",
+            expected_class="app",
+            preferred_workspace=25
+        )
+        assert config.preferred_workspace == 25
+
+        # Workspace 50 should be valid for regular apps
+        config50 = ApplicationConfig(
+            name="app50",
+            display_name="App 50",
+            command="app50",
+            expected_class="app50",
+            preferred_workspace=50
+        )
+        assert config50.preferred_workspace == 50
+
+    def test_pwa_workspace_must_be_50_or_higher(self):
+        """PWA workspace must be 50 or higher"""
+        config = PWAConfig(
+            name="youtube-pwa",
+            display_name="YouTube",
+            command="firefoxpwa",
+            parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+            expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            preferred_workspace=52,
+            ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            start_url="https://youtube.com",
+            scope_url="https://youtube.com/"
+        )
+        assert config.preferred_workspace == 52
+
+    def test_pwa_workspace_below_50_rejected(self):
+        """PWA with workspace below 50 should be rejected"""
+        with pytest.raises(ValidationError) as exc_info:
+            PWAConfig(
+                name="bad-pwa",
+                display_name="Bad PWA",
+                command="firefoxpwa",
+                parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+                expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                preferred_workspace=25,  # Below 50
+                ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                start_url="https://example.com",
+                scope_url="https://example.com/"
+            )
+        assert "workspace" in str(exc_info.value).lower() or "50" in str(exc_info.value)
+
+    def test_terminal_app_creation_valid(self):
+        """Valid terminal application should be accepted"""
+        config = TerminalAppConfig(
+            name="my-terminal",
+            display_name="My Terminal",
+            command="ghostty",
+            parameters=["-e", "tmux"],
+            expected_class="ghostty",
+            preferred_workspace=1,
+            scope="scoped"
+        )
+        assert config.terminal is True
+        assert config.scope == "scoped"
+
+    def test_app_name_must_be_unique_format(self):
+        """Application name must follow naming conventions"""
+        # Valid lowercase with hyphens
+        config = ApplicationConfig(
+            name="my-new-app",
+            display_name="My New App",
+            command="my-new-app",
+            expected_class="my-new-app",
+            preferred_workspace=3
+        )
+        assert config.name == "my-new-app"
+
+    def test_display_name_required(self):
+        """Display name is required"""
+        with pytest.raises(ValidationError):
+            ApplicationConfig(
+                name="app",
+                display_name="",  # Empty display name
+                command="app",
+                expected_class="app",
+                preferred_workspace=3
+            )
+
+    def test_command_required(self):
+        """Command is required"""
+        with pytest.raises(ValidationError):
+            ApplicationConfig(
+                name="app",
+                display_name="App",
+                command="",  # Empty command
+                expected_class="app",
+                preferred_workspace=3
+            )
+
+
+class TestApplicationCreationDefaults:
+    """Test default values for application creation"""
+
+    def test_default_scope_is_scoped(self):
+        """Default scope for regular apps should be scoped"""
+        config = ApplicationConfig(
+            name="app",
+            display_name="App",
+            command="app",
+            expected_class="app",
+            preferred_workspace=3
+        )
+        assert config.scope == "scoped"
+
+    def test_terminal_default_scope_is_scoped(self):
+        """Default scope for terminal apps should be scoped"""
+        config = TerminalAppConfig(
+            name="terminal",
+            display_name="Terminal",
+            command="ghostty",
+            expected_class="ghostty",
+            preferred_workspace=1
+        )
+        # Terminal apps typically are scoped
+        assert config.scope in ["scoped", "global"]
+
+    def test_default_floating_is_false(self):
+        """Default floating should be false"""
+        config = ApplicationConfig(
+            name="app",
+            display_name="App",
+            command="app",
+            expected_class="app",
+            preferred_workspace=3
+        )
+        assert config.floating is False
+
+    def test_default_monitor_role_is_none(self):
+        """Default monitor role should be None (no preference)"""
+        config = ApplicationConfig(
+            name="app",
+            display_name="App",
+            command="app",
+            expected_class="app",
+            preferred_workspace=3
+        )
+        assert config.preferred_monitor_role is None
+
+
+class TestPWACreationValidation:
+    """Test PWA-specific creation validation"""
+
+    def test_pwa_name_must_end_with_pwa(self):
+        """PWA name must end with -pwa suffix"""
+        config = PWAConfig(
+            name="claude-pwa",
+            display_name="Claude",
+            command="firefoxpwa",
+            parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+            expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            preferred_workspace=52,
+            ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            start_url="https://claude.ai",
+            scope_url="https://claude.ai/"
+        )
+        assert config.name.endswith("-pwa")
+
+    def test_pwa_start_url_required(self):
+        """PWA start_url is required"""
+        with pytest.raises(ValidationError):
+            PWAConfig(
+                name="bad-pwa",
+                display_name="Bad PWA",
+                command="firefoxpwa",
+                parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+                expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                preferred_workspace=50,
+                ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                start_url="",  # Empty start_url
+                scope_url="https://example.com/"
+            )
+
+    def test_pwa_ulid_format_validation(self):
+        """PWA ULID must be valid format"""
+        # Valid ULID
+        config = PWAConfig(
+            name="app-pwa",
+            display_name="App",
+            command="firefoxpwa",
+            parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+            expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            preferred_workspace=50,
+            ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            start_url="https://example.com",
+            scope_url="https://example.com/"
+        )
+        assert len(config.ulid) == 26
+
+    def test_pwa_scope_url_required(self):
+        """PWA scope_url is required"""
+        with pytest.raises(ValidationError):
+            PWAConfig(
+                name="bad-pwa",
+                display_name="Bad PWA",
+                command="firefoxpwa",
+                parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+                expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                preferred_workspace=50,
+                ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+                start_url="https://example.com",
+                scope_url=""  # Empty scope_url
+            )
+
+    def test_pwa_url_accepts_http_and_https(self):
+        """PWA URLs accept both HTTP and HTTPS (validation allows both)"""
+        # HTTPS should work
+        config_https = PWAConfig(
+            name="secure-pwa",
+            display_name="Secure PWA",
+            command="firefoxpwa",
+            parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9W"],
+            expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            preferred_workspace=50,
+            ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9W",
+            start_url="https://example.com",
+            scope_url="https://example.com/"
+        )
+        assert config_https.start_url.startswith("https://")
+
+        # HTTP should also work (for local development, etc.)
+        config_http = PWAConfig(
+            name="local-pwa",
+            display_name="Local PWA",
+            command="firefoxpwa",
+            parameters=["site", "launch", "01JCYF8Z2M0N3P4Q5R6S7T8V9X"],
+            expected_class="FFPWA-01JCYF8Z2M0N3P4Q5R6S7T8V9X",
+            preferred_workspace=51,
+            ulid="01JCYF8Z2M0N3P4Q5R6S7T8V9X",
+            start_url="http://localhost:3000",
+            scope_url="http://localhost:3000/"
+        )
+        assert config_http.start_url.startswith("http://")

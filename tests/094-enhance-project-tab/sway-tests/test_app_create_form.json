@@ -1,0 +1,544 @@
+{
+  "name": "test_app_create_form",
+  "description": "Feature 094 US8 T073: Test application create form UI functionality",
+  "setup": {
+    "wait_for_services": ["eww-monitoring-panel"],
+    "open_panel": true,
+    "switch_to_tab": "apps"
+  },
+  "tests": [
+    {
+      "name": "new_app_button_visible",
+      "description": "New Application button should be visible in Applications tab header",
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".new-app-button",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "click_new_app_shows_form",
+      "description": "Clicking New Application button should show create form with type selector",
+      "steps": [
+        {
+          "action": "click",
+          "selector": ".new-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form",
+          "expected": true
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-type-selector",
+          "expected": true,
+          "note": "Type selector (Regular/Terminal/PWA) should be visible"
+        }
+      ]
+    },
+    {
+      "name": "type_selector_shows_options",
+      "description": "Type selector should show Regular App, Terminal App, and PWA options",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-type-selector .type-option[data-type='regular']",
+          "expected": true,
+          "note": "Regular App option"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-type-selector .type-option[data-type='terminal']",
+          "expected": true,
+          "note": "Terminal App option"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-type-selector .type-option[data-type='pwa']",
+          "expected": true,
+          "note": "PWA option"
+        }
+      ]
+    },
+    {
+      "name": "regular_app_form_fields",
+      "description": "Regular app form should have standard fields",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "regular"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='name']",
+          "expected": true,
+          "note": "Name input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='display_name']",
+          "expected": true,
+          "note": "Display name input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='command']",
+          "expected": true,
+          "note": "Command input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='expected_class']",
+          "expected": true,
+          "note": "Expected class input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='preferred_workspace']",
+          "expected": true,
+          "note": "Workspace input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-select[data-field='scope']",
+          "expected": true,
+          "note": "Scope dropdown"
+        }
+      ]
+    },
+    {
+      "name": "terminal_app_form_shows_terminal_flag",
+      "description": "Terminal app form should show terminal-specific options",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "terminal"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .terminal-command-select",
+          "expected": true,
+          "note": "Terminal command dropdown (ghostty/alacritty/kitty/wezterm)"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .terminal-parameters",
+          "expected": true,
+          "note": "Terminal parameters section"
+        }
+      ]
+    },
+    {
+      "name": "pwa_form_shows_pwa_fields",
+      "description": "PWA form should show PWA-specific fields (no ULID field)",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "pwa"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='start_url']",
+          "expected": true,
+          "note": "Start URL input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .field-input[data-field='scope_url']",
+          "expected": true,
+          "note": "Scope URL input field"
+        },
+        {
+          "action": "verify_element_not_exists",
+          "selector": ".app-create-form .field-input[data-field='ulid']",
+          "expected": true,
+          "note": "ULID field should NOT be visible (auto-generated)"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-create-form .pwa-workspace-note",
+          "expected": true,
+          "note": "Note that workspace must be 50+"
+        }
+      ]
+    },
+    {
+      "name": "pwa_name_suffix_enforced",
+      "description": "PWA name should auto-add -pwa suffix",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "pwa"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_name",
+          "value": "test-app"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "create_app_name_display",
+          "expected": "test-app-pwa",
+          "note": "Name should show with -pwa suffix"
+        }
+      ]
+    },
+    {
+      "name": "workspace_validation_for_regular_app",
+      "description": "Regular app workspace must be 1-50",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "regular"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_workspace",
+          "value": 60
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-create-form .workspace-error",
+          "expected": true,
+          "note": "Error should show for workspace > 50"
+        }
+      ]
+    },
+    {
+      "name": "workspace_validation_for_pwa",
+      "description": "PWA workspace must be 50+",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "pwa"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_workspace",
+          "value": 30
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-create-form .workspace-error",
+          "expected": true,
+          "note": "Error should show for workspace < 50"
+        }
+      ]
+    },
+    {
+      "name": "cancel_button_closes_form",
+      "description": "Clicking Cancel should close create form without saving",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_name",
+          "value": "test-app"
+        },
+        {
+          "action": "click",
+          "selector": ".app-create-form .cancel-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_creating",
+          "expected": false
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "create_app_name",
+          "expected": "",
+          "note": "Form fields should be cleared"
+        }
+      ]
+    },
+    {
+      "name": "validation_error_shown_on_invalid_name",
+      "description": "Invalid name format should show validation error",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "regular"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_name",
+          "value": "Invalid Name"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_display_name",
+          "value": "Test App"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_command",
+          "value": "test-command"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_expected_class",
+          "value": "test"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_workspace",
+          "value": 10
+        },
+        {
+          "action": "click",
+          "selector": ".app-create-form .save-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 500
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-create-form .error-message",
+          "expected": true,
+          "note": "Error message should be displayed"
+        }
+      ]
+    },
+    {
+      "name": "successful_regular_app_create",
+      "description": "Successfully creating regular app should add it to the list",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "regular"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_name",
+          "value": "test-create-app-$$"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_display_name",
+          "value": "Test Create App"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_command",
+          "value": "test-command"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_expected_class",
+          "value": "test-create-app"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_workspace",
+          "value": 10
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_icon",
+          "value": "test"
+        },
+        {
+          "action": "click",
+          "selector": ".app-create-form .save-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_creating",
+          "expected": false,
+          "note": "Form should close on success"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-card[data-name='test-create-app-$$']",
+          "expected": true,
+          "note": "New app should appear in list"
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".rebuild-required-notice",
+          "expected": true,
+          "note": "Rebuild required notice should be shown"
+        }
+      ],
+      "cleanup": {
+        "remove_app": "test-create-app-$$"
+      }
+    },
+    {
+      "name": "successful_pwa_create_with_auto_ulid",
+      "description": "Creating PWA should auto-generate ULID and show in confirmation",
+      "precondition": {
+        "eww_variable": "app_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_type",
+          "value": "pwa"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_name",
+          "value": "test-pwa-create"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_display_name",
+          "value": "Test PWA Create"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_start_url",
+          "value": "https://test.example.com"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_scope_url",
+          "value": "https://test.example.com/"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_workspace",
+          "value": 55
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_app_icon",
+          "value": "/etc/nixos/assets/icons/test.svg"
+        },
+        {
+          "action": "click",
+          "selector": ".app-create-form .save-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1500
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_creating",
+          "expected": false
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-card[data-name='test-pwa-create-pwa']",
+          "expected": true,
+          "note": "New PWA should appear with -pwa suffix"
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".pwa-create-success .ulid-display",
+          "expected": true,
+          "note": "Generated ULID should be displayed in success message"
+        }
+      ],
+      "cleanup": {
+        "remove_app": "test-pwa-create-pwa"
+      }
+    }
+  ],
+  "cleanup": {
+    "close_panel": true,
+    "reset_variables": [
+      "app_creating",
+      "create_app_type",
+      "create_app_name",
+      "create_app_display_name",
+      "create_app_command",
+      "create_app_expected_class",
+      "create_app_workspace",
+      "create_app_icon",
+      "create_app_start_url",
+      "create_app_scope_url"
+    ]
+  }
+}

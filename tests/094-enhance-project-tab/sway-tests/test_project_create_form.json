@@ -1,0 +1,259 @@
+{
+  "name": "test_project_create_form",
+  "description": "Feature 094 US3 T064: Test project create form UI functionality",
+  "setup": {
+    "wait_for_services": ["eww-monitoring-panel"],
+    "open_panel": true,
+    "switch_to_tab": "projects"
+  },
+  "tests": [
+    {
+      "name": "new_project_button_visible",
+      "description": "New Project button should be visible in Projects tab header",
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".new-project-button",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "click_new_project_shows_form",
+      "description": "Clicking New Project button should show create form",
+      "steps": [
+        {
+          "action": "click",
+          "selector": ".new-project-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".project-create-form",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "form_has_required_fields",
+      "description": "Create form should have all required input fields",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='name']",
+          "expected": true,
+          "note": "Name input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='display_name']",
+          "expected": true,
+          "note": "Display name input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='icon']",
+          "expected": true,
+          "note": "Icon input field"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='working_dir']",
+          "expected": true,
+          "note": "Working directory input field"
+        }
+      ]
+    },
+    {
+      "name": "form_has_remote_toggle",
+      "description": "Create form should have Remote Project toggle",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .remote-toggle checkbox",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "remote_toggle_shows_remote_fields",
+      "description": "Enabling Remote toggle should show SSH config fields",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_remote_enabled",
+          "value": true
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .remote-fields",
+          "expected": true
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='remote_host']",
+          "expected": true
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='remote_user']",
+          "expected": true
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".create-form .field-input[data-field='remote_dir']",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "cancel_button_closes_form",
+      "description": "Clicking Cancel should close create form without saving",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_name",
+          "value": "test-project"
+        },
+        {
+          "action": "click",
+          "selector": ".create-form .cancel-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "project_creating",
+          "expected": false
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "create_form_name",
+          "expected": "",
+          "note": "Form fields should be cleared"
+        }
+      ]
+    },
+    {
+      "name": "validation_error_shown",
+      "description": "Validation errors should be displayed in form",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_name",
+          "value": "Invalid Name"
+        },
+        {
+          "action": "click",
+          "selector": ".create-form .save-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 500
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".create-form .error-message",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "successful_create_shows_project",
+      "description": "Successfully creating project should add it to the list",
+      "precondition": {
+        "eww_variable": "project_creating",
+        "value": true
+      },
+      "setup": {
+        "create_temp_directory": "/tmp/test-create-project-$$"
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_name",
+          "value": "test-create-$$"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_display_name",
+          "value": "Test Create Project"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_icon",
+          "value": "🧪"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "create_form_working_dir",
+          "value": "/tmp/test-create-project-$$"
+        },
+        {
+          "action": "click",
+          "selector": ".create-form .save-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "project_creating",
+          "expected": false,
+          "note": "Form should close on success"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".project-card[data-name='test-create-$$']",
+          "expected": true,
+          "note": "New project should appear in list"
+        }
+      ],
+      "cleanup": {
+        "remove_project": "test-create-$$",
+        "remove_directory": "/tmp/test-create-project-$$"
+      }
+    }
+  ],
+  "cleanup": {
+    "close_panel": true,
+    "reset_variables": [
+      "project_creating",
+      "create_form_name",
+      "create_form_display_name",
+      "create_form_icon",
+      "create_form_working_dir",
+      "create_form_remote_enabled"
+    ]
+  }
+}
