@@ -1,0 +1,441 @@
+{
+  "description": "Test inline application edit form in monitoring panel Applications tab",
+  "feature": "094-enhance-project-tab",
+  "user_story": "US7",
+  "task": "T045",
+  "setup": {
+    "commands": [
+      {
+        "type": "bash",
+        "command": "systemctl --user restart eww-monitoring-panel",
+        "wait_ms": 2000
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Edit form shows when Edit button clicked",
+      "steps": [
+        {
+          "action": "open_monitoring_panel",
+          "description": "Open monitoring panel with Mod+M"
+        },
+        {
+          "action": "switch_to_tab",
+          "tab": "applications",
+          "key": "Alt+3",
+          "description": "Switch to Applications tab"
+        },
+        {
+          "action": "click_element",
+          "selector": ".app-entry[data-app-name='firefox'] .edit-button",
+          "description": "Click Edit button on Firefox app"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form[data-app-name='firefox']",
+          "description": "Edit form should appear"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form input[name='display_name']",
+          "description": "Display name input should be visible"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form input[name='preferred_workspace']",
+          "description": "Workspace input should be visible"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form button.save",
+          "description": "Save button should be visible"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form button.cancel",
+          "description": "Cancel button should be visible"
+        }
+      ]
+    },
+    {
+      "name": "Form fields pre-filled with current values",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "input_value",
+          "selector": ".app-edit-form input[name='display_name']",
+          "value": "Firefox",
+          "description": "Display name should be pre-filled"
+        },
+        {
+          "type": "input_value",
+          "selector": ".app-edit-form input[name='preferred_workspace']",
+          "value": "3",
+          "description": "Workspace should be pre-filled"
+        }
+      ]
+    },
+    {
+      "name": "Real-time validation shows errors",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='preferred_workspace']",
+          "text": "100",
+          "clear_first": true,
+          "description": "Enter invalid workspace number"
+        },
+        {
+          "action": "wait",
+          "ms": 350,
+          "description": "Wait for 300ms debounce + 50ms buffer"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form .error-message[data-field='preferred_workspace']",
+          "description": "Workspace error message should appear"
+        },
+        {
+          "type": "text_contains",
+          "selector": ".app-edit-form .error-message[data-field='preferred_workspace']",
+          "text": "1-50",
+          "description": "Error should mention valid range"
+        },
+        {
+          "type": "button_disabled",
+          "selector": ".app-edit-form button.save",
+          "description": "Save button should be disabled when validation fails"
+        }
+      ]
+    },
+    {
+      "name": "PWA form shows different workspace range",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "youtube-pwa"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='preferred_workspace']",
+          "text": "45",
+          "clear_first": true,
+          "description": "Enter workspace below 50 for PWA"
+        },
+        {
+          "action": "wait",
+          "ms": 350
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form .error-message[data-field='preferred_workspace']",
+          "description": "Should show error for PWA workspace below 50"
+        },
+        {
+          "type": "text_contains",
+          "selector": ".app-edit-form .error-message[data-field='preferred_workspace']",
+          "text": "50",
+          "description": "Error should mention PWA workspace minimum"
+        }
+      ]
+    },
+    {
+      "name": "PWA form hides ULID field (read-only)",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "youtube-pwa"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_not_visible",
+          "selector": ".app-edit-form input[name='ulid']",
+          "description": "ULID field should not be visible/editable"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form .field-readonly[data-field='ulid']",
+          "description": "ULID should be shown as read-only text"
+        }
+      ]
+    },
+    {
+      "name": "Save button updates application successfully",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='display_name']",
+          "text": "Firefox Browser",
+          "clear_first": true
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='preferred_workspace']",
+          "text": "5",
+          "clear_first": true
+        },
+        {
+          "action": "wait",
+          "ms": 350,
+          "description": "Wait for validation"
+        },
+        {
+          "action": "click_element",
+          "selector": ".app-edit-form button.save",
+          "description": "Click Save button"
+        },
+        {
+          "action": "wait",
+          "ms": 1000,
+          "description": "Wait for save operation"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_not_visible",
+          "selector": ".app-edit-form[data-app-name='firefox']",
+          "description": "Edit form should close after save"
+        },
+        {
+          "type": "text_contains",
+          "selector": ".app-entry[data-app-name='firefox'] .display-name",
+          "text": "Firefox Browser",
+          "description": "List should show updated display name"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".success-notification",
+          "description": "Success notification should appear"
+        }
+      ]
+    },
+    {
+      "name": "Cancel button closes form without saving",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='display_name']",
+          "text": "Changed Name",
+          "clear_first": true
+        },
+        {
+          "action": "click_element",
+          "selector": ".app-edit-form button.cancel",
+          "description": "Click Cancel button"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_not_visible",
+          "selector": ".app-edit-form[data-app-name='firefox']",
+          "description": "Edit form should close"
+        },
+        {
+          "type": "text_contains",
+          "selector": ".app-entry[data-app-name='firefox'] .display-name",
+          "text": "Firefox",
+          "description": "List should still show original name"
+        }
+      ]
+    },
+    {
+      "name": "Escape key closes form",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "press_key",
+          "key": "Escape"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_not_visible",
+          "selector": ".app-edit-form[data-app-name='firefox']",
+          "description": "Edit form should close on Escape"
+        }
+      ]
+    },
+    {
+      "name": "Type-specific fields show conditionally",
+      "tests": [
+        {
+          "name": "Regular app shows monitor role selector",
+          "steps": [
+            {
+              "action": "open_edit_form",
+              "app_name": "firefox"
+            }
+          ],
+          "expectations": [
+            {
+              "type": "element_visible",
+              "selector": ".app-edit-form select[name='preferred_monitor_role']",
+              "description": "Monitor role dropdown should be visible for regular apps"
+            }
+          ]
+        },
+        {
+          "name": "Terminal app shows terminal-specific fields",
+          "steps": [
+            {
+              "action": "open_edit_form",
+              "app_name": "terminal"
+            }
+          ],
+          "expectations": [
+            {
+              "type": "element_visible",
+              "selector": ".app-edit-form .field-info[data-field='terminal']",
+              "description": "Terminal app indicator should be visible"
+            },
+            {
+              "type": "text_contains",
+              "selector": ".app-edit-form .field-info[data-field='terminal']",
+              "text": "terminal",
+              "case_insensitive": true
+            }
+          ]
+        },
+        {
+          "name": "PWA shows URL fields",
+          "steps": [
+            {
+              "action": "open_edit_form",
+              "app_name": "youtube-pwa"
+            }
+          ],
+          "expectations": [
+            {
+              "type": "element_visible",
+              "selector": ".app-edit-form input[name='start_url']",
+              "description": "Start URL field should be visible for PWAs"
+            },
+            {
+              "type": "element_visible",
+              "selector": ".app-edit-form input[name='scope_url']",
+              "description": "Scope URL field should be visible for PWAs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Rebuild notification shows after PWA or Nix package edit",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='nix_package']",
+          "text": "pkgs.firefox-esr",
+          "clear_first": true
+        },
+        {
+          "action": "wait",
+          "ms": 350
+        },
+        {
+          "action": "click_element",
+          "selector": ".app-edit-form button.save"
+        },
+        {
+          "action": "wait",
+          "ms": 1000
+        }
+      ],
+      "expectations": [
+        {
+          "type": "element_visible",
+          "selector": ".rebuild-notification",
+          "description": "Rebuild notification should appear"
+        },
+        {
+          "type": "text_contains",
+          "selector": ".rebuild-notification",
+          "text": "nixos-rebuild",
+          "description": "Should mention rebuild command"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".rebuild-notification button.copy-command",
+          "description": "Copy command button should be visible"
+        }
+      ]
+    },
+    {
+      "name": "Loading state during save",
+      "steps": [
+        {
+          "action": "open_edit_form",
+          "app_name": "firefox"
+        },
+        {
+          "action": "type_text",
+          "selector": ".app-edit-form input[name='display_name']",
+          "text": "New Name",
+          "clear_first": true
+        },
+        {
+          "action": "click_element",
+          "selector": ".app-edit-form button.save"
+        }
+      ],
+      "expectations": [
+        {
+          "type": "button_disabled",
+          "selector": ".app-edit-form button.save",
+          "description": "Save button should be disabled during save"
+        },
+        {
+          "type": "element_visible",
+          "selector": ".app-edit-form .loading-spinner",
+          "description": "Loading spinner should appear"
+        },
+        {
+          "type": "input_disabled",
+          "selector": ".app-edit-form input",
+          "description": "All inputs should be disabled during save"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "commands": [
+      {
+        "type": "bash",
+        "command": "git restore home-modules/desktop/app-registry-data.nix",
+        "description": "Restore original app registry file"
+      }
+    ]
+  }
+}
