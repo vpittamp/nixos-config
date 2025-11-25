@@ -1880,7 +1880,6 @@ in
         border-radius: 6px;
         padding: 10px;
         margin-top: 8px;
-        max-width: 100%;
       }
 
       .json-detail {
