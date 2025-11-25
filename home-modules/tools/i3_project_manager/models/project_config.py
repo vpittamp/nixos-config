@@ -38,7 +38,14 @@ class ProjectConfig(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, description="Unique project identifier")
     display_name: str = Field(..., min_length=1, description="Human-readable project name")
     icon: str = Field(default="📦", description="Emoji or file path for visual identification")
-    working_dir: str = Field(..., min_length=1, description="Absolute path to project directory")
+    working_dir: str = Field(
+        ...,
+        min_length=1,
+        description="Absolute path to project directory",
+        # Feature 094: Accept both "directory" (legacy) and "working_dir" (new) field names
+        validation_alias="directory",
+        serialization_alias="directory"
+    )
     scope: Literal["scoped", "global"] = Field(default="scoped", description="Window hiding behavior")
     remote: Optional[RemoteConfig] = Field(default=None, description="Remote SSH configuration")
 
@@ -52,8 +59,15 @@ class ProjectConfig(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def validate_name_uniqueness(cls, v: str) -> str:
-        """Per spec.md Edge Case: Duplicate project names"""
+    def validate_name_uniqueness(cls, v: str, info) -> str:
+        """Per spec.md Edge Case: Duplicate project names
+
+        Feature 094: Skip uniqueness check when editing (edit_mode=True in context)
+        """
+        # Skip uniqueness check if in edit mode (context passed from edit_project())
+        if info.context and info.context.get("edit_mode"):
+            return v
+
         project_file = Path.home() / f".config/i3/projects/{v}.json"
         if project_file.exists():
             raise ValueError(f"Project '{v}' already exists")
@@ -91,6 +105,8 @@ class ProjectConfig(BaseModel):
         return v
 
     model_config = {
+        # Feature 094: Allow both "directory" (legacy) and "working_dir" (new) field names
+        "populate_by_name": True,
         "json_schema_extra": {
             "examples": [
                 {
