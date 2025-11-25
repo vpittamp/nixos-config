@@ -153,6 +153,16 @@ let
     ${pkgs.sway}/bin/swaymsg 'focus prev'
   '';
 
+  # Feature 094: Project CRUD handler wrapper (T037)
+  projectCrudScript = pkgs.writeShellScriptBin "project-crud-handler" ''
+    #!${pkgs.bash}/bin/bash
+    # Set PYTHONPATH to tools directory for i3_project_manager imports
+    export PYTHONPATH="${../tools}"
+
+    # Use Python with Pydantic and other dependencies
+    exec ${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler "$@"
+  '';
+
   # Feature 093: Focus window action script (T009-T015)
   # Focuses a window with automatic project switching if needed
   focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
@@ -432,6 +442,7 @@ in
       restartServiceScript  # Feature 088 US3: Service restart script
       focusWindowScript     # Feature 093: Focus window action
       switchProjectScript   # Feature 093: Switch project action
+      projectCrudScript     # Feature 094: Project CRUD handler (T037)
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -515,6 +526,18 @@ in
       ;; Feature 094: Hover state for Applications tab detail tooltips
       (defvar hover_app_name "")
       (defvar copied_project_name "")
+
+      ;; Feature 094: Edit mode state for Projects tab (T038)
+      (defvar editing_project_name "")
+      (defvar edit_form_display_name "")
+      (defvar edit_form_icon "")
+      (defvar edit_form_directory "")
+      (defvar edit_form_scope "scoped")
+      (defvar edit_form_remote_enabled false)
+      (defvar edit_form_remote_host "")
+      (defvar edit_form_remote_user "")
+      (defvar edit_form_remote_dir "")
+      (defvar edit_form_remote_port "22")
 
 
       ;; Main monitoring panel window - Sidebar layout
@@ -1051,10 +1074,16 @@ in
               (label
                 :class "active-indicator"
                 :visible {project.is_active}
-                :text "●"))
+                :text "●")
+              ;; Feature 094: Edit button (T038)
+              (button
+                :class "edit-button"
+                :visible {editing_project_name != project.name}
+                :onclick "eww update editing_project_name='''''${project.name}' && eww update edit_form_display_name='''''${project.display_name ?: project.name}' && eww update edit_form_icon='''''${project.icon}' && eww update edit_form_directory='''''${project.directory}' && eww update edit_form_scope='''''${project.scope ?: 'scoped'}' && eww update edit_form_remote_enabled='''''${project.remote.enabled ?: false}' && eww update edit_form_remote_host='''''${project.remote.host ?: ''}' && eww update edit_form_remote_user='''''${project.remote.user ?: ''}' && eww update edit_form_remote_dir='''''${project.remote.remote_dir ?: ''}' && eww update edit_form_remote_port='''''${project.remote.port ?: '22'}'"
+                ""))
             ;; Hover detail tooltip
             (revealer
-              :reveal {hover_project_name == project.name}
+              :reveal {hover_project_name == project.name && editing_project_name != project.name}
               :transition "slidedown"
               :duration "200ms"
               (box
@@ -1065,7 +1094,13 @@ in
                   :class "json-detail"
                   :halign "start"
                   :wrap true
-                  :text "''${project.directory}"))))))
+                  :text "''${project.directory}")))
+            ;; Feature 094: Inline edit form (T038)
+            (revealer
+              :reveal {editing_project_name == project.name}
+              :transition "slidedown"
+              :duration "300ms"
+              (project-edit-form :project project)))))
 
       (defwidget worktree-card [project]
         (eventbox
@@ -1133,6 +1168,171 @@ in
                   :halign "start"
                   :wrap true
                   :text "''${project.directory}"))))))
+
+      ;; Feature 094: Project edit form widget (T038)
+      (defwidget project-edit-form [project]
+        (box
+          :class "edit-form"
+          :orientation "v"
+          :space-evenly false
+          ;; Form header
+          (label
+            :class "edit-form-header"
+            :halign "start"
+            :text "Edit Project")
+          ;; Display name field
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Display Name")
+            (input
+              :class "field-input"
+              :value edit_form_display_name
+              :onchange "eww update edit_form_display_name={}"))
+          ;; Icon field
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Icon (emoji or path)")
+            (input
+              :class "field-input"
+              :value edit_form_icon
+              :onchange "eww update edit_form_icon={}"))
+          ;; Directory field (read-only)
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Directory (read-only)")
+            (label
+              :class "field-value-readonly"
+              :halign "start"
+              :wrap true
+              :text edit_form_directory))
+          ;; Scope field
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Scope")
+            (box
+              :class "radio-group"
+              :orientation "h"
+              :space-evenly false
+              (button
+                :class "radio-button ''${edit_form_scope == 'scoped' ? 'selected' : ''}"
+                :onclick "eww update edit_form_scope='scoped'"
+                "Scoped")
+              (button
+                :class "radio-button ''${edit_form_scope == 'global' ? 'selected' : ''}"
+                :onclick "eww update edit_form_scope='global'"
+                "Global")))
+          ;; Remote SSH configuration
+          (box
+            :class "form-section"
+            :orientation "v"
+            :space-evenly false
+            ;; Remote enabled checkbox
+            (box
+              :class "form-field"
+              :orientation "h"
+              :space-evenly false
+              (checkbox
+                :checked edit_form_remote_enabled
+                :onchecked "eww update edit_form_remote_enabled=true"
+                :onunchecked "eww update edit_form_remote_enabled=false")
+              (label
+                :class "field-label"
+                :text "Enable Remote SSH"))
+            ;; Remote fields (conditional)
+            (revealer
+              :reveal edit_form_remote_enabled
+              :transition "slidedown"
+              :duration "200ms"
+              (box
+                :class "remote-fields"
+                :orientation "v"
+                :space-evenly false
+                ;; Host
+                (box
+                  :class "form-field"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "field-label"
+                    :halign "start"
+                    :text "SSH Host")
+                  (input
+                    :class "field-input"
+                    :value edit_form_remote_host
+                    :onchange "eww update edit_form_remote_host={}"))
+                ;; User
+                (box
+                  :class "form-field"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "field-label"
+                    :halign "start"
+                    :text "SSH User")
+                  (input
+                    :class "field-input"
+                    :value edit_form_remote_user
+                    :onchange "eww update edit_form_remote_user={}"))
+                ;; Remote directory
+                (box
+                  :class "form-field"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "field-label"
+                    :halign "start"
+                    :text "Remote Directory")
+                  (input
+                    :class "field-input"
+                    :value edit_form_remote_dir
+                    :onchange "eww update edit_form_remote_dir={}"))
+                ;; Port
+                (box
+                  :class "form-field"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "field-label"
+                    :halign "start"
+                    :text "SSH Port")
+                  (input
+                    :class "field-input"
+                    :value edit_form_remote_port
+                    :onchange "eww update edit_form_remote_port={}")))))
+          ;; Action buttons
+          (box
+            :class "form-actions"
+            :orientation "h"
+            :space-evenly false
+            :halign "end"
+            (button
+              :class "cancel-button"
+              :onclick "eww update editing_project_name=''"
+              "Cancel")
+            (button
+              :class "save-button"
+              :onclick "bash -c 'project-crud-handler edit ''${project.name} --updates $(jq -n --arg display_name \"$edit_form_display_name\" --arg icon \"$edit_form_icon\" --arg scope \"$edit_form_scope\" --arg remote_enabled \"$edit_form_remote_enabled\" --arg remote_host \"$edit_form_remote_host\" --arg remote_user \"$edit_form_remote_user\" --arg remote_dir \"$edit_form_remote_dir\" --arg remote_port \"$edit_form_remote_port\" \"{display_name: $display_name, icon: $icon, scope: $scope, remote: {enabled: ($remote_enabled == \"true\"), host: $remote_host, user: $remote_user, remote_dir: $remote_dir, port: ($remote_port | tonumber)}}\") && eww update editing_project_name=\"\" && eww update projects_data=\"$(monitoring-data-backend --mode projects)\"'"
+              "Save"))))
 
       ;; Apps View - Application registry browser
       ;; Applications View - App registry with type grouping (Feature 094)
@@ -1985,6 +2185,137 @@ in
       .worktree-name {
         font-size: 12px;
         color: ${mocha.subtext0};
+      }
+
+      /* Feature 094: Edit Form Styles (T038) */
+      .edit-button {
+        background-color: transparent;
+        border: none;
+        color: ${mocha.blue};
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-left: 8px;
+      }
+
+      .edit-button:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .edit-form {
+        background-color: rgba(24, 24, 37, 0.95);
+        border: 1px solid ${mocha.blue};
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 8px;
+      }
+
+      .edit-form-header {
+        font-size: 14px;
+        font-weight: bold;
+        color: ${mocha.blue};
+        margin-bottom: 12px;
+      }
+
+      .form-field {
+        margin-bottom: 12px;
+      }
+
+      .field-label {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+        margin-bottom: 4px;
+      }
+
+      .field-input {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-size: 12px;
+        color: ${mocha.text};
+      }
+
+      .field-input:focus {
+        border-color: ${mocha.blue};
+        outline: none;
+      }
+
+      .field-value-readonly {
+        font-size: 11px;
+        color: ${mocha.subtext1};
+        padding: 6px 8px;
+        background-color: ${mocha.mantle};
+        border-radius: 4px;
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .radio-group {
+        gap: 8px;
+      }
+
+      .radio-button {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 11px;
+        color: ${mocha.text};
+      }
+
+      .radio-button.selected {
+        background-color: ${mocha.blue};
+        border-color: ${mocha.blue};
+        color: ${mocha.base};
+      }
+
+      .radio-button:hover {
+        border-color: ${mocha.blue};
+      }
+
+      .form-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid ${mocha.overlay0};
+      }
+
+      .remote-fields {
+        margin-left: 24px;
+        margin-top: 8px;
+      }
+
+      .form-actions {
+        margin-top: 16px;
+        gap: 8px;
+      }
+
+      .cancel-button {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: ${mocha.text};
+      }
+
+      .cancel-button:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.overlay1};
+      }
+
+      .save-button {
+        background-color: ${mocha.blue};
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: ${mocha.base};
+        font-weight: bold;
+      }
+
+      .save-button:hover {
+        background-color: ${mocha.sapphire};
+        border-color: ${mocha.sapphire};
       }
 
       /* App Card Styles */
