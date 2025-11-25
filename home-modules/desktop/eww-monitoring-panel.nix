@@ -1885,7 +1885,6 @@ in
       .json-detail {
         font-family: "JetBrainsMono Nerd Font", monospace;
         font-size: 9px;
-        line-height: 1.4;
         color: ${mocha.text};
       }
 
