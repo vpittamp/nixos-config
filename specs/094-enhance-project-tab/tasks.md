@@ -130,7 +130,7 @@ Paths follow single project structure with home-modules integration:
 
 ### Implementation for User Story 2
 
-- [ ] T036 [P] [US2] Implement edit_project method in home-modules/tools/i3_project_manager/services/project_editor.py (read JSON, update fields, write with backup)
+- [X] T036 [P] [US2] Implement edit_project method in home-modules/tools/i3_project_manager/services/project_editor.py (read JSON, update fields, write with backup)
 - [X] T037 [P] [US2] Implement project CRUD handler in home-modules/tools/monitoring-panel/project_crud_handler.py (handle edit requests from Eww)
 - [X] T038 [US2] Add inline edit form widget to eww-monitoring-panel.nix Projects tab (pre-filled fields, Cancel/Save buttons, conditional remote fields)
 - [ ] T039 [US2] Implement form validation state streaming (deflisten) for Projects tab (300ms debounce, error messages below inputs)
