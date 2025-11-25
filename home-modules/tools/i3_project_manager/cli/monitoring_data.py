@@ -1225,8 +1225,27 @@ async def query_projects_data() -> Dict[str, Any]:
             # Check if active
             project["is_active"] = (project.get("name") == active_project)
 
+            # Feature 094: Normalize remote field to always be present (T038)
+            # This allows safe access to remote.* fields in Eww expressions
+            if "remote" not in project or project["remote"] is None:
+                project["remote"] = {
+                    "enabled": False,
+                    "host": "",
+                    "user": "",
+                    "remote_dir": "",
+                    "port": 22
+                }
+            else:
+                # Ensure all fields exist with defaults
+                remote = project["remote"]
+                remote.setdefault("enabled", False)
+                remote.setdefault("host", "")
+                remote.setdefault("user", "")
+                remote.setdefault("remote_dir", "")
+                remote.setdefault("port", 22)
+
             # Check if remote
-            project["is_remote"] = bool(project.get("remote", {}).get("enabled", False))
+            project["is_remote"] = bool(project["remote"]["enabled"])
 
             # Generate syntax-highlighted JSON for hover tooltip (Feature 094)
             project["json_repr"] = _format_json_with_syntax_highlighting(project)
