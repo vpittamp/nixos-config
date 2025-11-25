@@ -200,21 +200,45 @@ let
     export PYTHONPATH="${../tools}"
     RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler edit "$PROJECT_NAME" --updates "$UPDATES")
 
-    # Check if successful
+    # Feature 094 T041: Check for save success and conflicts
     STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    if [ "$STATUS" = "success" ]; then
-      # Clear editing state
-      $EWW update editing_project_name=""
+    CONFLICT=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.conflict // false')
 
-      # Refresh projects data
+    if [ "$STATUS" = "success" ]; then
+      # Check for conflicts (T041)
+      if [ "$CONFLICT" = "true" ]; then
+        # TODO T040: Show conflict resolution dialog
+        # For now, display error and keep form open
+        ERROR_MSG="Conflict: File was modified externally. Please reload and try again."
+        $EWW update edit_form_error="$ERROR_MSG"
+        echo "Conflict detected: $ERROR_MSG" >&2
+        exit 1
+      fi
+
+      # Success: Clear editing state and refresh
+      $EWW update editing_project_name='''
+      $EWW update edit_form_error='''
+
+      # Refresh projects data to show updated values
       PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
       $EWW update projects_data="$PROJECTS_DATA"
 
       echo "Project saved successfully"
     else
-      # Show error (in future, display in UI)
+      # Show validation or other errors
       ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error')
-      echo "Error: $ERROR" >&2
+      VALIDATION_ERRORS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.validation_errors // [] | length')
+
+      if [ "$VALIDATION_ERRORS" -gt 0 ]; then
+        # Extract first validation error for display
+        FIRST_ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.validation_errors[0].message')
+        ERROR_MSG="Validation error: $FIRST_ERROR"
+      else
+        ERROR_MSG="$ERROR"
+      fi
+
+      $EWW update edit_form_error="$ERROR_MSG"
+      echo "Error: $ERROR_MSG" >&2
       exit 1
     fi
   '';
@@ -444,6 +468,30 @@ let
     esac
   '';
 
+  # Feature 094: Copy window JSON helper script (used by Windows tab)
+  copyWindowJsonScript = pkgs.writeShellScript "copy-window-json" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    JSON_BASE64="''${1:-}"
+    WINDOW_ID="''${2:-0}"
+
+    if [[ -z "$JSON_BASE64" ]]; then
+      echo "Usage: copy-window-json <window-json-b64> <window-id>" >&2
+      exit 1
+    fi
+
+    # Decode payload and copy to clipboard
+    ${pkgs.coreutils}/bin/printf %s "$JSON_BASE64" \
+      | ${pkgs.coreutils}/bin/base64 -d \
+      | ${pkgs.wl-clipboard}/bin/wl-copy
+
+    # Toggle copied state for visual feedback
+    $EWW_CMD update copied_window_id="$WINDOW_ID"
+    (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_window_id=0) &
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -502,9 +550,9 @@ in
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
     ];
 
-    home.file.".config/eww-monitoring-panel/eww.yuck".text = ''
-      # Eww Yuck widget configuration (T009-T014)
-      # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
+    # Eww Yuck widget configuration (T009-T014)
+    # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
+    xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
       ;; Build: 2025-11-20 15:55 UTC
@@ -595,6 +643,7 @@ in
       (defvar edit_form_remote_user "")
       (defvar edit_form_remote_dir "")
       (defvar edit_form_remote_port "22")
+      (defvar edit_form_error "")  ;; T041: Error message for save failures
 
 
       ;; Main monitoring panel window - Sidebar layout
@@ -882,15 +931,7 @@ in
                     :text "Window JSON (ID: ''${window.id})")
                   (eventbox
                     :cursor "pointer"
-                    :onclick "${pkgs.writeShellScript "copy-json" ''
-                      EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
-                      # Copy JSON to clipboard
-                      ${pkgs.coreutils}/bin/echo -n "$1" | ${pkgs.coreutils}/bin/base64 -d | ${pkgs.wl-clipboard}/bin/wl-copy
-                      # Show visual feedback by setting copied state
-                      $EWW_CMD update copied_window_id=$2
-                      # Auto-reset after 2 seconds
-                      (sleep 2 && $EWW_CMD update copied_window_id=0) &
-                    ''} ''${window.json_base64} ''${window.id} &"
+                    :onclick "${copyWindowJsonScript} ''${window.json_base64} ''${window.id} &"
                     :tooltip "Copy JSON to clipboard"
                     (label
                       :class "json-copy-btn''${copied_window_id == window.id ? ' copied' : ""}"
@@ -1136,7 +1177,7 @@ in
               (button
                 :class "edit-button"
                 :visible {editing_project_name != project.name}
-                :onclick "eww update editing_project_name='''''${project.name}' && eww update edit_form_display_name='''''${project.display_name ?: project.name}' && eww update edit_form_icon='''''${project.icon}' && eww update edit_form_directory='''''${project.directory}' && eww update edit_form_scope='''''${project.scope ?: 'scoped'}' && eww update edit_form_remote_enabled='''''${project.remote.enabled}' && eww update edit_form_remote_host='''''${project.remote.host}' && eww update edit_form_remote_user='''''${project.remote.user}' && eww update edit_form_remote_dir='''''${project.remote.remote_dir}' && eww update edit_form_remote_port='''''${project.remote.port}'"
+                :onclick "eww update editing_project_name='''''${project.name}' && eww update edit_form_display_name='''''${project.display_name ?: project.name}' && eww update edit_form_icon='''''${project.icon}' && eww update edit_form_directory='''''${project.directory}' && eww update edit_form_scope='''''${project.scope ?: 'scoped'}' && eww update edit_form_remote_enabled='''''${project.remote.enabled}' && eww update edit_form_remote_host='''''${project.remote.host}' && eww update edit_form_remote_user='''''${project.remote.user}' && eww update edit_form_remote_dir='''''${project.remote.remote_dir}' && eww update edit_form_remote_port='''''${project.remote.port}' && eww update edit_form_error='''"
                 ""))
             ;; Hover detail tooltip
             (revealer
@@ -1376,6 +1417,16 @@ in
                     :class "field-input"
                     :value edit_form_remote_port
                     :onchange "eww update edit_form_remote_port={}")))))
+          ;; Error message display (T041)
+          (revealer
+            :reveal {edit_form_error != ""}
+            :transition "slidedown"
+            :duration "200ms"
+            (label
+              :class "error-message"
+              :halign "start"
+              :wrap true
+              :text edit_form_error))
           ;; Action buttons
           (box
             :class "form-actions"
@@ -1384,7 +1435,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww update editing_project_name=''"
+              :onclick "eww update editing_project_name=''' && eww update edit_form_error='''"
               "Cancel")
             (button
               :class "save-button"
@@ -1737,7 +1788,7 @@ in
     '';
 
     # Eww SCSS styling (T015)
-    home.file.".config/eww-monitoring-panel/eww.scss".text = ''
+    xdg.configFile."eww-monitoring-panel/eww.scss".text = ''
       /* Feature 085: Sway Monitoring Widget - Catppuccin Mocha Theme */
       /* Direct color interpolation from Nix - Eww doesn't support CSS variables */
 
@@ -1789,16 +1840,7 @@ in
         padding: 2px 8px;
         border-radius: 4px;
         margin-left: 8px;
-        animation: pulse 2s ease-in-out infinite;
       }
-
-      @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.7; }
-        100% { opacity: 1; }
-      }
-
-
       .panel-header {
         background-color: rgba(24, 24, 37, 0.4);
         border-bottom: 1px solid ${mocha.overlay0};
@@ -2307,10 +2349,6 @@ in
         font-family: "JetBrainsMono Nerd Font", monospace;
       }
 
-      .radio-group {
-        gap: 8px;
-      }
-
       .radio-button {
         background-color: ${mocha.surface0};
         border: 1px solid ${mocha.overlay0};
@@ -2318,6 +2356,7 @@ in
         padding: 6px 12px;
         font-size: 11px;
         color: ${mocha.text};
+        margin-right: 8px;
       }
 
       .radio-button.selected {
@@ -2343,7 +2382,6 @@ in
 
       .form-actions {
         margin-top: 16px;
-        gap: 8px;
       }
 
       .cancel-button {
@@ -2351,6 +2389,7 @@ in
         border: 1px solid ${mocha.overlay0};
         border-radius: 4px;
         padding: 8px 16px;
+        margin-right: 8px;
         font-size: 12px;
         color: ${mocha.text};
       }
@@ -2373,6 +2412,17 @@ in
       .save-button:hover {
         background-color: ${mocha.sapphire};
         border-color: ${mocha.sapphire};
+      }
+
+      /* Error message styles (T041) */
+      .error-message {
+        background-color: rgba(243, 139, 168, 0.15);
+        border-left: 3px solid ${mocha.red};
+        padding: 12px;
+        margin: 8px 0;
+        font-size: 12px;
+        color: ${mocha.red};
+        border-radius: 4px;
       }
 
       /* App Card Styles */
