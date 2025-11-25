@@ -1234,11 +1234,11 @@ in
               :orientation "h"
               :space-evenly false
               (button
-                :class "radio-button ''${edit_form_scope == 'scoped' ? 'selected' : ''}"
+                :class "''${edit_form_scope == 'scoped' ? 'radio-button selected' : 'radio-button'}"
                 :onclick "eww update edit_form_scope='scoped'"
                 "Scoped")
               (button
-                :class "radio-button ''${edit_form_scope == 'global' ? 'selected' : ''}"
+                :class "''${edit_form_scope == 'global' ? 'radio-button selected' : 'radio-button'}"
                 :onclick "eww update edit_form_scope='global'"
                 "Global")))
           ;; Remote SSH configuration
