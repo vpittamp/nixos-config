@@ -46,7 +46,8 @@ class ProjectEditor:
             raise ValueError(f"Project '{config.name}' already exists")
 
         # Convert Pydantic model to dict, excluding None values for remote if not used
-        data = config.model_dump(exclude_none=True)
+        # Feature 094: Use by_alias=True to serialize "working_dir" as "directory" for backward compatibility
+        data = config.model_dump(exclude_none=True, by_alias=True)
 
         # Write JSON with pretty formatting
         with open(project_file, 'w') as f:
@@ -139,17 +140,14 @@ class ProjectEditor:
         updated_data = {**current_data, **updates}
 
         # Validate with Pydantic (skip uniqueness check for existing project)
-        # We need to temporarily allow the existing name
-        temp_name = updated_data.get("name")
-        if temp_name == name:
-            # Same name, validation will pass
-            pass
+        # Feature 094: Pass context to skip name uniqueness validator during edit
+        validation_context = {"edit_mode": True}
 
         # Determine if worktree or regular project
         if "parent_project" in updated_data:
-            validated = WorktreeConfig(**updated_data)
+            validated = WorktreeConfig.model_validate(updated_data, context=validation_context)
         else:
-            validated = ProjectConfig(**updated_data)
+            validated = ProjectConfig.model_validate(updated_data, context=validation_context)
 
         # Create backup
         backup_file = project_file.with_suffix('.json.bak')
@@ -157,8 +155,9 @@ class ProjectEditor:
 
         try:
             # Write updated config
+            # Feature 094: Use by_alias=True to serialize "working_dir" as "directory" for backward compatibility
             with open(project_file, 'w') as f:
-                json.dump(validated.model_dump(exclude_none=True), f, indent=2)
+                json.dump(validated.model_dump(exclude_none=True, by_alias=True), f, indent=2)
 
             # Check for conflict (file modified between read and write)
             file_mtime_after = project_file.stat().st_mtime
