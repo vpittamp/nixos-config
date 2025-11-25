@@ -156,7 +156,7 @@ Paths follow single project structure with home-modules integration:
 
 ### Implementation for User Story 7
 
-- [ ] T046 [P] [US7] Implement edit_application method in home-modules/tools/i3_project_manager/services/app_registry_editor.py (find mkApp block, parse fields, regenerate with updates per research.md)
+- [X] T046 [P] [US7] Implement edit_application method in home-modules/tools/i3_project_manager/services/app_registry_editor.py (find mkApp block, parse fields, regenerate with updates per research.md)
 - [ ] T047 [P] [US7] Implement application CRUD handler in home-modules/tools/monitoring-panel/app_crud_handler.py
 - [ ] T048 [US7] Add inline edit form widget to eww-monitoring-panel.nix Applications tab (type-specific fields: regular 1-50 workspace, PWA 50+ workspace, ULID read-only for PWAs)
 - [ ] T049 [US7] Implement form validation state streaming (deflisten) for Applications tab
