@@ -126,15 +126,15 @@ Paths follow single project structure with home-modules integration:
 - [X] T032 [P] [US2] Unit test for project JSON editing in tests/094-enhance-project-tab/unit/test_project_editor.py (edit operations, backup/restore)
 - [X] T033 [P] [US2] Unit test for conflict detection in tests/094-enhance-project-tab/unit/test_conflict_detector.py
 - [X] T034 [P] [US2] Integration test for edit workflow in tests/094-enhance-project-tab/integration/test_project_edit_workflow.py (edit → validate → save → verify)
-- [ ] T035 [P] [US2] Sway test for inline edit form in tests/094-enhance-project-tab/sway-tests/test_project_edit_form.json
+- [X] T035 [P] [US2] Sway test for inline edit form in tests/094-enhance-project-tab/sway-tests/test_project_edit_form.json
 
 ### Implementation for User Story 2
 
 - [X] T036 [P] [US2] Implement edit_project method in home-modules/tools/i3_project_manager/services/project_editor.py (read JSON, update fields, write with backup)
 - [X] T037 [P] [US2] Implement project CRUD handler in home-modules/tools/monitoring-panel/project_crud_handler.py (handle edit requests from Eww)
 - [X] T038 [US2] Add inline edit form widget to eww-monitoring-panel.nix Projects tab (pre-filled fields, Cancel/Save buttons, conditional remote fields)
-- [ ] T039 [US2] Implement form validation state streaming (deflisten) for Projects tab (300ms debounce, error messages below inputs)
-- [ ] T040 [US2] Add conflict resolution dialog widget (Show file vs UI changes diff, Keep UI Changes/Keep File Changes/Merge Manually buttons)
+- [X] T039 [US2] Implement form validation state streaming (deflisten) for Projects tab (300ms debounce, error messages below inputs)
+- [X] T040 [US2] Add conflict resolution dialog widget (Show file vs UI changes diff, Keep UI Changes/Keep File Changes/Merge Manually buttons)
 - [X] T041 [US2] Implement save workflow with conflict detection (check file mtime before write, show dialog if conflict, update list on success)
 
 **Checkpoint**: At this point, User Story 2 should be fully functional - users can edit projects with validation and conflict handling

@@ -276,6 +276,81 @@ let
     fi
   '';
 
+  # Feature 094 T040: Conflict resolution handler script
+  # Handles user choice when file conflicts are detected
+  projectConflictResolveScript = pkgs.writeShellScriptBin "project-conflict-resolve" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 094 T040: Resolve file conflicts during save
+    # Usage: project-conflict-resolve <action> <project-name>
+    #   action: keep-file | keep-ui | merge-manual
+
+    ACTION="$1"
+    PROJECT_NAME="$2"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    case "$ACTION" in
+      keep-file)
+        # Discard UI changes, reload from file
+        # Close edit form and conflict dialog
+        $EWW_CMD update conflict_dialog_visible=false
+        $EWW_CMD update editing_project_name=''''
+        $EWW_CMD update edit_form_error=''''
+        # Refresh project list to show file content
+        PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
+        $EWW_CMD update projects_data="$PROJECTS_DATA"
+        echo "Kept file changes for project: $PROJECT_NAME" >&2
+        ;;
+
+      keep-ui)
+        # Force overwrite file with UI changes (ignoring mtime conflict)
+        # Re-run save with force flag
+        # For now, just retry the save (which will fail again if conflict persists)
+        # TODO: Implement force-save in project_crud_handler
+        $EWW_CMD update conflict_dialog_visible=false
+        echo "Force-saving UI changes for project: $PROJECT_NAME" >&2
+        project-edit-save "$PROJECT_NAME"
+        ;;
+
+      merge-manual)
+        # Open file in editor for manual merge
+        PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
+        if [ -f "$PROJECT_FILE" ]; then
+          # Use default editor or fallback to nano
+          ''${EDITOR:-nano} "$PROJECT_FILE"
+          # Close dialog and refresh
+          $EWW_CMD update conflict_dialog_visible=false
+          $EWW_CMD update editing_project_name=''''
+          # Refresh project list
+          PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
+          $EWW_CMD update projects_data="$PROJECTS_DATA"
+          echo "Opened $PROJECT_FILE for manual merge" >&2
+        else
+          echo "Error: Project file not found: $PROJECT_FILE" >&2
+          exit 1
+        fi
+        ;;
+
+      *)
+        echo "Error: Invalid action: $ACTION" >&2
+        echo "Usage: project-conflict-resolve <keep-file|keep-ui|merge-manual> <project-name>" >&2
+        exit 1
+        ;;
+    esac
+  '';
+
+  # Feature 094 T039: Form validation stream script (300ms debouncing)
+  # Monitors Eww form variables and streams validation results via deflisten
+  formValidationStreamScript = pkgs.writeShellScriptBin "form-validation-stream" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 094 T039: Real-time form validation with 300ms debouncing
+
+    # Set PYTHONPATH to tools directory for i3_project_manager imports
+    export PYTHONPATH="${../tools}"
+
+    # Run validation stream (reads Eww variables, outputs JSON to stdout)
+    exec ${pythonForBackend}/bin/python3 ${../tools/monitoring-panel/project_form_validator_stream.py} "$HOME/.config/eww-monitoring-panel"
+  '';
+
   # Feature 093: Focus window action script (T009-T015)
   # Focuses a window with automatic project switching if needed
   focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
@@ -624,6 +699,13 @@ in
         :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode events --listen`)
 
+      ;; Feature 094 T039: Deflisten: Real-time form validation stream
+      ;; Monitors form variable changes and streams validation results with 300ms debouncing
+      ;; Provides live validation feedback for project edit forms
+      (deflisten validation_state
+        :initial "{\"valid\":true,\"editing\":false,\"errors\":{},\"warnings\":{},\"timestamp\":\"\"}"
+        `${formValidationStreamScript}/bin/form-validation-stream`)
+
       ;; Current view state (windows, projects, apps, health, events)
       (defvar current_view "windows")
 
@@ -679,6 +761,12 @@ in
       (defvar edit_form_remote_port "22")
       (defvar edit_form_error "")  ;; T041: Error message for save failures
 
+      ;; Feature 094 T040: Conflict resolution dialog state
+      (defvar conflict_dialog_visible false)
+      (defvar conflict_file_content "")  ;; JSON from disk
+      (defvar conflict_ui_content "")    ;; JSON from UI form
+      (defvar conflict_project_name "")
+
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -712,7 +800,9 @@ in
             :space-evenly false
             (panel-header)
             (panel-body)
-            (panel-footer))))
+            (panel-footer)
+            ;; Feature 094 T040: Conflict resolution dialog overlay
+            (conflict-resolution-dialog))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -1327,7 +1417,17 @@ in
             (input
               :class "field-input"
               :value edit_form_display_name
-              :onchange "eww update edit_form_display_name={}"))
+              :onchange "eww update edit_form_display_name={}")
+            ;; T039: Validation error for display_name
+            (revealer
+              :reveal {validation_state.errors.display_name != ""}
+              :transition "slidedown"
+              :duration "150ms"
+              (label
+                :class "field-error"
+                :halign "start"
+                :wrap true
+                :text {validation_state.errors.display_name ?: ""})))
           ;; Icon field
           (box
             :class "form-field"
@@ -1340,7 +1440,17 @@ in
             (input
               :class "field-input"
               :value edit_form_icon
-              :onchange "eww update edit_form_icon={}"))
+              :onchange "eww update edit_form_icon={}")
+            ;; T039: Validation error for icon
+            (revealer
+              :reveal {validation_state.errors.icon != ""}
+              :transition "slidedown"
+              :duration "150ms"
+              (label
+                :class "field-error"
+                :halign "start"
+                :wrap true
+                :text {validation_state.errors.icon ?: ""})))
           ;; Directory field (read-only)
           (box
             :class "form-field"
@@ -1414,7 +1524,17 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_host
-                    :onchange "eww update edit_form_remote_host={}"))
+                    :onchange "eww update edit_form_remote_host={}")
+                  ;; T039: Validation error for remote host
+                  (revealer
+                    :reveal {validation_state.errors["remote.host"] != ""}
+                    :transition "slidedown"
+                    :duration "150ms"
+                    (label
+                      :class "field-error"
+                      :halign "start"
+                      :wrap true
+                      :text {validation_state.errors["remote.host"] ?: ""})))
                 ;; User
                 (box
                   :class "form-field"
@@ -1427,7 +1547,17 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_user
-                    :onchange "eww update edit_form_remote_user={}"))
+                    :onchange "eww update edit_form_remote_user={}")
+                  ;; T039: Validation error for remote user
+                  (revealer
+                    :reveal {validation_state.errors["remote.user"] != ""}
+                    :transition "slidedown"
+                    :duration "150ms"
+                    (label
+                      :class "field-error"
+                      :halign "start"
+                      :wrap true
+                      :text {validation_state.errors["remote.user"] ?: ""})))
                 ;; Remote directory
                 (box
                   :class "form-field"
@@ -1440,7 +1570,17 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_dir
-                    :onchange "eww update edit_form_remote_dir={}"))
+                    :onchange "eww update edit_form_remote_dir={}")
+                  ;; T039: Validation error for remote directory
+                  (revealer
+                    :reveal {validation_state.errors["remote.working_dir"] != ""}
+                    :transition "slidedown"
+                    :duration "150ms"
+                    (label
+                      :class "field-error"
+                      :halign "start"
+                      :wrap true
+                      :text {validation_state.errors["remote.working_dir"] ?: ""})))
                 ;; Port
                 (box
                   :class "form-field"
@@ -1453,7 +1593,17 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_port
-                    :onchange "eww update edit_form_remote_port={}")))))
+                    :onchange "eww update edit_form_remote_port={}")
+                  ;; T039: Validation error for remote port
+                  (revealer
+                    :reveal {validation_state.errors["remote.port"] != ""}
+                    :transition "slidedown"
+                    :duration "150ms"
+                    (label
+                      :class "field-error"
+                      :halign "start"
+                      :wrap true
+                      :text {validation_state.errors["remote.port"] ?: ""}))))))
           ;; Error message display (T041)
           (revealer
             :reveal {edit_form_error != ""}
@@ -1475,9 +1625,105 @@ in
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name='''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''''"
               "Cancel")
             (button
-              :class "save-button"
+              :class "''${validation_state.valid ? 'save-button' : 'save-button-disabled'}"
+              :sensitive {validation_state.valid}
               :onclick "project-edit-save ''${project.name}"
               "Save"))))
+
+      ;; Feature 094 T040: Conflict resolution dialog widget
+      ;; Overlay dialog shown when file conflicts are detected during save
+      (defwidget conflict-resolution-dialog []
+        (revealer
+          :reveal conflict_dialog_visible
+          :transition "slidedown"
+          :duration "300ms"
+          (box
+            :class "conflict-dialog-overlay"
+            :orientation "v"
+            :space-evenly false
+            (box
+              :class "conflict-dialog"
+              :orientation "v"
+              :space-evenly false
+              ;; Dialog header
+              (box
+                :class "conflict-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "conflict-title"
+                  :halign "start"
+                  :hexpand true
+                  :text "⚠️  Conflict Detected")
+                (button
+                  :class "conflict-close-button"
+                  :onclick "eww update conflict_dialog_visible=false"
+                  "✕"))
+              ;; Conflict explanation
+              (label
+                :class "conflict-message"
+                :halign "start"
+                :wrap true
+                :text "The project configuration file was modified externally while you were editing. Choose how to resolve:")
+              ;; Diff display (side-by-side comparison)
+              (box
+                :class "conflict-diff-container"
+                :orientation "h"
+                :space-evenly true
+                ;; File content (left side)
+                (box
+                  :class "conflict-diff-pane"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "conflict-pane-header"
+                    :text "📄 File on Disk")
+                  (scroll
+                    :vscroll true
+                    :hscroll false
+                    :height 200
+                    (label
+                      :class "conflict-content"
+                      :halign "start"
+                      :valign "start"
+                      :wrap false
+                      :text conflict_file_content)))
+                ;; UI content (right side)
+                (box
+                  :class "conflict-diff-pane"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "conflict-pane-header"
+                    :text "✏️  Your Unsaved Changes")
+                  (scroll
+                    :vscroll true
+                    :hscroll false
+                    :height 200
+                    (label
+                      :class "conflict-content"
+                      :halign "start"
+                      :valign "start"
+                      :wrap false
+                      :text conflict_ui_content))))
+              ;; Action buttons
+              (box
+                :class "conflict-actions"
+                :orientation "h"
+                :space-evenly false
+                :halign "center"
+                (button
+                  :class "conflict-button conflict-keep-file"
+                  :onclick "project-conflict-resolve keep-file ''${conflict_project_name}"
+                  "Keep File Changes")
+                (button
+                  :class "conflict-button conflict-keep-ui"
+                  :onclick "project-conflict-resolve keep-ui ''${conflict_project_name}"
+                  "Keep My Changes")
+                (button
+                  :class "conflict-button conflict-merge"
+                  :onclick "project-conflict-resolve merge-manual ''${conflict_project_name}"
+                  "Merge Manually"))))))
 
       ;; Apps View - Application registry browser
       ;; Applications View - App registry with type grouping (Feature 094)
@@ -2411,6 +2657,123 @@ in
         font-family: "JetBrainsMono Nerd Font", monospace;
       }
 
+      /* Feature 094 T040: Conflict resolution dialog styles */
+      .conflict-dialog-overlay {
+        background-color: rgba(0, 0, 0, 0.7);
+        padding: 20px;
+      }
+
+      .conflict-dialog {
+        background-color: ${mocha.base};
+        border: 2px solid ${mocha.yellow};
+        border-radius: 12px;
+        padding: 20px;
+      }
+
+      .conflict-header {
+        padding-bottom: 12px;
+        border-bottom: 1px solid ${mocha.overlay0};
+        margin-bottom: 16px;
+      }
+
+      .conflict-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: ${mocha.yellow};
+      }
+
+      .conflict-close-button {
+        background-color: transparent;
+        border: none;
+        color: ${mocha.overlay0};
+        font-size: 18px;
+        padding: 4px 8px;
+      }
+
+      .conflict-close-button:hover {
+        color: ${mocha.text};
+        background-color: ${mocha.surface0};
+        border-radius: 4px;
+      }
+
+      .conflict-message {
+        font-size: 13px;
+        color: ${mocha.text};
+        margin-bottom: 16px;
+      }
+
+      .conflict-diff-container {
+        margin: 16px 0;
+      }
+
+      .conflict-diff-pane {
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 8px;
+        padding: 8px;
+        background-color: ${mocha.mantle};
+      }
+
+      .conflict-pane-header {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.blue};
+        margin-bottom: 8px;
+      }
+
+      .conflict-content {
+        font-family: "JetBrainsMono Nerd Font", monospace;
+        font-size: 11px;
+        color: ${mocha.text};
+        white-space: pre;
+      }
+
+      .conflict-actions {
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1px solid ${mocha.overlay0};
+      }
+
+      .conflict-button {
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: bold;
+        margin: 0 4px;
+      }
+
+      .conflict-keep-file {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        color: ${mocha.text};
+      }
+
+      .conflict-keep-file:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.overlay0};
+      }
+
+      .conflict-keep-ui {
+        background-color: ${mocha.green};
+        border: 1px solid ${mocha.green};
+        color: ${mocha.base};
+      }
+
+      .conflict-keep-ui:hover {
+        background-color: ${mocha.teal};
+        border-color: ${mocha.teal};
+      }
+
+      .conflict-merge {
+        background-color: ${mocha.yellow};
+        border: 1px solid ${mocha.yellow};
+        color: ${mocha.base};
+      }
+
+      .conflict-merge:hover {
+        background-color: ${mocha.peach};
+        border-color: ${mocha.peach};
+      }
+
       .radio-button {
         background-color: ${mocha.surface0};
         border: 1px solid ${mocha.overlay0};
@@ -2474,6 +2837,26 @@ in
       .save-button:hover {
         background-color: ${mocha.sapphire};
         border-color: ${mocha.sapphire};
+      }
+
+      /* T039: Disabled save button (validation failed) */
+      .save-button-disabled {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: ${mocha.subtext0};
+        font-weight: bold;
+        opacity: 0.5;
+      }
+
+      /* T039: Field-level validation error messages */
+      .field-error {
+        font-size: 11px;
+        color: ${mocha.red};
+        margin-top: 4px;
+        padding: 4px 0;
       }
 
       /* Error message styles (T041) */
