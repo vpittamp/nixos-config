@@ -1,0 +1,300 @@
+{
+  "name": "test_app_delete_form",
+  "description": "Feature 094 US9 T092: Test application delete confirmation dialog UI functionality",
+  "setup": {
+    "wait_for_services": ["eww-monitoring-panel"],
+    "open_panel": true,
+    "switch_to_tab": "apps"
+  },
+  "tests": [
+    {
+      "name": "delete_button_visible_on_app",
+      "description": "Delete button should be visible on each application entry",
+      "precondition": {
+        "eww_variable": "panel_visible",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-card .delete-app-button",
+          "expected": true,
+          "note": "Delete button should be visible on app cards"
+        }
+      ]
+    },
+    {
+      "name": "click_delete_shows_confirmation",
+      "description": "Clicking Delete button should show confirmation dialog",
+      "steps": [
+        {
+          "action": "click",
+          "selector": ".app-card:first-child .delete-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-delete-confirmation-dialog",
+          "expected": true
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_deleting",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_shows_app_name",
+      "description": "Confirmation dialog should display the application name being deleted",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-delete-confirmation-dialog .app-name-display",
+          "expected": true
+        },
+        {
+          "action": "verify_element_not_empty",
+          "selector": ".app-delete-confirmation-dialog .app-name-display",
+          "note": "App name should be displayed"
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_shows_warning",
+      "description": "Confirmation dialog should show warning about permanent deletion and rebuild requirement",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-delete-confirmation-dialog .warning-message",
+          "expected": true,
+          "note": "Warning about permanent deletion"
+        },
+        {
+          "action": "verify_element_contains",
+          "selector": ".app-delete-confirmation-dialog .warning-message",
+          "contains": "rebuild",
+          "case_insensitive": true
+        }
+      ]
+    },
+    {
+      "name": "pwa_shows_uninstall_warning",
+      "description": "PWA deletion should show uninstall warning",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_is_pwa",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_ulid",
+          "value": "01ABCDEFGH1234567890ABCDEF"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-delete-confirmation-dialog .pwa-warning",
+          "expected": true,
+          "note": "PWA uninstall warning"
+        },
+        {
+          "action": "verify_element_contains",
+          "selector": ".app-delete-confirmation-dialog .pwa-warning",
+          "contains": "pwa-uninstall",
+          "case_insensitive": true
+        }
+      ]
+    },
+    {
+      "name": "confirmation_dialog_has_confirm_cancel_buttons",
+      "description": "Confirmation dialog should have Confirm and Cancel buttons",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-delete-confirmation-dialog .confirm-delete-app-button",
+          "expected": true,
+          "note": "Confirm button"
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-delete-confirmation-dialog .cancel-delete-app-button",
+          "expected": true,
+          "note": "Cancel button"
+        }
+      ]
+    },
+    {
+      "name": "cancel_closes_confirmation",
+      "description": "Clicking Cancel should close confirmation dialog without deleting",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_name",
+          "value": "test-app"
+        },
+        {
+          "action": "click",
+          "selector": ".app-delete-confirmation-dialog .cancel-delete-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 300
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_deleting",
+          "expected": false
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "delete_app_name",
+          "expected": ""
+        }
+      ]
+    },
+    {
+      "name": "successful_delete_shows_success_message",
+      "description": "Successfully deleting an app should show success message with rebuild notice",
+      "setup": {
+        "create_test_app": "delete-test-app-$$"
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "app_deleting",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_name",
+          "value": "delete-test-app-$$"
+        },
+        {
+          "action": "click",
+          "selector": ".app-delete-confirmation-dialog .confirm-delete-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_eww_variable",
+          "variable": "app_deleting",
+          "expected": false
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".rebuild-required-notice",
+          "expected": true,
+          "note": "Rebuild required notice should be shown"
+        }
+      ]
+    },
+    {
+      "name": "deleted_app_removed_from_list",
+      "description": "Deleted app should disappear from application list",
+      "setup": {
+        "create_test_app": "remove-test-app-$$"
+      },
+      "steps": [
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-card[data-name='remove-test-app-$$']",
+          "expected": true,
+          "note": "App should exist before deletion"
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "app_deleting",
+          "value": true
+        },
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_name",
+          "value": "remove-test-app-$$"
+        },
+        {
+          "action": "click",
+          "selector": ".app-delete-confirmation-dialog .confirm-delete-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1500
+        },
+        {
+          "action": "verify_element_exists",
+          "selector": ".app-card[data-name='remove-test-app-$$']",
+          "expected": false,
+          "note": "App should be removed from list"
+        }
+      ]
+    },
+    {
+      "name": "error_message_on_delete_failure",
+      "description": "Failed delete should show error message",
+      "precondition": {
+        "eww_variable": "app_deleting",
+        "value": true
+      },
+      "steps": [
+        {
+          "action": "set_eww_variable",
+          "variable": "delete_app_name",
+          "value": "nonexistent-app-xyz"
+        },
+        {
+          "action": "click",
+          "selector": ".app-delete-confirmation-dialog .confirm-delete-app-button"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 1000
+        },
+        {
+          "action": "verify_element_visible",
+          "selector": ".app-delete-confirmation-dialog .error-message",
+          "expected": true,
+          "note": "Error message should be displayed"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "close_panel": true,
+    "reset_variables": [
+      "app_deleting",
+      "delete_app_name",
+      "delete_app_display_name",
+      "delete_app_is_pwa",
+      "delete_app_ulid"
+    ]
+  }
+}

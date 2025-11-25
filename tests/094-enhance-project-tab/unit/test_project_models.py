@@ -212,25 +212,59 @@ class TestRemoteConfig:
 class TestWorktreeConfig:
     """Test WorktreeConfig model validation"""
 
-    def test_valid_worktree_config(self):
+    @pytest.fixture
+    def parent_project_fixture(self, tmp_path):
+        """Create parent project directory and JSON file for worktree tests"""
+        # Create projects config directory
+        projects_dir = tmp_path / ".config" / "i3" / "projects"
+        projects_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create parent project JSON file
+        parent_file = projects_dir / "parent-project.json"
+        parent_file.write_text('{"name": "parent-project", "display_name": "Parent Project", "icon": "📦", "directory": "/tmp", "scope": "scoped"}')
+
+        # Create working directory
+        working_dir = tmp_path / "test-working-dir"
+        working_dir.mkdir(parents=True, exist_ok=True)
+
+        # Monkey-patch Path.home() to return tmp_path for testing
+        original_home = Path.home
+        Path.home = lambda: tmp_path
+
+        yield {
+            "projects_dir": projects_dir,
+            "parent_file": parent_file,
+            "working_dir": working_dir,
+            "tmp_path": tmp_path
+        }
+
+        # Restore original
+        Path.home = original_home
+
+    def test_valid_worktree_config(self, parent_project_fixture):
         """Test valid worktree configuration"""
+        wt = parent_project_fixture
+        worktree_path = wt["tmp_path"] / "test-worktree"  # Non-existent path (required)
+
         config = WorktreeConfig(
             name="test-worktree",
             display_name="Test Worktree",
             icon="🌳",
-            working_dir="/tmp/test",
+            working_dir=str(wt["working_dir"]),
             scope="scoped",
-            worktree_path="/tmp/test-worktree",
+            worktree_path=str(worktree_path),
             branch_name="feature-123",
             parent_project="parent-project"
         )
         assert config.name == "test-worktree"
-        assert config.worktree_path == "/tmp/test-worktree"
+        assert config.worktree_path == str(worktree_path)
         assert config.branch_name == "feature-123"
         assert config.parent_project == "parent-project"
 
-    def test_branch_name_validation(self):
+    def test_branch_name_validation(self, parent_project_fixture):
         """Test branch name validation"""
+        wt = parent_project_fixture
+
         # Valid branch names
         valid_branches = [
             "main",
@@ -239,16 +273,19 @@ class TestWorktreeConfig:
             "bugfix/issue-456",
             "release/v1.0.0"
         ]
-        for branch in valid_branches:
+        for i, branch in enumerate(valid_branches):
+            # Use unique worktree paths for each test
+            worktree_path = wt["tmp_path"] / f"wt-{i}"
+
             config = WorktreeConfig(
                 name="test",
                 display_name="Test",
                 icon="🌳",
-                working_dir="/tmp",
+                working_dir=str(wt["working_dir"]),
                 scope="scoped",
-                worktree_path="/tmp/wt",
+                worktree_path=str(worktree_path),
                 branch_name=branch,
-                parent_project="parent"
+                parent_project="parent-project"
             )
             assert config.branch_name == branch
 
@@ -263,38 +300,80 @@ class TestWorktreeConfig:
                     name="test",
                     display_name="Test",
                     icon="🌳",
-                    working_dir="/tmp",
+                    working_dir=str(wt["working_dir"]),
                     scope="scoped",
-                    worktree_path="/tmp/wt",
+                    worktree_path=str(wt["tmp_path"] / "wt-invalid"),
                     branch_name=branch,
-                    parent_project="parent"
+                    parent_project="parent-project"
                 )
 
-    def test_parent_project_required(self):
+    def test_parent_project_required(self, parent_project_fixture):
         """Test parent_project field is required for worktrees"""
+        wt = parent_project_fixture
+
         with pytest.raises(ValidationError):
             WorktreeConfig(
                 name="test",
                 display_name="Test",
                 icon="🌳",
-                working_dir="/tmp",
+                working_dir=str(wt["working_dir"]),
                 scope="scoped",
-                worktree_path="/tmp/wt",
+                worktree_path=str(wt["tmp_path"] / "wt-missing-parent"),
                 branch_name="feature"
                 # parent_project missing
             )
 
-    def test_worktree_inherits_project_config(self):
+    def test_parent_project_must_exist(self, parent_project_fixture):
+        """Test parent_project must reference an existing project"""
+        wt = parent_project_fixture
+
+        with pytest.raises(ValidationError) as exc_info:
+            WorktreeConfig(
+                name="test",
+                display_name="Test",
+                icon="🌳",
+                working_dir=str(wt["working_dir"]),
+                scope="scoped",
+                worktree_path=str(wt["tmp_path"] / "wt-nonexistent-parent"),
+                branch_name="feature",
+                parent_project="nonexistent-parent"
+            )
+        assert "does not exist" in str(exc_info.value)
+
+    def test_worktree_path_must_not_exist(self, parent_project_fixture):
+        """Test worktree_path must not already exist"""
+        wt = parent_project_fixture
+
+        # Create a directory at the worktree path
+        existing_path = wt["tmp_path"] / "existing-wt"
+        existing_path.mkdir()
+
+        with pytest.raises(ValidationError) as exc_info:
+            WorktreeConfig(
+                name="test",
+                display_name="Test",
+                icon="🌳",
+                working_dir=str(wt["working_dir"]),
+                scope="scoped",
+                worktree_path=str(existing_path),
+                branch_name="feature",
+                parent_project="parent-project"
+            )
+        assert "already exists" in str(exc_info.value)
+
+    def test_worktree_inherits_project_config(self, parent_project_fixture):
         """Test WorktreeConfig inherits all ProjectConfig fields"""
+        wt = parent_project_fixture
+
         config = WorktreeConfig(
             name="test-wt",
             display_name="Test Worktree",
             icon="🌳",
-            working_dir="/tmp/test",
+            working_dir=str(wt["working_dir"]),
             scope="scoped",
-            worktree_path="/tmp/wt",
+            worktree_path=str(wt["tmp_path"] / "wt-inherit"),
             branch_name="feature",
-            parent_project="parent"
+            parent_project="parent-project"
         )
         # Should have both ProjectConfig and WorktreeConfig fields
         assert hasattr(config, "name")
