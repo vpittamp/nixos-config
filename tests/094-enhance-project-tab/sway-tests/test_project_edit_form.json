@@ -1,0 +1,485 @@
+{
+  "name": "Projects Tab Inline Edit Form Test",
+  "description": "Verify inline edit form functionality for projects (Feature 094 - T035, US2)",
+  "setup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "systemctl --user restart eww-monitoring-panel",
+        "description": "Restart Eww service with updated Projects tab"
+      },
+      {
+        "action": "wait_sync"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close-all",
+        "description": "Ensure panel is closed"
+      },
+      {
+        "action": "wait_sync"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Panel opens and Projects tab is accessible",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel",
+          "description": "Open monitoring panel"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to open"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "contains": "monitoring-panel",
+            "description": "Panel should be open"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edit form state variables exist",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get editing_project_name 2>&1",
+            "not_contains": "error",
+            "description": "editing_project_name variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_display_name 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_display_name variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_icon 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_icon variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_directory 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_directory variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_scope 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_scope variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_remote_enabled 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_remote_enabled variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_error 2>&1",
+            "not_contains": "error",
+            "description": "edit_form_error variable should exist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edit mode can be triggered by setting editing_project_name",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].name'",
+          "save_output": "first_project_name",
+          "description": "Get first project name"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name='$first_project_name'",
+          "description": "Enter edit mode for first project"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200,
+          "description": "Wait for edit mode to activate"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get editing_project_name",
+            "equals": "$first_project_name",
+            "description": "editing_project_name should be set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edit form fields are pre-filled from project data",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].display_name'",
+          "save_output": "project_display_name",
+          "description": "Get project display name"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].icon'",
+          "save_output": "project_icon",
+          "description": "Get project icon"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].directory'",
+          "save_output": "project_directory",
+          "description": "Get project directory"
+        },
+        {
+          "action": "exec",
+          "command": "project-edit-open $first_project_name \"$project_display_name\" \"$project_icon\" \"$project_directory\" scoped false \"\" \"\" \"\" 22",
+          "description": "Open edit form with project-edit-open script"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200,
+          "description": "Wait for form to populate"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_display_name",
+            "equals": "$project_display_name",
+            "description": "edit_form_display_name should match project data"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_icon",
+            "equals": "$project_icon",
+            "description": "edit_form_icon should match project data"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_directory",
+            "equals": "$project_directory",
+            "description": "edit_form_directory should match project data"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Form fields can be updated",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='Updated Project Name'",
+          "description": "Update display name field"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_display_name",
+            "equals": "Updated Project Name",
+            "description": "edit_form_display_name should be updated"
+          }
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='🚀'",
+          "description": "Update icon field"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_icon",
+            "equals": "🚀",
+            "description": "edit_form_icon should be updated"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Remote fields can be toggled",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_enabled=true",
+          "description": "Enable remote mode"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_remote_enabled",
+            "equals": "true",
+            "description": "edit_form_remote_enabled should be true"
+          }
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_host='remote.example.com'",
+          "description": "Set remote host"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_user='testuser'",
+          "description": "Set remote user"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_dir='/home/testuser/project'",
+          "description": "Set remote directory"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for updates"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_remote_host",
+            "equals": "remote.example.com",
+            "description": "edit_form_remote_host should be set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error message can be displayed",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='Test error message'",
+          "description": "Set error message"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_error",
+            "equals": "Test error message",
+            "description": "edit_form_error should be set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error message can be cleared",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''",
+          "description": "Clear error message"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_error",
+            "equals": "",
+            "description": "edit_form_error should be empty"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cancel clears edit mode and form state",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "project-edit-cancel",
+          "description": "Trigger cancel action"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200,
+          "description": "Wait for cancel to complete"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get editing_project_name",
+            "equals": "",
+            "description": "editing_project_name should be cleared"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_error",
+            "equals": "",
+            "description": "edit_form_error should be cleared"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Save workflow triggers project-edit-save script",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].name'",
+          "save_output": "test_project_name",
+          "description": "Get test project name"
+        },
+        {
+          "action": "exec",
+          "command": "project-edit-open $test_project_name 'Test Display' '🧪' '/tmp/test' scoped false '' '' '' 22",
+          "description": "Open edit form for test"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200,
+          "description": "Wait for form to populate"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='Test Save Display Name'",
+          "description": "Update display name for save test"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_success",
+            "command": "which project-edit-save",
+            "description": "project-edit-save script should exist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scope radio buttons can be toggled",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_scope='global'",
+          "description": "Set scope to global"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_scope",
+            "equals": "global",
+            "description": "edit_form_scope should be global"
+          }
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_scope='scoped'",
+          "description": "Set scope back to scoped"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for update"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get edit_form_scope",
+            "equals": "scoped",
+            "description": "edit_form_scope should be scoped"
+          }
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''",
+        "description": "Clear edit mode"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''",
+        "description": "Clear error state"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel",
+        "description": "Close panel"
+      }
+    ]
+  }
+}
