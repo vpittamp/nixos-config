@@ -2724,7 +2724,6 @@ in
         font-family: "JetBrainsMono Nerd Font", monospace;
         font-size: 11px;
         color: ${mocha.text};
-        white-space: pre;
       }
 
       .conflict-actions {
