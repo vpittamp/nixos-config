@@ -135,7 +135,7 @@ Paths follow single project structure with home-modules integration:
 - [X] T038 [US2] Add inline edit form widget to eww-monitoring-panel.nix Projects tab (pre-filled fields, Cancel/Save buttons, conditional remote fields)
 - [ ] T039 [US2] Implement form validation state streaming (deflisten) for Projects tab (300ms debounce, error messages below inputs)
 - [ ] T040 [US2] Add conflict resolution dialog widget (Show file vs UI changes diff, Keep UI Changes/Keep File Changes/Merge Manually buttons)
-- [ ] T041 [US2] Implement save workflow with conflict detection (check file mtime before write, show dialog if conflict, update list on success)
+- [X] T041 [US2] Implement save workflow with conflict detection (check file mtime before write, show dialog if conflict, update list on success)
 
 **Checkpoint**: At this point, User Story 2 should be fully functional - users can edit projects with validation and conflict handling
 
