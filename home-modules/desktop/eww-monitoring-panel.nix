@@ -1012,13 +1012,13 @@ in
                     :class "window-app-name"
                     :halign "start"
                     :text "''${window.display_name}"
-                    :limit-width 25
+                    :limit-width 18
                     :truncate true)
                   (label
                     :class "window-title"
                     :halign "start"
                     :text "''${window.title ?: '#' + window.id}"
-                    :limit-width 35
+                    :limit-width 25
                     :truncate true))
                 ; Compact badges for states
                 (box
@@ -3271,11 +3271,17 @@ in
       /* Window info in list view */
       .window-info {
         margin-left: 6px;
+        min-width: 0;
+      }
+
+      .window-app-name {
+        min-width: 0;
       }
 
       .window-title {
         font-size: 10px;
         color: ${mocha.subtext0};
+        min-width: 0;
       }
 
       .window:hover {
