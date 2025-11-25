@@ -122,9 +122,9 @@ Paths follow single project structure with home-modules integration:
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T031 [P] [US2] Unit test for project validation rules in tests/094-enhance-project-tab/unit/test_form_validator.py
-- [ ] T032 [P] [US2] Unit test for project JSON editing in tests/094-enhance-project-tab/unit/test_project_editor.py (edit operations, backup/restore)
-- [ ] T033 [P] [US2] Unit test for conflict detection in tests/094-enhance-project-tab/unit/test_conflict_detector.py
+- [X] T031 [P] [US2] Unit test for project validation rules in tests/094-enhance-project-tab/unit/test_form_validator.py
+- [X] T032 [P] [US2] Unit test for project JSON editing in tests/094-enhance-project-tab/unit/test_project_editor.py (edit operations, backup/restore)
+- [X] T033 [P] [US2] Unit test for conflict detection in tests/094-enhance-project-tab/unit/test_conflict_detector.py
 - [ ] T034 [P] [US2] Integration test for edit workflow in tests/094-enhance-project-tab/integration/test_project_edit_workflow.py (edit → validate → save → verify)
 - [ ] T035 [P] [US2] Sway test for inline edit form in tests/094-enhance-project-tab/sway-tests/test_project_edit_form.json
 
