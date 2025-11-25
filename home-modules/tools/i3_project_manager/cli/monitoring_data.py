@@ -1283,23 +1283,19 @@ async def query_apps_data() -> Dict[str, Any]:
     friendly_time = format_friendly_timestamp(current_timestamp)
 
     try:
-        # Query app registry via i3pm CLI
-        result = subprocess.run(
-            ["i3pm", "apps", "list", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        # Read application registry JSON file directly (Feature 094)
+        # The i3pm apps list --json flag doesn't work, so we read the file directly
+        registry_path = Path.home() / ".config/i3/application-registry.json"
 
-        if result.returncode != 0:
-            # Fallback: return empty list (apps command might not have --json flag yet)
+        if not registry_path.exists():
             apps = []
         else:
             try:
-                apps_data = json.loads(result.stdout)
-                apps = apps_data.get("apps", [])
-            except json.JSONDecodeError:
-                # Command output wasn't JSON, return empty list
+                with open(registry_path, 'r') as f:
+                    registry_data = json.load(f)
+                    apps = registry_data.get("applications", [])
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"Failed to parse application registry: {e}")
                 apps = []
 
         # Enhance with runtime state (running instances)
