@@ -89,12 +89,12 @@ fi
 # Focus terminal window
 swaymsg "[con_id=$WINDOW_ID] focus" >/dev/null 2>&1 || true
 
-# Feature 095: Clear badge in monitoring panel daemon after focusing window
+# Feature 095: Clear badge file after focusing window
 # This removes the notification badge since the user has returned to the window
-DAEMON_SOCKET="/run/i3-project-daemon/ipc.sock"
-if [ -S "$DAEMON_SOCKET" ] && [ -n "$WINDOW_ID" ]; then
-    echo "{\"jsonrpc\":\"2.0\",\"method\":\"clear_badge\",\"params\":{\"window_id\":$WINDOW_ID},\"id\":1}" | \
-        timeout 2 socat - UNIX-CONNECT:"$DAEMON_SOCKET" >/dev/null 2>&1 || true
+BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
+BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
+if [ -f "$BADGE_FILE" ]; then
+    rm -f "$BADGE_FILE"
 fi
 
 # Select tmux window if specified
