@@ -100,9 +100,9 @@ Paths follow single project structure with home-modules integration:
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T025 [P] [US6] Unit test for ApplicationConfig models in tests/094-enhance-project-tab/unit/test_app_models.py (test regular, terminal, PWA variants)
-- [ ] T026 [P] [US6] Integration test for Applications tab data loading in tests/094-enhance-project-tab/integration/test_app_view_workflow.py
-- [ ] T027 [P] [US6] Sway test for hover detail interaction in tests/094-enhance-project-tab/sway-tests/test_app_hover_detail.json
+- [x] T025 [P] [US6] Unit test for ApplicationConfig models in tests/094-enhance-project-tab/unit/test_app_models.py (test regular, terminal, PWA variants)
+- [x] T026 [P] [US6] Integration test for Applications tab data loading in tests/094-enhance-project-tab/integration/test_app_view_workflow.py
+- [x] T027 [P] [US6] Sway test for hover detail interaction in tests/094-enhance-project-tab/sway-tests/test_app_hover_detail.json
 
 ### Implementation for User Story 6
 
