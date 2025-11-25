@@ -1434,11 +1434,11 @@ in
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: ${mocha.base} !important;
+        background-color: ${mocha.base};
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
-        border: 2px solid rgba(137, 180, 250, 0.2) !important;
+        border: 2px solid rgba(137, 180, 250, 0.2);
         /* transition not supported in GTK CSS */
       }
 
@@ -1822,8 +1822,8 @@ in
 
       /* Project Card Styles */
       .project-card {
-        background-color: rgba(49, 50, 68, 0.4) !important;
-        border: 1px solid ${mocha.overlay0} !important;
+        background-color: rgba(49, 50, 68, 0.4);
+        border: 1px solid ${mocha.overlay0};
         border-radius: 8px;
         padding: 12px;
         margin-bottom: 8px;
@@ -1850,22 +1850,22 @@ in
       .project-card-name {
         font-size: 13px;
         font-weight: bold;
-        color: ${mocha.text} !important;
+        color: ${mocha.text};
         margin-bottom: 2px;
       }
 
       .project-card-path {
         font-size: 10px;
-        color: ${mocha.subtext0} !important;
+        color: ${mocha.subtext0};
       }
 
       .active-indicator {
-        color: ${mocha.teal} !important;
+        color: ${mocha.teal};
         font-size: 14px;
       }
 
       .remote-indicator {
-        color: ${mocha.peach} !important;
+        color: ${mocha.peach};
         font-size: 12px;
         margin-left: 6px;
       }
