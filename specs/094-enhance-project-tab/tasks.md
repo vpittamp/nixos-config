@@ -77,8 +77,8 @@ Paths follow single project structure with home-modules integration:
 
 - [x] T016 [P] [US1] Unit test for ProjectConfig model validation in tests/094-enhance-project-tab/unit/test_project_models.py
 - [x] T017 [P] [US1] Unit test for project JSON reading in tests/094-enhance-project-tab/unit/test_project_editor.py
-- [ ] T018 [P] [US1] Integration test for Projects tab data loading in tests/094-enhance-project-tab/integration/test_project_view_workflow.py
-- [ ] T019 [P] [US1] Sway test for hover detail interaction in tests/094-enhance-project-tab/sway-tests/test_project_hover_detail.json
+- [x] T018 [P] [US1] Integration test for Projects tab data loading in tests/094-enhance-project-tab/integration/test_project_view_workflow.py
+- [x] T019 [P] [US1] Sway test for hover detail interaction in tests/094-enhance-project-tab/sway-tests/test_project_hover_detail.json
 
 ### Implementation for User Story 1
 
