@@ -767,6 +767,12 @@ in
       (defvar conflict_ui_content "")    ;; JSON from UI form
       (defvar conflict_project_name "")
 
+      ;; Feature 094 US7: Edit mode state for Applications tab (T048)
+      (defvar editing_app_name "")
+      (defvar edit_display_name "")
+      (defvar edit_workspace "")
+      (defvar edit_icon "")
+      (defvar edit_start_url "")
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -1841,7 +1847,12 @@ in
               (label
                 :class "app-card-details"
                 :halign "start"
-                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running")))))
+                :hexpand true
+                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running")
+              (button
+                :class "app-edit-button"
+                :onclick "eww update editing_app_name=''${app.name}"
+                "")))))
 
       ;; Health View - System diagnostics (Feature 088)
       (defwidget health-view []
@@ -2951,6 +2962,21 @@ in
         margin-top: 6px;
         padding-top: 6px;
         border-top: 1px solid rgba(108, 112, 134, 0.2);
+      }
+
+      /* Feature 094 US7: Application Edit Button Style (T048) */
+      .app-edit-button {
+        background-color: transparent;
+        color: ${mocha.blue};
+        border: none;
+        font-size: 14px;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .app-edit-button:hover {
+        background-color: rgba(137, 180, 250, 0.15);
+        color: ${mocha.sapphire};
       }
 
       /* Health Card Styles */
