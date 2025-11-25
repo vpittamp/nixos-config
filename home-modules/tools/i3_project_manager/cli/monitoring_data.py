@@ -48,6 +48,57 @@ try:
 except ImportError:
     I3Connection = None  # Gracefully handle missing i3ipc in one-shot mode
 
+# Feature 095 Enhancement: Animated spinner frames for "working" state badges
+# Braille dot spinner: elegant, modern, 10 frames cycling every 120ms
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+SPINNER_INTERVAL_MS = 120  # milliseconds per frame
+
+
+def get_spinner_frame() -> str:
+    """Get current spinner frame based on time.
+
+    Uses millisecond precision to determine which frame to show.
+    Frame changes every SPINNER_INTERVAL_MS milliseconds.
+    """
+    ms = int(time.time() * 1000)
+    idx = (ms // SPINNER_INTERVAL_MS) % len(SPINNER_FRAMES)
+    return SPINNER_FRAMES[idx]
+
+
+# Feature 095: File-based badge state directory
+# Badge state files are written by claude-hooks scripts and read by this script
+# Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
+BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm-badges"
+
+
+def load_badge_state_from_files() -> Dict[str, Any]:
+    """Load badge state from filesystem.
+
+    Feature 095: File-based badge tracking without daemon dependency.
+    Reads JSON files from $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
+
+    Returns:
+        Dict mapping window_id (string) to badge metadata
+    """
+    badge_state: Dict[str, Any] = {}
+
+    if not BADGE_STATE_DIR.exists():
+        return badge_state
+
+    for badge_file in BADGE_STATE_DIR.glob("*.json"):
+        try:
+            with open(badge_file, "r") as f:
+                badge_data = json.load(f)
+                window_id = badge_file.stem  # filename without .json extension
+                badge_state[window_id] = badge_data
+                logger.debug(f"Feature 095: Loaded badge for window {window_id}: {badge_data.get('state', 'unknown')}")
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Feature 095: Failed to read badge file {badge_file}: {e}")
+            continue
+
+    return badge_state
+
+
 # Icon resolution - loads from application-registry.json and pwa-registry.json
 # Uses XDG icon theme lookup for icon names (like "firefox" -> /usr/share/icons/.../firefox.png)
 _icon_registry: Optional[Dict[str, str]] = None
@@ -1125,16 +1176,10 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Query window tree (monitors → workspaces → windows hierarchy)
         tree_data = await client.get_window_tree()
 
-        # Feature 095: Query badge state for notification badges
-        # Badge state is dict with "badges" key mapping window ID (string) to badge metadata
-        try:
-            badge_response = await client.get_badge_state()
-            # Extract badges dict from response (format: {"badges": {"10": {...}, "20": {...}}})
-            badge_state = badge_response.get("badges", {}) if isinstance(badge_response, dict) else {}
-            logger.debug(f"Feature 095: Fetched badge state with {len(badge_state)} badges")
-        except Exception as e:
-            logger.warning(f"Feature 095: Failed to fetch badge state: {e}")
-            badge_state = {}
+        # Feature 095: Load badge state from filesystem (file-based, no daemon)
+        # Badge files are written by claude-hooks scripts in $XDG_RUNTIME_DIR/i3pm-badges/
+        badge_state = load_badge_state_from_files()
+        logger.debug(f"Feature 095: Loaded {len(badge_state)} badges from filesystem")
 
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
@@ -1158,6 +1203,13 @@ async def query_monitoring_data() -> Dict[str, Any]:
         current_timestamp = time.time()
         friendly_time = format_friendly_timestamp(current_timestamp)
 
+        # Feature 095 Enhancement: Check if any badges are in "working" state
+        # This is used to trigger more frequent updates for spinner animation
+        has_working_badge = any(
+            badge.get("state") == "working"
+            for badge in badge_state.values()
+        ) if badge_state else False
+
         # Return success state with project-based view
         return {
             "status": "ok",
@@ -1170,6 +1222,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
             "error": None,
+            # Feature 095 Enhancement: Animated spinner frame
+            "spinner_frame": get_spinner_frame(),
+            "has_working_badge": has_working_badge,
         }
 
     except DaemonError as e:
@@ -1186,6 +1241,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": str(e),
+            "spinner_frame": get_spinner_frame(),
+            "has_working_badge": False,
         }
 
     except Exception as e:
@@ -1202,6 +1259,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp": error_timestamp,
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": f"Unexpected error: {type(e).__name__}: {e}",
+            "spinner_frame": get_spinner_frame(),
+            "has_working_badge": False,
         }
 
 
@@ -2043,11 +2102,16 @@ async def stream_monitoring_data():
                 """Handle output events (monitor connect/disconnect)"""
                 asyncio.create_task(refresh_and_output())
 
+            # Feature 095 Enhancement: Track if we have working badges for spinner animation
+            has_working_badge = False
+
             async def refresh_and_output():
                 """Query daemon and output updated JSON."""
-                nonlocal last_update
+                nonlocal last_update, has_working_badge
                 try:
                     data = await query_monitoring_data()
+                    # Track if we have working badges to enable spinner updates
+                    has_working_badge = data.get("has_working_badge", False)
                     print(json.dumps(data, separators=(",", ":")), flush=True)
                     last_update = time.time()
                 except Exception as e:
@@ -2058,15 +2122,42 @@ async def stream_monitoring_data():
             ipc.on('workspace', on_workspace_event)
             ipc.on('output', on_output_event)
 
+            # Feature 095 Enhancement: Spinner animation interval (120ms)
+            # Only used when has_working_badge is True
+            spinner_interval = SPINNER_INTERVAL_MS / 1000.0  # Convert to seconds
+            last_spinner_update = time.time()
+
+            # Feature 095: Badge state check interval (500ms when idle)
+            # Check badge files periodically to detect when hook scripts create/update them
+            badge_check_interval = 0.5  # 500ms
+            last_badge_check = time.time()
+
             # Event loop with heartbeat
             while not shutdown_requested:
-                # Send heartbeat if no updates in last N seconds
-                if time.time() - last_update > heartbeat_interval:
+                current_time = time.time()
+
+                # Feature 095: Periodically check badge state from filesystem
+                # This catches badge changes from hook scripts even when no Sway events occur
+                if not has_working_badge and (current_time - last_badge_check) >= badge_check_interval:
+                    badge_state = load_badge_state_from_files()
+                    if any(b.get("state") == "working" for b in badge_state.values()):
+                        logger.debug("Feature 095: Detected working badge from file, triggering refresh")
+                        await refresh_and_output()
+                    last_badge_check = current_time
+
+                # Feature 095 Enhancement: Fast updates for spinner animation when working badge exists
+                if has_working_badge and (current_time - last_spinner_update) >= spinner_interval:
+                    logger.debug("Sending spinner frame update")
+                    await refresh_and_output()
+                    last_spinner_update = current_time
+                # Send heartbeat if no updates in last N seconds (normal mode)
+                elif current_time - last_update > heartbeat_interval:
                     logger.debug("Sending heartbeat")
                     await refresh_and_output()
 
-                # Sleep briefly to avoid busy loop
-                await asyncio.sleep(0.5)
+                # Sleep briefly - shorter when animating spinner
+                sleep_time = 0.05 if has_working_badge else 0.5
+                await asyncio.sleep(sleep_time)
 
         except ConnectionError as e:
             logger.warning(f"Connection lost: {e}, reconnecting in {reconnect_delay}s")
@@ -2400,3 +2491,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+# Feature 095 Enhancement build marker: 1764104128

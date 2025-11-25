@@ -1662,6 +1662,10 @@ in
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
 
+      ;; Feature 095 Enhancement: Animated spinner is embedded in monitoring_data.spinner_frame
+      ;; The Python backend (monitoring_data.py) generates spinner frames at 120ms intervals
+      ;; when there's a "working" badge, enabling smooth animation via the existing deflisten stream
+
       ;; Feature 092: Deflisten: Real-time Sway event log stream
       ;; Subscribes to window/workspace/output IPC events with <100ms latency
       ;; Maintains circular buffer of 500 most recent events (FIFO eviction)
@@ -2102,12 +2106,16 @@ in
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
                   ;; Feature 095: Notification badge with state-based icons
-                  ;; "working" state = spinner icon (animated), "stopped" state = bell icon
+                  ;; "working" state = animated braille spinner (teal, pulsing glow)
+                  ;; "stopped" state = bell icon with count (peach, attention-grabbing)
                   ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
+                  ;; spinner_frame comes from monitoring_data (Python backend updates at 120ms when working)
                   (label
-                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : "")}
-                    :text {((window.badge?.state ?: "stopped") == "working" ? "⏳" : "🔔") + ((window.badge?.state ?: "stopped") == "working" ? "" : (window.badge?.count ?: ""))}
-                    :tooltip {(window.badge?.count ?: "0") + " notification(s) from " + (window.badge?.source ?: "unknown") + " [" + (window.badge?.state ?: "stopped") + "]"}
+                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : " badge-stopped")}
+                    :text {((window.badge?.state ?: "stopped") == "working" ? (monitoring_data.spinner_frame ?: "⠋") : "󰂚 " + (window.badge?.count ?: ""))}
+                    :tooltip {(window.badge?.state ?: "stopped") == "working"
+                      ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
+                      : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
                     :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
             ;; JSON hover tooltip (slides down on hover)
             (revealer
@@ -4609,20 +4617,38 @@ in
         background-color: rgba(137, 180, 250, 0.15);
       }
 
-      /* Feature 095: Notification badge styling */
+      /* Feature 095: Notification badge base styling */
       .badge-notification {
-        color: ${mocha.peach};
-        background-color: rgba(250, 179, 135, 0.2);
         font-weight: bold;
-        border: 1px solid rgba(250, 179, 135, 0.4);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 6px;
+        font-size: 10px;
       }
 
-      /* Feature 095: Working state - distinct styling (GTK CSS doesn't support @keyframes) */
+      /* Feature 095: Stopped state - bell icon with warm peach glow (attention-grabbing) */
+      .badge-stopped {
+        color: ${mocha.base};
+        background: linear-gradient(135deg, ${mocha.peach}, ${mocha.red});
+        border: 1px solid ${mocha.peach};
+        box-shadow: 0 0 8px rgba(250, 179, 135, 0.6),
+                    0 0 16px rgba(250, 179, 135, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+      }
+
+      /* Feature 095: Working state - animated spinner with cool teal glow */
       .badge-working {
-        color: ${mocha.teal};
-        background-color: rgba(148, 226, 213, 0.3);
-        border: 2px solid ${mocha.teal};
-        font-weight: bold;
+        color: ${mocha.base};
+        background: linear-gradient(135deg, ${mocha.teal}, ${mocha.sky});
+        border: 1px solid ${mocha.teal};
+        box-shadow: 0 0 10px rgba(148, 226, 213, 0.7),
+                    0 0 20px rgba(148, 226, 213, 0.4),
+                    0 0 30px rgba(148, 226, 213, 0.2),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+        font-size: 11px;
+        letter-spacing: 1px;
       }
 
       /* JSON Hover Tooltip */
