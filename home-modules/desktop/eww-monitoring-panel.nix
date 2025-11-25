@@ -163,6 +163,71 @@ let
     exec ${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler "$@"
   '';
 
+  # Feature 094: Project edit form save handler (T038)
+  projectEditSaveScript = pkgs.writeShellScriptBin "project-edit-save" ''
+    #!${pkgs.bash}/bin/bash
+    # Save project edit form by reading Eww variables and calling CRUD handler
+    # Usage: project-edit-save <project-name>
+
+    PROJECT_NAME="$1"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Read form values from Eww variables
+    DISPLAY_NAME=$($EWW get edit_form_display_name)
+    ICON=$($EWW get edit_form_icon)
+    SCOPE=$($EWW get edit_form_scope)
+    REMOTE_ENABLED=$($EWW get edit_form_remote_enabled)
+    REMOTE_HOST=$($EWW get edit_form_remote_host)
+    REMOTE_USER=$($EWW get edit_form_remote_user)
+    REMOTE_DIR=$($EWW get edit_form_remote_dir)
+    REMOTE_PORT=$($EWW get edit_form_remote_port)
+
+    # Build JSON update object
+    UPDATES=$(${pkgs.jq}/bin/jq -n \
+      --arg display_name "$DISPLAY_NAME" \
+      --arg icon "$ICON" \
+      --arg scope "$SCOPE" \
+      --argjson remote_enabled "$REMOTE_ENABLED" \
+      --arg remote_host "$REMOTE_HOST" \
+      --arg remote_user "$REMOTE_USER" \
+      --arg remote_dir "$REMOTE_DIR" \
+      --arg remote_port "$REMOTE_PORT" \
+      '{
+        display_name: $display_name,
+        icon: $icon,
+        scope: $scope,
+        remote: {
+          enabled: $remote_enabled,
+          host: $remote_host,
+          user: $remote_user,
+          remote_dir: $remote_dir,
+          port: ($remote_port | tonumber)
+        }
+      }')
+
+    # Call CRUD handler
+    export PYTHONPATH="${../tools}"
+    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler edit "$PROJECT_NAME" --updates "$UPDATES")
+
+    # Check if successful
+    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
+    if [ "$STATUS" = "success" ]; then
+      # Clear editing state
+      $EWW update editing_project_name=""
+
+      # Refresh projects data
+      PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
+      $EWW update projects_data="$PROJECTS_DATA"
+
+      echo "Project saved successfully"
+    else
+      # Show error (in future, display in UI)
+      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error')
+      echo "Error: $ERROR" >&2
+      exit 1
+    fi
+  '';
+
   # Feature 093: Focus window action script (T009-T015)
   # Focuses a window with automatic project switching if needed
   focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
@@ -443,6 +508,7 @@ in
       focusWindowScript     # Feature 093: Focus window action
       switchProjectScript   # Feature 093: Switch project action
       projectCrudScript     # Feature 094: Project CRUD handler (T037)
+      projectEditSaveScript # Feature 094: Project edit save handler (T038)
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -1331,7 +1397,7 @@ in
               "Cancel")
             (button
               :class "save-button"
-              :onclick "bash -c 'project-crud-handler edit ''${project.name} --updates $(jq -n --arg display_name \"$edit_form_display_name\" --arg icon \"$edit_form_icon\" --arg scope \"$edit_form_scope\" --arg remote_enabled \"$edit_form_remote_enabled\" --arg remote_host \"$edit_form_remote_host\" --arg remote_user \"$edit_form_remote_user\" --arg remote_dir \"$edit_form_remote_dir\" --arg remote_port \"$edit_form_remote_port\" \"{display_name: $display_name, icon: $icon, scope: $scope, remote: {enabled: ($remote_enabled == \"true\"), host: $remote_host, user: $remote_user, remote_dir: $remote_dir, port: ($remote_port | tonumber)}}\") && eww update editing_project_name=\"\" && eww update projects_data=\"$(monitoring-data-backend --mode projects)\"'"
+              :onclick "project-edit-save ''${project.name}"
               "Save"))))
 
       ;; Apps View - Application registry browser
