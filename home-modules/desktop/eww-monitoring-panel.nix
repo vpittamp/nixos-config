@@ -2309,7 +2309,7 @@ in
 
       .field-value-readonly {
         font-size: 11px;
-        color: ${mocha.subtext1};
+        color: ${mocha.subtext0};
         padding: 6px 8px;
         background-color: ${mocha.mantle};
         border-radius: 4px;
