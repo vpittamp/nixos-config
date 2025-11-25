@@ -2039,27 +2039,30 @@ in
             (for window in {project.windows ?: []}
               (window-widget :window window)))))
 
-      ;; Compact window widget for sidebar - Single line with badges + JSON hover tooltip
-      ;; Click to show detail view (stores window ID)
-      ;; Hover to show syntax-highlighted JSON with copy button
-      ;; Fixed: Entire widget wrapped in eventbox so tooltip stays open when hovering over JSON
+      ;; Compact window widget for sidebar - Single line with badges + JSON expand
+      ;; Click main area to focus window
+      ;; Hover expand icon (󰅂) to reveal JSON panel - intentional action required
       (defwidget window-widget [window]
-        (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=0"
+        (box
+          :class "window-container"
+          :orientation "v"
+          :space-evenly false
+          ;; Main window row with icon trigger for JSON expand
           (box
-            :class "window-container"
-            :orientation "v"
+            :class "window-row"
+            :orientation "h"
             :space-evenly false
-            ;; Main window item (clickable)
+            ;; Main clickable area (focuses window)
             ;; Feature 093: Added click handler for window focus with project switching
             (eventbox
               :onclick "focus-window-action ''${window.project} ''${window.id} &"
               :cursor "pointer"
+              :hexpand true
               (box
                 :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
                 :orientation "h"
                 :space-evenly false
+                :hexpand true
                 ; App icon (image if available, fallback emoji otherwise)
                 (box
                   :class "window-icon-container"
@@ -2096,7 +2099,6 @@ in
                   :class "window-badges"
                   :orientation "h"
                   :space-evenly false
-                  :hexpand true
                   :halign "end"
                   (label
                     :class "badge badge-workspace"
@@ -2117,11 +2119,25 @@ in
                       ? "Claude Code is working... [" + (window.badge?.source ?: "claude-code") + "]"
                       : (window.badge?.count ?: "0") + " notification(s) - awaiting input [" + (window.badge?.source ?: "unknown") + "]"}
                     :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
-            ;; JSON hover tooltip (slides down on hover)
-            (revealer
-              :reveal {hover_window_id == window.id}
-              :transition "slidedown"
-              :duration "150ms"
+            ;; JSON expand trigger icon - hover to expand, intentional action
+            (eventbox
+              :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
+              :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=0"
+              :tooltip "Hover to view JSON"
+              (box
+                :class {"json-expand-trigger" + (hover_window_id == window.id ? " expanded" : "")}
+                :valign "center"
+                (label
+                  :class "json-expand-icon"
+                  :text {hover_window_id == window.id ? "󰅀" : "󰅂"}))))
+          ;; JSON panel (slides down when expand icon is hovered)
+          (revealer
+            :reveal {hover_window_id == window.id}
+            :transition "slidedown"
+            :duration "150ms"
+            (eventbox
+              :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
+              :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=0"
               (box
                 :class "window-json-tooltip"
                 :orientation "v"
@@ -4649,6 +4665,45 @@ in
         text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
         font-size: 11px;
         letter-spacing: 1px;
+      }
+
+      /* JSON Expand Trigger Icon - Intentional hover target */
+      .window-row {
+        /* Ensure row aligns items properly */
+      }
+
+      .json-expand-trigger {
+        padding: 4px 6px;
+        margin-left: 4px;
+        border-radius: 4px;
+        background-color: transparent;
+        transition: all 150ms ease;
+        opacity: 0.4;
+      }
+
+      .json-expand-trigger:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+        opacity: 1;
+      }
+
+      .json-expand-trigger.expanded {
+        background-color: rgba(137, 180, 250, 0.3);
+        opacity: 1;
+      }
+
+      .json-expand-icon {
+        font-size: 14px;
+        color: ${mocha.blue};
+        min-width: 16px;
+        transition: transform 150ms ease;
+      }
+
+      .json-expand-trigger:hover .json-expand-icon {
+        color: ${mocha.sapphire};
+      }
+
+      .json-expand-trigger.expanded .json-expand-icon {
+        color: ${mocha.sky};
       }
 
       /* JSON Hover Tooltip */
