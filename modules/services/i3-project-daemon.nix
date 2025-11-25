@@ -33,14 +33,11 @@ let
   ]);
 
   # Daemon package (Feature 061: Unified mark format)
-  daemonSrc = builtins.path {
-    path = ../../home-modules/desktop/i3-project-event-daemon;
-    name = "i3pm-daemon-src-v6-feature-087-remote";  # Force rebuild with RemoteConfig model
-  };
+  daemonSrc = ../../home-modules/desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon";
-    version = "1.10.1";  # Feature 085: Include i3_project_manager module for monitoring panel
+    name = "i3-project-event-daemon-fixed";
+    version = "1.11.2";  # Fix: Removed Feature 029 Event Correlator stale references (force rebuild)
     src = daemonSrc;
 
     installPhase = ''

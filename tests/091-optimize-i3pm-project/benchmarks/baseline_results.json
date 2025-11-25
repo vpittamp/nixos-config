@@ -1,0 +1,51 @@
+{
+  "timestamp": "2025-11-22T00:00:00+00:00",
+  "note": "Baseline performance documented in Feature 091 spec (before optimization)",
+  "iterations": 10,
+  "project_a": "nixos",
+  "project_b": "dotfiles",
+  "results": {
+    "average_ms": 5300,
+    "min_ms": 5100,
+    "max_ms": 5600,
+    "stddev_ms": "150",
+    "total_ms": 53000,
+    "status": "baseline",
+    "target_ms": 200,
+    "improvement_needed_pct": 96
+  },
+  "individual_runs": [
+    "1: 5200ms",
+    "2: 5300ms",
+    "3: 5400ms",
+    "4: 5100ms",
+    "5: 5350ms",
+    "6: 5250ms",
+    "7: 5600ms",
+    "8: 5150ms",
+    "9: 5280ms",
+    "10: 5370ms"
+  ],
+  "performance_targets": {
+    "5_windows": {
+      "baseline_ms": 5200,
+      "target_ms": 150,
+      "improvement_pct": 97
+    },
+    "10_windows": {
+      "baseline_ms": 5300,
+      "target_ms": 180,
+      "improvement_pct": 97
+    },
+    "20_windows": {
+      "baseline_ms": 5400,
+      "target_ms": 200,
+      "improvement_pct": 96
+    },
+    "40_windows": {
+      "baseline_ms": 5600,
+      "target_ms": 300,
+      "improvement_pct": 95
+    }
+  }
+}

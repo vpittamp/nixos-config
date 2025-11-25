@@ -58,11 +58,12 @@ from .handlers import (
     on_output,  # Feature 024: R013
     on_mode,  # Feature 042: Workspace mode navigation
 )
-from .proc_monitor import ProcessMonitor  # Feature 029: Process monitoring
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
 from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
 from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-raise-hide launching
 from .services.mark_manager import MarkManager  # Feature 076: Mark-based app identification
+from .services.tree_cache import initialize_tree_cache  # Feature 091: Tree caching
+from .services.performance_tracker import initialize_performance_tracker  # Feature 091: Performance tracking
 from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
 from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
 from .monitoring_panel_publisher import MonitoringPanelPublisher  # Feature 085: Monitoring panel updates
@@ -177,7 +178,6 @@ class I3ProjectDaemon:
         self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
         self.output_states_watcher: Optional[OutputStatesWatcher] = None  # Output states file watcher
-        self.proc_monitor: Optional[Any] = None  # Feature 029: Process monitoring
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
@@ -185,6 +185,8 @@ class I3ProjectDaemon:
         self.eww_publisher: Optional[EwwPublisher] = None  # Feature 083: Eww real-time updates
         self.monitoring_panel_publisher: Optional[MonitoringPanelPublisher] = None  # Feature 085: Monitoring panel updates
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
+        self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
+        self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -287,6 +289,11 @@ class I3ProjectDaemon:
         # Update IPC server with i3 connection (Feature 018)
         self.ipc_server.i3_connection = self.connection
         logger.info("IPC server updated with i3 connection")
+
+        # Feature 091: Initialize tree cache and performance tracker
+        self.tree_cache = initialize_tree_cache(self.connection.conn, ttl_ms=100.0)
+        self.performance_tracker = initialize_performance_tracker(max_history=100, target_ms=200.0)
+        logger.info("[Feature 091] Tree cache and performance tracker initialized")
 
         # Feature 042: Initialize workspace mode manager
         from .workspace_mode import WorkspaceModeManager
@@ -419,10 +426,6 @@ class I3ProjectDaemon:
                 logger.info(f"Initialized output states for {len(output_names)} outputs")
             except Exception as e:
                 logger.warning(f"Failed to initialize output states: {e}")
-
-        # Feature 029: T033 - Initialize process monitor
-        self.proc_monitor = ProcessMonitor(poll_interval=0.5)
-        logger.info("Process monitor initialized")
 
         logger.info("Daemon initialization complete")
 
@@ -620,6 +623,19 @@ class I3ProjectDaemon:
         self.connection.subscribe("workspace::focus", publish_monitoring_panel_workspace_update)
         logger.info("Feature 085: Monitoring panel subscribed to workspace events")
 
+        # Feature 091: Tree cache invalidation on state-changing events
+        async def invalidate_tree_cache(conn, event):
+            """Invalidate tree cache on relevant Sway events."""
+            if self.tree_cache:
+                event_type = f"{event.__class__.__name__.replace('Event', '').lower()}::{event.change}"
+                self.tree_cache.invalidate_on_event(event_type)
+
+        self.connection.subscribe("window::close", invalidate_tree_cache)
+        self.connection.subscribe("window::move", invalidate_tree_cache)
+        self.connection.subscribe("workspace::empty", invalidate_tree_cache)
+        self.connection.subscribe("workspace::move", invalidate_tree_cache)
+        logger.info("Feature 091: Tree cache invalidation subscribed to window/workspace events")
+
         # Feature 024: R013 - Multi-monitor output event handling
         # Feature 042: Also refresh workspace mode cache on output changes
         self.connection.subscribe(
@@ -724,41 +740,6 @@ class I3ProjectDaemon:
         if self.health_monitor:
             watchdog_task = asyncio.create_task(self.health_monitor.watchdog_loop())
 
-        # Feature 029: T033 - Start process monitoring
-        if self.proc_monitor and self.event_buffer:
-            async def proc_event_callback(event: EventEntry):
-                """Callback to handle process events."""
-                await self.event_buffer.add_event(event)
-                logger.debug(f"Process event captured: {event.process_name} (PID {event.process_pid})")
-
-            await self.proc_monitor.start(proc_event_callback)
-            logger.info("Process monitoring started")
-
-        # Feature 029: T046-T052 - Start periodic correlation detection
-        correlation_task = None
-        if self.ipc_server and self.event_buffer:
-            async def run_correlation_detection():
-                """Periodically detect correlations in recent events."""
-                while True:
-                    try:
-                        await asyncio.sleep(10)  # Run every 10 seconds
-
-                        # Get recent events (last 100)
-                        events = self.event_buffer.get_events(limit=100)
-
-                        # Run correlation detection
-                        if self.ipc_server.event_correlator:
-                            correlations = await self.ipc_server.event_correlator.detect_correlations(events)
-                            if correlations:
-                                logger.debug(f"Detected {len(correlations)} new correlations")
-                    except asyncio.CancelledError:
-                        break
-                    except Exception as e:
-                        logger.error(f"Error in correlation detection: {e}")
-
-            correlation_task = asyncio.create_task(run_correlation_detection())
-            logger.info("Correlation detection started")
-
         # Socket validation task - detect stale sockets after Sway restart
         socket_validation_task = None
         if self.connection:
@@ -791,20 +772,6 @@ class I3ProjectDaemon:
             raise
 
         finally:
-            # Feature 029: Stop process monitoring
-            if self.proc_monitor:
-                await self.proc_monitor.stop()
-                logger.info("Process monitoring stopped")
-
-            # Feature 029: Stop correlation detection
-            if correlation_task:
-                correlation_task.cancel()
-                try:
-                    await correlation_task
-                except asyncio.CancelledError:
-                    pass
-                logger.info("Correlation detection stopped")
-
             # Stop socket validation task
             if socket_validation_task:
                 socket_validation_task.cancel()

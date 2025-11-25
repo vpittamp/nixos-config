@@ -1,0 +1,44 @@
+{
+  "name": "Same-project terminal focus after notification",
+  "description": "Verify terminal window receives focus when user is in same project but different workspace",
+  "tags": ["notification", "focus", "same-project", "us2"],
+  "timeout": 5000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "terminal",
+        "workspace": 1,
+        "sync": true
+      }
+    },
+    {
+      "type": "switch_workspace",
+      "params": {
+        "workspace": 3
+      }
+    },
+    {
+      "type": "sway_command",
+      "params": {
+        "command": "[workspace=1] focus"
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 1,
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 1,
+        "focused": true,
+        "windows": [
+          {
+            "app_id": "com.mitchellh.ghostty",
+            "focused": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,9 +41,40 @@ let
     mauve = "#cba6f7";     # Border accent
   };
 
+  # Clipboard sync script - fully parameterized with nix store paths
+  clipboardSyncScript = pkgs.writeShellScript "clipboard-sync" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    tmp=$(${pkgs.coreutils}/bin/mktemp -t clipboard-sync-XXXXXX)
+    cleanup() {
+      ${pkgs.coreutils}/bin/rm -f "$tmp"
+    }
+    trap cleanup EXIT
+
+    ${pkgs.coreutils}/bin/cat >"$tmp"
+
+    # Exit cleanly on empty input
+    if [[ ! -s "$tmp" ]]; then
+      exit 0
+    fi
+
+    # Copy to Wayland clipboard
+    if [[ -n "''${WAYLAND_DISPLAY:-}" ]]; then
+      ${pkgs.wl-clipboard}/bin/wl-copy <"$tmp"
+      ${pkgs.wl-clipboard}/bin/wl-copy --primary <"$tmp"
+    fi
+
+    # Copy to X11 clipboard
+    if command -v ${pkgs.xclip}/bin/xclip >/dev/null 2>&1; then
+      ${pkgs.xclip}/bin/xclip -selection clipboard <"$tmp"
+      ${pkgs.xclip}/bin/xclip -selection primary <"$tmp"
+    fi
+  '';
+
   # Python with required packages for both modes (one-shot and streaming)
   # pyxdg required for XDG icon theme lookup (resolves icon names like "firefox" to paths)
-  pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ]);
+  pythonForBackend = pkgs.python3.withPackages (ps: [ ps.i3ipc ps.pyxdg ps.pydantic ]);
 
   # Python backend script for monitoring data
   # Supports both one-shot mode (no args) and stream mode (--listen)
@@ -65,7 +96,6 @@ let
 
   # Toggle script for panel visibility
   # Use eww active-windows to check if panel is actually open (not just defined)
-  # Closes SwayNC notification center if open (mutual exclusivity)
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
     # Check if panel is in active windows (actually open, not just defined)
@@ -73,9 +103,6 @@ let
       # Panel is open - close it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
     else
-      # Close SwayNC notification center if it's open (mutual exclusivity)
-      # Always try to close it - skip-wait flag makes it safe even if not open
-      ${pkgs.swaynotificationcenter}/bin/swaync-client -cp -sw >/dev/null 2>&1
       # Panel is closed - open it
       ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
     fi
@@ -126,14 +153,120 @@ let
     ${pkgs.sway}/bin/swaymsg 'focus prev'
   '';
 
-  # SwayNC toggle wrapper with mutual exclusivity
-  # Closes monitoring panel if it's open before opening notification center
+  # Feature 093: Focus window action script (T009-T015)
+  # Focuses a window with automatic project switching if needed
+  focusWindowScript = pkgs.writeShellScriptBin "focus-window-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 093: Focus window with automatic project switching
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+    WINDOW_ID="''${2:-}"
+
+    # Validate inputs (T010)
+    if [[ -z "$PROJECT_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No project name provided"
+        exit 1
+    fi
+
+    if [[ -z "$WINDOW_ID" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Action Failed" "No window ID provided"
+        exit 1
+    fi
+
+    # Lock file mechanism for debouncing (T011)
+    LOCK_FILE="/tmp/eww-monitoring-focus-''${WINDOW_ID}.lock"
+
+    if [[ -f "$LOCK_FILE" ]]; then
+        # Silently ignore if previous action still in progress
+        exit 1
+    fi
+
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get current project (T012)
+    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+
+    # Conditional project switch (T013)
+    if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
+        if ! i3pm project switch "$PROJECT_NAME"; then
+            EXIT_CODE=$?
+            ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
+                "Failed to switch to project $PROJECT_NAME (exit code: $EXIT_CODE)"
+            exit 1
+        fi
+    fi
+
+    # Focus window (T014)
+    if ${pkgs.sway}/bin/swaymsg "[con_id=$WINDOW_ID] focus"; then
+        # Success path (T015) - Visual feedback only, no notification
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=$WINDOW_ID
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0) &
+        exit 0
+    else
+        # Failure path - Keep critical notification for actual errors
+        ${pkgs.libnotify}/bin/notify-send -u critical "Focus Failed" "Window no longer available"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_window_id=0
+        exit 1
+    fi
+  '';
+
+  # Feature 093: Switch project action script (T016-T020)
+  # Switches to a different project context by name
+  switchProjectScript = pkgs.writeShellScriptBin "switch-project-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 093: Switch to a different project context
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+
+    # Validate input (T017)
+    if [[ -z "$PROJECT_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" "No project name provided"
+        exit 1
+    fi
+
+    # Lock file mechanism for debouncing (T018)
+    LOCK_FILE="/tmp/eww-monitoring-project-''${PROJECT_NAME}.lock"
+
+    if [[ -f "$LOCK_FILE" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Project Switch" "Previous action still in progress"
+        exit 1
+    fi
+
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get current project (T019)
+    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+
+    # Check if already in target project
+    if [[ "$PROJECT_NAME" == "$CURRENT_PROJECT" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Already in project $PROJECT_NAME"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
+        exit 0
+    fi
+
+    # Execute project switch (T020)
+    if i3pm project switch "$PROJECT_NAME"; then
+        ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
+        (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
+        exit 0
+    else
+        EXIT_CODE=$?
+        ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
+            "Failed to switch to $PROJECT_NAME (exit code: $EXIT_CODE)"
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project=""
+        exit 1
+    fi
+  '';
+
+  # SwayNC toggle wrapper
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
-    # Close monitoring panel if it's open (mutual exclusivity)
-    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
-    fi
     # Toggle SwayNC notification center
     ${pkgs.swaynotificationcenter}/bin/swaync-client -t -sw
   '';
@@ -256,6 +389,7 @@ let
       2|Alt+2) $EWW_CMD update current_view=projects ;;
       3|Alt+3) $EWW_CMD update current_view=apps ;;
       4|Alt+4) $EWW_CMD update current_view=health ;;
+      5|Alt+5) $EWW_CMD update current_view=events ;;
       Escape|q) $EWW_CMD close monitoring-panel ;;
     esac
   '';
@@ -296,6 +430,8 @@ in
       monitorPanelNavScript # Feature 086: Navigation within panel
       swayNCToggleScript    # SwayNC toggle with mutual exclusivity
       restartServiceScript  # Feature 088 US3: Service restart script
+      focusWindowScript     # Feature 093: Focus window action
+      switchProjectScript   # Feature 093: Switch project action
     ];
 
     # Eww Yuck widget configuration (T009-T014)
@@ -331,7 +467,14 @@ in
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
 
-      ;; Current view state (windows, projects, apps, health)
+      ;; Feature 092: Deflisten: Real-time Sway event log stream
+      ;; Subscribes to window/workspace/output IPC events with <100ms latency
+      ;; Maintains circular buffer of 500 most recent events (FIFO eviction)
+      (deflisten events_data
+        :initial "{\"status\":\"connecting\",\"events\":[],\"event_count\":0,\"daemon_available\":true,\"ipc_connected\":false,\"timestamp\":0,\"timestamp_friendly\":\"Initializing...\"}"
+        `${monitoringDataScript}/bin/monitoring-data-backend --mode events --listen`)
+
+      ;; Current view state (windows, projects, apps, health, events)
       (defvar current_view "windows")
 
       ;; Selected window ID for detail view (0 = none selected)
@@ -345,8 +488,53 @@ in
       ;; Updated by j/k or up/down in monitoring mode
       (defvar selected_index -1)
 
+      ;; Hover tooltip state - Window ID being hovered (0 = none)
+      ;; Updated by onhover/onhoverlost events on window items
+      (defvar hover_window_id 0)
+
+      ;; Copy state - Window ID that was just copied (0 = none)
+      ;; Set when copy button clicked, auto-resets after 2 seconds
+      (defvar copied_window_id 0)
+
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
+
+      ;; Feature 093: Click interaction state variables (T021-T023)
+      ;; Window ID of last clicked window (0 = no window clicked or auto-reset after 2s)
+      (defvar clicked_window_id 0)
+
+      ;; Project name of last clicked project header ("" = no project clicked or auto-reset after 2s)
+      (defvar clicked_project "")
+
+      ;; True if a click action is currently executing (lock file exists)
+      (defvar click_in_progress false)
+
+      ;; Feature 092: Event filter state (all enabled by default)
+      ;; Individual event type filters (true = show, false = hide)
+      (defvar filter_window_new true)
+      (defvar filter_window_close true)
+      (defvar filter_window_focus true)
+      (defvar filter_window_move true)
+      (defvar filter_window_floating true)
+      (defvar filter_window_fullscreen_mode true)
+      (defvar filter_window_title true)
+      (defvar filter_window_mark true)
+      (defvar filter_window_urgent true)
+      (defvar filter_workspace_focus true)
+      (defvar filter_workspace_init true)
+      (defvar filter_workspace_empty true)
+      (defvar filter_workspace_move true)
+      (defvar filter_workspace_rename true)
+      (defvar filter_workspace_urgent true)
+      (defvar filter_workspace_reload true)
+      (defvar filter_output_unspecified true)
+      (defvar filter_binding_run true)
+      (defvar filter_mode_change true)
+      (defvar filter_shutdown_exit true)
+      (defvar filter_tick_manual true)
+
+      ;; Filter panel visibility (false = collapsed, true = expanded)
+      (defvar filter_panel_expanded false)
 
 
       ;; Main monitoring panel window - Sidebar layout
@@ -422,6 +610,14 @@ in
                 :class "tab ''${current_view == 'health' ? 'active' : ""}"
                 :tooltip "Health (Alt+4)"
                 "󰓙"))
+            ;; Feature 092: Logs tab (5th tab)
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=events"
+              (button
+                :class "tab ''${current_view == 'events' ? 'active' : ""}"
+                :tooltip "Logs (Alt+5)"
+                "󰌱"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -445,28 +641,35 @@ in
               :visible {current_view == "windows"}))))
 
       ;; Panel body with multi-view container
+      ;; Uses overlay to ensure only one view is visible at a time (no stacking)
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          ;; Stack layout - only show one view at a time, each taking full height
-          (box
+          (overlay
             :vexpand true
-            :visible {current_view == "windows"}
-            (windows-view))
-          (box
-            :vexpand true
-            :visible {current_view == "projects"}
-            (projects-view))
-          (box
-            :vexpand true
-            :visible {current_view == "apps"}
-            (apps-view))
-          (box
-            :vexpand true
-            :visible {current_view == "health"}
-            (health-view))))
+            ;; Only one of these will be visible at a time
+            (box
+              :vexpand true
+              :visible {current_view == "windows"}
+              (windows-view))
+            (box
+              :vexpand true
+              :visible {current_view == "projects"}
+              (projects-view))
+            (box
+              :vexpand true
+              :visible {current_view == "apps"}
+              (apps-view))
+            (box
+              :vexpand true
+              :visible {current_view == "health"}
+              (health-view))
+            ;; Feature 092: Events/Logs View - Real-time Sway IPC event log
+            (box
+              :visible {current_view == "events"}
+              (events-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -531,61 +734,117 @@ in
             (for window in {project.windows ?: []}
               (window-widget :window window)))))
 
-      ;; Compact window widget for sidebar - Single line with badges
+      ;; Compact window widget for sidebar - Single line with badges + JSON hover tooltip
       ;; Click to show detail view (stores window ID)
+      ;; Hover to show syntax-highlighted JSON with copy button
+      ;; Fixed: Entire widget wrapped in eventbox so tooltip stays open when hovering over JSON
       (defwidget window-widget [window]
         (eventbox
-          :onclick "eww --config $HOME/.config/eww-monitoring-panel update selected_window_id=''${window.id}"
-          :cursor "pointer"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=''${window.id}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_window_id=0"
           (box
-            :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
-            :orientation "h"
+            :class "window-container"
+            :orientation "v"
             :space-evenly false
-            ; App icon (image if available, fallback emoji otherwise)
-            (box
-              :class "window-icon-container"
-              :valign "center"
-              (image :class "window-icon-image"
-                     :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
-                     :image-width 20
-                     :image-height 20
-                     :visible {strlength(window.icon_path) > 0})
-              (label
-                :class "window-icon-fallback"
-                :text "''${window.floating ? '⚓' : '󱂬'}"
-                :visible {strlength(window.icon_path) == 0}))
-            ; App name and truncated title
-            (box
-              :class "window-info"
-              :orientation "v"
-              :space-evenly false
-              :hexpand true
-              (label
-                :class "window-app-name"
-                :halign "start"
-                :text "''${window.display_name}"
-                :limit-width 25
-                :truncate true)
-              (label
-                :class "window-title"
-                :halign "start"
-                :text "''${window.title ?: '#' + window.id}"
-                :limit-width 35
-                :truncate true))
-            ; Compact badges for states
-            (box
-              :class "window-badges"
-              :orientation "h"
-              :space-evenly false
-              :hexpand true
-              :halign "end"
-              (label
-                :class "badge badge-workspace"
-                :text "WS''${window.workspace_number}")
-              (label
-                :class "badge badge-pwa"
-                :text "PWA"
-                :visible "''${window.is_pwa ?: false}")))))
+            ;; Main window item (clickable)
+            ;; Feature 093: Added click handler for window focus with project switching
+            (eventbox
+              :onclick "focus-window-action ''${window.project} ''${window.id} &"
+              :cursor "pointer"
+              (box
+                :class "window ''${window.scope == 'scoped' ? 'scoped-window' : 'global-window'} ''${window.state_classes} ''${clicked_window_id == window.id ? ' clicked' : ""} ''${strlength(window.icon_path) > 0 ? 'has-icon' : 'no-icon'}"
+                :orientation "h"
+                :space-evenly false
+                ; App icon (image if available, fallback emoji otherwise)
+                (box
+                  :class "window-icon-container"
+                  :valign "center"
+                  (image :class "window-icon-image"
+                         :path {strlength(window.icon_path) > 0 ? window.icon_path : "/etc/nixos/assets/icons/tmux-original.svg"}
+                         :image-width 20
+                         :image-height 20
+                         :visible {strlength(window.icon_path) > 0})
+                  (label
+                    :class "window-icon-fallback"
+                    :text "''${window.floating ? '⚓' : '󱂬'}"
+                    :visible {strlength(window.icon_path) == 0}))
+                ; App name and truncated title
+                (box
+                  :class "window-info"
+                  :orientation "v"
+                  :space-evenly false
+                  :hexpand true
+                  (label
+                    :class "window-app-name"
+                    :halign "start"
+                    :text "''${window.display_name}"
+                    :limit-width 25
+                    :truncate true)
+                  (label
+                    :class "window-title"
+                    :halign "start"
+                    :text "''${window.title ?: '#' + window.id}"
+                    :limit-width 35
+                    :truncate true))
+                ; Compact badges for states
+                (box
+                  :class "window-badges"
+                  :orientation "h"
+                  :space-evenly false
+                  :hexpand true
+                  :halign "end"
+                  (label
+                    :class "badge badge-workspace"
+                    :text "WS''${window.workspace_number}")
+                  (label
+                    :class "badge badge-pwa"
+                    :text "PWA"
+                    :visible "''${window.is_pwa ?: false}"))))
+            ;; JSON hover tooltip (slides down on hover)
+            (revealer
+              :reveal {hover_window_id == window.id}
+              :transition "slidedown"
+              :duration "150ms"
+              (box
+                :class "window-json-tooltip"
+                :orientation "v"
+                :space-evenly false
+                ;; Header with title and copy button
+                (box
+                  :class "json-tooltip-header"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "json-tooltip-title"
+                    :halign "start"
+                    :hexpand true
+                    :text "Window JSON (ID: ''${window.id})")
+                  (eventbox
+                    :cursor "pointer"
+                    :onclick "${pkgs.writeShellScript "copy-json" ''
+                      EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+                      # Copy JSON to clipboard
+                      ${pkgs.coreutils}/bin/echo -n "$1" | ${pkgs.coreutils}/bin/base64 -d | ${pkgs.wl-clipboard}/bin/wl-copy
+                      # Show visual feedback by setting copied state
+                      $EWW_CMD update copied_window_id=$2
+                      # Auto-reset after 2 seconds
+                      (sleep 2 && $EWW_CMD update copied_window_id=0) &
+                    ''} ''${window.json_base64} ''${window.id} &"
+                    :tooltip "Copy JSON to clipboard"
+                    (label
+                      :class "json-copy-btn''${copied_window_id == window.id ? ' copied' : ""}"
+                      :text "''${copied_window_id == window.id ? '󰄬' : '󰆏'}")))
+                ;; Scrollable JSON content with syntax highlighting
+                (scroll
+                  :vscroll true
+                  :hscroll false
+                  :vexpand false
+                  :height 200
+                  (label
+                    :class "json-content"
+                    :halign "start"
+                    :markup "''${window.json_repr}"
+                    :wrap false)))))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
@@ -964,6 +1223,235 @@ in
               :tooltip "Restart ''${service.display_name}"
               "⟳"))))
 
+      ;; Feature 092: Events/Logs View - Real-time Sway IPC event log (T024)
+      (defwidget events-view []
+        (box
+          :class "events-view-container"
+          :orientation "v"
+          :vexpand true
+          :space-evenly false
+          ;; Filter panel (collapsible)
+          (box
+            :class "filter-panel"
+            :orientation "v"
+            :space-evenly false
+            :visible "''${events_data.status == 'ok'}"
+            ;; Filter header (always visible)
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_panel_expanded=''${!filter_panel_expanded}"
+              (box
+                :class "filter-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "filter-title"
+                  :halign "start"
+                  :hexpand true
+                  :text "󰈙 Filter Events")
+                (label
+                  :class "filter-toggle"
+                  :text "''${filter_panel_expanded ? '▼' : '▶'}")))
+            ;; Filter controls (expandable)
+            (box
+              :class "filter-controls"
+              :orientation "v"
+              :space-evenly false
+              :visible filter_panel_expanded
+              ;; Global controls
+              (box
+                :class "filter-global-controls"
+                :orientation "h"
+                :space-evenly false
+                (button
+                  :class "filter-button"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=true filter_window_close=true filter_window_focus=true filter_window_move=true filter_window_floating=true filter_window_fullscreen_mode=true filter_window_title=true filter_window_mark=true filter_window_urgent=true filter_workspace_focus=true filter_workspace_init=true filter_workspace_empty=true filter_workspace_move=true filter_workspace_rename=true filter_workspace_urgent=true filter_workspace_reload=true filter_output_unspecified=true filter_binding_run=true filter_mode_change=true filter_shutdown_exit=true filter_tick_manual=true"
+                  "Select All")
+                (button
+                  :class "filter-button"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false"
+                  "Clear All"))
+              ;; Window events category
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Window Events (9)")
+                (box
+                  :class "filter-checkboxes"
+                  :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "new" :var "filter_window_new" :value filter_window_new)
+                  (filter-checkbox :label "close" :var "filter_window_close" :value filter_window_close)
+                  (filter-checkbox :label "focus" :var "filter_window_focus" :value filter_window_focus)
+                  (filter-checkbox :label "move" :var "filter_window_move" :value filter_window_move)
+                  (filter-checkbox :label "floating" :var "filter_window_floating" :value filter_window_floating)
+                  (filter-checkbox :label "fullscreen" :var "filter_window_fullscreen_mode" :value filter_window_fullscreen_mode)
+                  (filter-checkbox :label "title" :var "filter_window_title" :value filter_window_title)
+                  (filter-checkbox :label "mark" :var "filter_window_mark" :value filter_window_mark)
+                  (filter-checkbox :label "urgent" :var "filter_window_urgent" :value filter_window_urgent)))
+              ;; Workspace events category
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Workspace Events (7)")
+                (box
+                  :class "filter-checkboxes"
+                :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "focus" :var "filter_workspace_focus" :value filter_workspace_focus)
+                  (filter-checkbox :label "init" :var "filter_workspace_init" :value filter_workspace_init)
+                  (filter-checkbox :label "empty" :var "filter_workspace_empty" :value filter_workspace_empty)
+                  (filter-checkbox :label "move" :var "filter_workspace_move" :value filter_workspace_move)
+                  (filter-checkbox :label "rename" :var "filter_workspace_rename" :value filter_workspace_rename)
+                  (filter-checkbox :label "urgent" :var "filter_workspace_urgent" :value filter_workspace_urgent)
+                  (filter-checkbox :label "reload" :var "filter_workspace_reload" :value filter_workspace_reload)))
+              ;; Output/Binding/Mode/System events
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "Other Events (5)")
+                (box
+                  :class "filter-checkboxes"
+                  :orientation "h"
+                  :space-evenly false
+                  (filter-checkbox :label "output" :var "filter_output_unspecified" :value filter_output_unspecified)
+                  (filter-checkbox :label "binding" :var "filter_binding_run" :value filter_binding_run)
+                  (filter-checkbox :label "mode" :var "filter_mode_change" :value filter_mode_change)
+                  (filter-checkbox :label "shutdown" :var "filter_shutdown_exit" :value filter_shutdown_exit)
+                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))))
+          ;; Error state
+          (box
+            :visible "''${events_data.status == 'error'}"
+            :class "error-state"
+            :orientation "v"
+            :valign "center"
+            :halign "center"
+            :vexpand true
+            (label
+              :class "error-message"
+              :text "󰀦 Error: ''${events_data.error ?: 'Unknown error'}")
+            (label
+              :class "error-help"
+              :text "Check i3pm daemon and Sway IPC connection"))
+          ;; Empty state (no events yet)
+          (box
+            :visible "''${events_data.status == 'ok' && events_data.event_count == 0}"
+            :class "empty-state"
+            :orientation "v"
+            :valign "center"
+            :halign "center"
+            :vexpand true
+            (label
+              :class "empty-message"
+              :text "󰌱 No events yet")
+            (label
+              :class "empty-help"
+              :text "Waiting for Sway window/workspace events..."))
+          ;; Events list (scroll container) with filtering
+          (scroll
+            :vscroll true
+            :hscroll false
+            :vexpand true
+            :visible "''${events_data.status == 'ok' && events_data.event_count > 0}"
+            (box
+              :class "events-list"
+              :orientation "v"
+              :space-evenly false
+              ;; Iterate through events with filter logic
+              (for event in {events_data.events ?: []}
+                (box
+                  :visible {
+                    event.event_type == "window::new" ? filter_window_new :
+                    event.event_type == "window::close" ? filter_window_close :
+                    event.event_type == "window::focus" ? filter_window_focus :
+                    event.event_type == "window::move" ? filter_window_move :
+                    event.event_type == "window::floating" ? filter_window_floating :
+                    event.event_type == "window::fullscreen_mode" ? filter_window_fullscreen_mode :
+                    event.event_type == "window::title" ? filter_window_title :
+                    event.event_type == "window::mark" ? filter_window_mark :
+                    event.event_type == "window::urgent" ? filter_window_urgent :
+                    event.event_type == "workspace::focus" ? filter_workspace_focus :
+                    event.event_type == "workspace::init" ? filter_workspace_init :
+                    event.event_type == "workspace::empty" ? filter_workspace_empty :
+                    event.event_type == "workspace::move" ? filter_workspace_move :
+                    event.event_type == "workspace::rename" ? filter_workspace_rename :
+                    event.event_type == "workspace::urgent" ? filter_workspace_urgent :
+                    event.event_type == "workspace::reload" ? filter_workspace_reload :
+                    event.event_type == "output::unspecified" ? filter_output_unspecified :
+                    event.event_type == "binding::run" ? filter_binding_run :
+                    event.event_type == "mode::change" ? filter_mode_change :
+                    event.event_type == "shutdown::exit" ? filter_shutdown_exit :
+                    event.event_type == "tick::manual" ? filter_tick_manual :
+                    true
+                  }
+                  (event-card :event event)))))))
+
+      ;; Feature 092: Event card widget - Single event display (T025)
+      (defwidget event-card [event]
+        (box
+          :class "event-card event-category-''${event.category}"
+          :orientation "h"
+          :space-evenly false
+          ;; Event icon with category color
+          (label
+            :class "event-icon"
+            :style "color: ''${event.color};"
+            :text "''${event.icon}")
+          ;; Event details
+          (box
+            :class "event-details"
+            :orientation "v"
+            :space-evenly false
+            :hexpand true
+            ;; Event type and timestamp
+            (box
+              :class "event-header"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "event-type"
+                :halign "start"
+                :hexpand true
+                :text "''${event.event_type}")
+              (label
+                :class "event-timestamp"
+                :halign "end"
+                :text "''${event.timestamp_friendly}"))
+            ;; Event payload info (window/workspace details)
+            (label
+              :class "event-payload"
+              :halign "start"
+              :limit-width 60
+              :text "''${event.searchable_text}"))))
+
+      ;; Feature 092: Filter checkbox widget - single checkbox for an event type
+      (defwidget filter-checkbox [label var value]
+        (eventbox
+          :cursor "pointer"
+          :onclick "eww --config $HOME/.config/eww-monitoring-panel update ''${var}=''${!value}"
+          (box
+            :class "filter-checkbox-item"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "filter-checkbox-icon"
+              :text "''${value ? '☑' : '☐'}")
+            (label
+              :class "filter-checkbox-label"
+              :text label))))
+
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
         (box
@@ -1176,6 +1664,19 @@ in
         border-left-color: ${mocha.overlay0};
       }
 
+      /* Feature 093: Hover state for clickable window rows (T029) */
+      .window:hover {
+        background-color: rgba(137, 180, 250, 0.15);
+        border-left-width: 3px;
+      }
+
+      /* Feature 093: Clicked state (2s highlight after successful focus) (T030) */
+      .window.clicked {
+        background-color: rgba(137, 180, 250, 0.25);
+        border-left-color: ${mocha.blue};
+        border-left-width: 4px;
+      }
+
       .window-icon-container {
         min-width: 24px;
         min-height: 24px;
@@ -1226,6 +1727,72 @@ in
       .badge-workspace {
         color: ${mocha.blue};
         background-color: rgba(137, 180, 250, 0.15);
+      }
+
+      /* JSON Hover Tooltip */
+      .window-json-tooltip {
+        background-color: rgba(24, 24, 37, 0.98);
+        border: 2px solid ${mocha.blue};
+        border-radius: 8px;
+        padding: 0;
+        margin: 4px 0 8px 0;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(137, 180, 250, 0.3);
+      }
+
+      .json-tooltip-header {
+        background-color: rgba(137, 180, 250, 0.15);
+        border-bottom: 1px solid ${mocha.blue};
+        padding: 8px 12px;
+        border-radius: 6px 6px 0 0;
+      }
+
+      .json-tooltip-title {
+        font-size: 11px;
+        font-weight: bold;
+        color: ${mocha.blue};
+      }
+
+      .json-copy-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.blue};
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        min-width: 32px;
+      }
+
+      .json-copy-btn:hover {
+        background-color: rgba(137, 180, 250, 0.3);
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
+      }
+
+      .json-copy-btn:active {
+        background-color: rgba(137, 180, 250, 0.5);
+        box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+      }
+
+      /* Success state when JSON is copied */
+      .json-copy-btn.copied {
+        background-color: rgba(166, 227, 161, 0.3);  /* Green with transparency */
+        color: ${mocha.green};  /* #a6e3a1 */
+        border: 1px solid ${mocha.green};
+        box-shadow: 0 0 12px rgba(166, 227, 161, 0.5),
+                    inset 0 0 8px rgba(166, 227, 161, 0.2);
+        font-weight: bold;
+      }
+
+      .json-copy-btn.copied:hover {
+        background-color: rgba(166, 227, 161, 0.4);
+        box-shadow: 0 0 16px rgba(166, 227, 161, 0.6);
+      }
+
+      .json-content {
+        font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+        font-size: 10px;
+        padding: 10px 12px;
+        background-color: rgba(30, 30, 46, 0.4);
       }
 
       /* Error State (T042) */
@@ -1704,6 +2271,192 @@ in
 
       .window:hover {
         background-color: rgba(49, 50, 68, 0.3);
+      }
+
+      /* Feature 092: Event Logging - Logs View Styling (T027) */
+      .events-view-container {
+        padding: 0 8px 8px 8px;
+      }
+
+      .events-list {
+        padding: 4px;
+        margin-top: 4px;
+      }
+
+      .event-card {
+        background-color: ${mocha.surface0};
+        border-left: 3px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 8px;
+        margin-bottom: 6px;
+        transition: background-color 0.2s ease;
+      }
+
+      .event-card:hover {
+        background-color: ${mocha.surface1};
+      }
+
+      /* Category-specific border colors */
+      .event-card.event-category-window {
+        border-left-color: ${mocha.blue};
+      }
+
+      .event-card.event-category-workspace {
+        border-left-color: ${mocha.teal};
+      }
+
+      .event-card.event-category-output {
+        border-left-color: ${mocha.mauve};
+      }
+
+      .event-card.event-category-binding {
+        border-left-color: ${mocha.yellow};
+      }
+
+      .event-card.event-category-mode {
+        border-left-color: ${mocha.sky};
+      }
+
+      .event-card.event-category-system {
+        border-left-color: ${mocha.red};
+      }
+
+      .event-icon {
+        font-size: 20px;
+        margin-right: 12px;
+        min-width: 28px;
+      }
+
+      .event-details {
+        /* GTK CSS doesn't support flex property - layout handled by box widget */
+      }
+
+      .event-header {
+        margin-bottom: 4px;
+      }
+
+      .event-type {
+        font-size: 11px;
+        font-weight: 600;
+        color: ${mocha.text};
+        font-family: monospace;
+      }
+
+      .event-timestamp {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        font-style: italic;
+      }
+
+      .event-payload {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        /* GTK CSS doesn't support white-space property */
+      }
+
+      /* Feature 092: Event Filter Panel Styling */
+      .filter-panel {
+        background-color: transparent;
+        padding: 0;
+        margin: 0 4px 0 4px;
+      }
+
+      .filter-header {
+        padding: 6px 8px;
+        background-color: ${mocha.surface0};
+        border-radius: 4px;
+        border: 1px solid ${mocha.overlay0};
+        margin-bottom: 0;
+      }
+
+      .filter-header:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.blue};
+      }
+
+      .filter-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: ${mocha.blue};
+      }
+
+      .filter-toggle {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+        margin-left: 8px;
+      }
+
+      .filter-controls {
+        padding: 8px 4px;
+        background-color: ${mocha.mantle};
+        border-radius: 6px;
+        margin-top: 4px;
+        border: 1px solid ${mocha.overlay0};
+      }
+
+      .filter-global-controls {
+        padding: 6px 4px;
+        margin-bottom: 8px;
+      }
+
+      .filter-button {
+        background-color: ${mocha.surface0};
+        color: ${mocha.text};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 3px;
+        padding: 4px 10px;
+        margin-right: 6px;
+        font-size: 10px;
+        font-weight: 500;
+      }
+
+      .filter-button:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.blue};
+      }
+
+      .filter-category-group {
+        background-color: ${mocha.base};
+        border-radius: 4px;
+        padding: 6px;
+        margin-bottom: 6px;
+        border: 1px solid ${mocha.surface0};
+      }
+
+      .filter-category-title {
+        font-size: 10px;
+        font-weight: 600;
+        color: ${mocha.teal};
+        margin-bottom: 4px;
+        padding: 2px 0;
+        border-bottom: 1px solid ${mocha.surface0};
+      }
+
+      .filter-checkboxes {
+        padding: 2px 0;
+      }
+
+      .filter-checkbox-item {
+        padding: 2px 6px;
+        margin-right: 8px;
+        border-radius: 3px;
+        background-color: transparent;
+      }
+
+      .filter-checkbox-item:hover {
+        background-color: ${mocha.surface0};
+      }
+
+      .filter-checkbox-icon {
+        font-size: 12px;
+        color: ${mocha.blue};
+        margin-right: 3px;
+      }
+
+      .filter-checkbox-label {
+        font-size: 9px;
+        color: ${mocha.text};
+        font-family: monospace;
       }
     '';
 

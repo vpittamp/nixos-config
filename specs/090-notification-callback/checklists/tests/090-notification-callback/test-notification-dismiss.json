@@ -1,0 +1,33 @@
+{
+  "name": "Notification dismissal without focus change",
+  "description": "Verify focus remains on current workspace/window when notification is dismissed (state verification only - manual UI testing needed for dismiss action)",
+  "tags": ["notification", "dismiss", "focus-preservation", "us3"],
+  "timeout": 5000,
+  "actions": [
+    {
+      "type": "launch_app",
+      "params": {
+        "app_name": "terminal",
+        "workspace": 1,
+        "sync": true
+      }
+    },
+    {
+      "type": "switch_workspace",
+      "params": {
+        "workspace": 5
+      }
+    }
+  ],
+  "expectedState": {
+    "focusedWorkspace": 5,
+    "windowCount": 1,
+    "workspaces": [
+      {
+        "num": 5,
+        "focused": true,
+        "windows": []
+      }
+    ]
+  }
+}
