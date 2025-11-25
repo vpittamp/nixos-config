@@ -106,9 +106,9 @@ Paths follow single project structure with home-modules integration:
 
 ### Implementation for User Story 6
 
-- [ ] T028 [P] [US6] Implement application list data provider in monitoring_data.py (read from app-registry-data.nix via generated JSON, group by type: Regular/Terminal/PWA)
-- [ ] T029 [US6] Implement Applications tab list view widget in eww-monitoring-panel.nix (grouped by type, display name, command, icon)
-- [ ] T030 [US6] Implement app hover detail widget in eww-monitoring-panel.nix (JSON tooltip, conditional PWA fields: ULID/start_url/scope_url, terminal flag indicator)
+- [X] T028 [P] [US6] Implement application list data provider in monitoring_data.py (read from app-registry-data.nix via generated JSON, group by type: Regular/Terminal/PWA)
+- [X] T029 [US6] Implement Applications tab list view widget in eww-monitoring-panel.nix (grouped by type, display name, command, icon)
+- [X] T030 [US6] Implement app hover detail widget in eww-monitoring-panel.nix (JSON tooltip, conditional PWA fields: ULID/start_url/scope_url, terminal flag indicator)
 
 **Checkpoint**: At this point, User Story 6 should be fully functional - users can view all application configurations with type-specific hover detail
 
