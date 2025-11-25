@@ -1178,7 +1178,7 @@ in
                 :class "edit-button"
                 :visible {editing_project_name != project.name}
                 :onclick "eww update editing_project_name='''''${project.name}' && eww update edit_form_display_name='''''${project.display_name ?: project.name}' && eww update edit_form_icon='''''${project.icon}' && eww update edit_form_directory='''''${project.directory}' && eww update edit_form_scope='''''${project.scope ?: 'scoped'}' && eww update edit_form_remote_enabled='''''${project.remote.enabled}' && eww update edit_form_remote_host='''''${project.remote.host}' && eww update edit_form_remote_user='''''${project.remote.user}' && eww update edit_form_remote_dir='''''${project.remote.remote_dir}' && eww update edit_form_remote_port='''''${project.remote.port}' && eww update edit_form_error='''"
-                ""))
+                "✏"))
             ;; Hover detail tooltip
             (revealer
               :reveal {hover_project_name == project.name && editing_project_name != project.name}
