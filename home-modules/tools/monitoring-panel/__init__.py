@@ -1,13 +1,6 @@
 """
-Monitoring Panel tools module
+Monitoring Panel Backend Tools
 
 Feature 094: Enhanced Projects & Applications CRUD Interface
+Backend handlers for monitoring panel interactions
 """
-
-from .conflict_detector import ConflictDetector
-from .cli_executor import CLIExecutor
-
-__all__ = [
-    "ConflictDetector",
-    "CLIExecutor",
-]

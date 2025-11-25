@@ -20,9 +20,12 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "home-modules/tools"))
 
 from i3_project_manager.models.app_config import ApplicationConfig, PWAConfig
-from monitoring_panel.app_crud_handler import AppCRUDHandler
 from i3_project_manager.services.app_registry_editor import AppRegistryEditor
-from i3_project_manager.services.form_validator import FormValidator
+
+# Import from monitoring-panel (note the hyphen vs underscore)
+monitoring_panel_path = Path(__file__).parent.parent.parent.parent / "home-modules/tools/monitoring-panel"
+sys.path.insert(0, str(monitoring_panel_path))
+from app_crud_handler import AppCRUDHandler
 
 
 @pytest.fixture
