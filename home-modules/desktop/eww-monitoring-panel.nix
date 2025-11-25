@@ -502,9 +502,9 @@ in
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
     ];
 
-    # Eww Yuck widget configuration (T009-T014)
-    # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
+      # Eww Yuck widget configuration (T009-T014)
+      # Version: v9-dynamic-sizing (Build: 2025-11-21-18:15)
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
       ;; Build: 2025-11-20 15:55 UTC
