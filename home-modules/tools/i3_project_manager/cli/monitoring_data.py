@@ -710,12 +710,14 @@ def colorize_json_pango(data: Dict[str, Any]) -> str:
     return colorize_json_value(data, indent_level=1)
 
 
-def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
+def transform_window(window: Dict[str, Any], badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
 
     Args:
         window: Window data from daemon (Sway IPC format)
+        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
+                     (Feature 095: Visual Notification Badges)
 
     Returns:
         WindowInfo dict matching data-model.md specification
@@ -783,6 +785,9 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
         "geometry_y": geometry.get("y", 0),
         "geometry_width": geometry.get("width", 0),
         "geometry_height": geometry.get("height", 0),
+        # Feature 095: Notification badge data (if present)
+        # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
+        "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
     }
 
     # Generate Pango-markup colorized JSON for hover tooltip
@@ -825,19 +830,21 @@ def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     return window_data
 
 
-def transform_workspace(workspace: Dict[str, Any], monitor_name: str) -> Dict[str, Any]:
+def transform_workspace(workspace: Dict[str, Any], monitor_name: str, badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Transform daemon workspace data to Eww-friendly schema.
 
     Args:
         workspace: Workspace data from daemon
         monitor_name: Parent monitor name
+        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
+                     (Feature 095: Visual Notification Badges)
 
     Returns:
         WorkspaceInfo dict matching data-model.md specification
     """
     windows = workspace.get("windows", [])
-    transformed_windows = [transform_window(w) for w in windows]
+    transformed_windows = [transform_window(w, badge_state) for w in windows]
 
     return {
         "number": workspace.get("num", workspace.get("number", 1)),
@@ -850,19 +857,21 @@ def transform_workspace(workspace: Dict[str, Any], monitor_name: str) -> Dict[st
     }
 
 
-def transform_monitor(output: Dict[str, Any]) -> Dict[str, Any]:
+def transform_monitor(output: Dict[str, Any], badge_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Transform daemon output/monitor data to Eww-friendly schema.
 
     Args:
         output: Output data from daemon (contains name, active status, workspaces)
+        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
+                     (Feature 095: Visual Notification Badges)
 
     Returns:
         MonitorInfo dict matching data-model.md specification
     """
     monitor_name = output.get("name", "unknown")
     workspaces = output.get("workspaces", [])
-    transformed_workspaces = [transform_workspace(ws, monitor_name) for ws in workspaces]
+    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state) for ws in workspaces]
 
     # Determine if monitor has focused workspace
     has_focused = any(ws["focused"] for ws in transformed_workspaces)
@@ -1116,12 +1125,23 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Query window tree (monitors → workspaces → windows hierarchy)
         tree_data = await client.get_window_tree()
 
+        # Feature 095: Query badge state for notification badges
+        # Badge state is dict with "badges" key mapping window ID (string) to badge metadata
+        try:
+            badge_response = await client.get_badge_state()
+            # Extract badges dict from response (format: {"badges": {"10": {...}, "20": {...}}})
+            badge_state = badge_response.get("badges", {}) if isinstance(badge_response, dict) else {}
+            logger.debug(f"Feature 095: Fetched badge state with {len(badge_state)} badges")
+        except Exception as e:
+            logger.warning(f"Feature 095: Failed to fetch badge state: {e}")
+            badge_state = {}
+
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
         # Transform daemon response to Eww schema
         outputs = tree_data.get("outputs", [])
-        monitors = [transform_monitor(output) for output in outputs]
+        monitors = [transform_monitor(output, badge_state) for output in outputs]
 
         # Validate and compute summary counts
         counts = validate_and_count(monitors)

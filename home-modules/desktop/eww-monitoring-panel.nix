@@ -293,8 +293,8 @@ let
         # Discard UI changes, reload from file
         # Close edit form and conflict dialog
         $EWW_CMD update conflict_dialog_visible=false
-        $EWW_CMD update editing_project_name=''''
-        $EWW_CMD update edit_form_error=''''
+        $EWW_CMD update editing_project_name='''
+        $EWW_CMD update edit_form_error='''
         # Refresh project list to show file content
         PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
         $EWW_CMD update projects_data="$PROJECTS_DATA"
@@ -319,7 +319,7 @@ let
           ''${EDITOR:-nano} "$PROJECT_FILE"
           # Close dialog and refresh
           $EWW_CMD update conflict_dialog_visible=false
-          $EWW_CMD update editing_project_name=''''
+          $EWW_CMD update editing_project_name='''
           # Refresh project list
           PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
           $EWW_CMD update projects_data="$PROJECTS_DATA"
@@ -2101,12 +2101,14 @@ in
                     :class "badge badge-pwa"
                     :text "PWA"
                     :visible {window.is_pwa ?: false})
-                  ;; Feature 095: Notification badge (bell icon + count)
+                  ;; Feature 095: Notification badge with state-based icons
+                  ;; "working" state = spinner icon (animated), "stopped" state = bell icon
+                  ;; Badge data comes from daemon badge_service.py, triggered by Claude Code hooks
                   (label
-                    :class "badge badge-notification"
-                    :text "🔔''${window.badge.count}"
-                    :tooltip "''${window.badge.count} notification(s) from ''${window.badge.source}"
-                    :visible {window.badge != null}))))
+                    :class {"badge badge-notification" + ((window.badge?.state ?: "stopped") == "working" ? " badge-working" : "")}
+                    :text {((window.badge?.state ?: "stopped") == "working" ? "⏳" : "🔔") + ((window.badge?.state ?: "stopped") == "working" ? "" : (window.badge?.count ?: ""))}
+                    :tooltip {(window.badge?.count ?: "0") + " notification(s) from " + (window.badge?.source ?: "unknown") + " [" + (window.badge?.state ?: "stopped") + "]"}
+                    :visible {(window.badge?.count ?: "") != "" || (window.badge?.state ?: "") == "working"}))))
             ;; JSON hover tooltip (slides down on hover)
             (revealer
               :reveal {hover_window_id == window.id}
@@ -2800,7 +2802,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name='''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             (button
               :class "''${validation_state.valid ? 'save-button' : 'save-button-disabled'}"
@@ -2904,7 +2906,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name='''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             (button
               :class "save-button"
@@ -3010,7 +3012,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path='''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project='''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error=''''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             (button
               :class "save-button"
@@ -4613,12 +4615,14 @@ in
         background-color: rgba(250, 179, 135, 0.2);
         font-weight: bold;
         border: 1px solid rgba(250, 179, 135, 0.4);
-        animation: pulse-notification 2s ease-in-out infinite;
       }
 
-      @keyframes pulse-notification {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
+      /* Feature 095: Working state - distinct styling (GTK CSS doesn't support @keyframes) */
+      .badge-working {
+        color: ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.3);
+        border: 2px solid ${mocha.teal};
+        font-weight: bold;
       }
 
       /* JSON Hover Tooltip */

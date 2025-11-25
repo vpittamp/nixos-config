@@ -2,11 +2,19 @@
 
 Feature 095: Visual Notification Badges in Monitoring Panel
 Implements notification-agnostic badge state management with Pydantic models.
+
+Badge States:
+- "working": Claude Code is actively processing (shows spinner animation)
+- "stopped": Claude Code finished and is waiting for input (shows bell icon)
 """
 
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 from pydantic import BaseModel, Field
+
+
+# Badge state type - determines visual representation
+BadgeStateType = Literal["working", "stopped"]
 
 
 class WindowBadge(BaseModel):
@@ -17,12 +25,14 @@ class WindowBadge(BaseModel):
         count: Number of pending notifications (1-9999, display as "9+" if >9)
         timestamp: Unix timestamp when badge was created (for cleanup/sorting)
         source: Notification source identifier (claude-code, build, test, generic, etc.)
+        state: Badge state - "working" (spinner) or "stopped" (bell icon)
     """
 
     window_id: int = Field(..., description="Sway window container ID", gt=0)
     count: int = Field(1, description="Number of pending notifications", ge=1, le=9999)
     timestamp: float = Field(..., description="Unix timestamp when badge was created")
     source: str = Field("generic", description="Notification source identifier", min_length=1)
+    state: BadgeStateType = Field("stopped", description="Badge state: working or stopped")
 
     def increment(self) -> None:
         """Increment badge count (capped at 9999 for display overflow protection)."""
@@ -49,39 +59,84 @@ class BadgeState(BaseModel):
 
     badges: Dict[int, WindowBadge] = Field(default_factory=dict)
 
-    def create_badge(self, window_id: int, source: str = "generic") -> WindowBadge:
-        """Create new badge or increment existing badge count.
+    def create_badge(
+        self,
+        window_id: int,
+        source: str = "generic",
+        state: BadgeStateType = "stopped"
+    ) -> WindowBadge:
+        """Create new badge or update existing badge state.
 
         Args:
             window_id: Sway window container ID
             source: Notification source identifier (defaults to "generic")
+            state: Badge state - "working" or "stopped" (defaults to "stopped")
 
         Returns:
-            WindowBadge: Badge state after creation/increment
+            WindowBadge: Badge state after creation/update
         """
         if window_id in self.badges:
-            # Increment existing badge
-            self.badges[window_id].increment()
+            # Update existing badge state and timestamp
+            self.badges[window_id].state = state
+            self.badges[window_id].timestamp = time.time()
+            # Only increment count when transitioning to "stopped"
+            if state == "stopped":
+                self.badges[window_id].increment()
         else:
             # Create new badge
             self.badges[window_id] = WindowBadge(
                 window_id=window_id,
                 timestamp=time.time(),
-                source=source
+                source=source,
+                state=state
             )
         return self.badges[window_id]
 
-    def clear_badge(self, window_id: int) -> int:
+    def set_badge_state(self, window_id: int, state: BadgeStateType) -> Optional[WindowBadge]:
+        """Update badge state without creating new badge.
+
+        Args:
+            window_id: Sway window container ID
+            state: New badge state - "working" or "stopped"
+
+        Returns:
+            Optional[WindowBadge]: Updated badge if exists, None otherwise
+        """
+        badge = self.badges.get(window_id)
+        if badge:
+            badge.state = state
+            badge.timestamp = time.time()
+        return badge
+
+    def clear_badge(self, window_id: int, min_age_seconds: float = 0.0) -> int:
         """Remove badge and return cleared count.
 
         Args:
             window_id: Sway window container ID
+            min_age_seconds: Minimum badge age (in seconds) before clearing.
+                If badge is younger than this, it won't be cleared. This prevents
+                badges from being cleared immediately on focus when the window
+                was already focused when the badge was created.
+                Default: 0.0 (always clear, for explicit user action like clicking
+                "Return to Window" in notification).
 
         Returns:
-            int: Badge count that was cleared (0 if no badge existed)
+            int: Badge count that was cleared (0 if no badge existed or too young)
         """
-        badge = self.badges.pop(window_id, None)
-        return badge.count if badge else 0
+        badge = self.badges.get(window_id)
+        if not badge:
+            return 0
+
+        # Check if badge is old enough to clear
+        if min_age_seconds > 0:
+            age = time.time() - badge.timestamp
+            if age < min_age_seconds:
+                # Badge is too young, don't clear it yet
+                return 0
+
+        # Clear the badge
+        self.badges.pop(window_id, None)
+        return badge.count
 
     def has_badge(self, window_id: int) -> bool:
         """Check if window has badge.
@@ -133,8 +188,8 @@ class BadgeState(BaseModel):
         Returns:
             Dict mapping stringified window IDs to badge metadata:
             {
-                "12345": {"count": "2", "timestamp": 1732450000.5, "source": "claude-code"},
-                "67890": {"count": "1", "timestamp": 1732450100.0, "source": "build"}
+                "12345": {"count": "2", "timestamp": 1732450000.5, "source": "claude-code", "state": "stopped"},
+                "67890": {"count": "1", "timestamp": 1732450100.0, "source": "build", "state": "working"}
             }
         """
         return {
@@ -142,6 +197,7 @@ class BadgeState(BaseModel):
                 "count": badge.display_count(),
                 "timestamp": badge.timestamp,
                 "source": badge.source,
+                "state": badge.state,
             }
             for window_id, badge in self.badges.items()
         }
