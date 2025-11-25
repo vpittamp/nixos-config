@@ -511,6 +511,9 @@ in
 
       ;; Feature 094: Project hover and copy state
       (defvar hover_project_name "")
+
+      ;; Feature 094: Hover state for Applications tab detail tooltips
+      (defvar hover_app_name "")
       (defvar copied_project_name "")
 
 
@@ -1132,6 +1135,7 @@ in
                   :text "''${project.directory}"))))))
 
       ;; Apps View - Application registry browser
+      ;; Applications View - App registry with type grouping (Feature 094)
       (defwidget apps-view []
         (scroll
           :vscroll true
@@ -1146,39 +1150,107 @@ in
               :class "error-message"
               :visible {apps_data.status == "error"}
               (label :text "⚠ ''${apps_data.error ?: 'Unknown error'}"))
-            ;; Apps list
-            (for app in {apps_data.apps ?: []}
-              (app-card :app app)))))
-
-      (defwidget app-card [app]
-        (box
-          :class "app-card"
-          :orientation "v"
-          :space-evenly false
-          (box
-            :class "app-card-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "app-icon"
-              :text "''${app.scope == 'scoped' ? '󱂬' : '󰞇'}")
+            ;; Regular Apps Section
             (box
-              :class "app-info"
+              :class "app-section"
               :orientation "v"
               :space-evenly false
-              :hexpand true
               (label
-                :class "app-card-name"
+                :class "section-header"
                 :halign "start"
-                :text "''${app.display_name ?: app.name}")
+                :text "Regular Applications")
+              (for app in {apps_data.apps ?: []}
+                (box
+                  :visible {!app.terminal && app.preferred_workspace <= 50 && !matches(app.name, ".*-pwa$")}
+                  (app-card :app app))))
+            ;; Terminal Apps Section
+            (box
+              :class "app-section"
+              :orientation "v"
+              :space-evenly false
+              (label
+                :class "section-header"
+                :halign "start"
+                :text "Terminal Applications")
+              (for app in {apps_data.apps ?: []}
+                (box
+                  :visible {app.terminal}
+                  (app-card :app app))))
+            ;; PWA Apps Section
+            (box
+              :class "app-section"
+              :orientation "v"
+              :space-evenly false
+              (label
+                :class "section-header"
+                :halign "start"
+                :text "Progressive Web Apps")
+              (for app in {apps_data.apps ?: []}
+                (box
+                  :visible {app.preferred_workspace >= 50 || matches(app.name, ".*-pwa$")}
+                  (app-card :app app)))))))
+
+      (defwidget app-card [app]
+        (eventbox
+          :onhover "eww update hover_app_name=''${app.name}"
+          :onhoverlost "eww update hover_app_name='''"
+          (box
+            :class "app-card"
+            :orientation "v"
+            :space-evenly false
+            (box
+              :class "app-card-header"
+              :orientation "h"
+              :space-evenly false
+              ;; Type icon
+              (box
+                :class "app-icon-container"
+                :orientation "v"
+                :valign "center"
+                (label
+                  :class "app-type-icon"
+                  :text "''${app.terminal ? '🖥️' : app.preferred_workspace >= 50 ? '🌐' : '󰀻'}"))
+              ;; App info
+              (box
+                :class "app-info"
+                :orientation "v"
+                :space-evenly false
+                :hexpand true
+                (box
+                  :class "app-name-row"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "app-card-name"
+                    :halign "start"
+                    :text "''${app.display_name ?: app.name}")
+                  ;; Terminal indicator
+                  (label
+                    :class "terminal-indicator"
+                    :visible {app.terminal}
+                    :text ""))
+                (label
+                  :class "app-card-command"
+                  :halign "start"
+                  :text "''${app.command}"))
+              ;; Running indicator
+              (box
+                :class "app-status-container"
+                :orientation "v"
+                :valign "center"
+                (label
+                  :class "app-running-indicator"
+                  :visible {app.running_instances > 0}
+                  :text "●")))
+            ;; Details row
+            (box
+              :class "app-card-details-row"
+              :orientation "h"
+              :space-evenly false
               (label
                 :class "app-card-details"
                 :halign "start"
-                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running"))
-            (label
-              :class "app-running-indicator"
-              :visible {app.running_instances > 0}
-              :text "●"))))
+                :text "WS ''${app.preferred_workspace ?: '?'} · ''${app.scope} · ''${app.running_instances ?: 0} running")))))
 
       ;; Health View - System diagnostics (Feature 088)
       (defwidget health-view []
@@ -1948,6 +2020,55 @@ in
       .app-running-indicator {
         color: ${mocha.green};
         font-size: 14px;
+      }
+
+      /* Feature 094: Enhanced Applications Tab Styles */
+      .app-section {
+        margin-bottom: 16px;
+      }
+
+      .section-header {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.subtext0};
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+        margin-left: 4px;
+      }
+
+      .app-icon-container {
+        margin-right: 10px;
+      }
+
+      .app-type-icon {
+        font-size: 24px;
+      }
+
+      .app-name-row {
+        margin-bottom: 2px;
+      }
+
+      .app-card-command {
+        font-size: 9px;
+        color: ${mocha.overlay2};
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .terminal-indicator {
+        color: ${mocha.mauve};
+        font-size: 12px;
+        margin-left: 6px;
+      }
+
+      .app-status-container {
+        margin-left: 8px;
+      }
+
+      .app-card-details-row {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(108, 112, 134, 0.2);
       }
 
       /* Health Card Styles */
