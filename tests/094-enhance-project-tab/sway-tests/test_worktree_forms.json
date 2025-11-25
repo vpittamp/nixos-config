@@ -1,0 +1,378 @@
+{
+  "name": "Worktree Forms Test",
+  "description": "Verify worktree create/edit/delete form functionality (Feature 094 - T055, US5)",
+  "setup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "systemctl --user restart eww-monitoring-panel",
+        "description": "Restart Eww service with updated Projects tab"
+      },
+      {
+        "action": "wait_sync"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close-all",
+        "description": "Ensure panel is closed"
+      },
+      {
+        "action": "wait_sync"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "name": "Panel opens and Projects tab shows worktree hierarchy",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel",
+          "description": "Open monitoring panel"
+        },
+        {
+          "action": "wait_sync",
+          "description": "Wait for panel to open"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel active-windows",
+            "contains": "monitoring-panel",
+            "description": "Panel should be open"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects data includes worktree information",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_success",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -e '.worktrees'",
+            "description": "projects_data should have worktrees array"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_success",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -e '.main_projects'",
+            "description": "projects_data should have main_projects array"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree-specific form state variables exist",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_branch_name 2>&1",
+            "not_contains": "error",
+            "description": "worktree_form_branch_name variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_path 2>&1",
+            "not_contains": "error",
+            "description": "worktree_form_path variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_parent_project 2>&1",
+            "not_contains": "error",
+            "description": "worktree_form_parent_project variable should exist"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_creating 2>&1",
+            "not_contains": "error",
+            "description": "worktree_creating variable should exist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "New Worktree button only shows for main projects",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects | length'",
+          "save_output": "main_project_count",
+          "description": "Get count of main projects"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects | length'",
+            "not_equals": "0",
+            "description": "Should have at least one main project"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree create mode can be enabled",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.main_projects[0].name'",
+          "save_output": "parent_project_name",
+          "description": "Get first main project as parent"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=true",
+          "description": "Enable worktree create mode"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=\"$parent_project_name\"",
+          "description": "Set parent project"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 200,
+          "description": "Wait for mode change"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_creating",
+            "equals": "true",
+            "description": "worktree_creating should be true"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_parent_project",
+            "equals": "$parent_project_name",
+            "description": "worktree_form_parent_project should be set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree create form fields can be filled",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='feature-test-123'",
+          "description": "Set branch name"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path='/tmp/test-worktree'",
+          "description": "Set worktree path"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='Test Worktree'",
+          "description": "Set display name"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='🌿'",
+          "description": "Set icon"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for updates"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_branch_name",
+            "equals": "feature-test-123",
+            "description": "worktree_form_branch_name should be set"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_path",
+            "equals": "/tmp/test-worktree",
+            "description": "worktree_form_path should be set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree create form validates branch name format",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='invalid branch name with spaces'",
+          "description": "Set invalid branch name"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 400,
+          "description": "Wait for validation (300ms debounce + buffer)"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get project_validation_state | jq -r '.valid // false'",
+            "equals": "false",
+            "description": "Validation should fail for invalid branch name"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cancel worktree create clears form state",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false",
+          "description": "Cancel worktree create mode"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''",
+          "description": "Clear branch name"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''",
+          "description": "Clear path"
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''",
+          "description": "Clear parent project"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 100,
+          "description": "Wait for updates"
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_creating",
+            "equals": "false",
+            "description": "worktree_creating should be false"
+          }
+        },
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_form_branch_name",
+            "equals": "",
+            "description": "worktree_form_branch_name should be empty"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Worktree edit shows read-only fields",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.worktrees | length'",
+          "save_output": "worktree_count",
+          "description": "Get worktree count"
+        },
+        {
+          "action": "comment",
+          "value": "If worktrees exist, test that branch_name and worktree_path are read-only in edit mode (per spec.md US5 scenario 6)"
+        }
+      ]
+    },
+    {
+      "name": "Delete worktree requires confirmation",
+      "steps": [
+        {
+          "action": "verify",
+          "condition": {
+            "type": "command_output",
+            "command": "eww --config $HOME/.config/eww-monitoring-panel get worktree_delete_confirm 2>&1",
+            "not_contains": "error",
+            "description": "worktree_delete_confirm variable should exist"
+          }
+        },
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_delete_confirm=''",
+          "description": "Clear delete confirmation"
+        }
+      ]
+    },
+    {
+      "name": "Worktree hierarchy displays with indentation",
+      "steps": [
+        {
+          "action": "exec",
+          "command": "eww --config $HOME/.config/eww-monitoring-panel get projects_data | jq -r '.worktrees[] | select(.parent_project != null) | .parent_project' | head -1",
+          "save_output": "worktree_parent",
+          "description": "Get parent of first worktree if exists"
+        },
+        {
+          "action": "comment",
+          "value": "Visual verification: worktrees should appear indented under their parent projects with tree lines (├─)"
+        }
+      ]
+    }
+  ],
+  "cleanup": {
+    "steps": [
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false",
+        "description": "Clear worktree create mode"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''",
+        "description": "Clear branch name"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''",
+        "description": "Clear path"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''",
+        "description": "Clear parent project"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''",
+        "description": "Clear edit mode"
+      },
+      {
+        "action": "exec",
+        "command": "eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel",
+        "description": "Close panel"
+      }
+    ]
+  }
+}

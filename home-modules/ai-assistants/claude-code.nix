@@ -140,19 +140,11 @@ lib.mkIf enableClaudeCode {
           # Slash commands
           "SlashCommand"
 
-          # MCP Server: Context7 (use server prefix for all tools)
-          "mcp__context7"
-
-          # MCP Server: IDE integration (use server prefix for all IDE operations)
-          "mcp__ide"
-        ] ++ lib.optionals enableChromiumMcpServers [
-          # MCP Server: Playwright (use server prefix for all browser automation)
-          # Only on Linux where Chromium is available
-          "mcp__playwright"
-
-          # MCP Server: Chrome DevTools (use server prefix for all debugging)
-          # Only on Linux where Chromium is available
-          "mcp__chrome-devtools"
+          # MCP Servers disabled by default - uncomment permissions if you enable mcpServers above
+          # "mcp__context7"
+          # "mcp__ide"
+          # "mcp__playwright"  # Linux only
+          # "mcp__chrome-devtools"  # Linux only
         ];
       };
 
@@ -281,54 +273,54 @@ lib.mkIf enableClaudeCode {
     };
 
     # MCP Servers configuration - using npx for cross-platform compatibility
-    # Note: All servers enabled - uses ~33k tokens
-    # Comment out servers you don't need to save context tokens
-    mcpServers = {
-      # Context7 - Lightweight documentation lookup (~1.7k tokens)
-      # Available on all platforms
-      context7 = {
-        command = "npx";
-        args = [
-          "-y"
-          "@upstash/context7-mcp@latest"
-        ];
-      };
-    } // lib.optionalAttrs enableChromiumMcpServers {
-      # Playwright MCP server for browser automation (~13.7k tokens)
-      # Only enabled on Linux where Chromium is available via Nix
-      playwright = {
-        transport = "stdio";
-        command = "npx";
-        args = [
-          "-y"
-          "@playwright/mcp@latest"
-          "--isolated"
-          "--browser"
-          "chromium"
-          "--executable-path"
-          chromiumConfig.chromiumBin
-        ];
-        env = {
-          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
-          NODE_ENV = "production";
-          LOG_DIR = "/tmp/mcp-puppeteer-logs";
-        };
-      };
-
-      # Chrome DevTools MCP server for debugging and performance (~17k tokens)
-      # Only enabled on Linux where Chromium is available via Nix
-      chrome-devtools = {
-        command = "npx";
-        args = [
-          "-y"
-          "chrome-devtools-mcp@latest"
-          "--isolated"
-          "--headless"
-          "--executablePath"
-          chromiumConfig.chromiumBin
-        ];
-      };
-    };
+    # Note: All servers disabled by default to save context tokens (~33k tokens when enabled)
+    # Uncomment servers below if you need them
+    # mcpServers = {
+    #   # Context7 - Lightweight documentation lookup (~1.7k tokens)
+    #   # Available on all platforms
+    #   context7 = {
+    #     command = "npx";
+    #     args = [
+    #       "-y"
+    #       "@upstash/context7-mcp@latest"
+    #     ];
+    #   };
+    # } // lib.optionalAttrs enableChromiumMcpServers {
+    #   # Playwright MCP server for browser automation (~13.7k tokens)
+    #   # Only enabled on Linux where Chromium is available via Nix
+    #   playwright = {
+    #     transport = "stdio";
+    #     command = "npx";
+    #     args = [
+    #       "-y"
+    #       "@playwright/mcp@latest"
+    #       "--isolated"
+    #       "--browser"
+    #       "chromium"
+    #       "--executable-path"
+    #       chromiumConfig.chromiumBin
+    #     ];
+    #     env = {
+    #       PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+    #       PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+    #       NODE_ENV = "production";
+    #       LOG_DIR = "/tmp/mcp-puppeteer-logs";
+    #     };
+    #   };
+    #
+    #   # Chrome DevTools MCP server for debugging and performance (~17k tokens)
+    #   # Only enabled on Linux where Chromium is available via Nix
+    #   chrome-devtools = {
+    #     command = "npx";
+    #     args = [
+    #       "-y"
+    #       "chrome-devtools-mcp@latest"
+    #       "--isolated"
+    #       "--headless"
+    #       "--executablePath"
+    #       chromiumConfig.chromiumBin
+    #     ];
+    #   };
+    # };
   };
 }
