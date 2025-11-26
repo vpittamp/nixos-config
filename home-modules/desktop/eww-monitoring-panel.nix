@@ -1698,9 +1698,6 @@ in
       ;; Updated by onhover/onhoverlost events on window items
       (defvar hover_window_id 0)
 
-      ;; UX Enhancement: Search/filter state
-      (defvar search_query "")
-
       ;; UX Enhancement: Inline action bar state - tracks which window has action bar visible
       (defvar context_menu_window_id 0)
 
@@ -1933,27 +1930,6 @@ in
               :class "focus-indicator"
               :visible {panel_focused}
               :text "⌨ FOCUS"))
-          ;; UX Enhancement: Search/filter box
-          (box
-            :class "search-container"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "search-icon"
-              :text "Search")
-            (input
-              :class "search-input"
-              :value search_query
-              :onchange "eww update search_query={}"
-              :hexpand true)
-            (eventbox
-              :cursor "pointer"
-              :onclick "eww update search_query=''''''"
-              :visible {search_query != ""}
-              :tooltip "Clear search"
-              (label
-                :class "search-clear"
-                :text "x")))
           ;; Summary counts (dynamic based on view)
           (box
             :class "summary-counts"
@@ -4518,46 +4494,6 @@ in
         background-color: rgba(148, 226, 213, 0.15);
         padding: 2px 6px;
         border-radius: 3px;
-      }
-
-      /* UX Enhancement: Search/filter box */
-      .search-container {
-        padding: 6px 8px;
-        margin-bottom: 6px;
-        background-color: rgba(49, 50, 68, 0.3);
-        border-radius: 6px;
-        border: 1px solid ${mocha.surface0};
-      }
-
-      .search-icon {
-        font-size: 12px;
-        color: ${mocha.subtext0};
-        margin-right: 6px;
-      }
-
-      .search-input {
-        background-color: transparent;
-        border: none;
-        color: ${mocha.text};
-        font-size: 12px;
-        min-width: 100px;
-      }
-
-      .search-input:focus {
-        outline: none;
-      }
-
-      .search-clear {
-        font-size: 14px;
-        color: ${mocha.subtext0};
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-left: 4px;
-      }
-
-      .search-clear:hover {
-        background-color: ${mocha.surface0};
-        color: ${mocha.red};
       }
 
       /* UX Enhancement: Workspace Pills (CSS only test) */
