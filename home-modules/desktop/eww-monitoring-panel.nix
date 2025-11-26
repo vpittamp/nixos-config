@@ -2746,73 +2746,52 @@ in
                 (label
                   :class "project-icon"
                   :text "''${project.icon}"))
-              ;; Project info - main content area
+              ;; Project info - main content area (takes remaining space)
               (box
                 :class "project-info"
                 :orientation "v"
                 :space-evenly false
                 :hexpand true
-                (box
-                  :class "project-name-row"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "project-card-name"
-                    :halign "start"
-                    :truncate true
-                    :text "''${project.display_name ?: project.name}")
-                  ;; Active indicator pill
-                  (label
-                    :class "badge badge-active"
-                    :visible {project.is_active}
-                    :text "● Active"))
-                ;; Path and badges row
-                (box
-                  :class "project-meta-row"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "project-card-path"
-                    :halign "start"
-                    :truncate true
-                    :hexpand true
-                    :text "''${project.directory}")
-                  ;; Badges container
-                  (box
-                    :class "project-badges"
-                    :orientation "h"
-                    :space-evenly false
-                    :halign "end"
-                    ;; Scope badge
-                    (label
-                      :class "badge badge-scope''${project.scope == 'global' ? ' badge-global' : ' badge-scoped'}"
-                      :text "''${project.scope == 'global' ? '󰊠' : '󰒃'}"
-                      :tooltip "''${project.scope == 'global' ? 'Global scope' : 'Scoped to project'}")
-                    ;; Remote indicator badge
-                    (label
-                      :class "badge badge-remote"
-                      :visible {project.is_remote}
-                      :text "󰒍"
-                      :tooltip "Remote project"))))
-              ;; JSON expand trigger icon (hover to expand)
-              (eventbox
-                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
-                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
-                :tooltip "Hover to view JSON"
-                :visible {editing_project_name != project.name && !project_deleting}
-                (box
-                  :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
-                  :valign "center"
-                  (label
-                    :class "json-expand-icon"
-                    :text {json_hover_project == project.name ? "󰅀" : "󰅂"})))
-              ;; Action buttons (window-style inline bar)
+                (label
+                  :class "project-card-name"
+                  :halign "start"
+                  :limit-width 24
+                  :truncate true
+                  :text "''${project.display_name ?: project.name}")
+                (label
+                  :class "project-card-path"
+                  :halign "start"
+                  :limit-width 32
+                  :truncate true
+                  :text "''${project.directory}"))
+              ;; Badges - fixed width section
+              (box
+                :class "project-badges"
+                :orientation "h"
+                :space-evenly false
+                :halign "end"
+                ;; Active badge
+                (label
+                  :class "badge badge-active"
+                  :visible {project.is_active}
+                  :text "●")
+                ;; Scope badge
+                (label
+                  :class "badge badge-scope''${project.scope == 'global' ? ' badge-global' : ' badge-scoped'}"
+                  :text "''${project.scope == 'global' ? '󰊠' : '󰒃'}"
+                  :tooltip "''${project.scope == 'global' ? 'Global scope' : 'Scoped to project'}")
+                ;; Remote indicator badge
+                (label
+                  :class "badge badge-remote"
+                  :visible {project.is_remote}
+                  :text "󰒍"
+                  :tooltip "Remote project"))
+              ;; Action buttons (fixed width)
               (box
                 :class "project-action-bar"
                 :orientation "h"
                 :space-evenly false
-                :halign "end"
-                :visible {editing_project_name != project.name && !project_deleting}
+                :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
                 (eventbox
                   :cursor "pointer"
                   :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
@@ -2822,7 +2801,15 @@ in
                   :cursor "pointer"
                   :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
                   :tooltip "Delete project"
-                  (label :class "action-btn action-delete" :text "󰆴"))))
+                  (label :class "action-btn action-delete" :text "󰆴"))
+                ;; JSON expand trigger icon (hover to expand)
+                (eventbox
+                  :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                  :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                  :tooltip "View JSON"
+                  (label
+                    :class {"action-btn action-json" + (json_hover_project == project.name ? " expanded" : "")}
+                    :text {json_hover_project == project.name ? "󰅀" : "󰅂"}))))
             ;; JSON panel (slides down when expand icon is hovered) - like Window tab
             (revealer
               :reveal {json_hover_project == project.name && editing_project_name != project.name}
@@ -5347,9 +5334,9 @@ in
       .project-card {
         background-color: rgba(49, 50, 68, 0.5);
         border: 1px solid ${mocha.surface1};
-        border-radius: 10px;
-        padding: 10px 12px;
-        margin-bottom: 8px;
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
       }
 
       .project-card:hover {
@@ -5360,76 +5347,70 @@ in
       .project-card.active-project {
         border-color: ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.12);
-        box-shadow: 0 0 12px rgba(148, 226, 213, 0.15),
-                    inset 0 0 8px rgba(148, 226, 213, 0.05);
+        box-shadow: 0 0 8px rgba(148, 226, 213, 0.15);
       }
 
       .project-card-header {
-        margin-bottom: 2px;
+        /* Header row - horizontal layout */
       }
 
       .project-icon-container {
         background-color: rgba(137, 180, 250, 0.1);
-        border-radius: 8px;
-        padding: 6px 8px;
-        margin-right: 10px;
+        border-radius: 6px;
+        padding: 4px 6px;
+        margin-right: 8px;
+        min-width: 28px;
       }
 
       .project-icon {
-        font-size: 18px;
+        font-size: 16px;
       }
 
       .project-info {
-        min-width: 0;
-      }
-
-      .project-name-row {
-        margin-bottom: 2px;
+        min-width: 0;  /* Allow text truncation */
       }
 
       .project-card-name {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: bold;
         color: ${mocha.text};
-      }
-
-      .project-meta-row {
-        margin-top: 2px;
       }
 
       .project-card-path {
         font-size: 9px;
         color: ${mocha.subtext0};
         font-family: "JetBrainsMono Nerd Font", monospace;
+        margin-top: 1px;
       }
 
-      /* Project badges - pill style */
+      /* Project badges - compact pill style */
       .project-badges {
-        margin-left: 8px;
+        margin-left: 6px;
       }
 
       .badge {
-        font-size: 10px;
-        padding: 2px 8px;
-        border-radius: 10px;
-        margin-left: 4px;
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 8px;
+        margin-left: 3px;
         font-weight: 500;
       }
 
       .badge-active {
         color: ${mocha.green};
-        background-color: rgba(166, 227, 161, 0.2);
-        border: 1px solid rgba(166, 227, 161, 0.4);
+        font-size: 8px;
       }
 
       .badge-scope {
-        font-size: 11px;
-        padding: 2px 6px;
+        font-size: 10px;
+        padding: 1px 4px;
+        color: ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.15);
+        border-radius: 4px;
       }
 
       .badge-scoped {
         color: ${mocha.teal};
-        background-color: rgba(148, 226, 213, 0.15);
       }
 
       .badge-global {
@@ -5440,13 +5421,23 @@ in
       .badge-remote {
         color: ${mocha.mauve};
         background-color: rgba(203, 166, 247, 0.15);
-        font-size: 11px;
-        padding: 2px 6px;
+        font-size: 10px;
+        padding: 1px 4px;
       }
 
-      /* Project action bar - matches window action bar style */
+      /* Project action bar - compact buttons on hover */
       .project-action-bar {
-        margin-left: 8px;
+        margin-left: 6px;
+        background-color: rgba(30, 30, 46, 0.8);
+        border-radius: 6px;
+        padding: 2px 4px;
+      }
+
+      .action-btn {
+        font-size: 12px;
+        padding: 3px 6px;
+        border-radius: 4px;
+        min-width: 20px;
       }
 
       .action-edit {
@@ -5465,6 +5456,16 @@ in
       .action-delete:hover {
         background-color: rgba(243, 139, 168, 0.2);
         color: ${mocha.red};
+      }
+
+      .action-json {
+        color: ${mocha.overlay0};
+      }
+
+      .action-json:hover,
+      .action-json.expanded {
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.blue};
       }
 
       /* Project JSON tooltip - same style as window JSON */
