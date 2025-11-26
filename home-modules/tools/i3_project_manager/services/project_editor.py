@@ -154,15 +154,15 @@ class ProjectEditor:
         shutil.copy2(project_file, backup_file)
 
         try:
+            # Feature 096 T007: Check for conflict BEFORE write (not after)
+            # Conflict = file was modified by another process between our read and now
+            file_mtime_before_write = project_file.stat().st_mtime
+            has_conflict = file_mtime_before_write != file_mtime_before
+
             # Write updated config
             # Feature 094: Use by_alias=True to serialize "working_dir" as "directory" for backward compatibility
             with open(project_file, 'w') as f:
                 json.dump(validated.model_dump(exclude_none=True, by_alias=True), f, indent=2)
-
-            # Check for conflict (file modified between read and write)
-            file_mtime_after = project_file.stat().st_mtime
-            has_conflict = (file_mtime_after != file_mtime_before and
-                          file_mtime_before != file_mtime_after)
 
             return {
                 "status": "success",
