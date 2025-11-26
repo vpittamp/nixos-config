@@ -1311,7 +1311,7 @@ print(json.dumps(result))
       $EWW update projects_data="$PROJECTS_DATA"
 
       # Feature 096 T023: Show success notification via eww (consistent with create/edit)
-      $EWW update success_notification="Project '$PROJECT_NAME' deleted successfully"
+      $EWW update success_notification="Project '${PROJECT_NAME}' deleted successfully"
       $EWW update success_notification_visible=true
       # Auto-dismiss after 3 seconds (T020)
       (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
