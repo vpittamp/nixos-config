@@ -15,18 +15,24 @@ import os
 class RemoteConfig(BaseModel):
     """Remote SSH configuration for remote projects"""
     enabled: bool = False
-    host: str = Field(..., min_length=1, description="SSH hostname or Tailscale FQDN")
-    user: str = Field(..., min_length=1, description="SSH username")
-    remote_dir: str = Field(..., min_length=1, description="Remote working directory (absolute path)")
+    host: str = Field(default="", description="SSH hostname or Tailscale FQDN")
+    user: str = Field(default="", description="SSH username")
+    remote_dir: str = Field(default="", description="Remote working directory (absolute path)")
     port: int = Field(default=22, ge=1, le=65535, description="SSH port")
 
-    @field_validator("remote_dir")
-    @classmethod
-    def validate_absolute_path(cls, v: str) -> str:
-        """Per spec.md FR-P-010: remote_dir must be absolute path"""
-        if not v.startswith("/"):
-            raise ValueError(f"Remote directory must be absolute path, got: {v}")
-        return v
+    @model_validator(mode="after")
+    def validate_remote_fields_when_enabled(self) -> "RemoteConfig":
+        """Only validate remote fields when enabled=True"""
+        if self.enabled:
+            if not self.host:
+                raise ValueError("Host is required when remote is enabled")
+            if not self.user:
+                raise ValueError("User is required when remote is enabled")
+            if not self.remote_dir:
+                raise ValueError("Remote directory is required when remote is enabled")
+            if not self.remote_dir.startswith("/"):
+                raise ValueError(f"Remote directory must be absolute path, got: {self.remote_dir}")
+        return self
 
 
 class ProjectConfig(BaseModel):
