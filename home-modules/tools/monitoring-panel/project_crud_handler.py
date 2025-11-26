@@ -12,7 +12,10 @@ from typing import Dict, Any, Optional, Callable, List
 from dataclasses import dataclass
 
 import sys
+# Add parent directory for i3_project_manager imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add current directory for cli_executor import
+sys.path.insert(0, str(Path(__file__).parent))
 
 from i3_project_manager.services.project_editor import ProjectEditor
 from i3_project_manager.models.project_config import ProjectConfig, WorktreeConfig
