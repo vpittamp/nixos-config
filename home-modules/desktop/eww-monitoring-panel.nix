@@ -1553,6 +1553,33 @@ print(json.dumps(result))
     (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_window_id=0) &
   '';
 
+  # UX Enhancement: Toggle project collapse state
+  toggleProjectScript = pkgs.writeShellScript "toggle-project-collapse" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    PROJECT_NAME="''${1:-}"
+
+    if [[ -z "$PROJECT_NAME" ]]; then
+      exit 1
+    fi
+
+    # Get current collapsed projects
+    CURRENT=$($EWW_CMD get collapsed_projects 2>/dev/null || echo "")
+
+    # Toggle: if project is in list, remove it; otherwise add it
+    if echo "$CURRENT" | ${pkgs.gnugrep}/bin/grep -qw "$PROJECT_NAME"; then
+      # Remove project from collapsed list
+      NEW=$(echo "$CURRENT" | ${pkgs.gnused}/bin/sed "s/\b$PROJECT_NAME\b//g" | ${pkgs.coreutils}/bin/tr -s ' ' | ${pkgs.coreutils}/bin/xargs)
+    else
+      # Add project to collapsed list
+      NEW="$CURRENT $PROJECT_NAME"
+    fi
+
+    $EWW_CMD update collapsed_projects="$NEW"
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -1697,6 +1724,16 @@ in
       ;; Hover tooltip state - Window ID being hovered (0 = none)
       ;; Updated by onhover/onhoverlost events on window items
       (defvar hover_window_id 0)
+
+      ;; UX Enhancement: Search/filter state
+      (defvar search_query "")
+
+      ;; UX Enhancement: Collapsed projects state (space-separated project names)
+      (defvar collapsed_projects "")
+
+      ;; UX Enhancement: Context menu state for quick actions
+      (defvar context_menu_window_id 0)
+      (defvar context_menu_visible false)
 
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
@@ -1873,7 +1910,9 @@ in
             ;; Feature 094 T040: Conflict resolution dialog overlay
             (conflict-resolution-dialog)
             ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast))))
+            (success-notification-toast)
+            ;; UX Enhancement: Window context menu overlay
+            (window-context-menu))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -1927,6 +1966,27 @@ in
               :class "focus-indicator"
               :visible {panel_focused}
               :text "⌨ FOCUS"))
+          ;; UX Enhancement: Search/filter box
+          (box
+            :class "search-container"
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "search-icon"
+              :text "Search")
+            (input
+              :class "search-input"
+              :value search_query
+              :onchange "eww update search_query={}"
+              :hexpand true)
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww update search_query=''''''"
+              :visible {search_query != ""}
+              :tooltip "Clear search"
+              (label
+                :class "search-clear"
+                :text "x")))
           ;; Summary counts (dynamic based on view)
           (box
             :class "summary-counts"
@@ -1942,7 +2002,25 @@ in
             (label
               :class "count-badge"
               :text "''${current_view == 'windows' ? monitoring_data.window_count ?: 0 : 0} WIN"
-              :visible {current_view == "windows"}))))
+              :visible {current_view == "windows"}))
+          ;; UX Enhancement: Workspace Pills - Quick workspace switcher
+          (scroll
+            :hscroll true
+            :vscroll false
+            :visible {current_view == "windows"}
+            :class "workspace-pills-scroll"
+            (box
+              :class "workspace-pills"
+              :orientation "h"
+              :space-evenly false
+              (for ws in {monitoring_data.workspaces ?: []}
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "swaymsg workspace ''${ws.name} &"
+                  :tooltip "Switch to workspace ''${ws.name}"
+                  (label
+                    :class {"workspace-pill" + (ws.focused ? " focused" : "") + (ws.urgent ? " urgent" : "")}
+                    :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
       ;; Uses overlay to ensure only one view is visible at a time (no stacking)
@@ -2014,30 +2092,43 @@ in
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
 
-      ;; Project display widget
+      ;; Project display widget with collapsible windows list
+      ;; UX Enhancement: Click header to collapse/expand windows
+      ;; UX Enhancement: Active project gets highlighted
       (defwidget project-widget [project]
         (box
-          :class "project ''${project.scope == 'scoped' ? 'scoped-project' : 'global-project'}"
+          :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
           :orientation "v"
           :space-evenly false
-          ; Project header
-          (box
-            :class "project-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "project-name"
-              :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
-            (label
-              :class "window-count-badge"
-              :text "''${project.window_count}"))
-          ; Windows list
-          (box
-            :class "windows-container"
-            :orientation "v"
-            :space-evenly false
-            (for window in {project.windows ?: []}
-              (window-widget :window window)))))
+          ; Project header (clickable to collapse/expand)
+          (eventbox
+            :cursor "pointer"
+            :onclick "${toggleProjectScript} ''${project.name}"
+            :tooltip {matches(collapsed_projects, project.name) ? "Expand windows" : "Collapse windows"}
+            (box
+              :class {"project-header" + (matches(collapsed_projects, project.name) ? " collapsed" : "")}
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "project-collapse-icon"
+                :text {matches(collapsed_projects, project.name) ? "󰅂" : "󰅀"})
+              (label
+                :class "project-name"
+                :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
+              (label
+                :class "window-count-badge"
+                :text "''${project.window_count}")))
+          ; Windows list (collapsible)
+          (revealer
+            :reveal {!matches(collapsed_projects, project.name)}
+            :transition "slidedown"
+            :duration "150ms"
+            (box
+              :class "windows-container"
+              :orientation "v"
+              :space-evenly false
+              (for window in {project.windows ?: []}
+                (window-widget :window window))))))
 
       ;; Compact window widget for sidebar - Single line with badges + JSON expand
       ;; Click main area to focus window
@@ -2054,8 +2145,10 @@ in
             :space-evenly false
             ;; Main clickable area (focuses window)
             ;; Feature 093: Added click handler for window focus with project switching
+            ;; UX Enhancement: Right-click for context menu
             (eventbox
               :onclick "focus-window-action ''${window.project} ''${window.id} &"
+              :onrightclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${window.id} context_menu_visible=true"
               :cursor "pointer"
               :hexpand true
               (box
@@ -4346,6 +4439,83 @@ in
           (label
             :class "timestamp"
             :text "''${monitoring_data.timestamp_friendly ?: 'Initializing...'}")))
+
+      ;; UX Enhancement: Window context menu overlay (right-click quick actions)
+      (defwidget window-context-menu []
+        (revealer
+          :reveal context_menu_visible
+          :transition "crossfade"
+          :duration "100ms"
+          (eventbox
+            :class "context-menu-overlay"
+            :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+            (box
+              :class "context-menu"
+              :orientation "v"
+              :space-evenly false
+              :valign "center"
+              :halign "center"
+              ;; Menu header
+              (box
+                :class "context-menu-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "context-menu-title"
+                  :text "Quick Actions")
+                (eventbox
+                  :class "context-menu-close"
+                  :cursor "pointer"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                  (label :text "✕")))
+              ;; Menu items
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "󰆤")
+                  (label :class "menu-label" :text "Focus Window")))
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "⚓")
+                  (label :class "menu-label" :text "Toggle Floating")))
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "󰊓")
+                  (label :class "menu-label" :text "Toggle Fullscreen")))
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "󰪶")
+                  (label :class "menu-label" :text "Move to Scratchpad")))
+              ;; Separator
+              (box :class "context-menu-separator")
+              (eventbox
+                :class "context-menu-item danger"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "󰅖")
+                  (label :class "menu-label" :text "Close Window")))))))
     '';
 
     # Eww SCSS styling (T015)
@@ -4422,12 +4592,93 @@ in
         color: ${mocha.subtext0};
       }
 
+      /* UX Enhancement: Search/filter box */
+      .search-container {
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        background-color: rgba(49, 50, 68, 0.3);
+        border-radius: 6px;
+        border: 1px solid ${mocha.surface0};
+      }
+
+      .search-icon {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+        margin-right: 6px;
+      }
+
+      .search-input {
+        background-color: transparent;
+        border: none;
+        color: ${mocha.text};
+        font-size: 12px;
+        min-width: 100px;
+      }
+
+      .search-input:focus {
+        outline: none;
+      }
+
+      .search-clear {
+        font-size: 14px;
+        color: ${mocha.subtext0};
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 4px;
+      }
+
+      .search-clear:hover {
+        background-color: ${mocha.surface0};
+        color: ${mocha.red};
+      }
+
       .count-badge {
         font-size: 10px;
         color: ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.15);
         padding: 2px 6px;
         border-radius: 3px;
+      }
+
+      /* UX Enhancement: Workspace Pills */
+      .workspace-pills-scroll {
+        margin-top: 6px;
+        max-height: 32px;
+      }
+
+      .workspace-pills {
+        padding: 2px 0;
+      }
+
+      .workspace-pill {
+        font-size: 11px;
+        padding: 4px 10px;
+        margin-right: 4px;
+        border-radius: 12px;
+        background-color: rgba(49, 50, 68, 0.5);
+        color: ${mocha.subtext0};
+        border: 1px solid ${mocha.surface0};
+      }
+
+      .workspace-pill:hover {
+        background-color: rgba(69, 71, 90, 0.6);
+        color: ${mocha.text};
+        border-color: ${mocha.overlay0};
+      }
+
+      .workspace-pill.focused {
+        background-color: rgba(137, 180, 250, 0.3);
+        color: ${mocha.blue};
+        border-color: ${mocha.blue};
+        font-weight: bold;
+        box-shadow: 0 0 6px rgba(137, 180, 250, 0.4);
+      }
+
+      .workspace-pill.urgent {
+        background-color: rgba(243, 139, 168, 0.3);
+        color: ${mocha.red};
+        border-color: ${mocha.red};
+        box-shadow: 0 0 6px rgba(243, 139, 168, 0.4);
       }
 
       /* Tab Navigation */
@@ -4510,10 +4761,50 @@ in
         border-left: 3px solid ${mocha.mauve};
       }
 
+      /* UX Enhancement: Active project highlight */
+      .project-active {
+        background-color: rgba(137, 180, 250, 0.15);
+        border: 1px solid ${mocha.blue};
+        box-shadow: 0 0 12px rgba(137, 180, 250, 0.3),
+                    inset 0 0 8px rgba(137, 180, 250, 0.1);
+      }
+
+      .project-active .project-header {
+        background-color: rgba(137, 180, 250, 0.1);
+      }
+
+      .project-active .project-name {
+        color: ${mocha.blue};
+        font-weight: bold;
+      }
+
       .project-header {
         padding: 6px 8px;
         border-bottom: 1px solid ${mocha.overlay0};
         margin-bottom: 6px;
+        border-radius: 4px;
+      }
+
+      .project-header:hover {
+        background-color: rgba(137, 180, 250, 0.1);
+      }
+
+      .project-header.collapsed {
+        border-bottom: none;
+        margin-bottom: 2px;
+        opacity: 0.8;
+      }
+
+      /* UX Enhancement: Project collapse/expand icon */
+      .project-collapse-icon {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+        margin-right: 6px;
+        min-width: 14px;
+      }
+
+      .project-header:hover .project-collapse-icon {
+        color: ${mocha.blue};
       }
 
       .project-name {
@@ -4529,6 +4820,7 @@ in
         padding: 1px 5px;
         border-radius: 3px;
         min-width: 18px;
+        margin-left: auto;
       }
 
       /* Windows Container */
@@ -4559,6 +4851,20 @@ in
         font-style: italic;
       }
 
+      /* UX Enhancement: Activity Pulse Glow for urgent windows */
+      /* Note: GTK CSS doesn't support @keyframes, using static glow instead */
+      .window-urgent {
+        background-color: rgba(243, 139, 168, 0.15);
+        border-left: 3px solid ${mocha.red};
+        box-shadow: 0 0 8px rgba(243, 139, 168, 0.5),
+                    0 0 16px rgba(243, 139, 168, 0.3);
+      }
+
+      .window-urgent .window-app-name {
+        color: ${mocha.red};
+        font-weight: bold;
+      }
+
       /* Project Scope - Subtle border */
       .scoped-window {
         border-left-color: ${mocha.teal};
@@ -4579,6 +4885,93 @@ in
         background-color: rgba(137, 180, 250, 0.25);
         border-left-color: ${mocha.blue};
         border-left-width: 4px;
+      }
+
+      /* UX Enhancement: Context menu overlay (right-click quick actions) */
+      .context-menu-overlay {
+        background-color: rgba(0, 0, 0, 0.4);
+        min-width: 100%;
+        min-height: 100%;
+      }
+
+      .context-menu {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 8px;
+        padding: 4px;
+        min-width: 180px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+
+      .context-menu-header {
+        padding: 8px 12px;
+        border-bottom: 1px solid ${mocha.surface1};
+        margin-bottom: 4px;
+      }
+
+      .context-menu-title {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.subtext0};
+      }
+
+      .context-menu-close {
+        margin-left: auto;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .context-menu-close:hover {
+        background-color: ${mocha.surface1};
+      }
+
+      .context-menu-close label {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+      }
+
+      .context-menu-item {
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin: 2px 0;
+      }
+
+      .context-menu-item:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .context-menu-item.danger:hover {
+        background-color: rgba(243, 139, 168, 0.2);
+      }
+
+      .context-menu-item .menu-icon {
+        font-size: 14px;
+        color: ${mocha.subtext0};
+        min-width: 24px;
+        margin-right: 8px;
+      }
+
+      .context-menu-item:hover .menu-icon {
+        color: ${mocha.blue};
+      }
+
+      .context-menu-item.danger:hover .menu-icon {
+        color: ${mocha.red};
+      }
+
+      .context-menu-item .menu-label {
+        font-size: 12px;
+        color: ${mocha.text};
+      }
+
+      .context-menu-item.danger .menu-label {
+        color: ${mocha.red};
+      }
+
+      .context-menu-separator {
+        height: 1px;
+        background-color: ${mocha.surface1};
+        margin: 4px 8px;
       }
 
       .window-icon-container {
