@@ -2731,7 +2731,7 @@ in
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
           :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
-            :class "project-card''${project.is_active ? ' active-project' : ''}"
+            :class {"project-card" + (project.is_active ? " active-project" : "")}
             :orientation "v"
             :space-evenly false
             (box
@@ -2801,7 +2801,7 @@ in
                 :tooltip "Hover to view JSON"
                 :visible {editing_project_name != project.name && !project_deleting}
                 (box
-                  :class "json-expand-trigger''${json_hover_project == project.name ? ' expanded' : ''}"
+                  :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
                   :valign "center"
                   (label
                     :class "json-expand-icon"
@@ -2850,8 +2850,8 @@ in
                       :onclick "${copyProjectJsonScript} ''${project.name} &"
                       :tooltip "Copy JSON to clipboard"
                       (label
-                        :class "json-copy-btn''${copied_project_name == project.name ? ' copied' : ''}"
-                        :text "''${copied_project_name == project.name ? '󰄬' : '󰆏'}")))
+                        :class {"json-copy-btn" + (copied_project_name == project.name ? " copied" : "")}
+                        :text {copied_project_name == project.name ? "󰄬" : "󰆏"})))
                   ;; Scrollable JSON content
                   (scroll
                     :vscroll true
