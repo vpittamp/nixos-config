@@ -200,10 +200,24 @@ let
   projectEditSaveScript = pkgs.writeShellScriptBin "project-edit-save" ''
     #!${pkgs.bash}/bin/bash
     # Save project edit form by reading Eww variables and calling CRUD handler
-    # Usage: project-edit-save <project-name>
+    # Usage: project-edit-save [project-name]
+    # If no project-name is provided, reads from editing_project_name eww variable
 
-    PROJECT_NAME="$1"
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get project name from argument or from eww variable
+    if [ -n "$1" ]; then
+      PROJECT_NAME="$1"
+    else
+      PROJECT_NAME=$($EWW get editing_project_name)
+    fi
+
+    # Validate project name
+    if [ -z "$PROJECT_NAME" ]; then
+      echo "Error: No project name provided" >&2
+      $EWW update edit_form_error="No project selected"
+      exit 1
+    fi
 
     # Feature 096 T022: Set loading state to prevent double-submit
     $EWW update save_in_progress=true
@@ -257,9 +271,7 @@ let
       $EWW update editing_project_name='''
       $EWW update edit_form_error='''
 
-      # Refresh projects data to show updated values
-      PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-      $EWW update projects_data="$PROJECTS_DATA"
+      # Note: Project list will be refreshed by the deflisten stream automatically
 
       # Feature 096 T023: Show success notification
       $EWW update success_notification="Project saved successfully"
@@ -317,9 +329,7 @@ let
         $EWW_CMD update conflict_dialog_visible=false
         $EWW_CMD update editing_project_name='''
         $EWW_CMD update edit_form_error='''
-        # Refresh project list to show file content
-        PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-        $EWW_CMD update projects_data="$PROJECTS_DATA"
+        # Note: Project list will be refreshed by the deflisten stream automatically
         echo "Kept file changes for project: $PROJECT_NAME" >&2
         ;;
 
@@ -339,12 +349,9 @@ let
         if [ -f "$PROJECT_FILE" ]; then
           # Use default editor or fallback to nano
           ''${EDITOR:-nano} "$PROJECT_FILE"
-          # Close dialog and refresh
+          # Close dialog - project list will be refreshed by the deflisten stream automatically
           $EWW_CMD update conflict_dialog_visible=false
           $EWW_CMD update editing_project_name='''
-          # Refresh project list
-          PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-          $EWW_CMD update projects_data="$PROJECTS_DATA"
           echo "Opened $PROJECT_FILE for manual merge" >&2
         else
           echo "Error: Project file not found: $PROJECT_FILE" >&2
@@ -559,9 +566,7 @@ asyncio.run(stream.run())
     $EWW update edit_form_icon=""
     $EWW update edit_form_error=""
 
-    # Refresh projects data
-    PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-    $EWW update projects_data="$PROJECTS_DATA"
+    # Note: Project list will be refreshed by the deflisten stream automatically
 
     # Feature 096 T023: Show success notification
     $EWW update success_notification="Worktree '$WORKTREE_NAME' created successfully"
@@ -661,9 +666,7 @@ asyncio.run(stream.run())
     $EWW update worktree_delete_confirm=""
     $EWW update edit_form_error=""
 
-    # Refresh projects data
-    PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-    $EWW update projects_data="$PROJECTS_DATA"
+    # Note: Project list will be refreshed by the deflisten stream automatically
 
     # Feature 096 T023: Show success notification (with optional warning)
     if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
@@ -728,9 +731,7 @@ asyncio.run(stream.run())
       $EWW update editing_project_name=""
       $EWW update edit_form_error=""
 
-      # Refresh projects data
-      PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-      $EWW update projects_data="$PROJECTS_DATA"
+      # Note: Project list will be refreshed by the deflisten stream automatically
 
       # Feature 096 T023: Show success notification
       $EWW update success_notification="Worktree saved successfully"
@@ -911,9 +912,8 @@ EOF
       $EWW update create_form_remote_port="22"
       $EWW update create_form_error=""
 
-      # Refresh projects data
-      PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-      $EWW update projects_data="$PROJECTS_DATA"
+      # Note: Project list will be refreshed by the deflisten stream automatically
+      # Skipping manual refresh to avoid issues with large JSON payloads in eww update
 
       # Feature 096 T023: Show success notification
       $EWW update success_notification="Project '$NAME' created successfully"
@@ -1328,9 +1328,7 @@ print(json.dumps(result))
       $EWW update delete_force=false
       $EWW update delete_error=""
 
-      # Refresh projects data
-      PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
-      $EWW update projects_data="$PROJECTS_DATA"
+      # Note: Project list will be refreshed by the deflisten stream automatically
 
       # Feature 096 T023: Show success notification via eww (consistent with create/edit)
       $EWW update success_notification="Project '$PROJECT_NAME' deleted successfully"
@@ -1763,6 +1761,32 @@ print(json.dumps(result))
     (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_window_id=0) &
   '';
 
+  # Feature 096: Copy project JSON to clipboard (similar to window JSON)
+  copyProjectJsonScript = pkgs.writeShellScript "copy-project-json" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    PROJECT_NAME="''${1:-}"
+
+    if [[ -z "$PROJECT_NAME" ]]; then
+      echo "Usage: copy-project-json <project-name>" >&2
+      exit 1
+    fi
+
+    # Read project JSON from file and copy to clipboard
+    PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
+    if [[ -f "$PROJECT_FILE" ]]; then
+      ${pkgs.jq}/bin/jq '.' "$PROJECT_FILE" | ${pkgs.wl-clipboard}/bin/wl-copy
+      # Toggle copied state for visual feedback
+      $EWW_CMD update copied_project_name="$PROJECT_NAME"
+      (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_project_name="") &
+    else
+      echo "Project file not found: $PROJECT_FILE" >&2
+      exit 1
+    fi
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -1961,6 +1985,8 @@ in
       ;; Feature 094: Hover state for Applications tab detail tooltips
       (defvar hover_app_name "")
       (defvar copied_project_name "")
+      ;; Feature 096: JSON hover state for Projects tab (separate from general hover)
+      (defvar json_hover_project "")
 
       ;; Feature 094: Edit mode state for Projects tab (T038)
       (defvar editing_project_name "")
@@ -2702,17 +2728,17 @@ in
 
       (defwidget project-card [project]
         (eventbox
-          :onhover "eww update hover_project_name=''${project.name}"
-          :onhoverlost "eww update hover_project_name='''"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
-            :class "project-card"
+            :class "project-card''${project.is_active ? ' active-project' : ''}"
             :orientation "v"
             :space-evenly false
             (box
               :class "project-card-header"
               :orientation "h"
               :space-evenly false
-              ;; Icon
+              ;; Icon with container for consistent sizing
               (box
                 :class "project-icon-container"
                 :orientation "v"
@@ -2720,12 +2746,12 @@ in
                 (label
                   :class "project-icon"
                   :text "''${project.icon}"))
-              ;; Project info
+              ;; Project info - main content area
               (box
                 :class "project-info"
                 :orientation "v"
                 :space-evenly false
-                :hexpand false
+                :hexpand true
                 (box
                   :class "project-name-row"
                   :orientation "h"
@@ -2735,48 +2761,108 @@ in
                     :halign "start"
                     :truncate true
                     :text "''${project.display_name ?: project.name}")
-                  ;; Remote indicator
+                  ;; Active indicator pill
                   (label
-                    :class "remote-indicator"
-                    :visible {project.is_remote}
-                    :text "󰒍"))
-                (label
-                  :class "project-card-path"
-                  :halign "start"
-                  :truncate true
-                  :text "''${project.directory}"))
-              ;; Active indicator
-              (label
-                :class "active-indicator"
-                :visible {project.is_active}
-                :text "●")
-              ;; Feature 094: Edit button (T038)
-              (button
-                :class "edit-button"
+                    :class "badge badge-active"
+                    :visible {project.is_active}
+                    :text "● Active"))
+                ;; Path and badges row
+                (box
+                  :class "project-meta-row"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "project-card-path"
+                    :halign "start"
+                    :truncate true
+                    :hexpand true
+                    :text "''${project.directory}")
+                  ;; Badges container
+                  (box
+                    :class "project-badges"
+                    :orientation "h"
+                    :space-evenly false
+                    :halign "end"
+                    ;; Scope badge
+                    (label
+                      :class "badge badge-scope''${project.scope == 'global' ? ' badge-global' : ' badge-scoped'}"
+                      :text "''${project.scope == 'global' ? '󰊠' : '󰒃'}"
+                      :tooltip "''${project.scope == 'global' ? 'Global scope' : 'Scoped to project'}")
+                    ;; Remote indicator badge
+                    (label
+                      :class "badge badge-remote"
+                      :visible {project.is_remote}
+                      :text "󰒍"
+                      :tooltip "Remote project"))))
+              ;; JSON expand trigger icon (hover to expand)
+              (eventbox
+                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                :tooltip "Hover to view JSON"
                 :visible {editing_project_name != project.name && !project_deleting}
-                :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
-                "✏")
-              ;; Feature 094 US4: Delete button (T087)
-              (button
-                :class "delete-button"
-                :visible {editing_project_name != project.name && !project_deleting}
-                :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
-                :tooltip "Delete project"
-                "🗑"))
-            ;; Hover detail tooltip
-            (revealer
-              :reveal {hover_project_name == project.name && editing_project_name != project.name}
-              :transition "slidedown"
-              :duration "200ms"
+                (box
+                  :class "json-expand-trigger''${json_hover_project == project.name ? ' expanded' : ''}"
+                  :valign "center"
+                  (label
+                    :class "json-expand-icon"
+                    :text {json_hover_project == project.name ? "󰅀" : "󰅂"})))
+              ;; Action buttons (window-style inline bar)
               (box
-                :class "project-detail-tooltip"
-                :orientation "v"
+                :class "project-action-bar"
+                :orientation "h"
                 :space-evenly false
-                (label
-                  :class "json-detail"
-                  :halign "start"
-                  :wrap true
-                  :text "''${project.directory}")))
+                :halign "end"
+                :visible {editing_project_name != project.name && !project_deleting}
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
+                  :tooltip "Edit project"
+                  (label :class "action-btn action-edit" :text "󰏫"))
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
+                  :tooltip "Delete project"
+                  (label :class "action-btn action-delete" :text "󰆴"))))
+            ;; JSON panel (slides down when expand icon is hovered) - like Window tab
+            (revealer
+              :reveal {json_hover_project == project.name && editing_project_name != project.name}
+              :transition "slidedown"
+              :duration "150ms"
+              (eventbox
+                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                (box
+                  :class "project-json-tooltip"
+                  :orientation "v"
+                  :space-evenly false
+                  ;; Header with title and copy button
+                  (box
+                    :class "json-tooltip-header"
+                    :orientation "h"
+                    :space-evenly false
+                    (label
+                      :class "json-tooltip-title"
+                      :halign "start"
+                      :hexpand true
+                      :text "Project JSON: ''${project.name}")
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "${copyProjectJsonScript} ''${project.name} &"
+                      :tooltip "Copy JSON to clipboard"
+                      (label
+                        :class "json-copy-btn''${copied_project_name == project.name ? ' copied' : ''}"
+                        :text "''${copied_project_name == project.name ? '󰄬' : '󰆏'}")))
+                  ;; Scrollable JSON content
+                  (scroll
+                    :vscroll true
+                    :hscroll false
+                    :vexpand false
+                    :height 150
+                    (label
+                      :class "json-content"
+                      :halign "start"
+                      :wrap false
+                      :text "name: ''${project.name}\ndisplay_name: ''${project.display_name ?: project.name}\nicon: ''${project.icon}\ndirectory: ''${project.directory}\nscope: ''${project.scope ?: 'scoped'}\nis_remote: ''${project.is_remote}\nis_active: ''${project.is_active}")))))
             ;; Feature 094: Inline edit form (T038)
             (revealer
               :reveal {editing_project_name == project.name}
@@ -3110,14 +3196,14 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :sensitive {!save_in_progress}
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Feature 096 T021: Save button with loading state
+            ;; Script reads editing_project_name from eww variable internally
+            ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
               :class "''${save_in_progress ? 'save-button-loading' : (validation_state.valid ? 'save-button' : 'save-button-disabled')}"
-              :sensitive {validation_state.valid && !save_in_progress}
-              :onclick "project-edit-save ''${project.name}"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-edit-save &"
               "''${save_in_progress ? 'Saving...' : 'Save'}"))))
 
       ;; Feature 094 US5 T059: Worktree edit form widget
@@ -3218,9 +3304,10 @@ in
               :class "cancel-button"
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
+            ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
               :class "save-button"
-              :onclick "worktree-edit-save ''${project.name}"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-edit-save ''${project.name} &"
               "Save"))))
 
       ;; Feature 094 US5 T057-T058: Worktree create form widget
@@ -3324,9 +3411,10 @@ in
               :class "cancel-button"
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
+            ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
               :class "save-button"
-              :onclick "worktree-create"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && worktree-create &"
               "Create"))))
 
       ;; Feature 094 US3: Project create form widget (T067)
@@ -3522,10 +3610,12 @@ in
               :class "cancel-button"
               :onclick "project-create-cancel"
               "Cancel")
+            ;; Feature 096: Save button with loading state
+            ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
-              :class "save-button"
-              :onclick "project-create-save"
-              "Create"))))
+              :class "''${save_in_progress ? 'save-button-loading' : 'save-button'}"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update save_in_progress=true && project-create-save &"
+              "''${save_in_progress ? 'Creating...' : 'Create'}"))))
 
       ;; Feature 094 US4: Project delete confirmation dialog (T088-T089)
       (defwidget project-delete-confirmation []
@@ -3611,9 +3701,10 @@ in
                 :class "cancel-delete-button"
                 :onclick "project-delete-cancel"
                 "Cancel")
+              ;; Run in background (&) to avoid eww onclick timeout (2s default)
               (button
                 :class "confirm-delete-button ''${delete_project_has_worktrees && !delete_force ? 'disabled' : '''}"
-                :onclick {delete_project_has_worktrees && !delete_force ? "" : "project-delete-confirm"}
+                :onclick {delete_project_has_worktrees && !delete_force ? "" : "project-delete-confirm &"}
                 :tooltip "''${delete_project_has_worktrees && !delete_force ? 'Check force delete to proceed' : 'Permanently delete project'}"
                 "🗑 Delete")))))
 
@@ -4705,7 +4796,7 @@ in
 
       /* Panel Container - Sidebar Style with rounded corners and transparency */
       .panel-container {
-        background-color: ${mocha.base};
+        background-color: rgba(30, 30, 46, 0.50);  /* 50% transparent Catppuccin base */
         border-radius: 12px;
         padding: 8px;
         margin: 8px;
@@ -5071,7 +5162,7 @@ in
         margin-left: 4px;
         border-radius: 4px;
         background-color: transparent;
-        transition: all 150ms ease;
+        /* GTK CSS doesn't support transition */
         opacity: 0.4;
       }
 
@@ -5089,7 +5180,7 @@ in
         font-size: 14px;
         color: ${mocha.blue};
         min-width: 16px;
-        transition: transform 150ms ease;
+        /* GTK CSS doesn't support transition */
       }
 
       .json-expand-trigger:hover .json-expand-icon {
@@ -5252,44 +5343,148 @@ in
         background-color: ${mocha.surface1};
       }
 
-      /* Project Card Styles */
+      /* Project Card Styles - Enhanced with Catppuccin theming */
       .project-card {
-        background-color: rgba(49, 50, 68, 0.4);
-        border: 1px solid ${mocha.overlay0};
-        border-radius: 8px;
-        padding: 12px;
+        background-color: rgba(49, 50, 68, 0.5);
+        border: 1px solid ${mocha.surface1};
+        border-radius: 10px;
+        padding: 10px 12px;
         margin-bottom: 8px;
+      }
+
+      .project-card:hover {
+        background-color: rgba(49, 50, 68, 0.7);
+        border-color: ${mocha.overlay0};
       }
 
       .project-card.active-project {
         border-color: ${mocha.teal};
-        background-color: rgba(148, 226, 213, 0.1);
+        background-color: rgba(148, 226, 213, 0.12);
+        box-shadow: 0 0 12px rgba(148, 226, 213, 0.15),
+                    inset 0 0 8px rgba(148, 226, 213, 0.05);
       }
 
       .project-card-header {
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+      }
+
+      .project-icon-container {
+        background-color: rgba(137, 180, 250, 0.1);
+        border-radius: 8px;
+        padding: 6px 8px;
+        margin-right: 10px;
       }
 
       .project-icon {
-        font-size: 16px;
-        margin-right: 8px;
+        font-size: 18px;
       }
 
       .project-info {
-        margin-right: 8px;
         min-width: 0;
       }
 
+      .project-name-row {
+        margin-bottom: 2px;
+      }
+
       .project-card-name {
-        font-size: 12px;
+        font-size: 13px;
         font-weight: bold;
         color: ${mocha.text};
-        margin-bottom: 2px;
+      }
+
+      .project-meta-row {
+        margin-top: 2px;
       }
 
       .project-card-path {
         font-size: 9px;
         color: ${mocha.subtext0};
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      /* Project badges - pill style */
+      .project-badges {
+        margin-left: 8px;
+      }
+
+      .badge {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-left: 4px;
+        font-weight: 500;
+      }
+
+      .badge-active {
+        color: ${mocha.green};
+        background-color: rgba(166, 227, 161, 0.2);
+        border: 1px solid rgba(166, 227, 161, 0.4);
+      }
+
+      .badge-scope {
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+
+      .badge-scoped {
+        color: ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.15);
+      }
+
+      .badge-global {
+        color: ${mocha.peach};
+        background-color: rgba(250, 179, 135, 0.15);
+      }
+
+      .badge-remote {
+        color: ${mocha.mauve};
+        background-color: rgba(203, 166, 247, 0.15);
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+
+      /* Project action bar - matches window action bar style */
+      .project-action-bar {
+        margin-left: 8px;
+      }
+
+      .action-edit {
+        color: ${mocha.blue};
+      }
+
+      .action-edit:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.sapphire};
+      }
+
+      .action-delete {
+        color: ${mocha.overlay0};
+      }
+
+      .action-delete:hover {
+        background-color: rgba(243, 139, 168, 0.2);
+        color: ${mocha.red};
+      }
+
+      /* Project JSON tooltip - same style as window JSON */
+      .project-json-tooltip {
+        background-color: rgba(24, 24, 37, 0.98);
+        border: 2px solid ${mocha.teal};
+        border-radius: 8px;
+        padding: 0;
+        margin: 4px 0 8px 0;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(148, 226, 213, 0.3);
+      }
+
+      .project-json-tooltip .json-tooltip-header {
+        background-color: rgba(148, 226, 213, 0.15);
+        border-bottom: 1px solid ${mocha.teal};
+      }
+
+      .project-json-tooltip .json-tooltip-title {
+        color: ${mocha.teal};
       }
 
       .active-indicator {
@@ -5422,15 +5617,17 @@ in
       .new-project-button {
         background-color: ${mocha.green};
         color: ${mocha.base};
-        padding: 4px 12px;
-        border-radius: 6px;
+        padding: 6px 14px;
+        border-radius: 8px;
         font-size: 12px;
         font-weight: bold;
         border: none;
+        box-shadow: 0 2px 8px rgba(166, 227, 161, 0.3);
       }
 
       .new-project-button:hover {
         background-color: ${mocha.teal};
+        box-shadow: 0 4px 12px rgba(148, 226, 213, 0.4);
       }
 
       .project-create-form {
@@ -6397,59 +6594,62 @@ in
         margin-top: 16px;
       }
 
+      /* Enhanced form buttons with Catppuccin pill style */
       .cancel-button {
-        background-color: ${mocha.surface0};
-        border: 1px solid ${mocha.overlay0};
-        border-radius: 4px;
-        padding: 8px 16px;
-        margin-right: 8px;
+        background-color: rgba(49, 50, 68, 0.6);
+        border: 1px solid ${mocha.surface1};
+        border-radius: 8px;
+        padding: 8px 18px;
+        margin-right: 10px;
         font-size: 12px;
-        color: ${mocha.text};
+        font-weight: 500;
+        color: ${mocha.subtext0};
       }
 
       .cancel-button:hover {
-        background-color: ${mocha.surface1};
+        background-color: rgba(69, 71, 90, 0.8);
         border-color: ${mocha.overlay0};
+        color: ${mocha.text};
       }
 
       .save-button {
         background-color: ${mocha.blue};
-        border: 1px solid ${mocha.blue};
-        border-radius: 4px;
-        padding: 8px 16px;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 20px;
         font-size: 12px;
         color: ${mocha.base};
         font-weight: bold;
+        box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
       }
 
       .save-button:hover {
         background-color: ${mocha.sapphire};
-        border-color: ${mocha.sapphire};
+        box-shadow: 0 4px 12px rgba(116, 199, 236, 0.4);
       }
 
       /* T039: Disabled save button (validation failed) */
       .save-button-disabled {
         background-color: ${mocha.surface0};
-        border: 1px solid ${mocha.overlay0};
-        border-radius: 4px;
-        padding: 8px 16px;
+        border: 1px solid ${mocha.surface1};
+        border-radius: 8px;
+        padding: 8px 20px;
         font-size: 12px;
-        color: ${mocha.subtext0};
+        color: ${mocha.overlay0};
         font-weight: bold;
-        opacity: 0.5;
+        opacity: 0.6;
       }
 
       /* Feature 096 T021: Loading state save button */
       .save-button-loading {
-        background-color: ${mocha.surface0};
+        background-color: rgba(137, 180, 250, 0.2);
         border: 1px solid ${mocha.blue};
-        border-radius: 4px;
-        padding: 8px 16px;
+        border-radius: 8px;
+        padding: 8px 20px;
         font-size: 12px;
         color: ${mocha.blue};
         font-weight: bold;
         font-style: italic;
-        opacity: 0.8;
       }
 
       /* T039: Field-level validation error messages */
@@ -6920,7 +7120,7 @@ in
         border-radius: 4px;
         padding: 8px;
         margin-bottom: 6px;
-        transition: background-color 0.2s ease;
+        /* GTK CSS doesn't support transition */
       }
 
       .event-card:hover {
