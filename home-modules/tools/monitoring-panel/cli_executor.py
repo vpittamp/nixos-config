@@ -11,9 +11,10 @@ from typing import Optional, Literal
 from pathlib import Path
 
 import sys
-sys.path.append(str(Path(__file__).parent.parent / "i3_project_manager"))
+# Add tools directory to path for i3_project_manager imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models.validation_state import CLIExecutionResult
+from i3_project_manager.models.validation_state import CLIExecutionResult
 
 
 class CLIExecutor:

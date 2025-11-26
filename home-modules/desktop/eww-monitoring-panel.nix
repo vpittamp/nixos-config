@@ -367,10 +367,18 @@ let
     # Feature 094 T039: Real-time form validation with 300ms debouncing
 
     # Set PYTHONPATH to tools directory for i3_project_manager imports
-    export PYTHONPATH="${../tools}"
+    export PYTHONPATH="${../tools}:${../tools/monitoring-panel}"
 
     # Run validation stream (reads Eww variables, outputs JSON to stdout)
-    exec ${pythonForBackend}/bin/python3 ${../tools/monitoring-panel/project_form_validator_stream.py} "$HOME/.config/eww-monitoring-panel"
+    exec ${pythonForBackend}/bin/python3 -c "
+import sys
+sys.path.insert(0, '${../tools}')
+sys.path.insert(0, '${../tools/monitoring-panel}')
+from project_form_validator_stream import FormValidationStream
+import asyncio
+stream = FormValidationStream('$HOME/.config/eww-monitoring-panel')
+asyncio.run(stream.run())
+"
   '';
 
   # Feature 094 US5: Worktree edit form opener (T059)
@@ -870,12 +878,13 @@ let
     fi
 
     # Call Python CRUD handler
-    export PYTHONPATH="${../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 ${../tools/monitoring-panel/project_crud_handler.py} <<EOF
+    export PYTHONPATH="${../tools}:${../tools/monitoring-panel}"
+    RESULT=$(${pythonForBackend}/bin/python3 <<EOF
 import asyncio
 import json
 import sys
 sys.path.insert(0, "${../tools}")
+sys.path.insert(0, "${../tools/monitoring-panel}")
 from project_crud_handler import ProjectCRUDHandler
 
 handler = ProjectCRUDHandler()
@@ -1292,7 +1301,20 @@ print(json.dumps(result))
     echo "Deleting project: $PROJECT_NAME (force=$FORCE)" >&2
 
     # Call the CRUD handler
-    RESULT=$(echo "$REQUEST" | ${pythonForBackend}/bin/python3 ${../tools/monitoring-panel/project_crud_handler.py})
+    export PYTHONPATH="${../tools}:${../tools/monitoring-panel}"
+    RESULT=$(echo "$REQUEST" | ${pythonForBackend}/bin/python3 -c "
+import sys
+sys.path.insert(0, '${../tools}')
+sys.path.insert(0, '${../tools/monitoring-panel}')
+from project_crud_handler import ProjectCRUDHandler
+import asyncio
+import json
+
+handler = ProjectCRUDHandler()
+request = json.loads(sys.stdin.read())
+result = asyncio.run(handler.handle_request(request))
+print(json.dumps(result))
+")
 
     # Check result
     SUCCESS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.success')
@@ -1311,7 +1333,7 @@ print(json.dumps(result))
       $EWW update projects_data="$PROJECTS_DATA"
 
       # Feature 096 T023: Show success notification via eww (consistent with create/edit)
-      $EWW update success_notification="Project '${PROJECT_NAME}' deleted successfully"
+      $EWW update success_notification="Project '$PROJECT_NAME' deleted successfully"
       $EWW update success_notification_visible=true
       # Auto-dismiss after 3 seconds (T020)
       (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
@@ -1405,7 +1427,20 @@ print(json.dumps(result))
     echo "Deleting application: $APP_NAME" >&2
 
     # Call the CRUD handler
-    RESULT=$(echo "$REQUEST" | ${pythonForBackend}/bin/python3 ${../tools/monitoring-panel/app_crud_handler.py})
+    export PYTHONPATH="${../tools}:${../tools/monitoring-panel}"
+    RESULT=$(echo "$REQUEST" | ${pythonForBackend}/bin/python3 -c "
+import sys
+sys.path.insert(0, '${../tools}')
+sys.path.insert(0, '${../tools/monitoring-panel}')
+from app_crud_handler import AppCRUDHandler
+import asyncio
+import json
+
+handler = AppCRUDHandler()
+request = json.loads(sys.stdin.read())
+result = asyncio.run(handler.handle_request(request))
+print(json.dumps(result))
+")
 
     # Check result
     SUCCESS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.success')
@@ -2870,7 +2905,7 @@ in
             (input
               :class "field-input"
               :value edit_form_display_name
-              :onchange "eww update edit_form_display_name={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}")
             ;; T039: Validation error for display_name
             (revealer
               :reveal {validation_state.errors.display_name != ""}
@@ -2893,7 +2928,7 @@ in
             (input
               :class "field-input"
               :value edit_form_icon
-              :onchange "eww update edit_form_icon={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}")
             ;; T039: Validation error for icon
             (revealer
               :reveal {validation_state.errors.icon != ""}
@@ -2977,7 +3012,7 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_host
-                    :onchange "eww update edit_form_remote_host={}")
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_host={}")
                   ;; T039: Validation error for remote host
                   (revealer
                     :reveal {validation_state.errors["remote.host"] != ""}
@@ -3000,7 +3035,7 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_user
-                    :onchange "eww update edit_form_remote_user={}")
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_user={}")
                   ;; T039: Validation error for remote user
                   (revealer
                     :reveal {validation_state.errors["remote.user"] != ""}
@@ -3023,7 +3058,7 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_dir
-                    :onchange "eww update edit_form_remote_dir={}")
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_dir={}")
                   ;; T039: Validation error for remote directory
                   (revealer
                     :reveal {validation_state.errors["remote.working_dir"] != ""}
@@ -3046,7 +3081,7 @@ in
                   (input
                     :class "field-input"
                     :value edit_form_remote_port
-                    :onchange "eww update edit_form_remote_port={}")
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_remote_port={}")
                   ;; T039: Validation error for remote port
                   (revealer
                     :reveal {validation_state.errors["remote.port"] != ""}
@@ -3109,7 +3144,7 @@ in
             (input
               :class "field-input"
               :value edit_form_display_name
-              :onchange "eww update edit_form_display_name={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}"))
           ;; Icon field (editable)
           (box
             :class "form-field"
@@ -3122,7 +3157,7 @@ in
             (input
               :class "field-input"
               :value edit_form_icon
-              :onchange "eww update edit_form_icon={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}"))
           ;; Branch name field (read-only per spec.md US5 scenario 6)
           (box
             :class "form-field readonly-field"
@@ -3225,7 +3260,7 @@ in
             (input
               :class "field-input"
               :value worktree_form_branch_name
-              :onchange "eww update worktree_form_branch_name={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -3242,7 +3277,7 @@ in
             (input
               :class "field-input"
               :value worktree_form_path
-              :onchange "eww update worktree_form_path={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path={}"))
           ;; Display name field (optional)
           (box
             :class "form-field"
@@ -3255,7 +3290,7 @@ in
             (input
               :class "field-input"
               :value edit_form_display_name
-              :onchange "eww update edit_form_display_name={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}"))
           ;; Icon field (optional)
           (box
             :class "form-field"
@@ -3268,7 +3303,7 @@ in
             (input
               :class "field-input"
               :value edit_form_icon
-              :onchange "eww update edit_form_icon={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}"))
           ;; Error message display
           (revealer
             :reveal {edit_form_error != ""}
@@ -3317,7 +3352,7 @@ in
             (input
               :class "field-input"
               :value create_form_name
-              :onchange "eww update create_form_name={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_name={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -3334,7 +3369,7 @@ in
             (input
               :class "field-input"
               :value create_form_display_name
-              :onchange "eww update create_form_display_name={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_display_name={}"))
           ;; Icon field (optional)
           (box
             :class "form-field"
@@ -3347,7 +3382,7 @@ in
             (input
               :class "field-input icon-input"
               :value create_form_icon
-              :onchange "eww update create_form_icon={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_icon={}"))
           ;; Working directory field (required)
           (box
             :class "form-field"
@@ -3360,7 +3395,7 @@ in
             (input
               :class "field-input"
               :value create_form_working_dir
-              :onchange "eww update create_form_working_dir={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_working_dir={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -3393,7 +3428,7 @@ in
             :space-evenly false
             (checkbox
               :checked create_form_remote_enabled
-              :onchange "eww update create_form_remote_enabled={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_enabled={}")
             (label
               :class "field-label"
               :halign "start"
@@ -3419,7 +3454,7 @@ in
                 (input
                   :class "field-input"
                   :value create_form_remote_host
-                  :onchange "eww update create_form_remote_host={}")
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_host={}")
                 (label
                   :class "field-hint"
                   :halign "start"
@@ -3436,7 +3471,7 @@ in
                 (input
                   :class "field-input"
                   :value create_form_remote_user
-                  :onchange "eww update create_form_remote_user={}"))
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_user={}"))
               ;; Remote directory
               (box
                 :class "form-field"
@@ -3449,7 +3484,7 @@ in
                 (input
                   :class "field-input"
                   :value create_form_remote_dir
-                  :onchange "eww update create_form_remote_dir={}")
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_dir={}")
                 (label
                   :class "field-hint"
                   :halign "start"
@@ -3466,7 +3501,7 @@ in
                 (input
                   :class "field-input port-input"
                   :value create_form_remote_port
-                  :onchange "eww update create_form_remote_port={}"))))
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_form_remote_port={}"))))
           ;; Error message display
           (revealer
             :reveal {create_form_error != ""}
@@ -3551,7 +3586,7 @@ in
                   (checkbox
                     :class "force-delete-checkbox"
                     :checked delete_force
-                    :onchange "eww update delete_force={}")
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update delete_force={}")
                   (label
                     :class "force-delete-label"
                     :halign "start"
@@ -3707,7 +3742,7 @@ in
             (input
               :class "field-input"
               :value create_app_name
-              :onchange "eww update create_app_name={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_name={}")
             (label
               :class "field-hint"
               :halign "start"
@@ -3724,7 +3759,7 @@ in
             (input
               :class "field-input"
               :value create_app_display_name
-              :onchange "eww update create_app_display_name={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_display_name={}"))
           ;; Command field (not shown for PWA - auto-set to firefoxpwa)
           (revealer
             :reveal {create_app_type != "pwa"}
@@ -3744,7 +3779,7 @@ in
                 (input
                   :class "field-input"
                   :value create_app_command
-                  :onchange "eww update create_app_command={}"))
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_command={}"))
               ;; Terminal apps: dropdown of terminal emulators
               (box
                 :visible {create_app_type == "terminal"}
@@ -3783,7 +3818,7 @@ in
               (input
                 :class "field-input"
                 :value create_app_parameters
-                :onchange "eww update create_app_parameters={}")
+                :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_parameters={}")
               (label
                 :class "field-hint"
                 :halign "start"
@@ -3804,7 +3839,7 @@ in
               (input
                 :class "field-input"
                 :value create_app_expected_class
-                :onchange "eww update create_app_expected_class={}")
+                :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_expected_class={}")
               (label
                 :class "field-hint"
                 :halign "start"
@@ -3830,7 +3865,7 @@ in
                 (input
                   :class "field-input"
                   :value create_app_start_url
-                  :onchange "eww update create_app_start_url={}")
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_start_url={}")
                 (label
                   :class "field-hint"
                   :halign "start"
@@ -3847,7 +3882,7 @@ in
                 (input
                   :class "field-input"
                   :value create_app_scope_url
-                  :onchange "eww update create_app_scope_url={}")
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_scope_url={}")
                 (label
                   :class "field-hint"
                   :halign "start"
@@ -3869,7 +3904,7 @@ in
             (input
               :class "field-input workspace-input"
               :value create_app_workspace
-              :onchange "eww update create_app_workspace={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_workspace={}")
             (label
               :class "field-hint ''${create_app_type == 'pwa' ? 'pwa-workspace-note' : '''}"
               :halign "start"
@@ -3911,7 +3946,7 @@ in
             (input
               :class "field-input icon-input"
               :value create_app_icon
-              :onchange "eww update create_app_icon={}")
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update create_app_icon={}")
             (label
               :class "field-hint"
               :halign "start"

@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-# Add parent directory to path for imports
+# Add parent directory (tools) to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tools.i3_project_manager.services.form_validator import FormValidator
+from i3_project_manager.services.form_validator import FormValidator
 
 
 class FormValidationStream:
