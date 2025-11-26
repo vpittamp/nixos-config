@@ -4774,6 +4774,11 @@ in
         /* transition not supported in GTK CSS */
       }
 
+      .panel-container * {
+        /* Prevent any child from exceeding container bounds */
+        min-width: 0;
+      }
+
       /* Feature 086: Focused state with glowing border effect */
       .panel-container.focused {
         border: 2px solid ${mocha.mauve};
@@ -4929,7 +4934,9 @@ in
       }
 
       .projects-list {
-        padding: 4px 10px;
+        padding: 4px 8px;
+        /* Constrain width to prevent overflow */
+        margin-right: 4px;
       }
 
       /* Project Widget */
