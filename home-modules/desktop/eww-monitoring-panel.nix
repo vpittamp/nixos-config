@@ -2859,101 +2859,79 @@ in
 
       (defwidget worktree-card [project]
         (eventbox
-          :onhover "eww update hover_project_name=''${project.name}"
-          :onhoverlost "eww update hover_project_name='''"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
             :class "worktree-card"
-            :orientation "v"
+            :orientation "h"
             :space-evenly false
+            ;; Worktree tree indicator
+            (label
+              :class "worktree-tree"
+              :text "├─")
+            ;; Icon
             (box
-              :class "project-card-header"
+              :class "project-icon-container"
+              :orientation "v"
+              :valign "center"
+              (label
+                :class "project-icon worktree-icon"
+                :text "''${project.icon}"))
+            ;; Project info - takes remaining space
+            (box
+              :class "project-info"
+              :orientation "v"
+              :space-evenly false
+              :hexpand true
+              (label
+                :class "project-card-name worktree-name"
+                :halign "start"
+                :limit-width 20
+                :truncate true
+                :text "''${project.display_name ?: project.name}")
+              (label
+                :class "project-card-path"
+                :halign "start"
+                :limit-width 28
+                :truncate true
+                :text "''${project.directory}"))
+            ;; Badges - compact
+            (box
+              :class "worktree-badges"
               :orientation "h"
               :space-evenly false
-              ;; Worktree tree indicator
+              ;; Branch indicator (US5)
               (label
-                :class "worktree-tree"
-                :text "''${"├─"}")
-              ;; Icon
-              (box
-                :class "project-icon-container"
-                :orientation "v"
-                :valign "center"
-                (label
-                  :class "project-icon worktree-icon"
-                  :text "''${project.icon}"))
-              ;; Project info
-              (box
-                :class "project-info"
-                :orientation "v"
-                :space-evenly false
-                :hexpand true
-                (box
-                  :class "project-name-row"
-                  :orientation "h"
-                  :space-evenly false
-                  (label
-                    :class "project-card-name worktree-name"
-                    :halign "start"
-                    :text "''${project.display_name ?: project.name}")
-                  ;; Branch indicator (US5)
-                  (label
-                    :class "branch-indicator"
-                    :visible {project.branch_name != ""}
-                    :text "''${project.branch_name}")
-                  ;; Remote indicator
-                  (label
-                    :class "remote-indicator"
-                    :visible {project.is_remote}
-                    :text "󰒍"))
-                (label
-                  :class "project-card-path"
-                  :halign "start"
-                  :truncate true
-                  :text "''${project.directory}"))
-              ;; Action buttons (visible on hover, hide when editing)
-              (revealer
-                :reveal {hover_project_name == project.name && editing_project_name != project.name}
-                :transition "slideleft"
-                :duration "150ms"
-                (box
-                  :class "worktree-actions"
-                  :orientation "h"
-                  :space-evenly false
-                  (button
-                    :class "worktree-action-btn edit-btn"
-                    :tooltip "Edit worktree"
-                    :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
-                    "''${"✏️"}")
-                  (button
-                    :class "worktree-action-btn delete-btn ''${worktree_delete_confirm == project.name ? "confirm" : ""}"
-                    :tooltip "''${worktree_delete_confirm == project.name ? "Click again to confirm" : "Delete worktree"}"
-                    :onclick "worktree-delete ''${project.name}"
-                    "''${worktree_delete_confirm == project.name ? "❗" : "🗑️"}")))
-              ;; Active indicator
+                :class "badge badge-branch"
+                :visible {project.branch_name != ""}
+                :limit-width 10
+                :text "''${project.branch_name}")
+              ;; Remote indicator
               (label
-                :class "active-indicator"
-                :visible {project.is_active}
-                :text "●"))
-            ;; Hover detail tooltip (hide when editing)
-            (revealer
-              :reveal {hover_project_name == project.name && editing_project_name != project.name}
-              :transition "slidedown"
-              :duration "200ms"
-              (box
-                :class "project-detail-tooltip"
-                :orientation "v"
-                :space-evenly false
-                (label
-                  :class "json-detail"
-                  :halign "start"
-                  :wrap true
-                  :text "''${project.directory}")))
-            ;; Edit form (T059: Worktree edit shows read-only branch/path)
-            (revealer
-              :reveal {editing_project_name == project.name}
-              :transition "slidedown"
-              :duration "200ms"
-              (worktree-edit-form :project project)))))
+                :class "badge badge-remote"
+                :visible {project.is_remote}
+                :text "󰒍"))
+            ;; Action buttons (visible on hover)
+            (box
+              :class "worktree-actions"
+              :visible {hover_project_name == project.name && editing_project_name != project.name}
+              :orientation "h"
+              :space-evenly false
+              (eventbox
+                :cursor "pointer"
+                :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
+                :tooltip "Edit worktree"
+                (label :class "action-btn action-edit" :text "󰏫"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "worktree-delete ''${project.name}"
+                :tooltip "''${worktree_delete_confirm == project.name ? 'Click again to confirm' : 'Delete worktree'}"
+                (label :class {"action-btn action-delete" + (worktree_delete_confirm == project.name ? " confirm" : "")} :text "''${worktree_delete_confirm == project.name ? '❗' : '󰆴'}")))
+            ;; Active indicator
+            (label
+              :class "active-indicator"
+              :visible {project.is_active}
+              :text "●"))))
 
       ;; Feature 094: Project edit form widget (T038)
       (defwidget project-edit-form [project]
@@ -5522,51 +5500,58 @@ in
         background-color: rgba(49, 50, 68, 0.3);
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
-        padding: 10px;
-        margin-left: 20px;
-        margin-bottom: 6px;
-        margin-top: 4px;
+        padding: 6px 8px;
+        margin-left: 16px;
+        margin-bottom: 4px;
+        margin-top: 2px;
       }
 
       .worktree-tree {
         color: ${mocha.overlay0};
-        font-size: 12px;
+        font-size: 11px;
         margin-right: 4px;
         font-family: monospace;
+        min-width: 16px;
       }
 
       .worktree-icon {
-        font-size: 16px;
+        font-size: 14px;
       }
 
       .worktree-name {
-        font-size: 12px;
+        font-size: 11px;
         color: ${mocha.subtext0};
       }
 
-      /* Feature 094 US5: Branch indicator */
-      .branch-indicator {
-        font-size: 10px;
+      .worktree-badges {
+        margin-left: 4px;
+      }
+
+      /* Feature 094 US5: Branch indicator badge */
+      .badge-branch {
+        font-size: 9px;
         color: ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.15);
-        padding: 2px 6px;
+        padding: 1px 4px;
         border-radius: 4px;
-        margin-left: 8px;
         font-family: monospace;
       }
 
-      /* Feature 094 US5: Worktree action buttons (T057-T061) */
+      /* Feature 094 US5: Worktree action buttons */
       .worktree-actions {
-        /* GTK CSS doesn't support margin-left: auto; use box expand in yuck instead */
+        margin-left: 4px;
+        background-color: rgba(30, 30, 46, 0.8);
+        border-radius: 4px;
+        padding: 1px 3px;
       }
 
       .worktree-action-btn {
         background-color: transparent;
         border: none;
-        padding: 4px 8px;
+        padding: 2px 4px;
         border-radius: 4px;
-        font-size: 12px;
-        min-width: 28px;
+        font-size: 11px;
+        min-width: 20px;
       }
 
       .worktree-action-btn.edit-btn {
