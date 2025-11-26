@@ -1701,6 +1701,10 @@ in
       ;; UX Enhancement: Search/filter state
       (defvar search_query "")
 
+      ;; UX Enhancement: Context menu state for quick actions
+      (defvar context_menu_window_id 0)
+      (defvar context_menu_visible false)
+
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
       (defvar copied_window_id 0)
@@ -1876,7 +1880,9 @@ in
             ;; Feature 094 T040: Conflict resolution dialog overlay
             (conflict-resolution-dialog)
             ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast))))
+            (success-notification-toast)
+            ;; UX Enhancement: Window context menu overlay
+            (window-context-menu))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -2057,9 +2063,10 @@ in
                   (project-widget :project project)))))))
 
       ;; Project display widget
+      ;; UX Enhancement: Active project gets highlighted
       (defwidget project-widget [project]
         (box
-          :class "project ''${project.scope == 'scoped' ? 'scoped-project' : 'global-project'}"
+          :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
           :orientation "v"
           :space-evenly false
           ; Project header
@@ -2070,6 +2077,11 @@ in
             (label
               :class "project-name"
               :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
+            ;; UX Enhancement: Active indicator
+            (label
+              :class "active-indicator"
+              :visible {project.is_active}
+              :text "ACTIVE")
             (label
               :class "window-count-badge"
               :text "''${project.window_count}"))
@@ -3872,6 +3884,72 @@ in
               :onclick "eww update success_notification_visible=false success_notification=\"\""
               "x"))))
 
+      ;; UX Enhancement: Window context menu overlay
+      (defwidget window-context-menu []
+        (revealer
+          :reveal context_menu_visible
+          :transition "crossfade"
+          :duration "100ms"
+          (eventbox
+            :class "context-menu-overlay"
+            :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+            (box
+              :class "context-menu"
+              :orientation "v"
+              :space-evenly false
+              :valign "center"
+              :halign "center"
+              ;; Menu header
+              (box
+                :class "context-menu-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "context-menu-title"
+                  :text "Quick Actions")
+                (eventbox
+                  :class "context-menu-close"
+                  :cursor "pointer"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                  (label :text "x")))
+              ;; Menu items
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "F")
+                  (label :class "menu-label" :text "Focus Window")))
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "~")
+                  (label :class "menu-label" :text "Toggle Floating")))
+              (eventbox
+                :class "context-menu-item"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "[]")
+                  (label :class "menu-label" :text "Toggle Fullscreen")))
+              (eventbox
+                :class "context-menu-item danger"
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${context_menu_window_id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
+                (box
+                  :orientation "h"
+                  :space-evenly false
+                  (label :class "menu-icon" :text "X")
+                  (label :class "menu-label" :text "Close Window")))))))
+
       ;; Apps View - Application registry browser
       ;; Applications View - App registry with type grouping (Feature 094)
       (defwidget apps-view []
@@ -4630,6 +4708,30 @@ in
 
       .global-project {
         border-left: 3px solid ${mocha.mauve};
+      }
+
+      /* UX Enhancement: Active project highlight */
+      .project-active {
+        background-color: rgba(137, 180, 250, 0.1);
+        border-left-color: ${mocha.blue};
+      }
+
+      .project-active .project-header {
+        background-color: rgba(137, 180, 250, 0.15);
+      }
+
+      .project-active .project-name {
+        color: ${mocha.blue};
+      }
+
+      .active-indicator {
+        font-size: 9px;
+        font-weight: bold;
+        color: ${mocha.blue};
+        background-color: rgba(137, 180, 250, 0.2);
+        padding: 1px 6px;
+        border-radius: 3px;
+        margin-left: 6px;
       }
 
       .project-header {
@@ -5734,6 +5836,69 @@ in
 
       .success-notification-toast .success-dismiss:hover {
         opacity: 1;
+      }
+
+      /* UX Enhancement: Context menu styles */
+      .context-menu-overlay {
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 20px;
+      }
+
+      .context-menu {
+        background-color: ${mocha.base};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 8px;
+        padding: 8px 0;
+        min-width: 200px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+
+      .context-menu-header {
+        padding: 8px 12px;
+        border-bottom: 1px solid ${mocha.surface0};
+        margin-bottom: 4px;
+      }
+
+      .context-menu-title {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.subtext0};
+      }
+
+      .context-menu-close {
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .context-menu-close:hover {
+        background-color: ${mocha.surface0};
+      }
+
+      .context-menu-item {
+        padding: 8px 12px;
+      }
+
+      .context-menu-item:hover {
+        background-color: ${mocha.surface0};
+      }
+
+      .context-menu-item.danger:hover {
+        background-color: rgba(243, 139, 168, 0.2);
+      }
+
+      .context-menu-item.danger .menu-label {
+        color: ${mocha.red};
+      }
+
+      .menu-icon {
+        font-size: 14px;
+        color: ${mocha.subtext0};
+        min-width: 24px;
+      }
+
+      .menu-label {
+        font-size: 13px;
+        color: ${mocha.text};
       }
 
       /* Feature 094 Phase 12 T098: Loading spinner styles */
