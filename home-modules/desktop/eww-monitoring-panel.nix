@@ -2676,55 +2676,60 @@ in
 
       ;; Projects View - Project list with metadata
       (defwidget projects-view []
-        (scroll
-          :vscroll true
-          :hscroll false
+        (box
+          :class "projects-view-wrapper"
+          :orientation "v"
+          :space-evenly false
           :vexpand true
+          ;; Feature 094 US3: Projects tab header with New Project button (T066)
           (box
-            :class "content-container"
-            :orientation "v"
+            :class "projects-header"
+            :orientation "h"
             :space-evenly false
-            ;; Feature 094 US3: Projects tab header with New Project button (T066)
+            :visible {!project_creating}
+            (label
+              :class "projects-header-title"
+              :halign "start"
+              :hexpand true
+              :text "Projects")
+            (button
+              :class "new-project-button"
+              :onclick "project-create-open"
+              :tooltip "Create a new project"
+              "+ New"))
+          ;; Feature 094 US3: Project create form (T067)
+          (revealer
+            :transition "slidedown"
+            :reveal project_creating
+            :duration "200ms"
+            (project-create-form))
+          ;; Feature 094 US4: Delete confirmation dialog (T088)
+          (project-delete-confirmation)
+          ;; Error state
+          (box
+            :class "error-message"
+            :visible {projects_data.status == "error"}
+            (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
+          ;; Scrollable projects list
+          (scroll
+            :vscroll true
+            :hscroll false
+            :vexpand true
             (box
-              :class "projects-header"
-              :orientation "h"
+              :class "projects-list"
+              :orientation "v"
               :space-evenly false
-              :visible {!project_creating}
-              (label
-                :class "projects-header-title"
-                :halign "start"
-                :hexpand true
-                :text "Projects")
-              (button
-                :class "new-project-button"
-                :onclick "project-create-open"
-                :tooltip "Create a new project"
-                "+ New Project"))
-            ;; Feature 094 US3: Project create form (T067)
-            (revealer
-              :transition "slidedown"
-              :reveal project_creating
-              :duration "200ms"
-              (project-create-form))
-            ;; Feature 094 US4: Delete confirmation dialog (T088)
-            (project-delete-confirmation)
-            ;; Error state
-            (box
-              :class "error-message"
-              :visible {projects_data.status == "error"}
-              (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Main projects
-            (for project in {projects_data.main_projects ?: []}
-              (box
-                :orientation "v"
-                :space-evenly false
-                ;; Main project card
-                (project-card :project project)
-                ;; Worktrees for this main project
-                (for worktree in {projects_data.worktrees ?: []}
-                  (box
-                    :visible {worktree.parent_project == project.name}
-                    (worktree-card :project worktree))))))))
+              (for project in {projects_data.main_projects ?: []}
+                (box
+                  :orientation "v"
+                  :space-evenly false
+                  ;; Main project card
+                  (project-card :project project)
+                  ;; Worktrees for this main project
+                  (for worktree in {projects_data.worktrees ?: []}
+                    (box
+                      :visible {worktree.parent_project == project.name}
+                      (worktree-card :project worktree)))))))))
 
       (defwidget project-card [project]
         (eventbox
@@ -4916,7 +4921,15 @@ in
       }
 
       .content-container {
+        padding: 8px 12px;
+      }
+
+      .projects-view-wrapper {
         padding: 0;
+      }
+
+      .projects-list {
+        padding: 4px 10px;
       }
 
       /* Project Widget */
@@ -5315,6 +5328,7 @@ in
         border-radius: 8px;
         padding: 8px 10px;
         margin-bottom: 6px;
+        margin-right: 2px;  /* Ensure right border/shadow is visible */
       }
 
       .project-card:hover {
