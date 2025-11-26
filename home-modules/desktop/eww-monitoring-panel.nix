@@ -2092,7 +2092,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "450px"
+          :width "460px"
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
@@ -4768,8 +4768,8 @@ in
       .panel-container {
         background-color: rgba(30, 30, 46, 0.50);  /* 50% transparent Catppuccin base */
         border-radius: 12px;
-        padding: 8px;
-        margin: 8px;
+        padding: 6px;
+        margin: 4px;
         border: 2px solid rgba(137, 180, 250, 0.2);
         /* transition not supported in GTK CSS */
       }
