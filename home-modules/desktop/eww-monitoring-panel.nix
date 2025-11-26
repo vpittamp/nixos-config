@@ -205,6 +205,9 @@ let
     PROJECT_NAME="$1"
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 096 T022: Set loading state to prevent double-submit
+    $EWW update save_in_progress=true
+
     # Read form values from Eww variables
     DISPLAY_NAME=$($EWW get edit_form_display_name)
     ICON=$($EWW get edit_form_icon)
@@ -238,14 +241,16 @@ let
     CONFLICT=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.conflict // false')
 
     if [ "$STATUS" = "success" ]; then
-      # Check for conflicts (T041)
+      # Feature 096 T010: Handle conflicts as warnings, not errors
+      # The save DID succeed (last write wins), so continue with success handling
+      # but show a warning notification to inform the user about the conflict
       if [ "$CONFLICT" = "true" ]; then
-        # TODO T040: Show conflict resolution dialog
-        # For now, display error and keep form open
-        ERROR_MSG="Conflict: File was modified externally. Please reload and try again."
-        $EWW update edit_form_error="$ERROR_MSG"
-        echo "Conflict detected: $ERROR_MSG" >&2
-        exit 1
+        # Feature 096 T023: Show warning notification for conflicts (but save succeeded)
+        $EWW update warning_notification="File was modified externally - your changes were saved (last write wins)"
+        $EWW update warning_notification_visible=true
+        # Auto-dismiss warning after 5 seconds
+        (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+        echo "Warning: File was modified externally but your changes were saved (last write wins)" >&2
       fi
 
       # Success: Clear editing state and refresh
@@ -256,9 +261,18 @@ let
       PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
       $EWW update projects_data="$PROJECTS_DATA"
 
+      # Feature 096 T023: Show success notification
+      $EWW update success_notification="Project saved successfully"
+      $EWW update success_notification_visible=true
+      # Auto-dismiss after 3 seconds (T020)
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+
+      # Feature 096 T022: Clear loading state
+      $EWW update save_in_progress=false
+
       echo "Project saved successfully"
     else
-      # Show validation or other errors
+      # Feature 096 T024: Show error notification with specific message
       ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error')
       VALIDATION_ERRORS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.validation_errors // [] | length')
 
@@ -270,7 +284,15 @@ let
         ERROR_MSG="$ERROR"
       fi
 
+      # Show error in form AND as notification toast
       $EWW update edit_form_error="$ERROR_MSG"
+      $EWW update error_notification="$ERROR_MSG"
+      $EWW update error_notification_visible=true
+      # Error notifications persist until dismissed (no auto-dismiss)
+
+      # Feature 096 T022: Clear loading state
+      $EWW update save_in_progress=false
+
       echo "Error: $ERROR_MSG" >&2
       exit 1
     fi
@@ -385,6 +407,9 @@ let
 
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 096 T022: Set loading state to prevent double-submit
+    $EWW update save_in_progress=true
+
     # Read form values from Eww variables
     BRANCH_NAME=$($EWW get worktree_form_branch_name)
     WORKTREE_PATH=$($EWW get worktree_form_path)
@@ -395,14 +420,26 @@ let
     # Validate required fields
     if [[ -z "$BRANCH_NAME" ]]; then
       $EWW update edit_form_error="Branch name is required"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Branch name is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
     if [[ -z "$WORKTREE_PATH" ]]; then
       $EWW update edit_form_error="Worktree path is required"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Worktree path is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
     if [[ -z "$PARENT_PROJECT" ]]; then
       $EWW update edit_form_error="Parent project is required"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Parent project is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
@@ -410,24 +447,40 @@ let
     PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
     if [[ ! -f "$PARENT_FILE" ]]; then
       $EWW update edit_form_error="Parent project not found: $PARENT_PROJECT"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Parent project not found: $PARENT_PROJECT"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
     PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // .working_dir // empty' "$PARENT_FILE")
     if [[ -z "$PARENT_DIR" ]]; then
       $EWW update edit_form_error="Parent project has no directory"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Parent project has no directory"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
     # Check if worktree path already exists
     if [[ -e "$WORKTREE_PATH" ]]; then
       $EWW update edit_form_error="Path already exists: $WORKTREE_PATH"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Path already exists: $WORKTREE_PATH"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
     # Create Git worktree
     cd "$PARENT_DIR" || {
       $EWW update edit_form_error="Cannot change to parent directory: $PARENT_DIR"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Cannot change to parent directory: $PARENT_DIR"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     }
 
@@ -436,12 +489,20 @@ let
       # Branch exists
       if ! git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" 2>&1; then
         $EWW update edit_form_error="Git worktree add failed"
+        # Feature 096 T024: Show error notification
+        $EWW update error_notification="Git worktree add failed for branch: $BRANCH_NAME"
+        $EWW update error_notification_visible=true
+        $EWW update save_in_progress=false
         exit 1
       fi
     else
       # Branch doesn't exist - create it
       if ! git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" 2>&1; then
         $EWW update edit_form_error="Git worktree add failed (new branch)"
+        # Feature 096 T024: Show error notification
+        $EWW update error_notification="Failed to create new branch: $BRANCH_NAME"
+        $EWW update error_notification_visible=true
+        $EWW update save_in_progress=false
         exit 1
       fi
     fi
@@ -472,6 +533,10 @@ let
     if [[ "$STATUS" != "success" ]]; then
       ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
       $EWW update edit_form_error="Failed to create worktree config: $ERROR"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Failed to create worktree config: $ERROR"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       # Cleanup: remove the git worktree we just created
       git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
       exit 1
@@ -489,6 +554,15 @@ let
     # Refresh projects data
     PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
     $EWW update projects_data="$PROJECTS_DATA"
+
+    # Feature 096 T023: Show success notification
+    $EWW update success_notification="Worktree '$WORKTREE_NAME' created successfully"
+    $EWW update success_notification_visible=true
+    # Auto-dismiss after 3 seconds (T020)
+    (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+
+    # Feature 096 T022: Clear loading state
+    $EWW update save_in_progress=false
 
     echo "Worktree created successfully: $WORKTREE_NAME"
   '';
@@ -516,11 +590,18 @@ let
       exit 0
     fi
 
+    # Feature 096 T022: Set loading state
+    $EWW update save_in_progress=true
+
     # User confirmed - proceed with deletion
     PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
     if [[ ! -f "$PROJECT_FILE" ]]; then
       $EWW update edit_form_error="Project not found: $PROJECT_NAME"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Worktree not found: $PROJECT_NAME"
+      $EWW update error_notification_visible=true
       $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
       exit 1
     fi
 
@@ -530,18 +611,25 @@ let
 
     if [[ -z "$WORKTREE_PATH" ]] || [[ -z "$PARENT_PROJECT" ]]; then
       $EWW update edit_form_error="Not a worktree project"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Not a worktree project: $PROJECT_NAME"
+      $EWW update error_notification_visible=true
       $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
       exit 1
     fi
 
     # Get parent directory for git worktree removal
     PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
+    GIT_CLEANUP_WARNING=""
     if [[ -f "$PARENT_FILE" ]]; then
       PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // .working_dir // empty' "$PARENT_FILE")
       if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
         cd "$PARENT_DIR"
         # Remove git worktree (use --force if dirty)
-        git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+        if ! git worktree remove "$WORKTREE_PATH" --force 2>/dev/null; then
+          GIT_CLEANUP_WARNING=" (Git cleanup may have failed)"
+        fi
       fi
     fi
 
@@ -553,7 +641,11 @@ let
     if [[ "$STATUS" != "success" ]]; then
       ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
       $EWW update edit_form_error="Failed to delete: $ERROR"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Failed to delete worktree: $ERROR"
+      $EWW update error_notification_visible=true
       $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
       exit 1
     fi
 
@@ -564,6 +656,20 @@ let
     # Refresh projects data
     PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
     $EWW update projects_data="$PROJECTS_DATA"
+
+    # Feature 096 T023: Show success notification (with optional warning)
+    if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
+      $EWW update warning_notification="Worktree '$PROJECT_NAME' deleted$GIT_CLEANUP_WARNING"
+      $EWW update warning_notification_visible=true
+      (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+    else
+      $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
+      $EWW update success_notification_visible=true
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+    fi
+
+    # Feature 096 T022: Clear loading state
+    $EWW update save_in_progress=false
 
     echo "Worktree deleted successfully: $PROJECT_NAME"
   '';
@@ -582,6 +688,9 @@ let
       exit 1
     fi
 
+    # Feature 096 T022: Set loading state to prevent double-submit
+    $EWW update save_in_progress=true
+
     # Read form values (only editable fields for worktrees)
     DISPLAY_NAME=$($EWW get edit_form_display_name)
     ICON=$($EWW get edit_form_icon)
@@ -597,7 +706,16 @@ let
     RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler edit "$PROJECT_NAME" --updates "$UPDATES")
 
     STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
+    CONFLICT=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.conflict // false')
+
     if [[ "$STATUS" == "success" ]]; then
+      # Feature 096 T010: Handle conflicts as warnings, not errors
+      if [[ "$CONFLICT" == "true" ]]; then
+        $EWW update warning_notification="File was modified externally - your changes were saved (last write wins)"
+        $EWW update warning_notification_visible=true
+        (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+      fi
+
       # Success: clear editing state and refresh
       $EWW update editing_project_name=""
       $EWW update edit_form_error=""
@@ -606,10 +724,26 @@ let
       PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
       $EWW update projects_data="$PROJECTS_DATA"
 
+      # Feature 096 T023: Show success notification
+      $EWW update success_notification="Worktree saved successfully"
+      $EWW update success_notification_visible=true
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+
+      # Feature 096 T022: Clear loading state
+      $EWW update save_in_progress=false
+
       echo "Worktree saved successfully"
     else
       ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
       $EWW update edit_form_error="$ERROR"
+
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Failed to save worktree: $ERROR"
+      $EWW update error_notification_visible=true
+
+      # Feature 096 T022: Clear loading state
+      $EWW update save_in_progress=false
+
       echo "Error: $ERROR" >&2
       exit 1
     fi
@@ -648,6 +782,9 @@ let
 
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
+    # Feature 096 T022: Set loading state to prevent double-submit
+    $EWW update save_in_progress=true
+
     # Read form values from Eww variables
     NAME=$($EWW get create_form_name)
     DISPLAY_NAME=$($EWW get create_form_display_name)
@@ -663,11 +800,19 @@ let
     # Client-side validation
     if [[ -z "$NAME" ]]; then
       $EWW update create_form_error="Project name is required"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Project name is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
     if [[ -z "$WORKING_DIR" ]]; then
       $EWW update create_form_error="Working directory is required"
+      # Feature 096 T024: Show error notification
+      $EWW update error_notification="Working directory is required"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       exit 1
     fi
 
@@ -761,6 +906,15 @@ EOF
       PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
       $EWW update projects_data="$PROJECTS_DATA"
 
+      # Feature 096 T023: Show success notification
+      $EWW update success_notification="Project '$NAME' created successfully"
+      $EWW update success_notification_visible=true
+      # Auto-dismiss after 3 seconds (T020)
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+
+      # Feature 096 T022: Clear loading state
+      $EWW update save_in_progress=false
+
       echo "Project created successfully: $NAME"
     else
       # Show error message
@@ -770,11 +924,24 @@ EOF
       if [[ "$VALIDATION_ERRORS" -gt 0 ]]; then
         FIRST_ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.validation_errors[0]')
         $EWW update create_form_error="$FIRST_ERROR"
+        # Feature 096 T024: Show error notification
+        $EWW update error_notification="Validation error: $FIRST_ERROR"
+        $EWW update error_notification_visible=true
       elif [[ -n "$ERROR_MSG" ]] && [[ "$ERROR_MSG" != "null" ]]; then
         $EWW update create_form_error="$ERROR_MSG"
+        # Feature 096 T024: Show error notification
+        $EWW update error_notification="$ERROR_MSG"
+        $EWW update error_notification_visible=true
       else
         $EWW update create_form_error="Failed to create project"
+        # Feature 096 T024: Show error notification
+        $EWW update error_notification="Failed to create project"
+        $EWW update error_notification_visible=true
       fi
+
+      # Feature 096 T022: Clear loading state on error
+      $EWW update save_in_progress=false
+
       exit 1
     fi
   '';
@@ -1143,14 +1310,22 @@ print(json.dumps(result))
       PROJECTS_DATA=$(${pythonForBackend}/bin/python3 ${../tools/i3_project_manager/cli/monitoring_data.py} --mode projects)
       $EWW update projects_data="$PROJECTS_DATA"
 
-      # Brief success notification
-      ${pkgs.libnotify}/bin/notify-send -t 3000 "Project Deleted" "''${PROJECT_NAME} has been deleted"
+      # Feature 096 T023: Show success notification via eww (consistent with create/edit)
+      $EWW update success_notification="Project '${PROJECT_NAME}' deleted successfully"
+      $EWW update success_notification_visible=true
+      # Auto-dismiss after 3 seconds (T020)
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
 
       echo "Project deleted successfully: $PROJECT_NAME"
     else
       # Show error in dialog
       ERROR_MSG=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error_message')
       $EWW update delete_error="$ERROR_MSG"
+
+      # Feature 096 T024: Show error notification via eww
+      $EWW update error_notification="Delete failed: $ERROR_MSG"
+      $EWW update error_notification_visible=true
+
       echo "Error deleting project: $ERROR_MSG" >&2
       exit 1
     fi
@@ -1823,9 +1998,14 @@ in
       (defvar delete_app_error "")                  ;; Error message from delete operation
 
       ;; Feature 094 Phase 12: Loading and notification states (T098-T099)
+      ;; Feature 096 T017-T018: Enhanced notification state for all CRUD operations
       (defvar save_in_progress false)               ;; True during save operations (disables form inputs)
       (defvar success_notification "")              ;; Success message to display (auto-dismiss after 3s)
       (defvar success_notification_visible false)   ;; Controls success notification visibility
+      (defvar error_notification "")                ;; Error message to display (persist until dismissed)
+      (defvar error_notification_visible false)     ;; Controls error notification visibility
+      (defvar warning_notification "")              ;; Warning message (e.g., conflict detected but saved)
+      (defvar warning_notification_visible false)   ;; Controls warning notification visibility
 
       ;; Feature 094 T040: Conflict resolution dialog state
       (defvar conflict_dialog_visible false)
@@ -1876,7 +2056,10 @@ in
             ;; Feature 094 T040: Conflict resolution dialog overlay
             (conflict-resolution-dialog)
             ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast))))
+            (success-notification-toast)
+            ;; Feature 096 T019: Error and warning notification overlays
+            (error-notification-toast)
+            (warning-notification-toast))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -2892,13 +3075,15 @@ in
             :halign "end"
             (button
               :class "cancel-button"
+              :sensitive {!save_in_progress}
               :onclick "eww --config $HOME/.config/eww-monitoring-panel update editing_project_name=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
+            ;; Feature 096 T021: Save button with loading state
             (button
-              :class "''${validation_state.valid ? 'save-button' : 'save-button-disabled'}"
-              :sensitive {validation_state.valid}
+              :class "''${save_in_progress ? 'save-button-loading' : (validation_state.valid ? 'save-button' : 'save-button-disabled')}"
+              :sensitive {validation_state.valid && !save_in_progress}
               :onclick "project-edit-save ''${project.name}"
-              "Save"))))
+              "''${save_in_progress ? 'Saving...' : 'Save'}"))))
 
       ;; Feature 094 US5 T059: Worktree edit form widget
       ;; Similar to project-edit-form but with read-only branch and path fields
@@ -3894,6 +4079,50 @@ in
             (button
               :class "success-dismiss"
               :onclick "eww update success_notification_visible=false success_notification=\"\""
+              "x"))))
+
+      ;; Feature 096 T019: Error notification toast (persists until dismissed)
+      (defwidget error-notification-toast []
+        (revealer
+          :reveal error_notification_visible
+          :transition "slidedown"
+          :duration "200ms"
+          (box
+            :class "error-notification-toast"
+            :orientation "h"
+            :space-evenly false
+            :halign "center"
+            (label
+              :class "error-icon"
+              :text "[ERR]")
+            (label
+              :class "error-message"
+              :text error_notification)
+            (button
+              :class "error-dismiss"
+              :onclick "eww update error_notification_visible=false error_notification=\"\""
+              "x"))))
+
+      ;; Feature 096 T019: Warning notification toast (auto-dismiss after 5s)
+      (defwidget warning-notification-toast []
+        (revealer
+          :reveal warning_notification_visible
+          :transition "slidedown"
+          :duration "200ms"
+          (box
+            :class "warning-notification-toast"
+            :orientation "h"
+            :space-evenly false
+            :halign "center"
+            (label
+              :class "warning-icon"
+              :text "[!]")
+            (label
+              :class "warning-message"
+              :text warning_notification)
+            (button
+              :class "warning-dismiss"
+              :onclick "eww update warning_notification_visible=false warning_notification=\"\""
               "x"))))
 
       ;; Apps View - Application registry browser
@@ -5744,6 +5973,78 @@ in
         opacity: 1;
       }
 
+      /* Feature 096 T019: Error notification toast (Catppuccin red #f38ba8) */
+      .error-notification-toast {
+        background-color: rgba(243, 139, 168, 0.95);
+        border: 1px solid ${mocha.red};
+        border-radius: 8px;
+        padding: 10px 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        margin-top: 10px;
+      }
+
+      .error-notification-toast .error-icon {
+        font-size: 16px;
+        color: ${mocha.mantle};
+        font-weight: bold;
+      }
+
+      .error-notification-toast .error-message {
+        font-size: 13px;
+        color: ${mocha.mantle};
+        font-weight: 500;
+      }
+
+      .error-notification-toast .error-dismiss {
+        background-color: transparent;
+        border: none;
+        font-size: 12px;
+        color: ${mocha.mantle};
+        opacity: 0.7;
+        padding: 2px 6px;
+        margin-left: 8px;
+      }
+
+      .error-notification-toast .error-dismiss:hover {
+        opacity: 1;
+      }
+
+      /* Feature 096 T019: Warning notification toast (Catppuccin yellow #f9e2af) */
+      .warning-notification-toast {
+        background-color: rgba(249, 226, 175, 0.95);
+        border: 1px solid ${mocha.yellow};
+        border-radius: 8px;
+        padding: 10px 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        margin-top: 10px;
+      }
+
+      .warning-notification-toast .warning-icon {
+        font-size: 16px;
+        color: ${mocha.mantle};
+        font-weight: bold;
+      }
+
+      .warning-notification-toast .warning-message {
+        font-size: 13px;
+        color: ${mocha.mantle};
+        font-weight: 500;
+      }
+
+      .warning-notification-toast .warning-dismiss {
+        background-color: transparent;
+        border: none;
+        font-size: 12px;
+        color: ${mocha.mantle};
+        opacity: 0.7;
+        padding: 2px 6px;
+        margin-left: 8px;
+      }
+
+      .warning-notification-toast .warning-dismiss:hover {
+        opacity: 1;
+      }
+
       /* UX Enhancement: Context menu styles */
       .context-menu-overlay {
         background-color: rgba(0, 0, 0, 0.5);
@@ -6101,6 +6402,19 @@ in
         color: ${mocha.subtext0};
         font-weight: bold;
         opacity: 0.5;
+      }
+
+      /* Feature 096 T021: Loading state save button */
+      .save-button-loading {
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: ${mocha.blue};
+        font-weight: bold;
+        font-style: italic;
+        opacity: 0.8;
       }
 
       /* T039: Field-level validation error messages */
