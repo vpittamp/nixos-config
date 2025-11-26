@@ -658,6 +658,9 @@ def get_window_state_classes(window: Dict[str, Any]) -> str:
         classes.append("window-hidden")
     if window.get("focused", False):
         classes.append("window-focused")
+    # UX Enhancement: Activity Pulse Glow for urgent windows
+    if window.get("urgent", False):
+        classes.append("window-urgent")
 
     return " ".join(classes)
 
@@ -1176,6 +1179,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Query window tree (monitors → workspaces → windows hierarchy)
         tree_data = await client.get_window_tree()
 
+        # UX Enhancement: Query active project for highlighting
+        active_project = await client.get_active_project()
+
         # Feature 095: Load badge state from filesystem (file-based, no daemon)
         # Badge files are written by claude-hooks scripts in $XDG_RUNTIME_DIR/i3pm-badges/
         badge_state = load_badge_state_from_files()
@@ -1194,10 +1200,28 @@ async def query_monitoring_data() -> Dict[str, Any]:
         # Transform to project-based view (default view)
         projects = transform_to_project_view(monitors)
 
+        # UX Enhancement: Add is_active flag to each project
+        for project in projects:
+            project["is_active"] = (project.get("name") == active_project)
+
         # Create flat list of all windows for easy ID lookup in detail view
         all_windows = []
         for project in projects:
             all_windows.extend(project.get("windows", []))
+
+        # UX Enhancement: Extract flat workspaces list for workspace pills
+        workspaces = []
+        for monitor in monitors:
+            for ws in monitor.get("workspaces", []):
+                workspaces.append({
+                    "name": ws.get("name", ""),
+                    "number": ws.get("number", 0),
+                    "output": monitor.get("name", ""),
+                    "focused": ws.get("focused", False),
+                    "urgent": ws.get("urgent", False),
+                    "window_count": ws.get("window_count", 0),
+                })
+        workspaces.sort(key=lambda w: w["number"])
 
         # Get current timestamp for friendly formatting
         current_timestamp = time.time()
@@ -1215,6 +1239,8 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "status": "ok",
             "projects": projects,
             "all_windows": all_windows,  # Flat list for detail view lookup
+            "workspaces": workspaces,  # UX Enhancement: Flat list for workspace pills
+            "active_project": active_project,  # UX Enhancement: For active project highlight
             "project_count": len(projects),
             "monitor_count": counts["monitor_count"],
             "workspace_count": counts["workspace_count"],
@@ -1234,6 +1260,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         return {
             "status": "error",
             "projects": [],
+            "workspaces": [],  # UX Enhancement: Empty workspaces for error state
             "project_count": 0,
             "monitor_count": 0,
             "workspace_count": 0,
@@ -1252,6 +1279,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         return {
             "status": "error",
             "projects": [],
+            "workspaces": [],  # UX Enhancement: Empty workspaces for error state
             "project_count": 0,
             "monitor_count": 0,
             "workspace_count": 0,
