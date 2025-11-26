@@ -4,18 +4,22 @@ let
   chromiumBin = "${pkgs.chromium}/bin/chromium";
 in
 {
+  # Force overwrite settings.json to prevent conflicts with manually-created files
+  # This is necessary because gemini-cli can modify settings.json at runtime
+  home.file.".gemini/settings.json".force = true;
+
   # Gemini CLI - Google's Gemini AI in terminal (using native home-manager module with unstable package)
   programs.gemini-cli = {
     enable = true;
     package = pkgs-unstable.gemini-cli or pkgs.gemini-cli;  # Use unstable if available, fallback to stable
 
-    # Default model to use (Gemini 2.5 Pro - upgrade to 3.0 when nixpkgs updates to v0.16.0+)
-    defaultModel = "gemini-2.5-pro";
+    # Default model to use (Gemini 3.0 Pro Preview)
+    defaultModel = "gemini-3.0-pro-preview";
 
     # Settings for gemini-cli
     settings = {
       theme = "Default";
-      vimMode = false;
+      vimMode = true;
       preferredEditor = "nvim";
       autoAccept = false;
 
