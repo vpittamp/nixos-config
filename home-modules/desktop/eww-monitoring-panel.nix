@@ -1701,9 +1701,8 @@ in
       ;; UX Enhancement: Search/filter state
       (defvar search_query "")
 
-      ;; UX Enhancement: Context menu state for quick actions
+      ;; UX Enhancement: Inline action bar state - tracks which window has action bar visible
       (defvar context_menu_window_id 0)
-      (defvar context_menu_visible false)
 
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
@@ -1880,9 +1879,7 @@ in
             ;; Feature 094 T040: Conflict resolution dialog overlay
             (conflict-resolution-dialog)
             ;; Feature 094 Phase 12 T099: Success notification overlay (auto-dismiss)
-            (success-notification-toast)
-            ;; UX Enhancement: Window context menu overlay
-            (window-context-menu))))
+            (success-notification-toast))))
 
       ;; Panel header with tab navigation
       (defwidget panel-header []
@@ -2077,11 +2074,12 @@ in
             (label
               :class "project-name"
               :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
-            ;; UX Enhancement: Active indicator
+            ;; UX Enhancement: Active indicator (filled circle)
             (label
               :class "active-indicator"
               :visible {project.is_active}
-              :text "ACTIVE")
+              :tooltip "Active project"
+              :text "●")
             (label
               :class "window-count-badge"
               :text "''${project.window_count}"))
@@ -2096,6 +2094,7 @@ in
       ;; Compact window widget for sidebar - Single line with badges + JSON expand
       ;; Click main area to focus window
       ;; Hover expand icon (󰅂) to reveal JSON panel - intentional action required
+      ;; Right-click shows inline action bar below the window item
       (defwidget window-widget [window]
         (box
           :class "window-container"
@@ -2108,8 +2107,10 @@ in
             :space-evenly false
             ;; Main clickable area (focuses window)
             ;; Feature 093: Added click handler for window focus with project switching
+            ;; Right-click toggles inline action bar for this specific window
             (eventbox
               :onclick "focus-window-action ''${window.project} ''${window.id} &"
+              :onrightclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=''${context_menu_window_id == window.id ? 0 : window.id}"
               :cursor "pointer"
               :hexpand true
               (box
@@ -2184,6 +2185,41 @@ in
                 (label
                   :class "json-expand-icon"
                   :text {hover_window_id == window.id ? "󰅀" : "󰅂"}))))
+          ;; Inline action bar (slides down on right-click)
+          (revealer
+            :reveal {context_menu_window_id == window.id}
+            :transition "slidedown"
+            :duration "100ms"
+            (box
+              :class "window-action-bar"
+              :orientation "h"
+              :space-evenly false
+              :halign "end"
+              (eventbox
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${window.id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :tooltip "Focus window"
+                (label :class "action-btn action-focus" :text "󰈈"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${window.id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :tooltip "Toggle floating"
+                (label :class "action-btn action-float" :text "󰖲"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${window.id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :tooltip "Toggle fullscreen"
+                (label :class "action-btn action-fullscreen" :text "󰊓"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :tooltip "Move to scratchpad"
+                (label :class "action-btn action-scratchpad" :text "󰘓"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "swaymsg [con_id=''${window.id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
+                :tooltip "Close window"
+                (label :class "action-btn action-close" :text "󰅖"))))
           ;; JSON panel (slides down when expand icon is hovered)
           (revealer
             :reveal {hover_window_id == window.id}
@@ -3883,72 +3919,6 @@ in
               :class "success-dismiss"
               :onclick "eww update success_notification_visible=false success_notification=\"\""
               "x"))))
-
-      ;; UX Enhancement: Window context menu overlay
-      (defwidget window-context-menu []
-        (revealer
-          :reveal context_menu_visible
-          :transition "crossfade"
-          :duration "100ms"
-          (eventbox
-            :class "context-menu-overlay"
-            :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-            (box
-              :class "context-menu"
-              :orientation "v"
-              :space-evenly false
-              :valign "center"
-              :halign "center"
-              ;; Menu header
-              (box
-                :class "context-menu-header"
-                :orientation "h"
-                :space-evenly false
-                (label
-                  :class "context-menu-title"
-                  :text "Quick Actions")
-                (eventbox
-                  :class "context-menu-close"
-                  :cursor "pointer"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-                  (label :text "x")))
-              ;; Menu items
-              (eventbox
-                :class "context-menu-item"
-                :cursor "pointer"
-                :onclick "swaymsg [con_id=''${context_menu_window_id}] focus && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-                (box
-                  :orientation "h"
-                  :space-evenly false
-                  (label :class "menu-icon" :text "F")
-                  (label :class "menu-label" :text "Focus Window")))
-              (eventbox
-                :class "context-menu-item"
-                :cursor "pointer"
-                :onclick "swaymsg [con_id=''${context_menu_window_id}] floating toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-                (box
-                  :orientation "h"
-                  :space-evenly false
-                  (label :class "menu-icon" :text "~")
-                  (label :class "menu-label" :text "Toggle Floating")))
-              (eventbox
-                :class "context-menu-item"
-                :cursor "pointer"
-                :onclick "swaymsg [con_id=''${context_menu_window_id}] fullscreen toggle && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-                (box
-                  :orientation "h"
-                  :space-evenly false
-                  (label :class "menu-icon" :text "[]")
-                  (label :class "menu-label" :text "Toggle Fullscreen")))
-              (eventbox
-                :class "context-menu-item danger"
-                :cursor "pointer"
-                :onclick "swaymsg [con_id=''${context_menu_window_id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_visible=false"
-                (box
-                  :orientation "h"
-                  :space-evenly false
-                  (label :class "menu-icon" :text "X")
-                  (label :class "menu-label" :text "Close Window")))))))
 
       ;; Apps View - Application registry browser
       ;; Applications View - App registry with type grouping (Feature 094)
@@ -5899,6 +5869,52 @@ in
       .menu-label {
         font-size: 13px;
         color: ${mocha.text};
+      }
+
+      /* Inline action bar for window context actions */
+      .window-action-bar {
+        background-color: ${mocha.surface0};
+        border-radius: 0 0 6px 6px;
+        padding: 4px 8px;
+        margin-top: 2px;
+      }
+
+      .action-btn {
+        font-size: 16px;
+        padding: 6px 10px;
+        border-radius: 4px;
+        color: ${mocha.subtext0};
+        margin: 0 2px;
+      }
+
+      .action-btn:hover {
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+      }
+
+      .action-focus:hover {
+        color: ${mocha.blue};
+      }
+
+      .action-float:hover {
+        color: ${mocha.yellow};
+      }
+
+      .action-fullscreen:hover {
+        color: ${mocha.green};
+      }
+
+      .action-scratchpad:hover {
+        color: ${mocha.mauve};
+      }
+
+      .action-close {
+        color: ${mocha.overlay0};
+      }
+
+      .action-close:hover {
+        background-color: rgba(243, 139, 168, 0.2);
+        color: ${mocha.red};
       }
 
       /* Feature 094 Phase 12 T098: Loading spinner styles */
