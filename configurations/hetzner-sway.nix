@@ -152,6 +152,21 @@
     logLevel = "DEBUG";  # Temporary for testing
   };
 
+  # Fix intermittent home-manager activation failures during nixos-rebuild
+  # The checkLinkTargets phase occasionally fails when services are being
+  # stopped/restarted concurrently (same issue as M1 config).
+  # Fix: Ensure home-manager waits for i3-project-daemon to stabilize
+  systemd.services.home-manager-vpittamp = {
+    wants = [ "i3-project-daemon.socket" ];
+    after = [ "i3-project-daemon.socket" ];
+    serviceConfig = {
+      Restart = "on-failure";
+      RestartSec = "2s";
+      StartLimitBurst = 3;
+      StartLimitIntervalSec = 30;
+    };
+  };
+
   # Sway Tree Diff Monitor (Feature 064) - Real-time window state monitoring
   services.sway-tree-monitor = {
     enable = true;

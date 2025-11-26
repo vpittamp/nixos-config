@@ -141,9 +141,17 @@
   boot.kernelParams = [ "brcmfmac.feature_disable=0x82000" ];
 
   # Fix intermittent home-manager activation failures during nixos-rebuild
-  # The checkLinkTargets phase occasionally fails with "broken pipe" errors
-  # due to race conditions in find/xargs pipelines. Retry automatically.
+  # The checkLinkTargets phase occasionally fails when services are being
+  # stopped/restarted concurrently. This happens because:
+  # 1. nixos-rebuild stops i3-project-daemon.service
+  # 2. home-manager-vpittamp.service runs concurrently
+  # 3. A subprocess (find's bash) gets caught in SIGTERM crossfire
+  # Fix: Ensure home-manager waits for i3-project-daemon to stabilize
   systemd.services.home-manager-vpittamp = {
+    # Wait for i3-project-daemon socket to be ready before activation
+    # This ensures the daemon restart cycle completes before home-manager runs
+    wants = [ "i3-project-daemon.socket" ];
+    after = [ "i3-project-daemon.socket" ];
     serviceConfig = {
       Restart = "on-failure";
       RestartSec = "2s";
