@@ -31,6 +31,7 @@ from .config import (
     WindowRulesWatcher,
     OutputStatesWatcher,
     MonitorProfileWatcher,  # Feature 083: Profile file watcher
+    load_discovery_config,  # Feature 097: Git-based discovery
 )
 from .output_state_manager import (
     load_output_states,
@@ -189,6 +190,7 @@ class I3ProjectDaemon:
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
         self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
         self.badge_state: BadgeState = BadgeState()  # Feature 095: Visual notification badges
+        self.discovery_config: Optional[Any] = None  # Feature 097: Discovery configuration
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -244,6 +246,11 @@ class I3ProjectDaemon:
         app_registry_file = self.config_dir / "application-registry.json"
         self.application_registry = load_application_registry(app_registry_file)
         logger.info(f"Application registry loaded: {len(self.application_registry)} applications")
+
+        # Feature 097: Load discovery configuration
+        discovery_config_file = self.config_dir / "discovery-config.json"
+        self.discovery_config = load_discovery_config(discovery_config_file)
+        logger.info(f"[Feature 097] Discovery config loaded: {len(self.discovery_config.scan_paths)} scan paths")
 
         # Load active project state
         active_project_file = self.config_dir / "active-project.json"
@@ -447,6 +454,11 @@ class I3ProjectDaemon:
             await self.event_buffer.add_event(entry)
             logger.info(f"Logged daemon::start event (duration: {duration_ms:.2f}ms)")
 
+        # Feature 097 T057: Trigger background discovery if enabled (T056: config loading already done above)
+        if self.discovery_config and self.discovery_config.auto_discover_on_startup:
+            logger.info("[Feature 097] Auto-discover enabled, scheduling background discovery...")
+            asyncio.create_task(self._run_startup_discovery())
+
     async def _trigger_output_state_change(self) -> None:
         """Trigger workspace reassignment after output states file change.
 
@@ -507,6 +519,108 @@ class I3ProjectDaemon:
 
         except Exception as e:
             logger.error(f"Failed to trigger output state change: {e}")
+
+    async def _run_startup_discovery(self) -> None:
+        """Run background project discovery on daemon startup.
+
+        Feature 097 T057-T059: Background discovery with timeout and logging.
+
+        This runs in the background without blocking daemon startup.
+        Uses 60-second timeout (T058) and logs results to journal (T059).
+        """
+        from .services.discovery_service import scan_directory
+        from .services.project_service import ProjectService
+
+        start_time = time.perf_counter()
+        discovery_timeout = 60  # T058: 60-second timeout
+
+        logger.info("[Feature 097] Starting background startup discovery...")
+
+        try:
+            # Create project service for creating/updating projects
+            project_service = ProjectService(
+                config_dir=self.config_dir,
+                state_manager=self.state_manager
+            )
+
+            created_count = 0
+            updated_count = 0
+            error_count = 0
+
+            # Scan each configured path with timeout
+            for scan_path in self.discovery_config.scan_paths:
+                expanded_path = str(Path(scan_path).expanduser())
+
+                try:
+                    # T058: Apply timeout to entire discovery operation
+                    result = await asyncio.wait_for(
+                        scan_directory(
+                            expanded_path,
+                            max_depth=self.discovery_config.max_depth,
+                            exclude_patterns=self.discovery_config.exclude_patterns,
+                        ),
+                        timeout=discovery_timeout
+                    )
+
+                    # Process discovered repositories
+                    for repo in result.repositories:
+                        try:
+                            existing = project_service.find_by_directory(repo.path)
+                            if existing:
+                                await project_service._update_from_discovery(existing, repo)
+                                updated_count += 1
+                            else:
+                                await project_service._create_from_discovery(repo)
+                                created_count += 1
+                        except Exception as e:
+                            logger.warning(f"[Feature 097] Failed to process repo {repo.name}: {e}")
+                            error_count += 1
+
+                    error_count += len(result.errors)
+
+                except asyncio.TimeoutError:
+                    logger.warning(f"[Feature 097] Scan of {scan_path} timed out after {discovery_timeout}s")
+                    error_count += 1
+                except Exception as e:
+                    logger.error(f"[Feature 097] Failed to scan {scan_path}: {e}")
+                    error_count += 1
+
+            # T059: Log results to daemon journal
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                f"[Feature 097] Startup discovery complete: "
+                f"{created_count} created, {updated_count} updated, {error_count} errors | "
+                f"Duration: {duration_ms:.1f}ms"
+            )
+
+            # Log discovery::startup event
+            if self.event_buffer:
+                entry = EventEntry(
+                    event_id=self.event_buffer.event_counter,
+                    event_type="discovery::startup",
+                    timestamp=datetime.now(),
+                    source="daemon",
+                    created_count=created_count,
+                    updated_count=updated_count,
+                    error_count=error_count,
+                    processing_duration_ms=duration_ms,
+                )
+                await self.event_buffer.add_event(entry)
+
+            # Emit projects_discovered event for UI refresh
+            if self.ipc_server and (created_count > 0 or updated_count > 0):
+                await self.ipc_server.broadcast_event_entry(EventEntry(
+                    event_id=self.event_buffer.event_counter if self.event_buffer else 0,
+                    event_type="projects_discovered",
+                    timestamp=datetime.now(),
+                    source="startup_discovery",
+                    created_count=created_count,
+                    updated_count=updated_count,
+                ))
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.error(f"[Feature 097] Startup discovery failed: {e} (after {duration_ms:.1f}ms)")
 
     async def register_event_handlers(self) -> None:
         """Register all i3 event handlers."""

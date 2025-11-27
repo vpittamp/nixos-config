@@ -169,6 +169,105 @@ def load_application_registry(config_file: Path) -> Dict[str, Dict]:
         return {}
 
 
+def load_discovery_config(config_file: Path) -> "ScanConfiguration":
+    """Load discovery configuration from JSON file.
+
+    Feature 097: Git-based project discovery configuration.
+
+    Args:
+        config_file: Path to discovery-config.json
+
+    Returns:
+        ScanConfiguration object with scan paths and settings
+
+    Note:
+        Returns default config if file doesn't exist (with ~/projects as default path).
+        This allows auto-discovery to work out of the box for new users.
+    """
+    from .models.discovery import ScanConfiguration
+
+    # Default configuration
+    default_config = ScanConfiguration(
+        scan_paths=["~/projects"],
+        exclude_patterns=["node_modules", "vendor", ".cache"],
+        auto_discover_on_startup=False,
+        max_depth=3
+    )
+
+    try:
+        if not config_file.exists():
+            logger.info(f"Discovery config file does not exist: {config_file}, using defaults")
+            return default_config
+
+        with open(config_file) as f:
+            data = json.load(f)
+
+        config = ScanConfiguration.model_validate(data)
+
+        logger.info(
+            f"Loaded discovery config: "
+            f"{len(config.scan_paths)} scan paths, "
+            f"max_depth={config.max_depth}, "
+            f"auto_discover={config.auto_discover_on_startup}"
+        )
+
+        return config
+
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Failed to load discovery config from {config_file}: {e}")
+        logger.warning("Using default discovery configuration")
+        return default_config
+    except Exception as e:
+        logger.error(f"Unexpected error loading discovery config: {e}")
+        return default_config
+
+
+def save_discovery_config(config: "ScanConfiguration", config_file: Path) -> None:
+    """Save discovery configuration to JSON file (atomic write).
+
+    Feature 097: Git-based project discovery configuration.
+
+    Uses temp file + rename pattern to prevent corruption.
+
+    Args:
+        config: ScanConfiguration to save
+        config_file: Path to discovery-config.json
+    """
+    from .models.discovery import ScanConfiguration
+
+    try:
+        # Ensure parent directory exists
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Prepare data - use Pydantic model serialization
+        data = config.model_dump(mode='json')
+
+        # Atomic write using temp file + rename
+        fd, temp_path = tempfile.mkstemp(
+            dir=config_file.parent, prefix=".discovery-config-", suffix=".json"
+        )
+
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Ensure data is written to disk
+
+            # Atomic rename
+            os.rename(temp_path, config_file)
+            logger.info(f"Saved discovery config: {len(config.scan_paths)} scan paths")
+
+        except Exception:
+            # Clean up temp file on error
+            if Path(temp_path).exists():
+                os.unlink(temp_path)
+            raise
+
+    except Exception as e:
+        logger.error(f"Failed to save discovery config: {e}")
+        raise
+
+
 def save_active_project(state: ActiveProjectState, config_file: Path) -> None:
     """Save active project state to JSON file (atomic write).
 

@@ -2,15 +2,24 @@
 ProjectService for project CRUD operations and active project state management.
 
 Feature 058: Python Backend Consolidation
+Feature 097: Git-Based Project Discovery and Management
 Provides single source of truth for project state, preventing race conditions.
 """
 
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 from datetime import datetime
 import logging
 
 from ..models.project import Project, ActiveProjectState
+from ..models.discovery import (
+    DiscoveredRepository,
+    DiscoveredWorktree,
+    GitHubRepo,
+    GitMetadata,
+    ProjectStatus,
+    SourceType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -221,3 +230,247 @@ class ProjectService:
             "previous": previous,
             "current": name
         }
+
+    # =========================================================================
+    # Feature 097: Discovery Integration
+    # =========================================================================
+
+    def get_existing_names(self) -> Set[str]:
+        """Get set of all existing project names.
+
+        Returns:
+            Set of project name strings
+        """
+        return {p.name for p in self.list()}
+
+    def find_by_directory(self, directory: str) -> Optional[Project]:
+        """Find a project by its directory path.
+
+        Args:
+            directory: Absolute path to search for
+
+        Returns:
+            Project if found, None otherwise
+        """
+        normalized = str(Path(directory).resolve())
+        for project in self.list():
+            if str(Path(project.directory).resolve()) == normalized:
+                return project
+        return None
+
+    async def create_or_update_from_discovery(
+        self,
+        discovered: DiscoveredRepository,
+    ) -> Project:
+        """Create a new project or update existing from discovered repository.
+
+        Feature 097: Creates projects from git discovery results.
+
+        Args:
+            discovered: DiscoveredRepository or DiscoveredWorktree instance
+
+        Returns:
+            Created or updated Project instance
+        """
+        # Check if project already exists by directory
+        existing = self.find_by_directory(discovered.path)
+
+        if existing:
+            # Update existing project with new metadata
+            return await self._update_from_discovery(existing, discovered)
+        else:
+            # Create new project
+            return await self._create_from_discovery(discovered)
+
+    async def _create_from_discovery(
+        self,
+        discovered: DiscoveredRepository,
+    ) -> Project:
+        """Create a new project from discovery result.
+
+        Args:
+            discovered: DiscoveredRepository instance
+
+        Returns:
+            Created Project instance
+        """
+        # Determine source type
+        source_type = SourceType.LOCAL
+        if isinstance(discovered, DiscoveredWorktree) or discovered.is_worktree:
+            source_type = SourceType.WORKTREE
+
+        # Create display name from project name
+        display_name = discovered.name.replace("-", " ").replace("_", " ").title()
+
+        now = datetime.now()
+
+        project = Project(
+            name=discovered.name,
+            directory=discovered.path,
+            display_name=display_name,
+            icon=discovered.inferred_icon,
+            created_at=now,
+            updated_at=now,
+            scoped_classes=[],
+            source_type=source_type,
+            status=ProjectStatus.ACTIVE,
+            git_metadata=discovered.git_metadata,
+            discovered_at=now,
+        )
+
+        # Save to file
+        project.save_to_file(self.config_dir)
+
+        logger.info(
+            f"[Feature 097] Created project from discovery: {discovered.name} "
+            f"(source_type={source_type.value})"
+        )
+
+        return project
+
+    async def _update_from_discovery(
+        self,
+        existing: Project,
+        discovered: DiscoveredRepository,
+    ) -> Project:
+        """Update existing project with fresh discovery metadata.
+
+        Args:
+            existing: Existing Project instance
+            discovered: DiscoveredRepository with new metadata
+
+        Returns:
+            Updated Project instance
+        """
+        # Update git metadata from fresh discovery
+        existing.git_metadata = discovered.git_metadata
+        existing.updated_at = datetime.now()
+
+        # Restore from missing status if directory now exists
+        if existing.status == ProjectStatus.MISSING:
+            existing.status = ProjectStatus.ACTIVE
+            logger.info(f"[Feature 097] Project {existing.name} restored from missing status")
+
+        # Update icon if it changed (language detection)
+        if existing.icon != discovered.inferred_icon and existing.icon == "📁":
+            existing.icon = discovered.inferred_icon
+
+        # Save updated project
+        existing.save_to_file(self.config_dir)
+
+        logger.info(f"[Feature 097] Updated project: {existing.name}")
+
+        return existing
+
+    async def mark_missing(self, name: str) -> Project:
+        """Mark a project as missing (directory no longer exists).
+
+        Feature 097: Preserves project when directory is temporarily unavailable.
+
+        Args:
+            name: Project name to mark as missing
+
+        Returns:
+            Updated Project instance
+
+        Raises:
+            FileNotFoundError: If project doesn't exist
+        """
+        project = Project.load_from_file(self.config_dir, name)
+
+        if project.status != ProjectStatus.MISSING:
+            project.status = ProjectStatus.MISSING
+            project.updated_at = datetime.now()
+            project.save_to_file(self.config_dir)
+
+            logger.info(f"[Feature 097] Marked project as missing: {name}")
+
+        return project
+
+    async def check_and_mark_missing_projects(self) -> List[str]:
+        """Check all projects and mark any with missing directories.
+
+        Feature 097: Called during discovery to detect removed repositories.
+
+        Returns:
+            List of project names that were marked as missing
+        """
+        marked_missing = []
+
+        for project in self.list():
+            # Skip already missing or remote projects
+            if project.status == ProjectStatus.MISSING:
+                continue
+            if project.source_type == SourceType.REMOTE:
+                continue
+
+            # Check if directory exists
+            if not Path(project.directory).exists():
+                await self.mark_missing(project.name)
+                marked_missing.append(project.name)
+
+        return marked_missing
+
+    async def create_from_github_repo(
+        self,
+        gh_repo: "GitHubRepo",
+    ) -> Project:
+        """Create a remote-only project from a GitHub repository.
+
+        Feature 097 T046: Create remote projects for uncloned GitHub repos.
+
+        Args:
+            gh_repo: GitHub repository information
+
+        Returns:
+            Created Project instance with source_type=REMOTE
+        """
+        from ..models.discovery import GitHubRepo  # noqa: F811
+
+        now = datetime.now()
+
+        # Use clone URL as "directory" for remote projects
+        directory = gh_repo.clone_url
+
+        # Create display name from repo name
+        display_name = gh_repo.name.replace("-", " ").replace("_", " ").title()
+
+        # Infer icon from language
+        from ..services.discovery_service import infer_icon_from_language
+        icon = infer_icon_from_language(gh_repo.primary_language)
+
+        # Create git metadata from GitHub repo info
+        git_metadata = GitMetadata(
+            current_branch="main",  # Default, not known for uncloned repos
+            commit_hash="0000000",  # Not known for uncloned repos
+            is_clean=True,
+            has_untracked=False,
+            ahead_count=0,
+            behind_count=0,
+            remote_url=gh_repo.clone_url,
+            primary_language=gh_repo.primary_language,
+            last_commit_date=gh_repo.pushed_at,
+        )
+
+        project = Project(
+            name=gh_repo.name,
+            directory=directory,
+            display_name=display_name,
+            icon=icon,
+            created_at=now,
+            updated_at=now,
+            scoped_classes=[],
+            source_type=SourceType.REMOTE,
+            status=ProjectStatus.ACTIVE,
+            git_metadata=git_metadata,
+            discovered_at=now,
+        )
+
+        # Save to file
+        project.save_to_file(self.config_dir)
+
+        logger.info(
+            f"[Feature 097] Created remote project from GitHub: {gh_repo.name}"
+        )
+
+        return project
