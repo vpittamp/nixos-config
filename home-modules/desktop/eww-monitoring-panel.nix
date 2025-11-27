@@ -78,10 +78,10 @@ let
 
   # Python backend script for monitoring data
   # Supports both one-shot mode (no args) and stream mode (--listen)
-  # Version: 2025-11-22-v10 (Feature 088: Added Health tab icon)
+  # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
   monitoringDataScript = pkgs.writeShellScriptBin "monitoring-data-backend" ''
     #!${pkgs.bash}/bin/bash
-    # Version: 2025-11-22-v10 (Feature 088: Added Health tab icon)
+    # Version: 2025-11-26-v12 (Feature 097: Optional chaining for remote fields)
 
     # Set PYTHONPATH to tools directory for i3_project_manager imports
     export PYTHONPATH="${../tools}"
@@ -2092,7 +2092,7 @@ in
           :anchor "right center"
           :x "0px"
           :y "0px"
-          :width "460px"
+          :width "600px"
           :height "90%")
         :namespace "eww-monitoring-panel"
         :stacking "fg"
@@ -2210,7 +2210,8 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses overlay to ensure only one view is visible at a time (no stacking)
+      ;; Uses overlay - all views stacked, only visible one shows
+      ;; Each child box has view-container class for solid background to prevent bleed-through
       (defwidget panel-body []
         (box
           :class "panel-body"
@@ -2218,27 +2219,11 @@ in
           :vexpand true
           (overlay
             :vexpand true
-            ;; Only one of these will be visible at a time
-            (box
-              :vexpand true
-              :visible {current_view == "windows"}
-              (windows-view))
-            (box
-              :vexpand true
-              :visible {current_view == "projects"}
-              (projects-view))
-            (box
-              :vexpand true
-              :visible {current_view == "apps"}
-              (apps-view))
-            (box
-              :vexpand true
-              :visible {current_view == "health"}
-              (health-view))
-            ;; Feature 092: Events/Logs View - Real-time Sway IPC event log
-            (box
-              :visible {current_view == "events"}
-              (events-view)))))
+            (box :class "view-container" :visible {current_view == "windows"} :vexpand true (windows-view))
+            (box :class "view-container" :visible {current_view == "projects"} :vexpand true (projects-view))
+            (box :class "view-container" :visible {current_view == "apps"} :vexpand true (apps-view))
+            (box :class "view-container" :visible {current_view == "health"} :vexpand true (health-view))
+            (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -2675,46 +2660,47 @@ in
             :text value)))
 
       ;; Projects View - Project list with metadata
+      ;; Projects View - matches windows-view structure with scroll at top level
       (defwidget projects-view []
-        (box
-          :class "projects-view-wrapper"
-          :orientation "v"
-          :space-evenly false
+        (scroll
+          :vscroll true
+          :hscroll false
           :vexpand true
-          ;; Feature 094 US3: Projects tab header with New Project button (T066)
           (box
-            :class "projects-header"
-            :orientation "h"
+            :class "content-container"
+            :orientation "v"
             :space-evenly false
-            :visible {!project_creating}
-            (label
-              :class "projects-header-title"
-              :halign "start"
-              :hexpand true
-              :text "Projects")
-            (button
-              :class "new-project-button"
-              :onclick "project-create-open"
-              :tooltip "Create a new project"
-              "+ New"))
-          ;; Feature 094 US3: Project create form (T067)
-          (revealer
-            :transition "slidedown"
-            :reveal project_creating
-            :duration "200ms"
-            (project-create-form))
-          ;; Feature 094 US4: Delete confirmation dialog (T088)
-          (project-delete-confirmation)
-          ;; Error state
-          (box
-            :class "error-message"
-            :visible {projects_data.status == "error"}
-            (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
-          ;; Scrollable projects list
-          (scroll
-            :vscroll true
-            :hscroll false
             :vexpand true
+            ;; Feature 094 US3: Projects tab header with New Project button (T066)
+            (box
+              :class "projects-header"
+              :orientation "h"
+              :space-evenly false
+              :visible {!project_creating}
+              (label
+                :class "projects-header-title"
+                :halign "start"
+                :hexpand true
+                :text "Projects")
+              (button
+                :class "new-project-button"
+                :onclick "project-create-open"
+                :tooltip "Create a new project"
+                "+ New"))
+            ;; Feature 094 US3: Project create form (T067)
+            (revealer
+              :transition "slidedown"
+              :reveal project_creating
+              :duration "200ms"
+              (project-create-form))
+            ;; Feature 094 US4: Delete confirmation dialog (T088)
+            (project-delete-confirmation)
+            ;; Error state
+            (box
+              :class "error-message"
+              :visible {projects_data.status == "error"}
+              (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
+            ;; Projects list
             (box
               :class "projects-list"
               :orientation "v"
@@ -2739,82 +2725,119 @@ in
             :class {"project-card" + (project.is_active ? " active-project" : "")}
             :orientation "v"
             :space-evenly false
+            ;; Row 1: Icon + Name/Path + Actions + JSON trigger (like window-widget pattern)
             (box
               :class "project-card-header"
               :orientation "h"
               :space-evenly false
-              ;; Icon with container for consistent sizing
-              (box
-                :class "project-icon-container"
-                :orientation "v"
-                :valign "center"
-                (label
-                  :class "project-icon"
-                  :text "''${project.icon}"))
-              ;; Project info - main content area (takes remaining space)
-              (box
-                :class "project-info"
-                :orientation "v"
-                :space-evenly false
+              :hexpand true
+              ;; Main content area - clickable, takes remaining space leaving room for JSON trigger sibling
+              (eventbox
+                :cursor "pointer"
                 :hexpand true
-                (label
-                  :class "project-card-name"
-                  :halign "start"
-                  :limit-width 24
-                  :truncate true
-                  :text "''${project.display_name ?: project.name}")
-                (label
-                  :class "project-card-path"
-                  :halign "start"
-                  :limit-width 32
-                  :truncate true
-                  :text "''${project.directory}"))
-              ;; Badges - fixed width section
-              (box
-                :class "project-badges"
-                :orientation "h"
-                :space-evenly false
-                :halign "end"
-                ;; Active badge
-                (label
-                  :class "badge badge-active"
-                  :visible {project.is_active}
-                  :text "●")
-                ;; Scope badge
-                (label
-                  :class "badge badge-scope''${project.scope == 'global' ? ' badge-global' : ' badge-scoped'}"
-                  :text "''${project.scope == 'global' ? '󰊠' : '󰒃'}"
-                  :tooltip "''${project.scope == 'global' ? 'Global scope' : 'Scoped to project'}")
-                ;; Remote indicator badge
-                (label
-                  :class "badge badge-remote"
-                  :visible {project.is_remote}
-                  :text "󰒍"
-                  :tooltip "Remote project"))
-              ;; Action buttons (fixed width)
-              (box
-                :class "project-action-bar"
-                :orientation "h"
-                :space-evenly false
-                :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
-                (eventbox
-                  :cursor "pointer"
-                  :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
-                  :tooltip "Edit project"
-                  (label :class "action-btn action-edit" :text "󰏫"))
-                (eventbox
-                  :cursor "pointer"
-                  :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
-                  :tooltip "Delete project"
-                  (label :class "action-btn action-delete" :text "󰆴"))
-                ;; JSON expand trigger icon (hover to expand)
-                (eventbox
-                  :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
-                  :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
-                  :tooltip "View JSON"
+                (box
+                  :class "project-main-content"
+                  :orientation "h"
+                  :space-evenly false
+                  :hexpand true
+                  ;; Icon
+                  (box
+                    :class "project-icon-container"
+                    :orientation "v"
+                    :valign "center"
+                    (label
+                      :class "project-icon"
+                      :text "''${project.icon}"))
+                  ;; Project info - takes remaining space within main content
+                  (box
+                    :class "project-info"
+                    :orientation "v"
+                    :space-evenly false
+                    :hexpand true
+                    (label
+                      :class "project-card-name"
+                      :halign "start"
+                      :limit-width 15
+                      :truncate true
+                      :text "''${project.display_name ?: project.name}"
+                      :tooltip "''${project.display_name ?: project.name}")
+                    (label
+                      :class "project-card-path"
+                      :halign "start"
+                      :limit-width 18
+                      :truncate true
+                      :text "''${project.directory_display ?: project.directory}"
+                      :tooltip "''${project.directory}"))
+                  ;; Action buttons (visible on hover)
+                  (box
+                    :class "project-action-bar"
+                    :orientation "h"
+                    :space-evenly false
+                    :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
+                      :tooltip "Edit project"
+                      (label :class "action-btn action-edit" :text "󰏫"))
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
+                      :tooltip "Delete project"
+                      (label :class "action-btn action-delete" :text "󰆴")))))
+              ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
+              ;; NO halign/width - let GTK box layout handle positioning naturally
+              (eventbox
+                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                :tooltip "Hover to view JSON"
+                (box
+                  :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
+                  :valign "center"
                   (label
-                    :class {"action-btn action-json" + (json_hover_project == project.name ? " expanded" : "")}
+                    :class "json-expand-icon"
                     :text {json_hover_project == project.name ? "󰅀" : "󰅂"}))))
+            ;; Row 2: Git branch (full width row)
+            (box
+              :class "git-branch-row"
+              :orientation "h"
+              :space-evenly false
+              :visible {(project.git_branch ?: "") != ""}
+              (label
+                :class "git-branch-icon"
+                :text "󰘬")
+              (label
+                :class "git-branch-text"
+                :wrap true
+                :xalign 0
+                :text "''${project.git_branch}"
+                :tooltip "Branch: ''${project.git_branch}")
+              ;; Git dirty indicator
+              (label
+                :class "git-dirty"
+                :visible {project.git_is_dirty}
+                :text "''${project.git_dirty_indicator}"
+                :tooltip "Uncommitted changes"))
+            ;; Row 3: Badges + Actions
+            (box
+              :class "project-card-meta"
+              :orientation "h"
+              :space-evenly false
+              ;; Badges (left aligned)
+              (label
+                :class "badge badge-active"
+                :visible {project.is_active}
+                :text "●"
+                :tooltip "Active project")
+              (label
+                :class "badge badge-missing"
+                :visible {project.status == "missing"}
+                :text "⚠"
+                :tooltip "Directory not found")
+              (label
+                :class "badge badge-remote"
+                :visible {project.is_remote}
+                :text "󰒍"
+                :tooltip "Remote project"))
             ;; JSON panel (slides down when expand icon is hovered) - like Window tab
             (revealer
               :reveal {json_hover_project == project.name && editing_project_name != project.name}
@@ -2844,17 +2867,17 @@ in
                       (label
                         :class {"json-copy-btn" + (copied_project_name == project.name ? " copied" : "")}
                         :text {copied_project_name == project.name ? "󰄬" : "󰆏"})))
-                  ;; Scrollable JSON content
+                  ;; Scrollable JSON content with syntax highlighting
                   (scroll
                     :vscroll true
                     :hscroll false
                     :vexpand false
-                    :height 150
+                    :height 200
                     (label
                       :class "json-content"
                       :halign "start"
-                      :wrap false
-                      :text "name: ''${project.name}\ndisplay_name: ''${project.display_name ?: project.name}\nicon: ''${project.icon}\ndirectory: ''${project.directory}\nscope: ''${project.scope ?: 'scoped'}\nis_remote: ''${project.is_remote}\nis_active: ''${project.is_active}")))))
+                      :markup "''${project.json_repr}"
+                      :wrap false)))))
             ;; Feature 094: Inline edit form (T038)
             (revealer
               :reveal {editing_project_name == project.name}
@@ -2891,31 +2914,36 @@ in
               (label
                 :class "project-card-name worktree-name"
                 :halign "start"
-                :limit-width 20
+                :limit-width 18
                 :truncate true
                 :text "''${project.display_name ?: project.name}")
               (label
                 :class "project-card-path"
                 :halign "start"
-                :limit-width 28
+                :limit-width 22
                 :truncate true
-                :text "''${project.directory}"))
-            ;; Badges - compact
+                :text "''${project.directory_display ?: project.directory}"))
+            ;; Git branch - styled like project-card
             (box
-              :class "worktree-badges"
+              :class "git-branch-container worktree-branch"
               :orientation "h"
               :space-evenly false
-              ;; Branch indicator (US5)
+              :hexpand true
+              :visible {(project.branch_name ?: "") != ""}
               (label
-                :class "badge badge-branch"
-                :visible {project.branch_name != ""}
-                :limit-width 10
-                :text "''${project.branch_name}")
-              ;; Remote indicator
+                :class "git-branch-icon"
+                :text "󰘬")
               (label
-                :class "badge badge-remote"
-                :visible {project.is_remote}
-                :text "󰒍"))
+                :class "git-branch-text"
+                :wrap true
+                :xalign 0
+                :text "''${project.branch_name}"
+                :tooltip "Branch: ''${project.branch_name}"))
+            ;; Remote indicator
+            (label
+              :class "badge badge-remote"
+              :visible {project.is_remote}
+              :text "󰒍")
             ;; Action buttons (visible on hover)
             (box
               :class "worktree-actions"
@@ -4923,20 +4951,20 @@ in
         background-color: rgba(30, 30, 46, 0.3);
         padding: 4px;
         min-height: 0;  /* Enable proper flex shrinking for scrolling */
+        min-width: 0;  /* GTK fix: prevent overflow */
+      }
+
+      /* View container - solid background to prevent overlay bleed-through */
+      .view-container {
+        background-color: ${mocha.base};
       }
 
       .content-container {
-        padding: 8px 12px;
-      }
-
-      .projects-view-wrapper {
-        padding: 0;
+        padding: 8px 24px 8px 12px;  /* Extra right padding for visible card borders */
       }
 
       .projects-list {
-        padding: 4px 8px;
-        /* Constrain width to prevent overflow */
-        margin-right: 4px;
+        min-width: 0;  /* GTK fix: prevent overflow */
       }
 
       /* Project Widget */
@@ -5143,12 +5171,16 @@ in
       }
 
       .json-expand-trigger {
-        padding: 4px 6px;
-        margin-left: 4px;
+        padding: 4px 8px;
+        margin-left: 8px;
         border-radius: 4px;
-        background-color: transparent;
+        background-color: rgba(137, 180, 250, 0.15);
+        border: 1px dashed rgba(137, 180, 250, 0.35); /* debug border to confirm visibility */
         /* GTK CSS doesn't support transition */
-        opacity: 0.4;
+        opacity: 0.7;
+        /* Ensure trigger doesn't get squeezed out */
+        min-width: 28px;
+        min-height: 24px;
       }
 
       .json-expand-trigger:hover {
@@ -5162,9 +5194,9 @@ in
       }
 
       .json-expand-icon {
-        font-size: 14px;
+        font-size: 16px;
         color: ${mocha.blue};
-        min-width: 16px;
+        min-width: 18px;
         /* GTK CSS doesn't support transition */
       }
 
@@ -5328,29 +5360,71 @@ in
         background-color: ${mocha.surface1};
       }
 
-      /* Project Card Styles - Enhanced with Catppuccin theming */
+      /* Project Card Styles - Simplified to match window-widget style */
       .project-card {
-        background-color: rgba(49, 50, 68, 0.5);
-        border: 1px solid ${mocha.surface1};
-        border-radius: 8px;
+        background-color: rgba(49, 50, 68, 0.3);
+        border-left: 2px solid ${mocha.surface1};
+        border-radius: 2px;
         padding: 8px 10px;
-        margin-bottom: 6px;
-        margin-right: 2px;  /* Ensure right border/shadow is visible */
+        margin-bottom: 4px;
+        min-width: 0;  /* GTK fix: prevent overflow */
       }
 
       .project-card:hover {
-        background-color: rgba(49, 50, 68, 0.7);
-        border-color: ${mocha.overlay0};
+        background-color: rgba(49, 50, 68, 0.5);
+        border-left-color: ${mocha.overlay0};
       }
 
       .project-card.active-project {
-        border-color: ${mocha.teal};
+        border-left-color: ${mocha.teal};
         background-color: rgba(148, 226, 213, 0.12);
-        box-shadow: 0 0 8px rgba(148, 226, 213, 0.15);
       }
 
       .project-card-header {
         /* Header row - horizontal layout */
+        min-width: 0;  /* GTK fix: prevent overflow */
+      }
+
+      .project-main-content {
+        /* Main content wrapper - contains icon, info, action-bar */
+        min-width: 0;  /* GTK fix: prevent overflow, allow truncation */
+      }
+
+      .git-branch-row {
+        /* Row 2: Git branch on its own row for full width */
+        margin-top: 4px;
+        padding-top: 4px;
+        border-top: 1px solid rgba(69, 71, 90, 0.3);
+      }
+
+      .project-card-meta {
+        /* Row 3: Badges only */
+        margin-top: 4px;
+      }
+
+      .git-branch-container {
+        /* Used in worktree-card for inline branch display */
+        margin-right: 6px;
+        min-width: 0;
+      }
+
+      .git-branch-icon {
+        font-family: "JetBrainsMono Nerd Font", monospace;
+        color: ${mocha.teal};
+        font-size: 12px;
+        margin-right: 4px;
+      }
+
+      .git-branch-text {
+        color: ${mocha.subtext0};
+        font-size: 11px;
+        min-width: 0;
+      }
+
+      .git-dirty {
+        color: ${mocha.peach};
+        font-size: 11px;
+        margin-left: 4px;
       }
 
       .project-icon-container {
@@ -5366,7 +5440,7 @@ in
       }
 
       .project-info {
-        min-width: 0;  /* Allow text truncation */
+        min-width: 0;  /* GTK fix: prevent hexpand from overflowing container */
       }
 
       .project-card-name {
@@ -5422,6 +5496,65 @@ in
         background-color: rgba(203, 166, 247, 0.15);
         font-size: 10px;
         padding: 1px 4px;
+      }
+
+      /* Feature 097: Git status row styles */
+      .project-git-status {
+        padding: 2px 6px;
+        background-color: rgba(69, 71, 90, 0.3);
+        border-radius: 4px;
+        font-size: 10px;
+      }
+
+      .git-branch-icon {
+        color: ${mocha.mauve};
+        font-size: 11px;
+        margin-right: 3px;
+      }
+
+      .git-branch-name {
+        color: ${mocha.subtext0};
+        font-size: 10px;
+      }
+
+      .git-dirty-indicator {
+        color: ${mocha.yellow};
+        font-size: 10px;
+        margin-left: 4px;
+        font-weight: bold;
+      }
+
+      .git-sync-status {
+        color: ${mocha.sapphire};
+        font-size: 10px;
+        margin-left: 4px;
+      }
+
+      /* Feature 097: Missing status warning badge */
+      .badge-missing {
+        color: ${mocha.yellow};
+        font-size: 12px;
+        margin-right: 4px;
+      }
+
+      /* Feature 097: Source type badges */
+      .badge-source-type {
+        font-size: 10px;
+        padding: 1px 3px;
+        border-radius: 4px;
+        margin-right: 2px;
+      }
+
+      .badge-source-local {
+        color: ${mocha.blue};
+      }
+
+      .badge-source-worktree {
+        color: ${mocha.green};
+      }
+
+      .badge-source-remote {
+        color: ${mocha.mauve};
       }
 
       /* Project action bar - compact buttons on hover */
@@ -7324,3 +7457,4 @@ in
   };
 }
 # Test comment to force rebuild
+# Force rebuild comment

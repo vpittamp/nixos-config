@@ -50,6 +50,7 @@ COMMANDS:
   monitor          Interactive monitoring dashboard
   app-classes      Application class management
   apps             Application registry management (Feature 034)
+  config           Discovery configuration management (Feature 097)
 
 Run 'i3pm <command> --help' for more information on a specific command.
 
@@ -203,6 +204,13 @@ async function main(): Promise<void> {
       {
         const { appsCommand } = await import("./src/commands/apps.ts");
         await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "config":
+      {
+        const { configCommand } = await import("./src/commands/config.ts");
+        await configCommand(commandArgs.map(String));
       }
       break;
 

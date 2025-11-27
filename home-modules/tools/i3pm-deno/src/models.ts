@@ -771,3 +771,162 @@ export interface ScratchpadCloseParams {
   /** Project name (omit for current project) */
   project_name?: string;
 }
+
+// ============================================================================
+// Project Discovery Models (Feature 097)
+// ============================================================================
+
+/**
+ * Git metadata for discovered repositories
+ */
+export interface GitMetadata {
+  /** Current branch name */
+  current_branch: string;
+
+  /** Short commit hash (7 chars) */
+  commit_hash: string;
+
+  /** Whether working directory is clean */
+  is_clean: boolean;
+
+  /** Whether there are untracked files */
+  has_untracked: boolean;
+
+  /** Commits ahead of remote */
+  ahead_count: number;
+
+  /** Commits behind remote */
+  behind_count: number;
+
+  /** Remote URL if configured */
+  remote_url?: string;
+
+  /** Primary programming language */
+  primary_language?: string;
+
+  /** Last commit date ISO string */
+  last_commit_date?: string;
+}
+
+/**
+ * Discovered git repository
+ */
+export interface DiscoveredRepository {
+  /** Project name (directory basename, conflict-resolved) */
+  name: string;
+
+  /** Absolute path to repository */
+  path: string;
+
+  /** Whether this is a worktree */
+  is_worktree: boolean;
+
+  /** Inferred icon based on language */
+  inferred_icon: string;
+
+  /** Git metadata */
+  git_metadata: GitMetadata | null;
+}
+
+/**
+ * Discovered git worktree
+ */
+export interface DiscoveredWorktree {
+  /** Project name (directory basename, conflict-resolved) */
+  name: string;
+
+  /** Absolute path to worktree */
+  path: string;
+
+  /** Path to parent repository */
+  parent_path: string;
+
+  /** Branch checked out in worktree */
+  branch: string;
+
+  /** Inferred icon */
+  inferred_icon: string;
+
+  /** Git metadata */
+  git_metadata: GitMetadata | null;
+}
+
+/**
+ * Skipped path during discovery
+ */
+export interface SkippedPath {
+  /** Absolute path that was skipped */
+  path: string;
+
+  /** Reason for skipping */
+  reason: string;
+}
+
+/**
+ * Error during discovery
+ */
+export interface DiscoveryError {
+  /** Path where error occurred */
+  path: string;
+
+  /** Error type */
+  error_type: string;
+
+  /** Error message */
+  message: string;
+}
+
+/**
+ * Parameters for discover_projects request
+ */
+export interface DiscoverProjectsParams {
+  /** Override scan paths (uses config default if omitted) */
+  paths?: string[];
+
+  /** Override exclude patterns */
+  exclude_patterns?: string[];
+
+  /** Override max depth */
+  max_depth?: number;
+
+  /** If true, don't create projects (preview only) */
+  dry_run?: boolean;
+}
+
+/**
+ * Result of discover_projects request
+ */
+export interface DiscoverProjectsResult {
+  /** Discovered repositories */
+  repositories: DiscoveredRepository[];
+
+  /** Discovered worktrees */
+  worktrees: DiscoveredWorktree[];
+
+  /** Skipped paths */
+  skipped: SkippedPath[];
+
+  /** Errors encountered */
+  errors: DiscoveryError[];
+
+  /** Number of projects created */
+  created: number;
+
+  /** Number of projects updated */
+  updated: number;
+
+  /** Names of created projects */
+  created_projects: string[];
+
+  /** Names of updated projects */
+  updated_projects: string[];
+
+  /** Projects marked as missing (directory no longer exists) */
+  marked_missing: string[];
+
+  /** Total discovery time in milliseconds */
+  duration_ms: number;
+
+  /** Whether this was a dry run */
+  dry_run: boolean;
+}

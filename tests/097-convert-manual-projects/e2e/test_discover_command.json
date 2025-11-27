@@ -1,0 +1,109 @@
+{
+  "name": "Feature 097: Discovery Command E2E Tests",
+  "description": "End-to-end tests for git-based project discovery workflow",
+  "feature": "097-convert-manual-projects",
+  "tests": [
+    {
+      "name": "discover_local_repos",
+      "description": "Discover local git repositories in scan path",
+      "steps": [
+        {
+          "action": "setup",
+          "command": "mkdir -p /tmp/test-repos/repo1 && cd /tmp/test-repos/repo1 && git init",
+          "timeout_ms": 5000
+        },
+        {
+          "action": "run",
+          "command": "i3pm project discover --path /tmp/test-repos --dry-run",
+          "timeout_ms": 10000,
+          "expected_output": {
+            "contains": ["repo1", "discovered"]
+          }
+        },
+        {
+          "action": "cleanup",
+          "command": "rm -rf /tmp/test-repos",
+          "timeout_ms": 2000
+        }
+      ]
+    },
+    {
+      "name": "discover_with_github",
+      "description": "Discover with GitHub correlation (requires gh CLI auth)",
+      "requires": ["gh_authenticated"],
+      "steps": [
+        {
+          "action": "run",
+          "command": "i3pm project discover --github --dry-run",
+          "timeout_ms": 30000,
+          "expected_output": {
+            "contains": ["github", "repos"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "config_show",
+      "description": "Show discovery configuration",
+      "steps": [
+        {
+          "action": "run",
+          "command": "i3pm config discovery show",
+          "timeout_ms": 5000,
+          "expected_output": {
+            "contains": ["scan_paths", "max_depth"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "config_add_remove_path",
+      "description": "Add and remove scan path",
+      "steps": [
+        {
+          "action": "run",
+          "command": "i3pm config discovery add-path /tmp/test-scan",
+          "timeout_ms": 5000,
+          "expected_output": {
+            "contains": ["Added scan path"]
+          }
+        },
+        {
+          "action": "verify",
+          "command": "i3pm config discovery show --json | grep /tmp/test-scan",
+          "timeout_ms": 5000
+        },
+        {
+          "action": "run",
+          "command": "i3pm config discovery remove-path /tmp/test-scan",
+          "timeout_ms": 5000,
+          "expected_output": {
+            "contains": ["Removed scan path"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "project_refresh",
+      "description": "Refresh git metadata for projects",
+      "steps": [
+        {
+          "action": "run",
+          "command": "i3pm project refresh --all",
+          "timeout_ms": 30000,
+          "expected_output": {
+            "contains": ["Refreshed git metadata"]
+          }
+        }
+      ]
+    }
+  ],
+  "setup": {
+    "requires_daemon": true,
+    "daemon_timeout_ms": 5000
+  },
+  "cleanup": {
+    "remove_test_projects": true,
+    "restore_config": true
+  }
+}

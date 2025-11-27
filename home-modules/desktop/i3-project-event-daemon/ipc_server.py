@@ -409,6 +409,18 @@ class IPCServer:
             elif method == "project_set_active":
                 result = await self._project_set_active(params)
 
+            # Feature 097: Discovery methods
+            elif method == "discover_projects":
+                result = await self._discover_projects(params)
+            elif method == "list_github_repos":
+                result = await self._list_github_repos(params)
+            elif method == "get_discovery_config":
+                result = await self._get_discovery_config(params)
+            elif method == "update_discovery_config":
+                result = await self._update_discovery_config(params)
+            elif method == "refresh_git_metadata":
+                result = await self._refresh_git_metadata(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -5581,6 +5593,465 @@ class IPCServer:
                 error=str(e)
             )
             raise
+
+    # Feature 097: Discovery methods
+    async def _discover_projects(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Discover git repositories and create/update projects.
+
+        Feature 097: Git-Based Project Discovery and Management
+
+        Args:
+            params: {
+                "paths": list[str] | None,     # Override scan paths (optional)
+                "exclude_patterns": list[str] | None,  # Override excludes (optional)
+                "max_depth": int | None,       # Override max depth (optional)
+                "dry_run": bool = False        # If true, don't create projects
+            }
+
+        Returns:
+            {
+                "repositories": list[dict],    # Discovered repositories
+                "worktrees": list[dict],       # Discovered worktrees
+                "skipped": list[dict],         # Skipped paths with reasons
+                "errors": list[dict],          # Errors encountered
+                "created": int,                # Projects created
+                "updated": int,                # Projects updated
+                "marked_missing": list[str],   # Projects marked as missing
+                "duration_ms": float           # Total discovery time
+            }
+        """
+        start_time = time.perf_counter()
+
+        try:
+            # Import discovery and project services
+            from .services.discovery_service import discover_projects
+            from .services.project_service import ProjectService
+            from .models.discovery import ScanConfiguration
+            from .config import load_discovery_config
+
+            config_dir = Path.home() / ".config" / "i3"
+            project_service = ProjectService(config_dir, self.state_manager)
+
+            # Load default discovery config
+            discovery_config_file = config_dir / "discovery-config.json"
+            base_config = load_discovery_config(discovery_config_file)
+
+            # Apply parameter overrides
+            scan_paths = params.get("paths") or base_config.scan_paths
+            exclude_patterns = params.get("exclude_patterns") or base_config.exclude_patterns
+            max_depth = params.get("max_depth") or base_config.max_depth
+            dry_run = params.get("dry_run", False)
+            include_github = params.get("include_github", False)  # T044: GitHub integration
+
+            # Create scan configuration
+            scan_config = ScanConfiguration(
+                scan_paths=scan_paths,
+                exclude_patterns=exclude_patterns,
+                max_depth=max_depth
+            )
+
+            # Get existing project names for conflict resolution
+            existing_names = project_service.get_existing_names()
+
+            # Run discovery
+            discovery_result = await discover_projects(scan_config, existing_names)
+
+            # T044: Optionally include GitHub repos
+            github_repos = []
+            remote_only = []
+            if include_github:
+                from .services.github_service import list_repos
+                from .services.discovery_service import correlate_local_remote
+
+                gh_result = await list_repos()
+                if gh_result.success:
+                    github_repos = gh_result.repos
+                    correlation = correlate_local_remote(
+                        discovery_result.repositories,
+                        github_repos
+                    )
+                    remote_only = correlation.remote_only
+
+            # Track statistics
+            created_count = 0
+            updated_count = 0
+            created_projects = []
+            updated_projects = []
+
+            if not dry_run:
+                # Create/update projects from discovered repositories
+                for repo in discovery_result.repositories:
+                    existing = project_service.find_by_directory(repo.path)
+                    project = await project_service.create_or_update_from_discovery(repo)
+
+                    if existing:
+                        updated_count += 1
+                        updated_projects.append(project.name)
+                    else:
+                        created_count += 1
+                        created_projects.append(project.name)
+
+                # Create/update projects from discovered worktrees
+                for worktree in discovery_result.worktrees:
+                    existing = project_service.find_by_directory(worktree.path)
+                    project = await project_service.create_or_update_from_discovery(worktree)
+
+                    if existing:
+                        updated_count += 1
+                        updated_projects.append(project.name)
+                    else:
+                        created_count += 1
+                        created_projects.append(project.name)
+
+                # T044: Create projects from remote-only GitHub repos
+                for gh_repo in remote_only:
+                    try:
+                        project = await project_service.create_from_github_repo(gh_repo)
+                        created_count += 1
+                        created_projects.append(project.name)
+                    except Exception as e:
+                        logger.warning(
+                            f"[Feature 097] Failed to create remote project {gh_repo.name}: {e}"
+                        )
+
+                # Mark missing projects
+                marked_missing = await project_service.check_and_mark_missing_projects()
+            else:
+                marked_missing = []
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::discover",
+                duration_ms=duration_ms,
+                params={
+                    "paths": scan_paths,
+                    "dry_run": dry_run,
+                    "repos_found": len(discovery_result.repositories),
+                    "worktrees_found": len(discovery_result.worktrees)
+                }
+            )
+
+            logger.info(
+                f"[Feature 097] Discovery complete: "
+                f"{len(discovery_result.repositories)} repos, "
+                f"{len(discovery_result.worktrees)} worktrees, "
+                f"{created_count} created, {updated_count} updated, "
+                f"{len(marked_missing)} marked missing | "
+                f"Duration: {duration_ms:.1f}ms"
+            )
+
+            # Feature 097 T027: Emit projects_discovered event (if not dry run)
+            if not dry_run and (created_count > 0 or updated_count > 0 or len(marked_missing) > 0):
+                await self.broadcast_event({
+                    "type": "projects_discovered",
+                    "created": created_count,
+                    "updated": updated_count,
+                    "created_projects": created_projects,
+                    "updated_projects": updated_projects,
+                    "marked_missing": marked_missing,
+                    "repositories_found": len(discovery_result.repositories),
+                    "worktrees_found": len(discovery_result.worktrees),
+                    "duration_ms": duration_ms
+                })
+
+            # Build response
+            return {
+                "repositories": [
+                    {
+                        "name": r.name,
+                        "path": r.path,
+                        "is_worktree": r.is_worktree,
+                        "inferred_icon": r.inferred_icon,
+                        "git_metadata": r.git_metadata.model_dump() if r.git_metadata else None
+                    }
+                    for r in discovery_result.repositories
+                ],
+                "worktrees": [
+                    {
+                        "name": w.name,
+                        "path": w.path,
+                        "parent_path": w.parent_path,
+                        "branch": w.branch,
+                        "inferred_icon": w.inferred_icon,
+                        "git_metadata": w.git_metadata.model_dump() if w.git_metadata else None
+                    }
+                    for w in discovery_result.worktrees
+                ],
+                "skipped": [
+                    {"path": s.path, "reason": s.reason}
+                    for s in discovery_result.skipped
+                ],
+                "errors": [
+                    {"path": e.path, "error_type": e.error_type, "message": e.message}
+                    for e in discovery_result.errors
+                ],
+                "created": created_count,
+                "updated": updated_count,
+                "created_projects": created_projects,
+                "updated_projects": updated_projects,
+                "marked_missing": marked_missing,
+                "duration_ms": duration_ms,
+                "dry_run": dry_run
+            }
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::discover",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            logger.error(f"[Feature 097] Discovery failed: {e}")
+            raise RuntimeError(f"{INTERNAL_ERROR}:Discovery failed: {str(e)}")
+
+    async def _list_github_repos(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List GitHub repositories using gh CLI.
+
+        Feature 097 T042: List GitHub repos for discovery workflow.
+
+        Args:
+            params: {
+                "limit": int = 100,             # Max repos to fetch
+                "include_private": bool = True,  # Include private repos
+                "include_forks": bool = True,    # Include forked repos
+                "include_archived": bool = False # Include archived repos
+            }
+
+        Returns:
+            {
+                "success": bool,
+                "repos": list[dict],
+                "total_count": int,
+                "errors": list[dict]
+            }
+        """
+        start_time = time.perf_counter()
+
+        try:
+            from .services.github_service import list_repos
+
+            limit = params.get("limit", 100)
+            include_private = params.get("include_private", True)
+            include_forks = params.get("include_forks", True)
+            include_archived = params.get("include_archived", False)
+
+            result = await list_repos(
+                limit=limit,
+                include_private=include_private,
+                include_forks=include_forks,
+                include_archived=include_archived
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="github::list_repos",
+                duration_ms=duration_ms,
+                params={"limit": limit, "count": len(result.repos)}
+            )
+
+            return {
+                "success": result.success,
+                "repos": [
+                    {
+                        "name": r.name,
+                        "full_name": r.full_name,
+                        "description": r.description,
+                        "clone_url": r.clone_url,
+                        "ssh_url": r.ssh_url,
+                        "is_private": r.is_private,
+                        "is_fork": r.is_fork,
+                        "is_archived": r.is_archived,
+                        "primary_language": r.primary_language,
+                        "pushed_at": r.pushed_at.isoformat() if r.pushed_at else None,
+                        "has_local_clone": r.has_local_clone,
+                        "local_project_name": r.local_project_name
+                    }
+                    for r in result.repos
+                ],
+                "total_count": result.total_count,
+                "errors": [
+                    {"path": e.path, "error_type": e.error_type, "message": e.message}
+                    for e in result.errors
+                ]
+            }
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="github::list_repos",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            logger.error(f"[Feature 097] GitHub list failed: {e}")
+            raise RuntimeError(f"{INTERNAL_ERROR}:GitHub list failed: {str(e)}")
+
+    async def _get_discovery_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get current discovery configuration.
+
+        Feature 097 T060: Get discovery config for CLI display/editing.
+
+        Returns:
+            {
+                "scan_paths": list[str],
+                "exclude_patterns": list[str],
+                "auto_discover_on_startup": bool,
+                "max_depth": int
+            }
+        """
+        from .config import load_discovery_config
+        from pathlib import Path
+
+        config_file = Path.home() / ".config" / "i3" / "discovery-config.json"
+        config = load_discovery_config(config_file)
+
+        return {
+            "scan_paths": config.scan_paths,
+            "exclude_patterns": config.exclude_patterns,
+            "auto_discover_on_startup": config.auto_discover_on_startup,
+            "max_depth": config.max_depth
+        }
+
+    async def _update_discovery_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update discovery configuration.
+
+        Feature 097 T061: Update discovery config from CLI.
+
+        Args:
+            params: {
+                "scan_paths": list[str] (optional),
+                "exclude_patterns": list[str] (optional),
+                "auto_discover_on_startup": bool (optional),
+                "max_depth": int (optional),
+                "add_path": str (optional) - add single path,
+                "remove_path": str (optional) - remove single path
+            }
+
+        Returns:
+            {"success": bool, "config": dict}
+        """
+        import json
+        from pathlib import Path
+        from .config import load_discovery_config
+        from .models.discovery import ScanConfiguration
+
+        config_file = Path.home() / ".config" / "i3" / "discovery-config.json"
+        current_config = load_discovery_config(config_file)
+
+        # Build updated values
+        scan_paths = list(current_config.scan_paths)
+        exclude_patterns = list(current_config.exclude_patterns)
+        auto_discover = current_config.auto_discover_on_startup
+        max_depth = current_config.max_depth
+
+        # Apply updates
+        if "scan_paths" in params:
+            scan_paths = params["scan_paths"]
+        if "exclude_patterns" in params:
+            exclude_patterns = params["exclude_patterns"]
+        if "auto_discover_on_startup" in params:
+            auto_discover = params["auto_discover_on_startup"]
+        if "max_depth" in params:
+            max_depth = params["max_depth"]
+
+        # Handle add_path/remove_path
+        if "add_path" in params:
+            path = params["add_path"]
+            if path not in scan_paths:
+                scan_paths.append(path)
+        if "remove_path" in params:
+            path = params["remove_path"]
+            if path in scan_paths:
+                scan_paths.remove(path)
+
+        # Validate with Pydantic
+        new_config = ScanConfiguration(
+            scan_paths=scan_paths,
+            exclude_patterns=exclude_patterns,
+            auto_discover_on_startup=auto_discover,
+            max_depth=max_depth
+        )
+
+        # Save to file
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w') as f:
+            json.dump(new_config.model_dump(), f, indent=2)
+
+        logger.info(f"[Feature 097] Updated discovery config: {len(scan_paths)} paths, auto_discover={auto_discover}")
+
+        return {
+            "success": True,
+            "config": new_config.model_dump()
+        }
+
+    async def _refresh_git_metadata(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Refresh git metadata for a project or all projects.
+
+        Feature 097 T062: Refresh git status without full re-discovery.
+
+        Args:
+            params: {
+                "project_name": str (optional) - specific project, or None for all
+            }
+
+        Returns:
+            {"refreshed_count": int, "errors": list[str]}
+        """
+        from pathlib import Path
+        from .services.discovery_service import extract_git_metadata
+        from .services.project_service import ProjectService
+
+        start_time = time.perf_counter()
+
+        project_service = ProjectService(
+            config_dir=Path.home() / ".config" / "i3",
+            state_manager=self.state_manager
+        )
+
+        project_name = params.get("project_name")
+        refreshed_count = 0
+        errors = []
+
+        if project_name:
+            # Refresh single project
+            try:
+                project = project_service.get(project_name)
+                if project.source_type in ["local", "worktree"]:
+                    git_meta = await extract_git_metadata(project.directory)
+                    if git_meta:
+                        project.git_metadata = git_meta
+                        project.save_to_file(project_service.config_dir)
+                        refreshed_count = 1
+                else:
+                    errors.append(f"Project {project_name} is not a local/worktree project")
+            except FileNotFoundError:
+                errors.append(f"Project {project_name} not found")
+            except Exception as e:
+                errors.append(f"Failed to refresh {project_name}: {str(e)}")
+        else:
+            # Refresh all local/worktree projects
+            for project in project_service.list():
+                if project.source_type in ["local", "worktree"]:
+                    try:
+                        git_meta = await extract_git_metadata(project.directory)
+                        if git_meta:
+                            project.git_metadata = git_meta
+                            project.save_to_file(project_service.config_dir)
+                            refreshed_count += 1
+                    except Exception as e:
+                        errors.append(f"Failed to refresh {project.name}: {str(e)}")
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        logger.info(f"[Feature 097] Refreshed git metadata: {refreshed_count} projects in {duration_ms:.1f}ms")
+
+        return {
+            "refreshed_count": refreshed_count,
+            "errors": errors,
+            "duration_ms": duration_ms
+        }
 
     # Feature 062: Scratchpad terminal management methods
     async def _scratchpad_toggle(self, params: Dict[str, Any]) -> Dict[str, Any]:

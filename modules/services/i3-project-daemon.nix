@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.11.2";  # Fix: Removed Feature 029 Event Correlator stale references (force rebuild)
+    version = "1.12.0";  # Feature 097: Added discovery.py module (force rebuild after permission fix)
     src = daemonSrc;
 
     installPhase = ''

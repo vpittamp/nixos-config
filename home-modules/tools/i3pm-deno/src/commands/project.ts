@@ -9,6 +9,8 @@ import { createClient } from "../client.ts";
 import type {
   ClearProjectResult,
   CreateProjectParams,
+  DiscoverProjectsParams,
+  DiscoverProjectsResult,
   Project,
   SwitchProjectResult,
 } from "../models.ts";
@@ -52,6 +54,7 @@ SUBCOMMANDS:
   show <name>       Show project details
   validate          Validate all project configurations
   delete <name>     Delete a project
+  discover          Discover git repositories and create projects (Feature 097)
 
 OPTIONS:
   -h, --help        Show this help message
@@ -65,6 +68,11 @@ EXAMPLES:
   i3pm project show nixos
   i3pm project validate
   i3pm project delete oldproject
+  i3pm project discover                         # Discover repos in configured paths
+  i3pm project discover --path ~/projects       # Discover in specific path
+  i3pm project discover --dry-run               # Preview without creating projects
+  i3pm project discover --github                # Include GitHub repos (requires gh CLI auth)
+  i3pm project discover -g --dry-run            # Preview GitHub integration
 `);
   Deno.exit(0);
 }
@@ -471,6 +479,264 @@ async function deleteProject(projectName: string, options: ProjectCommandOptions
 }
 
 /**
+ * Discover git repositories and create projects (Feature 097)
+ */
+async function discoverProjects(args: string[], options: ProjectCommandOptions): Promise<void> {
+  const parsed = parseArgs(args, {
+    string: ["path", "exclude", "max-depth"],
+    boolean: ["dry-run", "json", "verbose", "github"],
+    collect: ["path", "exclude"],
+    alias: {
+      p: "path",
+      e: "exclude",
+      d: "max-depth",
+      n: "dry-run",
+      g: "github",
+    },
+  });
+
+  const includeGitHub = parsed.github || false;
+
+  const spinner = new Spinner({
+    message: parsed["dry-run"]
+      ? "Scanning for git repositories (dry run)..."
+      : includeGitHub
+        ? "Discovering git repositories and GitHub repos..."
+        : "Discovering git repositories...",
+    showAfter: 0,
+  });
+  spinner.start();
+
+  const client = createClient();
+
+  try {
+    // Build request parameters
+    const params: DiscoverProjectsParams = {};
+
+    // Handle path collection
+    if (parsed.path && Array.isArray(parsed.path) && parsed.path.length > 0) {
+      params.paths = parsed.path.map((p) => {
+        // Expand ~ to home directory
+        if (p.startsWith("~/")) {
+          return Deno.env.get("HOME") + p.slice(1);
+        }
+        // Convert relative to absolute path
+        if (!p.startsWith("/")) {
+          return Deno.cwd() + "/" + p;
+        }
+        return p;
+      });
+    }
+
+    // Handle exclude patterns
+    if (parsed.exclude && Array.isArray(parsed.exclude) && parsed.exclude.length > 0) {
+      params.exclude_patterns = parsed.exclude;
+    }
+
+    // Handle max depth
+    if (parsed["max-depth"]) {
+      params.max_depth = parseInt(parsed["max-depth"], 10);
+      if (isNaN(params.max_depth) || params.max_depth < 1) {
+        spinner.stop();
+        console.error("Error: --max-depth must be a positive integer");
+        Deno.exit(1);
+      }
+    }
+
+    // Handle dry run
+    if (parsed["dry-run"]) {
+      params.dry_run = true;
+    }
+
+    // T045: Handle GitHub integration
+    if (includeGitHub) {
+      (params as Record<string, unknown>).include_github = true;
+    }
+
+    const result = await client.request<DiscoverProjectsResult>("discover_projects", params);
+    spinner.stop();
+
+    if (parsed.json) {
+      // JSON output for scripting
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    // Human-readable output
+    const totalRepos = result.repositories.length;
+    const totalWorktrees = result.worktrees.length;
+
+    if (result.dry_run) {
+      console.log(yellow("DRY RUN") + " - No projects were created or modified\n");
+    }
+
+    // Summary header
+    console.log(bold("Discovery Results:"));
+    console.log(`  Found ${cyan(String(totalRepos))} repositories and ${cyan(String(totalWorktrees))} worktrees`);
+    console.log(`  Duration: ${dim(result.duration_ms.toFixed(1) + "ms")}`);
+    console.log("");
+
+    // Repositories section
+    if (totalRepos > 0) {
+      console.log(bold("Repositories:"));
+      for (const repo of result.repositories) {
+        const meta = repo.git_metadata;
+        const branch = meta ? meta.current_branch : "unknown";
+        const cleanStatus = meta?.is_clean ? green("✓") : yellow("*");
+        console.log(`  ${repo.inferred_icon} ${cyan(repo.name)} ${dim("(" + branch + ")")} ${cleanStatus}`);
+        if (parsed.verbose) {
+          console.log(`    ${gray("Path:")} ${repo.path}`);
+          if (meta) {
+            console.log(`    ${gray("Commit:")} ${meta.commit_hash}`);
+            if (meta.remote_url) {
+              console.log(`    ${gray("Remote:")} ${meta.remote_url}`);
+            }
+          }
+        }
+      }
+      console.log("");
+    }
+
+    // Worktrees section
+    if (totalWorktrees > 0) {
+      console.log(bold("Worktrees:"));
+      for (const wt of result.worktrees) {
+        console.log(`  ${wt.inferred_icon} ${cyan(wt.name)} ${dim("(" + wt.branch + ")")}`);
+        if (parsed.verbose) {
+          console.log(`    ${gray("Path:")} ${wt.path}`);
+          console.log(`    ${gray("Parent:")} ${wt.parent_path}`);
+        }
+      }
+      console.log("");
+    }
+
+    // Created/Updated section (only if not dry run)
+    if (!result.dry_run) {
+      if (result.created > 0) {
+        console.log(green("✓") + ` Created ${result.created} project${result.created !== 1 ? "s" : ""}:`);
+        for (const name of result.created_projects) {
+          console.log(`    + ${cyan(name)}`);
+        }
+        console.log("");
+      }
+
+      if (result.updated > 0) {
+        console.log(green("✓") + ` Updated ${result.updated} project${result.updated !== 1 ? "s" : ""}:`);
+        for (const name of result.updated_projects) {
+          console.log(`    ~ ${cyan(name)}`);
+        }
+        console.log("");
+      }
+
+      if (result.marked_missing.length > 0) {
+        console.log(yellow("⚠") + ` Marked ${result.marked_missing.length} project${result.marked_missing.length !== 1 ? "s" : ""} as missing:`);
+        for (const name of result.marked_missing) {
+          console.log(`    - ${dim(name)}`);
+        }
+        console.log("");
+      }
+
+      if (result.created === 0 && result.updated === 0) {
+        console.log(dim("No new projects created or updated."));
+      }
+    }
+
+    // Errors section
+    if (result.errors.length > 0) {
+      console.log(yellow("⚠") + ` Encountered ${result.errors.length} error${result.errors.length !== 1 ? "s" : ""}:`);
+      for (const err of result.errors) {
+        console.log(`    ${err.path}: ${err.message}`);
+      }
+      console.log("");
+    }
+
+    // Skipped section (only in verbose mode)
+    if (parsed.verbose && result.skipped.length > 0) {
+      console.log(dim(`Skipped ${result.skipped.length} path${result.skipped.length !== 1 ? "s" : ""} (non-git directories)`));
+    }
+
+  } catch (err) {
+    spinner.stop();
+    console.error(err instanceof Error ? err.message : String(err));
+    Deno.exit(1);
+  } finally {
+    await client.close();
+    // Force exit to avoid event loop blocking from pending read operations
+    // See: https://github.com/denoland/deno/issues/4284
+    Deno.exit(0);
+  }
+}
+
+/**
+ * Refresh git metadata for a project or all projects.
+ *
+ * Feature 097 T068: Refresh git status without full re-discovery.
+ */
+async function refreshGitMetadata(
+  args: string[],
+  options: ProjectCommandOptions
+): Promise<void> {
+  const parsed = parseArgs(args, {
+    boolean: ["all", "json", "help"],
+    alias: { h: "help", a: "all" },
+  });
+
+  if (parsed.help) {
+    console.log(`
+Refresh git metadata for projects.
+
+USAGE:
+  i3pm project refresh [PROJECT_NAME] [OPTIONS]
+
+ARGUMENTS:
+  PROJECT_NAME    Name of project to refresh (optional, omit for all)
+
+OPTIONS:
+  -a, --all       Refresh all local/worktree projects
+  --json          Output result as JSON
+  -h, --help      Show this help message
+
+EXAMPLES:
+  i3pm project refresh nixos        Refresh git status for 'nixos' project
+  i3pm project refresh --all        Refresh all local projects
+  i3pm project refresh              Refresh all (same as --all)
+`);
+    return;
+  }
+
+  const client = new DaemonClient();
+
+  try {
+    await client.connect();
+
+    const projectName = parsed._[0] ? String(parsed._[0]) : undefined;
+
+    const response = await client.request("refresh_git_metadata", {
+      project_name: projectName,
+    });
+
+    if (parsed.json) {
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      console.log(`Refreshed git metadata for ${response.refreshed_count} project(s)`);
+      console.log(`Duration: ${response.duration_ms.toFixed(1)}ms`);
+
+      if (response.errors.length > 0) {
+        console.log(`\nErrors (${response.errors.length}):`);
+        for (const error of response.errors) {
+          console.log(`  - ${error}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    Deno.exit(1);
+  } finally {
+    await client.close();
+  }
+}
+
+/**
  * Project command router
  */
 export async function projectCommand(
@@ -543,6 +809,14 @@ export async function projectCommand(
         Deno.exit(1);
       }
       await deleteProject(subcommandArgs[0], options);
+      break;
+
+    case "discover":
+      await discoverProjects(args.slice(1).map(String), options);
+      break;
+
+    case "refresh":
+      await refreshGitMetadata(args.slice(1).map(String), options);
       break;
 
     default:

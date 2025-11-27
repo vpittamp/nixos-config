@@ -3,16 +3,18 @@ Project and ActiveProjectState Pydantic models for project management.
 
 Feature 058: Python Backend Consolidation
 Feature 087: Remote Project Environment Support
+Feature 097: Git-Based Project Discovery and Management
 Provides data validation and JSON serialization for project state.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 import json
 import logging
 from .remote_config import RemoteConfig
+from .discovery import SourceType, ProjectStatus, GitMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -34,26 +36,66 @@ class Project(BaseModel):
         description="Remote environment config (SSH-based)"
     )
 
+    # Feature 097: Discovery fields - all projects must be discovered
+    source_type: SourceType = Field(
+        ...,
+        description="How project was discovered (local, worktree, remote)"
+    )
+    status: ProjectStatus = Field(
+        default=ProjectStatus.ACTIVE,
+        description="Project availability (active, missing)"
+    )
+    git_metadata: Optional[GitMetadata] = Field(
+        default=None,
+        description="Git-specific data (required for local/worktree)"
+    )
+    discovered_at: datetime = Field(
+        default_factory=datetime.now,
+        description="When project was discovered"
+    )
+
     @field_validator('directory', mode='before')
     @classmethod
-    def validate_directory(cls, v) -> str:
-        """Ensure directory exists and is absolute path. Handles PosixPath for backward compatibility."""
-        # Convert PosixPath to string (backward compatibility with old dataclass serialization)
-        if isinstance(v, Path):
-            v = str(v)
+    def validate_directory_format(cls, v: str) -> str:
+        """Ensure directory is absolute path or URL.
+
+        Feature 097: Remote projects use URLs as "directory" field.
+        Local/worktree projects require absolute filesystem paths.
+        """
+        if not isinstance(v, str):
+            raise ValueError("directory must be a string")
+
+        # Allow URLs for remote-only projects
+        if v.startswith("https://") or v.startswith("git@"):
+            return v
 
         path = Path(v).expanduser()
 
         if not path.is_absolute():
             raise ValueError("directory must be absolute path")
 
-        if not path.exists():
-            raise ValueError(f"directory does not exist: {v}")
-
-        if not path.is_dir():
-            raise ValueError(f"path is not a directory: {v}")
-
         return str(path)
+
+    @model_validator(mode='after')
+    def validate_directory_exists(self):
+        """Validate directory exists unless status is 'missing' or source_type is 'remote'.
+
+        Feature 097: Projects with status='missing' can have non-existent directories
+        to preserve project configuration when repositories are temporarily unavailable.
+
+        Feature 097: Remote-only projects use URLs and don't need directory validation.
+        """
+        # Skip validation for remote-only projects (URL-based)
+        if self.source_type == SourceType.REMOTE:
+            return self
+
+        if self.status == ProjectStatus.ACTIVE:
+            path = Path(self.directory)
+            if not path.exists():
+                raise ValueError(f"directory does not exist: {self.directory}")
+            if not path.is_dir():
+                raise ValueError(f"path is not a directory: {self.directory}")
+        return self
 
     def is_remote(self) -> bool:
         """Check if this is a remote project."""

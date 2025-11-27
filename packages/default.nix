@@ -56,40 +56,6 @@ in
           memSize = 8192; # 8GB QEMU VM memory for build process
         };
 
-      # Minimal KubeVirt VM image (qcow2 format with RustDesk + Tailscale)
-      nixos-kubevirt-minimal-image = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [ ../configurations/kubevirt-minimal.nix ];
-        format = "qcow";
-      };
-
-      # Full KubeVirt VM image (qcow2 with complete desktop + home-manager)
-      nixos-kubevirt-full-image = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [
-          ../configurations/kubevirt-full.nix
-          # Add home-manager integration
-          home-manager.nixosModules.home-manager
-          (helpers.mkHomeManagerConfig {
-            inherit system;
-            user = "vpittamp";
-            modules = [
-              ../home-vpittamp.nix
-              inputs.plasma-manager.homeModules.plasma-manager
-            ];
-          })
-        ];
-        format = "qcow";
-      };
-
-      # Optimized KubeVirt VM image (qcow2 with desktop, no home-manager)
-      # Fast build: ~15-20 minutes (vs 60+ minutes for full image)
-      nixos-kubevirt-optimized-image = nixos-generators.nixosGenerate {
-        inherit system;
-        modules = [ ../configurations/kubevirt-optimized.nix ];
-        format = "qcow";
-      };
-
       # Minimal container
       container-minimal = pkgs.dockerTools.buildLayeredImage {
         name = "nixos-container";

@@ -1326,40 +1326,82 @@ async def query_projects_data() -> Dict[str, Any]:
         )
         active_project = result.stdout.strip() if result.returncode == 0 else None
 
-        # Enhance each project with additional metadata for UI
+        # Enhance each project with UI-specific computed fields
         def enhance_project(project: Dict[str, Any]) -> Dict[str, Any]:
-            """Add UI-specific metadata to project"""
-            # Check if active
+            """Add UI-specific computed fields to project.
+
+            Feature 097: All projects come from discovery with proper data.
+            This function only adds UI display fields, not default values.
+            """
+            # Active project indicator
             project["is_active"] = (project.get("name") == active_project)
 
-            # Feature 094: Normalize remote field to always be present (T038)
-            # This allows safe access to remote.* fields in Eww expressions
-            if "remote" not in project or project["remote"] is None:
-                project["remote"] = {
-                    "enabled": False,
-                    "host": "",
-                    "user": "",
-                    "remote_dir": "",
-                    "port": 22
-                }
-            else:
-                # Ensure all fields exist with defaults
-                remote = project["remote"]
-                remote.setdefault("enabled", False)
-                remote.setdefault("host", "")
-                remote.setdefault("user", "")
-                remote.setdefault("remote_dir", "")
-                remote.setdefault("port", 22)
-
-            # Check if remote
+            # Remote project indicator (Feature 087)
+            # Ensure remote field always has a valid structure for UI access
+            remote = project.get("remote") or {}
+            project["remote"] = {
+                "enabled": remote.get("enabled", False),
+                "host": remote.get("host", ""),
+                "user": remote.get("user", ""),
+                "remote_dir": remote.get("remote_dir", ""),
+                "port": remote.get("port", 22),
+            }
             project["is_remote"] = bool(project["remote"]["enabled"])
 
-            # Generate syntax-highlighted JSON for hover tooltip (Feature 094)
-            project["json_repr"] = _format_json_with_syntax_highlighting(project)
+            # Feature 097: Source type badge
+            # Infer source_type from existing data if not present
+            source_type = project.get("source_type")
+            if not source_type:
+                # Infer from worktree field (legacy projects)
+                if project.get("worktree"):
+                    source_type = "worktree"
+                else:
+                    source_type = "local"
+                project["source_type"] = source_type
 
-            # Add directory display (shortened for UI)
-            working_dir = project.get("working_dir", "")
-            project["directory"] = working_dir.replace(str(Path.home()), "~")
+            source_type_badges = {
+                "local": "📦",
+                "worktree": "🌿",
+                "remote": "☁️",
+            }
+            project["source_type_badge"] = source_type_badges.get(
+                source_type, "📦"
+            )
+
+            # Feature 097: Status indicator (missing = warning)
+            project["status_indicator"] = "⚠️" if project.get("status") == "missing" else ""
+
+            # Feature 097: Derived git status for UI display
+            # Support both new git_metadata and legacy worktree field
+            gm = project.get("git_metadata") or project.get("worktree") or {}
+            # Legacy worktree uses "branch", new git_metadata uses "current_branch"
+            project["git_branch"] = gm.get("current_branch") or gm.get("branch", "")
+            project["git_commit_short"] = gm.get("commit_hash", "")[:7] if gm.get("commit_hash") else ""
+            project["git_is_dirty"] = not gm.get("is_clean", True) or gm.get("has_untracked", False)
+            project["git_dirty_indicator"] = "●" if project["git_is_dirty"] else ""
+            project["git_ahead"] = gm.get("ahead_count", 0)
+            project["git_behind"] = gm.get("behind_count", 0)
+
+            # Sync status indicator (ahead/behind)
+            sync_parts = []
+            if project["git_ahead"] > 0:
+                sync_parts.append(f"↑{project['git_ahead']}")
+            if project["git_behind"] > 0:
+                sync_parts.append(f"↓{project['git_behind']}")
+            project["git_sync_indicator"] = " ".join(sync_parts)
+
+            # Generate syntax-highlighted JSON for hover tooltip (Feature 094)
+            # Use colorize_json_pango (same as Windows tab) - it handles escaping properly
+            # Exclude computed/circular fields from the JSON display
+            json_display_data = {k: v for k, v in project.items()
+                                 if k not in ("json_repr", "git_branch_label", "git_badge",
+                                              "git_status_indicator", "git_sync_indicator",
+                                              "directory_display")}
+            project["json_repr"] = colorize_json_pango(json_display_data)
+
+            # Directory display (shortened for UI)
+            directory = project.get("directory", "")
+            project["directory_display"] = directory.replace(str(Path.home()), "~")
 
             return project
 
