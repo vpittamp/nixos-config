@@ -30,6 +30,9 @@ import {
 } from "../utils/errors.ts";
 import { Spinner } from "@cli-ux";
 
+// Feature 097: Import new discover command
+import { discoverCommand } from "./project/discover.ts";
+
 interface ProjectCommandOptions {
   verbose?: boolean;
   debug?: boolean;
@@ -47,6 +50,8 @@ USAGE:
 
 SUBCOMMANDS:
   list              List all configured projects
+                    --json         Output as JSON (T071)
+                    --hierarchy    Tree view grouped by repo (T070)
   current           Show currently active project
   switch <name>     Switch to a project
   clear             Clear active project (enter global mode)
@@ -79,57 +84,191 @@ EXAMPLES:
 
 /**
  * List all projects
+ *
+ * Feature 097 T070: --hierarchy flag shows tree format grouped by bare_repo_path
+ * Feature 097 T071: --json output includes source_type, parent_project, bare_repo_path
  */
 async function listProjects(args: (string | number)[], options: ProjectCommandOptions): Promise<void> {
   const parsed = parseArgs(args.map(String), {
-    boolean: ["json"],
+    boolean: ["json", "hierarchy"],
+    alias: { t: "hierarchy" },  // -t for tree
   });
 
-  const client = createClient();
+  // Feature 097: Read directly from project JSON files for hierarchy support
+  const projectsDir = Deno.env.get("HOME") + "/.config/i3/projects";
+  const projects: Project[] = [];
 
   try {
-    const projects = await client.request<Project[]>("list_projects");
-    const validated = projects.map((p) => validateResponse(ProjectSchema, p));
-
-    if (parsed.json) {
-      // JSON output
-      console.log(JSON.stringify(validated, null, 2));
-      return;
+    for await (const entry of Deno.readDir(projectsDir)) {
+      if (entry.isFile && entry.name.endsWith(".json")) {
+        try {
+          const content = await Deno.readTextFile(`${projectsDir}/${entry.name}`);
+          const project = JSON.parse(content) as Project;
+          projects.push(project);
+        } catch {
+          // Skip invalid JSON files
+        }
+      }
     }
+  } catch {
+    // Directory doesn't exist yet
+  }
 
-    // Human-readable output
-    if (validated.length === 0) {
-      console.log("No projects configured.");
-      console.log("");
-      console.log("Create a project with:");
-      console.log("  i3pm project create --name myproject --dir /path/to/project");
-      return;
-    }
+  if (parsed.json) {
+    // Feature 097 T071: JSON output with all fields
+    console.log(JSON.stringify(projects, null, 2));
+    Deno.exit(0);
+  }
 
+  if (projects.length === 0) {
+    console.log("No projects configured.");
+    console.log("");
+    console.log("Create a project with:");
+    console.log("  i3pm project create --name myproject --dir /path/to/project");
+    console.log("Or discover git repositories:");
+    console.log("  i3pm project discover --path ~/projects");
+    Deno.exit(0);
+  }
+
+  if (parsed.hierarchy) {
+    // Feature 097 T070: Tree output format
+    await listProjectsHierarchy(projects);
+  } else {
+    // Default flat list
     console.log(bold("Projects:"));
     console.log("");
 
-    for (const project of validated) {
+    for (const project of projects.sort((a, b) => a.name.localeCompare(b.name))) {
+      const sourceType = (project as Record<string, unknown>).source_type as string | undefined;
+      const typeLabel = sourceType === "repository" ? cyan("[repo]") :
+                       sourceType === "worktree" ? yellow("[wt]") :
+                       gray("[std]");
       console.log(
-        `  ${project.icon} ${cyan(project.name)} ${dim("(" + project.display_name + ")")}`,
+        `  ${project.icon} ${cyan(project.name)} ${typeLabel} ${dim("(" + project.display_name + ")")}`,
       );
       console.log(`    ${gray("Directory:")} ${project.directory}`);
-      console.log(
-        `    ${gray("Classes:")} ${project.scoped_classes.join(", ") || dim("none")}`,
-      );
+      if (options.verbose) {
+        const gitMeta = (project as Record<string, unknown>).git_metadata as { current_branch?: string; commit_hash?: string; is_clean?: boolean } | undefined;
+        if (gitMeta?.current_branch) {
+          console.log(`    ${gray("Branch:")} ${gitMeta.current_branch} @ ${gitMeta.commit_hash || "unknown"}`);
+        }
+        console.log(
+          `    ${gray("Classes:")} ${project.scoped_classes.join(", ") || dim("none")}`,
+        );
+      }
       console.log("");
     }
 
-    console.log(`Total: ${validated.length} project${validated.length !== 1 ? "s" : ""}`);
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    Deno.exit(1);
-  } finally {
-    await client.close();
-    // Force exit to avoid event loop blocking from pending read operations
-    // See: https://github.com/denoland/deno/issues/4284
-    Deno.exit(0);
+    console.log(`Total: ${projects.length} project${projects.length !== 1 ? "s" : ""}`);
   }
+  Deno.exit(0);
+}
+
+/**
+ * Feature 097 T070: Display projects in tree hierarchy format
+ * Groups by bare_repo_path: Repository → Worktrees
+ */
+async function listProjectsHierarchy(projects: Project[]): Promise<void> {
+  // Group projects by type
+  const repoMap = new Map<string, { repo: Project; worktrees: Project[] }>();
+  const standalones: Project[] = [];
+  const orphans: Project[] = [];
+
+  for (const project of projects) {
+    const sourceType = (project as Record<string, unknown>).source_type as string | undefined;
+    const bareRepoPath = (project as Record<string, unknown>).bare_repo_path as string | undefined;
+    const parentProject = (project as Record<string, unknown>).parent_project as string | undefined;
+
+    if (sourceType === "repository" && bareRepoPath) {
+      if (!repoMap.has(bareRepoPath)) {
+        repoMap.set(bareRepoPath, { repo: project, worktrees: [] });
+      } else {
+        // Shouldn't happen, but handle gracefully
+        const existing = repoMap.get(bareRepoPath)!;
+        existing.repo = project;
+      }
+    } else if (sourceType === "worktree" && bareRepoPath) {
+      if (repoMap.has(bareRepoPath)) {
+        repoMap.get(bareRepoPath)!.worktrees.push(project);
+      } else {
+        // Check if parent exists, otherwise orphan
+        const parentExists = projects.some(p => p.name === parentProject);
+        if (parentExists) {
+          // Parent hasn't been processed yet, create placeholder
+          repoMap.set(bareRepoPath, { repo: null as unknown as Project, worktrees: [project] });
+        } else {
+          orphans.push(project);
+        }
+      }
+    } else {
+      standalones.push(project);
+    }
+  }
+
+  // Fill in repos for worktrees added before repo
+  for (const project of projects) {
+    const sourceType = (project as Record<string, unknown>).source_type as string | undefined;
+    const bareRepoPath = (project as Record<string, unknown>).bare_repo_path as string | undefined;
+    if (sourceType === "repository" && bareRepoPath && repoMap.has(bareRepoPath)) {
+      const entry = repoMap.get(bareRepoPath)!;
+      if (!entry.repo) {
+        entry.repo = project;
+      }
+    }
+  }
+
+  console.log(bold("Projects (Hierarchy View):"));
+  console.log("");
+
+  // Print Repository groups
+  const sortedRepos = Array.from(repoMap.values())
+    .filter(v => v.repo)
+    .sort((a, b) => a.repo.name.localeCompare(b.repo.name));
+
+  for (const { repo, worktrees } of sortedRepos) {
+    const gitMeta = (repo as Record<string, unknown>).git_metadata as { current_branch?: string; is_clean?: boolean } | undefined;
+    const cleanIndicator = gitMeta?.is_clean === false ? yellow("●") : green("✓");
+    console.log(`${repo.icon} ${cyan(repo.name)} ${cleanIndicator} ${dim("(repository)")}`);
+    console.log(`  ${gray("└─")} ${repo.directory}`);
+    if (gitMeta?.current_branch) {
+      console.log(`  ${gray("   branch:")} ${gitMeta.current_branch}`);
+    }
+
+    // Print worktrees
+    const sortedWorktrees = worktrees.sort((a, b) => a.name.localeCompare(b.name));
+    for (let i = 0; i < sortedWorktrees.length; i++) {
+      const wt = sortedWorktrees[i];
+      const isLast = i === sortedWorktrees.length - 1;
+      const wtMeta = (wt as Record<string, unknown>).git_metadata as { current_branch?: string; is_clean?: boolean } | undefined;
+      const wtClean = wtMeta?.is_clean === false ? yellow("●") : green("✓");
+      const connector = isLast ? "└─" : "├─";
+      console.log(`  ${gray(connector)} 🌿 ${cyan(wt.name)} ${wtClean} ${dim("(" + (wtMeta?.current_branch || "unknown") + ")")}`);
+    }
+    console.log("");
+  }
+
+  // Print standalones
+  if (standalones.length > 0) {
+    console.log(dim("Standalone Projects:"));
+    for (const project of standalones.sort((a, b) => a.name.localeCompare(b.name))) {
+      console.log(`  ${project.icon} ${cyan(project.name)} ${dim("(standalone)")}`);
+    }
+    console.log("");
+  }
+
+  // Print orphans
+  if (orphans.length > 0) {
+    console.log(yellow("⚠ Orphaned Worktrees:"));
+    for (const project of orphans.sort((a, b) => a.name.localeCompare(b.name))) {
+      console.log(`  ${project.icon} ${yellow(project.name)} ${dim("(no parent)")}`);
+    }
+    console.log("");
+  }
+
+  // Summary
+  const repoCount = sortedRepos.length;
+  const wtCount = sortedRepos.reduce((sum, r) => sum + r.worktrees.length, 0);
+  console.log(`Total: ${repoCount} repositories, ${wtCount} worktrees, ${standalones.length} standalone, ${orphans.length} orphaned`);
 }
 
 /**
@@ -812,7 +951,8 @@ export async function projectCommand(
       break;
 
     case "discover":
-      await discoverProjects(args.slice(1).map(String), options);
+      // Feature 097: Use new git-centric discover command
+      await discoverCommand(args.slice(1).map(String));
       break;
 
     case "refresh":

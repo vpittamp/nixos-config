@@ -485,3 +485,179 @@ export async function getLastModifiedTime(cwd: string): Promise<string> {
   const result = await execGit(["log", "-1", "--format=%cI"], cwd);
   return result.stdout;
 }
+
+/**
+ * Feature 097 Option A: Get the bare repository path (GIT_COMMON_DIR)
+ *
+ * Git worktrees share a common directory (the bare repo or main repo's .git).
+ * This function returns the absolute path to that common directory, which is
+ * the canonical identifier for all worktrees belonging to the same repository.
+ *
+ * For a regular repository: returns /path/to/repo/.git
+ * For a bare repository: returns /path/to/repo.git
+ * For a linked worktree: returns /path/to/bare-repo.git (the parent)
+ *
+ * This is used to correctly group worktrees by their parent repository,
+ * rather than by another worktree's path.
+ *
+ * @param cwd - Working directory (any worktree or repo directory)
+ * @returns Absolute path to the common git directory (bare repo)
+ * @throws GitError if not in a git repository
+ *
+ * @example
+ * ```ts
+ * // From any worktree of nixos-config.git:
+ * const bareRepo = await getBareRepositoryPath("/etc/nixos");
+ * console.log(bareRepo); // "/home/vpittamp/nixos-config.git"
+ *
+ * const bareRepo2 = await getBareRepositoryPath("/home/vpittamp/nixos-097-convert-manual-projects");
+ * console.log(bareRepo2); // "/home/vpittamp/nixos-config.git" (same bare repo)
+ * ```
+ */
+export async function getBareRepositoryPath(cwd: string): Promise<string> {
+  // git rev-parse --git-common-dir returns the path to the common directory
+  // For linked worktrees, this resolves through .git file → gitdir → commondir
+  const result = await execGit(["rev-parse", "--git-common-dir"], cwd);
+  const commonDir = result.stdout;
+
+  // The result might be relative, so we need to resolve it to absolute
+  // If it's already absolute (starts with /), use it directly
+  if (commonDir.startsWith("/")) {
+    // Remove trailing /.git if present to get the bare repo path
+    // For bare repos like /path/to/repo.git, this returns /path/to/repo.git
+    // For regular repos, --git-common-dir returns /path/to/repo/.git
+    return commonDir.replace(/\/\.git$/, "") || commonDir;
+  }
+
+  // Relative path - resolve from the working directory
+  // First get the absolute working directory
+  const repoRoot = await getRepositoryRoot(cwd);
+  const absoluteCommonDir = join(repoRoot, commonDir);
+
+  // Normalize and remove trailing /.git if present
+  return absoluteCommonDir.replace(/\/\.git$/, "") || absoluteCommonDir;
+}
+
+// ============================================================================
+// Feature 097: Git-Centric Project Management Utilities
+// ============================================================================
+
+import type { Project, SourceType } from "../models/discovery.ts";
+
+/**
+ * T011: Determine project type based on git structure and existing projects.
+ *
+ * Decision tree:
+ * 1. Not a git repo? → standalone
+ * 2. Has a Repository Project with same bare_repo_path? → worktree
+ * 3. First project for this bare_repo_path? → repository
+ *
+ * @param directory - Path to the project directory
+ * @param existingProjects - List of currently registered projects
+ * @returns SourceType: "repository", "worktree", or "standalone"
+ */
+export async function determineSourceType(
+  directory: string,
+  existingProjects: Project[],
+): Promise<SourceType> {
+  // Check if it's a git repository
+  if (!(await isGitRepository(directory))) {
+    return "standalone";
+  }
+
+  // Get the bare_repo_path for this directory
+  let bareRepoPath: string;
+  try {
+    bareRepoPath = await getBareRepositoryPath(directory);
+  } catch {
+    // Not a git repo or error - treat as standalone
+    return "standalone";
+  }
+
+  // Check if any existing project with source_type=repository has the same bare_repo_path
+  const existingRepo = findRepositoryForBareRepo(bareRepoPath, existingProjects);
+
+  if (existingRepo) {
+    return "worktree";
+  } else {
+    return "repository";
+  }
+}
+
+/**
+ * Find the Repository Project for a given bare_repo_path.
+ *
+ * @param bareRepoPath - The canonical identifier (GIT_COMMON_DIR)
+ * @param projects - List of projects to search
+ * @returns The Repository Project with matching bare_repo_path, or null
+ */
+export function findRepositoryForBareRepo(
+  bareRepoPath: string,
+  projects: Project[],
+): Project | null {
+  for (const project of projects) {
+    if (
+      project.source_type === "repository" &&
+      project.bare_repo_path === bareRepoPath
+    ) {
+      return project;
+    }
+  }
+  return null;
+}
+
+/**
+ * Find worktrees whose parent Repository Project is missing.
+ *
+ * @param projects - List of all registered projects
+ * @returns List of orphaned worktree projects
+ */
+export function detectOrphanedWorktrees(projects: Project[]): Project[] {
+  // Collect all bare_repo_paths from repository projects
+  const repoBarePathsSet = new Set<string>();
+  for (const project of projects) {
+    if (project.source_type === "repository" && project.bare_repo_path) {
+      repoBarePathsSet.add(project.bare_repo_path);
+    }
+  }
+
+  // Find worktrees without a matching repository
+  const orphans: Project[] = [];
+  for (const project of projects) {
+    if (project.source_type === "worktree") {
+      if (!project.bare_repo_path || !repoBarePathsSet.has(project.bare_repo_path)) {
+        orphans.push({
+          ...project,
+          status: "orphaned",
+        });
+      }
+    }
+  }
+
+  return orphans;
+}
+
+/**
+ * Generate a unique project name by appending numeric suffix if needed.
+ *
+ * Algorithm: my-app → my-app-2 → my-app-3 → ...
+ *
+ * @param baseName - Desired project name
+ * @param existingNames - Set of already-used project names
+ * @returns Unique name (either baseName or baseName-N)
+ */
+export function generateUniqueName(
+  baseName: string,
+  existingNames: Set<string>,
+): string {
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+
+  let counter = 2;
+  while (existingNames.has(`${baseName}-${counter}`)) {
+    counter++;
+  }
+
+  return `${baseName}-${counter}`;
+}

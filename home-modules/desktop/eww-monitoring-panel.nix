@@ -423,6 +423,42 @@ asyncio.run(stream.run())
     $EWW_CMD update edit_form_error=""
   '';
 
+  # Feature 097 T030-T031: Worktree create dialog opener
+  # Opens the worktree creation form for a Repository Project
+  worktreeCreateOpenScript = pkgs.writeShellScriptBin "worktree-create-open" ''
+    #!${pkgs.bash}/bin/bash
+    # Open worktree creation dialog for a Repository Project
+    # Usage: worktree-create-open <parent_project_name> <parent_directory>
+    #
+    # Feature 097: Creates Worktree Projects linked to the parent Repository Project
+
+    PARENT_PROJECT="$1"
+    PARENT_DIR="$2"
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$PARENT_PROJECT" ]]; then
+      echo "Error: Parent project name required" >&2
+      exit 1
+    fi
+
+    # Generate default worktree path from parent directory
+    BASE_DIR=$(dirname "$PARENT_DIR")
+    REPO_NAME=$(basename "$PARENT_DIR")
+    DEFAULT_PATH="''${BASE_DIR}/''${REPO_NAME}-"
+
+    # Clear previous state
+    $EWW_CMD update worktree_form_branch_name=""
+    $EWW_CMD update worktree_form_path="$DEFAULT_PATH"
+    $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
+    $EWW_CMD update edit_form_display_name=""
+    $EWW_CMD update edit_form_icon="🌿"
+    $EWW_CMD update edit_form_error=""
+
+    # Show the worktree creation dialog
+    $EWW_CMD update worktree_creating=true
+  '';
+
   # Feature 094 US5: Worktree create script (T057-T058)
   worktreeCreateScript = pkgs.writeShellScriptBin "worktree-create" ''
     #!${pkgs.bash}/bin/bash
@@ -540,28 +576,89 @@ asyncio.run(stream.run())
       ICON="🌿"
     fi
 
-    # Create worktree project config using CRUD handler
-    export PYTHONPATH="${../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler create \
-      --name "$WORKTREE_NAME" \
-      --display-name "$DISPLAY_NAME" \
-      --icon "$ICON" \
-      --directory "$WORKTREE_PATH" \
-      --scope scoped \
-      --worktree \
-      --branch-name "$BRANCH_NAME" \
-      --worktree-path "$WORKTREE_PATH" \
-      --parent-project "$PARENT_PROJECT")
-
-    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    if [[ "$STATUS" != "success" ]]; then
-      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
-      $EWW update edit_form_error="Failed to create worktree config: $ERROR"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Failed to create worktree config: $ERROR"
+    # Feature 097: Get bare_repo_path for the worktree
+    BARE_REPO_PATH=$(cd "$WORKTREE_PATH" && git rev-parse --git-common-dir 2>/dev/null)
+    if [[ -z "$BARE_REPO_PATH" ]]; then
+      $EWW update edit_form_error="Failed to get bare_repo_path"
+      $EWW update error_notification="Failed to get bare_repo_path for worktree"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
-      # Cleanup: remove the git worktree we just created
+      git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+      exit 1
+    fi
+
+    # Feature 097: Get git metadata for the new worktree
+    cd "$WORKTREE_PATH" || {
+      $EWW update edit_form_error="Cannot change to worktree directory"
+      $EWW update error_notification="Cannot change to worktree directory: $WORKTREE_PATH"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
+      git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+      exit 1
+    }
+    GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
+    GIT_COMMIT=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "0000000")
+    GIT_STATUS=$(git status --porcelain 2>/dev/null)
+    GIT_IS_CLEAN="true"
+    GIT_HAS_UNTRACKED="false"
+    if [[ -n "$GIT_STATUS" ]]; then
+      GIT_IS_CLEAN="false"
+      if echo "$GIT_STATUS" | grep -q "^??"; then
+        GIT_HAS_UNTRACKED="true"
+      fi
+    fi
+    REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    NOW=$(date -Is)
+
+    # Feature 097: Create project JSON with source_type=worktree
+    PROJECTS_DIR="$HOME/.config/i3/projects"
+    mkdir -p "$PROJECTS_DIR"
+
+    ${pkgs.jq}/bin/jq -n \
+      --arg name "$WORKTREE_NAME" \
+      --arg display_name "$DISPLAY_NAME" \
+      --arg icon "$ICON" \
+      --arg directory "$WORKTREE_PATH" \
+      --arg bare_repo_path "$BARE_REPO_PATH" \
+      --arg parent_project "$PARENT_PROJECT" \
+      --arg git_branch "$GIT_BRANCH" \
+      --arg git_commit "$GIT_COMMIT" \
+      --argjson is_clean "$GIT_IS_CLEAN" \
+      --argjson has_untracked "$GIT_HAS_UNTRACKED" \
+      --arg remote_url "$REMOTE_URL" \
+      --arg now "$NOW" \
+      '{
+        name: $name,
+        display_name: $display_name,
+        icon: $icon,
+        directory: $directory,
+        scope: "scoped",
+        remote: null,
+        source_type: "worktree",
+        status: "active",
+        bare_repo_path: $bare_repo_path,
+        parent_project: $parent_project,
+        git_metadata: {
+          current_branch: $git_branch,
+          commit_hash: $git_commit,
+          is_clean: $is_clean,
+          has_untracked: $has_untracked,
+          ahead_count: 0,
+          behind_count: 0,
+          remote_url: (if $remote_url == "" then null else $remote_url end),
+          last_modified: null,
+          last_refreshed: $now
+        },
+        scoped_classes: ["Ghostty", "code", "yazi", "lazygit"],
+        created_at: $now,
+        updated_at: $now
+      }' > "$PROJECTS_DIR/$WORKTREE_NAME.json"
+
+    if [[ $? -ne 0 ]]; then
+      $EWW update edit_form_error="Failed to create worktree config"
+      $EWW update error_notification="Failed to write project JSON"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
       git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
       exit 1
     fi
@@ -598,17 +695,20 @@ asyncio.run(stream.run())
     echo "Worktree created successfully: $WORKTREE_NAME"
   '';
 
-  # Feature 094 US5: Worktree delete script (T060)
+  # Feature 094/097: Worktree delete script
+  # Updated for Feature 097 git-centric model (uses directory, source_type, parent_project)
   worktreeDeleteScript = pkgs.writeShellScriptBin "worktree-delete" ''
     #!${pkgs.bash}/bin/bash
     # Delete a Git worktree and its project config
-    # Usage: worktree-delete <project-name>
+    # Usage: worktree-delete <project-name> [--force]
+    # Feature 097: Uses source_type to verify worktree, directory for path
 
     PROJECT_NAME="$1"
+    FORCE_FLAG="$2"
     EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
 
     if [[ -z "$PROJECT_NAME" ]]; then
-      echo "Usage: worktree-delete <project-name>" >&2
+      echo "Usage: worktree-delete <project-name> [--force]" >&2
       exit 1
     fi
 
@@ -636,13 +736,15 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Read worktree info
-    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r '.worktree_path // empty' "$PROJECT_FILE")
+    # Feature 097: Read project info using new fields
+    SOURCE_TYPE=$(${pkgs.jq}/bin/jq -r '.source_type // empty' "$PROJECT_FILE")
+    WORKTREE_DIR=$(${pkgs.jq}/bin/jq -r '.directory // empty' "$PROJECT_FILE")
     PARENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.parent_project // empty' "$PROJECT_FILE")
+    IS_DIRTY=$(${pkgs.jq}/bin/jq -r '.git_metadata.is_clean // true' "$PROJECT_FILE")
 
-    if [[ -z "$WORKTREE_PATH" ]] || [[ -z "$PARENT_PROJECT" ]]; then
-      $EWW update edit_form_error="Not a worktree project"
-      # Feature 096 T024: Show error notification
+    # Feature 097: Verify this is a worktree project
+    if [[ "$SOURCE_TYPE" != "worktree" ]]; then
+      $EWW update edit_form_error="Not a worktree project (source_type: $SOURCE_TYPE)"
       $EWW update error_notification="Not a worktree project: $PROJECT_NAME"
       $EWW update error_notification_visible=true
       $EWW update worktree_delete_confirm=""
@@ -650,65 +752,68 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Get parent directory for git worktree removal
-    PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
-    GIT_CLEANUP_WARNING=""
-    if [[ -f "$PARENT_FILE" ]]; then
-      PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // .working_dir // empty' "$PARENT_FILE")
-      if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
-        cd "$PARENT_DIR"
-        # Remove git worktree (use --force if dirty)
-        if ! git worktree remove "$WORKTREE_PATH" --force 2>/dev/null; then
-          GIT_CLEANUP_WARNING=" (Git cleanup may have failed)"
-        fi
-      fi
-    fi
-
-    # Delete project config using CRUD handler
-    export PYTHONPATH="${../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler delete "$PROJECT_NAME")
-
-    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    if [[ "$STATUS" != "success" ]]; then
-      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
-      $EWW update edit_form_error="Failed to delete: $ERROR"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Failed to delete worktree: $ERROR"
+    if [[ -z "$WORKTREE_DIR" ]] || [[ -z "$PARENT_PROJECT" ]]; then
+      $EWW update edit_form_error="Invalid worktree project (missing directory or parent)"
+      $EWW update error_notification="Invalid worktree project: $PROJECT_NAME"
       $EWW update error_notification_visible=true
       $EWW update worktree_delete_confirm=""
       $EWW update save_in_progress=false
       exit 1
     fi
 
-    # Success: clear state and refresh
-    $EWW update worktree_delete_confirm=""
-    $EWW update edit_form_error=""
-
-    # Note: Project list will be refreshed by the deflisten stream automatically
-
-    # Feature 096 T023: Show success notification (with optional warning)
-    if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
-      $EWW update warning_notification="Worktree '$PROJECT_NAME' deleted$GIT_CLEANUP_WARNING"
-      $EWW update warning_notification_visible=true
-      (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
-    else
-      $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
-      $EWW update success_notification_visible=true
-      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+    # Feature 097 T045: Check for uncommitted changes and warn
+    if [[ "$IS_DIRTY" == "false" ]] && [[ "$FORCE_FLAG" != "--force" ]]; then
+      $EWW update edit_form_error="Worktree has uncommitted changes. Use --force to delete anyway."
+      $EWW update error_notification="Worktree has uncommitted changes"
+      $EWW update error_notification_visible=true
+      $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
+      exit 1
     fi
 
-    # Feature 096 T022: Clear loading state
-    $EWW update save_in_progress=false
-
-    # Feature 096 T023: Show success notification (with optional warning)
-    if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
-      $EWW update warning_notification="Worktree '$PROJECT_NAME' deleted$GIT_CLEANUP_WARNING"
-      $EWW update warning_notification_visible=true
-      (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+    # Feature 097 T044/T046: Remove git worktree (if directory exists)
+    GIT_CLEANUP_WARNING=""
+    if [[ -d "$WORKTREE_DIR" ]]; then
+      # Get parent directory for git worktree removal
+      PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
+      if [[ -f "$PARENT_FILE" ]]; then
+        PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // empty' "$PARENT_FILE")
+        if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
+          cd "$PARENT_DIR"
+          # Remove git worktree (use --force to handle dirty state)
+          if ! git worktree remove "$WORKTREE_DIR" --force 2>/dev/null; then
+            GIT_CLEANUP_WARNING=" (Git worktree cleanup may have failed)"
+          fi
+        fi
+      fi
     else
-      $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
-      $EWW update success_notification_visible=true
-      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+      # Feature 097 T046: Worktree directory already gone, just cleanup JSON
+      GIT_CLEANUP_WARNING=" (directory already removed)"
+    fi
+
+    # Feature 097: Delete project JSON file directly (no CRUD handler needed)
+    if rm -f "$PROJECT_FILE"; then
+      # Success: clear state
+      $EWW update worktree_delete_confirm=""
+      $EWW update edit_form_error=""
+
+      # Note: Project list will be refreshed by the deflisten stream automatically
+
+      # Feature 096 T023: Show success notification (with optional warning)
+      if [[ -n "$GIT_CLEANUP_WARNING" ]]; then
+        $EWW update warning_notification="Worktree '$PROJECT_NAME' deleted$GIT_CLEANUP_WARNING"
+        $EWW update warning_notification_visible=true
+        (sleep 5 && $EWW update warning_notification_visible=false warning_notification="") &
+      else
+        $EWW update success_notification="Worktree '$PROJECT_NAME' deleted successfully"
+        $EWW update success_notification_visible=true
+        (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+      fi
+    else
+      $EWW update edit_form_error="Failed to delete project file"
+      $EWW update error_notification="Failed to delete project file: $PROJECT_NAME"
+      $EWW update error_notification_visible=true
+      $EWW update worktree_delete_confirm=""
     fi
 
     # Feature 096 T022: Clear loading state
@@ -1417,6 +1522,301 @@ print(json.dumps(result))
     $EWW update delete_error=""
   '';
 
+  # Feature 097 T056-T062: Project git metadata refresh script
+  projectRefreshScript = pkgs.writeShellScriptBin "project-refresh" ''
+    #!${pkgs.bash}/bin/bash
+    # Refresh git metadata for one or all projects
+    # Usage: project-refresh [project-name | --all]
+    # Feature 097: Updates git_metadata in project JSON files
+
+    PROJECT_NAME="$1"
+    PROJECTS_DIR="$HOME/.config/i3/projects"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Function to refresh a single project's git metadata
+    refresh_project() {
+      local PROJECT_FILE="$1"
+      local NAME=$(basename "$PROJECT_FILE" .json)
+
+      # Read current project
+      if [[ ! -f "$PROJECT_FILE" ]]; then
+        echo "Project file not found: $PROJECT_FILE" >&2
+        return 1
+      fi
+
+      local DIRECTORY=$(${pkgs.jq}/bin/jq -r '.directory // empty' "$PROJECT_FILE")
+      local SOURCE_TYPE=$(${pkgs.jq}/bin/jq -r '.source_type // "standalone"' "$PROJECT_FILE")
+
+      # Skip if directory doesn't exist
+      if [[ ! -d "$DIRECTORY" ]]; then
+        echo "Directory missing for $NAME: $DIRECTORY" >&2
+        # Mark as missing status
+        ${pkgs.jq}/bin/jq '.status = "missing"' "$PROJECT_FILE" > "''${PROJECT_FILE}.tmp" && mv "''${PROJECT_FILE}.tmp" "$PROJECT_FILE"
+        return 0
+      fi
+
+      # Skip standalone projects without git
+      if [[ "$SOURCE_TYPE" == "standalone" ]]; then
+        if ! git -C "$DIRECTORY" rev-parse --git-dir >/dev/null 2>&1; then
+          echo "Skipping non-git project: $NAME" >&2
+          return 0
+        fi
+      fi
+
+      # Extract git metadata
+      cd "$DIRECTORY" || return 1
+      local GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
+      local GIT_COMMIT=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "0000000")
+      local GIT_STATUS=$(git status --porcelain 2>/dev/null)
+      local GIT_IS_CLEAN="true"
+      local GIT_HAS_UNTRACKED="false"
+
+      if [[ -n "$GIT_STATUS" ]]; then
+        GIT_IS_CLEAN="false"
+        if echo "$GIT_STATUS" | grep -q "^??"; then
+          GIT_HAS_UNTRACKED="true"
+        fi
+      fi
+
+      # Get ahead/behind counts
+      local TRACKING=$(git rev-parse --abbrev-ref @{upstream} 2>/dev/null || echo "")
+      local AHEAD_COUNT=0
+      local BEHIND_COUNT=0
+      if [[ -n "$TRACKING" ]]; then
+        AHEAD_COUNT=$(git rev-list --count @{upstream}..HEAD 2>/dev/null || echo "0")
+        BEHIND_COUNT=$(git rev-list --count HEAD..@{upstream} 2>/dev/null || echo "0")
+      fi
+
+      local REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+      local NOW=$(date -Is)
+
+      # Update the project JSON with new git metadata
+      ${pkgs.jq}/bin/jq \
+        --arg branch "$GIT_BRANCH" \
+        --arg commit "$GIT_COMMIT" \
+        --argjson is_clean $GIT_IS_CLEAN \
+        --argjson has_untracked $GIT_HAS_UNTRACKED \
+        --argjson ahead "$AHEAD_COUNT" \
+        --argjson behind "$BEHIND_COUNT" \
+        --arg remote_url "$REMOTE_URL" \
+        --arg now "$NOW" \
+        '.status = "active" | .git_metadata = {
+          current_branch: $branch,
+          commit_hash: $commit,
+          is_clean: $is_clean,
+          has_untracked: $has_untracked,
+          ahead_count: $ahead,
+          behind_count: $behind,
+          remote_url: (if $remote_url == "" then null else $remote_url end),
+          last_modified: .git_metadata.last_modified,
+          last_refreshed: $now
+        } | .updated_at = $now' "$PROJECT_FILE" > "''${PROJECT_FILE}.tmp" && mv "''${PROJECT_FILE}.tmp" "$PROJECT_FILE"
+
+      echo "Refreshed: $NAME ($GIT_BRANCH @ $GIT_COMMIT)"
+    }
+
+    # Main logic
+    if [[ "$PROJECT_NAME" == "--all" ]] || [[ -z "$PROJECT_NAME" ]]; then
+      # Refresh all projects
+      echo "Refreshing all projects..."
+      for f in "$PROJECTS_DIR"/*.json; do
+        if [[ -f "$f" ]]; then
+          refresh_project "$f"
+        fi
+      done
+      $EWW update success_notification="All projects refreshed"
+      $EWW update success_notification_visible=true
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+    else
+      # Refresh single project
+      PROJECT_FILE="$PROJECTS_DIR/$PROJECT_NAME.json"
+      if [[ ! -f "$PROJECT_FILE" ]]; then
+        echo "Project not found: $PROJECT_NAME" >&2
+        $EWW update error_notification="Project not found: $PROJECT_NAME"
+        $EWW update error_notification_visible=true
+        exit 1
+      fi
+      refresh_project "$PROJECT_FILE"
+      $EWW update success_notification="Refreshed: $PROJECT_NAME"
+      $EWW update success_notification_visible=true
+      (sleep 2 && $EWW update success_notification_visible=false success_notification="") &
+    fi
+
+    echo "Refresh complete"
+  '';
+
+  # Feature 097 T066-T068: Orphan recovery script
+  # Creates a Repository Project for an orphaned worktree's bare_repo_path
+  orphanRecoverScript = pkgs.writeShellScriptBin "orphan-recover" ''
+    #!${pkgs.bash}/bin/bash
+    # Recover orphaned worktree by creating missing Repository Project
+    # Usage: orphan-recover <orphan-project-name>
+    # Feature 097 T066-T068: Creates Repository Project from worktree's bare_repo_path
+
+    ORPHAN_NAME="$1"
+    PROJECTS_DIR="$HOME/.config/i3/projects"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$ORPHAN_NAME" ]]; then
+      echo "Usage: orphan-recover <orphan-project-name>" >&2
+      exit 1
+    fi
+
+    ORPHAN_FILE="$PROJECTS_DIR/$ORPHAN_NAME.json"
+    if [[ ! -f "$ORPHAN_FILE" ]]; then
+      $EWW update error_notification="Orphan project not found: $ORPHAN_NAME"
+      $EWW update error_notification_visible=true
+      exit 1
+    fi
+
+    # Read orphan's bare_repo_path
+    BARE_REPO_PATH=$(${pkgs.jq}/bin/jq -r '.bare_repo_path // empty' "$ORPHAN_FILE")
+    DIRECTORY=$(${pkgs.jq}/bin/jq -r '.directory // empty' "$ORPHAN_FILE")
+
+    if [[ -z "$BARE_REPO_PATH" ]]; then
+      $EWW update error_notification="Orphan has no bare_repo_path: $ORPHAN_NAME"
+      $EWW update error_notification_visible=true
+      exit 1
+    fi
+
+    # Determine the main repo directory from bare_repo_path
+    # For regular repos: bare_repo_path ends in .git
+    # For bare repos: bare_repo_path is the repo itself
+    if [[ "$BARE_REPO_PATH" == *".git" ]]; then
+      MAIN_REPO_DIR=$(dirname "$BARE_REPO_PATH")
+    else
+      MAIN_REPO_DIR="$BARE_REPO_PATH"
+    fi
+
+    if [[ ! -d "$MAIN_REPO_DIR" ]]; then
+      $EWW update error_notification="Repository directory not found: $MAIN_REPO_DIR"
+      $EWW update error_notification_visible=true
+      exit 1
+    fi
+
+    # Generate a unique name for the new Repository Project
+    REPO_BASE_NAME=$(basename "$MAIN_REPO_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+    REPO_NAME="$REPO_BASE_NAME"
+    COUNTER=1
+    while [[ -f "$PROJECTS_DIR/$REPO_NAME.json" ]]; do
+      COUNTER=$((COUNTER + 1))
+      REPO_NAME="''${REPO_BASE_NAME}-$COUNTER"
+    done
+
+    # Extract git metadata for the main repo
+    cd "$MAIN_REPO_DIR" || exit 1
+    GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
+    GIT_COMMIT=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "0000000")
+    GIT_STATUS=$(git status --porcelain 2>/dev/null)
+    GIT_IS_CLEAN="true"
+    GIT_HAS_UNTRACKED="false"
+    if [[ -n "$GIT_STATUS" ]]; then
+      GIT_IS_CLEAN="false"
+      if echo "$GIT_STATUS" | grep -q "^??"; then
+        GIT_HAS_UNTRACKED="true"
+      fi
+    fi
+    REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    NOW=$(date -Is)
+
+    # Create the Repository Project JSON
+    ${pkgs.jq}/bin/jq -n \
+      --arg name "$REPO_NAME" \
+      --arg display_name "$(basename "$MAIN_REPO_DIR")" \
+      --arg directory "$MAIN_REPO_DIR" \
+      --arg bare_repo_path "$BARE_REPO_PATH" \
+      --arg branch "$GIT_BRANCH" \
+      --arg commit "$GIT_COMMIT" \
+      --argjson is_clean $GIT_IS_CLEAN \
+      --argjson has_untracked $GIT_HAS_UNTRACKED \
+      --arg remote_url "$REMOTE_URL" \
+      --arg now "$NOW" \
+      '{
+        name: $name,
+        display_name: $display_name,
+        icon: "🔧",
+        directory: $directory,
+        scope: "scoped",
+        remote: null,
+        source_type: "repository",
+        status: "active",
+        bare_repo_path: $bare_repo_path,
+        parent_project: null,
+        git_metadata: {
+          current_branch: $branch,
+          commit_hash: $commit,
+          is_clean: $is_clean,
+          has_untracked: $has_untracked,
+          ahead_count: 0,
+          behind_count: 0,
+          remote_url: (if $remote_url == "" then null else $remote_url end),
+          last_modified: null,
+          last_refreshed: $now
+        },
+        scoped_classes: ["Ghostty", "code", "yazi", "lazygit"],
+        created_at: $now,
+        updated_at: $now
+      }' > "$PROJECTS_DIR/$REPO_NAME.json"
+
+    # Update the orphan to point to the new parent
+    ${pkgs.jq}/bin/jq --arg parent "$REPO_NAME" '.parent_project = $parent' "$ORPHAN_FILE" > "''${ORPHAN_FILE}.tmp" && mv "''${ORPHAN_FILE}.tmp" "$ORPHAN_FILE"
+
+    $EWW update success_notification="Created Repository Project '$REPO_NAME' for orphan '$ORPHAN_NAME'"
+    $EWW update success_notification_visible=true
+    (sleep 4 && $EWW update success_notification_visible=false success_notification="") &
+
+    echo "Recovery complete: Created $REPO_NAME as parent for $ORPHAN_NAME"
+  '';
+
+  # Feature 097 T069: Orphan delete registration script
+  # Deletes the project JSON without affecting git worktree (for orphans with missing directories)
+  orphanDeleteScript = pkgs.writeShellScriptBin "orphan-delete" ''
+    #!${pkgs.bash}/bin/bash
+    # Delete orphaned worktree registration (JSON only, not git worktree)
+    # Usage: orphan-delete <orphan-project-name>
+    # Feature 097 T069: For orphans with missing directories
+
+    ORPHAN_NAME="$1"
+    PROJECTS_DIR="$HOME/.config/i3/projects"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$ORPHAN_NAME" ]]; then
+      echo "Usage: orphan-delete <orphan-project-name>" >&2
+      exit 1
+    fi
+
+    # Check for confirmation (click-twice pattern)
+    CONFIRM=$($EWW get orphan_delete_confirm)
+    if [[ "$CONFIRM" != "$ORPHAN_NAME" ]]; then
+      $EWW update orphan_delete_confirm="$ORPHAN_NAME"
+      echo "Click again to confirm deletion of: $ORPHAN_NAME"
+      exit 0
+    fi
+
+    ORPHAN_FILE="$PROJECTS_DIR/$ORPHAN_NAME.json"
+    if [[ ! -f "$ORPHAN_FILE" ]]; then
+      $EWW update error_notification="Orphan project not found: $ORPHAN_NAME"
+      $EWW update error_notification_visible=true
+      $EWW update orphan_delete_confirm=""
+      exit 1
+    fi
+
+    # Delete the project JSON
+    if rm -f "$ORPHAN_FILE"; then
+      $EWW update success_notification="Deleted orphan registration: $ORPHAN_NAME"
+      $EWW update success_notification_visible=true
+      (sleep 3 && $EWW update success_notification_visible=false success_notification="") &
+      $EWW update orphan_delete_confirm=""
+    else
+      $EWW update error_notification="Failed to delete orphan: $ORPHAN_NAME"
+      $EWW update error_notification_visible=true
+      $EWW update orphan_delete_confirm=""
+      exit 1
+    fi
+
+    echo "Orphan deleted: $ORPHAN_NAME"
+  '';
+
   # Feature 094 US9: Application delete confirmation open handler (T093)
   appDeleteOpenScript = pkgs.writeShellScriptBin "app-delete-open" ''
     #!${pkgs.bash}/bin/bash
@@ -1894,6 +2294,7 @@ in
       projectEditOpenScript # Feature 094: Project edit form opener (T038)
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
       worktreeEditOpenScript  # Feature 094 US5: Worktree edit form opener (T059)
+      worktreeCreateOpenScript # Feature 097 T030-T031: Worktree create dialog opener
       worktreeCreateScript    # Feature 094 US5: Worktree create handler (T057-T058)
       worktreeDeleteScript    # Feature 094 US5: Worktree delete handler (T060)
       worktreeEditSaveScript  # Feature 094 US5: Worktree edit save handler (T059)
@@ -1906,6 +2307,9 @@ in
       projectDeleteOpenScript   # Feature 094 US4: Project delete dialog opener (T087)
       projectDeleteConfirmScript # Feature 094 US4: Project delete confirm handler (T088)
       projectDeleteCancelScript # Feature 094 US4: Project delete cancel handler (T089)
+      projectRefreshScript      # Feature 097 T056-T062: Project git metadata refresh
+      orphanRecoverScript       # Feature 097 T066-T068: Orphan recovery handler
+      orphanDeleteScript        # Feature 097 T069: Orphan delete registration handler
       appDeleteOpenScript       # Feature 094 US9: App delete dialog opener (T093)
       appDeleteConfirmScript    # Feature 094 US9: App delete confirm handler (T094)
       appDeleteCancelScript     # Feature 094 US9: App delete cancel handler (T095)
@@ -2031,6 +2435,10 @@ in
       ;; Feature 094: Project hover and copy state
       (defvar hover_project_name "")
 
+      ;; Feature 097 T042: Repository expand/collapse state
+      ;; Stores JSON object mapping repository name to expanded state: {"nixos": true, "other-repo": false}
+      (defvar repo_expanded_states "{}")
+
       ;; Feature 094: Hover state for Applications tab detail tooltips
       (defvar hover_app_name "")
       (defvar copied_project_name "")
@@ -2089,6 +2497,7 @@ in
       (defvar worktree_form_path "")              ;; Worktree path (editable in create, read-only in edit)
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
+      (defvar orphan_delete_confirm "")           ;; Feature 097 T069: Orphan name to confirm deletion
 
       ;; Feature 094 US4: Project delete confirmation state (T086-T089)
       (defvar project_deleting false)              ;; True when delete confirmation dialog is visible
@@ -2731,6 +3140,12 @@ in
                 :halign "start"
                 :hexpand true
                 :text "Projects")
+              ;; Feature 097 T061: [⟳ Refresh All] button
+              (button
+                :class "refresh-all-button"
+                :onclick "project-refresh --all"
+                :tooltip "Refresh git metadata for all projects"
+                "⟳ All")
               (button
                 :class "new-project-button"
                 :onclick "project-create-open"
@@ -2754,17 +3169,96 @@ in
               :class "projects-list"
               :orientation "v"
               :space-evenly false
-              (for project in {projects_data.main_projects ?: []}
+              ;; Feature 097 T038-T043: Repository Projects (with expand/collapse hierarchy)
+              (for repo in {projects_data.repository_projects ?: []}
+                (repository-container :repo repo))
+              ;; Feature 097: Standalone Projects (legacy or non-git)
+              ;; Show standalone projects if we have repository_projects; otherwise fall back to main_projects
+              (for project in {arraylength(projects_data.repository_projects ?: []) > 0 ? (projects_data.standalone_projects ?: []) : (projects_data.main_projects ?: [])}
                 (box
                   :orientation "v"
                   :space-evenly false
                   ;; Main project card
                   (project-card :project project)
-                  ;; Worktrees for this main project
+                  ;; Worktrees for this main project (legacy backward compatibility)
                   (for worktree in {projects_data.worktrees ?: []}
                     (box
-                      :visible {worktree.parent_project == project.name}
-                      (worktree-card :project worktree)))))))))
+                      :visible {worktree.parent_project == project.directory}
+                      (worktree-card :project worktree)))))
+              ;; Feature 097 T064-T069: Orphaned worktrees section
+              (box
+                :class "orphaned-worktrees-section"
+                :orientation "v"
+                :space-evenly false
+                :visible {arraylength(projects_data.orphaned_worktrees ?: []) > 0}
+                (label
+                  :class "orphaned-worktrees-header"
+                  :halign "start"
+                  :text "⚠ Orphaned Worktrees")
+                (label
+                  :class "orphaned-worktrees-hint"
+                  :halign "start"
+                  :text "Parent repository project missing")
+                (for worktree in {projects_data.orphaned_worktrees ?: []}
+                  (orphan-card :project worktree)))))))
+
+      ;; Feature 097 T038: Expandable repository container widget
+      ;; Groups a repository project with its child worktrees
+      (defwidget repository-container [repo]
+        (box
+          :class "repository-container"
+          :orientation "v"
+          :space-evenly false
+          ;; Repository header with expand/collapse toggle
+          (box
+            :class {"repository-header" + (repo.has_dirty ? " has-dirty" : "")}
+            :orientation "h"
+            :space-evenly false
+            ;; T042: Expand/collapse toggle
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update repo_expanded_states=\"$(echo '{}' | jq --arg name ''${repo.project.name} --argjson current \"$(eww --config $HOME/.config/eww-monitoring-panel get repo_expanded_states)\" 'if ($current[$$name] // true) then ($current + {($$name): false}) else ($current + {($$name): true}) end')\""
+              (label
+                :class "expand-toggle"
+                :text {(jq(repo_expanded_states, ".[\"" + repo.project.name + "\"] // true") == "true") ? "▼" : "►"}
+                :tooltip {(jq(repo_expanded_states, ".[\"" + repo.project.name + "\"] // true") == "true") ? "Collapse worktrees" : "Expand worktrees"}))
+            ;; Repository project card (inline)
+            (box
+              :hexpand true
+              (project-card :project {repo.project}))
+            ;; T040: Worktree count badge
+            (label
+              :class "worktree-count-badge"
+              :visible {repo.worktree_count > 0}
+              :text {"(" + repo.worktree_count + " worktrees)"}
+              :tooltip {"''${repo.worktree_count} worktrees under this repository"})
+            ;; Feature 097 T030: [+ Create Worktree] button
+            (eventbox
+              :cursor "pointer"
+              :onclick "worktree-create-open \"''${repo.project.name}\" \"''${repo.project.directory}\""
+              :tooltip "Create new worktree from this repository"
+              (label
+                :class "action-btn action-create-worktree"
+                :text "+ Worktree"))
+            ;; Feature 097 T060: [⟳ Refresh] button for repository
+            (eventbox
+              :cursor "pointer"
+              :onclick "project-refresh \"''${repo.project.name}\""
+              :tooltip "Refresh git metadata for this repository and all its worktrees"
+              (label
+                :class "action-btn action-refresh"
+                :text "⟳")))
+          ;; T039: Nested worktree rows (collapsible)
+          (revealer
+            :reveal {(jq(repo_expanded_states, ".[\"" + repo.project.name + "\"] // true") == "true")}
+            :transition "slidedown"
+            :duration "200ms"
+            (box
+              :class "worktrees-container"
+              :orientation "v"
+              :space-evenly false
+              (for worktree in {repo.worktrees ?: []}
+                (worktree-card :project worktree))))))
 
       (defwidget project-card [project]
         (eventbox
@@ -2780,15 +3274,15 @@ in
               :orientation "h"
               :space-evenly false
               :hexpand true
-              ;; Main content area - clickable, takes remaining space
+              ;; Main content area - clickable, takes remaining space leaving room for JSON trigger sibling
               (eventbox
                 :cursor "pointer"
-                :hexpand false
+                :hexpand true
                 (box
                   :class "project-main-content"
                   :orientation "h"
                   :space-evenly false
-                  :hexpand false
+                  :hexpand true
                   ;; Icon
                   (box
                     :class "project-icon-container"
@@ -2806,14 +3300,14 @@ in
                     (label
                       :class "project-card-name"
                       :halign "start"
-                      :limit-width 12
+                      :limit-width 15
                       :truncate true
                       :text "''${project.display_name ?: project.name}"
                       :tooltip "''${project.display_name ?: project.name}")
                     (label
                       :class "project-card-path"
                       :halign "start"
-                      :limit-width 14
+                      :limit-width 18
                       :truncate true
                       :text "''${project.directory_display ?: project.directory}"
                       :tooltip "''${project.directory}"))
@@ -2823,6 +3317,13 @@ in
                     :orientation "h"
                     :space-evenly false
                     :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
+                    ;; Feature 097 T052-T053: Switch to project button
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "switch-project-action \"''${project.name}\""
+                      :tooltip "Switch to this project"
+                      :visible {!project.is_active}
+                      (label :class "action-btn action-switch" :text "󰁯"))
                     (eventbox
                       :cursor "pointer"
                       :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
@@ -2833,23 +3334,18 @@ in
                       :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
                       :tooltip "Delete project"
                       (label :class "action-btn action-delete" :text "󰆴")))))
-        ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
-        ;; NO halign/width - let GTK box layout handle positioning naturally
-        (eventbox
-          :hexpand false
-          :halign "end"
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
-          :tooltip "Hover to view JSON"
-          (box
-            :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
-            :valign "center"
-            :width 32
-            :style "margin-left: 8px;"
-            (label
-              :class "json-expand-icon"
-              :text {json_hover_project == project.name ? "󰅀" : "󰅂"}
-              :fallback ">"))))
+              ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
+              ;; NO halign/width - let GTK box layout handle positioning naturally
+              (eventbox
+                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+                :tooltip "Hover to view JSON"
+                (box
+                  :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
+                  :valign "center"
+                  (label
+                    :class "json-expand-icon"
+                    :text {json_hover_project == project.name ? "󰅀" : "󰅂"}))))
             ;; Row 2: Git branch (full width row)
             (box
               :class "git-branch-row"
@@ -2939,12 +3435,13 @@ in
               :duration "300ms"
               (project-edit-form :project project)))))
 
+      ;; Feature 097: Worktree card using git-centric fields
       (defwidget worktree-card [project]
         (eventbox
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
           :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
-            :class "worktree-card"
+            :class {"worktree-card" + (project.is_active ? " active-worktree" : "") + ((project.git_metadata.is_clean ?: true) ? "" : " dirty")}
             :orientation "h"
             :space-evenly false
             ;; Worktree tree indicator
@@ -2977,13 +3474,13 @@ in
                 :limit-width 22
                 :truncate true
                 :text "''${project.directory_display ?: project.directory}"))
-            ;; Git branch - styled like project-card
+            ;; Feature 097: Git branch from git_metadata.current_branch
             (box
               :class "git-branch-container worktree-branch"
               :orientation "h"
               :space-evenly false
               :hexpand true
-              :visible {(project.branch_name ?: "") != ""}
+              :visible {(project.git_metadata.current_branch ?: "") != ""}
               (label
                 :class "git-branch-icon"
                 :text "󰘬")
@@ -2991,8 +3488,14 @@ in
                 :class "git-branch-text"
                 :wrap true
                 :xalign 0
-                :text "''${project.branch_name}"
-                :tooltip "Branch: ''${project.branch_name}"))
+                :text "''${project.git_metadata.current_branch ?: 'unknown'}"
+                :tooltip "Branch: ''${project.git_metadata.current_branch ?: 'unknown'}"))
+            ;; T041: Dirty indicator
+            (label
+              :class "badge badge-dirty"
+              :visible {!(project.git_metadata.is_clean ?: true)}
+              :text "●"
+              :tooltip "Uncommitted changes")
             ;; Remote indicator
             (label
               :class "badge badge-remote"
@@ -3004,21 +3507,98 @@ in
               :visible {hover_project_name == project.name && editing_project_name != project.name}
               :orientation "h"
               :space-evenly false
+              ;; Feature 097: Switch button for worktrees
               (eventbox
                 :cursor "pointer"
-                :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
+                :onclick "switch-project-action \"''${project.name}\""
+                :tooltip "Switch to this worktree"
+                :visible {!project.is_active}
+                (label :class "action-btn action-switch" :text "󰁯"))
+              (eventbox
+                :cursor "pointer"
+                :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.git_metadata.current_branch ?: 'unknown'}\" \"''${project.directory}\" \"''${project.parent_project}\""
                 :tooltip "Edit worktree"
                 (label :class "action-btn action-edit" :text "󰏫"))
+              ;; Feature 097 T047-T049: Delete button with dirty warning
               (eventbox
                 :cursor "pointer"
                 :onclick "worktree-delete ''${project.name}"
-                :tooltip "''${worktree_delete_confirm == project.name ? 'Click again to confirm' : 'Delete worktree'}"
+                :tooltip "''${worktree_delete_confirm == project.name ? 'Click again to confirm' : (project.git_metadata.is_clean ?: true) ? 'Delete worktree' : '⚠ Worktree has changes - click to delete'}"
                 (label :class {"action-btn action-delete" + (worktree_delete_confirm == project.name ? " confirm" : "")} :text "''${worktree_delete_confirm == project.name ? '❗' : '󰆴'}")))
             ;; Active indicator
             (label
               :class "active-indicator"
               :visible {project.is_active}
               :text "●"))))
+
+      ;; Feature 097 T065-T069: Orphan card widget (specialized for orphaned worktrees)
+      (defwidget orphan-card [project]
+        (eventbox
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
+          (box
+            :class {"orphan-card" + ((project.git_metadata.is_clean ?: true) ? "" : " dirty")}
+            :orientation "h"
+            :space-evenly false
+            ;; Warning indicator
+            (label
+              :class "orphan-warning-icon"
+              :text "⚠")
+            ;; Icon
+            (box
+              :class "project-icon-container"
+              :orientation "v"
+              :valign "center"
+              (label
+                :class "project-icon orphan-icon"
+                :text "''${project.icon}"))
+            ;; Project info
+            (box
+              :class "project-info"
+              :orientation "v"
+              :space-evenly false
+              :hexpand true
+              (label
+                :class "project-card-name orphan-name"
+                :halign "start"
+                :limit-width 18
+                :truncate true
+                :text "''${project.display_name ?: project.name}")
+              (label
+                :class "project-card-path orphan-path"
+                :halign "start"
+                :limit-width 22
+                :truncate true
+                :text "''${project.directory_display ?: project.directory}"))
+            ;; T065: Parent missing label
+            (label
+              :class "orphan-status-label"
+              :text "no parent"
+              :tooltip "Parent repository project is missing for bare_repo_path: ''${project.bare_repo_path ?: 'unknown'}")
+            ;; T041: Dirty indicator
+            (label
+              :class "badge badge-dirty"
+              :visible {!(project.git_metadata.is_clean ?: true)}
+              :text "●"
+              :tooltip "Uncommitted changes")
+            ;; Action buttons (visible on hover)
+            (box
+              :class "orphan-actions"
+              :visible {hover_project_name == project.name}
+              :orientation "h"
+              :space-evenly false
+              ;; T066: [Recover] button - creates parent Repository Project
+              (eventbox
+                :cursor "pointer"
+                :onclick "orphan-recover \"''${project.name}\""
+                :tooltip "Create missing Repository Project from bare_repo_path"
+                (label :class "action-btn action-recover" :text "🔧"))
+              ;; T069: [Delete] button - removes registration only
+              (eventbox
+                :cursor "pointer"
+                :onclick "orphan-delete \"''${project.name}\""
+                :tooltip "''${orphan_delete_confirm == project.name ? 'Click again to confirm deletion' : 'Delete registration (keeps git worktree)'}"
+                (label :class {"action-btn action-delete" + (orphan_delete_confirm == project.name ? " confirm" : "")} :text "''${orphan_delete_confirm == project.name ? '❗' : '󰆴'}"))))))
 
       ;; Feature 094: Project edit form widget (T038)
       (defwidget project-edit-form [project]
@@ -5227,15 +5807,15 @@ in
 
       .json-expand-trigger {
         padding: 4px 8px;
-        margin-left: 0px;
+        margin-left: 8px;
         border-radius: 4px;
-        background-color: rgba(137, 180, 250, 0.20);
-        border: 1px solid rgba(250, 200, 99, 0.8); /* high-contrast debug border */
+        background-color: rgba(137, 180, 250, 0.15);
+        border: 1px dashed rgba(137, 180, 250, 0.35); /* debug border to confirm visibility */
         /* GTK CSS doesn't support transition */
         opacity: 0.7;
         /* Ensure trigger doesn't get squeezed out */
-        min-width: 32px;
-        min-height: 26px;
+        min-width: 28px;
+        min-height: 24px;
       }
 
       .json-expand-trigger:hover {
@@ -5252,7 +5832,6 @@ in
         font-size: 16px;
         color: ${mocha.blue};
         min-width: 18px;
-        font-family: "JetBrainsMono Nerd Font", "NotoSans Nerd Font", monospace;
         /* GTK CSS doesn't support transition */
       }
 
@@ -5554,6 +6133,22 @@ in
         padding: 1px 4px;
       }
 
+      /* Feature 097 T041/T049: Dirty indicator for worktrees with uncommitted changes */
+      .badge-dirty {
+        color: ${mocha.yellow};
+        font-size: 12px;
+        margin-left: 4px;
+      }
+
+      .worktree-card.dirty {
+        border-left: 2px solid ${mocha.yellow};
+      }
+
+      .worktree-card.active-worktree {
+        background-color: rgba(148, 226, 213, 0.15);
+        border-left: 2px solid ${mocha.teal};
+      }
+
       /* Feature 097: Git status row styles */
       .project-git-status {
         padding: 2px 6px;
@@ -5626,6 +6221,152 @@ in
         padding: 3px 6px;
         border-radius: 4px;
         min-width: 20px;
+      }
+
+      /* Feature 097 T052: Switch project action button */
+      .action-switch {
+        color: ${mocha.green};
+      }
+
+      .action-switch:hover {
+        background-color: rgba(166, 227, 161, 0.2);
+        color: ${mocha.teal};
+      }
+
+      /* Feature 097 T030: Create worktree button */
+      .action-create-worktree {
+        color: ${mocha.mauve};
+        padding: 2px 8px;
+        font-size: 11px;
+        border-radius: 4px;
+        background-color: rgba(203, 166, 247, 0.1);
+        margin-left: 8px;
+      }
+
+      .action-create-worktree:hover {
+        background-color: rgba(203, 166, 247, 0.3);
+        color: ${mocha.text};
+      }
+
+      /* Feature 097 T060: Refresh button */
+      .action-refresh {
+        color: ${mocha.teal};
+        padding: 2px 6px;
+        font-size: 12px;
+        border-radius: 4px;
+        background-color: rgba(148, 226, 213, 0.1);
+        margin-left: 4px;
+      }
+
+      .action-refresh:hover {
+        background-color: rgba(148, 226, 213, 0.3);
+        color: ${mocha.text};
+      }
+
+      /* Feature 097 T061: Refresh All button in header */
+      .refresh-all-button {
+        color: ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.1);
+        border: none;
+        border-radius: 4px;
+        padding: 4px 10px;
+        margin-right: 8px;
+        font-size: 11px;
+        font-weight: bold;
+      }
+
+      .refresh-all-button:hover {
+        background-color: rgba(148, 226, 213, 0.3);
+        color: ${mocha.text};
+      }
+
+      /* Feature 097 T064-T069: Orphaned worktrees section */
+      .orphaned-worktrees-section {
+        margin-top: 16px;
+        padding: 12px;
+        background-color: rgba(249, 226, 175, 0.05);
+        border: 1px solid rgba(249, 226, 175, 0.3);
+        border-radius: 8px;
+      }
+
+      .orphaned-worktrees-header {
+        color: ${mocha.yellow};
+        font-size: 13px;
+        font-weight: bold;
+        margin-bottom: 4px;
+      }
+
+      .orphaned-worktrees-hint {
+        color: ${mocha.subtext0};
+        font-size: 11px;
+        font-style: italic;
+        margin-bottom: 8px;
+      }
+
+      .orphan-card {
+        background-color: rgba(249, 226, 175, 0.08);
+        border: 1px solid rgba(249, 226, 175, 0.2);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        transition: all 200ms ease;
+      }
+
+      .orphan-card:hover {
+        background-color: rgba(249, 226, 175, 0.15);
+        border-color: rgba(249, 226, 175, 0.4);
+      }
+
+      .orphan-card.dirty {
+        border-left: 3px solid ${mocha.red};
+      }
+
+      .orphan-warning-icon {
+        color: ${mocha.yellow};
+        font-size: 14px;
+        margin-right: 8px;
+      }
+
+      .orphan-icon {
+        opacity: 0.7;
+      }
+
+      .orphan-name {
+        color: ${mocha.yellow};
+      }
+
+      .orphan-path {
+        color: ${mocha.subtext0};
+        font-size: 11px;
+      }
+
+      .orphan-status-label {
+        color: ${mocha.red};
+        font-size: 10px;
+        font-weight: bold;
+        padding: 2px 6px;
+        background-color: rgba(243, 139, 168, 0.15);
+        border-radius: 4px;
+        margin-left: 8px;
+      }
+
+      .orphan-actions {
+        margin-left: 8px;
+      }
+
+      /* Feature 097 T066: Recover button */
+      .action-recover {
+        color: ${mocha.green};
+        padding: 2px 6px;
+        font-size: 12px;
+        border-radius: 4px;
+        background-color: rgba(166, 227, 161, 0.1);
+        margin-right: 4px;
+      }
+
+      .action-recover:hover {
+        background-color: rgba(166, 227, 161, 0.3);
+        color: ${mocha.text};
       }
 
       .action-edit {
@@ -5785,6 +6526,74 @@ in
         border: 2px solid ${mocha.red};
         /* GTK CSS doesn't support @keyframes, use static visual distinction */
         font-weight: bold;
+      }
+
+      /* Feature 097 T074: Orphaned worktrees section */
+      .orphaned-worktrees-section {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid ${mocha.surface0};
+      }
+
+      .orphaned-worktrees-header {
+        font-size: 11px;
+        color: ${mocha.yellow};
+        font-weight: 500;
+        margin-bottom: 6px;
+        margin-left: 4px;
+      }
+
+      /* Feature 097 T038-T043: Repository container with expand/collapse */
+      .repository-container {
+        margin-bottom: 8px;
+        border: 1px solid ${mocha.surface0};
+        border-radius: 8px;
+        background-color: rgba(30, 30, 46, 0.3);
+      }
+
+      .repository-header {
+        padding: 4px;
+        background-color: rgba(49, 50, 68, 0.4);
+        border-radius: 8px 8px 0 0;
+      }
+
+      /* T041: has_dirty indicator on repository header */
+      .repository-header.has-dirty {
+        border-left: 3px solid ${mocha.yellow};
+      }
+
+      /* T042: Expand/collapse toggle */
+      .expand-toggle {
+        font-size: 12px;
+        color: ${mocha.overlay0};
+        padding: 4px 8px;
+        min-width: 20px;
+      }
+
+      .expand-toggle:hover {
+        color: ${mocha.text};
+      }
+
+      /* T040: Worktree count badge */
+      .worktree-count-badge {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        background-color: rgba(108, 112, 134, 0.2);
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-right: 8px;
+      }
+
+      /* T039: Worktrees container (nested) */
+      .worktrees-container {
+        padding: 4px 4px 8px 4px;
+        background-color: rgba(24, 24, 37, 0.3);
+        border-radius: 0 0 8px 8px;
+      }
+
+      .worktrees-container .worktree-card {
+        margin-left: 24px;
+        border-left: 2px solid ${mocha.green};
       }
 
       /* Feature 094 US5: Worktree edit form styles */

@@ -42,6 +42,20 @@ from pydantic import BaseModel, Field
 # Import daemon client from core module
 from i3_project_manager.core.daemon_client import DaemonClient, DaemonError
 
+# Feature 097: Import models and utilities for project hierarchy
+from i3_project_manager.models.project_config import (
+    ProjectConfig,
+    SourceType,
+    ProjectStatus,
+    GitMetadata,
+    RepositoryWithWorktrees,
+    PanelProjectsData,
+)
+from i3_project_manager.services.git_utils import (
+    detect_orphaned_worktrees,
+    get_bare_repository_path,
+)
+
 # Import i3ipc for event subscriptions in listen mode
 try:
     from i3ipc.aio import Connection as I3Connection
@@ -1292,6 +1306,115 @@ async def query_monitoring_data() -> Dict[str, Any]:
         }
 
 
+def get_projects_hierarchy(projects_dir: Optional[Path] = None) -> PanelProjectsData:
+    """
+    Build hierarchical project structure for monitoring panel (Feature 097 T035).
+
+    Groups projects by bare_repo_path:
+    - Repository projects: First project registered for each bare repo
+    - Worktree projects: Nested under their parent repository
+    - Standalone projects: Non-git or simple repos
+    - Orphaned worktrees: Worktrees with missing parent Repository Project
+
+    Args:
+        projects_dir: Directory containing project JSON files (default: ~/.config/i3/projects/)
+
+    Returns:
+        PanelProjectsData with repository_projects, standalone_projects, orphaned_worktrees
+
+    Tasks:
+        T034: Group projects by bare_repo_path using detect_orphaned_worktrees()
+        T035: Return PanelProjectsData structure
+        T036: Calculate worktree_count per Repository Project
+        T037: Calculate has_dirty aggregation (bubble-up from worktrees to parent)
+    """
+    projects_dir = projects_dir or Path.home() / ".config/i3/projects"
+
+    if not projects_dir.exists():
+        return PanelProjectsData()
+
+    # Load all project configs
+    # Pass edit_mode=True context to skip uniqueness/existence validators (they're for creation, not loading)
+    load_context = {"edit_mode": True}
+    all_projects: List[ProjectConfig] = []
+    for project_file in projects_dir.glob("*.json"):
+        try:
+            with open(project_file, 'r') as f:
+                data = json.load(f)
+            # Parse with Pydantic model, skip creation-time validators
+            project = ProjectConfig.model_validate(data, context=load_context)
+            all_projects.append(project)
+        except Exception as e:
+            logger.warning(f"Feature 097: Skipping invalid project file {project_file}: {e}")
+            continue
+
+    # T034: Detect orphaned worktrees using git_utils
+    orphaned = detect_orphaned_worktrees(all_projects)
+    orphaned_names = {p.name for p in orphaned}
+
+    # Separate projects by source_type
+    repository_projects: Dict[str, RepositoryWithWorktrees] = {}  # bare_repo_path -> RepositoryWithWorktrees
+    standalone_projects: List[ProjectConfig] = []
+    worktree_projects: List[ProjectConfig] = []
+
+    for project in all_projects:
+        if project.name in orphaned_names:
+            # Skip orphans here, they're already in the orphaned list
+            continue
+
+        if project.source_type == SourceType.REPOSITORY:
+            # T035: Create RepositoryWithWorktrees container
+            if project.bare_repo_path:
+                repository_projects[project.bare_repo_path] = RepositoryWithWorktrees(
+                    project=project,
+                    worktree_count=0,
+                    has_dirty=not (project.git_metadata.is_clean if project.git_metadata else True),
+                    is_expanded=True,
+                    worktrees=[]
+                )
+        elif project.source_type == SourceType.WORKTREE:
+            worktree_projects.append(project)
+        else:  # standalone
+            standalone_projects.append(project)
+
+    # T036: Nest worktrees under their parent repository and calculate worktree_count
+    for worktree in worktree_projects:
+        if worktree.bare_repo_path and worktree.bare_repo_path in repository_projects:
+            repo_container = repository_projects[worktree.bare_repo_path]
+            repo_container.worktrees.append(worktree)
+            repo_container.worktree_count = len(repo_container.worktrees)
+
+            # T037: has_dirty bubble-up (if worktree is dirty, parent shows dirty)
+            worktree_dirty = not (worktree.git_metadata.is_clean if worktree.git_metadata else True)
+            if worktree_dirty:
+                repo_container.has_dirty = True
+        else:
+            # Worktree without matching repository - this shouldn't happen if detect_orphaned_worktrees worked
+            # but handle gracefully by adding to orphans
+            orphaned.append(worktree)
+
+    # Sort repository projects by name
+    sorted_repos = sorted(
+        repository_projects.values(),
+        key=lambda r: r.project.name
+    )
+
+    # Sort worktrees within each repository by name
+    for repo in sorted_repos:
+        repo.worktrees = sorted(repo.worktrees, key=lambda w: w.name)
+
+    # Sort standalone and orphaned projects by name
+    standalone_projects.sort(key=lambda p: p.name)
+    orphaned.sort(key=lambda p: p.name)
+
+    return PanelProjectsData(
+        repository_projects=sorted_repos,
+        standalone_projects=standalone_projects,
+        orphaned_worktrees=orphaned,
+        active_project=None  # Set by caller after getting active project
+    )
+
+
 async def query_projects_data() -> Dict[str, Any]:
     """
     Query projects view data (Feature 094: Enhanced Projects Tab).
@@ -1409,14 +1532,61 @@ async def query_projects_data() -> Dict[str, Any]:
         main_projects_enhanced = [enhance_project(p) for p in main_projects]
         worktrees_enhanced = [enhance_project(w) for w in worktrees]
 
+        # Feature 097 T074: Get worktrees grouped by parent repository
+        worktrees_by_parent = projects_list.get("worktrees_by_parent", {})
+        worktrees_by_parent_enhanced: Dict[str, list] = {}
+        for parent_path, wts in worktrees_by_parent.items():
+            worktrees_by_parent_enhanced[parent_path] = [enhance_project(w) for w in wts]
+
         # Combine for total count
         all_projects = main_projects_enhanced + worktrees_enhanced
+
+        # Feature 097 Option A: Use orphaned_worktrees from project_editor
+        # The editor correctly identifies orphans using bare_repo_path matching
+        orphaned_raw = projects_list.get("orphaned_worktrees", [])
+        orphaned_worktrees = [enhance_project(w) for w in orphaned_raw]
+
+        # Feature 097 T038-T043: Build repository hierarchy for expand/collapse view
+        # Group main_projects by bare_repo_path and nest their worktrees
+        repository_hierarchy: List[Dict[str, Any]] = []
+        standalone_hierarchy: List[Dict[str, Any]] = []
+
+        for project in main_projects_enhanced:
+            bare_repo = project.get("bare_repo_path")
+            source_type = project.get("source_type", "standalone")
+
+            if source_type == "repository" and bare_repo:
+                # T036: Get worktrees for this repository
+                repo_worktrees = worktrees_by_parent_enhanced.get(bare_repo, [])
+
+                # T037: Calculate has_dirty (bubble-up from worktrees)
+                repo_dirty = project.get("git_is_dirty", False)
+                for wt in repo_worktrees:
+                    if wt.get("git_is_dirty", False):
+                        repo_dirty = True
+                        break
+
+                repository_hierarchy.append({
+                    "project": project,
+                    "worktree_count": len(repo_worktrees),
+                    "has_dirty": repo_dirty,
+                    "is_expanded": True,  # Default expanded
+                    "worktrees": repo_worktrees,
+                })
+            else:
+                # Standalone or legacy projects without bare_repo_path
+                standalone_hierarchy.append(project)
 
         return {
             "status": "ok",
             "projects": all_projects,  # Combined list for backward compatibility
             "main_projects": main_projects_enhanced,
             "worktrees": worktrees_enhanced,
+            "worktrees_by_parent": worktrees_by_parent_enhanced,  # Feature 097 T074
+            "orphaned_worktrees": orphaned_worktrees,  # Feature 097 T074
+            # Feature 097 T038-T043: Hierarchical view data
+            "repository_projects": repository_hierarchy,
+            "standalone_projects": standalone_hierarchy,
             "project_count": len(all_projects),
             "active_project": active_project,
             "timestamp": current_timestamp,
@@ -1430,6 +1600,10 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
+            "worktrees_by_parent": {},  # Feature 097 T074
+            "orphaned_worktrees": [],  # Feature 097 T074
+            "repository_projects": [],  # Feature 097 T038-T043
+            "standalone_projects": [],  # Feature 097 T038-T043
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,
@@ -1443,6 +1617,10 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
+            "worktrees_by_parent": {},  # Feature 097 T074
+            "orphaned_worktrees": [],  # Feature 097 T074
+            "repository_projects": [],  # Feature 097 T038-T043
+            "standalone_projects": [],  # Feature 097 T038-T043
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,

@@ -1,142 +1,165 @@
 # Discovery API Contract
 
 **Feature**: 097-convert-manual-projects
-**Protocol**: JSON-RPC 2.0 over Unix Socket
-**Socket**: `$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock`
+**Protocol**: CLI Commands + JSON-RPC 2.0 over Unix Socket
+**Date**: 2025-11-28 (Major revision for git-centric architecture)
 
 ## Overview
 
-This document defines the JSON-RPC API extensions for git-based project discovery. These methods extend the existing i3pm daemon IPC interface.
+This document defines the CLI commands and JSON-RPC API for git-centric project management. The key change from the previous design is the use of `bare_repo_path` as the canonical identifier for project relationships.
 
-## Methods
+## Architecture: Git as Source of Truth
 
-### 1. `discover_projects`
-
-Scan configured directories for git repositories and register them as projects.
-
-**Request**:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "discover_projects",
-  "params": {
-    "paths": ["/home/user/projects", "/etc/nixos"],
-    "include_github": false,
-    "dry_run": false
-  }
-}
+```
+bare_repo_path (GIT_COMMON_DIR) is the CANONICAL identifier
+├── Computed via: git rev-parse --git-common-dir
+├── Never user-specified
+└── Used to:
+    ├── Group worktrees under Repository Projects
+    ├── Detect orphaned worktrees
+    └── Enforce "one Repository Project per bare repo" constraint
 ```
 
-**Parameters**:
+## CLI Commands
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| paths | string[] | No | From config | Override scan paths |
-| include_github | bool | No | false | Also query GitHub repos |
-| dry_run | bool | No | false | Report what would be discovered without creating projects |
+Primary user interface for git-centric project management.
 
-**Response (Success)**:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "success": true,
-    "discovered_repos": [
-      {
-        "path": "/home/user/projects/my-app",
-        "name": "my-app",
-        "is_worktree": false,
-        "git_metadata": {
-          "current_branch": "main",
-          "commit_hash": "a1b2c3d",
-          "is_clean": true,
-          "has_untracked": false,
-          "ahead_count": 0,
-          "behind_count": 0,
-          "remote_url": "https://github.com/user/my-app.git",
-          "primary_language": "TypeScript"
-        },
-        "inferred_icon": "📘"
-      }
-    ],
-    "discovered_worktrees": [
-      {
-        "path": "/home/user/nixos-097-feature",
-        "name": "097-convert-manual-projects",
-        "parent_repo_path": "/etc/nixos",
-        "git_metadata": {
-          "current_branch": "097-convert-manual-projects",
-          "commit_hash": "1637a7b",
-          "is_clean": true,
-          "has_untracked": false,
-          "ahead_count": 0,
-          "behind_count": 0
-        },
-        "inferred_icon": "🌿"
-      }
-    ],
-    "projects_created": 5,
-    "projects_updated": 2,
-    "projects_marked_missing": 1,
-    "skipped_paths": [
-      {
-        "path": "/home/user/projects/not-a-repo",
-        "reason": "no_git_directory"
-      }
-    ],
-    "duration_ms": 1250,
-    "errors": []
-  }
-}
+### `i3pm project discover`
+
+Discover and register a git repository as a project.
+
+```bash
+# Discover from current directory
+i3pm project discover
+
+# Discover specific path
+i3pm project discover --path /etc/nixos
+
+# Discover with custom display name
+i3pm project discover --path ~/projects/my-app --name "My App" --icon "🚀"
 ```
 
-**Response (Partial Success with Errors)**:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "success": true,
-    "discovered_repos": [...],
-    "errors": [
-      {
-        "path": "/home/user/projects/corrupted-repo",
-        "error": "git_metadata_extraction_failed",
-        "message": "Failed to read HEAD: not a valid git repository"
-      },
-      {
-        "source": "github",
-        "error": "github_auth_required",
-        "message": "gh CLI not authenticated. Run 'gh auth login' to enable GitHub discovery."
-      }
-    ]
-  }
-}
+**Behavior**:
+1. Compute `bare_repo_path` via `git rev-parse --git-common-dir`
+2. If `bare_repo_path` already has a Repository Project → create Worktree Project
+3. If no Repository Project exists → create Repository Project
+4. If not a git repo → create Standalone Project (optional, with `--standalone` flag)
+
+**Output**:
 ```
-
-**Error Codes**:
-
-| Code | Message | Description |
-|------|---------|-------------|
-| -32001 | `scan_paths_not_configured` | No scan paths in config and none provided |
-| -32002 | `path_not_found` | Specified scan path does not exist |
-| -32003 | `permission_denied` | Cannot read scan path |
-| -32004 | `discovery_timeout` | Discovery exceeded 60 second timeout |
+✓ Discovered repository at /etc/nixos
+  bare_repo_path: /home/user/nixos-config.git
+  source_type: repository
+  Project "nixos" created successfully
+```
 
 ---
 
-### 2. `get_discovery_config`
+### `i3pm project refresh`
 
-Retrieve the current discovery configuration.
+Refresh git metadata for projects.
+
+```bash
+# Refresh all projects
+i3pm project refresh --all
+
+# Refresh specific project
+i3pm project refresh nixos
+```
+
+**Output**:
+```
+✓ Refreshed 5 projects
+  nixos: main (clean, ahead 0, behind 0)
+  097-feature: 097-convert-manual-projects (dirty, 3 uncommitted)
+  ...
+```
+
+---
+
+### `i3pm worktree create`
+
+Create a new git worktree and register as a Worktree Project. (Already exists, update behavior)
+
+```bash
+# Create new branch and worktree
+i3pm worktree create 098-new-feature
+
+# Checkout existing branch
+i3pm worktree create hotfix-payment --checkout
+
+# Custom directory name
+i3pm worktree create feature-ui --name ui-work
+```
+
+**Behavior** (Updated for 097):
+1. Execute `git worktree add`
+2. Compute `bare_repo_path` for the worktree
+3. Find Repository Project with matching `bare_repo_path`
+4. Create Worktree Project with `parent_project` set to Repository Project's name
+
+---
+
+### `i3pm worktree remove`
+
+Delete a git worktree and its project registration. (Already exists)
+
+```bash
+# Remove worktree
+i3pm worktree remove 097-feature
+
+# Force remove (has uncommitted changes)
+i3pm worktree remove 097-feature --force
+```
+
+---
+
+### `i3pm project list`
+
+List projects with hierarchy display.
+
+```bash
+# List all projects
+i3pm project list
+
+# List with hierarchy (new default)
+i3pm project list --hierarchy
+
+# JSON output for scripting
+i3pm project list --json
+```
+
+**Output** (hierarchy):
+```
+Repository Projects:
+▼ 🔧 nixos (5 worktrees)
+    ├─ 🌿 097-feature ● (dirty)
+    ├─ 🌿 087-ssh-keys
+    └─ 🌿 085-widget
+
+Standalone Projects:
+  📁 notes
+
+Orphaned Worktrees:
+  ⚠️ 042-old-feature (parent missing)
+```
+
+---
+
+## JSON-RPC Methods
+
+Internal daemon API for panel and advanced tooling.
+
+### `get_projects_hierarchy`
+
+Get projects grouped by bare_repo_path for panel display.
 
 **Request**:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 2,
-  "method": "get_discovery_config",
+  "id": 1,
+  "method": "get_projects_hierarchy",
   "params": {}
 }
 ```
@@ -145,78 +168,58 @@ Retrieve the current discovery configuration.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 2,
+  "id": 1,
   "result": {
-    "scan_paths": [
-      "/home/user/projects",
-      "/etc/nixos"
+    "repository_projects": [
+      {
+        "project": {
+          "name": "nixos",
+          "display_name": "NixOS Config",
+          "directory": "/etc/nixos",
+          "source_type": "repository",
+          "bare_repo_path": "/home/user/nixos-config.git",
+          "git_metadata": { "current_branch": "main", "is_clean": true, ... }
+        },
+        "worktree_count": 5,
+        "has_dirty": true,
+        "is_expanded": true,
+        "worktrees": [
+          {
+            "name": "097-feature",
+            "display_name": "097 - Git-Centric Projects",
+            "directory": "/home/user/nixos-097-feature",
+            "source_type": "worktree",
+            "bare_repo_path": "/home/user/nixos-config.git",
+            "parent_project": "nixos",
+            "git_metadata": { "current_branch": "097-convert-manual-projects", "is_clean": false, ... }
+          }
+        ]
+      }
     ],
-    "exclude_patterns": [
-      "node_modules",
-      "vendor",
-      ".cache"
+    "standalone_projects": [
+      {
+        "name": "notes",
+        "source_type": "standalone",
+        "bare_repo_path": null
+      }
     ],
-    "auto_discover_on_startup": false,
-    "max_depth": 3
+    "orphaned_worktrees": [
+      {
+        "name": "042-old-feature",
+        "source_type": "worktree",
+        "bare_repo_path": "/home/user/deleted-repo.git",
+        "parent_project": "deleted-project",
+        "status": "orphaned"
+      }
+    ],
+    "active_project": "097-feature"
   }
 }
 ```
 
 ---
 
-### 3. `update_discovery_config`
-
-Update discovery configuration settings.
-
-**Request**:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "update_discovery_config",
-  "params": {
-    "scan_paths": ["/home/user/projects", "/etc/nixos", "~/work"],
-    "auto_discover_on_startup": true
-  }
-}
-```
-
-**Parameters** (all optional, only provided fields are updated):
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| scan_paths | string[] | Directories to scan |
-| exclude_patterns | string[] | Directory names to skip |
-| auto_discover_on_startup | bool | Enable startup discovery |
-| max_depth | int | Max recursion depth (1-10) |
-
-**Response**:
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "result": {
-    "success": true,
-    "config": {
-      "scan_paths": ["/home/user/projects", "/etc/nixos", "/home/user/work"],
-      "exclude_patterns": ["node_modules", "vendor", ".cache"],
-      "auto_discover_on_startup": true,
-      "max_depth": 3
-    }
-  }
-}
-```
-
-**Error Codes**:
-
-| Code | Message | Description |
-|------|---------|-------------|
-| -32011 | `invalid_scan_path` | Path is not absolute or doesn't exist |
-| -32012 | `invalid_max_depth` | max_depth not in range 1-10 |
-
----
-
-### 4. `refresh_git_metadata`
+### `refresh_git_metadata`
 
 Refresh git metadata for a specific project or all projects.
 
@@ -224,38 +227,33 @@ Refresh git metadata for a specific project or all projects.
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
+  "id": 2,
   "method": "refresh_git_metadata",
   "params": {
-    "project_name": "my-app"
+    "project_name": "nixos"
   }
 }
 ```
-
-**Parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project_name | string | No | Specific project to refresh (all if omitted) |
 
 **Response**:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
+  "id": 2,
   "result": {
     "success": true,
     "refreshed_count": 1,
     "projects": [
       {
-        "name": "my-app",
+        "name": "nixos",
         "git_metadata": {
-          "current_branch": "feature-x",
-          "commit_hash": "b2c3d4e",
-          "is_clean": false,
-          "has_untracked": true,
-          "ahead_count": 2,
-          "behind_count": 0
+          "current_branch": "main",
+          "commit_hash": "abc1234",
+          "is_clean": true,
+          "has_untracked": false,
+          "ahead_count": 0,
+          "behind_count": 0,
+          "last_refreshed": "2025-11-28T12:00:00Z"
         }
       }
     ]
@@ -265,154 +263,86 @@ Refresh git metadata for a specific project or all projects.
 
 ---
 
-### 5. `list_github_repos`
+### `recover_orphan`
 
-List authenticated user's GitHub repositories (without creating projects).
+Create a Repository Project for an orphaned worktree's bare_repo_path.
 
 **Request**:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 5,
-  "method": "list_github_repos",
+  "id": 3,
+  "method": "recover_orphan",
   "params": {
-    "limit": 50,
-    "include_archived": false,
-    "include_forks": false
+    "worktree_name": "042-old-feature"
   }
 }
 ```
-
-**Parameters**:
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| limit | int | No | 100 | Maximum repos to return |
-| include_archived | bool | No | false | Include archived repos |
-| include_forks | bool | No | false | Include forked repos |
 
 **Response**:
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 5,
+  "id": 3,
   "result": {
     "success": true,
-    "repos": [
-      {
-        "name": "my-app",
-        "full_name": "user/my-app",
-        "description": "My awesome application",
-        "primary_language": "TypeScript",
-        "pushed_at": "2025-11-25T10:30:00Z",
-        "visibility": "public",
-        "is_fork": false,
-        "is_archived": false,
-        "clone_url": "https://github.com/user/my-app.git",
-        "has_local_clone": true,
-        "local_project_name": "my-app"
-      }
-    ],
-    "total_count": 45
+    "new_repository_project": "recovered-repo",
+    "reparented_worktrees": ["042-old-feature"]
   }
 }
 ```
-
-**Error Codes**:
-
-| Code | Message | Description |
-|------|---------|-------------|
-| -32021 | `github_not_authenticated` | gh CLI not logged in |
-| -32022 | `github_api_error` | GitHub API returned error |
-| -32023 | `github_timeout` | GitHub API request timed out |
 
 ---
 
 ## Events
 
-The daemon emits events when discovery changes project state.
+### `projects_changed`
 
-### `projects_discovered`
-
-Emitted after successful discovery operation.
+Emitted when project hierarchy changes.
 
 ```json
 {
-  "event": "projects_discovered",
+  "event": "projects_changed",
   "data": {
-    "created": ["my-app", "other-repo"],
-    "updated": ["nixos"],
-    "marked_missing": ["old-project"],
-    "timestamp": "2025-11-26T15:30:00Z"
+    "repository_projects": [...],
+    "standalone_projects": [...],
+    "orphaned_worktrees": [...],
+    "active_project": "097-feature",
+    "timestamp": "2025-11-28T12:00:00Z"
   }
 }
 ```
 
-### `project_status_changed`
+### `worktree_created`
 
-Emitted when a project's status changes (active ↔ missing).
+Emitted when a new worktree is created.
 
 ```json
 {
-  "event": "project_status_changed",
+  "event": "worktree_created",
   "data": {
-    "project_name": "my-app",
-    "old_status": "active",
-    "new_status": "missing",
-    "timestamp": "2025-11-26T15:30:00Z"
+    "name": "098-new-feature",
+    "parent_project": "nixos",
+    "bare_repo_path": "/home/user/nixos-config.git",
+    "branch": "098-new-feature",
+    "timestamp": "2025-11-28T12:00:00Z"
   }
 }
 ```
 
----
+### `worktree_deleted`
 
-## CLI Commands
+Emitted when a worktree is deleted.
 
-The CLI wraps these RPC methods with user-friendly interfaces.
-
-### `i3pm project discover`
-
-```bash
-# Discover using configured paths
-i3pm project discover
-
-# Discover specific paths (override config)
-i3pm project discover --path ~/projects --path /etc/nixos
-
-# Include GitHub repositories
-i3pm project discover --github
-
-# Dry run (show what would be discovered)
-i3pm project discover --dry-run
-
-# Combined
-i3pm project discover --path ~/work --github --dry-run
-```
-
-### `i3pm project refresh`
-
-```bash
-# Refresh git metadata for all projects
-i3pm project refresh
-
-# Refresh specific project
-i3pm project refresh my-app
-```
-
-### `i3pm config discovery`
-
-```bash
-# Show current discovery config
-i3pm config discovery show
-
-# Add scan path
-i3pm config discovery add-path ~/work
-
-# Remove scan path
-i3pm config discovery remove-path ~/old-projects
-
-# Enable auto-discovery on startup
-i3pm config discovery set --auto-discover=true
+```json
+{
+  "event": "worktree_deleted",
+  "data": {
+    "name": "097-feature",
+    "parent_project": "nixos",
+    "timestamp": "2025-11-28T12:00:00Z"
+  }
+}
 ```
 
 ---
@@ -420,10 +350,15 @@ i3pm config discovery set --auto-discover=true
 ## TypeScript Types
 
 ```typescript
-// Zod schemas for CLI validation
+// Zod schemas for CLI validation (Feature 097 - git-centric architecture)
 
 import { z } from "zod";
 
+// Enums
+export const SourceTypeSchema = z.enum(["repository", "worktree", "standalone"]);
+export const ProjectStatusSchema = z.enum(["active", "missing", "orphaned"]);
+
+// Git Metadata
 export const GitMetadataSchema = z.object({
   current_branch: z.string(),
   commit_hash: z.string().length(7),
@@ -432,54 +367,64 @@ export const GitMetadataSchema = z.object({
   ahead_count: z.number().int().nonnegative(),
   behind_count: z.number().int().nonnegative(),
   remote_url: z.string().nullable(),
-  primary_language: z.string().nullable(),
-  last_commit_date: z.string().datetime().nullable(),
+  last_modified: z.string().datetime().nullable(),
+  last_refreshed: z.string().datetime().nullable(),
 });
 
-export const SourceTypeSchema = z.enum(["local", "worktree", "remote", "manual"]);
+// Unified Project Model
+export const ProjectSchema = z.object({
+  name: z.string(),
+  display_name: z.string(),
+  directory: z.string(),
+  icon: z.string(),
+  source_type: SourceTypeSchema,
+  status: ProjectStatusSchema.default("active"),
+  bare_repo_path: z.string().nullable(),
+  parent_project: z.string().nullable(),
+  git_metadata: GitMetadataSchema.nullable(),
+  scoped_classes: z.array(z.string()),
+  remote: z.object({
+    enabled: z.boolean(),
+    host: z.string(),
+    user: z.string(),
+    working_dir: z.string(),
+    port: z.number().int().min(1).max(65535).default(22),
+  }).nullable().optional(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
 
-export const ProjectStatusSchema = z.enum(["active", "missing"]);
+// Panel Display Models
+export const RepositoryWithWorktreesSchema = z.object({
+  project: ProjectSchema,
+  worktree_count: z.number().int(),
+  has_dirty: z.boolean(),
+  is_expanded: z.boolean(),
+  worktrees: z.array(ProjectSchema),
+});
 
-export const DiscoveryConfigSchema = z.object({
+export const PanelProjectsDataSchema = z.object({
+  repository_projects: z.array(RepositoryWithWorktreesSchema),
+  standalone_projects: z.array(ProjectSchema),
+  orphaned_worktrees: z.array(ProjectSchema),
+  active_project: z.string().nullable(),
+});
+
+// Discovery
+export const ScanConfigurationSchema = z.object({
   scan_paths: z.array(z.string()).min(1),
   exclude_patterns: z.array(z.string()).default([]),
-  auto_discover_on_startup: z.boolean().default(false),
   max_depth: z.number().int().min(1).max(10).default(3),
 });
 
-export const DiscoveryResultSchema = z.object({
-  success: z.boolean(),
-  discovered_repos: z.array(z.object({
-    path: z.string(),
-    name: z.string(),
-    is_worktree: z.boolean(),
-    git_metadata: GitMetadataSchema,
-    inferred_icon: z.string(),
-  })),
-  discovered_worktrees: z.array(z.object({
-    path: z.string(),
-    name: z.string(),
-    parent_repo_path: z.string(),
-    git_metadata: GitMetadataSchema,
-    inferred_icon: z.string(),
-  })),
-  projects_created: z.number().int(),
-  projects_updated: z.number().int(),
-  projects_marked_missing: z.number().int(),
-  duration_ms: z.number().int(),
-  errors: z.array(z.object({
-    path: z.string().optional(),
-    source: z.string().optional(),
-    error: z.string(),
-    message: z.string(),
-  })),
-});
-
-export type GitMetadata = z.infer<typeof GitMetadataSchema>;
+// Types
 export type SourceType = z.infer<typeof SourceTypeSchema>;
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
-export type DiscoveryConfig = z.infer<typeof DiscoveryConfigSchema>;
-export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;
+export type GitMetadata = z.infer<typeof GitMetadataSchema>;
+export type Project = z.infer<typeof ProjectSchema>;
+export type RepositoryWithWorktrees = z.infer<typeof RepositoryWithWorktreesSchema>;
+export type PanelProjectsData = z.infer<typeof PanelProjectsDataSchema>;
+export type ScanConfiguration = z.infer<typeof ScanConfigurationSchema>;
 ```
 
 ---
@@ -487,23 +432,22 @@ export type DiscoveryResult = z.infer<typeof DiscoveryResultSchema>;
 ## Python Types
 
 ```python
-# Pydantic models for daemon implementation
+# Pydantic models for daemon implementation (Feature 097 - git-centric architecture)
 
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 class SourceType(str, Enum):
-    LOCAL = "local"
+    REPOSITORY = "repository"
     WORKTREE = "worktree"
-    REMOTE = "remote"
-    MANUAL = "manual"
+    STANDALONE = "standalone"
 
 class ProjectStatus(str, Enum):
     ACTIVE = "active"
     MISSING = "missing"
+    ORPHANED = "orphaned"
 
 class GitMetadata(BaseModel):
     current_branch: str
@@ -513,42 +457,49 @@ class GitMetadata(BaseModel):
     ahead_count: int = Field(ge=0, default=0)
     behind_count: int = Field(ge=0, default=0)
     remote_url: Optional[str] = None
-    primary_language: Optional[str] = None
-    last_commit_date: Optional[datetime] = None
+    last_modified: Optional[datetime] = None
+    last_refreshed: Optional[datetime] = None
 
-class DiscoveryConfig(BaseModel):
+class Project(BaseModel):
+    """Unified Project Model - Feature 097"""
+    name: str
+    display_name: str
+    directory: str
+    icon: str = "📁"
+    source_type: SourceType
+    status: ProjectStatus = ProjectStatus.ACTIVE
+    bare_repo_path: Optional[str] = None
+    parent_project: Optional[str] = None
+    git_metadata: Optional[GitMetadata] = None
+    scoped_classes: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    @field_validator("parent_project")
+    @classmethod
+    def validate_parent_for_worktree(cls, v, info):
+        source_type = info.data.get("source_type")
+        if source_type == SourceType.WORKTREE and v is None:
+            raise ValueError("Worktree projects must have parent_project set")
+        return v
+
+class RepositoryWithWorktrees(BaseModel):
+    """Panel display model for repository with children"""
+    project: Project
+    worktree_count: int
+    has_dirty: bool
+    is_expanded: bool = True
+    worktrees: list[Project] = Field(default_factory=list)
+
+class PanelProjectsData(BaseModel):
+    """Complete data structure for monitoring panel"""
+    repository_projects: list[RepositoryWithWorktrees] = Field(default_factory=list)
+    standalone_projects: list[Project] = Field(default_factory=list)
+    orphaned_worktrees: list[Project] = Field(default_factory=list)
+    active_project: Optional[str] = None
+
+class ScanConfiguration(BaseModel):
     scan_paths: list[str] = Field(min_length=1)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["node_modules", "vendor", ".cache"])
-    auto_discover_on_startup: bool = False
     max_depth: int = Field(ge=1, le=10, default=3)
-
-    @field_validator("scan_paths", mode="before")
-    @classmethod
-    def expand_paths(cls, v: list[str]) -> list[str]:
-        return [str(Path(p).expanduser().resolve()) for p in v]
-
-class DiscoveredRepository(BaseModel):
-    path: str
-    name: str
-    is_worktree: bool
-    git_metadata: GitMetadata
-    parent_repo_path: Optional[str] = None
-    inferred_icon: str
-
-class DiscoveryError(BaseModel):
-    path: Optional[str] = None
-    source: Optional[str] = None
-    error: str
-    message: str
-
-class DiscoveryResult(BaseModel):
-    success: bool = True
-    discovered_repos: list[DiscoveredRepository] = Field(default_factory=list)
-    discovered_worktrees: list[DiscoveredRepository] = Field(default_factory=list)
-    projects_created: int = 0
-    projects_updated: int = 0
-    projects_marked_missing: int = 0
-    skipped_paths: list[dict] = Field(default_factory=list)
-    duration_ms: int = 0
-    errors: list[DiscoveryError] = Field(default_factory=list)
 ```
