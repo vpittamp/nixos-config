@@ -7,64 +7,11 @@ Handles CRUD operations for project JSON files at ~/.config/i3/projects/*.json
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from ..models.project_config import ProjectConfig, WorktreeConfig
-
-
-def get_bare_repository_path(directory: str) -> Optional[str]:
-    """
-    Feature 097 Option A: Get the bare repository path (GIT_COMMON_DIR) for a directory.
-
-    Git worktrees share a common directory (the bare repo or main repo's .git).
-    This function returns the absolute path to that common directory, which is
-    the canonical identifier for all worktrees belonging to the same repository.
-
-    Args:
-        directory: Path to check (any worktree or repo directory)
-
-    Returns:
-        Absolute path to the bare repository, or None if not a git repo
-    """
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            cwd=directory,
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            return None
-
-        common_dir = result.stdout.strip()
-
-        # The result might be relative, resolve to absolute
-        if not common_dir.startswith("/"):
-            # Get repo root to resolve relative path
-            root_result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=directory,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if root_result.returncode == 0:
-                repo_root = root_result.stdout.strip()
-                common_dir = str(Path(repo_root) / common_dir)
-
-        # Normalize and remove trailing /.git if present
-        # For bare repos like /path/to/repo.git, keep as-is
-        # For regular repos, --git-common-dir returns /path/to/repo/.git
-        if common_dir.endswith("/.git"):
-            common_dir = common_dir[:-5]
-
-        return common_dir
-    except (subprocess.TimeoutExpired, OSError):
-        return None
 
 
 class ProjectEditor:
@@ -135,135 +82,32 @@ class ProjectEditor:
 
     def list_projects(self) -> Dict[str, Any]:
         """
-        List all projects and worktrees, organized by parent repository.
-
-        Feature 097 T074: Organizes worktrees by their parent repository for
-        efficient UI grouping in the monitoring panel.
-
-        Feature 097 Option A: Uses bare repository path (GIT_COMMON_DIR) for
-        accurate grouping, not another worktree's path.
+        List all projects and worktrees
 
         Returns:
-            Dict with:
-            - main_projects: List of non-worktree projects (with bare_repo_path added)
-            - worktrees: List of worktree projects with parent_project field
-            - worktrees_by_parent: Dict mapping bare repo path to list of worktrees
-            - orphaned_worktrees: List of worktrees with no matching main project
+            Dict with main_projects and worktrees lists
         """
         main_projects = []
         worktrees = []
-        worktrees_by_parent: Dict[str, list] = {}
 
-        # First pass: collect all projects and identify worktrees
         for project_file in self.projects_dir.glob("*.json"):
             try:
                 with open(project_file, 'r') as f:
                     data = json.load(f)
 
-                # Feature 097 T074: Detect worktrees by:
-                # 1. Explicit parent_project field (new format)
-                # 2. worktree.repository_path field (legacy format from Feature 079)
-                is_worktree = False
-                parent_repo_path = None
-
+                # Check if worktree by presence of parent_project field
                 if "parent_project" in data:
-                    # New format: explicit parent project name
-                    is_worktree = True
-                    parent_repo_path = data.get("parent_project")
-                elif "worktree" in data and isinstance(data["worktree"], dict):
-                    # Legacy format: worktree object with repository_path
-                    worktree_info = data["worktree"]
-                    if "repository_path" in worktree_info:
-                        is_worktree = True
-                        parent_repo_path = worktree_info["repository_path"]
-                        # Add derived parent_project for UI consistency
-                        data["parent_project"] = parent_repo_path
-
-                if is_worktree:
                     worktrees.append(data)
-                    # Group by parent repository path
-                    if parent_repo_path:
-                        if parent_repo_path not in worktrees_by_parent:
-                            worktrees_by_parent[parent_repo_path] = []
-                        worktrees_by_parent[parent_repo_path].append(data)
                 else:
                     main_projects.append(data)
             except (json.JSONDecodeError, IOError) as e:
                 # Skip invalid files
                 continue
 
-        # Feature 097 Option A: Compute bare_repo_path for each main project
-        # This allows matching worktrees to main projects by their shared bare repo
-        # When multiple main projects share the same bare repo (e.g., multiple worktrees
-        # registered as "main" projects), prefer the one with the shortest directory path
-        # (typically the "main" branch worktree like /etc/nixos)
-        bare_repo_to_main_project: Dict[str, Dict] = {}
-        for project in main_projects:
-            directory = project.get("directory")
-            if directory and Path(directory).exists():
-                bare_repo = get_bare_repository_path(directory)
-                if bare_repo:
-                    project["bare_repo_path"] = bare_repo
-                    # Only update if no existing entry, or this one has shorter path
-                    existing = bare_repo_to_main_project.get(bare_repo)
-                    if not existing or len(directory) < len(existing.get("directory", "")):
-                        bare_repo_to_main_project[bare_repo] = project
-
-        # Feature 097 Option A: Identify orphaned worktrees (no matching main project)
-        # The worktree's repository_path may be another worktree path (legacy behavior)
-        # We need to resolve it to the actual bare repo path for matching
-        orphaned_worktrees = []
-        for worktree in worktrees:
-            parent_repo = worktree.get("parent_project")
-            if parent_repo:
-                # Resolve the stored repository_path to its bare repo
-                # This handles both:
-                # - Legacy: repository_path points to another worktree (e.g., /etc/nixos)
-                # - New: repository_path already points to bare repo (e.g., /home/user/repo.git)
-                resolved_bare_repo = None
-                if Path(parent_repo).exists():
-                    resolved_bare_repo = get_bare_repository_path(parent_repo)
-                else:
-                    # Path might already be a bare repo path
-                    resolved_bare_repo = parent_repo
-
-                # Check if any main project shares this bare repo
-                if resolved_bare_repo and resolved_bare_repo in bare_repo_to_main_project:
-                    # Found matching main project - update parent_project to use directory
-                    main_proj = bare_repo_to_main_project[resolved_bare_repo]
-                    worktree["parent_project"] = main_proj.get("directory")
-                else:
-                    # No matching main project found - this is orphaned
-                    orphaned_worktrees.append(worktree)
-
-        # Sort main projects alphabetically
-        main_projects_sorted = sorted(main_projects, key=lambda p: p.get("name", ""))
-
-        # Sort worktrees by parent, then by name within each parent group
-        # Use "or" to handle None values (key exists but value is None)
-        worktrees_sorted = sorted(
-            worktrees,
-            key=lambda w: (w.get("parent_project") or "", w.get("name") or "")
-        )
-
-        # Sort worktrees within each parent group
-        for parent_path in worktrees_by_parent:
-            worktrees_by_parent[parent_path] = sorted(
-                worktrees_by_parent[parent_path],
-                key=lambda w: w.get("name", "")
-            )
-
-        # Sort orphaned worktrees alphabetically
-        orphaned_worktrees_sorted = sorted(
-            orphaned_worktrees,
-            key=lambda w: w.get("name", "")
-        )
-
         return {
-            "main_projects": main_projects_sorted,
-            "worktrees": worktrees_sorted,
-            "worktrees_by_parent": worktrees_by_parent,
-            "orphaned_worktrees": orphaned_worktrees_sorted,
+            "main_projects": sorted(main_projects, key=lambda p: p.get("name", "")),
+            # Feature 098: Handle None parent_project values during sorting
+            "worktrees": sorted(worktrees, key=lambda w: w.get("parent_project") or "")
         }
 
     def edit_project(self, name: str, updates: Dict[str, Any]) -> Dict[str, Any]:

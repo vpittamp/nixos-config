@@ -1,112 +1,147 @@
-# Data Model: Git-Centric Project and Worktree Management
+# Data Model: Git-Based Project Discovery
 
 **Feature**: 097-convert-manual-projects
-**Date**: 2025-11-28 (Major revision for git-centric architecture)
-
-## Architecture: Git as Source of Truth
-
-The core principle is that `bare_repo_path` (GIT_COMMON_DIR) is the canonical identifier for all project relationships. This eliminates orphaned worktree problems and state synchronization issues.
+**Date**: 2025-11-26
 
 ## Entity Relationship Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Unified Project Model                        │
-│      (Persisted in ~/.config/i3/projects/<name>.json)           │
+│                    ScanConfiguration                             │
+│  (User-defined discovery settings)                              │
 ├─────────────────────────────────────────────────────────────────┤
-│  name: str                     # Unique i3pm identifier         │
-│  display_name: str             # Human-readable name            │
-│  directory: Path               # Working directory path         │
+│  scan_paths: List[Path]                                         │
+│  exclude_patterns: List[str]                                    │
+│  auto_discover_on_startup: bool                                 │
+│  max_depth: int                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ triggers
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DiscoveryResult                               │
+│  (Ephemeral result of discovery operation)                      │
+├─────────────────────────────────────────────────────────────────┤
+│  discovered_repos: List[DiscoveredRepository]                   │
+│  discovered_worktrees: List[DiscoveredWorktree]                 │
+│  skipped_paths: List[SkippedPath]                               │
+│  duration_ms: int                                               │
+│  errors: List[DiscoveryError]                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ creates/updates
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Project (Extended)                         │
+│  (Persisted in ~/.config/i3/projects/<name>.json)               │
+├─────────────────────────────────────────────────────────────────┤
+│  name: str                     # Unique identifier              │
+│  display_name: str             # Human-readable                 │
+│  directory: Path               # Absolute path                  │
 │  icon: str                     # Emoji icon                     │
-│                                                                 │
-│  source_type: SourceType       # repository|worktree|standalone │
-│  status: ProjectStatus         # active|missing|orphaned        │
-│                                                                 │
-│  bare_repo_path: str?          # GIT_COMMON_DIR (canonical ID)  │
-│  parent_project: str?          # For worktrees: parent name     │
-│                                                                 │
-│  git_metadata: GitMetadata?    # Cached git state               │
-│  scoped_classes: List[str]     # App window classes             │
-│  remote: RemoteConfig?         # SSH config (Feature 087)       │
-│                                                                 │
+│  source_type: SourceType       # NEW: local | worktree | remote │
+│  status: ProjectStatus         # NEW: active | missing          │
+│  git_metadata: GitMetadata?    # NEW: Git-specific data         │
+│  worktree: WorktreeMetadata?   # Existing: Worktree linkage     │
+│  remote: RemoteConfig?         # Existing: SSH config           │
+│  scoped_classes: List[str]     # Existing: App classes          │
 │  created_at: datetime                                           │
 │  updated_at: datetime                                           │
+│  discovered_at: datetime?      # NEW: When discovered           │
 └─────────────────────────────────────────────────────────────────┘
-         │
-         │ grouped by bare_repo_path
-         ▼
+                              │
+                              │ contains
+                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Panel Display Model                          │
-│      (Runtime structure for Eww monitoring panel)               │
+│                       GitMetadata                                │
+│  (Git-specific data attached to projects)                       │
 ├─────────────────────────────────────────────────────────────────┤
-│  repository_projects: [                                         │
-│    {                                                            │
-│      project: Project,          # source_type="repository"      │
-│      worktree_count: int,       # Count of child worktrees      │
-│      has_dirty: bool,           # Any child is dirty            │
-│      is_expanded: bool,         # UI expansion state            │
-│      worktrees: [Project...]    # source_type="worktree"        │
-│    }                                                            │
-│  ]                                                              │
-│  standalone_projects: [Project...]  # source_type="standalone"  │
-│  orphaned_worktrees: [Project...]   # status="orphaned"         │
+│  current_branch: str           # Branch name or "HEAD"          │
+│  commit_hash: str              # Short SHA (7 chars)            │
+│  is_clean: bool                # No uncommitted changes         │
+│  has_untracked: bool           # Untracked files present        │
+│  ahead_count: int              # Commits ahead of upstream      │
+│  behind_count: int             # Commits behind upstream        │
+│  remote_url: str?              # Origin remote URL              │
+│  primary_language: str?        # Inferred or from GitHub        │
+│  last_commit_date: datetime?   # HEAD commit timestamp          │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-## Relationship Model
-
-```
-Bare Repo: /home/user/nixos-config.git
-    │
-    ├── Repository Project: "nixos" → /etc/nixos (main branch)
-    │       │
-    │       ├── Worktree Project: "097-feature" → /home/user/nixos-097-feature
-    │       ├── Worktree Project: "087-ssh" → /home/user/nixos-087-ssh
-    │       └── Worktree Project: "085-widget" → /home/user/nixos-085-widget
-    │
-Bare Repo: /home/user/other-repo/.git
-    │
-    └── Standalone Project: "other-repo" → /home/user/other-repo
 ```
 
 ## Entities
 
-### 1. Project (Unified Model)
+### 1. ScanConfiguration
 
-The core entity representing any project - repository, worktree, or standalone.
+User-defined settings for repository discovery.
 
-**Storage**: `~/.config/i3/projects/<name>.json`
+**Storage**: `~/.config/i3/discovery-config.json`
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| name | str | Yes | - | Unique i3pm identifier (e.g., "nixos", "097-feature") |
-| display_name | str | Yes | - | Human-readable name |
-| directory | Path | Yes | - | Absolute path to working directory |
-| icon | str | Yes | "📁" | Emoji icon |
-| source_type | SourceType | Yes | - | `repository` \| `worktree` \| `standalone` |
-| status | ProjectStatus | Yes | `"active"` | `active` \| `missing` \| `orphaned` |
-| bare_repo_path | str? | No | null | GIT_COMMON_DIR - canonical repo identifier |
-| parent_project | str? | No | null | For worktrees: parent project name |
-| git_metadata | GitMetadata? | No | null | Cached git state |
-| scoped_classes | List[str] | Yes | `[]` | App window classes for scoping |
-| remote | RemoteConfig? | No | null | SSH config (Feature 087) |
-| created_at | datetime | Yes | now | Creation timestamp |
-| updated_at | datetime | Yes | now | Last modification timestamp |
-
-**Invariants**:
-- Only ONE project with `source_type: "repository"` per unique `bare_repo_path`
-- Projects with `source_type: "worktree"` MUST have non-null `parent_project`
-- `bare_repo_path` is always computed from git, never user-specified
+| scan_paths | List[str] | Yes | `["~/projects"]` | Directories to scan for repositories |
+| exclude_patterns | List[str] | No | `["node_modules", "vendor", ".cache"]` | Directory names to skip |
+| auto_discover_on_startup | bool | No | `false` | Run discovery when daemon starts |
+| max_depth | int | No | `3` | Maximum recursion depth for scanning |
 
 **Validation Rules**:
-- `name` must be unique across all projects
-- `directory` must be an absolute path
-- If `source_type == "worktree"`, `parent_project` must reference an existing project
-- `bare_repo_path` must match parent's `bare_repo_path` for worktrees
+- `scan_paths` must be non-empty
+- Each path must be expandable (~ allowed) and absolute after expansion
+- `max_depth` must be between 1 and 10
+- `exclude_patterns` are case-sensitive glob patterns
 
-### 2. GitMetadata
+### 2. DiscoveryResult
 
-Cached git state attached to projects.
+Ephemeral result returned from a discovery operation.
+
+**Storage**: Not persisted (returned from RPC call)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| discovered_repos | List[DiscoveredRepository] | Yes | Repositories found |
+| discovered_worktrees | List[DiscoveredWorktree] | Yes | Worktrees found |
+| skipped_paths | List[SkippedPath] | Yes | Paths skipped (not git repos) |
+| projects_created | int | Yes | Count of new projects |
+| projects_updated | int | Yes | Count of updated projects |
+| projects_marked_missing | int | Yes | Count of newly missing projects |
+| duration_ms | int | Yes | Time taken in milliseconds |
+| errors | List[DiscoveryError] | Yes | Non-fatal errors encountered |
+
+### 3. DiscoveredRepository
+
+Intermediate representation of a found repository before project creation.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| path | Path | Yes | Absolute path to repository |
+| name | str | Yes | Derived from directory name |
+| is_worktree | bool | Yes | True if .git is a file |
+| git_metadata | GitMetadata | Yes | Extracted git data |
+| parent_repo_path | Path? | No | For worktrees, path to main repo |
+| inferred_icon | str | Yes | Emoji based on language |
+
+### 4. Project (Extended)
+
+Extended project entity with new fields for discovery support.
+
+**Storage**: `~/.config/i3/projects/<name>.json`
+
+**New Fields** (additions to existing Project model):
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| source_type | SourceType | Yes | `"local"` | How project was created |
+| status | ProjectStatus | Yes | `"active"` | Project availability |
+| git_metadata | GitMetadata? | No | null | Git-specific data |
+| discovered_at | datetime? | No | null | When first discovered |
+
+**Existing Fields** (unchanged):
+- `name`, `display_name`, `directory`, `icon`, `scoped_classes`
+- `worktree` (WorktreeMetadata), `remote` (RemoteConfig)
+- `created_at`, `updated_at`
+
+### 5. GitMetadata
+
+Git-specific metadata attached to discovered projects.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -117,80 +152,33 @@ Cached git state attached to projects.
 | ahead_count | int | Yes | 0 | Commits ahead of upstream |
 | behind_count | int | Yes | 0 | Commits behind upstream |
 | remote_url | str? | No | null | Origin remote URL |
-| last_modified | datetime? | No | null | Most recent file modification |
-| last_refreshed | datetime? | No | null | When metadata was last updated |
+| primary_language | str? | No | null | Dominant programming language |
+| last_commit_date | datetime? | No | null | Most recent commit timestamp |
 
 **Validation Rules**:
 - `commit_hash` must be exactly 7 characters (or empty if no commits)
 - `ahead_count` and `behind_count` must be non-negative
+- `remote_url` should be valid git URL format (https:// or git@)
 
-### 3. SourceType (Enum)
+### 6. SourceType (Enum)
 
-Classification of project type.
+Classification of how a project was created/discovered.
 
-| Value | Description | bare_repo_path | parent_project |
-|-------|-------------|----------------|----------------|
-| `repository` | Primary entry point for a bare repo (only ONE per bare repo) | Required | null |
-| `worktree` | Git worktree linked to a Repository Project | Required (matches parent) | Required |
-| `standalone` | Non-git directory OR simple repo with no worktrees | Optional | null |
+| Value | Description |
+|-------|-------------|
+| `local` | Standard git repository discovered on filesystem |
+| `worktree` | Git worktree linked to parent repository |
+| `remote` | GitHub repository not cloned locally (listing only) |
+| `manual` | Manually created project (legacy, no discovery) |
 
-### 4. ProjectStatus (Enum)
+### 7. ProjectStatus (Enum)
 
-Current availability status.
+Current availability status of a project.
 
 | Value | Description |
 |-------|-------------|
 | `active` | Directory exists and is accessible |
 | `missing` | Directory no longer exists or inaccessible |
-| `orphaned` | Worktree with no matching Repository Project |
-
-### 5. ScanConfiguration
-
-User-defined settings for repository discovery.
-
-**Storage**: `~/.config/i3/discovery-config.json`
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| scan_paths | List[str] | Yes | `["~/projects"]` | Directories to scan |
-| exclude_patterns | List[str] | No | `["node_modules", "vendor", ".cache"]` | Patterns to skip |
-| max_depth | int | No | `3` | Maximum recursion depth |
-
-### 6. DiscoveryResult
-
-Ephemeral result from discovery operation.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| repository_projects | List[Project] | Yes | New repository projects created |
-| worktree_projects | List[Project] | Yes | New worktree projects created |
-| orphaned_worktrees | List[Project] | Yes | Worktrees with missing parents |
-| projects_updated | int | Yes | Count of updated existing projects |
-| duration_ms | int | Yes | Time taken |
-| errors | List[str] | Yes | Non-fatal errors |
-
-### 7. RepositoryWithWorktrees (Panel Display)
-
-Runtime structure for Eww monitoring panel hierarchy.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| project | Project | The repository project (source_type="repository") |
-| worktree_count | int | Count of child worktrees |
-| has_dirty | bool | True if any child has uncommitted changes |
-| is_expanded | bool | UI expansion state |
-| worktrees | List[Project] | Child worktree projects |
-
-### 8. PanelProjectsData
-
-Complete data structure for monitoring panel.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| repository_projects | List[RepositoryWithWorktrees] | Grouped repository projects |
-| standalone_projects | List[Project] | Standalone projects |
-| orphaned_worktrees | List[Project] | Orphaned worktrees |
-| active_project | str? | Currently active project name |
 
 ## State Transitions
 
@@ -201,13 +189,13 @@ Complete data structure for monitoring panel.
                      │   Not Tracked    │
                      └────────┬─────────┘
                               │
-                 discovery or │ i3pm worktree create
+                 discovery or │ manual create
                               ▼
                      ┌──────────────────┐
           ┌─────────│     Active       │◄────────┐
           │         └────────┬─────────┘         │
           │                  │                   │
-    user  │     directory    │ removed    directory
+    user  │     directory    │ deleted    directory
   deletes │     removed      │            restored
           │                  ▼                   │
           │         ┌──────────────────┐         │
@@ -219,180 +207,89 @@ Complete data structure for monitoring panel.
           │         ┌──────────────────┐
           └────────►│     Deleted      │
                     └──────────────────┘
-
-                     For Worktrees Only:
-                     ┌──────────────────┐
-                     │     Active       │
-                     └────────┬─────────┘
-                              │
-               parent project │ deleted
-                              ▼
-                     ┌──────────────────┐
-                     │    Orphaned      │◄────── no matching bare_repo_path
-                     └────────┬─────────┘
-                              │
-                     [Recover]│ or [Delete]
-                              ▼
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-   ┌──────────────────┐            ┌──────────────────┐
-   │ Re-parented      │            │     Deleted      │
-   │ (new repo proj)  │            └──────────────────┘
-   └──────────────────┘
 ```
 
 ### Discovery Flow
 
 ```
-Start Discovery (i3pm project discover --path <dir>)
+Start Discovery
        │
        ▼
-┌──────────────────────┐
-│ Get bare_repo_path   │  ← git rev-parse --git-common-dir
-└──────────┬───────────┘
-           │
-           ├────────────────────────────────────────┐
-           │                                        │
-       not a git repo                          is a git repo
-           │                                        │
-           ▼                                        ▼
-┌──────────────────┐                    ┌──────────────────┐
-│ Create standalone│                    │ Check existing   │
-│ project          │                    │ repo project for │
-└──────────────────┘                    │ this bare_repo   │
-                                        └────────┬─────────┘
-                                                 │
-                              ┌──────────────────┼──────────────────┐
-                              │                  │                  │
-                         no repo proj       has repo proj     same directory
-                              │                  │                  │
-                              ▼                  ▼                  ▼
-                    ┌────────────────┐  ┌────────────────┐  ┌────────────────┐
-                    │ Create         │  │ Create worktree│  │ Update existing│
-                    │ repository     │  │ project linked │  │ project        │
-                    │ project        │  │ to parent      │  │                │
-                    └────────────────┘  └────────────────┘  └────────────────┘
+┌──────────────────┐
+│  Load ScanConfig │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐     for each
+│ Scan Directories │────────────────┐
+└────────┬─────────┘                │
+         │                          ▼
+         │              ┌──────────────────────┐
+         │              │ Check .git existence │
+         │              └──────────┬───────────┘
+         │                         │
+         │         ┌───────────────┼───────────────┐
+         │         │               │               │
+         │    .git dir        .git file       no .git
+         │    (repo)          (worktree)      (skip)
+         │         │               │               │
+         │         ▼               ▼               │
+         │  ┌────────────┐  ┌────────────┐         │
+         │  │ Extract    │  │ Extract    │         │
+         │  │ metadata   │  │ metadata + │         │
+         │  │            │  │ find parent│         │
+         │  └─────┬──────┘  └─────┬──────┘         │
+         │        │               │                │
+         │        └───────┬───────┘                │
+         │                │                        │
+         │                ▼                        │
+         │     ┌──────────────────┐               │
+         │     │ Check existing   │               │
+         │     │ project by path  │               │
+         │     └────────┬─────────┘               │
+         │              │                          │
+         │    ┌─────────┴─────────┐               │
+         │    │                   │               │
+         │  exists            new repo            │
+         │    │                   │               │
+         │    ▼                   ▼               │
+         │ ┌────────────┐  ┌────────────┐         │
+         │ │  Update    │  │  Create    │         │
+         │ │  metadata  │  │  project   │         │
+         │ └─────┬──────┘  └─────┬──────┘         │
+         │       │               │                │
+         │       └───────┬───────┘                │
+         │               │                        │
+         │◄──────────────┴────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Check for missing│
+│ (existing projs  │
+│ not found)       │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Notify daemon to │
+│ refresh state    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Return results   │
+└──────────────────┘
 ```
 
-### Orphan Detection Flow
+## Backward Compatibility
 
-```
-On Project List Load (monitoring_data.py)
-       │
-       ▼
-┌──────────────────────┐
-│ Load all projects    │
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Group by bare_repo   │
-│ - Find all "repository" projects
-│ - Get their bare_repo_paths
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ For each "worktree"  │
-│ project:             │
-│ - Check if its       │
-│   bare_repo_path     │
-│   matches any repo   │
-│   project            │
-└──────────┬───────────┘
-           │
-           ├──────────────────────────────┐
-           │                              │
-       match found                   no match
-           │                              │
-           ▼                              ▼
-┌──────────────────┐            ┌──────────────────┐
-│ Link to parent   │            │ Mark as orphaned │
-│ (status: active) │            │ (status: orphaned)
-└──────────────────┘            └──────────────────┘
-```
+### Existing Projects
 
-## JSON Schema Examples
+Projects created before Feature 097 will continue to work:
+- `source_type` defaults to `"manual"` if not present
+- `status` defaults to `"active"` if not present
+- `git_metadata` is optional and can be null
 
-### Repository Project (source_type: "repository")
+### JSON Schema Migration
 
-```json
-{
-  "name": "nixos",
-  "display_name": "NixOS Config",
-  "directory": "/etc/nixos",
-  "icon": "🔧",
-  "source_type": "repository",
-  "status": "active",
-  "bare_repo_path": "/home/user/nixos-config.git",
-  "parent_project": null,
-  "git_metadata": {
-    "current_branch": "main",
-    "commit_hash": "abc1234",
-    "is_clean": true,
-    "has_untracked": false,
-    "ahead_count": 0,
-    "behind_count": 0,
-    "remote_url": "https://github.com/user/nixos-config.git",
-    "last_refreshed": "2025-11-28T12:00:00Z"
-  },
-  "scoped_classes": ["Ghostty", "code", "yazi", "lazygit"],
-  "created_at": "2025-11-28T10:00:00Z",
-  "updated_at": "2025-11-28T12:00:00Z"
-}
-```
-
-### Worktree Project (source_type: "worktree")
-
-```json
-{
-  "name": "097-feature",
-  "display_name": "097 - Git-Centric Projects",
-  "directory": "/home/user/nixos-097-feature",
-  "icon": "🌿",
-  "source_type": "worktree",
-  "status": "active",
-  "bare_repo_path": "/home/user/nixos-config.git",
-  "parent_project": "nixos",
-  "git_metadata": {
-    "current_branch": "097-convert-manual-projects",
-    "commit_hash": "def5678",
-    "is_clean": false,
-    "has_untracked": true,
-    "ahead_count": 5,
-    "behind_count": 0,
-    "remote_url": "https://github.com/user/nixos-config.git",
-    "last_refreshed": "2025-11-28T12:00:00Z"
-  },
-  "scoped_classes": ["Ghostty", "code", "yazi", "lazygit"],
-  "created_at": "2025-11-28T10:30:00Z",
-  "updated_at": "2025-11-28T12:00:00Z"
-}
-```
-
-### Standalone Project (source_type: "standalone")
-
-```json
-{
-  "name": "notes",
-  "display_name": "Notes",
-  "directory": "/home/user/notes",
-  "icon": "📝",
-  "source_type": "standalone",
-  "status": "active",
-  "bare_repo_path": null,
-  "parent_project": null,
-  "git_metadata": null,
-  "scoped_classes": ["code"],
-  "created_at": "2025-11-28T09:00:00Z",
-  "updated_at": "2025-11-28T09:00:00Z"
-}
-```
-
-## No Backwards Compatibility
-
-Per Constitution Principle XII (Forward-Only Development):
-- Old project format is NOT supported
-- Existing projects will be recreated via discovery
-- No migration scripts or compatibility shims
-- `source_type` field is REQUIRED (not optional with default)
+No migration required. New fields are optional with sensible defaults. Existing project files remain valid.

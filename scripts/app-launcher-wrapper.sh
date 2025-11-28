@@ -121,12 +121,28 @@ REMOTE_USER=$(echo "$PROJECT_JSON" | jq -r '.remote.user // ""')
 REMOTE_WORKING_DIR=$(echo "$PROJECT_JSON" | jq -r '.remote.working_dir // ""')
 REMOTE_PORT=$(echo "$PROJECT_JSON" | jq -r '.remote.port // 22')
 
+# Feature 098: Extract worktree/branch metadata
+SOURCE_TYPE=$(echo "$PROJECT_JSON" | jq -r '.source_type // "local"')
+PARENT_PROJECT=$(echo "$PROJECT_JSON" | jq -r '.parent_project // ""')
+BRANCH_NUMBER=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.number // ""')
+BRANCH_TYPE=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.type // ""')
+FULL_BRANCH_NAME=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.full_name // ""')
+
+# Feature 098: Extract git metadata
+GIT_BRANCH=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.current_branch // ""')
+GIT_COMMIT=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.commit_hash // ""')
+GIT_IS_CLEAN=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.is_clean // ""')
+GIT_AHEAD=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.ahead_count // ""')
+GIT_BEHIND=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.behind_count // ""')
+
 log "DEBUG" "Project name: ${PROJECT_NAME:-<none>}"
 log "DEBUG" "Project directory: ${PROJECT_DIR:-<none>}"
 log "DEBUG" "Feature 087: Remote enabled: $REMOTE_ENABLED"
 if [[ "$REMOTE_ENABLED" == "true" ]]; then
     log "DEBUG" "Feature 087: Remote host: $REMOTE_USER@$REMOTE_HOST:$REMOTE_WORKING_DIR (port $REMOTE_PORT)"
 fi
+log "DEBUG" "Feature 098: Source type: $SOURCE_TYPE, Parent: ${PARENT_PROJECT:-<none>}"
+log "DEBUG" "Feature 098: Branch number: ${BRANCH_NUMBER:-<none>}, type: ${BRANCH_TYPE:-<none>}"
 
 # Validate project directory if present
 if [[ -n "$PROJECT_DIR" ]]; then
@@ -427,6 +443,56 @@ ENV_EXPORTS=(
 # This ensures restoration marks are passed through swaymsg exec to launched processes
 if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
     ENV_EXPORTS+=("export I3PM_RESTORE_MARK='$I3PM_RESTORE_MARK'")
+fi
+
+# Feature 098: Add worktree environment variables (conditional - only if set)
+# Per contracts/ipc-methods.md: Missing fields MUST be omitted (not set to empty string)
+if [[ "$SOURCE_TYPE" == "worktree" ]]; then
+    ENV_EXPORTS+=("export I3PM_IS_WORKTREE='true'")
+else
+    ENV_EXPORTS+=("export I3PM_IS_WORKTREE='false'")
+fi
+
+if [[ -n "$PARENT_PROJECT" ]]; then
+    ENV_EXPORTS+=("export I3PM_PARENT_PROJECT='$PARENT_PROJECT'")
+fi
+
+if [[ -n "$BRANCH_NUMBER" ]]; then
+    ENV_EXPORTS+=("export I3PM_BRANCH_NUMBER='$BRANCH_NUMBER'")
+fi
+
+if [[ -n "$BRANCH_TYPE" ]]; then
+    ENV_EXPORTS+=("export I3PM_BRANCH_TYPE='$BRANCH_TYPE'")
+fi
+
+if [[ -n "$FULL_BRANCH_NAME" ]]; then
+    ENV_EXPORTS+=("export I3PM_FULL_BRANCH_NAME='$FULL_BRANCH_NAME'")
+fi
+
+# Feature 098: Add git metadata environment variables (conditional - only if set)
+if [[ -n "$GIT_BRANCH" ]]; then
+    ENV_EXPORTS+=("export I3PM_GIT_BRANCH='$GIT_BRANCH'")
+fi
+
+if [[ -n "$GIT_COMMIT" ]]; then
+    ENV_EXPORTS+=("export I3PM_GIT_COMMIT='$GIT_COMMIT'")
+fi
+
+if [[ -n "$GIT_IS_CLEAN" ]]; then
+    # Convert to lowercase "true"/"false" string
+    if [[ "$GIT_IS_CLEAN" == "true" ]]; then
+        ENV_EXPORTS+=("export I3PM_GIT_IS_CLEAN='true'")
+    else
+        ENV_EXPORTS+=("export I3PM_GIT_IS_CLEAN='false'")
+    fi
+fi
+
+if [[ -n "$GIT_AHEAD" ]] && [[ "$GIT_AHEAD" != "null" ]]; then
+    ENV_EXPORTS+=("export I3PM_GIT_AHEAD='$GIT_AHEAD'")
+fi
+
+if [[ -n "$GIT_BEHIND" ]] && [[ "$GIT_BEHIND" != "null" ]]; then
+    ENV_EXPORTS+=("export I3PM_GIT_BEHIND='$GIT_BEHIND'")
 fi
 
 ENV_STRING=$(IFS='; '; echo "${ENV_EXPORTS[*]}")

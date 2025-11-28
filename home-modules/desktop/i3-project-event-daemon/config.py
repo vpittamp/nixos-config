@@ -49,18 +49,14 @@ def load_project_configs(config_dir: Path) -> Dict[str, "Project"]:
                 with open(json_file) as f:
                     project_data = json.load(f)
 
-                # Create simple project object from JSON data
+                # Feature 098: Load full project data including branch_metadata, parent_project, git_metadata
+                # Use model_validate to parse all Pydantic fields from JSON
                 from .models import Project as DaemonProject
-                project = DaemonProject(
-                    name=project_data["name"],
-                    display_name=project_data.get("display_name", project_data["name"]),
-                    icon=project_data.get("icon", ""),
-                    directory=Path(project_data["directory"]),
-                    scoped_classes=set(project_data.get("scoped_classes", []))
-                )
+                project = DaemonProject.model_validate(project_data)
                 projects[project.name] = project
                 logger.debug(f"Loaded project: {project.name} from {json_file.name}")
-            except (json.JSONDecodeError, KeyError, ValueError) as e:
+            except Exception as e:
+                # Catches json.JSONDecodeError, KeyError, ValueError, pydantic.ValidationError, etc.
                 logger.error(f"Failed to load project from {json_file}: {e}")
                 continue
 

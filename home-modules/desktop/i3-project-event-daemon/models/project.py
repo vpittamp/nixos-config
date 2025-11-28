@@ -14,7 +14,7 @@ from typing import Optional, List
 import json
 import logging
 from .remote_config import RemoteConfig
-from .discovery import SourceType, ProjectStatus, GitMetadata
+from .discovery import SourceType, ProjectStatus, GitMetadata, BranchMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,16 @@ class Project(BaseModel):
     discovered_at: datetime = Field(
         default_factory=datetime.now,
         description="When project was discovered"
+    )
+
+    # Feature 098: Worktree environment integration fields
+    parent_project: Optional[str] = Field(
+        default=None,
+        description="Name of parent project (if this is a worktree)"
+    )
+    branch_metadata: Optional[BranchMetadata] = Field(
+        default=None,
+        description="Parsed branch metadata (number, type, full_name)"
     )
 
     @field_validator('directory', mode='before')

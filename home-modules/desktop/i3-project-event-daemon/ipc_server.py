@@ -421,6 +421,12 @@ class IPCServer:
             elif method == "refresh_git_metadata":
                 result = await self._refresh_git_metadata(params)
 
+            # Feature 098: Worktree environment integration methods
+            elif method == "worktree.list":
+                result = await self._worktree_list(params)
+            elif method == "project.refresh":
+                result = await self._project_refresh(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -670,6 +676,8 @@ class IPCServer:
         Returns:
             Dictionary with project details or None values if no active project.
             Format matches what the app launcher wrapper script expects.
+
+        Feature 098: Includes parent_project, branch_metadata, and git_metadata fields.
         """
         project_name = await self.state_manager.get_active_project()
 
@@ -703,6 +711,32 @@ class IPCServer:
         # Feature 087: Include remote configuration if present
         if project.remote is not None:
             result["remote"] = project.remote.model_dump()
+
+        # Feature 098: Include source_type, parent_project, branch_metadata, git_metadata
+        result["source_type"] = project.source_type.value if hasattr(project, 'source_type') and project.source_type else "local"
+        result["status"] = project.status.value if hasattr(project, 'status') and project.status else "active"
+
+        # parent_project (nullable)
+        if hasattr(project, 'parent_project') and project.parent_project:
+            result["parent_project"] = project.parent_project
+
+        # branch_metadata (nullable object)
+        if hasattr(project, 'branch_metadata') and project.branch_metadata:
+            result["branch_metadata"] = {
+                "number": project.branch_metadata.number,
+                "type": project.branch_metadata.type,
+                "full_name": project.branch_metadata.full_name,
+            }
+
+        # git_metadata (nullable object)
+        if hasattr(project, 'git_metadata') and project.git_metadata:
+            result["git_metadata"] = {
+                "branch": project.git_metadata.current_branch if hasattr(project.git_metadata, 'current_branch') else None,
+                "commit": project.git_metadata.commit_hash if hasattr(project.git_metadata, 'commit_hash') else None,
+                "is_clean": project.git_metadata.is_clean if hasattr(project.git_metadata, 'is_clean') else None,
+                "ahead": project.git_metadata.ahead_count if hasattr(project.git_metadata, 'ahead_count') else None,
+                "behind": project.git_metadata.behind_count if hasattr(project.git_metadata, 'behind_count') else None,
+            }
 
         return result
 
@@ -797,6 +831,24 @@ class IPCServer:
             if project_name not in self.state_manager.state.projects:
                 raise ValueError(f"Project not found: {project_name}")
 
+            # Feature 098 (T029-T030): Validate project status before switching
+            # Prevent switching to projects with missing directories
+            project = self.state_manager.state.projects.get(project_name)
+            if project and hasattr(project, 'status'):
+                from .models.discovery import ProjectStatus
+                if project.status == ProjectStatus.MISSING:
+                    # Return JSON-RPC error -32001 with actionable message
+                    raise RuntimeError(json.dumps({
+                        "code": -32001,
+                        "message": f"Cannot switch to project '{project_name}': directory does not exist at {project.directory}",
+                        "data": {
+                            "reason": "project_missing",
+                            "project_name": project_name,
+                            "directory": str(project.directory),
+                            "suggestion": f"Either restore the directory or delete the project with: i3pm project delete {project_name}"
+                        }
+                    }))
+
             # Get current project before switch
             previous_project = self.state_manager.state.active_project
 
@@ -855,9 +907,45 @@ class IPCServer:
                 "project": project_name
             })
 
+            # Feature 098: Build enhanced project response with new metadata
+            project = self.state_manager.state.projects.get(project_name)
+            project_response = {
+                "name": project_name,
+                "directory": str(project.directory) if project else None,
+                "display_name": project.display_name if project else None,
+            }
+
+            if project:
+                project_response["source_type"] = project.source_type.value if hasattr(project, 'source_type') and project.source_type else "local"
+                project_response["status"] = project.status.value if hasattr(project, 'status') and project.status else "active"
+
+                # parent_project (nullable)
+                if hasattr(project, 'parent_project') and project.parent_project:
+                    project_response["parent_project"] = project.parent_project
+
+                # branch_metadata (nullable object)
+                if hasattr(project, 'branch_metadata') and project.branch_metadata:
+                    project_response["branch_metadata"] = {
+                        "number": project.branch_metadata.number,
+                        "type": project.branch_metadata.type,
+                        "full_name": project.branch_metadata.full_name,
+                    }
+
+                # git_metadata (nullable object)
+                if hasattr(project, 'git_metadata') and project.git_metadata:
+                    project_response["git_metadata"] = {
+                        "branch": project.git_metadata.current_branch if hasattr(project.git_metadata, 'current_branch') else None,
+                        "commit": project.git_metadata.commit_hash if hasattr(project.git_metadata, 'commit_hash') else None,
+                        "is_clean": project.git_metadata.is_clean if hasattr(project.git_metadata, 'is_clean') else None,
+                        "ahead": project.git_metadata.ahead_count if hasattr(project.git_metadata, 'ahead_count') else None,
+                        "behind": project.git_metadata.behind_count if hasattr(project.git_metadata, 'behind_count') else None,
+                    }
+
             return {
+                "success": True,
                 "previous_project": previous_project,
                 "new_project": project_name,
+                "project": project_response,
                 "windows_hidden": windows_to_hide,
                 "windows_shown": windows_to_show,
             }
@@ -5289,6 +5377,32 @@ class IPCServer:
             if project.remote is not None:
                 result["remote"] = project.remote.model_dump()
 
+            # Feature 098: Include source_type, parent_project, branch_metadata, git_metadata
+            result["source_type"] = project.source_type.value if hasattr(project, 'source_type') and project.source_type else "local"
+            result["status"] = project.status.value if hasattr(project, 'status') and project.status else "active"
+
+            # parent_project (nullable)
+            if hasattr(project, 'parent_project') and project.parent_project:
+                result["parent_project"] = project.parent_project
+
+            # branch_metadata (nullable object)
+            if hasattr(project, 'branch_metadata') and project.branch_metadata:
+                result["branch_metadata"] = {
+                    "number": project.branch_metadata.number,
+                    "type": project.branch_metadata.type,
+                    "full_name": project.branch_metadata.full_name,
+                }
+
+            # git_metadata (nullable object)
+            if hasattr(project, 'git_metadata') and project.git_metadata:
+                result["git_metadata"] = {
+                    "branch": project.git_metadata.current_branch if hasattr(project.git_metadata, 'current_branch') else None,
+                    "commit": project.git_metadata.commit_hash if hasattr(project.git_metadata, 'commit_hash') else None,
+                    "is_clean": project.git_metadata.is_clean if hasattr(project.git_metadata, 'is_clean') else None,
+                    "ahead": project.git_metadata.ahead_count if hasattr(project.git_metadata, 'ahead_count') else None,
+                    "behind": project.git_metadata.behind_count if hasattr(project.git_metadata, 'behind_count') else None,
+                }
+
             return result
 
         except FileNotFoundError as e:
@@ -5588,6 +5702,238 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="project::set_active",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    # Feature 098: Worktree environment integration methods
+    async def _worktree_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all worktree projects for a given parent project.
+
+        Feature 098: Worktree-Aware Project Environment Integration
+
+        Args:
+            params: {
+                "parent_project": str  # Name of parent project to list worktrees for
+            }
+
+        Returns:
+            {
+                "parent": {"name": str, "directory": str},
+                "worktrees": [
+                    {
+                        "name": str,
+                        "display_name": str,
+                        "branch_metadata": {"number": str?, "type": str?, "full_name": str},
+                        "status": str
+                    }
+                ],
+                "count": int
+            }
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Parent project doesn't exist
+        """
+        start_time = time.perf_counter()
+
+        try:
+            parent_name = params.get("parent_project")
+            if not parent_name:
+                raise ValueError("parent_project parameter is required")
+
+            # Get all projects from state
+            projects = self.state_manager.state.projects
+
+            # Find parent project
+            if parent_name not in projects:
+                raise FileNotFoundError(f"Parent project not found: {parent_name}")
+
+            parent_project = projects[parent_name]
+
+            # Find all worktrees that reference this parent
+            worktrees = []
+            for proj in projects.values():
+                if hasattr(proj, 'parent_project') and proj.parent_project == parent_name:
+                    worktree_data = {
+                        "name": proj.name,
+                        "display_name": proj.display_name,
+                        "status": proj.status.value if hasattr(proj, 'status') and proj.status else "active",
+                    }
+
+                    # Include branch_metadata if present
+                    if hasattr(proj, 'branch_metadata') and proj.branch_metadata:
+                        worktree_data["branch_metadata"] = {
+                            "number": proj.branch_metadata.number,
+                            "type": proj.branch_metadata.type,
+                            "full_name": proj.branch_metadata.full_name,
+                        }
+
+                    worktrees.append(worktree_data)
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="worktree::list",
+                duration_ms=duration_ms,
+                params={"parent_project": parent_name, "count": len(worktrees)}
+            )
+
+            return {
+                "parent": {
+                    "name": parent_project.name,
+                    "directory": str(parent_project.directory),
+                },
+                "worktrees": worktrees,
+                "count": len(worktrees),
+            }
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="worktree::list",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="worktree::list",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise
+
+    async def _project_refresh(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Re-extract git and branch metadata for an existing project.
+
+        Feature 098: Worktree-Aware Project Environment Integration (FR-009)
+
+        Args:
+            params: {
+                "name": str  # Project name to refresh
+            }
+
+        Returns:
+            {
+                "success": bool,
+                "project": {
+                    "name": str,
+                    "git_metadata": {...},
+                    "branch_metadata": {...}
+                },
+                "fields_updated": list[str]
+            }
+
+        Raises:
+            PROJECT_NOT_FOUND (1001): Project doesn't exist
+            -32001: Directory missing
+        """
+        start_time = time.perf_counter()
+
+        try:
+            project_name = params.get("name")
+            if not project_name:
+                raise ValueError("name parameter is required")
+
+            # Import required modules
+            from .services.project_service import ProjectService
+            from .services.discovery_service import extract_git_metadata
+            from .models.discovery import parse_branch_metadata, SourceType
+
+            config_dir = Path.home() / ".config" / "i3"
+            project_service = ProjectService(config_dir, self.state_manager)
+
+            # Get existing project
+            project = project_service.get(project_name)
+
+            # Check if directory exists
+            if not Path(project.directory).exists():
+                raise RuntimeError(
+                    f"-32001:Cannot refresh project '{project_name}': "
+                    f"directory does not exist at {project.directory}"
+                )
+
+            # Re-extract git metadata
+            git_metadata = await extract_git_metadata(Path(project.directory))
+
+            # Re-parse branch metadata if worktree and git metadata available
+            branch_metadata = None
+            if project.source_type == SourceType.WORKTREE and git_metadata:
+                branch_metadata = parse_branch_metadata(git_metadata.current_branch)
+
+            # Track which fields were updated
+            fields_updated = ["updated_at"]
+            if git_metadata:
+                project.git_metadata = git_metadata
+                fields_updated.append("git_metadata")
+            if branch_metadata:
+                project.branch_metadata = branch_metadata
+                fields_updated.append("branch_metadata")
+
+            # Update timestamp and save
+            from datetime import datetime
+            project.updated_at = datetime.now()
+            project.save_to_file(config_dir)
+
+            # Update in-memory state if available
+            if project_name in self.state_manager.state.projects:
+                self.state_manager.state.projects[project_name] = project
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            await self._log_ipc_event(
+                event_type="project::refresh",
+                duration_ms=duration_ms,
+                params={"name": project_name, "fields_updated": fields_updated}
+            )
+
+            # Build response
+            result = {
+                "success": True,
+                "project": {
+                    "name": project_name,
+                },
+                "fields_updated": fields_updated,
+            }
+
+            if git_metadata:
+                result["project"]["git_metadata"] = {
+                    "branch": git_metadata.current_branch,
+                    "commit": git_metadata.commit_hash,
+                    "is_clean": git_metadata.is_clean,
+                    "ahead": git_metadata.ahead_count,
+                    "behind": git_metadata.behind_count,
+                }
+
+            if branch_metadata:
+                result["project"]["branch_metadata"] = {
+                    "number": branch_metadata.number,
+                    "type": branch_metadata.type,
+                    "full_name": branch_metadata.full_name,
+                }
+
+            return result
+
+        except FileNotFoundError as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::refresh",
+                duration_ms=duration_ms,
+                params=params,
+                error=str(e)
+            )
+            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
+
+        except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="project::refresh",
                 duration_ms=duration_ms,
                 params=params,
                 error=str(e)

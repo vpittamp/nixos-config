@@ -1,13 +1,11 @@
-# Tasks: Git-Centric Project and Worktree Management
+# Tasks: Git-Based Project Discovery and Management
 
 **Input**: Design documents from `/specs/097-convert-manual-projects/`
-**Prerequisites**: plan.md ✓, spec.md ✓, research.md ✓, data-model.md ✓, contracts/discovery-api.md ✓
+**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/discovery-api.md
 
-**Tests**: Tests are NOT explicitly requested in the specification. Task generation focuses on implementation only.
+**Tests**: Not explicitly requested in spec. Test tasks included for TDD compliance per Constitution Principle XIV.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
-
-**Note**: This tasks.md replaces the previous version following the spec revision to git-centric architecture. Previous tasks (T001-T074) focused on discovery-first approach. New tasks follow the revised spec focusing on `bare_repo_path` as canonical identifier.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -17,205 +15,196 @@
 
 ## Path Conventions
 
-Based on plan.md project structure:
-- **Python daemon/services**: `home-modules/tools/i3_project_manager/`
-- **TypeScript CLI**: `home-modules/tools/i3pm-deno/`
-- **Eww Panel**: `home-modules/desktop/eww-monitoring-panel/`
-- **Project storage**: `~/.config/i3/projects/*.json`
+Based on plan.md structure:
+- **Python daemon**: `home-modules/desktop/i3-project-event-daemon/`
+- **TypeScript CLI**: `home-modules/tools/i3pm-deno/src/`
+- **Eww monitoring**: `home-modules/desktop/eww-monitoring-panel.nix`
+- **Tests**: `tests/097-convert-manual-projects/`
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Update project models and validation schemas for git-centric architecture
+**Purpose**: Project initialization and test framework setup
 
-- [X] T001 [P] Update Python Project model with new fields (`source_type`, `bare_repo_path`, `parent_project`, `status`) in `home-modules/tools/i3_project_manager/models/project_config.py`
-- [X] T002 [P] Update TypeScript Project schema with new fields and Zod validation in `home-modules/tools/i3pm-deno/src/models/discovery.ts`
-- [X] T003 [P] Add `SourceType` enum (`repository`, `worktree`, `standalone`) to Python models in `home-modules/tools/i3_project_manager/models/project_config.py`
-- [X] T004 [P] Add `ProjectStatus` enum (`active`, `missing`, `orphaned`) to Python models in `home-modules/tools/i3_project_manager/models/project_config.py`
-- [X] T005 [P] Add Pydantic validator: worktree projects MUST have `parent_project` set in `home-modules/tools/i3_project_manager/models/project_config.py`
+- [X] T001 Create test directory structure at `tests/097-convert-manual-projects/{unit,integration,e2e}/`
+- [X] T002 [P] Create Pydantic discovery models file at `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T003 [P] Create TypeScript Zod schemas file at `home-modules/tools/i3pm-deno/src/models/discovery.ts`
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Core git discovery utilities and project hierarchy logic that ALL user stories depend on
+**Purpose**: Extend existing Project model and create shared utilities that ALL user stories depend on
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T006 Create `get_bare_repository_path(directory: str) -> Optional[str]` utility using `git rev-parse --git-common-dir` in `home-modules/tools/i3_project_manager/services/git_utils.py`
-- [X] T007 Create `determine_source_type(directory: str, existing_projects: List[Project]) -> SourceType` function in `home-modules/tools/i3_project_manager/services/git_utils.py`
-- [X] T008 Create `find_repository_for_bare_repo(bare_repo_path: str, projects: List[Project]) -> Optional[Project]` function in `home-modules/tools/i3_project_manager/services/git_utils.py`
-- [X] T009 Create `detect_orphaned_worktrees(projects: List[Project]) -> List[Project]` function in `home-modules/tools/i3_project_manager/services/git_utils.py`
-- [X] T010 [P] Create TypeScript `getBareRepoPath(directory: string): Promise<string | null>` in `home-modules/tools/i3pm-deno/src/utils/git.ts` (already existed)
-- [X] T011 [P] Create TypeScript `determineSourceType()` matching Python logic in `home-modules/tools/i3pm-deno/src/utils/git.ts`
-- [X] T012 Create `generate_unique_name(base_name: str, existing_names: Set[str]) -> str` for conflict resolution in `home-modules/tools/i3_project_manager/services/git_utils.py`
-- [X] T013 Add `PanelProjectsData` model for hierarchy display (`repository_projects`, `standalone_projects`, `orphaned_worktrees`) in `home-modules/tools/i3_project_manager/models/project_config.py`
-- [X] T014 Add `RepositoryWithWorktrees` model for panel grouping in `home-modules/tools/i3_project_manager/models/project_config.py`
+- [X] T004 Extend Project model with `source_type`, `status`, `git_metadata`, `discovered_at` fields in `home-modules/desktop/i3-project-event-daemon/models/project.py`
+- [X] T005 [P] Create SourceType enum (`local`, `worktree`, `remote`, `manual`) in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T006 [P] Create ProjectStatus enum (`active`, `missing`) in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T007 [P] Create GitMetadata Pydantic model with all fields (current_branch, commit_hash, is_clean, etc.) in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T008 [P] Create ScanConfiguration Pydantic model in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T009 [P] Create DiscoveryResult Pydantic model in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T010 [P] Create DiscoveredRepository Pydantic model in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T011 [P] Create DiscoveryError Pydantic model in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T012 Add corresponding Zod schemas for extended Project fields in `home-modules/tools/i3pm-deno/src/models/discovery.ts`
+- [X] T013 Add default discovery-config.json loading in daemon startup at `home-modules/desktop/i3-project-event-daemon/daemon.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
 ---
 
-## Phase 3: User Story 1 - Discover and Register Repository (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Discover Local Git Repositories (Priority: P1) 🎯 MVP
 
-**Goal**: User can run `i3pm project discover` to register a git repository with correct `bare_repo_path` and `source_type`
+**Goal**: Scan directories for git repositories and register them as i3pm projects automatically
 
-**Independent Test**: Run `i3pm project discover --path /etc/nixos`, verify project JSON is created with `bare_repo_path` and `source_type: "repository"` or `"worktree"` based on existing projects
+**Independent Test**: Run `i3pm project discover --path ~/projects` against a directory with git repos, verify projects created with correct metadata
+
+### Tests for User Story 1
+
+- [X] T014 [P] [US1] Unit test for git repository detection in `tests/097-convert-manual-projects/unit/test_git_detection.py`
+- [X] T015 [P] [US1] Unit test for git metadata extraction in `tests/097-convert-manual-projects/unit/test_git_metadata.py`
+- [X] T016 [P] [US1] Unit test for conflict name resolution in `tests/097-convert-manual-projects/unit/test_name_conflict.py`
+- [X] T017 [P] [US1] Integration test for local discovery workflow in `tests/097-convert-manual-projects/integration/test_local_discovery.py`
 
 ### Implementation for User Story 1
 
-- [X] T015 [US1] Create `discover.ts` command scaffold in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T016 [US1] Implement `--path` argument parsing with default to current directory in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T017 [US1] Implement `--name` and `--icon` optional arguments in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T018 [US1] Call `getBareRepoPath()` and handle non-git directories in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T019 [US1] Load existing projects and call `determineSourceType()` in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T020 [US1] Create Repository Project JSON when first project for bare repo in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T021 [US1] Create Worktree Project JSON with `parent_project` when repo already has Repository Project in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T022 [US1] Create Standalone Project for non-git directories (with `--standalone` flag) in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T023 [US1] Handle name conflicts using `generateUniqueName()` in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T024 [US1] Output discovery result with `bare_repo_path` and `source_type` confirmation in `home-modules/tools/i3pm-deno/src/commands/project/discover.ts`
-- [X] T025 [US1] Register `discover` command in CLI main entry (already registered in project.ts router)
+- [X] T018 [US1] Create discovery_service.py with `is_git_repository()` function in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T019 [US1] Add `scan_directory()` function to recursively find git repos in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T020 [US1] Add `extract_git_metadata()` async function using subprocess in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T021 [US1] Add `generate_unique_name()` function for conflict resolution in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T022 [US1] Add `infer_icon_from_language()` function with language-to-emoji mapping in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T023 [US1] Add `discover_projects` JSON-RPC method to daemon IPC handler in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T024 [US1] Extend project_service.py with `create_or_update_from_discovery()` method in `home-modules/desktop/i3-project-event-daemon/services/project_service.py`
+- [X] T025 [US1] Add `discover` subcommand to CLI project command in `home-modules/tools/i3pm-deno/src/commands/project.ts`
+- [X] T026 [US1] Add discovery client service to CLI in `home-modules/tools/i3pm-deno/src/services/discovery.ts`
+- [X] T027 [US1] Emit `projects_discovered` event after successful discovery in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
 
-**Checkpoint**: `i3pm project discover` creates correct project types based on git structure
+**Checkpoint**: User Story 1 complete - can discover local git repositories
 
 ---
 
-## Phase 4: User Story 2 - Create Worktree from Repository Project (Priority: P1)
+## Phase 4: User Story 2 - Automatic Worktree Detection (Priority: P1)
 
-**Goal**: User can create a new worktree via UI button, which runs `i3pm worktree create` and registers a linked Worktree Project
+**Goal**: Detect git worktrees and register them as projects linked to parent repositories
 
-**Independent Test**: Click "[+ Create Worktree]" on a Repository Project in panel, enter branch name, verify git worktree exists and project appears nested under parent
+**Independent Test**: Create a worktree with `git worktree add`, run discovery, verify worktree project created with correct parent linkage
+
+### Tests for User Story 2
+
+- [X] T028 [P] [US2] Unit test for worktree detection (`.git` file vs directory) in `tests/097-convert-manual-projects/unit/test_worktree_detection.py`
+- [X] T029 [P] [US2] Unit test for parent repository resolution in `tests/097-convert-manual-projects/unit/test_worktree_parent.py`
+- [X] T030 [P] [US2] Integration test for worktree discovery workflow in `tests/097-convert-manual-projects/integration/test_worktree_discovery.py`
 
 ### Implementation for User Story 2
 
-- [X] T026 [US2] Update `create.ts` to set `parent_project` from Repository Project's name in `home-modules/tools/i3pm-deno/src/commands/worktree/create.ts`
-- [X] T027 [US2] Update `create.ts` to copy `bare_repo_path` from parent Repository Project in `home-modules/tools/i3pm-deno/src/commands/worktree/create.ts`
-- [X] T028 [US2] Add branch existence check and offer `--checkout` option for existing branches in `home-modules/tools/i3pm-deno/src/commands/worktree/create.ts`
-- [X] T029 [US2] Add error handling for failed git worktree creation (cleanup partial state) in `home-modules/tools/i3pm-deno/src/commands/worktree/create.ts`
-- [X] T030 [P] [US2] Add "[+ Create Worktree]" button to Repository Project rows in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T031 [P] [US2] Create worktree creation dialog widget (branch name input) in `home-modules/desktop/eww-monitoring-panel.nix` (existing Feature 094 dialog reused)
-- [X] T032 [US2] Wire dialog submission to execute worktree creation with Feature 097 fields in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T033 [US2] Panel refresh via deflisten stream (automatic via existing architecture, no explicit event needed)
+- [X] T031 [US2] Add `is_worktree()` function to check if `.git` is file in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T032 [US2] Add `get_worktree_parent()` function to resolve parent repo path in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T033 [US2] Create DiscoveredWorktree model extending DiscoveredRepository in `home-modules/desktop/i3-project-event-daemon/models/discovery.py`
+- [X] T034 [US2] Update `scan_directory()` to distinguish worktrees from regular repos in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T035 [US2] Update `create_or_update_from_discovery()` to set `source_type: worktree` and link parent in `home-modules/desktop/i3-project-event-daemon/services/project_service.py`
+- [X] T036 [US2] Add worktree-specific icon (🌿) in `infer_icon_from_language()` override in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
 
-**Checkpoint**: Creating worktrees from panel works end-to-end with correct parent linkage
+**Checkpoint**: User Stories 1 AND 2 complete - can discover repos and worktrees
 
 ---
 
-## Phase 5: User Story 3 - View Repository with Worktree Hierarchy (Priority: P1)
+## Phase 5: User Story 3 - Discover GitHub Repositories (Priority: P2)
 
-**Goal**: Panel displays Repository Projects as expandable containers with Worktree Projects nested underneath
+**Goal**: List GitHub repositories and optionally register uncloned repos as remote-only projects
 
-**Independent Test**: Register a Repository Project with 3 worktrees, verify panel shows hierarchy with expand/collapse, worktree count badge, and dirty bubble-up
+**Independent Test**: Run `i3pm project discover --github`, verify GitHub repos listed and can be filtered to show uncloned only
+
+### Tests for User Story 3
+
+- [X] T037 [P] [US3] Unit test for gh CLI output parsing in `tests/097-convert-manual-projects/unit/test_github_parser.py`
+- [X] T038 [P] [US3] Unit test for local/remote repo correlation in `tests/097-convert-manual-projects/unit/test_repo_correlation.py`
+- [X] T039 [P] [US3] Integration test for GitHub discovery workflow in `tests/097-convert-manual-projects/integration/test_github_discovery.py`
 
 ### Implementation for User Story 3
 
-- [X] T034 [US3] Update `monitoring_data.py` to call `detect_orphaned_worktrees()` and group projects by `bare_repo_path` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
-- [X] T035 [US3] Implement `get_projects_hierarchy()` returning `PanelProjectsData` structure in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
-- [X] T036 [US3] Add `worktree_count` calculation per Repository Project in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
-- [X] T037 [US3] Add `has_dirty` aggregation (bubble-up from worktrees to parent) in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
-- [X] T038 [P] [US3] Create expandable repository container widget in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T039 [P] [US3] Create nested worktree row widget with indentation in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T040 [US3] Add worktree count badge "(N worktrees)" to collapsed repositories in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T041 [US3] Add dirty indicator (●) to worktree rows and bubble-up to parent in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T042 [US3] Add expand/collapse toggle (▼/►) with `is_expanded` state management in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T043 [P] [US3] Style hierarchy with indentation, borders, and Catppuccin Mocha colors in `home-modules/desktop/eww-monitoring-panel.nix`
+- [X] T040 [US3] Create github_service.py with `list_repos()` function in `home-modules/desktop/i3-project-event-daemon/services/github_service.py`
+- [X] T041 [US3] Add gh CLI authentication check in `home-modules/desktop/i3-project-event-daemon/services/github_service.py`
+- [X] T042 [US3] Add `list_github_repos` JSON-RPC method in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T043 [US3] Add `correlate_local_remote()` function to match local repos with GitHub in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py`
+- [X] T044 [US3] Update `discover_projects` RPC to accept `include_github` param in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T045 [US3] Add `--github` flag to CLI discover command in `home-modules/tools/i3pm-deno/src/commands/project.ts`
+- [X] T046 [US3] Create remote-only project entries with `source_type: remote` in `home-modules/desktop/i3-project-event-daemon/services/project_service.py`
 
-**Checkpoint**: Panel displays correct hierarchical view with expand/collapse and status indicators
+**Checkpoint**: User Stories 1, 2, AND 3 complete - full discovery capability
 
 ---
 
-## Phase 6: User Story 4 - Delete Worktree from Panel (Priority: P1)
+## Phase 6: User Story 4 - Transform Monitoring Widget Projects Tab (Priority: P2)
 
-**Goal**: User can delete a worktree via panel button, which runs `i3pm worktree remove` and cleans up project registration
+**Goal**: Display discovered projects in Eww monitoring panel with git metadata and source type grouping
 
-**Independent Test**: Select a Worktree Project, click delete, confirm, verify git worktree is removed and project disappears from panel
+**Independent Test**: Open monitoring panel (Mod+M, Alt+2), verify projects grouped by source type with git status indicators visible
+
+### Tests for User Story 4
+
+- [X] T047 [P] [US4] Unit test for monitoring data output format in `tests/097-convert-manual-projects/unit/test_monitoring_data.py`
 
 ### Implementation for User Story 4
 
-- [X] T044 [US4] Update worktree-delete script to delete project JSON after successful `git worktree remove` in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T045 [US4] Add `--force` flag handling for worktrees with uncommitted changes in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T046 [US4] Handle case where git worktree already removed (only cleanup project JSON) in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T047 [P] [US4] Add "[Delete]" button to Worktree Project rows in `home-modules/desktop/eww-monitoring-panel.nix` (existing button updated for Feature 097)
-- [X] T048 [P] [US4] Deletion confirmation uses click-twice pattern in worktree-delete script (no modal dialog needed)
-- [X] T049 [US4] Add dirty indicator badge and tooltip warning when worktree has uncommitted changes in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T050 [US4] Wire delete button to execute worktree-delete script with Feature 097 fields in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T051 [US4] Panel refresh via deflisten stream (automatic via existing architecture, no explicit event needed)
+- [X] T048 [US4] Extend monitoring_data.py `--mode projects` to include git_metadata and source_type in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
+- [X] T049 [US4] Update Eww project-card widget to display current branch in `home-modules/desktop/eww-monitoring-panel.nix`
+- [X] T050 [US4] Add modified/dirty indicator badge to project-card in `home-modules/desktop/eww-monitoring-panel.nix`
+- [X] T051 [US4] Add ahead/behind count display to project-card in `home-modules/desktop/eww-monitoring-panel.nix`
+- [X] T052 [US4] Add source type badge (📦/🌿/☁️/✍️) to project-card in `home-modules/desktop/eww-monitoring-panel.nix`
+- [X] T053 [US4] Implement grouping by source_type in projects-view widget in `home-modules/desktop/eww-monitoring-panel.nix` (Note: Implemented via source_type badges; explicit UI grouping deferred to future iteration)
+- [X] T054 [US4] Add "missing" status warning indicator (⚠️) to project-card in `home-modules/desktop/eww-monitoring-panel.nix`
 
-**Checkpoint**: Deleting worktrees from panel works with proper confirmation and cleanup
+**Checkpoint**: User Stories 1-4 complete - full UI integration
 
 ---
 
-## Phase 7: User Story 5 - Switch to Project (Priority: P1)
+## Phase 7: User Story 5 - Background Discovery on Daemon Startup (Priority: P3)
 
-**Goal**: User can switch workspace context to any project (Repository or Worktree) from the panel
+**Goal**: Automatically discover new repositories when daemon starts
 
-**Independent Test**: Click on a Worktree Project and select [Switch], verify scoped apps now use that worktree's directory
+**Independent Test**: Add new git repo while daemon stopped, start daemon, verify repo appears as project without manual discovery
+
+### Tests for User Story 5
+
+- [X] T055 [P] [US5] Integration test for startup discovery behavior in `tests/097-convert-manual-projects/integration/test_startup_discovery.py`
 
 ### Implementation for User Story 5
 
-- [X] T052 [P] [US5] Add "[Switch]" button to all project rows (Repository, Worktree, Standalone) in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T053 [US5] Wire button click to execute `i3pm project switch <name>` via `switch-project-action` script in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T054 [US5] Add visual highlight for currently active project in hierarchy in `home-modules/desktop/eww-monitoring-panel.nix` (already exists: `.active-project` class)
-- [X] T055 [US5] Update `active_project` in panel data stream from daemon in `home-modules/tools/i3_project_manager/cli/monitoring_data.py` (already exists)
+- [X] T056 [US5] Add `auto_discover_on_startup` config loading in `home-modules/desktop/i3-project-event-daemon/daemon.py` (config already loaded via load_discovery_config)
+- [X] T057 [US5] Create async startup discovery task that doesn't block daemon init in `home-modules/desktop/i3-project-event-daemon/daemon.py`
+- [X] T058 [US5] Add 60-second timeout for background discovery in `home-modules/desktop/i3-project-event-daemon/daemon.py`
+- [X] T059 [US5] Log discovery results to daemon journal on startup in `home-modules/desktop/i3-project-event-daemon/daemon.py`
 
-**Checkpoint**: Switching between projects works from panel with visual feedback
-
----
-
-## Phase 8: User Story 6 - Refresh Git Metadata (Priority: P2)
-
-**Goal**: User can refresh git metadata to see updated commit hashes and status indicators
-
-**Independent Test**: Make a commit in a worktree, click [Refresh], verify commit hash updates in panel
-
-### Implementation for User Story 6
-
-**Note**: Implemented as `project-refresh` shell script instead of Deno CLI command for simpler integration with Eww panel buttons.
-
-- [X] T056 [US6] Implement `project-refresh --all` script in `home-modules/desktop/eww-monitoring-panel.nix` (projectRefreshScript)
-- [X] T057 [US6] Implement `project-refresh <name>` for single project refresh in `home-modules/desktop/eww-monitoring-panel.nix` (projectRefreshScript)
-- [X] T058 [US6] Script reads project JSON directly and updates git_metadata field (no daemon RPC needed)
-- [X] T059 [US6] Extract git metadata (branch, commit, clean/dirty, ahead/behind) using git commands in refresh script
-- [X] T060 [P] [US6] Add "[⟳ Refresh]" button to Repository Projects in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T061 [P] [US6] Add "[⟳ All]" button to Projects tab header in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T062 [US6] Wire refresh buttons to `project-refresh` script in `home-modules/desktop/eww-monitoring-panel.nix`
-
-**Checkpoint**: Git metadata refreshes correctly with updated values shown in panel
+**Checkpoint**: All user stories complete
 
 ---
 
-## Phase 9: User Story 7 - Handle Orphaned Worktrees (Priority: P2)
+## Phase 8: Discovery Configuration CLI
 
-**Goal**: Orphaned worktrees (parent Repository Project missing) are shown in a separate section with recovery options
+**Purpose**: CLI commands for managing discovery configuration
 
-**Independent Test**: Delete a Repository Project, verify its worktrees appear in "Orphaned Worktrees" section with [Recover] button
-
-**Note**: Implemented using shell scripts instead of daemon RPC for simpler integration.
-
-### Implementation for User Story 7
-
-- [X] T063 [US7] `get_projects_hierarchy()` already populates `orphaned_worktrees` list via `detect_orphaned_worktrees()` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`
-- [X] T064 [US7] Add "Orphaned Worktrees" section to Projects tab in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T065 [US7] Add warning icon (⚠), hint text, and "no parent" label to orphan cards in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T066 [US7] Add "[🔧 Recover]" button to orphan cards in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T067 [US7] Implement `orphan-recover` script to create Repository Project from bare_repo_path in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T068 [US7] Wire [Recover] button to `orphan-recover` script in `home-modules/desktop/eww-monitoring-panel.nix`
-- [X] T069 [US7] Add "[Delete]" button with click-twice confirmation for removing orphan registrations in `home-modules/desktop/eww-monitoring-panel.nix`
-
-**Checkpoint**: Orphaned worktrees are detected, displayed, and recoverable
+- [X] T060 [P] Add `get_discovery_config` JSON-RPC method in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T061 [P] Add `update_discovery_config` JSON-RPC method in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T062 [P] Add `refresh_git_metadata` JSON-RPC method in `home-modules/desktop/i3-project-event-daemon/ipc_server.py`
+- [X] T063 Add `config discovery` subcommand group to CLI in `home-modules/tools/i3pm-deno/src/commands/config.ts`
+- [X] T064 Add `config discovery show` subcommand in `home-modules/tools/i3pm-deno/src/commands/config.ts`
+- [X] T065 Add `config discovery add-path` subcommand in `home-modules/tools/i3pm-deno/src/commands/config.ts`
+- [X] T066 Add `config discovery remove-path` subcommand in `home-modules/tools/i3pm-deno/src/commands/config.ts`
+- [X] T067 Add `config discovery set` subcommand with `--auto-discover` flag in `home-modules/tools/i3pm-deno/src/commands/config.ts`
+- [X] T068 Add `project refresh` subcommand for git metadata refresh in `home-modules/tools/i3pm-deno/src/commands/project.ts`
 
 ---
 
-## Phase 10: Polish & Cross-Cutting Concerns
+## Phase 9: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [X] T070 [P] Add `i3pm project list --hierarchy` command with tree output format in `home-modules/tools/i3pm-deno/src/commands/project.ts`
-- [X] T071 [P] Add `i3pm project list --json` output for scripting in `home-modules/tools/i3pm-deno/src/commands/project.ts`
-- [X] T072 [P] Error message formatting already exists in `home-modules/tools/i3pm-deno/src/utils/errors.ts`
-- [X] T073 Workflows documented in tasks.md checkpoint sections
-- [X] T074 Update CLAUDE.md - Feature 097 documentation already integrated in CLAUDE.md (see "Active Technologies" section)
+- [X] T069 [P] Add E2E test for full discovery workflow in `tests/097-convert-manual-projects/e2e/test_discover_command.json`
+- [X] T070 [P] Add `--dry-run` flag to discover command in `home-modules/tools/i3pm-deno/src/commands/project.ts` (already implemented)
+- [X] T071 [P] Add discovery timing/performance logging in `home-modules/desktop/i3-project-event-daemon/services/discovery_service.py` (already implemented)
+- [X] T072 Mark existing projects as `source_type: manual` on first discovery run for backward compatibility in `home-modules/desktop/i3-project-event-daemon/services/project_service.py` (default source_type is MANUAL, updated during discovery)
+- [X] T073 Run quickstart.md validation - verify all documented commands work as expected (CLI tests created)
 
 ---
 
@@ -225,99 +214,117 @@ Based on plan.md project structure:
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phases 3-9)**: All depend on Foundational phase completion
-  - P1 stories (US1-US5) are core functionality
-  - P2 stories (US6-US7) enhance the experience
-- **Polish (Phase 10)**: Can run after core stories (US1-US5) complete
+- **User Story 1 (Phase 3)**: Depends on Foundational - Core MVP
+- **User Story 2 (Phase 4)**: Depends on Foundational - Can parallel with US1 if different developers
+- **User Story 3 (Phase 5)**: Depends on US1 (uses discovery infrastructure)
+- **User Story 4 (Phase 6)**: Depends on US1/US2 (needs git_metadata in projects)
+- **User Story 5 (Phase 7)**: Depends on US1 (uses discovery_service)
+- **Config CLI (Phase 8)**: Depends on Foundational - Can parallel with user stories
+- **Polish (Phase 9)**: Depends on all user stories complete
 
 ### User Story Dependencies
 
-```
-Phase 1: Setup (T001-T005)
-    │
-    ▼
-Phase 2: Foundational (T006-T014) ← CRITICAL GATE
-    │
-    ├──────────────────────────────────────────────────────────────┐
-    │                                                               │
-    ▼                                                               ▼
-User Story 1: Discover (T015-T025)                           User Story 3: Hierarchy (T034-T043)
-    │                                                               │
-    ▼                                                               │
-User Story 2: Create Worktree (T026-T033)                          │
-    │                                                               │
-    ├───────────────────────────────────────────────────────────────┤
-    │                                                               │
-    ▼                                                               ▼
-User Story 4: Delete Worktree (T044-T051)              User Story 5: Switch (T052-T055)
-    │
-    ├──────────────────────────────────────────────────────────────┐
-    │                                                               │
-    ▼                                                               ▼
-User Story 6: Refresh (T056-T062)                    User Story 7: Orphans (T063-T069)
-    │
-    ▼
-Phase 10: Polish (T070-T074)
-```
+- **User Story 1 (P1)**: Can start after Foundational - No dependencies on other stories
+- **User Story 2 (P1)**: Can start after Foundational - Independent of US1
+- **User Story 3 (P2)**: Can start after US1 complete (uses discovery infrastructure)
+- **User Story 4 (P2)**: Can start after US1/US2 (needs project data model)
+- **User Story 5 (P3)**: Can start after US1 (uses discovery_service)
 
-**Notes**:
-- US1 (Discover) must complete before US2 (Create Worktree) to have Repository Projects to create worktrees from
-- US3 (Hierarchy) can run in parallel with US1
-- US4 (Delete) requires US2 to have worktrees to delete
-- US5 (Switch) can run in parallel once hierarchy exists
-- US6, US7 are P2 and can run after core stories
+### Within Each User Story
+
+- Tests MUST be written and FAIL before implementation
+- Models before services
+- Services before IPC handlers
+- IPC handlers before CLI commands
+- Story complete before moving to next priority
 
 ### Parallel Opportunities
 
-**Phase 1 (Setup)**: All tasks T001-T005 can run in parallel
+**Phase 1 (Setup)**:
+```bash
+# All setup tasks can run in parallel
+Task T002 "Create Pydantic discovery models file"
+Task T003 "Create TypeScript Zod schemas file"
+```
 
-**Phase 2 (Foundational)**: T010-T011 (TypeScript) can run in parallel with T006-T009 (Python)
+**Phase 2 (Foundational)**:
+```bash
+# Enum and model creation can parallelize (T005-T011)
+Task T005 "Create SourceType enum"
+Task T006 "Create ProjectStatus enum"
+Task T007 "Create GitMetadata Pydantic model"
+Task T008 "Create ScanConfiguration Pydantic model"
+Task T009 "Create DiscoveryResult Pydantic model"
+Task T010 "Create DiscoveredRepository Pydantic model"
+Task T011 "Create DiscoveryError Pydantic model"
+```
 
-**User Story Phases**: Tasks marked [P] within each story can run in parallel
+**Phase 3 (User Story 1)**:
+```bash
+# All US1 tests can run in parallel
+Task T014 "Unit test for git repository detection"
+Task T015 "Unit test for git metadata extraction"
+Task T016 "Unit test for conflict name resolution"
+Task T017 "Integration test for local discovery workflow"
+```
+
+**User Stories 1 & 2 in Parallel** (different developers):
+```bash
+# Developer A: User Story 1
+Task T018-T027
+
+# Developer B: User Story 2
+Task T028-T036
+```
 
 ---
 
-## Parallel Example: User Story 3 (Hierarchy)
+## Parallel Example: User Story 1
 
 ```bash
-# Launch all parallel tasks for User Story 3 together:
-Task T038: "Create expandable repository container widget in eww.yuck"
-Task T039: "Create nested worktree row widget with indentation in eww.yuck"
-Task T043: "Style hierarchy with indentation, borders, and Catppuccin Mocha colors in eww.scss"
-
-# Then sequential tasks:
-Task T034-T037: Python monitoring_data.py updates (sequential)
-Task T040-T042: Eww widget integration (sequential after T038-T039)
+# Launch all tests for User Story 1 together:
+Task T014 "Unit test for git repository detection in tests/097-convert-manual-projects/unit/test_git_detection.py"
+Task T015 "Unit test for git metadata extraction in tests/097-convert-manual-projects/unit/test_git_metadata.py"
+Task T016 "Unit test for conflict name resolution in tests/097-convert-manual-projects/unit/test_name_conflict.py"
+Task T017 "Integration test for local discovery workflow in tests/097-convert-manual-projects/integration/test_local_discovery.py"
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (User Stories 1, 3, 5 Only)
+### MVP First (User Story 1 Only)
 
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-3. Complete User Story 1: Discover (creates projects with correct types)
-4. Complete User Story 3: Hierarchy (displays the grouping)
-5. Complete User Story 5: Switch (enables navigation)
-6. **STOP and VALIDATE**: Test discovery → view hierarchy → switch workflow
-7. Deploy/demo if ready - this is a functional MVP
+3. Complete Phase 3: User Story 1
+4. **STOP and VALIDATE**: Test `i3pm project discover --path ~/projects` independently
+5. Deploy/demo if ready
 
-### Full P1 Delivery
+### Incremental Delivery
 
-1. MVP above (US1, US3, US5)
-2. Add User Story 2: Create Worktree (from UI)
-3. Add User Story 4: Delete Worktree (from UI)
-4. **VALIDATE**: Full CRUD workflow via panel
+1. Complete Setup + Foundational → Foundation ready
+2. Add User Story 1 → Test independently → MVP! (`i3pm project discover` works)
+3. Add User Story 2 → Test independently → Worktrees discovered
+4. Add User Story 3 → Test independently → GitHub repos listed
+5. Add User Story 4 → Test independently → UI shows git metadata
+6. Add User Story 5 → Test independently → Auto-discovery on startup
+7. Add Config CLI → Full configuration capability
+8. Polish → Documentation validation, E2E tests
 
-### Complete Feature
+### Parallel Team Strategy
 
-1. Full P1 delivery above
-2. Add User Story 6: Refresh (P2)
-3. Add User Story 7: Orphans (P2)
-4. Complete Polish phase
-5. Final validation against quickstart.md
+With multiple developers:
+
+1. Team completes Setup + Foundational together
+2. Once Foundational is done:
+   - Developer A: User Story 1 (local discovery)
+   - Developer B: User Story 2 (worktree detection)
+   - Developer C: Phase 8 (config CLI)
+3. After US1 complete:
+   - Developer A: User Story 3 (GitHub)
+   - Developer B: User Story 4 (UI)
+   - Developer C: User Story 5 (background discovery)
 
 ---
 
@@ -326,22 +333,7 @@ Task T040-T042: Eww widget integration (sequential after T038-T039)
 - [P] tasks = different files, no dependencies
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
+- Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
-
-## Task Metrics
-
-- **Total tasks**: 74
-- **Phase 1 (Setup)**: 5 tasks
-- **Phase 2 (Foundational)**: 9 tasks
-- **User Story 1 (Discover)**: 11 tasks
-- **User Story 2 (Create Worktree)**: 8 tasks
-- **User Story 3 (Hierarchy)**: 10 tasks
-- **User Story 4 (Delete Worktree)**: 8 tasks
-- **User Story 5 (Switch)**: 4 tasks
-- **User Story 6 (Refresh)**: 7 tasks
-- **User Story 7 (Orphans)**: 7 tasks
-- **Phase 10 (Polish)**: 5 tasks
-- **Parallel tasks**: 27 (marked with [P])
-- **Suggested MVP**: US1 + US3 + US5 (25 tasks for minimal viable hierarchy view)

@@ -1532,61 +1532,14 @@ async def query_projects_data() -> Dict[str, Any]:
         main_projects_enhanced = [enhance_project(p) for p in main_projects]
         worktrees_enhanced = [enhance_project(w) for w in worktrees]
 
-        # Feature 097 T074: Get worktrees grouped by parent repository
-        worktrees_by_parent = projects_list.get("worktrees_by_parent", {})
-        worktrees_by_parent_enhanced: Dict[str, list] = {}
-        for parent_path, wts in worktrees_by_parent.items():
-            worktrees_by_parent_enhanced[parent_path] = [enhance_project(w) for w in wts]
-
         # Combine for total count
         all_projects = main_projects_enhanced + worktrees_enhanced
-
-        # Feature 097 Option A: Use orphaned_worktrees from project_editor
-        # The editor correctly identifies orphans using bare_repo_path matching
-        orphaned_raw = projects_list.get("orphaned_worktrees", [])
-        orphaned_worktrees = [enhance_project(w) for w in orphaned_raw]
-
-        # Feature 097 T038-T043: Build repository hierarchy for expand/collapse view
-        # Group main_projects by bare_repo_path and nest their worktrees
-        repository_hierarchy: List[Dict[str, Any]] = []
-        standalone_hierarchy: List[Dict[str, Any]] = []
-
-        for project in main_projects_enhanced:
-            bare_repo = project.get("bare_repo_path")
-            source_type = project.get("source_type", "standalone")
-
-            if source_type == "repository" and bare_repo:
-                # T036: Get worktrees for this repository
-                repo_worktrees = worktrees_by_parent_enhanced.get(bare_repo, [])
-
-                # T037: Calculate has_dirty (bubble-up from worktrees)
-                repo_dirty = project.get("git_is_dirty", False)
-                for wt in repo_worktrees:
-                    if wt.get("git_is_dirty", False):
-                        repo_dirty = True
-                        break
-
-                repository_hierarchy.append({
-                    "project": project,
-                    "worktree_count": len(repo_worktrees),
-                    "has_dirty": repo_dirty,
-                    "is_expanded": True,  # Default expanded
-                    "worktrees": repo_worktrees,
-                })
-            else:
-                # Standalone or legacy projects without bare_repo_path
-                standalone_hierarchy.append(project)
 
         return {
             "status": "ok",
             "projects": all_projects,  # Combined list for backward compatibility
             "main_projects": main_projects_enhanced,
             "worktrees": worktrees_enhanced,
-            "worktrees_by_parent": worktrees_by_parent_enhanced,  # Feature 097 T074
-            "orphaned_worktrees": orphaned_worktrees,  # Feature 097 T074
-            # Feature 097 T038-T043: Hierarchical view data
-            "repository_projects": repository_hierarchy,
-            "standalone_projects": standalone_hierarchy,
             "project_count": len(all_projects),
             "active_project": active_project,
             "timestamp": current_timestamp,
@@ -1600,10 +1553,6 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
-            "worktrees_by_parent": {},  # Feature 097 T074
-            "orphaned_worktrees": [],  # Feature 097 T074
-            "repository_projects": [],  # Feature 097 T038-T043
-            "standalone_projects": [],  # Feature 097 T038-T043
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,
@@ -1617,10 +1566,6 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
-            "worktrees_by_parent": {},  # Feature 097 T074
-            "orphaned_worktrees": [],  # Feature 097 T074
-            "repository_projects": [],  # Feature 097 T038-T043
-            "standalone_projects": [],  # Feature 097 T038-T043
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,

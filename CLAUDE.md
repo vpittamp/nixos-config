@@ -454,6 +454,61 @@ jq '.applications[] | select(.name=="terminal")' ~/.config/i3/application-regist
 
 **Docs**: `/etc/nixos/specs/087-ssh-projects/quickstart.md`
 
+### Worktree-Aware Project Environment Integration (Feature 098)
+
+**Status**: ✅ IMPLEMENTED (2025-11-28)
+
+Integrates worktree/project metadata into the Sway project management workflow, providing automatic environment context for worktree-based development.
+
+**Key Features**:
+- **Automatic Worktree Detection**: Worktree projects get `I3PM_IS_WORKTREE=true`
+- **Branch Metadata**: Extract number and type from branch names (e.g., `098-feature-auth`)
+- **Parent Project Linking**: Worktrees reference their parent repository project by name
+- **Git Metadata Injection**: Branch, commit, clean status available as environment variables
+- **Status Validation**: Prevents switching to projects with missing directories
+
+**Environment Variables** (in launched applications):
+```bash
+# Worktree identity
+echo $I3PM_IS_WORKTREE        # true (only for worktree projects)
+echo $I3PM_PARENT_PROJECT     # nixos (parent project name)
+echo $I3PM_BRANCH_NUMBER      # 098
+echo $I3PM_BRANCH_TYPE        # feature
+echo $I3PM_FULL_BRANCH_NAME   # 098-integrate-new-project
+
+# Git metadata
+echo $I3PM_GIT_BRANCH         # 098-integrate-new-project
+echo $I3PM_GIT_COMMIT         # 330b569
+echo $I3PM_GIT_IS_CLEAN       # true or false
+echo $I3PM_GIT_AHEAD          # 0
+echo $I3PM_GIT_BEHIND         # 0
+```
+
+**CLI Commands**:
+```bash
+# List worktrees for a parent project
+i3pm worktree list nixos
+
+# Refresh git/branch metadata for a project
+i3pm project refresh nixos-098-integrate-new-project
+```
+
+**Branch Naming Conventions** (auto-parsed):
+| Pattern | Example | number | type |
+|---------|---------|--------|------|
+| `<number>-<type>-<desc>` | `098-feature-auth` | 098 | feature |
+| `<type>-<number>-<desc>` | `fix-123-broken` | 123 | fix |
+| `<number>-<desc>` | `078-eww-preview` | 078 | feature |
+| `<type>-<desc>` | `hotfix-critical` | - | hotfix |
+
+**Technical Details**:
+- **Branch Parser**: `home-modules/desktop/i3-project-event-daemon/models/discovery.py:parse_branch_metadata()`
+- **Parent Resolution**: `home-modules/desktop/i3-project-event-daemon/services/project_service.py:_create_from_discovery()`
+- **Environment Injection**: `scripts/app-launcher-wrapper.sh` (Feature 098 section)
+- **IPC Methods**: `worktree.list`, `project.refresh`
+
+**Docs**: `/etc/nixos/specs/098-integrate-new-project/quickstart.md`
+
 ### Declarative Workspace-to-Monitor Assignment (Feature 001)
 
 Assign workspaces to monitor roles (primary/secondary/tertiary) declaratively.
@@ -991,6 +1046,7 @@ gh auth status               # Auto-uses 1Password token
 ## ⚠️ Recent Updates (2025-11)
 
 **Key Features**:
+- **Feature 098**: Worktree-aware project environment integration with automatic branch metadata parsing, parent project linking, and git metadata injection. See `/etc/nixos/specs/098-integrate-new-project/`
 - **Feature 085**: Live window/project monitoring panel with real-time event streaming (deflisten). See `/etc/nixos/specs/085-sway-monitoring-widget/`
 - **Feature 084**: M1 hybrid multi-monitor management (local + VNC virtual displays). See `/etc/nixos/specs/084-monitor-management-solution/`
 - **Feature 083**: Multi-monitor window management with event-driven profile switching. See `/etc/nixos/specs/083-multi-monitor-window-management/`
@@ -1038,10 +1094,11 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state (BadgeState dict), no persistent storage (Constitution Principle XII: Forward-Only Development - optimal solution without legacy compatibility) (095-visual-notification-badges)
 - Python 3.11+ (daemon extensions), TypeScript/Deno 1.40+ (CLI commands) + i3ipc.aio (async Sway IPC), Pydantic 2.x (validation), Zod 3.22+ (TypeScript schemas), gh CLI (GitHub API) (097-convert-manual-projects)
 - JSON files in `~/.config/i3/projects/`, discovery config in `~/.config/i3/discovery-config.json` (097-convert-manual-projects)
-- Python 3.11+ (daemon, services), TypeScript/Deno 1.40+ (CLI) + i3ipc.aio (Sway IPC), Pydantic 2.x (validation), Zod 3.22+ (TypeScript schemas), Eww (GTK widgets) (097-convert-manual-projects)
-- JSON files in `~/.config/i3/projects/*.json` (097-convert-manual-projects)
+- Python 3.11+ (existing daemon standard per Constitution Principle X), Bash 5.0+ (app-launcher-wrapper) + i3ipc.aio (async Sway IPC), Pydantic 2.x (data validation), asyncio (event handling) (098-integrate-new-project)
+- JSON files in `~/.config/i3/projects/*.json` (Project definitions with extended worktree fields) (098-integrate-new-project)
 
 ## Recent Changes
+- 098-integrate-new-project: Worktree-aware project environment integration with BranchMetadata model, 5-pattern branch parser (number-type-desc, type-number-desc, number-desc, type-desc, standard), parent project linking by name, environment variable injection (I3PM_IS_WORKTREE, I3PM_PARENT_PROJECT, I3PM_BRANCH_NUMBER, I3PM_BRANCH_TYPE, I3PM_FULL_BRANCH_NAME, I3PM_GIT_*), status validation to prevent switching to missing projects, `i3pm worktree list` and `i3pm project refresh` CLI commands, worktree.list and project.refresh IPC methods
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)
 - 085-sway-monitoring-widget: Real-time monitoring panel with hierarchical window/workspace/project view, event-driven streaming via deflisten (<100ms latency), automatic reconnection, i3ipc.aio subscriptions, Catppuccin Mocha styling
 - 084-monitor-management-solution: M1 hybrid multi-monitor profiles (local-only/local+1vnc/local+2vnc), WayVNC integration, keyboard cycling (Mod+Shift+M)
