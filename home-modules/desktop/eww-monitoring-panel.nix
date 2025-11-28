@@ -2780,15 +2780,15 @@ in
               :orientation "h"
               :space-evenly false
               :hexpand true
-              ;; Main content area - clickable, takes remaining space leaving room for JSON trigger sibling
+              ;; Main content area - clickable, takes remaining space
               (eventbox
                 :cursor "pointer"
-                :hexpand true
+                :hexpand false
                 (box
                   :class "project-main-content"
                   :orientation "h"
                   :space-evenly false
-                  :hexpand true
+                  :hexpand false
                   ;; Icon
                   (box
                     :class "project-icon-container"
@@ -2806,14 +2806,14 @@ in
                     (label
                       :class "project-card-name"
                       :halign "start"
-                      :limit-width 15
+                      :limit-width 12
                       :truncate true
                       :text "''${project.display_name ?: project.name}"
                       :tooltip "''${project.display_name ?: project.name}")
                     (label
                       :class "project-card-path"
                       :halign "start"
-                      :limit-width 18
+                      :limit-width 14
                       :truncate true
                       :text "''${project.directory_display ?: project.directory}"
                       :tooltip "''${project.directory}"))
@@ -2833,18 +2833,23 @@ in
                       :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
                       :tooltip "Delete project"
                       (label :class "action-btn action-delete" :text "󰆴")))))
-              ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
-              ;; NO halign/width - let GTK box layout handle positioning naturally
-              (eventbox
-                :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
-                :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
-                :tooltip "Hover to view JSON"
-                (box
-                  :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
-                  :valign "center"
-                  (label
-                    :class "json-expand-icon"
-                    :text {json_hover_project == project.name ? "󰅀" : "󰅂"}))))
+        ;; JSON expand trigger icon - SIBLING at header level (like Windows tab)
+        ;; NO halign/width - let GTK box layout handle positioning naturally
+        (eventbox
+          :hexpand false
+          :halign "end"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project=''${project.name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update json_hover_project='''"
+          :tooltip "Hover to view JSON"
+          (box
+            :class {"json-expand-trigger" + (json_hover_project == project.name ? " expanded" : "")}
+            :valign "center"
+            :width 32
+            :style "margin-left: 8px;"
+            (label
+              :class "json-expand-icon"
+              :text {json_hover_project == project.name ? "󰅀" : "󰅂"}
+              :fallback ">"))))
             ;; Row 2: Git branch (full width row)
             (box
               :class "git-branch-row"
@@ -5222,15 +5227,15 @@ in
 
       .json-expand-trigger {
         padding: 4px 8px;
-        margin-left: 8px;
+        margin-left: 0px;
         border-radius: 4px;
-        background-color: rgba(137, 180, 250, 0.15);
-        border: 1px dashed rgba(137, 180, 250, 0.35); /* debug border to confirm visibility */
+        background-color: rgba(137, 180, 250, 0.20);
+        border: 1px solid rgba(250, 200, 99, 0.8); /* high-contrast debug border */
         /* GTK CSS doesn't support transition */
         opacity: 0.7;
         /* Ensure trigger doesn't get squeezed out */
-        min-width: 28px;
-        min-height: 24px;
+        min-width: 32px;
+        min-height: 26px;
       }
 
       .json-expand-trigger:hover {
@@ -5247,6 +5252,7 @@ in
         font-size: 16px;
         color: ${mocha.blue};
         min-width: 18px;
+        font-family: "JetBrainsMono Nerd Font", "NotoSans Nerd Font", monospace;
         /* GTK CSS doesn't support transition */
       }
 
