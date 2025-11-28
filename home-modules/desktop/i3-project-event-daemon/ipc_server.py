@@ -513,6 +513,10 @@ class IPCServer:
             elif method == "get_badge_state":
                 result = await self._get_badge_state()
 
+            # Feature 099: Window environment variables view
+            elif method == "window.get_env":
+                result = await self._window_get_env(params)
+
             else:
                 return {
                     "jsonrpc": "2.0",
@@ -5759,6 +5763,8 @@ class IPCServer:
                     worktree_data = {
                         "name": proj.name,
                         "display_name": proj.display_name,
+                        "directory": str(proj.directory) if hasattr(proj, 'directory') else "",
+                        "icon": proj.icon if hasattr(proj, 'icon') else "🌿",
                         "status": proj.status.value if hasattr(proj, 'status') and proj.status else "active",
                     }
 
@@ -5768,6 +5774,17 @@ class IPCServer:
                             "number": proj.branch_metadata.number,
                             "type": proj.branch_metadata.type,
                             "full_name": proj.branch_metadata.full_name,
+                        }
+
+                    # Include git_metadata if present
+                    if hasattr(proj, 'git_metadata') and proj.git_metadata:
+                        gm = proj.git_metadata
+                        worktree_data["git_metadata"] = {
+                            "branch": getattr(gm, 'current_branch', getattr(gm, 'branch', '')),
+                            "commit": getattr(gm, 'commit_hash', getattr(gm, 'commit', '')),
+                            "is_clean": getattr(gm, 'is_clean', True),
+                            "ahead": getattr(gm, 'ahead', getattr(gm, 'ahead_count', 0)),
+                            "behind": getattr(gm, 'behind', getattr(gm, 'behind_count', 0)),
                         }
 
                     worktrees.append(worktree_data)
@@ -7014,17 +7031,116 @@ class IPCServer:
     
     async def _get_badge_state(self) -> Dict[str, Any]:
         """Get all badge state.
-        
+
         Returns:
             {"badges": {str(window_id): {count, timestamp, source}}}
         """
         if not self.badge_state:
             raise ValueError("Badge state not initialized")
-            
+
         badges_dict = self.badge_state.to_eww_format()
-        
+
         logger.debug(f"[Feature 095] Retrieved badge state: {len(badges_dict)} badges")
-        
+
         return {
             "badges": badges_dict
         }
+
+    # Feature 099: Window environment variables view
+    async def _window_get_env(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get environment variables for a window by PID.
+
+        Feature 099: Window Environment Variables View for Monitoring Panel
+
+        Args:
+            params: {
+                "pid": int  # Process ID of the window
+            }
+
+        Returns:
+            {
+                "pid": int,
+                "i3pm_vars": [{"key": str, "value": str}, ...],  # I3PM_* variables
+                "other_vars": [{"key": str, "value": str}, ...],  # Other notable vars
+                "error": str | null
+            }
+        """
+        start_time = time.perf_counter()
+
+        pid = params.get("pid")
+        if not pid:
+            raise ValueError("pid parameter is required")
+
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid pid: {pid}")
+
+        try:
+            from pathlib import Path
+
+            environ_path = Path(f"/proc/{pid}/environ")
+            if not environ_path.exists():
+                return {
+                    "pid": pid,
+                    "i3pm_vars": [],
+                    "other_vars": [],
+                    "error": f"Process {pid} not found or environ not accessible"
+                }
+
+            # Read environment variables
+            environ_bytes = environ_path.read_bytes()
+            environ_str = environ_bytes.decode("utf-8", errors="ignore")
+            env_pairs = environ_str.split("\x00")
+
+            i3pm_vars = []
+            other_vars = []
+
+            # Notable non-I3PM variables to include
+            notable_keys = {"PWD", "HOME", "USER", "SHELL", "TERM", "DISPLAY", "WAYLAND_DISPLAY",
+                           "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP", "SWAYSOCK"}
+
+            for pair in env_pairs:
+                if "=" not in pair:
+                    continue
+                key, _, value = pair.partition("=")
+
+                if key.startswith("I3PM_"):
+                    i3pm_vars.append({"key": key, "value": value})
+                elif key in notable_keys:
+                    # Truncate long values for display
+                    display_value = value if len(value) <= 100 else value[:97] + "..."
+                    other_vars.append({"key": key, "value": display_value})
+
+            # Sort I3PM vars by key for consistent display
+            i3pm_vars.sort(key=lambda x: x["key"])
+            other_vars.sort(key=lambda x: x["key"])
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+
+            logger.debug(f"[Feature 099] Retrieved env for PID {pid}: "
+                        f"{len(i3pm_vars)} I3PM vars, {len(other_vars)} other vars "
+                        f"in {duration_ms:.2f}ms")
+
+            return {
+                "pid": pid,
+                "i3pm_vars": i3pm_vars,
+                "other_vars": other_vars,
+                "error": None
+            }
+
+        except PermissionError:
+            return {
+                "pid": pid,
+                "i3pm_vars": [],
+                "other_vars": [],
+                "error": f"Permission denied reading environ for PID {pid}"
+            }
+        except Exception as e:
+            logger.error(f"[Feature 099] Error reading environ for PID {pid}: {e}")
+            return {
+                "pid": pid,
+                "i3pm_vars": [],
+                "other_vars": [],
+                "error": str(e)
+            }

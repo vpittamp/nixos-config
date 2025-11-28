@@ -1787,6 +1787,57 @@ print(json.dumps(result))
     fi
   '';
 
+  # Feature 099: Fetch window environment variables via IPC
+  # This script queries the daemon for environment variables and updates Eww state
+  fetchWindowEnvScript = pkgs.writeShellScript "fetch-window-env" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    WINDOW_PID="''${1:-}"
+    WINDOW_ID="''${2:-0}"
+
+    if [[ -z "$WINDOW_PID" ]] || [[ "$WINDOW_PID" == "0" ]] || [[ "$WINDOW_PID" == "null" ]]; then
+      # No PID available - update state to show error
+      $EWW_CMD update env_window_id="$WINDOW_ID"
+      $EWW_CMD update env_loading=false
+      $EWW_CMD update env_error="No process ID available for this window"
+      $EWW_CMD update env_i3pm_vars="[]"
+      $EWW_CMD update env_other_vars="[]"
+      exit 0
+    fi
+
+    # Set loading state
+    $EWW_CMD update env_window_id="$WINDOW_ID"
+    $EWW_CMD update env_loading=true
+    $EWW_CMD update env_error=""
+
+    # Query daemon for environment variables
+    SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [[ ! -S "$SOCKET" ]]; then
+      $EWW_CMD update env_loading=false
+      $EWW_CMD update env_error="Daemon not running"
+      $EWW_CMD update env_i3pm_vars="[]"
+      $EWW_CMD update env_other_vars="[]"
+      exit 0
+    fi
+
+    # Send JSON-RPC request and parse response
+    RESPONSE=$(${pkgs.coreutils}/bin/printf '{"jsonrpc":"2.0","method":"window.get_env","params":{"pid":%s},"id":1}\n' "$WINDOW_PID" \
+      | ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$SOCKET" 2>/dev/null || echo '{"error":"Connection failed"}')
+
+    # Extract result using jq
+    ERROR=$(${pkgs.jq}/bin/jq -r '.result.error // .error.message // ""' <<< "$RESPONSE")
+    I3PM_VARS=$(${pkgs.jq}/bin/jq -c '.result.i3pm_vars // []' <<< "$RESPONSE")
+    OTHER_VARS=$(${pkgs.jq}/bin/jq -c '.result.other_vars // []' <<< "$RESPONSE")
+
+    # Update Eww state
+    $EWW_CMD update env_loading=false
+    $EWW_CMD update env_error="$ERROR"
+    $EWW_CMD update env_i3pm_vars="$I3PM_VARS"
+    $EWW_CMD update env_other_vars="$OTHER_VARS"
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -1938,6 +1989,18 @@ in
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
       (defvar copied_window_id 0)
+
+      ;; Feature 099: Environment variables view state
+      ;; Window ID whose env vars are being displayed (0 = none)
+      (defvar env_window_id 0)
+      ;; True while fetching env vars from daemon
+      (defvar env_loading false)
+      ;; Error message from env fetch (empty = no error)
+      (defvar env_error "")
+      ;; Array of I3PM_* variables: [{key, value}, ...]
+      (defvar env_i3pm_vars "[]")
+      ;; Array of other notable variables: [{key, value}, ...]
+      (defvar env_other_vars "[]")
 
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
@@ -2389,7 +2452,18 @@ in
                 :valign "center"
                 (label
                   :class "json-expand-icon"
-                  :text {hover_window_id == window.id ? "󰅀" : "󰅂"}))))
+                  :text {hover_window_id == window.id ? "󰅀" : "󰅂"})))
+            ;; Feature 099: Environment variables trigger icon - click to expand
+            (eventbox
+              :cursor "pointer"
+              :onclick "${fetchWindowEnvScript} ''${window.pid ?: 0} ''${window.id} &"
+              :tooltip "Click to view environment variables"
+              (box
+                :class {"env-expand-trigger" + (env_window_id == window.id ? " expanded" : "")}
+                :valign "center"
+                (label
+                  :class "env-expand-icon"
+                  :text {env_window_id == window.id ? "󰘵" : "󰀫"}))))
           ;; Inline action bar (slides down on right-click)
           (revealer
             :reveal {context_menu_window_id == window.id}
@@ -2464,7 +2538,125 @@ in
                     :class "json-content"
                     :halign "start"
                     :markup "''${window.json_repr}"
-                    :wrap false)))))))
+                    :wrap false)))))
+          ;; Feature 099: Environment variables panel (slides down when env icon is clicked)
+          (revealer
+            :reveal {env_window_id == window.id}
+            :transition "slidedown"
+            :duration "150ms"
+            (box
+              :class "window-env-panel"
+              :orientation "v"
+              :space-evenly false
+              ;; Header with title and close button
+              (box
+                :class "env-panel-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "env-panel-title"
+                  :halign "start"
+                  :hexpand true
+                  :text "󰀫 Environment Variables (PID: ''${window.pid ?: 'N/A'})")
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update env_window_id=0"
+                  :tooltip "Close"
+                  (label
+                    :class "env-close-btn"
+                    :text "󰅖")))
+              ;; Loading state
+              (revealer
+                :reveal {env_loading}
+                :transition "slidedown"
+                :duration "100ms"
+                (box
+                  :class "env-loading"
+                  :halign "center"
+                  (label :text "󰦖 Loading environment...")))
+              ;; Error state
+              (revealer
+                :reveal {env_error != ""}
+                :transition "slidedown"
+                :duration "100ms"
+                (box
+                  :class "env-error"
+                  :halign "start"
+                  (label :text "󰀦 ''${env_error}")))
+              ;; I3PM variables section (prominent display)
+              (revealer
+                :reveal {!env_loading && env_error == "" && arraylength(env_i3pm_vars) > 0}
+                :transition "slidedown"
+                :duration "100ms"
+                (box
+                  :class "env-section env-section-i3pm"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "env-section-title"
+                    :halign "start"
+                    :text "I3PM Variables")
+                  (scroll
+                    :vscroll true
+                    :hscroll false
+                    :vexpand false
+                    :height 120
+                    (box
+                      :class "env-vars-list"
+                      :orientation "v"
+                      :space-evenly false
+                      (for var in {env_i3pm_vars}
+                        (box
+                          :class "env-var-row"
+                          :orientation "h"
+                          :space-evenly false
+                          (label
+                            :class "env-var-key"
+                            :halign "start"
+                            :text "''${var.key}")
+                          (label
+                            :class "env-var-value"
+                            :halign "start"
+                            :hexpand true
+                            :limit-width 50
+                            :text "''${var.value}")))))))
+              ;; Other variables section (collapsed by default)
+              (revealer
+                :reveal {!env_loading && env_error == "" && arraylength(env_other_vars) > 0}
+                :transition "slidedown"
+                :duration "100ms"
+                (box
+                  :class "env-section env-section-other"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "env-section-title"
+                    :halign "start"
+                    :text "Other Variables (''${arraylength(env_other_vars)})")
+                  (scroll
+                    :vscroll true
+                    :hscroll false
+                    :vexpand false
+                    :height 100
+                    (box
+                      :class "env-vars-list"
+                      :orientation "v"
+                      :space-evenly false
+                      (for var in {env_other_vars}
+                        (box
+                          :class "env-var-row"
+                          :orientation "h"
+                          :space-evenly false
+                          (label
+                            :class "env-var-key env-var-key-other"
+                            :halign "start"
+                            :text "''${var.key}")
+                          (label
+                            :class "env-var-value env-var-value-other"
+                            :halign "start"
+                            :hexpand true
+                            :limit-width 50
+                            :text "''${var.value}")))))))))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
@@ -5272,6 +5464,147 @@ in
         font-size: 10px;
         padding: 10px 12px;
         background-color: rgba(30, 30, 46, 0.4);
+      }
+
+      /* Feature 099: Environment Variables Panel */
+      .env-expand-trigger {
+        padding: 2px 6px;
+        margin: 0 2px;
+        border-radius: 4px;
+        transition: all 150ms ease;
+        background-color: transparent;
+      }
+
+      .env-expand-trigger:hover {
+        background-color: rgba(148, 226, 213, 0.15);
+      }
+
+      .env-expand-trigger.expanded {
+        background-color: rgba(148, 226, 213, 0.25);
+      }
+
+      .env-expand-icon {
+        font-size: 12px;
+        color: ${mocha.teal};
+        transition: transform 150ms ease;
+      }
+
+      .env-expand-trigger:hover .env-expand-icon {
+        color: ${mocha.green};
+      }
+
+      .window-env-panel {
+        background-color: rgba(24, 24, 37, 0.98);
+        border: 2px solid ${mocha.teal};
+        border-radius: 8px;
+        padding: 0;
+        margin: 4px 0 8px 0;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(148, 226, 213, 0.3);
+      }
+
+      .env-panel-header {
+        background-color: rgba(148, 226, 213, 0.15);
+        border-bottom: 1px solid ${mocha.teal};
+        padding: 8px 12px;
+        border-radius: 6px 6px 0 0;
+      }
+
+      .env-panel-title {
+        font-size: 11px;
+        font-weight: bold;
+        color: ${mocha.teal};
+      }
+
+      .env-close-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        background-color: rgba(243, 139, 168, 0.2);
+        color: ${mocha.red};
+        border: 1px solid ${mocha.red};
+        border-radius: 4px;
+        min-width: 24px;
+      }
+
+      .env-close-btn:hover {
+        background-color: rgba(243, 139, 168, 0.4);
+        box-shadow: 0 0 8px rgba(243, 139, 168, 0.4);
+      }
+
+      .env-loading {
+        padding: 16px;
+        color: ${mocha.subtext0};
+        font-size: 12px;
+        font-style: italic;
+      }
+
+      .env-error {
+        padding: 12px;
+        color: ${mocha.red};
+        font-size: 11px;
+        background-color: rgba(243, 139, 168, 0.1);
+        border-radius: 0 0 6px 6px;
+      }
+
+      .env-section {
+        padding: 8px 12px;
+      }
+
+      .env-section-i3pm {
+        background-color: rgba(148, 226, 213, 0.05);
+        border-bottom: 1px solid rgba(148, 226, 213, 0.2);
+      }
+
+      .env-section-other {
+        background-color: rgba(30, 30, 46, 0.4);
+      }
+
+      .env-section-title {
+        font-size: 10px;
+        font-weight: bold;
+        color: ${mocha.teal};
+        margin-bottom: 6px;
+      }
+
+      .env-section-other .env-section-title {
+        color: ${mocha.subtext0};
+      }
+
+      .env-vars-list {
+        padding: 0;
+      }
+
+      .env-var-row {
+        padding: 3px 0;
+        border-bottom: 1px solid rgba(108, 112, 134, 0.1);
+      }
+
+      .env-var-row:last-child {
+        border-bottom: none;
+      }
+
+      .env-var-key {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 10px;
+        font-weight: bold;
+        color: ${mocha.green};
+        min-width: 180px;
+        padding-right: 8px;
+      }
+
+      .env-var-key-other {
+        color: ${mocha.overlay0};
+        font-weight: normal;
+      }
+
+      .env-var-value {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 10px;
+        color: ${mocha.peach};
+      }
+
+      .env-var-value-other {
+        color: ${mocha.subtext0};
       }
 
       /* Error State (T042) */

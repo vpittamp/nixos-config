@@ -129,11 +129,12 @@ BRANCH_TYPE=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.type // ""')
 FULL_BRANCH_NAME=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.full_name // ""')
 
 # Feature 098: Extract git metadata
-GIT_BRANCH=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.current_branch // ""')
-GIT_COMMIT=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.commit_hash // ""')
+# Note: IPC response uses 'branch'/'commit'/'ahead'/'behind' (not current_branch/commit_hash/ahead_count/behind_count)
+GIT_BRANCH=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.branch // ""')
+GIT_COMMIT=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.commit // ""')
 GIT_IS_CLEAN=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.is_clean // ""')
-GIT_AHEAD=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.ahead_count // ""')
-GIT_BEHIND=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.behind_count // ""')
+GIT_AHEAD=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.ahead // ""')
+GIT_BEHIND=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.behind // ""')
 
 log "DEBUG" "Project name: ${PROJECT_NAME:-<none>}"
 log "DEBUG" "Project directory: ${PROJECT_DIR:-<none>}"
