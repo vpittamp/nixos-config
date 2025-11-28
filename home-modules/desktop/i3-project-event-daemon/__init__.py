@@ -15,3 +15,4 @@ Version: 1.0.0
 
 __version__ = "1.0.0"
 # Rebuild trigger
+# Version 1.13.0 - Feature 098: worktree.list IPC method enhancements

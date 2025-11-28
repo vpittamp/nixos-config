@@ -216,7 +216,7 @@ async function listWorktreesForParent(parentName: string, asJson: boolean): Prom
         };
       }>;
       count: number;
-    }>("worktree.list", { parent_name: parentName });
+    }>("worktree.list", { parent_project: parentName });
 
     if (asJson) {
       // Convert to WorktreeListItem format for consistency

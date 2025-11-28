@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.12.0";  # Feature 097: Added discovery.py module (force rebuild after permission fix)
+    version = "1.13.1";  # Feature 098: Fixed GitMetadata attribute names (current_branch, commit_hash)
     src = daemonSrc;
 
     installPhase = ''
