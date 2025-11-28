@@ -1,156 +1,221 @@
-# Quickstart: Git-Based Project Discovery
+# Quickstart: Git-Centric Project and Worktree Management
 
 **Feature**: 097-convert-manual-projects
-**Date**: 2025-11-26
+**Date**: 2025-11-28 (Major revision for git-centric architecture)
 
 ## Overview
 
-This feature converts i3pm project management from manual JSON creation to automatic git repository discovery. Instead of running `i3pm project create` for each repository, you can now discover all git repositories in a directory with a single command.
+This feature redesigns i3pm project management around git's native architecture. The key insight is that `bare_repo_path` (GIT_COMMON_DIR) is the canonical identifier that groups all related worktrees.
+
+**Architecture Vision**: Git is the source of truth. Projects are grouped by their shared bare repository path.
+
+## Key Concepts
+
+### Three Project Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Repository** | Primary entry for a bare repo (ONE per repo) | "nixos" → /etc/nixos |
+| **Worktree** | Feature branch linked to a Repository | "097-feature" → /home/user/nixos-097-feature |
+| **Standalone** | Non-git directory or simple repo | "notes" → /home/user/notes |
+
+### Relationship Model
+
+```
+Bare Repo: /home/user/nixos-config.git
+    │
+    ├── Repository Project: "nixos" → /etc/nixos (main branch)
+    │       ├── Worktree: "097-feature" → /home/user/nixos-097-feature
+    │       ├── Worktree: "087-ssh" → /home/user/nixos-087-ssh
+    │       └── Worktree: "085-widget" → /home/user/nixos-085-widget
+```
 
 ## Quick Commands
 
-### Discover Local Repositories
+### Discover and Register a Project
 
 ```bash
-# Discover repositories in configured scan paths
+# Discover from current directory
 i3pm project discover
 
-# Discover repositories in specific paths
-i3pm project discover --path ~/projects --path /etc/nixos
+# Discover specific path
+i3pm project discover --path /etc/nixos
 
-# Preview what would be discovered (dry run)
-i3pm project discover --dry-run
+# With custom name and icon
+i3pm project discover --path ~/my-app --name "My App" --icon "🚀"
 ```
 
-### Include GitHub Repositories
+### Create a Worktree
 
 ```bash
-# Discover local repos AND list GitHub repos
-i3pm project discover --github
+# Create new branch and worktree
+i3pm worktree create 098-new-feature
 
-# List only GitHub repos (no local discovery)
-i3pm project list --github
+# Checkout existing branch as worktree
+i3pm worktree create hotfix-payment --checkout
+
+# Custom directory name
+i3pm worktree create feature-ui --name ui-work
+```
+
+### Delete a Worktree
+
+```bash
+# Remove worktree (confirmation required)
+i3pm worktree remove 097-feature
+
+# Force remove (has uncommitted changes)
+i3pm worktree remove 097-feature --force
 ```
 
 ### Refresh Git Metadata
 
 ```bash
-# Refresh git status for all projects
-i3pm project refresh
+# Refresh all projects
+i3pm project refresh --all
 
 # Refresh specific project
 i3pm project refresh nixos
 ```
 
-### Configure Discovery
+### List Projects with Hierarchy
 
 ```bash
-# View current discovery configuration
-i3pm config discovery show
+# Default hierarchical view
+i3pm project list
 
-# Add a new scan path
-i3pm config discovery add-path ~/work
-
-# Remove a scan path
-i3pm config discovery remove-path ~/old-projects
-
-# Enable automatic discovery on daemon startup
-i3pm config discovery set --auto-discover=true
+# JSON output for scripting
+i3pm project list --json
 ```
 
-## What Gets Discovered
+Output:
+```
+Repository Projects:
+▼ 🔧 nixos (5 worktrees)
+    ├─ 🌿 097-feature ● (dirty)
+    ├─ 🌿 087-ssh-keys
+    └─ 🌿 085-widget
 
-### Standard Git Repositories
-- Directories containing `.git/` directory
-- Extracts: branch, commit, remote URL, clean/dirty status
-- Creates project with inferred icon based on language
+Standalone Projects:
+  📁 notes
 
-### Git Worktrees
-- Directories with `.git` file (not directory)
-- Automatically linked to parent repository
-- Appears in Projects tab with worktree indicator
+Orphaned Worktrees:
+  ⚠️ 042-old-feature (parent missing)
+```
 
-### GitHub Repositories (Optional)
-- Requires `gh` CLI authenticated
-- Lists remote repos not cloned locally
-- Shown with "remote" badge in UI
+## Monitoring Panel (Projects Tab)
 
-## Projects Tab Enhancements
+Access via **Alt+2** when panel is visible (**Mod+M** to toggle panel).
 
-The monitoring panel Projects tab (Alt+2) now displays:
+### Panel Features
 
-### Grouping
-- **Repositories**: Standard git repos
-- **Worktrees**: Feature branches linked to parent repos
-- **Remote Only**: GitHub repos not yet cloned
+- **Hierarchical Display**: Repository Projects are expandable containers
+- **Worktree Nesting**: Worktrees appear indented under parent
+- **Worktree Count**: Shows "(5 worktrees)" badge on collapsed parent
+- **Dirty Bubble-up**: If any worktree is dirty, parent shows aggregate indicator
 
-### Git Status Indicators
-- **Branch name**: Current branch displayed
-- **Modified badge**: Yellow dot if uncommitted changes
-- **Ahead/behind**: "3" or "2" count if out of sync with upstream
+### Panel Actions
 
-### Source Type Badge
-- : Discovered repository
-- : Git worktree
-- : GitHub-only (not cloned)
-- : Manually created (legacy)
+| Button | Action |
+|--------|--------|
+| **[+ Create]** | Create new worktree (on Repository Projects) |
+| **[Switch]** | Switch to project |
+| **[Delete]** | Delete worktree (with confirmation) |
+| **[Refresh]** | Refresh git metadata |
+| **[Recover]** | Restore orphaned worktree (creates Repository Project) |
+
+### Visual Indicators
+
+- **●** (yellow dot): Uncommitted changes (dirty)
+- **⚠** (warning): Orphaned worktree or missing directory
+- **▼/►**: Expand/collapse worktree list
 
 ## Workflow Examples
 
-### New Developer Setup
+### Setting Up a New Repository Project
 
 ```bash
-# Clone your projects repo
-git clone git@github.com:myorg/projects.git ~/projects
-
-# Discover all repos in projects directory
-i3pm project discover --path ~/projects
-
-# All repos now appear in project switcher (Win+P)
-```
-
-### Working with Feature Branches
-
-```bash
-# Create worktree using standard git
+# Navigate to main repository
 cd /etc/nixos
-git worktree add ../nixos-097-feature 097-feature-branch
 
-# Worktree automatically discovered on next discovery
+# Discover and register as Repository Project
 i3pm project discover
 
-# Or wait for daemon startup (if auto-discover enabled)
+# Output: Created repository project "nixos"
+#         bare_repo_path: /home/user/nixos-config.git
 ```
 
-### Syncing with GitHub
+### Creating a Feature Branch Worktree
 
 ```bash
-# See what repos you have on GitHub vs locally
-i3pm project discover --github --dry-run
+# From any worktree of the repository
+i3pm worktree create 098-new-feature
 
-# Discover local repos and show uncloned GitHub repos
-i3pm project discover --github
+# Automatically:
+# 1. Creates git worktree at /home/user/nixos-098-new-feature
+# 2. Registers Worktree Project linked to parent "nixos"
+# 3. Shows in panel under nixos hierarchy
+
+# Switch to the new worktree
+i3pm project switch 098-new-feature
 ```
 
-## Configuration File
+### Finishing Work on a Worktree
 
-Discovery settings stored in `~/.config/i3/discovery-config.json`:
+```bash
+# Merge your changes (in main worktree)
+cd /etc/nixos
+git merge 098-new-feature
 
-```json
-{
-  "scan_paths": [
-    "/home/vpittamp/projects",
-    "/etc/nixos"
-  ],
-  "exclude_patterns": [
-    "node_modules",
-    "vendor",
-    ".cache"
-  ],
-  "auto_discover_on_startup": false,
-  "max_depth": 3
-}
+# Delete the worktree
+i3pm worktree remove 098-new-feature
+
+# Automatically:
+# 1. Runs git worktree remove
+# 2. Deletes project JSON file
+# 3. Updates panel hierarchy
 ```
+
+### Recovering an Orphaned Worktree
+
+```bash
+# If parent Repository Project was deleted, worktree shows as orphaned
+
+# From panel: Click [Recover] on orphaned worktree
+# OR from CLI:
+i3pm project discover --path /home/user/nixos-097-feature
+
+# Creates new Repository Project from bare_repo_path
+# Re-parents the orphaned worktree automatically
+```
+
+## How It Works
+
+### bare_repo_path Discovery
+
+When you run `i3pm project discover` or `i3pm worktree create`:
+
+```bash
+# Git command used internally
+git rev-parse --git-common-dir
+# Returns: /home/user/nixos-config.git (for all worktrees of this repo)
+```
+
+This path is the **canonical identifier** that groups all related projects.
+
+### Project Type Determination
+
+1. **Not a git repo?** → Standalone (if `--standalone` flag used)
+2. **Has a Repository Project with same bare_repo_path?** → Worktree
+3. **First project for this bare_repo_path?** → Repository
+
+### Orphan Detection
+
+On every panel refresh:
+1. Find all `source_type: repository` projects
+2. Get their `bare_repo_path` values
+3. For each `source_type: worktree` project, check if its `bare_repo_path` matches any repository
+4. No match? → Mark as `status: orphaned`
 
 ## Edge Cases
 
@@ -159,64 +224,62 @@ If two repos have the same directory name, the second gets a numeric suffix:
 - `my-app` (first discovered)
 - `my-app-2` (second discovered)
 
-Rename via project edit if desired.
-
 ### Missing Repositories
 If a repository directory is removed:
-- Project marked as "missing" (yellow warning badge)
-- Project remains in list until explicitly deleted
+- Project marked as `status: missing`
+- Remains in list until explicitly deleted
 - Automatically restored if directory reappears
 
-### Symbolic Links
-Symbolic links are resolved to their real path. If two symlinks point to the same repo, only one project is created.
-
-### Submodules
-Git submodules are not registered as separate projects. Only top-level repositories are discovered.
+### One Repository Project per Bare Repo
+- Enforced constraint: Cannot create duplicate Repository Projects
+- If you try to discover a path that already has a Repository Project, it creates a Worktree instead
 
 ## Troubleshooting
 
-### Discovery returns no results
+### Project Not Discovered
 
 ```bash
-# Check scan paths exist
-ls -la ~/projects /etc/nixos
+# Check if path is a git repo
+git -C /path/to/repo rev-parse --git-common-dir
 
-# Verify git repos exist
-find ~/projects -maxdepth 2 -name ".git" -type d
-
-# Check config
-i3pm config discovery show
+# Check existing projects with same bare_repo_path
+i3pm project list --json | jq '.[] | select(.bare_repo_path)'
 ```
 
-### GitHub discovery fails
+### Worktree Not Linked to Parent
 
 ```bash
-# Check gh CLI authentication
-gh auth status
+# Check bare_repo_path matches
+i3pm project list --json | jq '.[] | {name, bare_repo_path}'
 
-# Login if needed
-gh auth login
+# If bare_repo_path differs, the projects won't be grouped
 ```
 
-### Projects not showing in panel
+### Panel Not Showing Hierarchy
 
 ```bash
 # Restart monitoring panel
 systemctl --user restart eww-monitoring-panel
 
-# Check daemon connection
+# Check daemon for project data
 i3pm daemon status
 ```
 
 ## Performance Notes
 
-- **Local discovery**: <30 seconds for 50 repositories
-- **GitHub listing**: <5 seconds for 100 repos
-- **Startup discovery**: Runs async, doesn't block daemon
+- **Worktree creation**: <10 seconds (git operation + project registration)
+- **Worktree deletion**: <5 seconds (git operation + project deletion)
+- **Metadata refresh**: <2 seconds per project
+- **Panel update**: <200ms after project changes
 
 ## Related Commands
 
-- `i3pm project list` - List all projects
-- `i3pm project switch <name>` - Switch to project
-- `i3pm project delete <name>` - Delete project
-- `i3pm worktree list` - List worktrees (existing command)
+| Command | Description |
+|---------|-------------|
+| `i3pm project list` | List all projects with hierarchy |
+| `i3pm project switch <name>` | Switch to project |
+| `i3pm project discover` | Discover and register project |
+| `i3pm project refresh` | Refresh git metadata |
+| `i3pm worktree create` | Create new worktree |
+| `i3pm worktree remove` | Delete worktree |
+| `i3pm worktree list` | List worktrees for current repo |

@@ -1038,6 +1038,8 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state (BadgeState dict), no persistent storage (Constitution Principle XII: Forward-Only Development - optimal solution without legacy compatibility) (095-visual-notification-badges)
 - Python 3.11+ (daemon extensions), TypeScript/Deno 1.40+ (CLI commands) + i3ipc.aio (async Sway IPC), Pydantic 2.x (validation), Zod 3.22+ (TypeScript schemas), gh CLI (GitHub API) (097-convert-manual-projects)
 - JSON files in `~/.config/i3/projects/`, discovery config in `~/.config/i3/discovery-config.json` (097-convert-manual-projects)
+- Python 3.11+ (daemon, services), TypeScript/Deno 1.40+ (CLI) + i3ipc.aio (Sway IPC), Pydantic 2.x (validation), Zod 3.22+ (TypeScript schemas), Eww (GTK widgets) (097-convert-manual-projects)
+- JSON files in `~/.config/i3/projects/*.json` (097-convert-manual-projects)
 
 ## Recent Changes
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)

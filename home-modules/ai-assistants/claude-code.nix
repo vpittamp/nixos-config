@@ -5,6 +5,10 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   claudeCodePackage = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
+  # Claude Desktop for Linux (unofficial community package)
+  # Use claude-desktop-with-fhs for MCP server support (npx, uvx, docker)
+  claudeDesktopPackage = inputs.claude-desktop.packages.${pkgs.system}.claude-desktop-with-fhs or null;
+
   # Claude Code's home-manager module has Chromium dependencies that break on Darwin
   # Only enable on Linux where Chromium is available
   enableClaudeCode = pkgs.stdenv.isLinux;
@@ -35,6 +39,12 @@ in
 lib.mkIf enableClaudeCode {
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
+
+  # Install Claude Desktop if available
+  # Provides native desktop app with git worktree support for parallel sessions
+  home.packages = lib.optionals (claudeDesktopPackage != null) [
+    claudeDesktopPackage
+  ];
 
   # Claude Code configuration with home-manager module
   # Only enabled on Linux due to Chromium dependencies in the module
@@ -165,6 +175,50 @@ lib.mkIf enableClaudeCode {
       # Custom memories - persistent instructions for Claude Code
       # These override default behaviors and provide environment-specific guidance
       memories = [
+        {
+          name = "extended-thinking-default";
+          content = ''
+            # Extended Thinking Default Behavior
+
+            ## Always Use Extended Thinking
+
+            You should use extended thinking by default for all non-trivial tasks. Extended thinking gives you enhanced reasoning capabilities for complex tasks by allowing you to reason step-by-step before delivering your final answer.
+
+            ### When to Use Extended Thinking
+
+            **ALWAYS use extended thinking for:**
+            - Code implementation and refactoring
+            - Debugging and error analysis
+            - Architecture decisions
+            - Complex configuration changes
+            - Multi-step tasks
+            - Any task requiring careful planning
+
+            **You may skip extended thinking for:**
+            - Simple file reads
+            - Basic questions with obvious answers
+            - Single-line changes
+            - Confirmations and acknowledgments
+
+            ### Thinking Budget Guidelines
+
+            - **Standard tasks**: Use "think" level (moderate budget)
+            - **Complex tasks** (multi-file changes, debugging): Use "think hard" level
+            - **Critical tasks** (architecture, security, major refactoring): Use "think harder" or "ultrathink" level
+
+            ### Benefits
+
+            Extended thinking enables:
+            - More thorough analysis of complex problems
+            - Better consideration of edge cases
+            - Improved code quality and correctness
+            - Reduced errors in multi-step operations
+
+            ### Implementation Note
+
+            This is the user's preference for thorough, well-reasoned responses. Always err on the side of using extended thinking rather than rushing to an answer.
+          '';
+        }
         {
           name = "nixos-interactive-bash";
           content = ''

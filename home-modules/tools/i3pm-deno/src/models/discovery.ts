@@ -1,11 +1,12 @@
 /**
- * Discovery Models for Feature 097: Git-Based Project Discovery and Management
+ * Discovery Models for Feature 097: Git-Centric Project and Worktree Management
  *
  * TypeScript/Zod schemas for:
  * - Git metadata extraction
  * - Repository and worktree discovery
  * - Scan configuration
  * - Discovery results
+ * - Panel display models
  *
  * Per Constitution Principle XIII: Deno CLI Standards with Zod 3.22+
  */
@@ -13,19 +14,27 @@
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 // ============================================================================
-// Enums
+// Enums (Feature 097 - Git-centric architecture)
 // ============================================================================
 
 /**
- * Classification of how a project was created/discovered.
+ * Classification of project type (Feature 097).
+ *
+ * - repository: Primary entry point for a bare repo (ONE per bare_repo_path)
+ * - worktree: Git worktree linked to a Repository Project
+ * - standalone: Non-git directory OR simple repo with no worktrees
  */
-export const SourceTypeSchema = z.enum(["local", "worktree", "remote", "manual"]);
+export const SourceTypeSchema = z.enum(["repository", "worktree", "standalone"]);
 export type SourceType = z.infer<typeof SourceTypeSchema>;
 
 /**
- * Current availability status of a project.
+ * Current availability status (Feature 097).
+ *
+ * - active: Directory exists and is accessible
+ * - missing: Directory no longer exists or inaccessible
+ * - orphaned: Worktree with no matching Repository Project
  */
-export const ProjectStatusSchema = z.enum(["active", "missing"]);
+export const ProjectStatusSchema = z.enum(["active", "missing", "orphaned"]);
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
 
 // ============================================================================
@@ -33,7 +42,7 @@ export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
 // ============================================================================
 
 /**
- * Git-specific metadata attached to discovered projects.
+ * Git-specific metadata attached to projects (Feature 097).
  */
 export const GitMetadataSchema = z.object({
   /** Branch name or "HEAD" if detached */
@@ -57,11 +66,11 @@ export const GitMetadataSchema = z.object({
   /** Origin remote URL */
   remote_url: z.string().nullable().default(null),
 
-  /** Dominant programming language */
-  primary_language: z.string().nullable().default(null),
+  /** Most recent file modification timestamp */
+  last_modified: z.string().datetime().nullable().default(null),
 
-  /** Most recent commit timestamp */
-  last_commit_date: z.string().datetime().nullable().default(null),
+  /** When metadata was last refreshed */
+  last_refreshed: z.string().datetime().nullable().default(null),
 });
 
 export type GitMetadata = z.infer<typeof GitMetadataSchema>;
@@ -266,28 +275,127 @@ export const GitHubListResultSchema = z.object({
 export type GitHubListResult = z.infer<typeof GitHubListResultSchema>;
 
 // ============================================================================
-// Extended Project Model Fields
+// Feature 097: Unified Project Schema
 // ============================================================================
 
 /**
- * Extended fields for Project model to support discovery.
- * These fields are added to the existing Project interface.
+ * Remote SSH configuration for projects.
  */
-export const ProjectDiscoveryFieldsSchema = z.object({
-  /** How project was created */
-  source_type: SourceTypeSchema.default("manual"),
-
-  /** Project availability */
-  status: ProjectStatusSchema.default("active"),
-
-  /** Git-specific data (null for non-git projects) */
-  git_metadata: GitMetadataSchema.nullable().default(null),
-
-  /** When first discovered */
-  discovered_at: z.string().datetime().nullable().default(null),
+export const RemoteConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  host: z.string().default(""),
+  user: z.string().default(""),
+  remote_dir: z.string().default(""),
+  port: z.number().int().min(1).max(65535).default(22),
 });
 
-export type ProjectDiscoveryFields = z.infer<typeof ProjectDiscoveryFieldsSchema>;
+export type RemoteConfig = z.infer<typeof RemoteConfigSchema>;
+
+/**
+ * Unified Project model for Feature 097 git-centric architecture.
+ *
+ * This is the single schema for all project types: repository, worktree, standalone.
+ */
+export const ProjectSchema = z.object({
+  /** Unique project identifier (slug) */
+  name: z.string().min(1).max(64),
+
+  /** Human-readable display name */
+  display_name: z.string().min(1),
+
+  /** Absolute path to project directory */
+  directory: z.string().min(1),
+
+  /** Emoji icon for visual identification */
+  icon: z.string().default("📁"),
+
+  /** Window hiding behavior */
+  scope: z.enum(["scoped", "global"]).default("scoped"),
+
+  /** Remote SSH configuration */
+  remote: RemoteConfigSchema.nullable().default(null),
+
+  // Feature 097: Git-centric fields
+  /** Project type: repository (primary), worktree (linked), or standalone (non-git) */
+  source_type: SourceTypeSchema.default("standalone"),
+
+  /** Availability status: active, missing, or orphaned */
+  status: ProjectStatusSchema.default("active"),
+
+  /** GIT_COMMON_DIR - canonical identifier for all worktrees of a repo */
+  bare_repo_path: z.string().nullable().default(null),
+
+  /** For worktrees: name of the parent Repository Project */
+  parent_project: z.string().nullable().default(null),
+
+  /** Cached git state */
+  git_metadata: GitMetadataSchema.nullable().default(null),
+
+  /** App window classes scoped to this project */
+  scoped_classes: z.array(z.string()).default([]),
+
+  /** When project was created */
+  created_at: z.string().datetime().nullable().default(null),
+
+  /** When project was last modified */
+  updated_at: z.string().datetime().nullable().default(null),
+}).refine(
+  (data) => {
+    // Feature 097 T005 equivalent: Worktree projects must have parent_project
+    if (data.source_type === "worktree" && !data.parent_project) {
+      return false;
+    }
+    return true;
+  },
+  { message: "Worktree projects must have parent_project set" }
+);
+
+export type Project = z.infer<typeof ProjectSchema>;
+
+// ============================================================================
+// Feature 097: Panel Display Models
+// ============================================================================
+
+/**
+ * Repository project with its child worktrees for panel display (T014 equivalent).
+ */
+export const RepositoryWithWorktreesSchema = z.object({
+  /** The repository project (source_type=repository) */
+  project: ProjectSchema,
+
+  /** Number of child worktrees */
+  worktree_count: z.number().int().nonnegative().default(0),
+
+  /** True if any worktree has uncommitted changes */
+  has_dirty: z.boolean().default(false),
+
+  /** UI expansion state */
+  is_expanded: z.boolean().default(true),
+
+  /** Child worktree projects */
+  worktrees: z.array(ProjectSchema).default([]),
+});
+
+export type RepositoryWithWorktrees = z.infer<typeof RepositoryWithWorktreesSchema>;
+
+/**
+ * Complete panel data structure (T013 equivalent).
+ */
+export const PanelProjectsDataSchema = z.object({
+  /** Repository projects with their grouped worktrees */
+  repository_projects: z.array(RepositoryWithWorktreesSchema).default([]),
+
+  /** Standalone projects (non-git or simple repos) */
+  standalone_projects: z.array(ProjectSchema).default([]),
+
+  /** Worktrees with no matching Repository Project */
+  orphaned_worktrees: z.array(ProjectSchema).default([]),
+
+  /** Currently active project name */
+  active_project: z.string().nullable().default(null),
+});
+
+export type PanelProjectsData = z.infer<typeof PanelProjectsDataSchema>;
 
 // ============================================================================
 // RPC Request/Response Types
