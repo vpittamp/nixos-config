@@ -10,7 +10,7 @@ let
   # Feature 059: Unified window view - show all windows including scratchpad by default
   # Feature 060: Project-centric tree view - group windows by project
   # Feature 061: Unified mark format - only project:NAME:ID
-  version = "2.12.0";  # Feature 077: Add worktree remove command with soft/hard delete
+  version = "2.14.0";  # Feature 098: Consolidate i3pm directories, add parent filtering to worktree list
 
   # i3pm Deno CLI - Runtime wrapper (Feature 035 registry-centric rewrite)
   i3pm = pkgs.stdenv.mkDerivation {
@@ -38,7 +38,7 @@ EOF
       chmod +x $out/bin/i3pm
 
       # Feature 048: Monitor detection for multi-display VNC setup
-      cp ${./i3pm-deno/i3pm-monitors} $out/bin/i3pm-monitors
+      cp ${./i3pm/i3pm-monitors} $out/bin/i3pm-monitors
       chmod +x $out/bin/i3pm-monitors
     '';
 

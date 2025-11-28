@@ -40,8 +40,12 @@ export async function projectCommand(args: string[], flags: Record<string, unkno
         return await switchProject(String(parsed._[1] || ""), allFlags);
       case "clear":
         return await clearProject(allFlags);
+      case "refresh":
+        return await refreshProject(String(parsed._[1] || ""), allFlags);
+      case "discover":
+        return await discoverProjects(parsed._.slice(1).map(String), allFlags);
       default:
-        console.error("Usage: i3pm project <create|list|show|current|update|delete|switch|clear>");
+        console.error("Usage: i3pm project <create|list|show|current|update|delete|switch|clear|refresh|discover>");
         return 1;
     }
   } catch (error) {
@@ -359,6 +363,229 @@ async function clearProject(flags: Record<string, unknown>): Promise<number> {
       }
     }
 
+    return 0;
+  } finally {
+    client.disconnect();
+  }
+}
+
+/**
+ * Feature 098: Refresh git and branch metadata for a project
+ */
+async function refreshProject(name: string | undefined, flags: Record<string, unknown>): Promise<number> {
+  if (!name) {
+    console.error("Error: Missing project name");
+    console.error("Usage: i3pm project refresh <name>");
+    return 1;
+  }
+
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      success: boolean;
+      project: {
+        name: string;
+        git_metadata?: {
+          branch: string;
+          commit: string;
+          is_clean: boolean;
+          ahead: number;
+          behind: number;
+        };
+        branch_metadata?: {
+          number: string | null;
+          type: string | null;
+          full_name: string;
+        };
+      };
+      fields_updated: string[];
+    }>("project.refresh", { name });
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    console.log(`\n✓ Refreshed project '${name}'`);
+    console.log(`  Fields updated: ${result.fields_updated.join(", ")}`);
+
+    if (result.project.git_metadata) {
+      const meta = result.project.git_metadata;
+      const cleanStatus = meta.is_clean ? "✓ clean" : "* dirty";
+      console.log(`  Branch: ${meta.branch} ${cleanStatus}`);
+      console.log(`  Commit: ${meta.commit}`);
+      if (meta.ahead > 0 || meta.behind > 0) {
+        console.log(`  Sync: ↑${meta.ahead} ↓${meta.behind}`);
+      }
+    }
+
+    if (result.project.branch_metadata) {
+      const bm = result.project.branch_metadata;
+      console.log(`  Branch Number: ${bm.number || "none"}`);
+      console.log(`  Branch Type: ${bm.type || "none"}`);
+    }
+
+    console.log();
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("not found") || message.includes("1001")) {
+      console.error(`Error: Project '${name}' not found`);
+    } else if (message.includes("-32001") || message.includes("does not exist")) {
+      console.error(`Error: Cannot refresh project '${name}': directory does not exist`);
+      console.error("\nEither restore the directory or delete the project with:");
+      console.error(`  i3pm project delete ${name}`);
+    } else {
+      console.error(`Error: ${message}`);
+    }
+    return 1;
+  } finally {
+    client.disconnect();
+  }
+}
+
+/**
+ * Feature 097: Discover git repositories and create projects
+ */
+async function discoverProjects(args: string[], flags: Record<string, unknown>): Promise<number> {
+  // Parse discover-specific flags
+  const parsed = parseArgs(args, {
+    string: ["path", "exclude", "max-depth"],
+    boolean: ["dry-run", "github"],
+    collect: ["path", "exclude"],
+    alias: {
+      p: "path",
+      e: "exclude",
+      d: "max-depth",
+      n: "dry-run",
+      g: "github",
+    },
+  });
+
+  const client = new DaemonClient();
+  try {
+    // Build request parameters
+    const params: Record<string, unknown> = {};
+
+    // Handle path collection
+    if (parsed.path && Array.isArray(parsed.path) && parsed.path.length > 0) {
+      params.paths = parsed.path.map((p: string) => {
+        if (p.startsWith("~/")) {
+          return Deno.env.get("HOME") + p.slice(1);
+        }
+        if (!p.startsWith("/")) {
+          return Deno.cwd() + "/" + p;
+        }
+        return p;
+      });
+    }
+
+    // Handle exclude patterns
+    if (parsed.exclude && Array.isArray(parsed.exclude) && parsed.exclude.length > 0) {
+      params.exclude_patterns = parsed.exclude;
+    }
+
+    // Handle max depth
+    if (parsed["max-depth"]) {
+      params.max_depth = parseInt(String(parsed["max-depth"]), 10);
+    }
+
+    // Handle dry run
+    if (parsed["dry-run"]) {
+      params.dry_run = true;
+    }
+
+    // Handle GitHub integration
+    if (parsed.github) {
+      params.include_github = true;
+    }
+
+    const result = await client.request<{
+      repositories: Array<{
+        name: string;
+        path: string;
+        inferred_icon: string;
+        git_metadata?: {
+          current_branch: string;
+          commit_hash: string;
+          is_clean: boolean;
+          remote_url?: string;
+        };
+      }>;
+      worktrees: Array<{
+        name: string;
+        path: string;
+        branch: string;
+        parent_path: string;
+        inferred_icon: string;
+      }>;
+      created: number;
+      updated: number;
+      created_projects: string[];
+      updated_projects: string[];
+      marked_missing: string[];
+      skipped: string[];
+      errors: Array<{ path: string; message: string }>;
+      dry_run: boolean;
+      duration_ms: number;
+    }>("discover_projects", params);
+
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return 0;
+    }
+
+    // Human-readable output
+    if (result.dry_run) {
+      console.log("\n[DRY RUN] No projects were created or modified\n");
+    }
+
+    console.log(`\nDiscovery Results:`);
+    console.log(`  Found ${result.repositories.length} repositories and ${result.worktrees.length} worktrees`);
+    console.log(`  Duration: ${result.duration_ms.toFixed(1)}ms\n`);
+
+    if (result.repositories.length > 0) {
+      console.log("Repositories:");
+      for (const repo of result.repositories) {
+        const meta = repo.git_metadata;
+        const branch = meta ? meta.current_branch : "unknown";
+        const cleanStatus = meta?.is_clean ? "✓" : "*";
+        console.log(`  ${repo.inferred_icon} ${repo.name} (${branch}) ${cleanStatus}`);
+      }
+      console.log();
+    }
+
+    if (result.worktrees.length > 0) {
+      console.log("Worktrees:");
+      for (const wt of result.worktrees) {
+        console.log(`  ${wt.inferred_icon} ${wt.name} (${wt.branch})`);
+      }
+      console.log();
+    }
+
+    if (!result.dry_run) {
+      if (result.created > 0) {
+        console.log(`✓ Created ${result.created} projects: ${result.created_projects.join(", ")}`);
+      }
+      if (result.updated > 0) {
+        console.log(`✓ Updated ${result.updated} projects: ${result.updated_projects.join(", ")}`);
+      }
+      if (result.marked_missing.length > 0) {
+        console.log(`⚠ Marked ${result.marked_missing.length} projects as missing: ${result.marked_missing.join(", ")}`);
+      }
+      if (result.created === 0 && result.updated === 0) {
+        console.log("No new projects created or updated.");
+      }
+    }
+
+    if (result.errors.length > 0) {
+      console.log(`\n⚠ Encountered ${result.errors.length} errors:`);
+      for (const err of result.errors) {
+        console.log(`  ${err.path}: ${err.message}`);
+      }
+    }
+
+    console.log();
     return 0;
   } finally {
     client.disconnect();

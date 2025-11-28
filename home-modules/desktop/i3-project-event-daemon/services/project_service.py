@@ -19,6 +19,8 @@ from ..models.discovery import (
     GitMetadata,
     ProjectStatus,
     SourceType,
+    BranchMetadata,
+    parse_branch_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -288,6 +290,9 @@ class ProjectService:
     ) -> Project:
         """Create a new project from discovery result.
 
+        Feature 097: Creates projects from git discovery results.
+        Feature 098: Adds parent project resolution and branch metadata parsing.
+
         Args:
             discovered: DiscoveredRepository instance
 
@@ -304,6 +309,44 @@ class ProjectService:
 
         now = datetime.now()
 
+        # Feature 098: Resolve parent project name from parent_repo_path
+        parent_project_name: Optional[str] = None
+        if source_type == SourceType.WORKTREE and discovered.parent_repo_path:
+            parent_project = self.find_by_directory(discovered.parent_repo_path)
+            if parent_project:
+                parent_project_name = parent_project.name
+                logger.info(
+                    f"[Feature 098] Resolved parent project: {discovered.parent_repo_path} -> {parent_project_name}"
+                )
+            else:
+                logger.warning(
+                    f"[Feature 098] Parent project not found for path: {discovered.parent_repo_path}. "
+                    "Parent project must be discovered first."
+                )
+
+        # Feature 098: Parse branch metadata from git branch name
+        branch_metadata: Optional[BranchMetadata] = None
+        if discovered.git_metadata and discovered.git_metadata.current_branch:
+            branch_metadata = parse_branch_metadata(discovered.git_metadata.current_branch)
+            if branch_metadata:
+                logger.info(
+                    f"[Feature 098] Parsed branch metadata: "
+                    f"number={branch_metadata.number}, type={branch_metadata.type}, "
+                    f"full_name={branch_metadata.full_name}"
+                )
+
+                # Feature 098: Create enhanced display name for worktrees with branch numbers
+                if branch_metadata.number and source_type == SourceType.WORKTREE:
+                    # Extract description part after number (e.g., "integrate-new-project" from "098-integrate-new-project")
+                    branch_desc = branch_metadata.full_name
+                    if branch_desc.startswith(f"{branch_metadata.number}-"):
+                        branch_desc = branch_desc[len(branch_metadata.number) + 1:]
+                    # Remove type prefix if present (e.g., "feature-" from "feature-auth")
+                    if branch_metadata.type and branch_desc.startswith(f"{branch_metadata.type}-"):
+                        branch_desc = branch_desc[len(branch_metadata.type) + 1:]
+                    # Format: "098 - Integrate New Project"
+                    display_name = f"{branch_metadata.number} - {branch_desc.replace('-', ' ').replace('_', ' ').title()}"
+
         project = Project(
             name=discovered.name,
             directory=discovered.path,
@@ -316,6 +359,9 @@ class ProjectService:
             status=ProjectStatus.ACTIVE,
             git_metadata=discovered.git_metadata,
             discovered_at=now,
+            # Feature 098: New fields
+            parent_project=parent_project_name,
+            branch_metadata=branch_metadata,
         )
 
         # Save to file

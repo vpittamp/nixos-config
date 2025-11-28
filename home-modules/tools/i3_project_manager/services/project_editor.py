@@ -106,7 +106,8 @@ class ProjectEditor:
 
         return {
             "main_projects": sorted(main_projects, key=lambda p: p.get("name", "")),
-            "worktrees": sorted(worktrees, key=lambda w: w.get("parent_project", ""))
+            # Feature 098: Handle None parent_project values during sorting
+            "worktrees": sorted(worktrees, key=lambda w: w.get("parent_project") or "")
         }
 
     def edit_project(self, name: str, updates: Dict[str, Any]) -> Dict[str, Any]:

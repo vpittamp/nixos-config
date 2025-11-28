@@ -10,6 +10,7 @@ Provides Pydantic models for:
 Per Constitution Principle X: Python 3.11+, Pydantic for validation.
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -368,3 +369,108 @@ class CorrelationResult(BaseModel):
         default_factory=list,
         description="GitHub repos without local clones"
     )
+
+
+# =============================================================================
+# Feature 098: Branch Metadata Model and Parser
+# =============================================================================
+
+
+class BranchMetadata(BaseModel):
+    """Parsed branch name metadata.
+
+    Feature 098: Extracts structured information from git branch names
+    to enable rich worktree environment context.
+
+    Supported patterns (in priority order):
+    1. <number>-<type>-<description>: 098-feature-auth
+    2. <type>-<number>-<description>: fix-123-broken-auth
+    3. <number>-<description>: 078-eww-preview (type defaults to "feature")
+    4. <type>-<description>: hotfix-critical (no number)
+    5. Standard branches: main, develop (returns None from parser)
+    """
+
+    number: Optional[str] = Field(
+        default=None,
+        description="Branch number extracted from name (e.g., '098')",
+        pattern=r'^\d+$'
+    )
+    type: Optional[str] = Field(
+        default=None,
+        description="Branch type (feature, fix, hotfix, release, etc.)"
+    )
+    full_name: str = Field(
+        ...,
+        description="Complete branch name as-is"
+    )
+
+
+# Known branch type prefixes for parsing
+KNOWN_BRANCH_TYPES = {
+    "feature", "fix", "hotfix", "release", "bug",
+    "chore", "docs", "test", "refactor"
+}
+
+
+def parse_branch_metadata(branch_name: str) -> Optional[BranchMetadata]:
+    """Parse branch name to extract number and type.
+
+    Feature 098: Extracts structured metadata from git branch names.
+
+    Patterns (in priority order):
+    1. <number>-<type>-<description>: 098-feature-auth
+    2. <type>-<number>-<description>: fix-123-broken-auth
+    3. <number>-<description>: 078-eww-preview (type defaults to "feature")
+    4. <type>-<description>: hotfix-critical (no number)
+    5. Standard branches: main, develop (returns None)
+
+    Args:
+        branch_name: Git branch name to parse
+
+    Returns:
+        BranchMetadata if pattern matches, None for standard branches
+    """
+    if not branch_name:
+        return None
+
+    # Build regex pattern from known types
+    types_pattern = '|'.join(KNOWN_BRANCH_TYPES)
+
+    # Pattern 1: <number>-<type>-<description>
+    match = re.match(rf'^(\d+)-({types_pattern})-', branch_name)
+    if match:
+        return BranchMetadata(
+            number=match.group(1),
+            type=match.group(2),
+            full_name=branch_name
+        )
+
+    # Pattern 2: <type>-<number>-<description>
+    match = re.match(rf'^({types_pattern})-(\d+)-', branch_name)
+    if match:
+        return BranchMetadata(
+            number=match.group(2),
+            type=match.group(1),
+            full_name=branch_name
+        )
+
+    # Pattern 3: <number>-<description> (type defaults to "feature")
+    match = re.match(r'^(\d+)-', branch_name)
+    if match:
+        return BranchMetadata(
+            number=match.group(1),
+            type="feature",
+            full_name=branch_name
+        )
+
+    # Pattern 4: Known type prefix without number
+    for type_name in KNOWN_BRANCH_TYPES:
+        if branch_name.startswith(f"{type_name}-"):
+            return BranchMetadata(
+                number=None,
+                type=type_name,
+                full_name=branch_name
+            )
+
+    # No metadata (main, develop, etc.)
+    return None
