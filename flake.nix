@@ -40,6 +40,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Claude Desktop for Linux (unofficial community package)
+    # Provides native desktop app with git worktree support for parallel sessions
+    claude-desktop = {
+      url = "github:k3d3/claude-desktop-linux-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     disko = {
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
