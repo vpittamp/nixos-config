@@ -2001,6 +2001,8 @@ in
       (defvar env_i3pm_vars "[]")
       ;; Array of other notable variables: [{key, value}, ...]
       (defvar env_other_vars "[]")
+      ;; Filter text for env vars (case-insensitive contains match on key or value)
+      (defvar env_filter "")
 
       ;; Event-driven state variable (updated by daemon publisher)
       (defvar panel_state "{}")
@@ -2560,10 +2562,32 @@ in
                   :text "󰀫 Environment Variables (PID: ''${window.pid ?: 'N/A'})")
                 (eventbox
                   :cursor "pointer"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update env_window_id=0"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update env_window_id=0 env_filter=''''''"
                   :tooltip "Close"
                   (label
                     :class "env-close-btn"
+                    :text "󰅖")))
+              ;; Filter input
+              (box
+                :class "env-filter-box"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "env-filter-icon"
+                  :text "󰈲")
+                (input
+                  :class "env-filter-input"
+                  :hexpand true
+                  :value env_filter
+                  :onchange "eww --config $HOME/.config/eww-monitoring-panel update env_filter='{}'"
+                  :timeout "150ms")
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update env_filter=''''''"
+                  :tooltip "Clear filter"
+                  :visible {env_filter != ""}
+                  (label
+                    :class "env-filter-clear"
                     :text "󰅖")))
               ;; Loading state
               (revealer
@@ -2609,6 +2633,7 @@ in
                         :class "env-var-row"
                         :orientation "h"
                         :space-evenly false
+                        :visible {env_filter == "" || matches(var.key, "(?i).*''${env_filter}.*") || matches(var.value, "(?i).*''${env_filter}.*")}
                         (label
                           :class "env-var-key"
                           :halign "start"
@@ -2645,6 +2670,7 @@ in
                         :class "env-var-row"
                         :orientation "h"
                         :space-evenly false
+                        :visible {env_filter == "" || matches(var.key, "(?i).*''${env_filter}.*") || matches(var.value, "(?i).*''${env_filter}.*")}
                         (label
                           :class "env-var-key env-var-key-other"
                           :halign "start"
@@ -5527,6 +5553,53 @@ in
       .env-close-btn:hover {
         background-color: rgba(243, 139, 168, 0.4);
         box-shadow: 0 0 8px rgba(243, 139, 168, 0.4);
+      }
+
+      /* Feature 099: Filter input styles */
+      .env-filter-box {
+        background-color: rgba(30, 30, 46, 0.6);
+        border: 1px solid ${mocha.surface1};
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin: 8px 12px;
+      }
+
+      .env-filter-box:focus-within {
+        border-color: ${mocha.teal};
+        background-color: rgba(30, 30, 46, 0.8);
+      }
+
+      .env-filter-icon {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+        padding-right: 6px;
+      }
+
+      .env-filter-input {
+        background-color: transparent;
+        border: none;
+        outline: none;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        color: ${mocha.text};
+        min-width: 150px;
+      }
+
+      .env-filter-input:focus {
+        border: none;
+        outline: none;
+      }
+
+      .env-filter-clear {
+        font-size: 12px;
+        padding: 2px 4px;
+        color: ${mocha.overlay0};
+        border-radius: 3px;
+      }
+
+      .env-filter-clear:hover {
+        color: ${mocha.red};
+        background-color: rgba(243, 139, 168, 0.2);
       }
 
       .env-loading {
