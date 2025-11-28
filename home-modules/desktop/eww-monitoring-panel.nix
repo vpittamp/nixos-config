@@ -2584,79 +2584,77 @@ in
                   :halign "start"
                   (label :text "󰀦 ''${env_error}")))
               ;; I3PM variables section (prominent display)
-              (revealer
-                :reveal {!env_loading && env_error == "" && arraylength(env_i3pm_vars) > 0}
-                :transition "slidedown"
-                :duration "100ms"
-                (box
-                  :class "env-section env-section-i3pm"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "env-section-title"
-                    :halign "start"
-                    :text "I3PM Variables")
-                  (scroll
-                    :vscroll true
-                    :hscroll false
-                    :vexpand false
-                    :height 120
-                    (box
-                      :class "env-vars-list"
-                      :orientation "v"
-                      :space-evenly false
-                      (for var in {env_i3pm_vars}
-                        (box
-                          :class "env-var-row"
-                          :orientation "h"
-                          :space-evenly false
-                          (label
-                            :class "env-var-key"
-                            :halign "start"
-                            :text "''${var.key}")
-                          (label
-                            :class "env-var-value"
-                            :halign "start"
-                            :hexpand true
-                            :limit-width 50
-                            :text "''${var.value}")))))))
-              ;; Other variables section (collapsed by default)
-              (revealer
-                :reveal {!env_loading && env_error == "" && arraylength(env_other_vars) > 0}
-                :transition "slidedown"
-                :duration "100ms"
-                (box
-                  :class "env-section env-section-other"
-                  :orientation "v"
-                  :space-evenly false
-                  (label
-                    :class "env-section-title"
-                    :halign "start"
-                    :text "Other Variables (''${arraylength(env_other_vars)})")
-                  (scroll
-                    :vscroll true
-                    :hscroll false
-                    :vexpand false
-                    :height 100
-                    (box
-                      :class "env-vars-list"
-                      :orientation "v"
-                      :space-evenly false
-                      (for var in {env_other_vars}
-                        (box
-                          :class "env-var-row"
-                          :orientation "h"
-                          :space-evenly false
-                          (label
-                            :class "env-var-key env-var-key-other"
-                            :halign "start"
-                            :text "''${var.key}")
-                          (label
-                            :class "env-var-value env-var-value-other"
-                            :halign "start"
-                            :hexpand true
-                            :limit-width 50
-                            :text "''${var.value}")))))))))))
+              ;; Note: Using fixed classes and structure to prevent scroll reset on parent updates
+              (box
+                :class "env-section env-section-i3pm"
+                :orientation "v"
+                :space-evenly false
+                :visible {!env_loading && env_error == "" && arraylength(env_i3pm_vars) > 0}
+                (label
+                  :class "env-section-title"
+                  :halign "start"
+                  :text "I3PM Variables")
+                (scroll
+                  :class "env-scroll-i3pm"
+                  :vscroll true
+                  :hscroll false
+                  :vexpand false
+                  :height 120
+                  (box
+                    :class "env-vars-list env-vars-list-i3pm"
+                    :orientation "v"
+                    :space-evenly false
+                    (for var in {env_i3pm_vars}
+                      (box
+                        :class "env-var-row"
+                        :orientation "h"
+                        :space-evenly false
+                        (label
+                          :class "env-var-key"
+                          :halign "start"
+                          :text "''${var.key}")
+                        (label
+                          :class "env-var-value"
+                          :halign "start"
+                          :hexpand true
+                          :limit-width 50
+                          :text "''${var.value}")))))
+              ;; Other variables section
+              ;; Note: Using fixed classes and structure to prevent scroll reset on parent updates
+              (box
+                :class "env-section env-section-other"
+                :orientation "v"
+                :space-evenly false
+                :visible {!env_loading && env_error == "" && arraylength(env_other_vars) > 0}
+                (label
+                  :class "env-section-title"
+                  :halign "start"
+                  :text "Other Variables (''${arraylength(env_other_vars)})")
+                (scroll
+                  :class "env-scroll-other"
+                  :vscroll true
+                  :hscroll false
+                  :vexpand false
+                  :height 100
+                  (box
+                    :class "env-vars-list env-vars-list-other"
+                    :orientation "v"
+                    :space-evenly false
+                    (for var in {env_other_vars}
+                      (box
+                        :class "env-var-row"
+                        :orientation "h"
+                        :space-evenly false
+                        (label
+                          :class "env-var-key env-var-key-other"
+                          :halign "start"
+                          :text "''${var.key}")
+                        (label
+                          :class "env-var-value env-var-value-other"
+                          :halign "start"
+                          :hexpand true
+                          :limit-width 50
+                          :text "''${var.value}")))))))))))
 
       ;; Empty state display (T041)
       (defwidget empty-state []
