@@ -3250,50 +3250,171 @@ in
               :class "error-message"
               :visible {projects_data.status == "error"}
               (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Feature 099: Hierarchical projects list with expand/collapse
-            ;; UX1: Filter support - projects hidden if they don't match filter
+            ;; Feature 100: Bare Repositories from repos.json (replaces legacy main_projects)
+            ;; Shows repositories discovered via `i3pm discover`
             (box
               :class "projects-list"
               :orientation "v"
               :space-evenly false
-              (for project in {projects_data.main_projects ?: []}
+              (for repo in {projects_data.discovered_repositories ?: []}
                 (box
                   :orientation "v"
                   :space-evenly false
-                  ;; UX1: Filter visibility - show if filter is empty or name/display_name contains filter text
-                  ;; Using simple case-insensitive substring match via regex
-                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(project.name, "(?i).*" + project_filter + ".*") || matches(project.display_name ?: "", "(?i).*" + project_filter + ".*")}
-                  ;; Feature 099 T012: Repository project card with expand/collapse
-                  (repository-project-card :project project)
-                  ;; Feature 099 T014: Worktrees (visible when parent is expanded)
+                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(repo.name, "(?i).*" + project_filter + ".*") || matches(repo.qualified_name ?: "", "(?i).*" + project_filter + ".*") || matches(repo.account ?: "", "(?i).*" + project_filter + ".*")}
+                  (discovered-repo-card :repo repo)
+                  ;; Nested worktrees (visible when parent is expanded)
                   (revealer
                     :transition "slidedown"
                     :duration "150ms"
-                    :reveal {jq(expanded_projects, "index(\"" + project.name + "\") != null")}
+                    :reveal {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")}
                     (box
                       :orientation "v"
                       :space-evenly false
                       :class "worktrees-container"
-                      (for worktree in {projects_data.worktrees ?: []}
-                        (box
-                          ;; UX1: Also filter worktrees by name/branch
-                          :visible {(worktree.parent_project == project.name) && (project_filter == "" || strlength(project_filter) < 1 || matches(worktree.name, "(?i).*" + project_filter + ".*") || matches(worktree.display_name ?: "", "(?i).*" + project_filter + ".*") || matches(worktree.branch_name ?: "", "(?i).*" + project_filter + ".*"))}
-                          (worktree-card :project worktree)))))))
-              ;; Feature 099 T007: Orphaned worktrees section
-              (revealer
-                :transition "slidedown"
-                :duration "150ms"
-                :reveal {arraylength(projects_data.orphaned_worktrees ?: []) > 0}
+                      (for wt in {repo.worktrees ?: []}
+                        (discovered-worktree-card :worktree wt))))))))))
+
+      ;; Feature 100: Discovered bare repository card
+      (defwidget discovered-repo-card [repo]
+        (eventbox
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${repo.qualified_name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
+          (box
+            :class {"repository-card project-card discovered-repo" + (repo.is_active ? " active-project" : "") + (repo.has_dirty_worktrees ? " has-dirty" : "")}
+            :orientation "v"
+            :space-evenly false
+            (box
+              :class "project-card-header"
+              :orientation "h"
+              :space-evenly false
+              :hexpand true
+              ;; Expand/collapse toggle
+              (eventbox
+                :cursor "pointer"
+                :onclick "toggle-project-expanded ''${repo.qualified_name}"
+                :tooltip {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
                 (box
+                  :class "expand-toggle"
+                  :valign "center"
+                  (label
+                    :class "expand-icon"
+                    :text {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "󰅀" : "󰅂"})))
+              ;; Main content
+              (box
+                :class "project-main-content"
+                :orientation "h"
+                :space-evenly false
+                :hexpand true
+                (box
+                  :class "project-icon-container"
+                  :orientation "v"
+                  :valign "center"
+                  (label
+                    :class "project-icon"
+                    :text "''${repo.icon}"))
+                (box
+                  :class "project-info"
                   :orientation "v"
                   :space-evenly false
-                  :class "orphaned-section"
+                  :hexpand true
+                  (box
+                    :orientation "h"
+                    :space-evenly false
+                    (label
+                      :class "project-card-name"
+                      :halign "start"
+                      :limit-width 20
+                      :truncate true
+                      :text "''${repo.qualified_name}"
+                      :tooltip "''${repo.qualified_name}")
+                    (label
+                      :class "worktree-count-badge"
+                      :visible {(repo.worktree_count ?: 0) > 0}
+                      :text "''${repo.worktree_count} 🌿"))
                   (label
-                    :class "orphaned-header"
+                    :class "project-card-path"
                     :halign "start"
-                    :text "⚠️ Orphaned Worktrees")
-                  (for orphan in {projects_data.orphaned_worktrees ?: []}
-                    (orphaned-worktree-card :project orphan))))))))
+                    :limit-width 25
+                    :truncate true
+                    :text "''${repo.directory_display ?: repo.directory}"
+                    :tooltip "''${repo.directory}")))
+              ;; Status badges
+              (box
+                :class "project-badges"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "badge badge-active"
+                  :visible {repo.is_active}
+                  :text "●"
+                  :tooltip "Active")
+                (label
+                  :class "badge badge-dirty"
+                  :visible {repo.has_dirty_worktrees}
+                  :text "●"
+                  :tooltip "Has uncommitted changes"))))))
+
+      ;; Feature 100: Discovered worktree card (nested under repo)
+      (defwidget discovered-worktree-card [worktree]
+        (eventbox
+          :cursor "pointer"
+          :onclick "i3pm project switch ''${worktree.qualified_name}"
+          (box
+            :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
+            :orientation "h"
+            :space-evenly false
+            (label
+              :class "worktree-indent"
+              :text "  ")
+            (label
+              :class "worktree-icon"
+              :text "🌿")
+            (box
+              :class "worktree-info"
+              :orientation "v"
+              :space-evenly false
+              :hexpand true
+              (box
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "worktree-branch"
+                  :halign "start"
+                  :text "''${worktree.branch}")
+                (label
+                  :class "worktree-commit"
+                  :halign "start"
+                  :limit-width 10
+                  :text {" @ " + (worktree.commit ?: "unknown")})
+                (label
+                  :class "git-dirty"
+                  :visible {worktree.git_is_dirty}
+                  :text " ''${worktree.git_dirty_indicator}")
+                (label
+                  :class "git-sync"
+                  :visible {(worktree.git_sync_indicator ?: "") != ""}
+                  :text " ''${worktree.git_sync_indicator}"))
+              (label
+                :class "worktree-path"
+                :halign "start"
+                :limit-width 30
+                :truncate true
+                :text "''${worktree.directory_display}"
+                :tooltip "''${worktree.path}"))
+            (box
+              :class "worktree-badges"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "badge badge-active"
+                :visible {worktree.is_active}
+                :text "●"
+                :tooltip "Active worktree")
+              (label
+                :class "badge badge-main"
+                :visible {worktree.is_main}
+                :text "M"
+                :tooltip "Main worktree")))))
 
       ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
       (defwidget repository-project-card [project]
@@ -6835,6 +6956,80 @@ in
 
       .worktree-create-form {
         border-color: ${mocha.green};
+      }
+
+      /* Feature 100: Discovered Bare Repositories section styles */
+      .discovered-repos-section {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px solid ${mocha.surface0};
+      }
+
+      .discovered-repos-header {
+        font-size: 12px;
+        font-weight: bold;
+        color: ${mocha.teal};
+        margin-bottom: 8px;
+        padding-left: 4px;
+      }
+
+      .discovered-repo {
+        border-left-color: ${mocha.teal};
+      }
+
+      .discovered-repo:hover {
+        background-color: rgba(148, 226, 213, 0.08);
+      }
+
+      .worktree-indent {
+        min-width: 16px;
+        color: ${mocha.overlay0};
+      }
+
+      .worktree-branch {
+        font-size: 11px;
+        font-weight: 500;
+        color: ${mocha.text};
+      }
+
+      .worktree-commit {
+        font-size: 10px;
+        color: ${mocha.overlay0};
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .worktree-path {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+      }
+
+      .active-worktree {
+        border-left: 3px solid ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.1);
+      }
+
+      .dirty-worktree {
+        border-left-color: ${mocha.peach};
+      }
+
+      .git-dirty {
+        color: ${mocha.peach};
+        font-weight: bold;
+      }
+
+      .git-sync {
+        font-size: 10px;
+        color: ${mocha.blue};
+        margin-left: 4px;
+      }
+
+      .badge-main {
+        font-size: 8px;
+        color: ${mocha.green};
+        background-color: rgba(166, 227, 161, 0.15);
+        padding: 1px 4px;
+        border-radius: 3px;
+        margin-left: 4px;
       }
 
       /* Feature 094 US3: Project create form styles (T066-T067) */
