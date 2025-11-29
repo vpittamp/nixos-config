@@ -6,8 +6,8 @@
  * enabling app launching with the correct environment.
  */
 
-import { parseArgs } from "@std/cli/parse-args";
-import { sendDaemonRequest } from "../../lib/ipc.ts";
+import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
+import { DaemonClient } from "../../services/daemon-client.ts";
 
 /**
  * Show switch command help
@@ -67,7 +67,8 @@ export async function worktreeSwitch(args: string[]): Promise<number> {
   }
 
   try {
-    const result = await sendDaemonRequest("worktree.switch", {
+    const client = new DaemonClient();
+    const result = await client.request<{ success: boolean; qualified_name: string; directory: string; branch: string; previous_project?: string; duration_ms?: number }>("worktree.switch", {
       qualified_name: qualifiedName,
     });
 

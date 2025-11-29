@@ -7730,7 +7730,6 @@ class IPCServer:
             }
         """
         from pathlib import Path
-        from tools.i3_project_manager.services.discovery_service import DiscoveryService
 
         start_time = time.perf_counter()
 
@@ -7741,17 +7740,58 @@ class IPCServer:
 
             logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
 
-            # Use DiscoveryService to find the worktree
-            discovery = DiscoveryService()
-            result = discovery.get_worktree_by_qualified_name(qualified_name)
+            # Parse qualified name and find worktree from repos.json
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if not repos_file.exists():
+                raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
 
-            if not result:
-                raise FileNotFoundError(f"Worktree not found: {qualified_name}")
+            with open(repos_file) as f:
+                repos_data = json.load(f)
 
-            repo, worktree = result
+            # Parse qualified name: account/repo:branch or account/repo (for main)
+            if ":" in qualified_name:
+                repo_name, branch = qualified_name.rsplit(":", 1)
+            else:
+                repo_name = qualified_name
+                branch = None
+
+            # Find the repository
+            # qualified_name format: account/repo_name (e.g., vpittamp/nixos-config)
+            repo = None
+            for r in repos_data.get("repositories", []):
+                # Build qualified name from account and name fields
+                r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
+                if r_qualified == repo_name:
+                    repo = r
+                    break
+
+            if not repo:
+                raise FileNotFoundError(f"Repository not found: {repo_name}")
+
+            # Find the worktree
+            worktree = None
+            worktrees = repo.get("worktrees", [])
+            if branch:
+                for wt in worktrees:
+                    if wt.get("branch") == branch:
+                        worktree = wt
+                        break
+            else:
+                # No branch specified - find main worktree
+                for wt in worktrees:
+                    if wt.get("is_main", False):
+                        worktree = wt
+                        break
+                # Fallback to first worktree
+                if not worktree and worktrees:
+                    worktree = worktrees[0]
+
+            if not worktree:
+                raise FileNotFoundError(f"Worktree not found: {branch or 'main'} in {repo_name}")
 
             # Determine the full qualified name (ensure it includes branch)
-            full_qualified_name = f"{repo.qualified_name}:{worktree.branch}"
+            full_qualified_name = f"{repo_name}:{worktree['branch']}"
+            worktree_path = worktree.get("path", "")
 
             # Get previous project
             previous_project = self.state_manager.state.active_project
@@ -7769,7 +7809,7 @@ class IPCServer:
             )
             # Add project_dir to the state if supported
             if hasattr(active_state, 'project_dir'):
-                active_state.project_dir = str(worktree.path)
+                active_state.project_dir = worktree_path
 
             config_dir = Path.home() / ".config" / "i3"
             config_file = config_dir / "active-project.json"
@@ -7777,15 +7817,14 @@ class IPCServer:
 
             # Also save the directory mapping for quick lookup
             worktree_context_file = config_dir / "active-worktree.json"
-            import json
             with open(worktree_context_file, "w") as f:
                 json.dump({
                     "qualified_name": full_qualified_name,
-                    "repo_qualified_name": repo.qualified_name,
-                    "branch": worktree.branch,
-                    "directory": str(worktree.path),
-                    "account": repo.account,
-                    "repo_name": repo.name,
+                    "repo_qualified_name": repo_name,
+                    "branch": worktree.get("branch", ""),
+                    "directory": worktree_path,
+                    "account": repo.get("account", ""),
+                    "repo_name": repo.get("name", ""),
                 }, f, indent=2)
 
             # Apply window filtering based on new project context
@@ -7817,8 +7856,8 @@ class IPCServer:
             return {
                 "success": True,
                 "qualified_name": full_qualified_name,
-                "directory": str(worktree.path),
-                "branch": worktree.branch,
+                "directory": worktree_path,
+                "branch": worktree.get("branch", ""),
                 "previous_project": previous_project,
                 "duration_ms": duration_ms
             }
