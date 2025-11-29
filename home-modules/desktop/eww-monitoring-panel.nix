@@ -3228,7 +3228,7 @@ in
                 (label
                   :class "filter-count"
                   :visible {project_filter != ""}
-                  :text "''${arraylength(projects_data.main_projects ?: [])} projects"))))
+                  :text "''${arraylength(projects_data.main_projects ?: [])} projects")))
             ;; Feature 094 US3: Project create form (T067)
             (revealer
               :transition "slidedown"
@@ -3291,24 +3291,7 @@ in
                     :halign "start"
                     :text "⚠️ Orphaned Worktrees")
                   (for orphan in {projects_data.orphaned_worktrees ?: []}
-                    (orphaned-worktree-card :project orphan))))
-            ;; UX2: Keyboard hints shown when in panel focus mode
-            (revealer
-              :transition "slideup"
-              :duration "150ms"
-              :reveal {panel_focused && current_view == "projects"}
-              (box
-                :class "keyboard-hints"
-                :orientation "h"
-                :space-evenly false
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "j/k") (label :text "Navigate"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Enter") (label :text "Switch"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Space") (label :text "Expand"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "e") (label :text "Edit"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "d") (label :text "Delete"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "y") (label :text "Copy"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "n") (label :text "New"))
-                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Esc") (label :text "Exit")))))))
+                    (orphaned-worktree-card :project orphan))))))))
 
       ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
       (defwidget repository-project-card [project]
@@ -6951,7 +6934,6 @@ in
         border-radius: 4px;
         margin-right: 6px;
         min-width: 24px;
-        text-align: center;
       }
 
       /* Feature 099 UX4: Copy button */
