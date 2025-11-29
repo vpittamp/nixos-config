@@ -297,6 +297,7 @@ export I3PM_APP_NAME="$APP_NAME"
 export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
 export I3PM_PROJECT_DIR="${PROJECT_DIR:-}"
 export I3PM_PROJECT_DISPLAY_NAME="${PROJECT_DISPLAY_NAME:-}"
+export I3PM_PROJECT_ICON="${PROJECT_ICON:-}"
 export I3PM_SCOPE="$SCOPE"
 export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
 export I3PM_LAUNCH_TIME="$(date +%s)"

@@ -2225,13 +2225,24 @@ class IPCServer:
 
             if is_x11_window or is_wayland_window:
                 # Get project from marks (format: SCOPE:PROJECT:WINDOW_ID)
+                # Note: PROJECT may contain colons for worktree qualified names
+                # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
+                # Parts: [scope, account/repo, branch, window_id]
                 project = None
                 scope_from_mark = None
                 for mark in node.marks:
                     if mark.startswith("scoped:") or mark.startswith("global:"):
                         mark_parts = mark.split(":")
                         scope_from_mark = mark_parts[0] if len(mark_parts) >= 1 else None
-                        project = mark_parts[1] if len(mark_parts) >= 2 else None
+                        # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
+                        # e.g., ["scoped", "vpittamp/nixos-config", "101-worktree-click-switch", "21"]
+                        # becomes "vpittamp/nixos-config:101-worktree-click-switch"
+                        if len(mark_parts) >= 4:
+                            # Worktree format: scope:account/repo:branch:window_id
+                            project = ":".join(mark_parts[1:-1])
+                        elif len(mark_parts) >= 3:
+                            # Legacy format: scope:project:window_id
+                            project = mark_parts[1]
                         break
 
                 # Get window class (X11 uses window_class, Wayland uses app_id)

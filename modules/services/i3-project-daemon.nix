@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.13.1";  # Feature 098: Fixed GitMetadata attribute names (current_branch, commit_hash)
+    version = "1.14.0";  # Feature 101: Fixed mark parsing for worktree qualified names with colons
     src = daemonSrc;
 
     installPhase = ''

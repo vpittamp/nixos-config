@@ -1606,9 +1606,18 @@ async def on_window_mark(
         project_marks = [mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")]
 
         if project_marks:
-            # Parse mark: "scoped:nixos:16777219" → extract "nixos"
+            # Parse mark - Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
+            # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
             mark_parts = project_marks[0].split(":")
-            project_name = mark_parts[1] if len(mark_parts) >= 2 else None
+            # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
+            if len(mark_parts) >= 4:
+                # Worktree format: scope:account/repo:branch:window_id
+                project_name = ":".join(mark_parts[1:-1])
+            elif len(mark_parts) >= 3:
+                # Legacy format: scope:project:window_id
+                project_name = mark_parts[1]
+            else:
+                project_name = None
             await state_manager.update_window(window_id, project=project_name, marks=container.marks)
             logger.debug(f"Updated window {window_id} project to {project_name}")
         else:
@@ -1751,10 +1760,19 @@ async def on_window_title(
 
                 if current_project_marks:
                     # Extract current project from mark
-                    # Format: "scoped:nixos:12345" -> project="nixos"
+                    # Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
+                    # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
                     old_mark = current_project_marks[0]
                     mark_parts = old_mark.split(":")
-                    current_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                    # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
+                    if len(mark_parts) >= 4:
+                        # Worktree format: scope:account/repo:branch:window_id
+                        current_project = ":".join(mark_parts[1:-1])
+                    elif len(mark_parts) >= 3:
+                        # Legacy format: scope:project:window_id
+                        current_project = mark_parts[1]
+                    else:
+                        current_project = None
 
                     # Update mark if project changed
                     if current_project != title_project:

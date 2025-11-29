@@ -360,22 +360,33 @@ async def filter_windows_by_project(
         window_id = window.id
 
         # Get project and scope from window marks
+        # Note: PROJECT may contain colons for worktree qualified names
+        # e.g., "scratchpad:vpittamp/nixos-config:101-worktree-click-switch"
+        # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
         window_project = None
         window_scope = None
         for mark in window.marks:
             if mark.startswith("scratchpad:"):
                 # Feature 062: Scratchpad terminals are project-scoped
-                # Extract project from scratchpad:PROJECT mark for hide/show logic
-                mark_parts = mark.split(":")
-                window_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                # Format: scratchpad:PROJECT where PROJECT may contain colons
+                # e.g., "scratchpad:vpittamp/nixos-config:main"
+                # Feature 101: Extract full qualified name after "scratchpad:"
+                window_project = mark[len("scratchpad:"):]
                 window_scope = "scoped"
                 logger.debug(f"Window {window_id} is scratchpad terminal for project: {window_project}")
                 break
             elif mark.startswith("scoped:") or mark.startswith("global:"):
-                # Format: SCOPE:PROJECT:WINDOW_ID
+                # Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
+                # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
                 mark_parts = mark.split(":")
                 window_scope = mark_parts[0]
-                window_project = mark_parts[1] if len(mark_parts) >= 2 else None
+                # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
+                if len(mark_parts) >= 4:
+                    # Worktree format: scope:account/repo:branch:window_id
+                    window_project = ":".join(mark_parts[1:-1])
+                elif len(mark_parts) >= 3:
+                    # Legacy format: scope:project:window_id
+                    window_project = mark_parts[1]
                 break
 
         # Determine visibility
