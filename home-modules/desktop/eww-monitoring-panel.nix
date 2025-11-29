@@ -3355,10 +3355,11 @@ in
                   :tooltip "Has uncommitted changes"))))))
 
       ;; Feature 100: Discovered worktree card (nested under repo)
+      ;; Feature 101: Click to switch to worktree context for app launching
       (defwidget discovered-worktree-card [worktree]
         (eventbox
           :cursor "pointer"
-          :onclick "i3pm project switch ''${worktree.qualified_name}"
+          :onclick "i3pm worktree switch ''${worktree.qualified_name}"
           (box
             :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
             :orientation "h"

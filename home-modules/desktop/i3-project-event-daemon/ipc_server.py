@@ -444,6 +444,9 @@ class IPCServer:
                 result = await self._worktree_create(params)
             elif method == "worktree.remove":
                 result = await self._worktree_remove(params)
+            elif method == "worktree.switch":
+                # Feature 101: Switch to worktree by qualified name
+                result = await self._worktree_switch(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -7685,4 +7688,130 @@ class IPCServer:
             raise RuntimeError(f"Git command failed: {e.stderr}")
         except Exception as e:
             logger.error(f"[Feature 100] worktree.remove error: {e}")
+            raise
+
+    async def _worktree_switch(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Switch to a worktree by qualified name.
+
+        Feature 101: Click-to-switch for discovered worktrees.
+
+        This method:
+        1. Looks up the worktree by qualified name from discovery cache
+        2. Sets active project to the qualified name
+        3. Stores the worktree directory for app launcher context
+        4. Applies window filtering based on new project context
+
+        Args:
+            params: {
+                "qualified_name": str  # e.g., "vpittamp/nixos-config:main" or "vpittamp/nixos-config"
+            }
+
+        Returns:
+            {
+                "success": bool,
+                "qualified_name": str,
+                "directory": str,
+                "branch": str,
+                "previous_project": str | None
+            }
+        """
+        from pathlib import Path
+        from tools.i3_project_manager.services.discovery_service import DiscoveryService
+
+        start_time = time.perf_counter()
+
+        try:
+            qualified_name = params.get("qualified_name")
+            if not qualified_name:
+                raise ValueError("qualified_name parameter is required")
+
+            logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
+
+            # Use DiscoveryService to find the worktree
+            discovery = DiscoveryService()
+            result = discovery.get_worktree_by_qualified_name(qualified_name)
+
+            if not result:
+                raise FileNotFoundError(f"Worktree not found: {qualified_name}")
+
+            repo, worktree = result
+
+            # Determine the full qualified name (ensure it includes branch)
+            full_qualified_name = f"{repo.qualified_name}:{worktree.branch}"
+
+            # Get previous project
+            previous_project = self.state_manager.state.active_project
+
+            # Set active project to the full qualified name
+            await self.state_manager.set_active_project(full_qualified_name)
+
+            # Store the project directory for app launcher context
+            # This is used by the app-launcher-wrapper.sh to set I3PM_PROJECT_DIR
+            from .config import save_active_project
+            from .models import ActiveProjectState
+
+            active_state = ActiveProjectState(
+                project_name=full_qualified_name
+            )
+            # Add project_dir to the state if supported
+            if hasattr(active_state, 'project_dir'):
+                active_state.project_dir = str(worktree.path)
+
+            config_dir = Path.home() / ".config" / "i3"
+            config_file = config_dir / "active-project.json"
+            save_active_project(active_state, config_file)
+
+            # Also save the directory mapping for quick lookup
+            worktree_context_file = config_dir / "active-worktree.json"
+            import json
+            with open(worktree_context_file, "w") as f:
+                json.dump({
+                    "qualified_name": full_qualified_name,
+                    "repo_qualified_name": repo.qualified_name,
+                    "branch": worktree.branch,
+                    "directory": str(worktree.path),
+                    "account": repo.account,
+                    "repo_name": repo.name,
+                }, f, indent=2)
+
+            # Apply window filtering based on new project context
+            if self.i3_connection and self.i3_connection.conn:
+                logger.info(f"[Feature 101] Applying window filtering for '{full_qualified_name}'")
+                from .services.window_filter import filter_windows_by_project
+                filter_result = await filter_windows_by_project(
+                    self.i3_connection.conn,
+                    full_qualified_name,
+                    self.workspace_tracker
+                )
+                logger.info(
+                    f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
+                    f"{filter_result.get('hidden', 0)} hidden"
+                )
+            else:
+                logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
+
+            # Broadcast project change event
+            await self.broadcast_event({
+                "type": "project",
+                "action": "switch",
+                "project": full_qualified_name
+            })
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 101] Switched to worktree '{full_qualified_name}' in {duration_ms:.2f}ms")
+
+            return {
+                "success": True,
+                "qualified_name": full_qualified_name,
+                "directory": str(worktree.path),
+                "branch": worktree.branch,
+                "previous_project": previous_project,
+                "duration_ms": duration_ms
+            }
+
+        except FileNotFoundError as e:
+            logger.error(f"[Feature 101] worktree.switch not found: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[Feature 101] worktree.switch error: {e}")
             raise

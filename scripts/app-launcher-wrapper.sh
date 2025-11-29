@@ -114,6 +114,36 @@ PROJECT_ICON=$(echo "$PROJECT_JSON" | jq -r '.icon // ""')
 SESSION_NAME="$PROJECT_NAME"
 USER_HOME="${HOME}"
 
+# Feature 101: Check for active worktree context (from worktree.switch)
+# This provides directory context for Feature 100 bare repository worktrees
+WORKTREE_CONTEXT_FILE="$HOME/.config/i3/active-worktree.json"
+if [[ -z "$PROJECT_DIR" ]] && [[ -f "$WORKTREE_CONTEXT_FILE" ]]; then
+    log "DEBUG" "Feature 101: Checking active-worktree.json for directory context"
+    WORKTREE_JSON=$(cat "$WORKTREE_CONTEXT_FILE" 2>/dev/null || echo '{}')
+    WORKTREE_QUALIFIED_NAME=$(echo "$WORKTREE_JSON" | jq -r '.qualified_name // ""')
+
+    # Only use if qualified name matches current project name (worktree context is for this session)
+    if [[ -n "$WORKTREE_QUALIFIED_NAME" ]] && [[ "$PROJECT_NAME" == "$WORKTREE_QUALIFIED_NAME" ]]; then
+        PROJECT_DIR=$(echo "$WORKTREE_JSON" | jq -r '.directory // ""')
+        log "INFO" "Feature 101: Using worktree directory from active-worktree.json: $PROJECT_DIR"
+    else
+        log "DEBUG" "Feature 101: Worktree context mismatch (expected: $PROJECT_NAME, got: $WORKTREE_QUALIFIED_NAME)"
+    fi
+elif [[ -z "$PROJECT_DIR" ]] && [[ -n "$PROJECT_NAME" ]] && [[ "$PROJECT_NAME" == *"/"* ]]; then
+    # Feature 101 fallback: For Feature 100 qualified names (account/repo:branch), derive directory
+    log "DEBUG" "Feature 101: Attempting to derive directory from qualified name: $PROJECT_NAME"
+    if [[ "$PROJECT_NAME" == *":"* ]]; then
+        # Extract account/repo:branch -> ~/repos/account/repo/branch
+        REPO_PART="${PROJECT_NAME%:*}"
+        BRANCH_PART="${PROJECT_NAME##*:}"
+        PROJECT_DIR="$HOME/repos/${REPO_PART}/${BRANCH_PART}"
+    else
+        # Just account/repo -> ~/repos/account/repo/main
+        PROJECT_DIR="$HOME/repos/${PROJECT_NAME}/main"
+    fi
+    log "INFO" "Feature 101: Derived worktree directory: $PROJECT_DIR"
+fi
+
 # Feature 087: Extract remote project configuration
 REMOTE_ENABLED=$(echo "$PROJECT_JSON" | jq -r '.remote.enabled // false')
 REMOTE_HOST=$(echo "$PROJECT_JSON" | jq -r '.remote.host // ""')

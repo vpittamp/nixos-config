@@ -10,6 +10,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import { worktreeCreate } from "./worktree/create.ts";
 import { worktreeRemove } from "./worktree/remove.ts";
 import { worktreeList } from "./worktree/list.ts";
+import { worktreeSwitch } from "./worktree/switch.ts";
 
 /**
  * Show worktree command help
@@ -25,6 +26,7 @@ SUBCOMMANDS:
   create <branch>       Create a new worktree (Feature 100)
   remove <branch>       Remove a worktree (Feature 100)
   list [repo]           List worktrees for a repository (Feature 100)
+  switch <name>         Switch to a worktree by qualified name (Feature 101)
 
 OPTIONS:
   -h, --help            Show this help message
@@ -81,10 +83,14 @@ export async function worktreeCommand(args: string[]): Promise<void> {
       exitCode = await worktreeList(subcommandArgs);
       break;
 
+    case "switch":
+      exitCode = await worktreeSwitch(subcommandArgs);
+      break;
+
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
-      console.error("Available subcommands: create, remove, list");
+      console.error("Available subcommands: create, remove, list, switch");
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);
   }

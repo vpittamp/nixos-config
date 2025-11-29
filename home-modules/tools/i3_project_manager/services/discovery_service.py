@@ -303,3 +303,50 @@ class DiscoveryService:
         if account:
             return self.repos_storage.get_by_account(account)
         return self.repos_storage.repositories
+
+    def get_worktree_by_qualified_name(
+        self,
+        qualified_name: str
+    ) -> Optional[tuple[BareRepository, Worktree]]:
+        """
+        Get a worktree by its qualified name.
+
+        Feature 101: Support clicking on worktrees to switch project context.
+
+        Args:
+            qualified_name: Worktree qualified name (account/repo:branch)
+                            or repo qualified name (account/repo) to get main worktree
+
+        Returns:
+            Tuple of (BareRepository, Worktree) or None if not found
+        """
+        if ":" in qualified_name:
+            # Worktree format: account/repo:branch
+            repo_name, branch = qualified_name.rsplit(":", 1)
+        else:
+            # Repo format: account/repo - return main worktree
+            repo_name = qualified_name
+            branch = None
+
+        repo = self.repos_storage.get_by_qualified_name(repo_name)
+        if not repo:
+            logger.warning(f"Repository not found: {repo_name}")
+            return None
+
+        # Find the worktree
+        if branch:
+            for wt in repo.worktrees:
+                if wt.branch == branch:
+                    return (repo, wt)
+            logger.warning(f"Worktree not found: {branch} in {repo_name}")
+            return None
+        else:
+            # Return main worktree (is_main=True)
+            for wt in repo.worktrees:
+                if wt.is_main:
+                    return (repo, wt)
+            # Fallback to first worktree
+            if repo.worktrees:
+                return (repo, repo.worktrees[0])
+            logger.warning(f"No worktrees found in repository: {repo_name}")
+            return None
