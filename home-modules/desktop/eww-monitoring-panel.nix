@@ -3154,8 +3154,8 @@ in
             :hexpand true
             :text value)))
 
-      ;; Projects View - Feature 100: Bare repository discovery
-      ;; Displays hierarchical view of repositories and worktrees
+      ;; Projects View - Project list with metadata
+      ;; Projects View - matches windows-view structure with scroll at top level
       (defwidget projects-view []
         (scroll
           :vscroll true
@@ -3166,11 +3166,14 @@ in
             :orientation "v"
             :space-evenly false
             :vexpand true
-            ;; Header with actions
+            ;; Feature 094 US3: Projects tab header with New Project button (T066)
+            ;; Feature 099 T016: Added Refresh button
+            ;; Feature 099 UX: Added filter, expand/collapse all
             (box
               :class "projects-header-container"
               :orientation "v"
               :space-evenly false
+              :visible {!project_creating}
               ;; Row 1: Title and action buttons
               (box
                 :class "projects-header"
@@ -3180,20 +3183,25 @@ in
                   :class "projects-header-title"
                   :halign "start"
                   :hexpand true
-                  :text "Repositories")
-                ;; Expand/Collapse All toggle
+                  :text "Projects")
+                ;; UX3: Expand/Collapse All toggle
                 (button
                   :class "expand-all-button"
                   :onclick "toggle-expand-all-projects"
                   :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
                   {projects_all_expanded ? "Collapse" : "Expand"})
-                ;; Discover button (runs i3pm discover)
+                ;; Feature 099 T016: Refresh button
                 (button
                   :class "refresh-button"
-                  :onclick "i3pm discover && systemctl --user restart eww-monitoring-panel &"
-                  :tooltip "Discover repositories"
-                  "Discover"))
-              ;; Row 2: Filter/search input
+                  :onclick "systemctl --user restart eww-monitoring-panel &"
+                  :tooltip "Refresh all projects"
+                  "Refresh")
+                (button
+                  :class "new-project-button"
+                  :onclick "project-create-open"
+                  :tooltip "Create a new project"
+                  "+ New"))
+              ;; Row 2: UX1 - Filter/search input
               (box
                 :class "projects-filter-row"
                 :orientation "h"
@@ -3218,191 +3226,74 @@ in
                     :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
                     :tooltip "Clear filter (Esc)"
                     "x"))
-                ;; Count indicator
+                ;; Filter count indicator - shows total count when filtering
                 (label
                   :class "filter-count"
-                  :text {"''${projects_data.repo_count ?: 0} repos, ''${projects_data.worktree_count ?: 0} worktrees"})))
+                  :visible {project_filter != ""}
+                  :text "''${arraylength(projects_data.main_projects ?: [])} projects")))
+            ;; Feature 094 US3: Project create form (T067)
+            (revealer
+              :transition "slidedown"
+              :reveal project_creating
+              :duration "200ms"
+              (project-create-form))
+            ;; Feature 099 T020: Worktree create form
+            (revealer
+              :transition "slidedown"
+              :reveal worktree_creating
+              :duration "200ms"
+              (worktree-create-form :parent_project worktree_form_parent_project))
+            ;; Feature 094 US4: Delete confirmation dialog (T088)
+            (project-delete-confirmation)
             ;; Error state
             (box
               :class "error-message"
               :visible {projects_data.status == "error"}
               (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Empty state
-            (box
-              :class "empty-state"
-              :visible {projects_data.status == "ok" && arraylength(projects_data.discovered_repositories ?: []) == 0}
-              :orientation "v"
-              :space-evenly false
-              (label
-                :class "empty-icon"
-                :text "📂")
-              (label
-                :class "empty-text"
-                :text "No repositories discovered")
-              (label
-                :class "empty-hint"
-                :text "Run 'i3pm discover' to scan for bare repositories"))
-            ;; Feature 100: Hierarchical repository list
+            ;; Feature 099: Hierarchical projects list with expand/collapse
+            ;; UX1: Filter support - projects hidden if they don't match filter
             (box
               :class "projects-list"
               :orientation "v"
               :space-evenly false
-              (for repo in {projects_data.discovered_repositories ?: []}
+              (for project in {projects_data.main_projects ?: []}
                 (box
                   :orientation "v"
                   :space-evenly false
-                  ;; Filter visibility
-                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(repo.name, "(?i).*" + project_filter + ".*") || matches(repo.account, "(?i).*" + project_filter + ".*")}
-                  ;; Repository card with expand/collapse
-                  (discovered-repo-card :repo repo)
-                  ;; Worktrees (visible when repo is expanded)
+                  ;; UX1: Filter visibility - show if filter is empty or name/display_name contains filter text
+                  ;; Using simple case-insensitive substring match via regex
+                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(project.name, "(?i).*" + project_filter + ".*") || matches(project.display_name ?: "", "(?i).*" + project_filter + ".*")}
+                  ;; Feature 099 T012: Repository project card with expand/collapse
+                  (repository-project-card :project project)
+                  ;; Feature 099 T014: Worktrees (visible when parent is expanded)
                   (revealer
                     :transition "slidedown"
                     :duration "150ms"
-                    :reveal {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null")}
+                    :reveal {jq(expanded_projects, "index(\"" + project.name + "\") != null")}
                     (box
                       :orientation "v"
                       :space-evenly false
                       :class "worktrees-container"
-                      (for wt in {repo.worktrees ?: []}
+                      (for worktree in {projects_data.worktrees ?: []}
                         (box
-                          :visible {project_filter == "" || strlength(project_filter) < 1 || matches(wt.branch, "(?i).*" + project_filter + ".*")}
-                          (discovered-worktree-card :worktree wt)))))))
-              ;; Last discovery timestamp
-              (box
-                :class "last-discovery-footer"
-                :orientation "h"
-                :space-evenly false
-                :visible {projects_data.last_discovery != false}
-                (label
-                  :class "last-discovery-time"
-                  :halign "start"
-                  :text {"Last scan: " + (projects_data.last_discovery ?: "never")}))))))
-
-      ;; Feature 100 T056: Discovered bare repository card with expand/collapse
-      (defwidget discovered-repo-card [repo]
-        (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''"
-          (box
-            :class {"discovered-repo-card" + (repo.is_active ? " active-project" : "") + (repo.has_dirty_worktrees ? " has-dirty" : "")}
-            :orientation "v"
-            :space-evenly false
-            ;; Header row
-            (box
-              :class "repo-card-header"
-              :orientation "h"
-              :space-evenly false
-              :hexpand true
-              ;; Expand/collapse toggle
-              (eventbox
-                :cursor "pointer"
-                :onclick "toggle-project-expanded ''${repo.qualified_name}"
-                :tooltip {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
+                          ;; UX1: Also filter worktrees by name/branch
+                          :visible {(worktree.parent_project == project.name) && (project_filter == "" || strlength(project_filter) < 1 || matches(worktree.name, "(?i).*" + project_filter + ".*") || matches(worktree.display_name ?: "", "(?i).*" + project_filter + ".*") || matches(worktree.branch_name ?: "", "(?i).*" + project_filter + ".*"))}
+                          (worktree-card :project worktree)))))))
+              ;; Feature 099 T007: Orphaned worktrees section
+              (revealer
+                :transition "slidedown"
+                :duration "150ms"
+                :reveal {arraylength(projects_data.orphaned_worktrees ?: []) > 0}
                 (box
-                  :class "expand-toggle"
-                  :valign "center"
-                  (label
-                    :class "expand-icon"
-                    :text {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "󰅀" : "󰅂"})))
-              ;; Main content
-              (box
-                :class "repo-main-content"
-                :orientation "h"
-                :space-evenly false
-                :hexpand true
-                ;; Icon
-                (box
-                  :class "repo-icon-container"
-                  :valign "center"
-                  (label
-                    :class "repo-icon"
-                    :text "📂"))
-                ;; Repo info
-                (box
-                  :class "repo-info"
                   :orientation "v"
                   :space-evenly false
-                  :hexpand true
-                  ;; Account/Name
-                  (box
-                    :orientation "h"
-                    :space-evenly false
-                    (label
-                      :class "repo-account"
-                      :halign "start"
-                      :text {repo.account + "/"})
-                    (label
-                      :class "repo-name"
-                      :halign "start"
-                      :text {repo.name}))
-                  ;; Path
+                  :class "orphaned-section"
                   (label
-                    :class "repo-path"
+                    :class "orphaned-header"
                     :halign "start"
-                    :truncate true
-                    :text {repo.directory_display ?: repo.path}))
-                ;; Badges
-                (box
-                  :class "repo-badges"
-                  :orientation "h"
-                  :space-evenly false
-                  :halign "end"
-                  ;; Dirty indicator
-                  (label
-                    :class "dirty-indicator"
-                    :visible {repo.has_dirty_worktrees}
-                    :tooltip "Has dirty worktrees"
-                    :text "●")
-                  ;; Worktree count
-                  (label
-                    :class "worktree-count-badge"
-                    :text {arraylength(repo.worktrees ?: []) + " wt"})))))))
-
-      ;; Feature 100 T056: Discovered worktree card (nested under repo)
-      (defwidget discovered-worktree-card [worktree]
-        (eventbox
-          :cursor "pointer"
-          :onclick "cd ''${worktree.path} && i3pm project switch ''${worktree.qualified_name}"
-          (box
-            :class {"discovered-worktree-card" + (worktree.is_active ? " active-project" : "") + (worktree.git_is_dirty ? " dirty" : "") + (worktree.is_main ? " main-worktree" : "")}
-            :orientation "h"
-            :space-evenly false
-            ;; Branch icon
-            (label
-              :class "worktree-icon"
-              :text "🌿")
-            ;; Branch info
-            (box
-              :class "worktree-info"
-              :orientation "v"
-              :space-evenly false
-              :hexpand true
-              (label
-                :class "worktree-branch"
-                :halign "start"
-                :text {worktree.branch})
-              (label
-                :class "worktree-path"
-                :halign "start"
-                :truncate true
-                :text {worktree.directory_display}))
-            ;; Status badges
-            (box
-              :class "worktree-badges"
-              :orientation "h"
-              :space-evenly false
-              :halign "end"
-              ;; Dirty indicator
-              (label
-                :class "dirty-indicator"
-                :visible {worktree.git_is_dirty}
-                :tooltip "Uncommitted changes"
-                :text {worktree.git_dirty_indicator})
-              ;; Sync status
-              (label
-                :class "sync-indicator"
-                :visible {worktree.git_sync_indicator != ""}
-                :text {worktree.git_sync_indicator})))))
+                    :text "⚠️ Orphaned Worktrees")
+                  (for orphan in {projects_data.orphaned_worktrees ?: []}
+                    (orphaned-worktree-card :project orphan))))))))
 
       ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
       (defwidget repository-project-card [project]
