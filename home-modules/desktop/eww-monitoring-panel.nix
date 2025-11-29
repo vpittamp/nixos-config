@@ -3468,7 +3468,7 @@ in
               :cursor "pointer"
               :onclick "i3pm worktree recover ''${project.name}"
               :tooltip "Recover (register parent repository)"
-              (label :class "action-btn action-recover" :text ""))
+              (label :class "action-btn action-recover" :text "󰑓"))
             (eventbox
               :cursor "pointer"
               :onclick "worktree-delete ''${project.name}"
@@ -5154,7 +5154,7 @@ in
                   (label
                     :class "terminal-indicator"
                     :visible {app.terminal}
-                    :text ""))
+                    :text "󰆍"))
                 (label
                   :class "app-card-command"
                   :halign "start"
