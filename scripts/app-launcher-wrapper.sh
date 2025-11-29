@@ -103,77 +103,54 @@ log "DEBUG" "Parameters: $PARAMETERS"
 log "DEBUG" "Scope: $SCOPE"
 log "DEBUG" "Expected class: $EXPECTED_CLASS"
 
-# Query daemon for project context
-log "DEBUG" "Querying daemon for project context"
-PROJECT_JSON=$(i3pm project current --json 2>/dev/null || echo '{}')
-
-PROJECT_NAME=$(echo "$PROJECT_JSON" | jq -r '.name // ""')
-PROJECT_DIR=$(echo "$PROJECT_JSON" | jq -r '.directory // ""')
-PROJECT_DISPLAY_NAME=$(echo "$PROJECT_JSON" | jq -r '.display_name // ""')
-PROJECT_ICON=$(echo "$PROJECT_JSON" | jq -r '.icon // ""')
-SESSION_NAME="$PROJECT_NAME"
+# Query active worktree context
+# active-worktree.json is the single source of truth for project context
+log "DEBUG" "Querying active worktree context"
+WORKTREE_CONTEXT_FILE="$HOME/.config/i3/active-worktree.json"
 USER_HOME="${HOME}"
 
-# Feature 101: Check for active worktree context (from worktree.switch)
-# This provides directory context for Feature 100 bare repository worktrees
-WORKTREE_CONTEXT_FILE="$HOME/.config/i3/active-worktree.json"
-if [[ -z "$PROJECT_DIR" ]] && [[ -f "$WORKTREE_CONTEXT_FILE" ]]; then
-    log "DEBUG" "Feature 101: Checking active-worktree.json for directory context"
+if [[ -f "$WORKTREE_CONTEXT_FILE" ]]; then
     WORKTREE_JSON=$(cat "$WORKTREE_CONTEXT_FILE" 2>/dev/null || echo '{}')
-    WORKTREE_QUALIFIED_NAME=$(echo "$WORKTREE_JSON" | jq -r '.qualified_name // ""')
-
-    # Only use if qualified name matches current project name (worktree context is for this session)
-    if [[ -n "$WORKTREE_QUALIFIED_NAME" ]] && [[ "$PROJECT_NAME" == "$WORKTREE_QUALIFIED_NAME" ]]; then
-        PROJECT_DIR=$(echo "$WORKTREE_JSON" | jq -r '.directory // ""')
-        log "INFO" "Feature 101: Using worktree directory from active-worktree.json: $PROJECT_DIR"
-    else
-        log "DEBUG" "Feature 101: Worktree context mismatch (expected: $PROJECT_NAME, got: $WORKTREE_QUALIFIED_NAME)"
-    fi
-elif [[ -z "$PROJECT_DIR" ]] && [[ -n "$PROJECT_NAME" ]] && [[ "$PROJECT_NAME" == *"/"* ]]; then
-    # Feature 101 fallback: For Feature 100 qualified names (account/repo:branch), derive directory
-    log "DEBUG" "Feature 101: Attempting to derive directory from qualified name: $PROJECT_NAME"
-    if [[ "$PROJECT_NAME" == *":"* ]]; then
-        # Extract account/repo:branch -> ~/repos/account/repo/branch
-        REPO_PART="${PROJECT_NAME%:*}"
-        BRANCH_PART="${PROJECT_NAME##*:}"
-        PROJECT_DIR="$HOME/repos/${REPO_PART}/${BRANCH_PART}"
-    else
-        # Just account/repo -> ~/repos/account/repo/main
-        PROJECT_DIR="$HOME/repos/${PROJECT_NAME}/main"
-    fi
-    log "INFO" "Feature 101: Derived worktree directory: $PROJECT_DIR"
+    PROJECT_NAME=$(echo "$WORKTREE_JSON" | jq -r '.qualified_name // ""')
+    PROJECT_DIR=$(echo "$WORKTREE_JSON" | jq -r '.directory // ""')
+    WORKTREE_BRANCH=$(echo "$WORKTREE_JSON" | jq -r '.branch // ""')
+    WORKTREE_ACCOUNT=$(echo "$WORKTREE_JSON" | jq -r '.account // ""')
+    WORKTREE_REPO_NAME=$(echo "$WORKTREE_JSON" | jq -r '.repo_name // ""')
+    PROJECT_DISPLAY_NAME="$WORKTREE_BRANCH"
+    SESSION_NAME="$WORKTREE_BRANCH"
+    PROJECT_ICON=""
+    log "INFO" "Using worktree context - name: $PROJECT_NAME, dir: $PROJECT_DIR, branch: $WORKTREE_BRANCH"
+else
+    # No active worktree - global mode
+    PROJECT_NAME=""
+    PROJECT_DIR=""
+    PROJECT_DISPLAY_NAME=""
+    PROJECT_ICON=""
+    SESSION_NAME=""
+    WORKTREE_BRANCH=""
+    WORKTREE_ACCOUNT=""
+    WORKTREE_REPO_NAME=""
+    log "DEBUG" "No active worktree context (global mode)"
 fi
 
-# Feature 087: Extract remote project configuration
-REMOTE_ENABLED=$(echo "$PROJECT_JSON" | jq -r '.remote.enabled // false')
-REMOTE_HOST=$(echo "$PROJECT_JSON" | jq -r '.remote.host // ""')
-REMOTE_USER=$(echo "$PROJECT_JSON" | jq -r '.remote.user // ""')
-REMOTE_WORKING_DIR=$(echo "$PROJECT_JSON" | jq -r '.remote.working_dir // ""')
-REMOTE_PORT=$(echo "$PROJECT_JSON" | jq -r '.remote.port // 22')
+# Remote configuration is not supported with bare repository worktrees
+# (Feature 087 was for legacy projects with SSH remotes)
+REMOTE_ENABLED="false"
+REMOTE_HOST=""
+REMOTE_USER=""
+REMOTE_WORKING_DIR=""
+REMOTE_PORT="22"
 
-# Feature 098: Extract worktree/branch metadata
-SOURCE_TYPE=$(echo "$PROJECT_JSON" | jq -r '.source_type // "local"')
-PARENT_PROJECT=$(echo "$PROJECT_JSON" | jq -r '.parent_project // ""')
-BRANCH_NUMBER=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.number // ""')
-BRANCH_TYPE=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.type // ""')
-FULL_BRANCH_NAME=$(echo "$PROJECT_JSON" | jq -r '.branch_metadata.full_name // ""')
-
-# Feature 098: Extract git metadata
-# Note: IPC response uses 'branch'/'commit'/'ahead'/'behind' (not current_branch/commit_hash/ahead_count/behind_count)
-GIT_BRANCH=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.branch // ""')
-GIT_COMMIT=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.commit // ""')
-GIT_IS_CLEAN=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.is_clean // ""')
-GIT_AHEAD=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.ahead // ""')
-GIT_BEHIND=$(echo "$PROJECT_JSON" | jq -r '.git_metadata.behind // ""')
+# Git metadata from worktree (simplified - can be extended if needed)
+GIT_BRANCH="$WORKTREE_BRANCH"
+GIT_COMMIT=""
+GIT_IS_CLEAN=""
+GIT_AHEAD=""
+GIT_BEHIND=""
 
 log "DEBUG" "Project name: ${PROJECT_NAME:-<none>}"
 log "DEBUG" "Project directory: ${PROJECT_DIR:-<none>}"
-log "DEBUG" "Feature 087: Remote enabled: $REMOTE_ENABLED"
-if [[ "$REMOTE_ENABLED" == "true" ]]; then
-    log "DEBUG" "Feature 087: Remote host: $REMOTE_USER@$REMOTE_HOST:$REMOTE_WORKING_DIR (port $REMOTE_PORT)"
-fi
-log "DEBUG" "Feature 098: Source type: $SOURCE_TYPE, Parent: ${PARENT_PROJECT:-<none>}"
-log "DEBUG" "Feature 098: Branch number: ${BRANCH_NUMBER:-<none>}, type: ${BRANCH_TYPE:-<none>}"
+log "DEBUG" "Worktree branch: ${WORKTREE_BRANCH:-<none>}"
 
 # Validate project directory if present
 if [[ -n "$PROJECT_DIR" ]]; then
@@ -314,17 +291,23 @@ else
     APP_INSTANCE_ID=$(generate_app_instance_id "$APP_NAME" "$PROJECT_NAME")
 fi
 
-# Standard I3PM environment variables (injected for ALL apps)
+# I3PM environment variables (injected for ALL apps)
 export I3PM_APP_ID="$APP_INSTANCE_ID"
 export I3PM_APP_NAME="$APP_NAME"
 export I3PM_PROJECT_NAME="${PROJECT_NAME:-}"
 export I3PM_PROJECT_DIR="${PROJECT_DIR:-}"
 export I3PM_PROJECT_DISPLAY_NAME="${PROJECT_DISPLAY_NAME:-}"
-export I3PM_PROJECT_ICON="${PROJECT_ICON:-}"
 export I3PM_SCOPE="$SCOPE"
 export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
 export I3PM_LAUNCH_TIME="$(date +%s)"
 export I3PM_LAUNCHER_PID="$$"
+
+# Worktree-specific environment variables
+export I3PM_WORKTREE_BRANCH="${WORKTREE_BRANCH:-}"
+export I3PM_WORKTREE_ACCOUNT="${WORKTREE_ACCOUNT:-}"
+export I3PM_WORKTREE_REPO="${WORKTREE_REPO_NAME:-}"
+
+log "DEBUG" "Env: I3PM_PROJECT_NAME=$I3PM_PROJECT_NAME, I3PM_PROJECT_DIR=$I3PM_PROJECT_DIR, I3PM_WORKTREE_BRANCH=$I3PM_WORKTREE_BRANCH"
 
 # Workspace assignment (Feature 053: Reliable event-driven assignment)
 export I3PM_TARGET_WORKSPACE="$PREFERRED_WORKSPACE"
@@ -476,28 +459,11 @@ if [[ -n "${I3PM_RESTORE_MARK:-}" ]]; then
     ENV_EXPORTS+=("export I3PM_RESTORE_MARK='$I3PM_RESTORE_MARK'")
 fi
 
-# Feature 098: Add worktree environment variables (conditional - only if set)
-# Per contracts/ipc-methods.md: Missing fields MUST be omitted (not set to empty string)
-if [[ "$SOURCE_TYPE" == "worktree" ]]; then
+# Feature 101: All projects are now worktrees (using active-worktree.json as single source of truth)
+# I3PM_IS_WORKTREE is always true when we have an active worktree context
+if [[ -n "$WORKTREE_BRANCH" ]]; then
     ENV_EXPORTS+=("export I3PM_IS_WORKTREE='true'")
-else
-    ENV_EXPORTS+=("export I3PM_IS_WORKTREE='false'")
-fi
-
-if [[ -n "$PARENT_PROJECT" ]]; then
-    ENV_EXPORTS+=("export I3PM_PARENT_PROJECT='$PARENT_PROJECT'")
-fi
-
-if [[ -n "$BRANCH_NUMBER" ]]; then
-    ENV_EXPORTS+=("export I3PM_BRANCH_NUMBER='$BRANCH_NUMBER'")
-fi
-
-if [[ -n "$BRANCH_TYPE" ]]; then
-    ENV_EXPORTS+=("export I3PM_BRANCH_TYPE='$BRANCH_TYPE'")
-fi
-
-if [[ -n "$FULL_BRANCH_NAME" ]]; then
-    ENV_EXPORTS+=("export I3PM_FULL_BRANCH_NAME='$FULL_BRANCH_NAME'")
+    ENV_EXPORTS+=("export I3PM_FULL_BRANCH_NAME='$WORKTREE_BRANCH'")
 fi
 
 # Feature 098: Add git metadata environment variables (conditional - only if set)
