@@ -1,206 +1,198 @@
+// Feature 100: Worktree Remove Command
+// T048: Create `i3pm worktree remove <branch>` CLI command
+
+import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
+import { WorktreeRemoveRequestSchema, type WorktreeRemoveRequest } from "../../../models/repository.ts";
+
 /**
- * Worktree Remove Command
- * Feature 077: Git Worktree Project Management
+ * Remove a worktree from a repository.
  *
- * Removes a git worktree and cleans up all associated resources.
+ * Fails if:
+ * - Worktree has uncommitted changes (unless --force)
+ * - Trying to remove main/master worktree
  */
-
-import { parseArgs } from "@std/cli/parse-args";
-import { join } from "@std/path";
-import { execGit } from "../../utils/git.ts";
-import { bold, green, yellow, red, dim } from "../../ui/ansi.ts";
-
-/**
- * Show help for worktree remove command
- */
-function showHelp(): void {
-  console.log(`
-i3pm worktree remove - Remove a worktree project and clean up resources
-
-USAGE:
-  i3pm worktree remove <project-name> [OPTIONS]
-
-ARGUMENTS:
-  <project-name>        Name of the worktree project to remove
-
-OPTIONS:
-  --force               Force delete branch even if not merged (git branch -D)
-  --delete-remote       Also delete the remote branch (git push origin --delete)
-  --keep-branch         Keep the git branch (only remove worktree and project)
-  --keep-project        Keep the i3pm project JSON (only remove worktree)
-  -h, --help            Show this help message
-
-CLEANUP STEPS (performed automatically):
-  1. Remove git worktree (git worktree remove)
-  2. Delete local branch (git branch -d, or -D with --force)
-  3. Remove i3pm project JSON (~/.config/i3/projects/<name>.json)
-  4. Remove from zoxide database
-
-EXAMPLES:
-  # Standard removal (soft delete - fails if branch not merged)
-  i3pm worktree remove 078-feature-name
-
-  # Force delete unmerged branch
-  i3pm worktree remove 078-feature-name --force
-
-  # Also delete remote branch
-  i3pm worktree remove 078-feature-name --delete-remote
-
-  # Keep the branch for later use
-  i3pm worktree remove 078-feature-name --keep-branch
-
-NOTES:
-  - By default, branch deletion is "soft" (fails if not merged to protect work)
-  - Use --force only when you're sure the branch can be discarded
-  - Remote branch deletion requires push access to origin
-  - Zoxide entries auto-decay if unused, but removal is immediate
-`);
-  Deno.exit(0);
-}
-
-/**
- * Execute worktree remove command
- */
-export async function removeWorktreeCommand(args: string[]): Promise<void> {
+export async function worktreeRemove(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    boolean: ["force", "delete-remote", "keep-branch", "keep-project", "help"],
-    alias: {
-      h: "help",
+    string: ["repo"],
+    boolean: ["force"],
+    default: {
+      force: false,
     },
   });
 
-  if (parsed.help) {
-    showHelp();
-  }
+  const positionalArgs = parsed._ as string[];
 
-  if (parsed._.length === 0) {
-    console.error(red("Error: Project name is required"));
+  if (positionalArgs.length < 1) {
+    console.error("Usage: i3pm worktree remove <branch> [--force] [--repo <account/repo>]");
     console.error("");
-    console.error("Usage: i3pm worktree remove <project-name> [OPTIONS]");
-    console.error("Run 'i3pm worktree remove --help' for more information");
-    Deno.exit(1);
+    console.error("Examples:");
+    console.error("  i3pm worktree remove 100-feature");
+    console.error("  i3pm worktree remove 101-bugfix --force");
+    console.error("  i3pm worktree remove review --repo vpittamp/nixos");
+    return 1;
   }
 
-  const projectName = String(parsed._[0]);
-  const forceDelete = parsed.force || false;
-  const deleteRemote = parsed["delete-remote"] || false;
-  const keepBranch = parsed["keep-branch"] || false;
-  const keepProject = parsed["keep-project"] || false;
+  const branch = positionalArgs[0];
 
-  const homeDir = Deno.env.get("HOME") || "/home/vpittamp";
-  const projectsDir = join(homeDir, ".config", "i3", "projects");
-  const projectFile = join(projectsDir, `${projectName}.json`);
-
-  // Step 1: Load project info to get worktree path
-  console.log(dim(`Loading project info for "${projectName}"...`));
-
-  let projectData: { directory: string; worktree?: { branch: string } } | null = null;
-  let worktreePath: string;
-  let branchName: string;
-
+  // Validate request
+  let request: WorktreeRemoveRequest;
   try {
-    const content = await Deno.readTextFile(projectFile);
-    projectData = JSON.parse(content);
-    worktreePath = projectData.directory;
-    branchName = projectData.worktree?.branch || projectName;
+    request = WorktreeRemoveRequestSchema.parse({
+      branch,
+      repo: parsed.repo,
+      force: parsed.force,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "ZodError") {
+      const zodError = error as unknown as { errors: Array<{ path: string[]; message: string }> };
+      console.error("Error: Invalid worktree remove request:");
+      for (const issue of zodError.errors) {
+        console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
+      }
+      return 1;
+    }
+    throw error;
+  }
+
+  // Prevent removing main/master
+  if (branch === "main" || branch === "master") {
+    console.error("Error: Cannot remove main worktree");
+    console.error("The main/master worktree must always exist for the bare repository pattern.");
+    return 1;
+  }
+
+  // Detect repository path
+  const repoPath = await detectRepoPath(request.repo);
+  if (!repoPath) {
+    console.error("Error: Not in a bare repository structure");
+    console.error("Please run from within a repository worktree or specify --repo");
+    return 1;
+  }
+
+  const barePath = `${repoPath}/.bare`;
+  const worktreePath = `${repoPath}/${branch}`;
+
+  // Check if worktree exists
+  try {
+    await Deno.stat(worktreePath);
   } catch {
-    console.error(red(`Error: Project "${projectName}" not found`));
-    console.error(dim(`Expected file: ${projectFile}`));
-    Deno.exit(1);
+    console.error(`Error: Worktree not found: ${worktreePath}`);
+    return 1;
   }
 
-  console.log(dim(`Worktree path: ${worktreePath}`));
-  console.log(dim(`Branch: ${branchName}`));
-  console.log("");
+  // Check for uncommitted changes (unless force)
+  if (!request.force) {
+    const statusCmd = new Deno.Command("git", {
+      args: ["-C", worktreePath, "status", "--porcelain"],
+      stdout: "piped",
+      stderr: "piped",
+    });
 
-  // Step 2: Remove git worktree
-  console.log("Removing git worktree...");
-  try {
-    await execGit(["worktree", "remove", worktreePath, "--force"]);
-    console.log(green("✓ Git worktree removed"));
-  } catch (error) {
-    console.error(red(`✗ Failed to remove worktree: ${error.message}`));
-    console.error(dim("You may need to manually remove the directory"));
-    Deno.exit(1);
+    const statusOutput = await statusCmd.output();
+    const statusStdout = new TextDecoder().decode(statusOutput.stdout).trim();
+
+    if (statusStdout.length > 0) {
+      console.error("Error: Worktree has uncommitted changes");
+      console.error("");
+      console.error("Status:");
+      console.error(statusStdout);
+      console.error("");
+      console.error("Use --force to remove anyway.");
+      return 1;
+    }
   }
 
-  // Step 3: Delete local branch (unless --keep-branch)
-  if (!keepBranch) {
-    console.log(
-      forceDelete
-        ? `Deleting branch "${branchName}" (force)...`
-        : `Deleting branch "${branchName}" (soft - fails if not merged)...`
-    );
+  console.log(`Removing worktree '${branch}'...`);
 
-    try {
-      const deleteFlag = forceDelete ? "-D" : "-d";
-      await execGit(["branch", deleteFlag, branchName]);
-      console.log(green(`✓ Branch "${branchName}" deleted`));
-    } catch (error) {
-      if (!forceDelete && error.message.includes("not fully merged")) {
-        console.error(yellow(`⚠ Branch "${branchName}" is not fully merged`));
-        console.error(dim("Use --force to delete anyway, or --keep-branch to preserve it"));
-        // Continue with other cleanup steps
-      } else {
-        console.error(yellow(`⚠ Could not delete branch: ${error.message}`));
+  // Remove the worktree
+  const removeArgs = ["-C", barePath, "worktree", "remove"];
+  if (request.force) {
+    removeArgs.push("--force");
+  }
+  removeArgs.push(worktreePath);
+
+  const cmd = new Deno.Command("git", {
+    args: removeArgs,
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await cmd.output();
+
+  if (!output.success) {
+    const stderr = new TextDecoder().decode(output.stderr);
+    console.error(`Error: git worktree remove failed`);
+    console.error(stderr);
+    return 1;
+  }
+
+  console.log(`Removed worktree: ${worktreePath}`);
+
+  return 0;
+}
+
+/**
+ * Detect repository path from current directory or --repo flag.
+ */
+async function detectRepoPath(repo?: string): Promise<string | null> {
+  const home = Deno.env.get("HOME") || "";
+
+  if (repo) {
+    // Check if it's a full account/repo path
+    if (repo.includes("/")) {
+      const [account, repoName] = repo.split("/");
+      const path = `${home}/repos/${account}/${repoName}`;
+      try {
+        await Deno.stat(`${path}/.bare`);
+        return path;
+      } catch {
+        return null;
       }
     }
-  } else {
-    console.log(dim(`Keeping branch "${branchName}" as requested`));
-  }
 
-  // Step 4: Delete remote branch (if requested)
-  if (deleteRemote && !keepBranch) {
-    console.log(`Deleting remote branch "origin/${branchName}"...`);
+    // Search for repo by name in all account directories
+    const reposBase = `${home}/repos`;
     try {
-      await execGit(["push", "origin", "--delete", branchName]);
-      console.log(green(`✓ Remote branch deleted`));
-    } catch (error) {
-      console.error(yellow(`⚠ Could not delete remote branch: ${error.message}`));
-      console.error(dim("Branch may not exist on remote, or you lack push access"));
-    }
-  }
-
-  // Step 5: Remove i3pm project JSON (unless --keep-project)
-  if (!keepProject) {
-    console.log("Removing i3pm project...");
-    try {
-      await Deno.remove(projectFile);
-      console.log(green("✓ i3pm project removed"));
+      for await (const entry of Deno.readDir(reposBase)) {
+        if (entry.isDirectory) {
+          const path = `${reposBase}/${entry.name}/${repo}`;
+          try {
+            await Deno.stat(`${path}/.bare`);
+            return path;
+          } catch {
+            // Not found in this account, continue
+          }
+        }
+      }
     } catch {
-      console.error(yellow(`⚠ Could not remove project file: ${projectFile}`));
+      // repos directory doesn't exist
     }
-  } else {
-    console.log(dim("Keeping i3pm project JSON as requested"));
+
+    return null;
   }
 
-  // Step 6: Remove from zoxide
-  console.log("Removing from zoxide...");
-  try {
-    const zoxideCmd = new Deno.Command("zoxide", {
-      args: ["remove", worktreePath],
-      stdout: "null",
-      stderr: "null",
-    });
-    await zoxideCmd.output();
-    console.log(green("✓ Removed from zoxide"));
-  } catch {
-    console.log(dim("zoxide not available or entry not found"));
+  // Detect from current directory
+  const cwd = Deno.cwd();
+
+  // Walk up the directory tree looking for .bare/
+  let dir = cwd;
+  while (dir !== "/") {
+    try {
+      const bareStat = await Deno.stat(`${dir}/.bare`);
+      if (bareStat.isDirectory) {
+        return dir;
+      }
+    } catch {
+      // Not found, continue up
+    }
+
+    // Go up one level
+    const parent = dir.substring(0, dir.lastIndexOf("/"));
+    if (parent === dir || parent === "") {
+      break;
+    }
+    dir = parent;
   }
 
-  console.log("");
-  console.log(bold("Worktree project removed successfully:"));
-  console.log(`  Project: ${projectName}`);
-  console.log(`  Path: ${worktreePath}`);
-  if (!keepBranch) {
-    console.log(`  Branch: ${branchName} (deleted)`);
-  } else {
-    console.log(`  Branch: ${branchName} (preserved)`);
-  }
-
-  if (!keepBranch && !forceDelete) {
-    console.log("");
-    console.log(dim("Tip: If the branch wasn't merged, your work is still in git reflog"));
-    console.log(dim("Recover with: git checkout -b <branch> <commit-hash>"));
-  }
+  return null;
 }

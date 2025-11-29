@@ -3,6 +3,18 @@ Project JSON Editor Service
 
 Feature 094: Enhanced Projects & Applications CRUD Interface
 Handles CRUD operations for project JSON files at ~/.config/i3/projects/*.json
+
+DEPRECATED (Feature 100):
+    This module is deprecated in favor of the bare repository discovery system.
+    Projects are now discovered automatically from ~/repos/<account>/<repo>/.bare/
+    and stored in ~/.config/i3/repos.json via `i3pm discover`.
+
+    New projects should be created using:
+        i3pm clone <url>
+        i3pm worktree create <branch>
+
+    This module is retained for backward compatibility during migration.
+    It will be removed in a future release.
 """
 
 import json
@@ -145,7 +157,8 @@ class ProjectEditor:
         validation_context = {"edit_mode": True}
 
         # Determine if worktree or regular project
-        if "parent_project" in updated_data:
+        # Feature 099: Check that parent_project is not None/null (not just present)
+        if updated_data.get("parent_project"):
             validated = WorktreeConfig.model_validate(updated_data, context=validation_context)
         else:
             validated = ProjectConfig.model_validate(updated_data, context=validation_context)

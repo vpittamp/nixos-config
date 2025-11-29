@@ -1415,158 +1415,150 @@ def get_projects_hierarchy(projects_dir: Optional[Path] = None) -> PanelProjects
     )
 
 
+def load_discovered_repositories() -> Dict[str, List[Dict[str, Any]]]:
+    """Load discovered bare repositories from repos.json.
+
+    Feature 100 T055: Load bare repositories discovered via `i3pm discover`
+    and convert them to a format compatible with the Projects tab.
+
+    Returns:
+        Dict with "repositories" list (bare repos with worktrees nested)
+    """
+    repos_file = Path.home() / ".config" / "i3" / "repos.json"
+
+    if not repos_file.exists():
+        logger.debug("Feature 100: No repos.json found, skipping bare repo discovery")
+        return {"repositories": [], "last_discovery": None}
+
+    try:
+        with open(repos_file, "r") as f:
+            repos_data = json.load(f)
+
+        repositories = repos_data.get("repositories", [])
+        last_discovery = repos_data.get("last_discovery")
+
+        # Convert each discovered repo to project-compatible format
+        for repo in repositories:
+            # Generate qualified name for the repository
+            repo["qualified_name"] = f"{repo['account']}/{repo['name']}"
+
+            # Add source_type for UI display
+            repo["source_type"] = "bare_repository"
+            repo["source_type_badge"] = "📂"
+
+            # Add display fields
+            repo["display_name"] = repo.get("display_name") or repo["name"]
+            repo["directory"] = repo["path"]
+            repo["directory_display"] = repo["path"].replace(str(Path.home()), "~")
+
+            # Mark worktrees with their qualified names
+            for wt in repo.get("worktrees", []):
+                wt["qualified_name"] = f"{repo['account']}/{repo['name']}:{wt['branch']}"
+                wt["source_type"] = "worktree"
+                wt["source_type_badge"] = "🌿"
+                wt["parent_repo"] = repo["qualified_name"]
+                wt["directory_display"] = wt["path"].replace(str(Path.home()), "~")
+
+        logger.debug(f"Feature 100: Loaded {len(repositories)} discovered bare repositories")
+        return {"repositories": repositories, "last_discovery": last_discovery}
+
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Feature 100: Failed to load repos.json: {e}")
+        return {"repositories": [], "last_discovery": None}
+
+
 async def query_projects_data() -> Dict[str, Any]:
     """
-    Query projects view data (Feature 094: Enhanced Projects Tab).
+    Query projects view data using bare repository discovery.
 
-    Reads directly from ~/.config/i3/projects/*.json files and returns:
-    - Grouped by main_projects and worktrees
-    - Full JSON representation for hover tooltips
-    - Local vs remote indicators
-    - Active project highlighting
+    Feature 100: Reads from repos.json (populated by `i3pm discover`) and returns:
+    - Hierarchical: repositories with nested worktrees
+    - Qualified names: account/repo and account/repo:branch
+    - Git status indicators (dirty, ahead/behind)
 
-    Returns project list with metadata and current active project.
+    Returns repository list with worktrees and current active project.
     """
     current_timestamp = time.time()
     friendly_time = format_friendly_timestamp(current_timestamp)
 
     try:
-        # Feature 094: Read projects directly from JSON files
-        from i3_project_manager.services.project_editor import ProjectEditor
+        # Feature 100: Load discovered bare repositories from repos.json
+        discovered_repos = load_discovered_repositories()
+        repositories = discovered_repos.get("repositories", [])
+        last_discovery = discovered_repos.get("last_discovery")
 
-        editor = ProjectEditor()
-        projects_list = editor.list_projects()
-
-        main_projects = projects_list.get("main_projects", [])
-        worktrees = projects_list.get("worktrees", [])
-
-        # Get active project
-        result = subprocess.run(
-            ["i3pm", "project", "current"],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-        active_project = result.stdout.strip() if result.returncode == 0 else None
-
-        # Enhance each project with UI-specific computed fields
-        def enhance_project(project: Dict[str, Any]) -> Dict[str, Any]:
-            """Add UI-specific computed fields to project.
-
-            Feature 097: All projects come from discovery with proper data.
-            This function only adds UI display fields, not default values.
-            """
-            # Active project indicator
-            project["is_active"] = (project.get("name") == active_project)
-
-            # Remote project indicator (Feature 087)
-            # Ensure remote field always has a valid structure for UI access
-            remote = project.get("remote") or {}
-            project["remote"] = {
-                "enabled": remote.get("enabled", False),
-                "host": remote.get("host", ""),
-                "user": remote.get("user", ""),
-                "remote_dir": remote.get("remote_dir", ""),
-                "port": remote.get("port", 22),
-            }
-            project["is_remote"] = bool(project["remote"]["enabled"])
-
-            # Feature 097: Source type badge
-            # Infer source_type from existing data if not present
-            source_type = project.get("source_type")
-            if not source_type:
-                # Infer from worktree field (legacy projects)
-                if project.get("worktree"):
-                    source_type = "worktree"
-                else:
-                    source_type = "local"
-                project["source_type"] = source_type
-
-            source_type_badges = {
-                "local": "📦",
-                "worktree": "🌿",
-                "remote": "☁️",
-            }
-            project["source_type_badge"] = source_type_badges.get(
-                source_type, "📦"
+        # Get active project (uses qualified name like vpittamp/nixos:main)
+        active_project = None
+        try:
+            result = subprocess.run(
+                ["i3pm", "project", "current"],
+                capture_output=True,
+                text=True,
+                timeout=2
             )
+            if result.returncode == 0:
+                active_project = result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            pass
 
-            # Feature 097: Status indicator (missing = warning)
-            project["status_indicator"] = "⚠️" if project.get("status") == "missing" else ""
+        # Enhance repositories with UI fields
+        for repo in repositories:
+            qualified_name = repo.get("qualified_name", f"{repo['account']}/{repo['name']}")
+            repo["is_active"] = (active_project == qualified_name)
+            repo["icon"] = "📂"  # Bare repository icon
+            repo["display_name"] = repo.get("display_name") or repo["name"]
 
-            # Feature 097: Derived git status for UI display
-            # Support both new git_metadata and legacy worktree field
-            gm = project.get("git_metadata") or project.get("worktree") or {}
-            # Legacy worktree uses "branch", new git_metadata uses "current_branch"
-            project["git_branch"] = gm.get("current_branch") or gm.get("branch", "")
-            project["git_commit_short"] = gm.get("commit_hash", "")[:7] if gm.get("commit_hash") else ""
-            project["git_is_dirty"] = not gm.get("is_clean", True) or gm.get("has_untracked", False)
-            project["git_dirty_indicator"] = "●" if project["git_is_dirty"] else ""
-            project["git_ahead"] = gm.get("ahead_count", 0)
-            project["git_behind"] = gm.get("behind_count", 0)
+            # Calculate aggregate stats for the repo
+            worktrees = repo.get("worktrees", [])
+            repo["worktree_count"] = len(worktrees)
+            repo["has_dirty_worktrees"] = any(not wt.get("is_clean", True) for wt in worktrees)
 
-            # Sync status indicator (ahead/behind)
-            sync_parts = []
-            if project["git_ahead"] > 0:
-                sync_parts.append(f"↑{project['git_ahead']}")
-            if project["git_behind"] > 0:
-                sync_parts.append(f"↓{project['git_behind']}")
-            project["git_sync_indicator"] = " ".join(sync_parts)
+            # Enhance each worktree
+            for wt in worktrees:
+                wt_qualified = f"{qualified_name}:{wt['branch']}"
+                wt["qualified_name"] = wt_qualified
+                wt["is_active"] = (active_project == wt_qualified)
+                wt["display_name"] = wt["branch"]
+                wt["directory_display"] = wt.get("path", "").replace(str(Path.home()), "~")
 
-            # Generate syntax-highlighted JSON for hover tooltip (Feature 094)
-            # Use colorize_json_pango (same as Windows tab) - it handles escaping properly
-            # Exclude computed/circular fields from the JSON display
-            json_display_data = {k: v for k, v in project.items()
-                                 if k not in ("json_repr", "git_branch_label", "git_badge",
-                                              "git_status_indicator", "git_sync_indicator",
-                                              "directory_display")}
-            project["json_repr"] = colorize_json_pango(json_display_data)
+                # Git status indicators
+                wt["git_is_dirty"] = not wt.get("is_clean", True)
+                wt["git_dirty_indicator"] = "●" if wt["git_is_dirty"] else ""
+                wt["git_ahead"] = wt.get("ahead", 0)
+                wt["git_behind"] = wt.get("behind", 0)
 
-            # Directory display (shortened for UI)
-            directory = project.get("directory", "")
-            project["directory_display"] = directory.replace(str(Path.home()), "~")
+                # Sync status
+                sync_parts = []
+                if wt["git_ahead"] > 0:
+                    sync_parts.append(f"↑{wt['git_ahead']}")
+                if wt["git_behind"] > 0:
+                    sync_parts.append(f"↓{wt['git_behind']}")
+                wt["git_sync_indicator"] = " ".join(sync_parts)
 
-            return project
-
-        # Enhance all projects
-        main_projects_enhanced = [enhance_project(p) for p in main_projects]
-        worktrees_enhanced = [enhance_project(w) for w in worktrees]
-
-        # Combine for total count
-        all_projects = main_projects_enhanced + worktrees_enhanced
+        # Count totals
+        total_worktrees = sum(len(r.get("worktrees", [])) for r in repositories)
 
         return {
             "status": "ok",
-            "projects": all_projects,  # Combined list for backward compatibility
-            "main_projects": main_projects_enhanced,
-            "worktrees": worktrees_enhanced,
-            "project_count": len(all_projects),
+            # Feature 100: Primary data is discovered_repositories
+            "discovered_repositories": repositories,
+            "last_discovery": last_discovery,
+            "repo_count": len(repositories),
+            "worktree_count": total_worktrees,
             "active_project": active_project,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
             "error": None
         }
 
-    except subprocess.TimeoutExpired:
-        return {
-            "status": "error",
-            "projects": [],
-            "main_projects": [],
-            "worktrees": [],
-            "project_count": 0,
-            "active_project": None,
-            "timestamp": current_timestamp,
-            "timestamp_friendly": friendly_time,
-            "error": "Active project query timeout"
-        }
     except Exception as e:
         logger.error(f"Error querying projects data: {e}", exc_info=True)
         return {
             "status": "error",
-            "projects": [],
-            "main_projects": [],
-            "worktrees": [],
-            "project_count": 0,
+            "discovered_repositories": [],
+            "last_discovery": None,
+            "repo_count": 0,
+            "worktree_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
