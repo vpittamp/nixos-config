@@ -7616,6 +7616,13 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             logger.info(f"[Feature 100] Created worktree '{branch}' at {worktree_path} in {duration_ms:.2f}ms")
 
+            # Feature 101: Auto-discover after worktree creation to update UI
+            try:
+                await self._discover_bare_repos({})
+                logger.info(f"[Feature 101] Auto-discovery completed after worktree creation")
+            except Exception as discover_err:
+                logger.warning(f"[Feature 101] Auto-discovery failed (non-fatal): {discover_err}")
+
             return {"success": True, "path": str(worktree_path)}
 
         except subprocess.CalledProcessError as e:
@@ -7680,6 +7687,13 @@ class IPCServer:
 
             duration_ms = (time.perf_counter() - start_time) * 1000
             logger.info(f"[Feature 100] Removed worktree '{branch}' in {duration_ms:.2f}ms")
+
+            # Feature 101: Auto-discover after worktree removal to update UI
+            try:
+                await self._discover_bare_repos({})
+                logger.info(f"[Feature 101] Auto-discovery completed after worktree removal")
+            except Exception as discover_err:
+                logger.warning(f"[Feature 101] Auto-discovery failed (non-fatal): {discover_err}")
 
             return {"success": True, "removed": str(worktree_path)}
 
