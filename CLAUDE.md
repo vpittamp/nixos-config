@@ -178,6 +178,59 @@ journalctl --user -u eww-monitoring-panel --since "5 minutes ago"
 
 **Docs**: `/etc/nixos/specs/085-sway-monitoring-widget/quickstart.md`
 
+### Projects Tab CRUD (Feature 099)
+
+**Status**: ✅ COMPLETE (2025-11-28)
+
+Full CRUD operations for git repositories and worktrees directly in the monitoring panel.
+
+**Opening Projects Tab**:
+- `Mod+M` → `Alt+2` (or `2` in focus mode)
+
+**Features**:
+- **Hierarchical Display**: Repositories with expandable worktree lists
+- **Create Worktree**: Click `[+ New Worktree]` on repository → fill form → click `[Create]`
+- **Delete Worktree**: Two-stage confirmation with dirty worktree warnings
+- **Switch Project**: Click any project row to switch context
+- **Refresh**: Click `[Refresh]` button to rescan all projects
+
+**Status Indicators**:
+| Indicator | Meaning |
+|-----------|---------|
+| ● (teal border) | Active project |
+| ● (red) | Uncommitted changes |
+| ↑3 / ↓2 | Ahead/behind remote |
+| 📦 | Repository project |
+| 🌿 | Worktree project |
+
+**CLI Commands**:
+```bash
+# Worktree operations
+i3pm worktree list nixos                # List worktrees for repo
+i3pm worktree create 100-new-feature    # Create worktree
+i3pm worktree remove 100-new-feature    # Delete worktree
+
+# Project operations
+i3pm project switch 099-revise-projects-tab  # Switch to project
+i3pm project refresh nixos                   # Refresh git metadata
+i3pm project clear                           # Return to global mode
+```
+
+**Troubleshooting**:
+```bash
+# Panel not updating
+systemctl --user restart eww-monitoring-panel
+
+# Worktree creation fails
+i3pm worktree list nixos  # Check existing worktrees
+git worktree list         # Verify git worktree state
+
+# Check CRUD handler errors
+journalctl --user -u eww-monitoring-panel --since "5 minutes ago"
+```
+
+**Docs**: `/etc/nixos/specs/099-revise-projects-tab/quickstart.md`
+
 ## 🎨 Unified Bar System (Feature 057)
 
 Centralized theming with Catppuccin Mocha across top bar (Eww), bottom bar (Eww), and notification center (SwayNC).
@@ -1098,6 +1151,7 @@ gh auth status               # Auto-uses 1Password token
 - JSON files in `~/.config/i3/projects/*.json` (Project definitions with extended worktree fields) (098-integrate-new-project)
 
 ## Recent Changes
+- 099-revise-projects-tab: Projects Tab CRUD enhancement with hierarchical repository/worktree display, create worktree form with branch name input, two-stage delete confirmation with dirty worktree warnings, project switching via click handler, teal active indicator styling, refresh button, worktree-create and worktree-delete Bash wrapper scripts, JSON config format for CRUD handler, worktree_path validation (exists-check for create workflow)
 - 098-integrate-new-project: Worktree-aware project environment integration with BranchMetadata model, 5-pattern branch parser (number-type-desc, type-number-desc, number-desc, type-desc, standard), parent project linking by name, environment variable injection (I3PM_IS_WORKTREE, I3PM_PARENT_PROJECT, I3PM_BRANCH_NUMBER, I3PM_BRANCH_TYPE, I3PM_FULL_BRANCH_NAME, I3PM_GIT_*), status validation to prevent switching to missing projects, `i3pm worktree list` and `i3pm project refresh` CLI commands, worktree.list and project.refresh IPC methods
 - 087-ssh-projects: SSH-based remote project support with automatic terminal app wrapping, Tailscale hostname support, Python RemoteConfig Pydantic model, TypeScript/Deno CLI (`i3pm project create-remote`), Bash SSH command construction in app-launcher-wrapper.sh, absolute path validation, custom port support, GUI app rejection (terminal-only)
 - 085-sway-monitoring-widget: Real-time monitoring panel with hierarchical window/workspace/project view, event-driven streaming via deflisten (<100ms latency), automatic reconnection, i3ipc.aio subscriptions, Catppuccin Mocha styling

@@ -966,20 +966,21 @@ in
           bindsym a exec eww --config $HOME/.config/eww-monitoring-panel update current_view=apps
 
           # Navigation - arrow keys and vim keys (use sh -c for PATH resolution)
-          bindsym j exec sh -c 'monitor-panel-nav down'
-          bindsym k exec sh -c 'monitor-panel-nav up'
-          bindsym Down exec sh -c 'monitor-panel-nav down'
-          bindsym Up exec sh -c 'monitor-panel-nav up'
-          bindsym g exec sh -c 'monitor-panel-nav first'
-          bindsym Shift+g exec sh -c 'monitor-panel-nav last'
-          bindsym Home exec sh -c 'monitor-panel-nav first'
-          bindsym End exec sh -c 'monitor-panel-nav last'
+          # Feature 099 UX2: Route to projects-nav when on Projects tab
+          bindsym j exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav down || monitor-panel-nav down'
+          bindsym k exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav up || monitor-panel-nav up'
+          bindsym Down exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav down || monitor-panel-nav down'
+          bindsym Up exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav up || monitor-panel-nav up'
+          bindsym g exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav first || monitor-panel-nav first'
+          bindsym Shift+g exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav last || monitor-panel-nav last'
+          bindsym Home exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav first || monitor-panel-nav first'
+          bindsym End exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav last || monitor-panel-nav last'
 
-          # Selection - Enter or Space to view detail
-          bindsym Return exec sh -c 'monitor-panel-nav select'
-          bindsym space exec sh -c 'monitor-panel-nav select'
-          bindsym l exec sh -c 'monitor-panel-nav select'
-          bindsym Right exec sh -c 'monitor-panel-nav select'
+          # Selection - Enter or Space (Space toggles expand for projects)
+          bindsym Return exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav enter || monitor-panel-nav select'
+          bindsym space exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav space || monitor-panel-nav select'
+          bindsym l exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav enter || monitor-panel-nav select'
+          bindsym Right exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav enter || monitor-panel-nav select'
 
           # Back - go back from detail view
           bindsym h exec sh -c 'monitor-panel-nav back'
@@ -990,6 +991,12 @@ in
           # Focus selected window (jump to it)
           bindsym f exec sh -c 'monitor-panel-nav focus'
           bindsym o exec sh -c 'monitor-panel-nav focus'
+
+          # Feature 099 UX2: Projects tab specific actions
+          bindsym e exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav edit'
+          bindsym d exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav delete'
+          bindsym y exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav copy'
+          bindsym n exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav new'
 
           # Exit panel mode - multiple options
           bindsym Escape exec sh -c 'exit-monitor-mode'

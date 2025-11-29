@@ -1532,6 +1532,44 @@ async def query_projects_data() -> Dict[str, Any]:
         main_projects_enhanced = [enhance_project(p) for p in main_projects]
         worktrees_enhanced = [enhance_project(w) for w in worktrees]
 
+        # Feature 099 T005-T007: Add hierarchical fields to main projects
+        # Build worktree lookup by parent_project name
+        worktrees_by_parent: Dict[str, List[Dict[str, Any]]] = {}
+        for wt in worktrees_enhanced:
+            parent = wt.get("parent_project") or ""
+            if parent not in worktrees_by_parent:
+                worktrees_by_parent[parent] = []
+            worktrees_by_parent[parent].append(wt)
+
+        # Enhance main projects with hierarchical fields
+        for proj in main_projects_enhanced:
+            proj_name = proj.get("name", "")
+            child_worktrees = worktrees_by_parent.get(proj_name, [])
+
+            # T005: is_expanded (default false, UI state)
+            proj["is_expanded"] = proj.get("is_expanded", False)
+
+            # T005: worktree_count (computed)
+            proj["worktree_count"] = len(child_worktrees)
+
+            # T006: has_dirty_worktrees (bubble-up from child worktrees)
+            proj["has_dirty_worktrees"] = any(
+                wt.get("git_is_dirty", False) for wt in child_worktrees
+            )
+
+        # Feature 099 T007: Detect orphaned worktrees
+        # A worktree is orphaned if its parent_project doesn't exist in main_projects
+        main_project_names = {p.get("name") for p in main_projects_enhanced}
+        orphaned_worktrees = [
+            wt for wt in worktrees_enhanced
+            if wt.get("parent_project") and wt.get("parent_project") not in main_project_names
+        ]
+        # Also filter out orphans from regular worktrees list
+        worktrees_enhanced = [
+            wt for wt in worktrees_enhanced
+            if not wt.get("parent_project") or wt.get("parent_project") in main_project_names
+        ]
+
         # Combine for total count
         all_projects = main_projects_enhanced + worktrees_enhanced
 
@@ -1540,6 +1578,7 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": all_projects,  # Combined list for backward compatibility
             "main_projects": main_projects_enhanced,
             "worktrees": worktrees_enhanced,
+            "orphaned_worktrees": orphaned_worktrees,  # Feature 099 T007
             "project_count": len(all_projects),
             "active_project": active_project,
             "timestamp": current_timestamp,
@@ -1553,6 +1592,7 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
+            "orphaned_worktrees": [],  # Feature 099 T007
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,
@@ -1566,6 +1606,7 @@ async def query_projects_data() -> Dict[str, Any]:
             "projects": [],
             "main_projects": [],
             "worktrees": [],
+            "orphaned_worktrees": [],  # Feature 099 T007
             "project_count": 0,
             "active_project": None,
             "timestamp": current_timestamp,

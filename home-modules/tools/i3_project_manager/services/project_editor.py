@@ -145,7 +145,8 @@ class ProjectEditor:
         validation_context = {"edit_mode": True}
 
         # Determine if worktree or regular project
-        if "parent_project" in updated_data:
+        # Feature 099: Check that parent_project is not None/null (not just present)
+        if updated_data.get("parent_project"):
             validated = WorktreeConfig.model_validate(updated_data, context=validation_context)
         else:
             validated = ProjectConfig.model_validate(updated_data, context=validation_context)

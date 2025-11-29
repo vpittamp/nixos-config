@@ -39,6 +39,7 @@ let
     peach = "#fab387";     # Warning
     red = "#f38ba8";       # Urgent/critical
     mauve = "#cba6f7";     # Border accent
+    lavender = "#b4befe";  # Lavender accent (input focus)
   };
 
   # Clipboard sync script - fully parameterized with nix store paths
@@ -388,6 +389,37 @@ asyncio.run(stream.run())
 "
   '';
 
+  # Feature 099 T021: Worktree create form opener
+  worktreeCreateOpenScript = pkgs.writeShellScriptBin "worktree-create-open" ''
+    #!${pkgs.bash}/bin/bash
+    # Open worktree create form for a given parent project
+    # Usage: worktree-create-open <parent_project_name>
+
+    PARENT_PROJECT="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$PARENT_PROJECT" ]]; then
+      echo "Usage: worktree-create-open <parent_project_name>" >&2
+      exit 1
+    fi
+
+    # Clear form fields and set parent project
+    $EWW_CMD update worktree_creating=true
+    $EWW_CMD update worktree_form_branch_name=""
+    $EWW_CMD update worktree_form_path=""
+    $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
+    $EWW_CMD update edit_form_display_name=""
+    $EWW_CMD update edit_form_icon="🌿"
+    $EWW_CMD update edit_form_error=""
+
+    # Also expand the parent project to show the form in context
+    CURRENT=$($EWW_CMD get expanded_projects)
+    if ! echo "$CURRENT" | ${pkgs.jq}/bin/jq -e "index(\"$PARENT_PROJECT\")" > /dev/null 2>&1; then
+      NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c ". + [\"$PARENT_PROJECT\"]")
+      $EWW_CMD update "expanded_projects=$NEW"
+    fi
+  '';
+
   # Feature 094 US5: Worktree edit form opener (T059)
   worktreeEditOpenScript = pkgs.writeShellScriptBin "worktree-edit-open" ''
     #!${pkgs.bash}/bin/bash
@@ -532,17 +564,30 @@ asyncio.run(stream.run())
     fi
 
     # Create worktree project config using CRUD handler
+    # Build JSON config object for create command
+    CONFIG_JSON=$(${pkgs.jq}/bin/jq -n \
+      --arg name "$WORKTREE_NAME" \
+      --arg display_name "$DISPLAY_NAME" \
+      --arg icon "$ICON" \
+      --arg directory "$WORKTREE_PATH" \
+      --arg scope "scoped" \
+      --arg worktree_path "$WORKTREE_PATH" \
+      --arg branch_name "$BRANCH_NAME" \
+      --arg parent_project "$PARENT_PROJECT" \
+      '{
+        name: $name,
+        display_name: $display_name,
+        icon: $icon,
+        directory: $directory,
+        scope: $scope,
+        worktree_path: $worktree_path,
+        branch_name: $branch_name,
+        parent_project: $parent_project
+      }')
+
     export PYTHONPATH="${../tools}"
     RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler create \
-      --name "$WORKTREE_NAME" \
-      --display-name "$DISPLAY_NAME" \
-      --icon "$ICON" \
-      --directory "$WORKTREE_PATH" \
-      --scope scoped \
-      --worktree \
-      --branch-name "$BRANCH_NAME" \
-      --worktree-path "$WORKTREE_PATH" \
-      --parent-project "$PARENT_PROJECT")
+      --config "$CONFIG_JSON")
 
     STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
     if [[ "$STATUS" != "success" ]]; then
@@ -683,6 +728,61 @@ asyncio.run(stream.run())
     $EWW update save_in_progress=false
 
     echo "Worktree deleted successfully: $PROJECT_NAME"
+  '';
+
+  # Feature 099 T015: Toggle project expand/collapse script
+  toggleProjectExpandedScript = pkgs.writeShellScriptBin "toggle-project-expanded" ''
+    #!${pkgs.bash}/bin/bash
+    # Toggle expand/collapse state for a repository project
+    # Usage: toggle-project-expanded <project-name>
+
+    PROJECT_NAME="$1"
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$PROJECT_NAME" ]]; then
+      echo "Usage: toggle-project-expanded <project-name>" >&2
+      exit 1
+    fi
+
+    # Get current expanded projects array
+    CURRENT=$($EWW get expanded_projects)
+
+    # Check if project is in the array and toggle
+    if echo "$CURRENT" | ${pkgs.jq}/bin/jq -e "index(\"$PROJECT_NAME\")" > /dev/null 2>&1; then
+      # Remove from array (collapse)
+      NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c "del(.[] | select(. == \"$PROJECT_NAME\"))")
+    else
+      # Add to array (expand)
+      NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c ". + [\"$PROJECT_NAME\"]")
+    fi
+
+    # Update eww variable
+    $EWW update "expanded_projects=$NEW"
+  '';
+
+  # Feature 099 UX3: Expand/collapse all repositories script
+  toggleExpandAllScript = pkgs.writeShellScriptBin "toggle-expand-all-projects" ''
+    #!${pkgs.bash}/bin/bash
+    # Toggle expand/collapse all repositories
+    # Usage: toggle-expand-all-projects
+
+    EWW="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get current all_expanded state
+    CURRENT_STATE=$($EWW get projects_all_expanded)
+
+    if [[ "$CURRENT_STATE" == "true" ]]; then
+      # Currently expanded, collapse all
+      $EWW update projects_all_expanded=false
+      $EWW update expanded_projects='[]'
+    else
+      # Currently collapsed, expand all
+      # Get all main project names from projects_data
+      PROJECTS_DATA=$($EWW get projects_data)
+      ALL_NAMES=$(echo "$PROJECTS_DATA" | ${pkgs.jq}/bin/jq -c '[.main_projects[]?.name] // []')
+      $EWW update projects_all_expanded=true
+      $EWW update "expanded_projects=$ALL_NAMES"
+    fi
   '';
 
   # Feature 094 US5: Worktree edit save script (T059)
@@ -1737,6 +1837,172 @@ print(json.dumps(result))
     esac
   '';
 
+  # Feature 099 UX2: Projects tab keyboard navigation script
+  projectsNavScript = pkgs.writeShellScriptBin "projects-nav" ''
+    #!${pkgs.bash}/bin/bash
+    # Feature 099 UX2: Handle keyboard navigation within Projects tab
+    # Usage: projects-nav <action>
+    # Actions: down, up, select, expand, edit, delete, copy, new
+
+    ACTION="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get current state
+    current_index=$($EWW_CMD get project_selected_index 2>/dev/null || echo "-1")
+    filter_text=$($EWW_CMD get project_filter 2>/dev/null || echo "")
+
+    # Get filtered project list
+    projects_data=$($EWW_CMD get projects_data 2>/dev/null)
+
+    # Build combined list: main projects + worktrees (matching filter)
+    # Each entry: { name, type: "project"|"worktree", parent?, index }
+    all_items=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -c --arg filter "$filter_text" '
+      def matches_filter:
+        if $filter == "" then true
+        else
+          (.name | ascii_downcase | contains($filter | ascii_downcase)) or
+          ((.display_name // "") | ascii_downcase | contains($filter | ascii_downcase)) or
+          ((.branch_name // "") | ascii_downcase | contains($filter | ascii_downcase))
+        end;
+
+      [
+        (.main_projects // [])[] |
+        select(matches_filter) |
+        {name, type: "project", display_name, directory}
+      ] +
+      [
+        (.worktrees // [])[] |
+        select(matches_filter) |
+        {name, type: "worktree", parent: .parent_project, display_name, directory}
+      ]
+    ')
+
+    max_items=$(echo "$all_items" | ${pkgs.jq}/bin/jq 'length')
+
+    # If no items, skip navigation
+    if [ "$max_items" -eq 0 ]; then
+      exit 0
+    fi
+
+    # Helper function to update selection by index
+    update_selection() {
+      local idx=$1
+      local name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson i "$idx" '.[$i].name // ""')
+      $EWW_CMD update project_selected_index=$idx
+      $EWW_CMD update "project_selected_name=$name"
+    }
+
+    case "$ACTION" in
+      down|j)
+        new_index=$((current_index + 1))
+        if [ "$new_index" -ge "$max_items" ]; then
+          new_index=$((max_items - 1))
+        fi
+        update_selection $new_index
+        ;;
+      up|k)
+        new_index=$((current_index - 1))
+        if [ "$new_index" -lt 0 ]; then
+          new_index=0
+        fi
+        update_selection $new_index
+        ;;
+      first|g)
+        update_selection 0
+        ;;
+      last|G)
+        update_selection $((max_items - 1))
+        ;;
+      select|enter)
+        # Switch to selected project
+        if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
+          if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            i3pm project switch "$project_name"
+            # Exit panel mode after switching
+            exit-monitor-mode
+          fi
+        fi
+        ;;
+      expand|space)
+        # Toggle expand/collapse for selected project (if it's a main project)
+        if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          item_type=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].type')
+          project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
+          if [ "$item_type" = "project" ] && [ -n "$project_name" ]; then
+            toggle-project-expanded "$project_name"
+          fi
+        fi
+        ;;
+      edit|e)
+        # Open edit form for selected project
+        if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
+          item_type=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].type')
+          if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            if [ "$item_type" = "worktree" ]; then
+              # Get worktree data for edit form
+              worktree_data=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -r --arg name "$project_name" '
+                .worktrees[] | select(.name == $name) |
+                "\(.display_name // .name)\t\(.icon)\t\(.branch_name // "")\t\(.worktree_path // "")\t\(.parent_project // "")"
+              ')
+              IFS=$'\t' read -r display_name icon branch_name worktree_path parent_project <<< "$worktree_data"
+              worktree-edit-open "$project_name" "$display_name" "$icon" "$branch_name" "$worktree_path" "$parent_project"
+            else
+              # Get project data for edit form
+              project_data=$(echo "$projects_data" | ${pkgs.jq}/bin/jq -r --arg name "$project_name" '
+                .main_projects[] | select(.name == $name) |
+                "\(.display_name // .name)\t\(.icon)\t\(.directory)\t\(.scope // "scoped")\t\(.remote.enabled // false)\t\(.remote.host // "")\t\(.remote.user // "")\t\(.remote.remote_dir // "")\t\(.remote.port // 22)"
+              ')
+              IFS=$'\t' read -r display_name icon directory scope remote_enabled remote_host remote_user remote_dir remote_port <<< "$project_data"
+              project-edit-open "$project_name" "$display_name" "$icon" "$directory" "$scope" "$remote_enabled" "$remote_host" "$remote_user" "$remote_dir" "$remote_port"
+            fi
+          fi
+        fi
+        ;;
+      delete|d)
+        # Open delete confirmation for selected project
+        if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
+          display_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].display_name // .[$idx].name')
+          item_type=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].type')
+          if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
+            if [ "$item_type" = "worktree" ]; then
+              worktree-delete "$project_name"
+            else
+              project-delete-open "$project_name" "$display_name"
+            fi
+          fi
+        fi
+        ;;
+      copy|y)
+        # Copy directory path of selected project
+        if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
+          directory=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].directory')
+          if [ -n "$directory" ] && [ "$directory" != "null" ]; then
+            echo -n "$directory" | ${pkgs.wl-clipboard}/bin/wl-copy
+            $EWW_CMD update success_notification="Copied: $directory" success_notification_visible=true
+            (sleep 2 && $EWW_CMD update success_notification_visible=false) &
+          fi
+        fi
+        ;;
+      new|n)
+        # Open new project form
+        project-create-open
+        ;;
+      filter|/)
+        # Focus filter input (handled by Sway keybinding - this is a placeholder)
+        # The actual focus requires direct eww interaction
+        ;;
+      clear-filter|escape)
+        # Clear filter and reset selection
+        $EWW_CMD update "project_filter="
+        $EWW_CMD update project_selected_index=-1
+        $EWW_CMD update "project_selected_name="
+        ;;
+    esac
+  '';
+
   # Feature 094: Copy window JSON helper script (used by Windows tab)
   copyWindowJsonScript = pkgs.writeShellScript "copy-window-json" ''
     #!/usr/bin/env bash
@@ -1899,6 +2165,10 @@ in
       worktreeCreateScript    # Feature 094 US5: Worktree create handler (T057-T058)
       worktreeDeleteScript    # Feature 094 US5: Worktree delete handler (T060)
       worktreeEditSaveScript  # Feature 094 US5: Worktree edit save handler (T059)
+      toggleProjectExpandedScript # Feature 099 T015: Toggle project expand/collapse
+      toggleExpandAllScript       # Feature 099 UX3: Expand/collapse all projects
+      projectsNavScript           # Feature 099 UX2: Projects tab keyboard navigation
+      worktreeCreateOpenScript    # Feature 099 T021: Worktree create form opener
       projectCreateOpenScript   # Feature 094 US3: Project create form opener (T066)
       projectCreateSaveScript   # Feature 094 US3: Project create save handler (T069)
       projectCreateCancelScript # Feature 094 US3: Project create cancel handler (T066)
@@ -2105,6 +2375,15 @@ in
       (defvar worktree_form_path "")              ;; Worktree path (editable in create, read-only in edit)
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
+
+      ;; Feature 099 T008: Expanded projects state (list of expanded project names as JSON array)
+      (defvar expanded_projects "[]")             ;; JSON array of expanded project names
+
+      ;; Feature 099 UX Enhancements
+      (defvar project_filter "")                  ;; UX1: Filter text for projects search
+      (defvar project_selected_index -1)          ;; UX2: Currently selected project index for keyboard nav
+      (defvar project_selected_name "")           ;; UX2: Name of currently selected project (for highlighting)
+      (defvar projects_all_expanded false)        ;; UX3: Toggle state for expand/collapse all
 
       ;; Feature 094 US4: Project delete confirmation state (T086-T089)
       (defvar project_deleting false)              ;; True when delete confirmation dialog is visible
@@ -2888,27 +3167,80 @@ in
             :space-evenly false
             :vexpand true
             ;; Feature 094 US3: Projects tab header with New Project button (T066)
+            ;; Feature 099 T016: Added Refresh button
+            ;; Feature 099 UX: Added filter, expand/collapse all
             (box
-              :class "projects-header"
-              :orientation "h"
+              :class "projects-header-container"
+              :orientation "v"
               :space-evenly false
               :visible {!project_creating}
-              (label
-                :class "projects-header-title"
-                :halign "start"
-                :hexpand true
-                :text "Projects")
-              (button
-                :class "new-project-button"
-                :onclick "project-create-open"
-                :tooltip "Create a new project"
-                "+ New"))
+              ;; Row 1: Title and action buttons
+              (box
+                :class "projects-header"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "projects-header-title"
+                  :halign "start"
+                  :hexpand true
+                  :text "Projects")
+                ;; UX3: Expand/Collapse All toggle
+                (button
+                  :class "expand-all-button"
+                  :onclick "toggle-expand-all-projects"
+                  :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
+                  {projects_all_expanded ? "󰅃" : "󰅀"})
+                ;; Feature 099 T016: Refresh button
+                (button
+                  :class "refresh-button"
+                  :onclick "systemctl --user restart eww-monitoring-panel &"
+                  :tooltip "Refresh all projects"
+                  "")
+                (button
+                  :class "new-project-button"
+                  :onclick "project-create-open"
+                  :tooltip "Create a new project"
+                  "+ New"))
+              ;; Row 2: UX1 - Filter/search input
+              (box
+                :class "projects-filter-row"
+                :orientation "h"
+                :space-evenly false
+                (box
+                  :class "filter-input-container"
+                  :hexpand true
+                  (label
+                    :class "filter-icon"
+                    :text "")
+                  (input
+                    :class "project-filter-input"
+                    :hexpand true
+                    :value project_filter
+                    :onchange "eww --config $HOME/.config/eww-monitoring-panel update project_filter={}"
+                    :timeout "100ms")
+                  (button
+                    :class "filter-clear-button"
+                    :visible {project_filter != ""}
+                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
+                    :tooltip "Clear filter (Esc)"
+                    "󰅖"))
+                ;; Filter count indicator - shows total count when filtering
+                (label
+                  :class "filter-count"
+                  :visible {project_filter != ""}
+                  :text "''${arraylength(projects_data.main_projects ?: [])} projects"))))
             ;; Feature 094 US3: Project create form (T067)
             (revealer
               :transition "slidedown"
               :reveal project_creating
               :duration "200ms"
               (project-create-form))
+            ;; Feature 099 T020: Worktree create form
+            (revealer
+              :transition "slidedown"
+              :reveal worktree_creating
+              :duration "200ms"
+              (worktree-create-form :parent_project worktree_form_parent_project))
             ;; Feature 094 US4: Delete confirmation dialog (T088)
             (project-delete-confirmation)
             ;; Error state
@@ -2916,7 +3248,8 @@ in
               :class "error-message"
               :visible {projects_data.status == "error"}
               (label :text "Error: ''${projects_data.error ?: 'Unknown error'}"))
-            ;; Projects list
+            ;; Feature 099: Hierarchical projects list with expand/collapse
+            ;; UX1: Filter support - projects hidden if they don't match filter
             (box
               :class "projects-list"
               :orientation "v"
@@ -2925,14 +3258,239 @@ in
                 (box
                   :orientation "v"
                   :space-evenly false
-                  ;; Main project card
-                  (project-card :project project)
-                  ;; Worktrees for this main project
-                  (for worktree in {projects_data.worktrees ?: []}
+                  ;; UX1: Filter visibility - show if filter is empty or name/display_name contains filter text
+                  ;; Using simple case-insensitive substring match via regex
+                  :visible {project_filter == "" || strlength(project_filter) < 1 || matches(project.name, "(?i).*" + project_filter + ".*") || matches(project.display_name ?: "", "(?i).*" + project_filter + ".*")}
+                  ;; Feature 099 T012: Repository project card with expand/collapse
+                  (repository-project-card :project project)
+                  ;; Feature 099 T014: Worktrees (visible when parent is expanded)
+                  (revealer
+                    :transition "slidedown"
+                    :duration "150ms"
+                    :reveal {jq(expanded_projects, "index(\"" + project.name + "\") != null")}
                     (box
-                      :visible {worktree.parent_project == project.name}
-                      (worktree-card :project worktree)))))))))
+                      :orientation "v"
+                      :space-evenly false
+                      :class "worktrees-container"
+                      (for worktree in {projects_data.worktrees ?: []}
+                        (box
+                          ;; UX1: Also filter worktrees by name/branch
+                          :visible {(worktree.parent_project == project.name) && (project_filter == "" || strlength(project_filter) < 1 || matches(worktree.name, "(?i).*" + project_filter + ".*") || matches(worktree.display_name ?: "", "(?i).*" + project_filter + ".*") || matches(worktree.branch_name ?: "", "(?i).*" + project_filter + ".*"))}
+                          (worktree-card :project worktree)))))))
+              ;; Feature 099 T007: Orphaned worktrees section
+              (revealer
+                :transition "slidedown"
+                :duration "150ms"
+                :reveal {arraylength(projects_data.orphaned_worktrees ?: []) > 0}
+                (box
+                  :orientation "v"
+                  :space-evenly false
+                  :class "orphaned-section"
+                  (label
+                    :class "orphaned-header"
+                    :halign "start"
+                    :text "⚠️ Orphaned Worktrees")
+                  (for orphan in {projects_data.orphaned_worktrees ?: []}
+                    (orphaned-worktree-card :project orphan))))
+            ;; UX2: Keyboard hints shown when in panel focus mode
+            (revealer
+              :transition "slideup"
+              :duration "150ms"
+              :reveal {panel_focused && current_view == "projects"}
+              (box
+                :class "keyboard-hints"
+                :orientation "h"
+                :space-evenly false
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "j/k") (label :text "Navigate"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Enter") (label :text "Switch"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Space") (label :text "Expand"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "e") (label :text "Edit"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "d") (label :text "Delete"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "y") (label :text "Copy"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "n") (label :text "New"))
+                (box :class "keyboard-hint" (label :class "keyboard-hint-key" :text "Esc") (label :text "Exit")))))))
 
+      ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
+      (defwidget repository-project-card [project]
+        (eventbox
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
+          (box
+            ;; UX2: Add "selected" class when this project is keyboard-selected
+            :class {"repository-card project-card" + (project.is_active ? " active-project" : "") + (project.has_dirty_worktrees ? " has-dirty" : "") + (project_selected_name == project.name ? " selected" : "")}
+            :orientation "v"
+            :space-evenly false
+            ;; Row 1: Expand toggle + Icon + Name/Path + Badges + Actions
+            (box
+              :class "project-card-header"
+              :orientation "h"
+              :space-evenly false
+              :hexpand true
+              ;; Feature 099 T015: Expand/collapse toggle
+              (eventbox
+                :cursor "pointer"
+                :onclick "toggle-project-expanded ''${project.name}"
+                :tooltip {jq(expanded_projects, "index(\"" + project.name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
+                (box
+                  :class "expand-toggle"
+                  :valign "center"
+                  (label
+                    :class "expand-icon"
+                    :text {jq(expanded_projects, "index(\"" + project.name + "\") != null") ? "󰅀" : "󰅂"})))
+              ;; Main content area - clickable for project switch
+              (eventbox
+                :cursor "pointer"
+                :hexpand true
+                :onclick "i3pm project switch ''${project.name}"
+                (box
+                  :class "project-main-content"
+                  :orientation "h"
+                  :space-evenly false
+                  :hexpand true
+                  ;; Icon
+                  (box
+                    :class "project-icon-container"
+                    :orientation "v"
+                    :valign "center"
+                    (label
+                      :class "project-icon"
+                      :text "''${project.icon}"))
+                  ;; Project info
+                  (box
+                    :class "project-info"
+                    :orientation "v"
+                    :space-evenly false
+                    :hexpand true
+                    (box
+                      :orientation "h"
+                      :space-evenly false
+                      (label
+                        :class "project-card-name"
+                        :halign "start"
+                        :limit-width 15
+                        :truncate true
+                        :text "''${project.display_name ?: project.name}"
+                        :tooltip "''${project.display_name ?: project.name}")
+                      ;; Feature 099 T012: Worktree count badge (when collapsed or always)
+                      (label
+                        :class "worktree-count-badge"
+                        :visible {(project.worktree_count ?: 0) > 0}
+                        :text "''${project.worktree_count} 🌿"
+                        :tooltip "''${project.worktree_count} worktrees"))
+                    (label
+                      :class "project-card-path"
+                      :halign "start"
+                      :limit-width 18
+                      :truncate true
+                      :text "''${project.directory_display ?: project.directory}"
+                      :tooltip "''${project.directory}"))))
+              ;; Action buttons (visible on hover)
+              (box
+                :class "project-action-bar"
+                :orientation "h"
+                :space-evenly false
+                :visible {hover_project_name == project.name && editing_project_name != project.name && !project_deleting}
+                ;; UX4: Copy directory path to clipboard
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                  :tooltip "Copy directory path"
+                  (label :class "action-btn action-copy" :text ""))
+                ;; Feature 099 T019: [+ New Worktree] button
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "worktree-create-open ''${project.name}"
+                  :tooltip "Create new worktree"
+                  (label :class "action-btn action-add" :text ""))
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
+                  :tooltip "Edit project"
+                  (label :class "action-btn action-edit" :text "󰏫"))
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "project-delete-open \"''${project.name}\" \"''${project.display_name ?: project.name}\""
+                  :tooltip "Delete project"
+                  (label :class "action-btn action-delete" :text "󰆴")))
+              ;; Status badges
+              (box
+                :class "project-badges"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "badge badge-active"
+                  :visible {project.is_active}
+                  :text "●"
+                  :tooltip "Active project")
+                (label
+                  :class "badge badge-dirty"
+                  :visible {project.has_dirty_worktrees}
+                  :text "●"
+                  :tooltip "Has dirty worktrees")
+                (label
+                  :class "badge badge-missing"
+                  :visible {project.status == "missing"}
+                  :text "⚠"
+                  :tooltip "Directory not found")))
+            ;; Row 2: Git branch (full width row)
+            (box
+              :class "git-branch-row"
+              :orientation "h"
+              :space-evenly false
+              :visible {(project.git_branch ?: "") != ""}
+              (label
+                :class "git-branch-icon"
+                :text "󰘬")
+              (label
+                :class "git-branch-text"
+                :wrap true
+                :xalign 0
+                :text "''${project.git_branch}"
+                :tooltip "Branch: ''${project.git_branch}")
+              (label
+                :class "git-dirty"
+                :visible {project.git_is_dirty}
+                :text "''${project.git_dirty_indicator}"
+                :tooltip "Uncommitted changes")))))
+
+      ;; Feature 099 T054: Orphaned worktree card widget
+      (defwidget orphaned-worktree-card [project]
+        (box
+          :class "orphaned-worktree-card"
+          :orientation "h"
+          :space-evenly false
+          (label
+            :class "orphaned-icon"
+            :text "⚠️")
+          (box
+            :class "orphaned-info"
+            :orientation "v"
+            :space-evenly false
+            :hexpand true
+            (label
+              :class "orphaned-name"
+              :halign "start"
+              :text "''${project.display_name ?: project.name}")
+            (label
+              :class "orphaned-path"
+              :halign "start"
+              :text "''${project.directory_display ?: project.directory}"))
+          (box
+            :class "orphaned-actions"
+            :orientation "h"
+            :space-evenly false
+            (eventbox
+              :cursor "pointer"
+              :onclick "i3pm worktree recover ''${project.name}"
+              :tooltip "Recover (register parent repository)"
+              (label :class "action-btn action-recover" :text ""))
+            (eventbox
+              :cursor "pointer"
+              :onclick "worktree-delete ''${project.name}"
+              :tooltip "Delete orphaned entry"
+              (label :class "action-btn action-delete" :text "󰆴")))))
+
+      ;; Original project-card kept for backward compatibility
       (defwidget project-card [project]
         (eventbox
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
@@ -3106,7 +3664,8 @@ in
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name=''${project.name}"
           :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_project_name='''"
           (box
-            :class "worktree-card"
+            ;; UX2: Add "selected" class when this worktree is keyboard-selected
+            :class {"worktree-card" + (project_selected_name == project.name ? " selected" : "")}
             :orientation "h"
             :space-evenly false
             ;; Worktree tree indicator
@@ -3121,18 +3680,27 @@ in
               (label
                 :class "project-icon worktree-icon"
                 :text "''${project.icon}"))
+            ;; UX5: Branch number badge (from Feature 098 branch_metadata)
+            (label
+              :class "branch-number-badge"
+              :visible {(project.branch_metadata.number ?: "") != ""}
+              :text "''${project.branch_metadata.number ?: ""}"
+              :tooltip "Branch #''${project.branch_metadata.number ?: ""} (''${project.branch_metadata.type ?: "feature"})")
             ;; Project info - takes remaining space
             (box
               :class "project-info"
               :orientation "v"
               :space-evenly false
               :hexpand true
-              (label
-                :class "project-card-name worktree-name"
-                :halign "start"
-                :limit-width 18
-                :truncate true
-                :text "''${project.display_name ?: project.name}")
+              (box
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "project-card-name worktree-name"
+                  :halign "start"
+                  :limit-width 16
+                  :truncate true
+                  :text "''${project.display_name ?: project.name}"))
               (label
                 :class "project-card-path"
                 :halign "start"
@@ -3154,7 +3722,24 @@ in
                 :wrap true
                 :xalign 0
                 :text "''${project.branch_name}"
-                :tooltip "Branch: ''${project.branch_name}"))
+                :tooltip "Branch: ''${project.branch_name}")
+              ;; Feature 099 T050: Dirty indicator (● red)
+              (label
+                :class "git-dirty"
+                :visible {project.git_is_dirty}
+                :text "''${project.git_dirty_indicator}"
+                :tooltip "Uncommitted changes")
+              ;; Feature 099 T051: Ahead/behind count display (↑3 ↓2)
+              (label
+                :class "git-sync-ahead"
+                :visible {(project.git_ahead ?: 0) > 0}
+                :text "↑''${project.git_ahead}"
+                :tooltip "''${project.git_ahead} commits ahead of remote")
+              (label
+                :class "git-sync-behind"
+                :visible {(project.git_behind ?: 0) > 0}
+                :text "↓''${project.git_behind}"
+                :tooltip "''${project.git_behind} commits behind remote"))
             ;; Remote indicator
             (label
               :class "badge badge-remote"
@@ -3166,6 +3751,12 @@ in
               :visible {hover_project_name == project.name && editing_project_name != project.name}
               :orientation "h"
               :space-evenly false
+              ;; UX4: Copy directory path to clipboard
+              (eventbox
+                :cursor "pointer"
+                :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                :tooltip "Copy directory path"
+                (label :class "action-btn action-copy" :text ""))
               (eventbox
                 :cursor "pointer"
                 :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
@@ -5831,6 +6422,21 @@ in
         margin-left: 4px;
       }
 
+      /* Feature 099 T051: Ahead/behind git sync indicators */
+      .git-sync-ahead {
+        color: ${mocha.green};
+        font-size: 10px;
+        margin-left: 6px;
+        font-weight: bold;
+      }
+
+      .git-sync-behind {
+        color: ${mocha.yellow};
+        font-size: 10px;
+        margin-left: 4px;
+        font-weight: bold;
+      }
+
       .project-icon-container {
         background-color: rgba(137, 180, 250, 0.1);
         border-radius: 6px;
@@ -5932,6 +6538,108 @@ in
         color: ${mocha.sapphire};
         font-size: 10px;
         margin-left: 4px;
+      }
+
+      /* Feature 099: Repository project card styles */
+      .repository-card {
+        /* Inherits from .project-card, add repository-specific styles */
+      }
+
+      .repository-card.has-dirty {
+        /* Visual indicator when repository has dirty worktrees */
+        border-left-color: ${mocha.peach};
+      }
+
+      .expand-toggle {
+        padding: 2px 6px;
+        margin-right: 4px;
+        border-radius: 4px;
+        background-color: rgba(69, 71, 90, 0.3);
+      }
+
+      .expand-toggle:hover {
+        background-color: rgba(69, 71, 90, 0.5);
+      }
+
+      .expand-icon {
+        font-family: "JetBrainsMono Nerd Font", monospace;
+        font-size: 12px;
+        color: ${mocha.subtext0};
+      }
+
+      .worktree-count-badge {
+        font-size: 9px;
+        color: ${mocha.green};
+        background-color: rgba(166, 227, 161, 0.15);
+        padding: 1px 5px;
+        border-radius: 8px;
+        margin-left: 6px;
+      }
+
+      .badge-dirty {
+        color: ${mocha.peach};
+        font-size: 8px;
+      }
+
+      /* Feature 099: Worktrees container (nested under repository) */
+      .worktrees-container {
+        margin-left: 20px;
+        padding-left: 8px;
+        border-left: 1px solid rgba(69, 71, 90, 0.5);
+      }
+
+      /* Feature 099: Orphaned worktrees section */
+      .orphaned-section {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px dashed ${mocha.peach};
+      }
+
+      .orphaned-header {
+        font-size: 11px;
+        color: ${mocha.peach};
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+
+      .orphaned-worktree-card {
+        background-color: rgba(250, 179, 135, 0.1);
+        border-left: 2px solid ${mocha.peach};
+        border-radius: 2px;
+        padding: 6px 8px;
+        margin-bottom: 4px;
+      }
+
+      .orphaned-icon {
+        margin-right: 6px;
+        font-size: 14px;
+      }
+
+      .orphaned-info {
+        min-width: 0;
+      }
+
+      .orphaned-name {
+        font-size: 11px;
+        color: ${mocha.text};
+      }
+
+      .orphaned-path {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+        font-family: "JetBrainsMono Nerd Font", monospace;
+      }
+
+      .orphaned-actions {
+        /* GTK doesn't support margin-left: auto; use hexpand on sibling instead */
+      }
+
+      .action-recover {
+        color: ${mocha.green};
+      }
+
+      .action-add {
+        color: ${mocha.green};
       }
 
       /* Feature 097: Missing status warning badge */
@@ -6145,17 +6853,169 @@ in
       }
 
       /* Feature 094 US3: Project create form styles (T066-T067) */
-      .projects-header {
-        padding: 8px 12px;
+      .projects-header-container {
         background-color: rgba(30, 30, 46, 0.4);
         border-bottom: 1px solid ${mocha.surface0};
         margin-bottom: 8px;
+      }
+
+      .projects-header {
+        padding: 8px 12px;
       }
 
       .projects-header-title {
         font-size: 14px;
         font-weight: bold;
         color: ${mocha.text};
+      }
+
+      /* Feature 099 UX3: Expand/Collapse All button */
+      .expand-all-button {
+        background-color: transparent;
+        color: ${mocha.subtext0};
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 14px;
+        border: 1px solid ${mocha.surface1};
+        margin-right: 8px;
+      }
+
+      .expand-all-button:hover {
+        background-color: rgba(69, 71, 90, 0.5);
+        color: ${mocha.text};
+        border-color: ${mocha.overlay0};
+      }
+
+      /* Feature 099 UX1: Filter/Search row */
+      .projects-filter-row {
+        padding: 4px 12px 8px 12px;
+      }
+
+      .filter-input-container {
+        background-color: rgba(49, 50, 68, 0.6);
+        border: 1px solid ${mocha.surface1};
+        border-radius: 6px;
+        padding: 4px 8px;
+      }
+
+      .filter-input-container:focus-within {
+        border-color: ${mocha.lavender};
+        background-color: rgba(49, 50, 68, 0.8);
+      }
+
+      .filter-icon {
+        color: ${mocha.subtext0};
+        font-size: 12px;
+        margin-right: 6px;
+      }
+
+      .project-filter-input {
+        background-color: transparent;
+        color: ${mocha.text};
+        font-size: 12px;
+        border: none;
+        outline: none;
+        min-width: 100px;
+      }
+
+      .filter-clear-button {
+        background-color: transparent;
+        color: ${mocha.subtext0};
+        padding: 2px 4px;
+        border: none;
+        font-size: 12px;
+        border-radius: 4px;
+      }
+
+      .filter-clear-button:hover {
+        color: ${mocha.red};
+        background-color: rgba(243, 139, 168, 0.2);
+      }
+
+      .filter-count {
+        color: ${mocha.subtext0};
+        font-size: 11px;
+        margin-left: 8px;
+        padding: 2px 6px;
+        background-color: rgba(137, 180, 250, 0.15);
+        border-radius: 4px;
+      }
+
+      /* Feature 099 UX5: Branch number badge */
+      .branch-number-badge {
+        background-color: rgba(203, 166, 247, 0.2);
+        color: ${mocha.mauve};
+        font-size: 10px;
+        font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-right: 6px;
+        min-width: 24px;
+        text-align: center;
+      }
+
+      /* Feature 099 UX4: Copy button */
+      .action-copy {
+        color: ${mocha.blue};
+      }
+
+      .action-copy:hover {
+        color: ${mocha.sapphire};
+      }
+
+      /* Feature 099 UX2: Keyboard navigation - selected project highlight */
+      .project-card.selected,
+      .repository-card.selected,
+      .worktree-card.selected {
+        background-color: rgba(137, 180, 250, 0.15);
+        border-color: ${mocha.blue};
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.3);
+      }
+
+      .project-card.selected .project-card-name,
+      .repository-card.selected .project-card-name,
+      .worktree-card.selected .worktree-name {
+        color: ${mocha.blue};
+      }
+
+      /* Keyboard hints shown in panel focus mode */
+      .keyboard-hints {
+        padding: 6px 12px;
+        background-color: rgba(49, 50, 68, 0.8);
+        border-top: 1px solid ${mocha.surface1};
+        font-size: 10px;
+        color: ${mocha.subtext0};
+      }
+
+      .keyboard-hint {
+        margin-right: 12px;
+      }
+
+      .keyboard-hint-key {
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-family: monospace;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+
+      /* Feature 099 T016: Refresh button */
+      .refresh-button {
+        background-color: transparent;
+        color: ${mocha.subtext0};
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 14px;
+        border: 1px solid ${mocha.surface1};
+        margin-right: 8px;
+      }
+
+      .refresh-button:hover {
+        background-color: rgba(69, 71, 90, 0.5);
+        color: ${mocha.text};
+        border-color: ${mocha.overlay0};
       }
 
       .new-project-button {

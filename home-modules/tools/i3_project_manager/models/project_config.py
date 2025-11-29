@@ -6,10 +6,36 @@ Storage: ~/.config/i3/projects/*.json
 """
 
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional, Literal, List, TYPE_CHECKING
 from pydantic import BaseModel, Field, field_validator, model_validator
+from enum import Enum
 import re
 import os
+
+if TYPE_CHECKING:
+    from typing import ForwardRef
+
+
+class SourceType(str, Enum):
+    """
+    Feature 097/099: Project source type classification
+
+    Determines how the project relates to git repositories.
+    """
+    REPOSITORY = "repository"  # Main bare/worktree repo, parent of worktrees
+    WORKTREE = "worktree"      # Git worktree linked to a repository project
+    STANDALONE = "standalone"  # Not git-managed or no worktree structure
+
+
+class ProjectStatus(str, Enum):
+    """
+    Feature 097/099: Project validation status
+
+    Indicates the current state of a project.
+    """
+    OK = "ok"                  # Directory exists, accessible
+    MISSING = "missing"        # Directory does not exist
+    INACCESSIBLE = "inaccessible"  # Directory exists but not readable/writable
 
 
 class RemoteConfig(BaseModel):
@@ -159,11 +185,26 @@ class WorktreeConfig(ProjectConfig):
 
     @field_validator("worktree_path")
     @classmethod
-    def validate_worktree_path_not_exists(cls, v: str) -> str:
-        """Per spec.md FR-P-018: Validate worktree path does not already exist"""
+    def validate_worktree_path_exists(cls, v: str, info) -> str:
+        """
+        Feature 099: Validate worktree path exists and is a valid directory.
+
+        The workflow is:
+        1. Script creates git worktree (directory now exists)
+        2. Script calls CRUD handler to register the worktree project
+
+        So we validate that the path EXISTS (reverse of original spec.md FR-P-018).
+        Skip validation when in edit mode (editing existing worktree).
+        """
+        # Skip validation if in edit mode
+        if info.context and info.context.get("edit_mode"):
+            return str(Path(v).expanduser().resolve())
+
         path = Path(v).expanduser().resolve()
-        if path.exists():
-            raise ValueError(f"Worktree path already exists: {v}")
+        if not path.exists():
+            raise ValueError(f"Worktree path does not exist: {v}")
+        if not path.is_dir():
+            raise ValueError(f"Worktree path is not a directory: {v}")
         return str(path)
 
     @field_validator("branch_name")
@@ -201,3 +242,58 @@ class WorktreeConfig(ProjectConfig):
             ]
         }
     }
+
+
+class GitMetadata(BaseModel):
+    """
+    Feature 099: Git repository metadata for display in monitoring panel.
+
+    Tracks git status information for projects and worktrees.
+    """
+    branch: str = Field(default="", description="Current git branch name")
+    commit: str = Field(default="", description="Short commit hash (7 chars)")
+    is_clean: bool = Field(default=True, description="True if no uncommitted changes")
+    ahead_count: int = Field(default=0, ge=0, description="Commits ahead of remote")
+    behind_count: int = Field(default=0, ge=0, description="Commits behind remote")
+    has_untracked: bool = Field(default=False, description="Has untracked files")
+
+
+class RepositoryWithWorktrees(BaseModel):
+    """
+    Feature 099: Repository project container with nested worktrees.
+
+    Groups a repository project with its child worktrees for hierarchical display.
+    """
+    project: "ProjectConfig" = Field(..., description="The repository project")
+    worktrees: List["ProjectConfig"] = Field(default_factory=list, description="Child worktree projects")
+    worktree_count: int = Field(default=0, ge=0, description="Number of worktrees")
+    has_dirty: bool = Field(default=False, description="True if repo or any worktree has uncommitted changes")
+    is_expanded: bool = Field(default=True, description="UI state: show nested worktrees")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+class PanelProjectsData(BaseModel):
+    """
+    Feature 099: Complete projects data structure for monitoring panel.
+
+    Contains all project types organized for hierarchical display.
+    """
+    repository_projects: List[RepositoryWithWorktrees] = Field(
+        default_factory=list,
+        description="Repository projects with nested worktrees"
+    )
+    standalone_projects: List["ProjectConfig"] = Field(
+        default_factory=list,
+        description="Non-git or standalone projects"
+    )
+    orphaned_worktrees: List["ProjectConfig"] = Field(
+        default_factory=list,
+        description="Worktrees whose parent repository is not registered"
+    )
+    active_project: Optional[str] = Field(
+        default=None,
+        description="Name of currently active project"
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
