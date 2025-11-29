@@ -155,18 +155,20 @@ Based on plan.md structure:
 
 ---
 
-## Phase 7: User Story 5 - Real-time Discovery (Priority: P4)
+## Phase 7: User Story 5 - Real-time Discovery (Priority: P4) ⏸️ DEFERRED
 
 **Goal**: New repos and worktrees detected automatically without manual scans
+
+**Status**: ⏸️ **INTENTIONALLY DEFERRED** - These optional P4 tasks add complexity and resource usage. The feature is fully functional with manual `i3pm discover`. Real-time watching can be added in a future enhancement if needed.
 
 **Independent Test**: Create worktree while monitoring, verify it appears within 30 seconds
 
 ### Implementation for User Story 5
 
-- [ ] T050 [US5] Implement file system watcher for account directories using inotify or watchfiles
-- [ ] T051 [US5] Trigger incremental discovery on directory changes (debounced to 30 seconds)
-- [ ] T052 [US5] Emit event when new repo/worktree discovered for UI updates
-- [ ] T053 [US5] Add configuration option to enable/disable file watching
+- [~] T050 [US5] Implement file system watcher for account directories using inotify or watchfiles - **DEFERRED**
+- [~] T051 [US5] Trigger incremental discovery on directory changes (debounced to 30 seconds) - **DEFERRED**
+- [~] T052 [US5] Emit event when new repo/worktree discovered for UI updates - **DEFERRED**
+- [~] T053 [US5] Add configuration option to enable/disable file watching - **DEFERRED**
 
 **Checkpoint**: Worktrees appear automatically without running `i3pm discover`
 
