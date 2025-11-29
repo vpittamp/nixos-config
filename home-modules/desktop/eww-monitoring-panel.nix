@@ -3296,7 +3296,7 @@ in
               ;; Expand/collapse toggle
               (eventbox
                 :cursor "pointer"
-                :onclick "toggle-project-expanded ''"'${repo.qualified_name}'"'"
+                :onclick "toggle-project-expanded ''${repo.qualified_name}"
                 :tooltip {jq(expanded_projects, "index(\"" + repo.qualified_name + "\") != null") ? "Collapse worktrees" : "Expand worktrees"}
                 (box
                   :class "expand-toggle"
@@ -3362,7 +3362,7 @@ in
       (defwidget discovered-worktree-card [worktree]
         (eventbox
           :cursor "pointer"
-          :onclick "cd ''"'${worktree.path}'"' && i3pm project switch ''"'${worktree.qualified_name}'"'"
+          :onclick "cd ''${worktree.path} && i3pm project switch ''${worktree.qualified_name}"
           (box
             :class {"discovered-worktree-card" + (worktree.is_active ? " active-project" : "") + (worktree.git_is_dirty ? " dirty" : "") + (worktree.is_main ? " main-worktree" : "")}
             :orientation "h"
