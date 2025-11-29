@@ -1149,6 +1149,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON files in `~/.config/i3/projects/`, discovery config in `~/.config/i3/discovery-config.json` (097-convert-manual-projects)
 - Python 3.11+ (existing daemon standard per Constitution Principle X), Bash 5.0+ (app-launcher-wrapper) + i3ipc.aio (async Sway IPC), Pydantic 2.x (data validation), asyncio (event handling) (098-integrate-new-project)
 - JSON files in `~/.config/i3/projects/*.json` (Project definitions with extended worktree fields) (098-integrate-new-project)
+- Python 3.11+ (daemon), TypeScript/Deno 1.40+ (CLI), Bash 5.0+ (scripts) + i3ipc.aio (Sway IPC), Pydantic 2.x (validation), Zod 3.22+ (TypeScript schemas) (100-automate-project-and)
+- JSON files at `~/.config/i3/repos.json` and `~/.config/i3/accounts.json` (100-automate-project-and)
 
 ## Recent Changes
 - 099-revise-projects-tab: Projects Tab CRUD enhancement with hierarchical repository/worktree display, create worktree form with branch name input, two-stage delete confirmation with dirty worktree warnings, project switching via click handler, teal active indicator styling, refresh button, worktree-create and worktree-delete Bash wrapper scripts, JSON config format for CRUD handler, worktree_path validation (exists-check for create workflow)

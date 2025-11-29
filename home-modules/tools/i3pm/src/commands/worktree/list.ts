@@ -1,156 +1,128 @@
-/**
- * Worktree List Subcommand
- * Feature 079: Preview Pane User Experience - US6
- * Feature 098: Worktree list command with parent filtering
- *
- * Lists all worktree projects with their metadata including branch,
- * path, parent_repo, and git_status.
- *
- * Usage:
- *   i3pm worktree list           # List all worktrees (file-based)
- *   i3pm worktree list <parent>  # List worktrees for specific parent (IPC-based)
- */
+// Feature 100: Worktree List Command
+// T041: Create `i3pm worktree list [repo]` CLI command
 
-import { parseArgs } from "@std/cli/parse-args";
-import { z } from "zod";
-import { DaemonClient } from "../../services/daemon-client.ts";
-
-// Schema for worktree list item output (Feature 079: T045)
-export const WorktreeListItemSchema = z.object({
-  name: z.string().min(1),
-  display_name: z.string().min(1),
-  branch: z.string().min(1),
-  path: z.string().min(1),
-  parent_repo: z.string().min(1),
-  git_status: z.object({
-    is_clean: z.boolean(),
-    ahead_count: z.number().int().nonnegative(),
-    behind_count: z.number().int().nonnegative(),
-    has_untracked: z.boolean(),
-  }),
-  created_at: z.string(),
-  updated_at: z.string(),
-  icon: z.string(),
-});
-
-export type WorktreeListItem = z.infer<typeof WorktreeListItemSchema>;
+import { parseArgs } from "https://deno.land/std@0.208.0/cli/parse_args.ts";
+import { WorktreeSchema, type Worktree } from "../../../models/repository.ts";
 
 /**
- * Show list command help
+ * List all worktrees for a repository.
  */
-function showHelp(): void {
-  console.log(`
-i3pm worktree list - List worktree projects
+export async function worktreeList(args: string[]): Promise<number> {
+  const parsed = parseArgs(args, {
+    boolean: ["json"],
+    default: {
+      json: false,
+    },
+  });
 
-USAGE:
-  i3pm worktree list [PARENT] [OPTIONS]
+  const positionalArgs = parsed._ as string[];
+  const repoArg = positionalArgs[0] as string | undefined;
 
-ARGUMENTS:
-  PARENT                Optional parent project name to filter by (Feature 098)
-
-OPTIONS:
-  --json                Output as JSON array (default)
-  --table               Output as formatted table
-  --filter-dirty        Show only worktrees with uncommitted changes
-  --filter-ahead        Show only worktrees with unpushed commits
-  -h, --help            Show this help message
-
-EXAMPLES:
-  # List all worktrees as JSON
-  i3pm worktree list
-
-  # List worktrees for a specific parent project (Feature 098)
-  i3pm worktree list nixos
-
-  # List as table
-  i3pm worktree list --table
-
-  # List only dirty worktrees
-  i3pm worktree list --filter-dirty
-
-OUTPUT FIELDS (JSON):
-  - name: Project identifier
-  - display_name: Human-readable name
-  - branch: Git branch name
-  - path: Worktree directory path
-  - parent_repo: Parent repository path
-  - git_status: { is_clean, ahead_count, behind_count, has_untracked }
-  - created_at: ISO 8601 timestamp
-  - updated_at: ISO 8601 timestamp
-  - icon: Emoji icon
-`);
-  Deno.exit(0);
-}
-
-/**
- * Load all project JSON files from project directory
- */
-async function loadAllProjects(): Promise<unknown[]> {
-  const projectDir = Deno.env.get("HOME") + "/.config/i3/projects";
-  const projects: unknown[] = [];
-
-  try {
-    for await (const entry of Deno.readDir(projectDir)) {
-      if (entry.isFile && entry.name.endsWith(".json")) {
-        try {
-          const filePath = `${projectDir}/${entry.name}`;
-          const content = await Deno.readTextFile(filePath);
-          const project = JSON.parse(content);
-          projects.push(project);
-        } catch {
-          // Skip invalid JSON files
-        }
-      }
-    }
-  } catch {
-    // Project directory doesn't exist
+  // Detect repository path
+  const repoPath = await detectRepoPath(repoArg);
+  if (!repoPath) {
+    console.error("Error: Not in a bare repository structure");
+    console.error("Please run from within a repository worktree or specify a repo name");
+    console.error("");
+    console.error("Usage: i3pm worktree list [repo]");
+    console.error("Examples:");
+    console.error("  i3pm worktree list");
+    console.error("  i3pm worktree list nixos");
+    console.error("  i3pm worktree list vpittamp/nixos");
+    return 1;
   }
 
-  return projects;
+  const barePath = `${repoPath}/.bare`;
+
+  // Get worktree list from git
+  const cmd = new Deno.Command("git", {
+    args: ["-C", barePath, "worktree", "list", "--porcelain"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await cmd.output();
+
+  if (!output.success) {
+    const stderr = new TextDecoder().decode(output.stderr);
+    console.error(`Error: git worktree list failed`);
+    console.error(stderr);
+    return 1;
+  }
+
+  const stdout = new TextDecoder().decode(output.stdout);
+  const worktrees = parseWorktreeList(stdout, repoPath);
+
+  if (parsed.json) {
+    console.log(JSON.stringify(worktrees, null, 2));
+    return 0;
+  }
+
+  // Get repo name from path
+  const parts = repoPath.split("/");
+  const repoName = parts.slice(-2).join("/");
+
+  console.log(`Worktrees for ${repoName}:`);
+  console.log("");
+
+  for (const wt of worktrees) {
+    const mainMarker = wt.is_main ? " (main)" : "";
+    const cleanStatus = wt.is_clean === false ? " [dirty]" : "";
+    const commitInfo = wt.commit ? ` @ ${wt.commit.substring(0, 7)}` : "";
+
+    console.log(`  ${wt.branch}${mainMarker}${cleanStatus}${commitInfo}`);
+    console.log(`    Path: ${wt.path}`);
+  }
+
+  return 0;
 }
 
 /**
- * Filter projects to only worktrees
+ * Parse git worktree list --porcelain output.
  */
-function filterWorktrees(projects: unknown[]): WorktreeListItem[] {
-  const worktrees: WorktreeListItem[] = [];
+function parseWorktreeList(output: string, repoPath: string): Worktree[] {
+  const worktrees: Worktree[] = [];
+  const entries = output.split("\n\n").filter(e => e.trim());
 
-  for (const project of projects) {
-    // Check if project has worktree field (T047)
-    if (
-      typeof project === "object" &&
-      project !== null &&
-      "worktree" in project &&
-      typeof (project as Record<string, unknown>).worktree === "object"
-    ) {
-      const p = project as Record<string, unknown>;
-      const wt = p.worktree as Record<string, unknown>;
+  for (const entry of entries) {
+    const lines = entry.split("\n");
+    const worktree: Partial<Worktree> = {
+      ahead: 0,
+      behind: 0,
+      is_clean: true,
+      is_main: false,
+    };
 
-      // Build worktree list item (T048, T049)
-      const item: WorktreeListItem = {
-        name: String(p.name || ""),
-        display_name: String(p.display_name || ""),
-        branch: String(wt.branch || ""),
-        path: String(wt.worktree_path || ""),
-        parent_repo: String(wt.repository_path || ""),
-        git_status: {
-          is_clean: Boolean(wt.is_clean),
-          ahead_count: Number(wt.ahead_count || 0),
-          behind_count: Number(wt.behind_count || 0),
-          has_untracked: Boolean(wt.has_untracked),
-        },
-        created_at: String(p.created_at || new Date().toISOString()),
-        updated_at: String(p.updated_at || new Date().toISOString()),
-        icon: String(p.icon || "🌿"),
-      };
-
-      // Validate with Zod schema (T045)
-      try {
-        WorktreeListItemSchema.parse(item);
-        worktrees.push(item);
-      } catch {
-        // Skip invalid worktrees
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        worktree.path = line.substring("worktree ".length);
+      } else if (line.startsWith("HEAD ")) {
+        worktree.commit = line.substring("HEAD ".length);
+      } else if (line.startsWith("branch refs/heads/")) {
+        worktree.branch = line.substring("branch refs/heads/".length);
+      } else if (line === "bare") {
+        // Skip bare repo entry
+        worktree.path = undefined;
       }
+    }
+
+    // Skip if this is the bare repo itself
+    if (!worktree.path || worktree.path.endsWith("/.bare")) {
+      continue;
+    }
+
+    // Skip if branch not detected (detached HEAD)
+    if (!worktree.branch) {
+      worktree.branch = "HEAD";
+    }
+
+    // Detect if this is the main worktree
+    if (worktree.branch === "main" || worktree.branch === "master") {
+      worktree.is_main = true;
+    }
+
+    if (worktree.path && worktree.branch) {
+      worktrees.push(worktree as Worktree);
     }
   }
 
@@ -158,178 +130,67 @@ function filterWorktrees(projects: unknown[]): WorktreeListItem[] {
 }
 
 /**
- * Format worktree list as table
+ * Detect repository path from current directory or repo name.
  */
-function formatTable(worktrees: WorktreeListItem[]): string {
-  if (worktrees.length === 0) {
-    return "No worktree projects found.";
-  }
+async function detectRepoPath(repo?: string): Promise<string | null> {
+  const home = Deno.env.get("HOME") || "";
 
-  const header =
-    "NAME                              | BRANCH                            | STATUS       | AHEAD | BEHIND";
-  const separator =
-    "----------------------------------|-----------------------------------|--------------|-------|-------";
-
-  const rows = worktrees.map((wt) => {
-    const name = wt.name.substring(0, 32).padEnd(32);
-    const branch = wt.branch.substring(0, 33).padEnd(33);
-    const status = wt.git_status.is_clean
-      ? (wt.git_status.has_untracked ? "untracked" : "clean").padEnd(12)
-      : "dirty".padEnd(12);
-    const ahead = String(wt.git_status.ahead_count).padStart(5);
-    const behind = String(wt.git_status.behind_count).padStart(6);
-    return `${name} | ${branch} | ${status} | ${ahead} | ${behind}`;
-  });
-
-  return [header, separator, ...rows].join("\n");
-}
-
-/**
- * List worktrees for a specific parent project via IPC (Feature 098)
- */
-async function listWorktreesForParent(parentName: string, asJson: boolean): Promise<void> {
-  const client = new DaemonClient();
-  try {
-    const response = await client.request<{
-      parent: {
-        name: string;
-        directory: string;
-        display_name: string;
-      };
-      worktrees: Array<{
-        name: string;
-        directory: string;
-        display_name: string;
-        icon: string;
-        status: string;
-        branch_metadata?: {
-          number: string | null;
-          type: string | null;
-          full_name: string;
-        };
-        git_metadata?: {
-          branch: string;
-          commit: string;
-          is_clean: boolean;
-          ahead: number;
-          behind: number;
-        };
-      }>;
-      count: number;
-    }>("worktree.list", { parent_project: parentName });
-
-    if (asJson) {
-      // Convert to WorktreeListItem format for consistency
-      const items = response.worktrees.map(wt => ({
-        name: wt.name,
-        display_name: wt.display_name,
-        branch: wt.branch_metadata?.full_name || wt.git_metadata?.branch || "",
-        path: wt.directory,
-        parent_repo: response.parent.directory,
-        git_status: {
-          is_clean: wt.git_metadata?.is_clean ?? true,
-          ahead_count: wt.git_metadata?.ahead ?? 0,
-          behind_count: wt.git_metadata?.behind ?? 0,
-          has_untracked: false, // Not available in IPC response
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        icon: wt.icon,
-      }));
-      console.log(JSON.stringify(items, null, 2));
-    } else {
-      // Human-readable output
-      console.log(`Parent: ${response.parent.name} (${response.parent.directory})\n`);
-
-      if (response.worktrees.length === 0) {
-        console.log("No worktrees found for this parent project.");
-        console.log("\nCreate a worktree with:");
-        console.log(`  i3pm worktree create <branch-name>`);
-      } else {
-        console.log("Worktrees:");
-        for (const wt of response.worktrees) {
-          const statusIcon = wt.status === "active" ? "●" : "○";
-          let branchInfo = "";
-          if (wt.branch_metadata?.number) {
-            branchInfo = wt.branch_metadata.number;
-            if (wt.branch_metadata.type) {
-              branchInfo += ` (${wt.branch_metadata.type})`;
-            }
-          }
-          let gitStatus = "";
-          if (wt.git_metadata) {
-            const cleanIcon = wt.git_metadata.is_clean ? "✓" : "*";
-            gitStatus = ` ${cleanIcon}`;
-            if (wt.git_metadata.ahead > 0 || wt.git_metadata.behind > 0) {
-              gitStatus += ` ↑${wt.git_metadata.ahead} ↓${wt.git_metadata.behind}`;
-            }
-          }
-          console.log(`  ${statusIcon} ${wt.icon} ${wt.name} ${branchInfo}${gitStatus}`);
-          console.log(`      ${wt.display_name}`);
-        }
-        console.log(`\nTotal: ${response.count} worktree${response.count !== 1 ? "s" : ""}`);
+  if (repo) {
+    // Check if it's a full account/repo path
+    if (repo.includes("/")) {
+      const [account, repoName] = repo.split("/");
+      const path = `${home}/repos/${account}/${repoName}`;
+      try {
+        await Deno.stat(`${path}/.bare`);
+        return path;
+      } catch {
+        return null;
       }
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("not found") || message.includes("1001")) {
-      console.error(`Error: Parent project '${parentName}' not found`);
-      console.error("\nAvailable projects:");
-      console.error("  i3pm project list");
-    } else if (message.includes("-32000")) {
-      console.error(`Error: Project '${parentName}' is not a valid parent project`);
-      console.error("\nA parent project must be a local or worktree project (not remote).");
-    } else {
-      console.error(`Error: ${message}`);
+
+    // Search for repo by name in all account directories
+    const reposBase = `${home}/repos`;
+    try {
+      for await (const entry of Deno.readDir(reposBase)) {
+        if (entry.isDirectory) {
+          const path = `${reposBase}/${entry.name}/${repo}`;
+          try {
+            await Deno.stat(`${path}/.bare`);
+            return path;
+          } catch {
+            // Not found in this account, continue
+          }
+        }
+      }
+    } catch {
+      // repos directory doesn't exist
     }
-    Deno.exit(1);
-  } finally {
-    client.disconnect();
-  }
-}
 
-/**
- * Main list command handler (T046)
- */
-export async function listWorktreesCommand(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    boolean: ["help", "json", "table", "filter-dirty", "filter-ahead"],
-    alias: { h: "help" },
-  });
-
-  if (parsed.help) {
-    showHelp();
+    return null;
   }
 
-  // Feature 098: Check if parent name is provided
-  const parentName = parsed._[0] ? String(parsed._[0]) : undefined;
+  // Detect from current directory
+  const cwd = Deno.cwd();
 
-  if (parentName) {
-    // Use IPC-based listing for specific parent
-    await listWorktreesForParent(parentName, !parsed.table);
-    return;
+  // Walk up the directory tree looking for .bare/
+  let dir = cwd;
+  while (dir !== "/") {
+    try {
+      const bareStat = await Deno.stat(`${dir}/.bare`);
+      if (bareStat.isDirectory) {
+        return dir;
+      }
+    } catch {
+      // Not found, continue up
+    }
+
+    // Go up one level
+    const parent = dir.substring(0, dir.lastIndexOf("/"));
+    if (parent === dir || parent === "") {
+      break;
+    }
+    dir = parent;
   }
 
-  // No parent specified: Load all worktrees from files (Feature 079 behavior)
-  const allProjects = await loadAllProjects();
-  let worktrees = filterWorktrees(allProjects);
-
-  // Apply filters
-  if (parsed["filter-dirty"]) {
-    worktrees = worktrees.filter(
-      (wt) => !wt.git_status.is_clean || wt.git_status.has_untracked
-    );
-  }
-
-  if (parsed["filter-ahead"]) {
-    worktrees = worktrees.filter((wt) => wt.git_status.ahead_count > 0);
-  }
-
-  // Output format (T049)
-  if (parsed.table) {
-    console.log(formatTable(worktrees));
-  } else {
-    // Default: JSON output
-    console.log(JSON.stringify(worktrees, null, 2));
-  }
+  return null;
 }

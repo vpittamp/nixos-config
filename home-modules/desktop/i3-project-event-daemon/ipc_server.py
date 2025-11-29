@@ -427,6 +427,24 @@ class IPCServer:
             elif method == "project.refresh":
                 result = await self._project_refresh(params)
 
+            # Feature 100: Structured Git Repository Management
+            elif method == "account.add":
+                result = await self._account_add(params)
+            elif method == "account.list":
+                result = await self._account_list(params)
+            elif method == "clone":
+                result = await self._clone(params)
+            elif method == "discover":
+                result = await self._discover_bare_repos(params)
+            elif method == "repo.list":
+                result = await self._repo_list(params)
+            elif method == "repo.get":
+                result = await self._repo_get(params)
+            elif method == "worktree.create":
+                result = await self._worktree_create(params)
+            elif method == "worktree.remove":
+                result = await self._worktree_remove(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -7144,3 +7162,527 @@ class IPCServer:
                 "other_vars": [],
                 "error": str(e)
             }
+
+    # -------------------------------------------------------------------------
+    # Feature 100: Structured Git Repository Management IPC Handlers
+    # -------------------------------------------------------------------------
+
+    async def _account_add(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new account configuration.
+
+        Feature 100: Structured Git Repository Management (T012)
+
+        Args:
+            params: {
+                "name": str,         # GitHub account/org name
+                "path": str,         # Base directory path
+                "is_default": bool,  # Default account for clone (optional)
+                "ssh_host": str      # SSH host alias (optional, default: github.com)
+            }
+
+        Returns:
+            {"success": bool, "account": {...}}
+        """
+        import json
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
+
+        try:
+            name = params.get("name")
+            path = params.get("path")
+
+            if not name or not path:
+                raise ValueError("name and path parameters are required")
+
+            # Load existing accounts
+            accounts = {"version": 1, "accounts": []}
+            if accounts_file.exists():
+                accounts = json.loads(accounts_file.read_text())
+
+            # Check for duplicate
+            for acc in accounts["accounts"]:
+                if acc["name"] == name:
+                    raise ValueError(f"Account '{name}' already exists")
+
+            # Expand ~ in path
+            if path.startswith("~/"):
+                path = str(Path.home()) + path[1:]
+
+            # Create directory if needed
+            account_dir = Path(path)
+            account_dir.mkdir(parents=True, exist_ok=True)
+
+            # Build account config
+            account = {
+                "name": name,
+                "path": path,
+                "is_default": params.get("is_default", False),
+                "ssh_host": params.get("ssh_host", "github.com"),
+            }
+
+            # If new default, clear other defaults
+            if account["is_default"]:
+                for acc in accounts["accounts"]:
+                    acc["is_default"] = False
+
+            # Make first account default
+            if not accounts["accounts"]:
+                account["is_default"] = True
+
+            accounts["accounts"].append(account)
+
+            # Save
+            accounts_file.parent.mkdir(parents=True, exist_ok=True)
+            accounts_file.write_text(json.dumps(accounts, indent=2) + "\n")
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 100] Added account '{name}' in {duration_ms:.2f}ms")
+
+            return {"success": True, "account": account}
+
+        except Exception as e:
+            logger.error(f"[Feature 100] account.add error: {e}")
+            raise
+
+    async def _account_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List configured accounts.
+
+        Feature 100: Structured Git Repository Management (T013)
+
+        Returns:
+            {"accounts": [...]}
+        """
+        import json
+        from pathlib import Path
+
+        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
+
+        try:
+            if not accounts_file.exists():
+                return {"accounts": []}
+
+            accounts = json.loads(accounts_file.read_text())
+            return {"accounts": accounts.get("accounts", [])}
+
+        except Exception as e:
+            logger.error(f"[Feature 100] account.list error: {e}")
+            raise
+
+    async def _clone(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clone a repository with bare setup.
+
+        Feature 100: Structured Git Repository Management (T021)
+
+        Args:
+            params: {
+                "url": str,        # GitHub URL (SSH or HTTPS)
+                "account": str     # Override account detection (optional)
+            }
+
+        Returns:
+            {"success": bool, "path": str, "main_worktree": str}
+        """
+        import subprocess
+        import re
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+
+        try:
+            url = params.get("url")
+            if not url:
+                raise ValueError("url parameter is required")
+
+            # Parse URL to get account and repo
+            ssh_match = re.match(r"^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", url)
+            https_match = re.match(r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?$", url)
+
+            if ssh_match:
+                detected_account, repo_name = ssh_match.groups()
+            elif https_match:
+                detected_account, repo_name = https_match.groups()
+            else:
+                raise ValueError(f"Invalid GitHub URL: {url}")
+
+            account = params.get("account") or detected_account
+            base_path = Path.home() / "repos" / account
+            repo_path = base_path / repo_name
+            bare_path = repo_path / ".bare"
+
+            # Check if exists
+            if bare_path.exists():
+                raise ValueError(f"Repository already exists at {repo_path}")
+
+            # Create directory
+            repo_path.mkdir(parents=True, exist_ok=True)
+
+            # Bare clone
+            subprocess.run(
+                ["git", "clone", "--bare", url, str(bare_path)],
+                capture_output=True, text=True, check=True, timeout=120
+            )
+
+            # Create .git pointer
+            (repo_path / ".git").write_text("gitdir: ./.bare\n")
+
+            # Get default branch
+            default_branch = "main"
+            result = subprocess.run(
+                ["git", "-C", str(bare_path), "symbolic-ref", "refs/remotes/origin/HEAD"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                ref = result.stdout.strip()
+                match = re.match(r"refs/remotes/origin/(.+)", ref)
+                if match:
+                    default_branch = match.group(1)
+
+            # Create main worktree
+            main_path = repo_path / default_branch
+            subprocess.run(
+                ["git", "-C", str(bare_path), "worktree", "add", str(main_path), default_branch],
+                capture_output=True, text=True, check=True, timeout=60
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 100] Cloned {url} to {repo_path} in {duration_ms:.2f}ms")
+
+            return {
+                "success": True,
+                "path": str(repo_path),
+                "main_worktree": str(main_path),
+                "default_branch": default_branch,
+            }
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"[Feature 100] clone git error: {e.stderr}")
+            raise RuntimeError(f"Git command failed: {e.stderr}")
+        except Exception as e:
+            logger.error(f"[Feature 100] clone error: {e}")
+            raise
+
+    async def _discover_bare_repos(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Discover all bare repositories and worktrees.
+
+        Feature 100: Structured Git Repository Management (T031)
+
+        Returns:
+            {"success": bool, "repos": int, "worktrees": int, "duration_ms": int}
+        """
+        import json
+        import subprocess
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
+        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+
+        try:
+            # Load accounts
+            if not accounts_file.exists():
+                return {"success": False, "error": "No accounts configured"}
+
+            accounts = json.loads(accounts_file.read_text())
+            repositories = []
+            total_worktrees = 0
+
+            for account in accounts.get("accounts", []):
+                account_path = Path(account["path"])
+                if account_path.as_posix().startswith("~/"):
+                    account_path = Path.home() / account_path.as_posix()[2:]
+
+                if not account_path.exists():
+                    continue
+
+                # Scan for repos with .bare directory
+                for entry in account_path.iterdir():
+                    if not entry.is_dir():
+                        continue
+
+                    bare_path = entry / ".bare"
+                    if not bare_path.is_dir():
+                        continue
+
+                    # Get remote URL
+                    result = subprocess.run(
+                        ["git", "-C", str(bare_path), "remote", "get-url", "origin"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode != 0:
+                        continue
+
+                    remote_url = result.stdout.strip()
+
+                    # Get default branch
+                    default_branch = "main"
+                    result = subprocess.run(
+                        ["git", "-C", str(bare_path), "symbolic-ref", "refs/remotes/origin/HEAD"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        import re
+                        match = re.match(r"refs/remotes/origin/(.+)", result.stdout.strip())
+                        if match:
+                            default_branch = match.group(1)
+
+                    # Get worktrees
+                    worktrees = []
+                    result = subprocess.run(
+                        ["git", "-C", str(bare_path), "worktree", "list", "--porcelain"],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        entries = result.stdout.split("\n\n")
+                        for wt_entry in entries:
+                            if not wt_entry.strip():
+                                continue
+                            wt = {}
+                            for line in wt_entry.split("\n"):
+                                if line.startswith("worktree "):
+                                    wt["path"] = line[9:]
+                                elif line.startswith("HEAD "):
+                                    wt["commit"] = line[5:]
+                                elif line.startswith("branch refs/heads/"):
+                                    wt["branch"] = line[18:]
+
+                            if wt.get("path") and not wt["path"].endswith("/.bare"):
+                                if not wt.get("branch"):
+                                    wt["branch"] = "HEAD"
+                                wt["is_main"] = wt.get("branch") in (default_branch, "main", "master")
+                                wt["is_clean"] = True
+                                wt["ahead"] = 0
+                                wt["behind"] = 0
+                                worktrees.append(wt)
+                                total_worktrees += 1
+
+                    repositories.append({
+                        "account": account["name"],
+                        "name": entry.name,
+                        "path": str(entry),
+                        "remote_url": remote_url,
+                        "default_branch": default_branch,
+                        "worktrees": worktrees,
+                        "discovered_at": datetime.now().isoformat(),
+                    })
+
+            # Save results
+            repos_storage = {
+                "version": 1,
+                "last_discovery": datetime.now().isoformat(),
+                "repositories": repositories,
+            }
+            repos_file.parent.mkdir(parents=True, exist_ok=True)
+            repos_file.write_text(json.dumps(repos_storage, indent=2) + "\n")
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 100] Discovered {len(repositories)} repos, {total_worktrees} worktrees in {duration_ms:.2f}ms")
+
+            return {
+                "success": True,
+                "repos": len(repositories),
+                "worktrees": total_worktrees,
+                "duration_ms": int(duration_ms),
+            }
+
+        except Exception as e:
+            logger.error(f"[Feature 100] discover error: {e}")
+            raise
+
+    async def _repo_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List discovered repositories.
+
+        Feature 100: Structured Git Repository Management (T034)
+
+        Returns:
+            {"repositories": [...], "total": int}
+        """
+        import json
+        from pathlib import Path
+
+        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+
+        try:
+            if not repos_file.exists():
+                return {"repositories": [], "total": 0}
+
+            repos = json.loads(repos_file.read_text())
+            repositories = repos.get("repositories", [])
+
+            # Filter by account if specified
+            account_filter = params.get("account")
+            if account_filter:
+                repositories = [r for r in repositories if r["account"] == account_filter]
+
+            return {"repositories": repositories, "total": len(repositories)}
+
+        except Exception as e:
+            logger.error(f"[Feature 100] repo.list error: {e}")
+            raise
+
+    async def _repo_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get details for a specific repository.
+
+        Feature 100: Structured Git Repository Management (T034)
+
+        Args:
+            params: {
+                "account": str,
+                "repo": str
+            }
+
+        Returns:
+            Repository details or error
+        """
+        import json
+        from pathlib import Path
+
+        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+
+        try:
+            account = params.get("account")
+            repo_name = params.get("repo")
+
+            if not account or not repo_name:
+                raise ValueError("account and repo parameters are required")
+
+            if not repos_file.exists():
+                raise FileNotFoundError(f"Repository not found: {account}/{repo_name}")
+
+            repos = json.loads(repos_file.read_text())
+            for repo in repos.get("repositories", []):
+                if repo["account"] == account and repo["name"] == repo_name:
+                    return repo
+
+            raise FileNotFoundError(f"Repository not found: {account}/{repo_name}")
+
+        except Exception as e:
+            logger.error(f"[Feature 100] repo.get error: {e}")
+            raise
+
+    async def _worktree_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new worktree.
+
+        Feature 100: Structured Git Repository Management (T024)
+
+        Args:
+            params: {
+                "branch": str,      # Branch name for new worktree
+                "repo": str,        # Repository qualified name (optional)
+                "from": str         # Base branch (optional, default: main)
+            }
+
+        Returns:
+            {"success": bool, "path": str}
+        """
+        import subprocess
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+
+        try:
+            branch = params.get("branch")
+            if not branch:
+                raise ValueError("branch parameter is required")
+
+            repo_name = params.get("repo")
+            from_branch = params.get("from", "main")
+
+            # Find repo path
+            if repo_name and "/" in repo_name:
+                account, name = repo_name.split("/", 1)
+                repo_path = Path.home() / "repos" / account / name
+            else:
+                raise ValueError("repo parameter with account/repo format required")
+
+            bare_path = repo_path / ".bare"
+            if not bare_path.exists():
+                raise FileNotFoundError(f"Repository not found: {repo_path}")
+
+            worktree_path = repo_path / branch
+            if worktree_path.exists():
+                raise ValueError(f"Worktree already exists: {worktree_path}")
+
+            # Create worktree
+            subprocess.run(
+                ["git", "-C", str(bare_path), "worktree", "add", str(worktree_path), "-b", branch, from_branch],
+                capture_output=True, text=True, check=True, timeout=60
+            )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 100] Created worktree '{branch}' at {worktree_path} in {duration_ms:.2f}ms")
+
+            return {"success": True, "path": str(worktree_path)}
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"[Feature 100] worktree.create git error: {e.stderr}")
+            raise RuntimeError(f"Git command failed: {e.stderr}")
+        except Exception as e:
+            logger.error(f"[Feature 100] worktree.create error: {e}")
+            raise
+
+    async def _worktree_remove(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove a worktree.
+
+        Feature 100: Structured Git Repository Management
+
+        Args:
+            params: {
+                "branch": str,      # Branch name of worktree to remove
+                "repo": str,        # Repository qualified name (optional)
+                "force": bool       # Force removal with uncommitted changes
+            }
+
+        Returns:
+            {"success": bool, "removed": str}
+        """
+        import subprocess
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+
+        try:
+            branch = params.get("branch")
+            if not branch:
+                raise ValueError("branch parameter is required")
+
+            # Prevent removing main/master
+            if branch in ("main", "master"):
+                raise ValueError("Cannot remove main worktree")
+
+            repo_name = params.get("repo")
+            force = params.get("force", False)
+
+            # Find repo path
+            if repo_name and "/" in repo_name:
+                account, name = repo_name.split("/", 1)
+                repo_path = Path.home() / "repos" / account / name
+            else:
+                raise ValueError("repo parameter with account/repo format required")
+
+            bare_path = repo_path / ".bare"
+            worktree_path = repo_path / branch
+
+            if not worktree_path.exists():
+                raise FileNotFoundError(f"Worktree not found: {worktree_path}")
+
+            # Remove worktree
+            cmd = ["git", "-C", str(bare_path), "worktree", "remove"]
+            if force:
+                cmd.append("--force")
+            cmd.append(str(worktree_path))
+
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 100] Removed worktree '{branch}' in {duration_ms:.2f}ms")
+
+            return {"success": True, "removed": str(worktree_path)}
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"[Feature 100] worktree.remove git error: {e.stderr}")
+            raise RuntimeError(f"Git command failed: {e.stderr}")
+        except Exception as e:
+            logger.error(f"[Feature 100] worktree.remove error: {e}")
+            raise

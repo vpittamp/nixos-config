@@ -1,46 +1,46 @@
 /**
  * Worktree Command Dispatcher
- * Feature 077: Git Worktree Project Management
+ * Feature 100: Structured Git Repository Management
  *
  * Main entry point for all worktree-related commands.
+ * Operates on bare repository structure: ~/repos/<account>/<repo>/.bare/
  */
 
 import { parseArgs } from "@std/cli/parse-args";
-import { createWorktreeCommand } from "./worktree/create.ts";
-import { removeWorktreeCommand } from "./worktree/remove.ts";
-import { listWorktreesCommand } from "./worktree/list.ts";
+import { worktreeCreate } from "./worktree/create.ts";
+import { worktreeRemove } from "./worktree/remove.ts";
+import { worktreeList } from "./worktree/list.ts";
 
 /**
  * Show worktree command help
  */
 function showHelp(): void {
   console.log(`
-i3pm worktree - Git worktree project management
+i3pm worktree - Git worktree management for bare repositories
 
 USAGE:
   i3pm worktree <SUBCOMMAND> [OPTIONS]
 
 SUBCOMMANDS:
-  create <branch>       Create a new worktree and register as i3pm project
-  remove <name>         Remove a worktree and clean up all resources
-  list                  List all worktrees with metadata
-  discover              Discover and register manually created worktrees
+  create <branch>       Create a new worktree (Feature 100)
+  remove <branch>       Remove a worktree (Feature 100)
+  list [repo]           List worktrees for a repository (Feature 100)
 
 OPTIONS:
   -h, --help            Show this help message
 
 EXAMPLES:
   # Create worktree for new feature branch
-  i3pm worktree create feature-auth-refactor
+  i3pm worktree create 100-feature
+  i3pm worktree create 101-bugfix --from develop
 
-  # List all worktrees
+  # List worktrees
   i3pm worktree list
+  i3pm worktree list vpittamp/nixos
 
-  # Remove a worktree project
-  i3pm worktree remove 078-feature-auth-refactor
-
-  # Discover manually created worktrees
-  i3pm worktree discover
+  # Remove a worktree
+  i3pm worktree remove 100-feature
+  i3pm worktree remove 100-feature --force
 
 For detailed help on a specific subcommand:
   i3pm worktree <subcommand> --help
@@ -65,32 +65,29 @@ export async function worktreeCommand(args: string[]): Promise<void> {
   const subcommand = String(parsed._[0]);
   const subcommandArgs = parsed._.slice(1).map(String);
 
+  let exitCode = 0;
+
   switch (subcommand) {
     case "create":
-      await createWorktreeCommand(subcommandArgs);
+      exitCode = await worktreeCreate(subcommandArgs);
       break;
 
     case "remove":
     case "delete":
-      await removeWorktreeCommand(subcommandArgs);
+      exitCode = await worktreeRemove(subcommandArgs);
       break;
 
     case "list":
-      // Feature 079: US6 - T046-T049
-      await listWorktreesCommand(subcommandArgs);
-      break;
-
-    case "discover":
-      console.error("Error: 'worktree discover' not yet implemented");
-      console.error("This will be available in a future update");
-      Deno.exit(1);
+      exitCode = await worktreeList(subcommandArgs);
       break;
 
     default:
       console.error(`Error: Unknown subcommand '${subcommand}'`);
       console.error("");
-      console.error("Available subcommands: create, remove, list, discover");
+      console.error("Available subcommands: create, remove, list");
       console.error("Run 'i3pm worktree --help' for more information");
       Deno.exit(1);
   }
+
+  Deno.exit(exitCode);
 }

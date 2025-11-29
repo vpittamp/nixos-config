@@ -1,5 +1,5 @@
 """
-Git Utilities for Feature 097: Git-Centric Project and Worktree Management
+Git Utilities for Features 097/100: Git-Centric Project and Worktree Management
 
 This module provides core git discovery utilities that ALL user stories depend on:
 - get_bare_repository_path(): Canonical identifier for worktrees
@@ -7,13 +7,160 @@ This module provides core git discovery utilities that ALL user stories depend o
 - find_repository_for_bare_repo(): Find parent repository project
 - detect_orphaned_worktrees(): Find worktrees with missing parents
 - generate_unique_name(): Conflict resolution for project names
+
+Feature 100 additions:
+- parse_github_url(): Extract account/repo from SSH or HTTPS URL
+- get_default_branch(): Detect default branch (main/master)
+- list_worktrees(): Enumerate worktrees using --porcelain output
 """
 
 import subprocess
+import re
 from pathlib import Path
-from typing import Optional, List, Set
+from typing import Optional, List, Set, Tuple
 
 from ..models.project_config import ProjectConfig, SourceType, ProjectStatus
+
+
+# Feature 100: GitHub URL parsing patterns
+SSH_PATTERN = re.compile(r'^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$')
+HTTPS_PATTERN = re.compile(r'^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?$')
+
+
+def parse_github_url(url: str) -> Tuple[str, str]:
+    """
+    Feature 100 T008: Extract (account, repo) from GitHub URL.
+
+    Supports both SSH and HTTPS formats:
+    - git@github.com:vpittamp/nixos.git
+    - https://github.com/PittampalliOrg/api.git
+
+    Args:
+        url: GitHub repository URL
+
+    Returns:
+        Tuple of (account, repo_name)
+
+    Raises:
+        ValueError: If URL doesn't match expected patterns
+    """
+    for pattern in [SSH_PATTERN, HTTPS_PATTERN]:
+        match = pattern.match(url)
+        if match:
+            return match.group(1), match.group(2)
+    raise ValueError(f"Invalid GitHub URL: {url}")
+
+
+def get_default_branch(bare_path: str) -> str:
+    """
+    Feature 100 T009: Get default branch name from bare repo.
+
+    Queries refs/remotes/origin/HEAD to determine the default branch.
+    Falls back to trying 'main', then 'master'.
+
+    Args:
+        bare_path: Path to .bare directory
+
+    Returns:
+        Branch name (e.g., "main" or "master")
+
+    Raises:
+        ValueError: If default branch cannot be determined
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", bare_path, "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # "refs/remotes/origin/main" → "main"
+            return result.stdout.strip().split('/')[-1]
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    # Fallback: try main, then master
+    for branch in ['main', 'master']:
+        try:
+            result = subprocess.run(
+                ["git", "-C", bare_path, "rev-parse", f"refs/heads/{branch}"],
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+    raise ValueError("Could not determine default branch")
+
+
+def list_worktrees(repo_path: str) -> List[dict]:
+    """
+    Feature 100 T037: List all worktrees for a repository.
+
+    Uses `git worktree list --porcelain` for machine-readable output.
+    Skips the bare repository entry.
+
+    Args:
+        repo_path: Path to repository (can be any worktree or repo directory)
+
+    Returns:
+        List of dicts with 'path', 'branch', 'commit' keys
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError):
+        return []
+
+    worktrees = []
+    current: dict = {}
+
+    for line in result.stdout.split('\n'):
+        if line.startswith('worktree '):
+            if current and not current.get('bare'):
+                worktrees.append(current)
+            current = {'path': line[9:]}
+        elif line == 'bare':
+            current['bare'] = True
+        elif line.startswith('branch '):
+            current['branch'] = line[7:].replace('refs/heads/', '')
+        elif line.startswith('HEAD '):
+            current['commit'] = line[5:][:7]  # Short hash
+
+    # Don't forget the last entry
+    if current and not current.get('bare'):
+        worktrees.append(current)
+
+    return worktrees
+
+
+def prune_worktrees(repo_path: str) -> bool:
+    """
+    Feature 100 T043: Run git worktree prune to clean stale references.
+
+    Args:
+        repo_path: Path to repository
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "worktree", "prune"],
+            capture_output=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        return False
 
 
 def get_bare_repository_path(directory: str) -> Optional[str]:

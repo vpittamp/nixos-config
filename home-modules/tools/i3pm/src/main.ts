@@ -51,6 +51,10 @@ COMMANDS:
   monitor          Interactive monitoring dashboard
   app-classes      Application class management
   apps             Application registry management (Feature 034)
+  account          GitHub account configuration (Feature 100)
+  clone            Clone repository with bare setup (Feature 100)
+  discover         Discover bare repositories and worktrees (Feature 100)
+  repo             Repository management commands (Feature 100)
 
 Run 'i3pm <command> --help' for more information on a specific command.
 
@@ -211,6 +215,63 @@ async function main(): Promise<void> {
       {
         const { appsCommand } = await import("./commands/apps.ts");
         await appsCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    // Feature 100: Structured Git Repository Management
+    case "account":
+      {
+        const subcommand = String(commandArgs[0] || "");
+        const subArgs = commandArgs.slice(1).map(String);
+        if (subcommand === "add") {
+          const { accountAdd } = await import("./commands/account/add.ts");
+          const exitCode = await accountAdd(subArgs);
+          Deno.exit(exitCode);
+        } else if (subcommand === "list") {
+          const { accountList } = await import("./commands/account/list.ts");
+          const exitCode = await accountList(subArgs);
+          Deno.exit(exitCode);
+        } else {
+          console.error(`Unknown account subcommand: ${subcommand}`);
+          console.error("Available subcommands: add, list");
+          Deno.exit(1);
+        }
+      }
+      break;
+
+    case "clone":
+      {
+        const { clone } = await import("./commands/clone/index.ts");
+        const exitCode = await clone(commandArgs.map(String));
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "discover":
+      {
+        const { discover } = await import("./commands/discover/index.ts");
+        const exitCode = await discover(commandArgs.map(String));
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "repo":
+      {
+        const subcommand = String(commandArgs[0] || "");
+        const subArgs = commandArgs.slice(1).map(String);
+        if (subcommand === "list") {
+          const { repoList } = await import("./commands/repo/list.ts");
+          const exitCode = await repoList(subArgs);
+          Deno.exit(exitCode);
+        } else if (subcommand === "get") {
+          const { repoGet } = await import("./commands/repo/get.ts");
+          const exitCode = await repoGet(subArgs);
+          Deno.exit(exitCode);
+        } else {
+          console.error(`Unknown repo subcommand: ${subcommand}`);
+          console.error("Available subcommands: list, get");
+          Deno.exit(1);
+        }
       }
       break;
 
