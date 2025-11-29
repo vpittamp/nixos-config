@@ -3380,13 +3380,13 @@ in
                   :cursor "pointer"
                   :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                   :tooltip "Copy directory path"
-                  (label :class "action-btn action-copy" :text "󰏫"))
+                  (label :class "action-btn action-copy" :text "󰆏"))
                 ;; Feature 099 T019: [+ New Worktree] button
                 (eventbox
                   :cursor "pointer"
                   :onclick "worktree-create-open ''${project.name}"
                   :tooltip "Create new worktree"
-                  (label :class "action-btn action-add" :text "󰏫"))
+                  (label :class "action-btn action-add" :text "󰐕"))
                 (eventbox
                   :cursor "pointer"
                   :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
