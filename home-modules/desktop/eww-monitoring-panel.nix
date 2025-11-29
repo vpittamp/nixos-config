@@ -2189,7 +2189,7 @@ in
     xdg.configFile."eww-monitoring-panel/eww.yuck".text = ''
       ;; Live Window/Project Monitoring Panel - Multi-View Edition
       ;; Feature 085: Sway Monitoring Widget
-      ;; Build: 2025-11-20 15:55 UTC
+      ;; Build: 2025-11-29 02:40 UTC - Fix action icons
 
       ;; Deflisten: Real-time event stream for Windows view (<100ms latency)
       ;; Backend subscribes to Sway window/workspace/output events
@@ -3189,13 +3189,13 @@ in
                   :class "expand-all-button"
                   :onclick "toggle-expand-all-projects"
                   :tooltip {projects_all_expanded ? "Collapse all repositories" : "Expand all repositories"}
-                  {projects_all_expanded ? "󰅃" : "󰅀"})
+                  {projects_all_expanded ? "Collapse" : "Expand"})
                 ;; Feature 099 T016: Refresh button
                 (button
                   :class "refresh-button"
                   :onclick "systemctl --user restart eww-monitoring-panel &"
                   :tooltip "Refresh all projects"
-                  "")
+                  "Refresh")
                 (button
                   :class "new-project-button"
                   :onclick "project-create-open"
@@ -3208,10 +3208,12 @@ in
                 :space-evenly false
                 (box
                   :class "filter-input-container"
+                  :orientation "h"
+                  :space-evenly false
                   :hexpand true
                   (label
                     :class "filter-icon"
-                    :text "")
+                    :text "Filter:")
                   (input
                     :class "project-filter-input"
                     :hexpand true
@@ -3223,7 +3225,7 @@ in
                     :visible {project_filter != ""}
                     :onclick "eww --config $HOME/.config/eww-monitoring-panel update 'project_filter='"
                     :tooltip "Clear filter (Esc)"
-                    "󰅖"))
+                    "x"))
                 ;; Filter count indicator - shows total count when filtering
                 (label
                   :class "filter-count"
@@ -3378,13 +3380,13 @@ in
                   :cursor "pointer"
                   :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                   :tooltip "Copy directory path"
-                  (label :class "action-btn action-copy" :text ""))
+                  (label :class "action-btn action-copy" :text "󰏫"))
                 ;; Feature 099 T019: [+ New Worktree] button
                 (eventbox
                   :cursor "pointer"
                   :onclick "worktree-create-open ''${project.name}"
                   :tooltip "Create new worktree"
-                  (label :class "action-btn action-add" :text ""))
+                  (label :class "action-btn action-add" :text "󰏫"))
                 (eventbox
                   :cursor "pointer"
                   :onclick "project-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.directory}\" \"''${project.scope ?: 'scoped'}\" \"''${project.remote.enabled}\" \"''${project.remote.host}\" \"''${project.remote.user}\" \"''${project.remote.remote_dir}\" \"''${project.remote.port}\""
@@ -3739,7 +3741,7 @@ in
                 :cursor "pointer"
                 :onclick "echo -n ''\'''${project.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${project.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
                 :tooltip "Copy directory path"
-                (label :class "action-btn action-copy" :text ""))
+                (label :class "action-btn action-copy" :text "󰆏"))
               (eventbox
                 :cursor "pointer"
                 :onclick "worktree-edit-open \"''${project.name}\" \"''${project.display_name ?: project.name}\" \"''${project.icon}\" \"''${project.branch_name}\" \"''${project.worktree_path}\" \"''${project.parent_project}\""
@@ -6854,19 +6856,19 @@ in
 
       /* Feature 099 UX3: Expand/Collapse All button */
       .expand-all-button {
-        background-color: transparent;
-        color: ${mocha.subtext0};
-        padding: 4px 8px;
+        background-color: ${mocha.surface0};
+        color: ${mocha.text};
+        padding: 4px 10px;
         border-radius: 6px;
-        font-size: 14px;
+        font-size: 11px;
         border: 1px solid ${mocha.surface1};
-        margin-right: 8px;
+        margin-right: 6px;
       }
 
       .expand-all-button:hover {
-        background-color: rgba(69, 71, 90, 0.5);
-        color: ${mocha.text};
-        border-color: ${mocha.overlay0};
+        background-color: ${mocha.surface1};
+        color: ${mocha.blue};
+        border-color: ${mocha.blue};
       }
 
       /* Feature 099 UX1: Filter/Search row */
@@ -6875,20 +6877,21 @@ in
       }
 
       .filter-input-container {
-        background-color: rgba(49, 50, 68, 0.6);
+        background-color: ${mocha.mantle};
         border: 1px solid ${mocha.surface1};
         border-radius: 6px;
-        padding: 4px 8px;
+        padding: 6px 10px;
+        min-height: 28px;
       }
 
       .filter-input-container:focus-within {
-        border-color: ${mocha.lavender};
-        background-color: rgba(49, 50, 68, 0.8);
+        border-color: ${mocha.blue};
+        background-color: ${mocha.base};
       }
 
       .filter-icon {
         color: ${mocha.subtext0};
-        font-size: 12px;
+        font-size: 11px;
         margin-right: 6px;
       }
 
@@ -6898,8 +6901,9 @@ in
         font-size: 12px;
         border: none;
         outline: none;
-        min-width: 100px;
+        min-width: 120px;
       }
+
 
       .filter-clear-button {
         background-color: transparent;
@@ -6985,35 +6989,33 @@ in
 
       /* Feature 099 T016: Refresh button */
       .refresh-button {
-        background-color: transparent;
-        color: ${mocha.subtext0};
-        padding: 4px 8px;
+        background-color: ${mocha.surface0};
+        color: ${mocha.text};
+        padding: 4px 10px;
         border-radius: 6px;
-        font-size: 14px;
+        font-size: 11px;
         border: 1px solid ${mocha.surface1};
-        margin-right: 8px;
+        margin-right: 6px;
       }
 
       .refresh-button:hover {
-        background-color: rgba(69, 71, 90, 0.5);
-        color: ${mocha.text};
-        border-color: ${mocha.overlay0};
+        background-color: ${mocha.surface1};
+        color: ${mocha.blue};
+        border-color: ${mocha.blue};
       }
 
       .new-project-button {
         background-color: ${mocha.green};
         color: ${mocha.base};
-        padding: 6px 14px;
-        border-radius: 8px;
-        font-size: 12px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 11px;
         font-weight: bold;
         border: none;
-        box-shadow: 0 2px 8px rgba(166, 227, 161, 0.3);
       }
 
       .new-project-button:hover {
         background-color: ${mocha.teal};
-        box-shadow: 0 4px 12px rgba(148, 226, 213, 0.4);
       }
 
       .project-create-form {
