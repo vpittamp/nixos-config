@@ -2112,6 +2112,40 @@ print(json.dumps(result))
     $EWW_CMD update env_other_vars="$OTHER_VARS"
   '';
 
+  # Feature 101: Start tracing a window by ID
+  # Uses the window's Sway container ID as the deterministic identifier
+  startWindowTraceScript = pkgs.writeShellScript "start-window-trace" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    WINDOW_ID="''${1:-}"
+    WINDOW_TITLE="''${2:-Window}"
+
+    if [[ -z "$WINDOW_ID" ]] || [[ "$WINDOW_ID" == "0" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Failed" "No window ID provided"
+      exit 1
+    fi
+
+    # Close the context menu
+    $EWW_CMD update context_menu_window_id=0
+
+    # Start trace using window ID (most deterministic identifier)
+    RESULT=$(i3pm trace start --id "$WINDOW_ID" 2>&1) || {
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Failed" "$RESULT"
+      exit 1
+    }
+
+    # Extract trace ID from result
+    TRACE_ID=$(echo "$RESULT" | ${pkgs.gnugrep}/bin/grep -oP 'trace-\d+-\d+' | head -1)
+
+    # Show success notification
+    ${pkgs.libnotify}/bin/notify-send -t 3000 "Trace Started" "Tracing window: $WINDOW_TITLE\nTrace ID: $TRACE_ID"
+
+    # Switch to Traces tab to show the new trace
+    $EWW_CMD update current_view=traces
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -2800,6 +2834,12 @@ in
                 :onclick "swaymsg [con_id=''${window.id}] move scratchpad && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
                 :tooltip "Move to scratchpad"
                 (label :class "action-btn action-scratchpad" :text "󰘓"))
+              ;; Feature 101: Start trace action
+              (eventbox
+                :cursor "pointer"
+                :onclick "${startWindowTraceScript} ''${window.id} '\"''${window.title}\"' &"
+                :tooltip "Start tracing this window"
+                (label :class "action-btn action-trace" :text "󱂛"))
               (eventbox
                 :cursor "pointer"
                 :onclick "swaymsg [con_id=''${window.id}] kill && eww --config $HOME/.config/eww-monitoring-panel update context_menu_window_id=0"
@@ -8120,6 +8160,16 @@ in
 
       .action-scratchpad:hover {
         color: ${mocha.mauve};
+      }
+
+      /* Feature 101: Trace action button */
+      .action-trace {
+        color: ${mocha.overlay0};
+      }
+
+      .action-trace:hover {
+        background-color: rgba(180, 190, 254, 0.2);
+        color: ${mocha.lavender};
       }
 
       .action-close {
