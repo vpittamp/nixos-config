@@ -1,7 +1,10 @@
 """
 Project filtering and loading service for Feature 078.
 
-Provides functions to load projects from JSON files, compute metadata,
+Feature 101: Refactored to use repos.json as single source of truth.
+All projects are worktrees (including main branch checkouts).
+
+Provides functions to load projects from repos.json, compute metadata,
 and convert to ProjectListItem format for UI rendering.
 """
 
@@ -9,10 +12,9 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
 try:
-    from .models import Project
     from .models.project_filter import (
         ProjectListItem,
         GitStatus,
@@ -22,7 +24,6 @@ try:
     )
 except ImportError:
     # Support direct import for tests
-    from models import Project
     from models.project_filter import (
         ProjectListItem,
         GitStatus,
@@ -73,117 +74,81 @@ def format_relative_time(dt: datetime) -> str:
         return f"{months}mo ago"
 
 
-def load_project_file(project_path: Path) -> Optional[dict]:
-    """Load a single project JSON file.
+def load_repos_json() -> Dict[str, Any]:
+    """Load repositories from repos.json.
 
-    Args:
-        project_path: Path to project JSON file
+    Feature 101: Single source of truth for all projects.
 
     Returns:
-        Project data dict or None if loading fails
+        Dict with "repositories" list and metadata, or empty dict if not found
     """
+    repos_file = Path.home() / ".config" / "i3" / "repos.json"
+
+    if not repos_file.exists():
+        logger.debug("Feature 101: repos.json not found at %s", repos_file)
+        return {"repositories": [], "last_discovery": None}
+
     try:
-        with open(project_path) as f:
+        with open(repos_file) as f:
             return json.load(f)
-    except Exception as e:
-        logger.warning(f"Failed to load project {project_path}: {e}")
-        return None
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Feature 101: Failed to load repos.json: {e}")
+        return {"repositories": [], "last_discovery": None}
 
 
-def resolve_parent_project_name(repository_path: str, all_projects: List[dict]) -> Optional[str]:
-    """Resolve parent project name from repository path.
-
-    Args:
-        repository_path: Absolute path to parent repository (e.g., "/etc/nixos")
-        all_projects: List of all project dicts
-
-    Returns:
-        Name of parent project or None if not found
-    """
-    for project in all_projects:
-        if project.get("directory") == repository_path:
-            return project.get("name")
-    return None
-
-
-def project_to_list_item(
-    project_data: dict,
-    all_projects: List[dict],
+def worktree_to_list_item(
+    wt: Dict[str, Any],
+    repo_qualified_name: str,
+    repo_account: str,
+    repo_name: str,
 ) -> ProjectListItem:
-    """Convert raw project dict to ProjectListItem with computed fields.
+    """Convert a worktree from repos.json to ProjectListItem.
+
+    Feature 101: All projects are worktrees in the new architecture.
 
     Args:
-        project_data: Raw project JSON data
-        all_projects: All loaded project dicts (for parent resolution)
+        wt: Worktree dict from repos.json
+        repo_qualified_name: Parent repo qualified name (account/repo)
+        repo_account: Repository account/owner
+        repo_name: Repository name
 
     Returns:
-        ProjectListItem with computed metadata
+        ProjectListItem with worktree metadata
     """
-    # Check if directory exists
-    directory = project_data.get("directory", "")
-    directory_exists = Path(directory).exists() if directory else False
+    # Build qualified name: account/repo:branch
+    qualified_name = f"{repo_qualified_name}:{wt['branch']}"
 
-    # Determine if worktree and extract git status
-    worktree_data = project_data.get("worktree")
-    is_worktree = worktree_data is not None
-    git_status = None
-    parent_project_name = None
-    last_modified_str = None
+    # Check if worktree directory exists
+    wt_path = wt.get("path", "")
+    directory_exists = Path(wt_path).exists() if wt_path else False
 
-    if is_worktree and worktree_data:
-        # Extract git status
-        git_status = GitStatus(
-            is_clean=worktree_data.get("is_clean", True),
-            ahead_count=worktree_data.get("ahead_count", 0),
-            behind_count=worktree_data.get("behind_count", 0),
-        )
-        # Resolve parent project
-        repository_path = worktree_data.get("repository_path", "")
-        if repository_path:
-            parent_project_name = resolve_parent_project_name(repository_path, all_projects)
-        # Get last modified from worktree
-        last_modified_str = worktree_data.get("last_modified")
+    # Extract git status
+    git_status = GitStatus(
+        is_clean=wt.get("is_clean", True),
+        ahead_count=wt.get("ahead", 0),
+        behind_count=wt.get("behind", 0),
+    )
 
-    # Calculate relative time
-    try:
-        if last_modified_str:
-            # Parse ISO8601 with timezone
-            if "T" in last_modified_str:
-                if "+" in last_modified_str or "-" in last_modified_str[10:]:
-                    # Has timezone offset (e.g., "2025-11-16T11:45:03-05:00")
-                    dt = datetime.fromisoformat(last_modified_str)
-                else:
-                    # UTC format (e.g., "2025-11-16T11:45:03Z")
-                    dt = datetime.fromisoformat(last_modified_str.replace("Z", "+00:00"))
-            else:
-                dt = datetime.fromisoformat(last_modified_str)
-        else:
-            # Fall back to updated_at
-            updated_at = project_data.get("updated_at", "")
-            if updated_at:
-                dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-            else:
-                dt = datetime.now(timezone.utc)
-        relative_time = format_relative_time(dt)
-    except Exception as e:
-        logger.warning(f"Failed to parse date for {project_data.get('name')}: {e}")
-        relative_time = "unknown"
+    # Calculate relative time from discovered_at or use current time
+    # repos.json doesn't have per-worktree timestamps, use repo discovery time
+    relative_time = "recent"
 
-    # Feature 079: Extract full_branch_name from worktree data for branch number extraction
-    full_branch_name = ""
-    if is_worktree and worktree_data:
-        full_branch_name = worktree_data.get("branch", "")
+    # Feature 079: branch name for number extraction
+    full_branch_name = wt.get("branch", "")
+
+    # Generate display name from branch
+    display_name = wt.get("branch", "unknown")
 
     return ProjectListItem(
-        name=project_data.get("name", "unknown"),
-        display_name=project_data.get("display_name", project_data.get("name", "Unknown")),
-        icon=project_data.get("icon", "📁"),
-        is_worktree=is_worktree,
-        parent_project_name=parent_project_name,
+        name=qualified_name,
+        display_name=display_name,
+        icon="🌿",  # All worktrees get worktree icon
+        is_worktree=True,  # Feature 101: ALL projects are worktrees
+        parent_project_name=repo_qualified_name,
         directory_exists=directory_exists,
         relative_time=relative_time,
         git_status=git_status,
-        full_branch_name=full_branch_name,  # Feature 079: Enables branch_number and branch_type auto-extraction
+        full_branch_name=full_branch_name,
         match_score=0,
         match_positions=[],
         selected=False,
@@ -191,88 +156,55 @@ def project_to_list_item(
 
 
 def load_all_projects(config_dir: Path) -> List[ProjectListItem]:
-    """Load all projects from config directory.
+    """Load all projects from repos.json.
+
+    Feature 101: Reads from repos.json as single source of truth.
+    All projects are worktrees (including main branch checkouts).
+    Groups worktrees by their parent repository.
 
     Args:
-        config_dir: Path to i3 config directory (typically ~/.config/i3/)
+        config_dir: Path to i3 config directory (ignored - uses repos.json)
 
     Returns:
-        List of ProjectListItem sorted by last activity (most recent first)
+        List of ProjectListItem grouped by repository, sorted by discovery time
     """
-    projects_dir = config_dir / "projects"
+    repos_data = load_repos_json()
+    repositories = repos_data.get("repositories", [])
 
-    if not projects_dir.exists():
-        logger.warning(f"Projects directory does not exist: {projects_dir}")
+    if not repositories:
+        logger.debug("Feature 101: No repositories found in repos.json")
         return []
 
-    # First pass: load all raw project data
-    all_project_data = []
-    for project_file in projects_dir.glob("*.json"):
-        data = load_project_file(project_file)
-        if data:
-            all_project_data.append(data)
+    # Convert each repository's worktrees to ProjectListItems
+    # Group by repository: repo header followed by its worktrees
+    grouped_items: List[ProjectListItem] = []
 
-    # Second pass: convert to ProjectListItem with parent resolution
-    project_items = []
-    for data in all_project_data:
-        item = project_to_list_item(data, all_project_data)
-        project_items.append(item)
+    for repo in repositories:
+        repo_account = repo.get("account", "unknown")
+        repo_name = repo.get("name", "unknown")
+        repo_qualified_name = f"{repo_account}/{repo_name}"
 
-    # Sort by recency (most recent first)
-    # Use updated_at or worktree.last_modified
-    def get_sort_key(item: ProjectListItem) -> datetime:
-        # Find original data
-        for data in all_project_data:
-            if data.get("name") == item.name:
-                worktree = data.get("worktree")
-                if worktree and "last_modified" in worktree:
-                    try:
-                        lm = worktree["last_modified"]
-                        dt = datetime.fromisoformat(lm.replace("Z", "+00:00"))
-                        # Ensure timezone-aware
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        return dt
-                    except Exception:
-                        pass
-                try:
-                    ua = data.get("updated_at", "1970-01-01T00:00:00Z")
-                    dt = datetime.fromisoformat(ua.replace("Z", "+00:00"))
-                    # Ensure timezone-aware (handles offset-naive timestamps like "2025-11-08T12:10:00.715975")
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    return dt
-                except Exception:
-                    pass
-        return datetime.min.replace(tzinfo=timezone.utc)
+        worktrees = repo.get("worktrees", [])
+        if not worktrees:
+            continue
 
-    # Feature 079: Group worktrees under their parent projects
-    # Sort so that: root projects come first, then their worktrees
-    root_projects = [p for p in project_items if not p.is_worktree]
-    worktrees = [p for p in project_items if p.is_worktree]
+        # Sort worktrees: main/default branch first, then others alphabetically
+        default_branch = repo.get("default_branch", "main")
 
-    # Sort root projects by recency
-    root_projects.sort(key=get_sort_key, reverse=True)
+        def worktree_sort_key(wt: Dict[str, Any]) -> tuple:
+            branch = wt.get("branch", "")
+            # Main/default branch comes first (0), others second (1)
+            is_default = 0 if branch == default_branch else 1
+            return (is_default, branch.lower())
 
-    # Build grouped list: for each root, add its worktrees after it
-    grouped_items = []
-    used_worktrees = set()
+        sorted_worktrees = sorted(worktrees, key=worktree_sort_key)
 
-    for root in root_projects:
-        grouped_items.append(root)
-        # Find worktrees belonging to this root
-        root_worktrees = [w for w in worktrees if w.parent_project_name == root.name]
-        # Sort these worktrees by recency
-        root_worktrees.sort(key=get_sort_key, reverse=True)
-        grouped_items.extend(root_worktrees)
-        for w in root_worktrees:
-            used_worktrees.add(w.name)
+        # Convert each worktree to ProjectListItem
+        for wt in sorted_worktrees:
+            item = worktree_to_list_item(wt, repo_qualified_name, repo_account, repo_name)
+            grouped_items.append(item)
 
-    # Add any orphan worktrees (parent project not found) at the end
-    orphan_worktrees = [w for w in worktrees if w.name not in used_worktrees]
-    orphan_worktrees.sort(key=get_sort_key, reverse=True)
-    grouped_items.extend(orphan_worktrees)
-
+    logger.debug(f"Feature 101: Loaded {len(grouped_items)} worktrees from repos.json")
     return grouped_items
 
 

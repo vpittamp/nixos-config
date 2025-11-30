@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.14.0";  # Feature 101: Fixed mark parsing for worktree qualified names with colons
+    version = "1.16.0";  # Feature 101: Full migration to repos.json as single source of truth for all project operations
     src = daemonSrc;
 
     installPhase = ''

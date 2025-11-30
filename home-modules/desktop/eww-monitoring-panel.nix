@@ -345,17 +345,20 @@ let
         ;;
 
       merge-manual)
-        # Open file in editor for manual merge
-        PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
-        if [ -f "$PROJECT_FILE" ]; then
+        # Feature 101: Open repos.json for manual editing
+        # Individual project files no longer exist - all data is in repos.json
+        REPOS_FILE="$HOME/.config/i3/repos.json"
+        if [ -f "$REPOS_FILE" ]; then
           # Use default editor or fallback to nano
-          ''${EDITOR:-nano} "$PROJECT_FILE"
+          ''${EDITOR:-nano} "$REPOS_FILE"
           # Close dialog - project list will be refreshed by the deflisten stream automatically
           $EWW_CMD update conflict_dialog_visible=false
           $EWW_CMD update editing_project_name='''
-          echo "Opened $PROJECT_FILE for manual merge" >&2
+          # Trigger rediscovery to ensure state is consistent
+          i3pm discover >/dev/null 2>&1 || true
+          echo "Opened $REPOS_FILE for manual editing (project: $PROJECT_NAME)" >&2
         else
-          echo "Error: Project file not found: $PROJECT_FILE" >&2
+          echo "Error: repos.json not found" >&2
           exit 1
         fi
         ;;
@@ -490,22 +493,28 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Get parent project directory
-    PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
-    if [[ ! -f "$PARENT_FILE" ]]; then
-      $EWW update edit_form_error="Parent project not found: $PARENT_PROJECT"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Parent project not found: $PARENT_PROJECT"
+    # Feature 101: Get parent project directory from repos.json
+    # PARENT_PROJECT is now a qualified name: account/repo (e.g., vpittamp/nixos-config)
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    if [[ ! -f "$REPOS_FILE" ]]; then
+      $EWW update edit_form_error="repos.json not found. Run 'i3pm discover' first."
+      $EWW update error_notification="repos.json not found. Run 'i3pm discover' first."
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
       exit 1
     fi
 
-    PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // .working_dir // empty' "$PARENT_FILE")
+    # Parse qualified name: account/repo
+    REPO_ACCOUNT=$(echo "$PARENT_PROJECT" | cut -d'/' -f1)
+    REPO_NAME=$(echo "$PARENT_PROJECT" | cut -d'/' -f2)
+
+    # Find repo in repos.json
+    PARENT_DIR=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
     if [[ -z "$PARENT_DIR" ]]; then
-      $EWW update edit_form_error="Parent project has no directory"
+      $EWW update edit_form_error="Repository not found: $PARENT_PROJECT"
       # Feature 096 T024: Show error notification
-      $EWW update error_notification="Parent project has no directory"
+      $EWW update error_notification="Repository not found: $PARENT_PROJECT"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
       exit 1
@@ -554,51 +563,22 @@ asyncio.run(stream.run())
       fi
     fi
 
-    # Generate worktree project name (parent-branch convention)
-    WORKTREE_NAME="''${PARENT_PROJECT}-''${BRANCH_NAME//\//-}"
+    # Feature 101: Generate qualified worktree name
+    # Format: account/repo:branch (e.g., vpittamp/nixos-config:101-worktree-click-switch)
+    WORKTREE_NAME="''${PARENT_PROJECT}:''${BRANCH_NAME}"
     if [[ -z "$DISPLAY_NAME" ]]; then
       DISPLAY_NAME="$BRANCH_NAME"
     fi
-    if [[ -z "$ICON" ]]; then
-      ICON="🌿"
-    fi
 
-    # Create worktree project config using CRUD handler
-    # Build JSON config object for create command
-    CONFIG_JSON=$(${pkgs.jq}/bin/jq -n \
-      --arg name "$WORKTREE_NAME" \
-      --arg display_name "$DISPLAY_NAME" \
-      --arg icon "$ICON" \
-      --arg directory "$WORKTREE_PATH" \
-      --arg scope "scoped" \
-      --arg worktree_path "$WORKTREE_PATH" \
-      --arg branch_name "$BRANCH_NAME" \
-      --arg parent_project "$PARENT_PROJECT" \
-      '{
-        name: $name,
-        display_name: $display_name,
-        icon: $icon,
-        directory: $directory,
-        scope: $scope,
-        worktree_path: $worktree_path,
-        branch_name: $branch_name,
-        parent_project: $parent_project
-      }')
-
-    export PYTHONPATH="${../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler create \
-      --config "$CONFIG_JSON")
-
-    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    if [[ "$STATUS" != "success" ]]; then
-      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
-      $EWW update edit_form_error="Failed to create worktree config: $ERROR"
+    # Feature 101: Trigger rediscovery to pick up the new worktree
+    # The git worktree add above created the worktree, now repos.json needs to be updated
+    if ! i3pm discover >/dev/null 2>&1; then
+      $EWW update edit_form_error="Failed to update repos.json"
       # Feature 096 T024: Show error notification
-      $EWW update error_notification="Failed to create worktree config: $ERROR"
+      $EWW update error_notification="Worktree created but repos.json refresh failed"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
-      # Cleanup: remove the git worktree we just created
-      git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+      # Note: Don't remove the git worktree - it was successfully created
       exit 1
     fi
 
@@ -651,10 +631,32 @@ asyncio.run(stream.run())
     # Feature 096 T022: Set loading state
     $EWW update save_in_progress=true
 
-    # User confirmed - proceed with deletion
-    PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
-    if [[ ! -f "$PROJECT_FILE" ]]; then
-      $EWW update edit_form_error="Project not found: $PROJECT_NAME"
+    # Feature 101: User confirmed - proceed with deletion using repos.json
+    # PROJECT_NAME is now a qualified name: account/repo:branch
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    if [[ ! -f "$REPOS_FILE" ]]; then
+      $EWW update edit_form_error="repos.json not found"
+      $EWW update error_notification="repos.json not found. Run 'i3pm discover' first."
+      $EWW update error_notification_visible=true
+      $EWW update worktree_delete_confirm=""
+      $EWW update save_in_progress=false
+      exit 1
+    fi
+
+    # Parse qualified name: account/repo:branch
+    REPO_PART=$(echo "$PROJECT_NAME" | cut -d':' -f1)
+    BRANCH_NAME=$(echo "$PROJECT_NAME" | cut -d':' -f2)
+    REPO_ACCOUNT=$(echo "$REPO_PART" | cut -d'/' -f1)
+    REPO_NAME=$(echo "$REPO_PART" | cut -d'/' -f2)
+
+    # Find worktree in repos.json
+    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[] | select(.branch == $branch) | .path // empty' "$REPOS_FILE")
+    PARENT_DIR=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+
+    if [[ -z "$WORKTREE_PATH" ]]; then
+      $EWW update edit_form_error="Worktree not found: $PROJECT_NAME"
       # Feature 096 T024: Show error notification
       $EWW update error_notification="Worktree not found: $PROJECT_NAME"
       $EWW update error_notification_visible=true
@@ -663,48 +665,22 @@ asyncio.run(stream.run())
       exit 1
     fi
 
-    # Read worktree info
-    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r '.worktree_path // empty' "$PROJECT_FILE")
-    PARENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.parent_project // empty' "$PROJECT_FILE")
-
-    if [[ -z "$WORKTREE_PATH" ]] || [[ -z "$PARENT_PROJECT" ]]; then
-      $EWW update edit_form_error="Not a worktree project"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Not a worktree project: $PROJECT_NAME"
-      $EWW update error_notification_visible=true
-      $EWW update worktree_delete_confirm=""
-      $EWW update save_in_progress=false
-      exit 1
-    fi
-
     # Get parent directory for git worktree removal
-    PARENT_FILE="$HOME/.config/i3/projects/$PARENT_PROJECT.json"
     GIT_CLEANUP_WARNING=""
-    if [[ -f "$PARENT_FILE" ]]; then
-      PARENT_DIR=$(${pkgs.jq}/bin/jq -r '.directory // .working_dir // empty' "$PARENT_FILE")
-      if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
-        cd "$PARENT_DIR"
-        # Remove git worktree (use --force if dirty)
-        if ! git worktree remove "$WORKTREE_PATH" --force 2>/dev/null; then
-          GIT_CLEANUP_WARNING=" (Git cleanup may have failed)"
-        fi
+    if [[ -n "$PARENT_DIR" ]] && [[ -d "$PARENT_DIR" ]]; then
+      cd "$PARENT_DIR"
+      # Remove git worktree (use --force if dirty)
+      if ! git worktree remove "$WORKTREE_PATH" --force 2>/dev/null; then
+        GIT_CLEANUP_WARNING=" (Git cleanup may have failed)"
       fi
     fi
 
-    # Delete project config using CRUD handler
-    export PYTHONPATH="${../tools}"
-    RESULT=$(${pythonForBackend}/bin/python3 -m i3_project_manager.cli.project_crud_handler delete "$PROJECT_NAME")
-
-    STATUS=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.status')
-    if [[ "$STATUS" != "success" ]]; then
-      ERROR=$(echo "$RESULT" | ${pkgs.jq}/bin/jq -r '.error // "Unknown error"')
-      $EWW update edit_form_error="Failed to delete: $ERROR"
-      # Feature 096 T024: Show error notification
-      $EWW update error_notification="Failed to delete worktree: $ERROR"
-      $EWW update error_notification_visible=true
-      $EWW update worktree_delete_confirm=""
-      $EWW update save_in_progress=false
-      exit 1
+    # Feature 101: Trigger rediscovery to update repos.json
+    # The git worktree remove above already deleted the worktree
+    # Now we just need to refresh repos.json via discovery
+    if ! i3pm discover >/dev/null 2>&1; then
+      # Non-fatal warning - worktree was still deleted
+      GIT_CLEANUP_WARNING="$GIT_CLEANUP_WARNING (repos.json refresh may have failed)"
     fi
 
     # Success: clear state and refresh
@@ -2028,6 +2004,7 @@ print(json.dumps(result))
   '';
 
   # Feature 096: Copy project JSON to clipboard (similar to window JSON)
+  # Feature 101: Updated to extract worktree data from repos.json
   copyProjectJsonScript = pkgs.writeShellScript "copy-project-json" ''
     #!/usr/bin/env bash
     set -euo pipefail
@@ -2036,21 +2013,34 @@ print(json.dumps(result))
     PROJECT_NAME="''${1:-}"
 
     if [[ -z "$PROJECT_NAME" ]]; then
-      echo "Usage: copy-project-json <project-name>" >&2
+      echo "Usage: copy-project-json <qualified-name>" >&2
+      echo "  qualified-name: account/repo:branch (e.g., vpittamp/nixos-config:main)" >&2
       exit 1
     fi
 
-    # Read project JSON from file and copy to clipboard
-    PROJECT_FILE="$HOME/.config/i3/projects/$PROJECT_NAME.json"
-    if [[ -f "$PROJECT_FILE" ]]; then
-      ${pkgs.jq}/bin/jq '.' "$PROJECT_FILE" | ${pkgs.wl-clipboard}/bin/wl-copy
-      # Toggle copied state for visual feedback
-      $EWW_CMD update copied_project_name="$PROJECT_NAME"
-      (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_project_name="") &
-    else
-      echo "Project file not found: $PROJECT_FILE" >&2
+    # Feature 101: Extract worktree data from repos.json
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    if [[ ! -f "$REPOS_FILE" ]]; then
+      echo "repos.json not found" >&2
       exit 1
     fi
+
+    # Parse qualified name: account/repo:branch
+    REPO_PART=$(echo "$PROJECT_NAME" | cut -d':' -f1)
+    BRANCH_NAME=$(echo "$PROJECT_NAME" | cut -d':' -f2)
+    REPO_ACCOUNT=$(echo "$REPO_PART" | cut -d'/' -f1)
+    REPO_NAME=$(echo "$REPO_PART" | cut -d'/' -f2)
+
+    # Extract worktree data and copy to clipboard
+    ${pkgs.jq}/bin/jq --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | {
+        repository: {account: .account, name: .name, path: .path, default_branch: .default_branch},
+        worktree: (.worktrees[] | select(.branch == $branch))
+      }' "$REPOS_FILE" | ${pkgs.wl-clipboard}/bin/wl-copy
+
+    # Toggle copied state for visual feedback
+    $EWW_CMD update copied_project_name="$PROJECT_NAME"
+    (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_project_name="") &
   '';
 
   # Feature 099: Fetch window environment variables via IPC

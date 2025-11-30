@@ -393,66 +393,77 @@ class WorkspaceModeManager:
     async def _fuzzy_match_project(self, chars: str) -> Optional[str]:
         """Find best project match for typed characters.
 
+        Feature 101: Uses repos.json via project_filter_service as single source of truth.
+
         Uses priority-based matching:
-        1. Exact match (e.g., "nixos" → "nixos")
-        2. Prefix match (e.g., "st" → "stacks")
-        3. Substring match (e.g., "ix" → "nixos")
+        1. Exact match (e.g., "nixos" → "vpittamp/nixos-config:main")
+        2. Prefix match (e.g., "st" → "PittampalliOrg/stacks:main")
+        3. Substring match (e.g., "ix" → "vpittamp/nixos-config:main")
         4. First character match for single char (e.g., "s" → first project starting with 's')
 
         Args:
             chars: Accumulated characters from user input
 
         Returns:
-            Matched project name or None if no match
+            Matched project qualified name or None if no match
         """
         if not chars:
             return None
 
-        # Lazy-load ProjectService if needed
-        if not self._project_service:
+        # Feature 101: Use project_filter_service to get projects from repos.json
+        if not self._all_projects:
             if not self._config_dir:
-                logger.error("Cannot load ProjectService: config_dir not provided")
+                logger.error("Cannot load projects: config_dir not provided")
                 return None
 
-            from .services.project_service import ProjectService
-            self._project_service = ProjectService(self._config_dir, self._state_manager)
-            logger.debug("Lazy-loaded ProjectService for project matching")
+            try:
+                from .project_filter_service import load_all_projects
+                self._all_projects = load_all_projects(Path(self._config_dir))
+                logger.debug(f"Loaded {len(self._all_projects)} projects from repos.json for matching")
+            except Exception as e:
+                logger.error(f"Failed to load projects: {e}")
+                return None
 
-        # Get all projects
-        projects = self._project_service.list()
-        project_names = [p.name.lower() for p in projects]
+        # Get all project names (qualified names: account/repo:branch)
+        project_names = [p.name.lower() for p in self._all_projects]
         chars_lower = chars.lower()
 
-        logger.debug(f"Fuzzy matching '{chars}' against projects: {project_names}")
+        logger.debug(f"Fuzzy matching '{chars}' against {len(project_names)} projects")
 
-        # Priority 1: Exact match
-        if chars_lower in project_names:
-            logger.debug(f"Exact match found: {chars_lower}")
-            return chars_lower
+        # Priority 1: Exact match on qualified name or branch name
+        for p in self._all_projects:
+            if p.name.lower() == chars_lower or p.display_name.lower() == chars_lower:
+                logger.debug(f"Exact match found: {p.name}")
+                return p.name
 
-        # Priority 2: Prefix match
-        prefix_matches = [p for p in project_names if p.startswith(chars_lower)]
+        # Priority 2: Prefix match on branch name or qualified name
+        prefix_matches = [p for p in self._all_projects
+                        if p.display_name.lower().startswith(chars_lower) or p.name.lower().startswith(chars_lower)]
         if prefix_matches:
             # Sort alphabetically and return first
-            match = sorted(prefix_matches)[0]
-            logger.debug(f"Prefix match found: {match} (from {prefix_matches})")
-            return match
+            match = sorted(prefix_matches, key=lambda p: p.display_name.lower())[0]
+            logger.debug(f"Prefix match found: {match.name} (from {len(prefix_matches)} matches)")
+            return match.name
 
-        # Priority 3: Substring match
-        substring_matches = [p for p in project_names if chars_lower in p]
+        # Priority 3: Substring match (also matches hyphenated words with spaces - Feature 079)
+        # e.g., "eww preview" matches "078-eww-preview-improvement"
+        chars_for_match = chars_lower.replace(" ", "-")
+        substring_matches = [p for p in self._all_projects
+                           if chars_for_match in p.display_name.lower().replace(" ", "-") or chars_for_match in p.name.lower()]
         if substring_matches:
             # Sort alphabetically and return first
-            match = sorted(substring_matches)[0]
-            logger.debug(f"Substring match found: {match} (from {substring_matches})")
-            return match
+            match = sorted(substring_matches, key=lambda p: p.display_name.lower())[0]
+            logger.debug(f"Substring match found: {match.name} (from {len(substring_matches)} matches)")
+            return match.name
 
         # Priority 4: First character match (only for single character input)
         if len(chars_lower) == 1:
-            first_char_matches = [p for p in project_names if p.startswith(chars_lower[0])]
+            first_char_matches = [p for p in self._all_projects
+                                 if p.display_name.lower().startswith(chars_lower[0])]
             if first_char_matches:
-                match = sorted(first_char_matches)[0]
-                logger.debug(f"First char match found: {match} (from {first_char_matches})")
-                return match
+                match = sorted(first_char_matches, key=lambda p: p.display_name.lower())[0]
+                logger.debug(f"First char match found: {match.name} (from {len(first_char_matches)} matches)")
+                return match.name
 
         logger.debug(f"No match found for '{chars}'")
         return None
@@ -495,33 +506,38 @@ class WorkspaceModeManager:
     async def _get_project_icon(self, project_name: str) -> str:
         """Get icon for a project by name.
 
+        Feature 101: Uses project_filter_service with repos.json as source of truth.
+        All projects are worktrees, so default icon is "🌿".
+
         Args:
-            project_name: Project name
+            project_name: Project qualified name (account/repo:branch)
 
         Returns:
-            Project icon (emoji or text), defaults to "📁" if not found
+            Project icon (emoji or text), defaults to "🌿" if not found
         """
         if not project_name:
-            return "📁"
+            return "🌿"
 
-        # Lazy-load ProjectService if needed
-        if not self._project_service:
+        # Feature 101: Use cached projects from _all_projects
+        if not self._all_projects:
             if not self._config_dir:
-                logger.error("Cannot load ProjectService: config_dir not provided")
-                return "📁"
+                logger.error("Cannot load projects: config_dir not provided")
+                return "🌿"
 
-            from .services.project_service import ProjectService
-            self._project_service = ProjectService(self._config_dir, self._state_manager)
-            logger.debug("Lazy-loaded ProjectService for project icon lookup")
+            try:
+                from .project_filter_service import load_all_projects
+                self._all_projects = load_all_projects(Path(self._config_dir))
+            except Exception as e:
+                logger.error(f"Failed to load projects: {e}")
+                return "🌿"
 
-        # Get all projects and find matching project
-        projects = self._project_service.list()
-        for project in projects:
+        # Find matching project by qualified name
+        for project in self._all_projects:
             if project.name.lower() == project_name.lower():
                 return project.icon
 
-        # Default icon if project not found
-        return "📁"
+        # Default worktree icon if project not found
+        return "🌿"
 
     async def cancel(self) -> None:
         """Cancel workspace mode without action."""

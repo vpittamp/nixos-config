@@ -766,22 +766,55 @@ class IPCServer:
         return result
 
     async def _get_projects(self) -> Dict[str, Any]:
-        """List all projects with window counts."""
+        """List all projects with window counts.
+
+        Feature 101: Uses repos.json as single source of truth.
+        All projects are worktrees (including main branch checkouts).
+        """
+        from pathlib import Path
+
         start_time = time.perf_counter()
         error_msg = None
+        project_count = 0
 
         try:
-            projects = self.state_manager.state.projects
+            # Feature 101: Load from repos.json
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if not repos_file.exists():
+                return {"projects": {}}
+
+            with open(repos_file) as f:
+                repos_data = json.load(f)
+
             result = {}
 
-            for name, config in projects.items():
-                windows = await self.state_manager.get_windows_by_project(name)
-                result[name] = {
-                    "display_name": config.display_name,
-                    "icon": config.icon,
-                    "directory": str(config.directory),
-                    "window_count": len(windows),
-                }
+            for repo in repos_data.get("repositories", []):
+                repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+
+                for wt in repo.get("worktrees", []):
+                    branch = wt.get("branch", "unknown")
+                    qualified_name = f"{repo_qualified}:{branch}"
+
+                    # Get window count for this project
+                    windows = await self.state_manager.get_windows_by_project(qualified_name)
+
+                    result[qualified_name] = {
+                        "display_name": branch,
+                        "icon": "🌿",
+                        "directory": wt.get("path", ""),
+                        "window_count": len(windows),
+                        # Feature 101: All projects are worktrees
+                        "source_type": "worktree",
+                        "status": "active" if Path(wt.get("path", "")).exists() else "missing",
+                        "parent_project": repo_qualified,
+                        "git_metadata": {
+                            "branch": branch,
+                            "is_clean": wt.get("is_clean", True),
+                            "ahead": wt.get("ahead", 0),
+                            "behind": wt.get("behind", 0),
+                        },
+                    }
+                    project_count += 1
 
             return {"projects": result}
         except Exception as e:
@@ -791,7 +824,7 @@ class IPCServer:
             duration_ms = (time.perf_counter() - start_time) * 1000
             await self._log_ipc_event(
                 event_type="query::projects",
-                result_count=len(self.state_manager.state.projects),
+                result_count=project_count,
                 duration_ms=duration_ms,
                 error=error_msg,
             )
@@ -838,12 +871,18 @@ class IPCServer:
     async def _switch_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Switch to a project and return results.
 
+        Feature 101: Uses repos.json as single source of truth.
+        Project names are qualified: account/repo:branch
+
         Args:
-            params: Switch parameters with project_name
+            params: Switch parameters with project_name (qualified name)
 
         Returns:
             Dictionary with previous_project, new_project, windows_hidden, windows_shown
         """
+        from pathlib import Path
+        from .models.discovery import parse_branch_metadata
+
         start_time = time.perf_counter()
         project_name = params.get("project_name")
         error_msg = None
@@ -852,27 +891,60 @@ class IPCServer:
             if not project_name:
                 raise ValueError("project_name parameter is required")
 
-            # Verify project exists
-            if project_name not in self.state_manager.state.projects:
+            # Feature 101: Load from repos.json
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if not repos_file.exists():
+                raise ValueError("repos.json not found. Run 'i3pm discover' first.")
+
+            with open(repos_file) as f:
+                repos_data = json.load(f)
+
+            # Parse qualified name: account/repo:branch
+            worktree_data = None
+            if ":" in project_name:
+                repo_name, branch = project_name.rsplit(":", 1)
+            else:
+                # No branch specified, try to find main worktree
+                repo_name = project_name
+                branch = None
+
+            # Find the repository and worktree
+            for repo in repos_data.get("repositories", []):
+                r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+                if r_qualified == repo_name or repo.get("name") == repo_name:
+                    # Found the repository
+                    for wt in repo.get("worktrees", []):
+                        if branch and wt.get("branch") == branch:
+                            worktree_data = {"repo": repo, "worktree": wt}
+                            break
+                        elif not branch and wt.get("is_main", False):
+                            worktree_data = {"repo": repo, "worktree": wt}
+                            branch = wt.get("branch")
+                            project_name = f"{r_qualified}:{branch}"
+                            break
+                    if worktree_data:
+                        break
+
+            if not worktree_data:
                 raise ValueError(f"Project not found: {project_name}")
 
+            wt = worktree_data["worktree"]
+            repo = worktree_data["repo"]
+            wt_path = wt.get("path", "")
+            repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+
             # Feature 098 (T029-T030): Validate project status before switching
-            # Prevent switching to projects with missing directories
-            project = self.state_manager.state.projects.get(project_name)
-            if project and hasattr(project, 'status'):
-                from .models.discovery import ProjectStatus
-                if project.status == ProjectStatus.MISSING:
-                    # Return JSON-RPC error -32001 with actionable message
-                    raise RuntimeError(json.dumps({
-                        "code": -32001,
-                        "message": f"Cannot switch to project '{project_name}': directory does not exist at {project.directory}",
-                        "data": {
-                            "reason": "project_missing",
-                            "project_name": project_name,
-                            "directory": str(project.directory),
-                            "suggestion": f"Either restore the directory or delete the project with: i3pm project delete {project_name}"
-                        }
-                    }))
+            if wt_path and not Path(wt_path).exists():
+                raise RuntimeError(json.dumps({
+                    "code": -32001,
+                    "message": f"Cannot switch to project '{project_name}': directory does not exist at {wt_path}",
+                    "data": {
+                        "reason": "project_missing",
+                        "project_name": project_name,
+                        "directory": wt_path,
+                        "suggestion": "Run 'i3pm discover' to update project state"
+                    }
+                }))
 
             # Get current project before switch
             previous_project = self.state_manager.state.active_project
@@ -896,13 +968,24 @@ class IPCServer:
             await self.state_manager.set_active_project(project_name)
 
             # Save active project state to disk
-            from pathlib import Path
             active_state = ActiveProjectState(
                 project_name=project_name
             )
             config_dir = Path.home() / ".config" / "i3"
             config_file = config_dir / "active-project.json"
             save_active_project(active_state, config_file)
+
+            # Feature 101: Also save active-worktree.json for app launcher context
+            worktree_context_file = config_dir / "active-worktree.json"
+            with open(worktree_context_file, "w") as f:
+                json.dump({
+                    "qualified_name": project_name,
+                    "repo_qualified_name": repo_qualified,
+                    "branch": wt.get("branch", ""),
+                    "directory": wt_path,
+                    "account": repo.get("account", ""),
+                    "repo_name": repo.get("name", ""),
+                }, f, indent=2)
 
             logger.info(f"IPC: Switching to project '{project_name}' (from '{previous_project}')")
 
@@ -932,39 +1015,38 @@ class IPCServer:
                 "project": project_name
             })
 
-            # Feature 098: Build enhanced project response with new metadata
-            project = self.state_manager.state.projects.get(project_name)
+            # Feature 101: Build project response from repos.json data (already loaded as wt, repo, repo_qualified)
+            branch = wt.get("branch", "unknown")
+
+            # Parse branch metadata
+            branch_metadata = parse_branch_metadata(branch)
+
             project_response = {
                 "name": project_name,
-                "directory": str(project.directory) if project else None,
-                "display_name": project.display_name if project else None,
+                "directory": wt_path,
+                "display_name": branch,
+                # Feature 101: All projects are worktrees
+                "source_type": "worktree",
+                "status": "active" if Path(wt_path).exists() else "missing",
+                "parent_project": repo_qualified,
             }
 
-            if project:
-                project_response["source_type"] = project.source_type.value if hasattr(project, 'source_type') and project.source_type else "local"
-                project_response["status"] = project.status.value if hasattr(project, 'status') and project.status else "active"
+            # branch_metadata (nullable object)
+            if branch_metadata:
+                project_response["branch_metadata"] = {
+                    "number": branch_metadata.number,
+                    "type": branch_metadata.type,
+                    "full_name": branch_metadata.full_name,
+                }
 
-                # parent_project (nullable)
-                if hasattr(project, 'parent_project') and project.parent_project:
-                    project_response["parent_project"] = project.parent_project
-
-                # branch_metadata (nullable object)
-                if hasattr(project, 'branch_metadata') and project.branch_metadata:
-                    project_response["branch_metadata"] = {
-                        "number": project.branch_metadata.number,
-                        "type": project.branch_metadata.type,
-                        "full_name": project.branch_metadata.full_name,
-                    }
-
-                # git_metadata (nullable object)
-                if hasattr(project, 'git_metadata') and project.git_metadata:
-                    project_response["git_metadata"] = {
-                        "branch": project.git_metadata.current_branch if hasattr(project.git_metadata, 'current_branch') else None,
-                        "commit": project.git_metadata.commit_hash if hasattr(project.git_metadata, 'commit_hash') else None,
-                        "is_clean": project.git_metadata.is_clean if hasattr(project.git_metadata, 'is_clean') else None,
-                        "ahead": project.git_metadata.ahead_count if hasattr(project.git_metadata, 'ahead_count') else None,
-                        "behind": project.git_metadata.behind_count if hasattr(project.git_metadata, 'behind_count') else None,
-                    }
+            # git_metadata from worktree entry
+            project_response["git_metadata"] = {
+                "branch": branch,
+                "commit": wt.get("commit", ""),
+                "is_clean": wt.get("is_clean", True),
+                "ahead": wt.get("ahead", 0),
+                "behind": wt.get("behind", 0),
+            }
 
             return {
                 "success": True,
@@ -5745,14 +5827,16 @@ class IPCServer:
             raise
 
     # Feature 098: Worktree environment integration methods
+    # Feature 101: Updated to use repos.json as single source of truth
     async def _worktree_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List all worktree projects for a given parent project.
+        """List all worktree projects for a given parent repository.
 
         Feature 098: Worktree-Aware Project Environment Integration
+        Feature 101: Uses repos.json as single source of truth
 
         Args:
             params: {
-                "parent_project": str  # Name of parent project to list worktrees for
+                "parent_project": str  # Qualified repo name (account/repo) or repo name
             }
 
         Returns:
@@ -5760,18 +5844,24 @@ class IPCServer:
                 "parent": {"name": str, "directory": str},
                 "worktrees": [
                     {
-                        "name": str,
-                        "display_name": str,
+                        "name": str,           # Full qualified name: account/repo:branch
+                        "display_name": str,   # Branch name or formatted display
+                        "directory": str,
+                        "icon": str,
+                        "status": str,
                         "branch_metadata": {"number": str?, "type": str?, "full_name": str},
-                        "status": str
+                        "git_metadata": {...}
                     }
                 ],
                 "count": int
             }
 
         Raises:
-            PROJECT_NOT_FOUND (1001): Parent project doesn't exist
+            PROJECT_NOT_FOUND (1001): Parent repository doesn't exist
         """
+        from pathlib import Path
+        from .models.discovery import parse_branch_metadata
+
         start_time = time.perf_counter()
 
         try:
@@ -5779,47 +5869,73 @@ class IPCServer:
             if not parent_name:
                 raise ValueError("parent_project parameter is required")
 
-            # Get all projects from state
-            projects = self.state_manager.state.projects
+            # Feature 101: Load from repos.json
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if not repos_file.exists():
+                raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
 
-            # Find parent project
-            if parent_name not in projects:
-                raise FileNotFoundError(f"Parent project not found: {parent_name}")
+            with open(repos_file) as f:
+                repos_data = json.load(f)
 
-            parent_project = projects[parent_name]
+            # Find the repository by qualified name (account/repo) or just repo name
+            repo = None
+            for r in repos_data.get("repositories", []):
+                r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
+                # Match by qualified name or just repo name
+                if r_qualified == parent_name or r.get("name") == parent_name:
+                    repo = r
+                    break
 
-            # Find all worktrees that reference this parent
+            if not repo:
+                raise FileNotFoundError(f"Repository not found: {parent_name}")
+
+            repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+
+            # Build worktree list from repos.json
             worktrees = []
-            for proj in projects.values():
-                if hasattr(proj, 'parent_project') and proj.parent_project == parent_name:
-                    worktree_data = {
-                        "name": proj.name,
-                        "display_name": proj.display_name,
-                        "directory": str(proj.directory) if hasattr(proj, 'directory') else "",
-                        "icon": proj.icon if hasattr(proj, 'icon') else "🌿",
-                        "status": proj.status.value if hasattr(proj, 'status') and proj.status else "active",
+            for wt in repo.get("worktrees", []):
+                branch = wt.get("branch", "unknown")
+                qualified_name = f"{repo_qualified}:{branch}"
+
+                # Parse branch metadata
+                branch_metadata = parse_branch_metadata(branch)
+
+                # Create display name
+                if branch_metadata and branch_metadata.number:
+                    # Format: "098 - Description"
+                    branch_desc = branch
+                    if branch_desc.startswith(f"{branch_metadata.number}-"):
+                        branch_desc = branch_desc[len(branch_metadata.number) + 1:]
+                    display_name = f"{branch_metadata.number} - {branch_desc.replace('-', ' ').replace('_', ' ').title()}"
+                else:
+                    display_name = branch
+
+                worktree_data = {
+                    "name": qualified_name,
+                    "display_name": display_name,
+                    "directory": wt.get("path", ""),
+                    "icon": "🌿",
+                    "status": "active" if Path(wt.get("path", "")).exists() else "missing",
+                }
+
+                # Include branch_metadata
+                if branch_metadata:
+                    worktree_data["branch_metadata"] = {
+                        "number": branch_metadata.number,
+                        "type": branch_metadata.type,
+                        "full_name": branch_metadata.full_name,
                     }
 
-                    # Include branch_metadata if present
-                    if hasattr(proj, 'branch_metadata') and proj.branch_metadata:
-                        worktree_data["branch_metadata"] = {
-                            "number": proj.branch_metadata.number,
-                            "type": proj.branch_metadata.type,
-                            "full_name": proj.branch_metadata.full_name,
-                        }
+                # Include git_metadata from worktree entry
+                worktree_data["git_metadata"] = {
+                    "branch": branch,
+                    "commit": wt.get("commit", ""),
+                    "is_clean": wt.get("is_clean", True),
+                    "ahead": wt.get("ahead", 0),
+                    "behind": wt.get("behind", 0),
+                }
 
-                    # Include git_metadata if present
-                    if hasattr(proj, 'git_metadata') and proj.git_metadata:
-                        gm = proj.git_metadata
-                        worktree_data["git_metadata"] = {
-                            "branch": getattr(gm, 'current_branch', getattr(gm, 'branch', '')),
-                            "commit": getattr(gm, 'commit_hash', getattr(gm, 'commit', '')),
-                            "is_clean": getattr(gm, 'is_clean', True),
-                            "ahead": getattr(gm, 'ahead', getattr(gm, 'ahead_count', 0)),
-                            "behind": getattr(gm, 'behind', getattr(gm, 'behind_count', 0)),
-                        }
-
-                    worktrees.append(worktree_data)
+                worktrees.append(worktree_data)
 
             duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -5831,8 +5947,8 @@ class IPCServer:
 
             return {
                 "parent": {
-                    "name": parent_project.name,
-                    "directory": str(parent_project.directory),
+                    "name": repo_qualified,
+                    "directory": repo.get("path", ""),
                 },
                 "worktrees": worktrees,
                 "count": len(worktrees),
