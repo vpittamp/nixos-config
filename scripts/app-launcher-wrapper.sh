@@ -193,7 +193,7 @@ if [[ -z "$PROJECT_NAME" ]] && [[ "$PARAMETERS" == *'$PROJECT'* ]]; then
         "error")
             error "No project active and fallback behavior is 'error'
   This application requires a project context.
-  Use 'i3pm project switch <name>' to activate a project."
+  Use 'i3pm worktree switch <name>' to activate a project."
             ;;
         *)
             error "Unknown fallback behavior: $FALLBACK_BEHAVIOR"
@@ -445,7 +445,7 @@ ENV_EXPORTS=(
     "export I3PM_PROJECT_NAME='$I3PM_PROJECT_NAME'"
     "export I3PM_PROJECT_DIR='$I3PM_PROJECT_DIR'"
     "export I3PM_PROJECT_DISPLAY_NAME='$I3PM_PROJECT_DISPLAY_NAME'"
-    "export I3PM_PROJECT_ICON='$I3PM_PROJECT_ICON'"
+    "export I3PM_PROJECT_ICON='${PROJECT_ICON:-}'"
     "export I3PM_SCOPE='$I3PM_SCOPE'"
     "export I3PM_ACTIVE='$I3PM_ACTIVE'"
     "export I3PM_LAUNCH_TIME='$I3PM_LAUNCH_TIME'"
@@ -566,7 +566,7 @@ elif [[ "$REMOTE_ENABLED" == "true" ]] && [[ "$IS_TERMINAL" == "false" ]]; then
 
   Workarounds:
   - Use VS Code Remote-SSH extension for GUI editor access
-  - Run GUI apps locally in global mode (i3pm project switch --clear)
+  - Run GUI apps locally in global mode (i3pm worktree clear)
   - Use VNC/RDP to access full remote desktop (see WayVNC setup)"
 fi
 

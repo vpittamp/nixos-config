@@ -229,47 +229,57 @@ PY
   walkerProjectList = pkgs.writeShellScriptBin "walker-project-list" ''
     #!/usr/bin/env bash
     # List projects for Walker menu
+    # Feature 101: Uses worktree list and active-worktree.json
     set -euo pipefail
 
     I3PM="${config.home.profileDirectory}/bin/i3pm"
 
-    # Get projects JSON
-    PROJECTS_JSON=$($I3PM project list --json 2>/dev/null || echo '{"projects":[]}')
+    # Feature 101: Get worktrees JSON from repos.json
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    ACTIVE_WORKTREE_FILE="$HOME/.config/i3/active-worktree.json"
 
-    # Check if we have projects
-    PROJECT_COUNT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq '.projects | length')
-    if [ "$PROJECT_COUNT" = "0" ]; then
+    if [ ! -f "$REPOS_FILE" ]; then
       exit 0
     fi
 
-    # Get current active project name
-    ACTIVE_PROJECT=$(echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.active.project_name // ""')
+    # Get current active worktree qualified name
+    ACTIVE_PROJECT=""
+    if [ -f "$ACTIVE_WORKTREE_FILE" ]; then
+      ACTIVE_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // ""' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+    fi
 
     # Add "Clear Project" option if a project is active
     if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
       echo "∅ Clear Project (Global Mode)	__CLEAR__"
     fi
 
-    # Output INACTIVE projects first (default selection will be first inactive project)
-    echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] | select(.name != "'"$ACTIVE_PROJECT"'") |
-      ((.icon // "📁") + " " + (.display_name // .name) +
-       (if .directory then " [" + (.directory | gsub("'$HOME'"; "~")) + "]" else "" end) +
-       "\t" + .name)'
-
-    # Output ACTIVE project last with prominent indicator
-    if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "null" ]; then
-      echo "$PROJECTS_JSON" | ${pkgs.jq}/bin/jq -r '.projects[] | select(.name == "'"$ACTIVE_PROJECT"'") |
-        ((.icon // "📁") + " " + (.display_name // .name) +
-         (if .directory then " [" + (.directory | gsub("'$HOME'"; "~")) + "]" else "" end) +
-         " 🟢 ACTIVE" +
-         "\t" + .name)'
-    fi
+    # Build worktree list from repos.json
+    ${pkgs.jq}/bin/jq -r '
+      .repositories[] |
+      . as $repo |
+      .worktrees[] |
+      {
+        qualified_name: ($repo.account + "/" + $repo.name + ":" + .branch),
+        display_name: $repo.name,
+        branch: .branch,
+        directory: .path,
+        is_main: .is_main
+      } |
+      (if .branch == "main" or .branch == "master" then "📦" else "🌿" end) + " " +
+      (if (.branch | test("^[0-9]+-")) then (.branch | capture("^(?<num>[0-9]+)-") | .num) + " - " else "" end) +
+      .display_name +
+      " [" + (.directory | gsub("'$HOME'"; "~")) + "]" +
+      (if .qualified_name == "'"$ACTIVE_PROJECT"'" then " 🟢 ACTIVE" else "" end) +
+      "\t" + .qualified_name
+    ' "$REPOS_FILE" | sort -t'	' -k1,1
   '';
 
   # Walker project switch script - parses selection and switches project
+  # Feature 101: Uses worktree switch command
   walkerProjectSwitch = pkgs.writeShellScriptBin "walker-project-switch" ''
     #!/usr/bin/env bash
     # Switch to selected project from Walker
+    # Feature 101: Uses worktree switch with qualified names
     set -euo pipefail
 
     if [ $# -eq 0 ]; then
@@ -283,14 +293,15 @@ PY
     # Feature 072 fix: Close preview window before switching projects
     $I3PM_WS_MODE cancel 2>/dev/null || true
 
-    # Extract project name (everything after the tab character)
-    PROJECT_NAME=$(echo "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
+    # Extract qualified name (everything after the tab character)
+    QUALIFIED_NAME=$(echo "$SELECTED" | ${pkgs.coreutils}/bin/cut -f2)
 
     # Handle special cases
-    if [ "$PROJECT_NAME" = "__CLEAR__" ]; then
+    if [ "$QUALIFIED_NAME" = "__CLEAR__" ]; then
       $I3PM project clear >/dev/null 2>&1
     else
-      $I3PM project switch "$PROJECT_NAME" >/dev/null 2>&1
+      # Feature 101: Use worktree switch with qualified name
+      $I3PM worktree switch "$QUALIFIED_NAME" >/dev/null 2>&1
     fi
   '';
 

@@ -69,6 +69,7 @@ from .monitor_profile_service import MonitorProfileService  # Feature 083: Monit
 from .eww_publisher import EwwPublisher  # Feature 083: Eww real-time updates
 from .monitoring_panel_publisher import MonitoringPanelPublisher  # Feature 085: Monitoring panel updates
 from .badge_service import BadgeState  # Feature 095: Visual notification badges
+from .constants import ConfigPaths  # Feature 101: Centralized paths
 from datetime import datetime
 import time
 
@@ -170,7 +171,7 @@ class I3ProjectDaemon:
 
     def __init__(self) -> None:
         """Initialize daemon."""
-        self.config_dir = Path.home() / ".config" / "i3"
+        self.config_dir = ConfigPaths.I3_CONFIG_DIR
         self.state_manager: Optional[StateManager] = None
         self.connection: Optional[ResilientI3Connection] = None
         self.ipc_server: Optional[IPCServer] = None
@@ -1067,7 +1068,7 @@ def main() -> None:
 
     logger.info("i3 Project Event Daemon starting...")
     logger.info(f"PID: {os.getpid()}")
-    logger.info(f"Config directory: {Path.home() / '.config' / 'i3'}")
+    logger.info(f"Config directory: {ConfigPaths.I3_CONFIG_DIR}")
 
     # Run async main
     try:

@@ -64,11 +64,11 @@ fi
 # Switch to i3pm project if specified
 if [ -n "$PROJECT_NAME" ]; then
     # Check if i3pm daemon is available (command exists and daemon is responding)
-    if command -v i3pm >/dev/null 2>&1 && i3pm project current >/dev/null 2>&1; then
+    if command -v i3pm >/dev/null 2>&1 && i3pm worktree current >/dev/null 2>&1; then
         # Feature 091 US3 T033: Log project switch timing
         SWITCH_START=$(date +%s%N)
 
-        i3pm project switch "$PROJECT_NAME" 2>/dev/null || true
+        i3pm worktree switch "$PROJECT_NAME" 2>/dev/null || true
 
         # Feature 091: Wait for project switch to complete
         # With Feature 091 optimizations, project switching completes in <200ms.

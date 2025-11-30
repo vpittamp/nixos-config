@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.16.0";  # Feature 101: Full migration to repos.json as single source of truth for all project operations
+    version = "1.18.0";  # Feature 101: Add centralized utilities (constants.py, worktree_utils.py, repos_loader.py)
     src = daemonSrc;
 
     installPhase = ''

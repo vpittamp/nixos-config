@@ -11,6 +11,7 @@ from i3ipc import aio
 from .models import DaemonState, WindowInfo, WorkspaceInfo
 from .services.launch_registry import LaunchRegistry  # Feature 041: IPC Launch Context - T013
 from .services.focus_tracker import FocusTracker  # Feature 074: Session Management - T021
+from .worktree_utils import extract_project_from_mark  # Feature 101
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -189,19 +190,10 @@ class StateManager:
                     ]
 
                     if project_marks:
-                        # Extract project name from mark
-                        # Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
-                        # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
-                        mark_parts = project_marks[0].split(":")
-                        # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
-                        if len(mark_parts) >= 4:
-                            # Worktree format: scope:account/repo:branch:window_id
-                            project_name = ":".join(mark_parts[1:-1])
-                        elif len(mark_parts) >= 3:
-                            # Legacy format: scope:project:window_id
-                            project_name = mark_parts[1]
-                        else:
-                            project_name = None
+                        # Feature 101: Use centralized mark parser
+                        project_name = extract_project_from_mark(
+                            project_marks[0], container.window
+                        )
 
                         # Create WindowInfo
                         from datetime import datetime

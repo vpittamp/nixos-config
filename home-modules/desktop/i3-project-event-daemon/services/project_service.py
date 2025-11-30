@@ -199,7 +199,9 @@ class ProjectService:
         Set active project (or clear to global mode).
 
         Args:
-            name: Project name to activate, or None for global mode
+            name: Project name to activate, or None for global mode.
+                  Can be a legacy project name or a worktree qualified name
+                  (e.g., "vpittamp/nixos-config:main").
 
         Returns:
             Dict with 'previous' and 'current' project names
@@ -213,8 +215,17 @@ class ProjectService:
 
         # Validate project exists (if not None)
         if name is not None:
-            # Will raise FileNotFoundError if doesn't exist
-            self.get(name)
+            # Feature 101: Check if this is a worktree qualified name (account/repo:branch)
+            if "/" in name and ":" in name:
+                # Try to find in repos.json first
+                from ..repos_loader import find_worktree
+                worktree = find_worktree(name)
+                if worktree is None:
+                    raise FileNotFoundError(f"Project not found: {name}")
+                logger.info(f"[Feature 101] Found worktree in repos.json: {name}")
+            else:
+                # Will raise FileNotFoundError if doesn't exist
+                self.get(name)
 
         # Update active state
         current_state.project_name = name

@@ -294,7 +294,7 @@ in
 ;; Active Project widget (with click handler to open project switcher)
 ;; Feature 079: US7 - T052/T053 - Enhanced with icon and branch number
 (defwidget project-widget []
-  (eventbox :onclick "i3pm project switch &"
+  (eventbox :onclick "swaymsg mode '→ WS' && i3pm-workspace-mode char ':' &"
     (box :class {active_project.is_worktree == true ? "pill project-pill-worktree" : "pill project-pill"}
          :spacing 2
          ;; T052: Project icon from metadata

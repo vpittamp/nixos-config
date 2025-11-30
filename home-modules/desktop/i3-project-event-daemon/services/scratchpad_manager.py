@@ -91,8 +91,8 @@ class ScratchpadManager:
         if not working_dir.exists() or not working_dir.is_dir():
             raise ValueError(f"Working directory does not exist: {working_dir}")
 
-        # Generate mark and prepare environment
-        mark = ScratchpadTerminal.create_mark(project_name)
+        # Feature 101: Mark is created AFTER window appears (needs window_id)
+        # We identify the window by I3PM_APP_NAME and I3PM_PROJECT_NAME in environment
 
         # Debug: Log Wayland environment
         wayland_display = os.environ.get("WAYLAND_DISPLAY", "NOT_SET")
@@ -150,7 +150,12 @@ class ScratchpadManager:
             raise RuntimeError(f"Failed to execute Sway command: {e}")
 
         # Wait for window to appear (we don't have a PID anymore, so we search by app_id)
-        window_id = await self._wait_for_terminal_window_by_appid("com.mitchellh.ghostty", mark, timeout=5.0)
+        # Feature 101: Pass project_name to identify the correct window via environment
+        window_id = await self._wait_for_terminal_window_by_appid(
+            app_id="com.mitchellh.ghostty",
+            project_name=project_name,
+            timeout=5.0
+        )
 
         if window_id is None:
             raise RuntimeError(f"Terminal window did not appear within timeout for project: {project_name}")
@@ -162,6 +167,9 @@ class ScratchpadManager:
             raise RuntimeError(f"Could not get PID for window {window_id}")
 
         terminal_pid = window.pid
+
+        # Feature 101: Create mark AFTER window appears (unified scoped: format)
+        mark = ScratchpadTerminal.create_mark(project_name, window_id)
 
         # Create terminal model
         terminal = ScratchpadTerminal(
@@ -182,17 +190,20 @@ class ScratchpadManager:
     async def _wait_for_terminal_window_by_appid(
         self,
         app_id: str,
-        mark: str,
+        project_name: str,
         timeout: float = 5.0,
     ) -> Optional[int]:
         """
-        Wait for terminal window to appear by app_id and mark it.
+        Wait for terminal window to appear by app_id, verify it's the right project, and mark it.
 
         Used when launching via Sway exec (no PID available).
 
+        Feature 101: Uses I3PM_PROJECT_NAME environment variable to match the specific project.
+        Creates mark with unified scoped: format after window is found.
+
         Args:
             app_id: Application ID to search for (e.g., "com.mitchellh.ghostty")
-            mark: Window mark to apply
+            project_name: Project name to match against I3PM_PROJECT_NAME
             timeout: Maximum time to wait in seconds
 
         Returns:
@@ -214,8 +225,9 @@ class ScratchpadManager:
                 if window.id in seen_windows:
                     continue
 
-                # Check if window already has a scratchpad mark (from another project)
-                if any(m.startswith("scratchpad:") for m in window.marks):
+                # Feature 101: Check if window already has a scoped mark (our new unified format)
+                # Skip windows already marked for any project
+                if any(m.startswith("scoped:") for m in window.marks):
                     seen_windows.add(window.id)
                     continue
 
@@ -231,6 +243,7 @@ class ScratchpadManager:
                     env = read_process_environ(window.pid)
                     is_scratchpad = env.get("I3PM_SCRATCHPAD") == "true"
                     app_name = env.get("I3PM_APP_NAME", "")
+                    env_project = env.get("I3PM_PROJECT_NAME", "")
 
                     if not is_scratchpad or app_name != "scratchpad-terminal":
                         self.logger.debug(
@@ -240,16 +253,29 @@ class ScratchpadManager:
                         )
                         seen_windows.add(window.id)
                         continue
+
+                    # Feature 101: Match project name from environment
+                    if env_project != project_name:
+                        self.logger.debug(
+                            f"Skipping window with different project: ID={window.id}, "
+                            f"I3PM_PROJECT_NAME={env_project} (expected {project_name})"
+                        )
+                        seen_windows.add(window.id)
+                        continue
+
                 except (ProcessLookupError, PermissionError) as e:
                     self.logger.debug(f"Could not read env for PID {window.pid}: {e}")
                     seen_windows.add(window.id)
                     continue
 
-                # Found an unmarked window with matching app_id AND correct environment
+                # Found an unmarked window with matching app_id, correct environment, and project
                 self.logger.info(
                     f"Found new scratchpad terminal window: ID={window.id}, PID={window.pid}, "
-                    f"name={window.name}, marks={window.marks}"
+                    f"name={window.name}, project={project_name}, marks={window.marks}"
                 )
+
+                # Feature 101: Create unified scoped: mark with window_id
+                mark = ScratchpadTerminal.create_mark(project_name, window.id)
 
                 # Mark the window (floating, size, and centering handled by window rule)
                 await self.sway.command(f'[con_id={window.id}] mark {mark}')

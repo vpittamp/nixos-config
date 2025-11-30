@@ -28,8 +28,14 @@ class DaemonClient:
             socket_path: Path to daemon Unix socket (default: systemd runtime dir)
         """
         if socket_path is None:
-            runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-            socket_path = f"{runtime_dir}/i3-project-daemon/ipc.sock"
+            # System socket (primary - daemon runs as system service with socket activation)
+            system_socket = "/run/i3-project-daemon/ipc.sock"
+            if Path(system_socket).exists():
+                socket_path = system_socket
+            else:
+                # Fallback to user runtime directory (for development/testing)
+                runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+                socket_path = f"{runtime_dir}/i3-project-daemon/ipc.sock"
 
         self.state = ConnectionState(socket_path=socket_path)
         self.reader: Optional[asyncio.StreamReader] = None

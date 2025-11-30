@@ -200,18 +200,29 @@ class FilterState(BaseModel):
 
         Args:
             char: Single character to append (should be lowercase alphanumeric or hyphen)
+
+        Note: Typing always resets selection to the first (best) match and clears
+        the user_navigated flag. This ensures the highlighted item always matches
+        what would be selected on Enter.
         """
         self.accumulated_chars += char
-        # If user hasn't manually navigated, auto-select best match (index 0)
-        if not self.user_navigated:
-            self.selected_index = 0
+        # Always reset to first match when typing - this ensures the highlighted
+        # item synchronizes with what will be selected on Enter
+        self.selected_index = 0
+        self.user_navigated = False
 
     def remove_char(self) -> None:
-        """Remove last character from filter string (backspace)."""
+        """Remove last character from filter string (backspace).
+
+        Note: Backspace resets selection to first match and clears user_navigated,
+        similar to typing. This ensures consistent behavior where the highlighted
+        item always represents the best match for the current filter.
+        """
         if self.accumulated_chars:
             self.accumulated_chars = self.accumulated_chars[:-1]
-        if not self.user_navigated:
-            self.selected_index = 0
+        # Always reset to first match on backspace for consistent UX
+        self.selected_index = 0
+        self.user_navigated = False
 
     def navigate_up(self) -> None:
         """Move selection up with circular wrapping."""

@@ -17,6 +17,7 @@ from .config import save_active_project, load_active_project
 from .pattern_resolver import classify_window, Classification
 from .window_rules import WindowRule
 from .action_executor import apply_rule_actions  # Feature 024
+from .worktree_utils import extract_project_from_mark  # Feature 101
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -740,11 +741,9 @@ async def on_window_new(
     try:
         active_project = await state_manager.get_active_project()
 
-        # Get active project's scoped classes
+        # Feature 101: Per-project scoped_classes are deprecated
+        # All window classification now uses global app_classification only
         active_project_scoped_classes = None
-        if active_project and active_project in state_manager.state.projects:
-            project = state_manager.state.projects[active_project]
-            active_project_scoped_classes = project.scoped_classes
 
         # Classify window using 4-level precedence (Feature 021: T023)
         classification = classify_window(
@@ -849,7 +848,7 @@ async def on_window_new(
                     elif is_scratchpad_terminal and mark_manager and window_env and window_env.app_name:
                         logger.info(
                             f"Skipping Feature 076 mark injection for scratchpad terminal {window_id} "
-                            f"(will be marked by scratchpad manager with 'scratchpad:{window_env.project_name}')"
+                            f"(will be marked by scratchpad manager with 'scoped:{window_env.project_name}:<window_id>')"
                         )
             except (PermissionError, FileNotFoundError):
                 logger.debug(f"Cannot read environment for PID {window_pid}, assuming global scope")
@@ -971,28 +970,42 @@ async def on_window_new(
             logger.debug(f"Window {window_id} has no project assignment, assuming global scope")
 
         # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
+        # Feature 101: Updated to use repos.json for project matching
         # VSCode windows share a single process, so I3PM environment doesn't distinguish
         # between multiple workspaces. Parse title to get the actual project directory.
         if window_class == "Code" and window_title:
             # VSCode title formats:
             #   No file: "PROJECT - HOSTNAME - Visual Studio Code"
             #   File open: "FILENAME - PROJECT - HOSTNAME - Visual Studio Code"
-            # Strategy: Split by " - " and find first segment matching a known project
+            # Strategy: Split by " - " and find first segment matching a known repo name
             segments = [seg.strip().lower() for seg in window_title.split(" - ")]
             title_project = None
 
+            # Feature 101: Match against repo names from repos.json
+            # Build set of known repo names for fast lookup
+            known_repos = set()
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if repos_file.exists():
+                try:
+                    import json
+                    with open(repos_file) as f:
+                        repos_data = json.load(f)
+                    for repo in repos_data.get("repositories", []):
+                        repo_name = repo.get("name", "").lower()
+                        if repo_name:
+                            known_repos.add(repo_name)
+                except Exception as e:
+                    logger.debug(f"Failed to load repos.json for VS Code title matching: {e}")
+
             for segment in segments:
-                if segment in state_manager.state.projects:
-                    title_project = segment
-                    logger.debug(f"Found project '{segment}' in VS Code title: {window_title}")
+                if segment in known_repos:
+                    # Found a match - but we need the full qualified name
+                    # For now, just log it; the I3PM environment should take precedence
+                    logger.debug(f"Found repo '{segment}' in VS Code title: {window_title}")
                     break
 
-            if title_project and actual_project != title_project:
-                logger.info(
-                    f"VSCode window {window_id}: Overriding project from I3PM "
-                    f"({actual_project}) to title-based ({title_project})"
-                )
-                actual_project = title_project
+            # Feature 101: Don't override I3PM environment with title-based detection
+            # The I3PM_PROJECT_NAME from environment is now the qualified name which is authoritative
 
         # Feature 062: Skip marking for scratchpad terminals
         # They will be marked by the scratchpad manager with "scratchpad:PROJECT" format
@@ -1606,18 +1619,8 @@ async def on_window_mark(
         project_marks = [mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")]
 
         if project_marks:
-            # Parse mark - Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
-            # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
-            mark_parts = project_marks[0].split(":")
-            # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
-            if len(mark_parts) >= 4:
-                # Worktree format: scope:account/repo:branch:window_id
-                project_name = ":".join(mark_parts[1:-1])
-            elif len(mark_parts) >= 3:
-                # Legacy format: scope:project:window_id
-                project_name = mark_parts[1]
-            else:
-                project_name = None
+            # Feature 101: Use centralized mark parser
+            project_name = extract_project_from_mark(project_marks[0], window_id)
             await state_manager.update_window(window_id, project=project_name, marks=container.marks)
             logger.debug(f"Updated window {window_id} project to {project_name}")
         else:
@@ -1699,11 +1702,10 @@ async def on_window_title(
     try:
         # Get active project for classification
         active_project_name = await state_manager.get_active_project()
-        active_project_scoped_classes = None
 
-        if active_project_name and active_project_name in state_manager.state.projects:
-            active_project = state_manager.state.projects[active_project_name]
-            active_project_scoped_classes = active_project.scoped_classes
+        # Feature 101: Per-project scoped_classes are deprecated
+        # All window classification now uses global app_classification only
+        active_project_scoped_classes = None
 
         # Re-classify window with new title
         from .pattern_resolver import classify_window
@@ -1732,24 +1734,41 @@ async def on_window_title(
         )
 
         # Feature 039 FIX: VS Code project mark update on title change
+        # Feature 101: Updated to use repos.json for project matching
         # VS Code windows inherit I3PM environment from first launch, so title-based
         # project detection is needed when the window title updates
         if window_class == "Code" and window_title:
             # VSCode title formats:
             #   No file: "PROJECT - HOSTNAME - Visual Studio Code"
             #   File open: "FILENAME - PROJECT - HOSTNAME - Visual Studio Code"
-            # Strategy: Split by " - " and find first segment matching a known project
+            # Strategy: Split by " - " and find first segment matching a known repo name
             segments = [seg.strip().lower() for seg in window_title.split(" - ")]
             title_project = None
 
+            # Feature 101: Match against repo names from repos.json
+            known_repos = set()
+            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            if repos_file.exists():
+                try:
+                    import json
+                    with open(repos_file) as f:
+                        repos_data = json.load(f)
+                    for repo in repos_data.get("repositories", []):
+                        repo_name = repo.get("name", "").lower()
+                        if repo_name:
+                            known_repos.add(repo_name)
+                except Exception as e:
+                    logger.debug(f"Failed to load repos.json for VS Code title matching: {e}")
+
             for segment in segments:
-                if segment in state_manager.state.projects:
+                if segment in known_repos:
                     title_project = segment
-                    logger.debug(f"Found project '{segment}' in VS Code title: {window_title}")
+                    logger.debug(f"Found repo '{segment}' in VS Code title: {window_title}")
                     break
 
-            # Check if this matches a known project
-            if title_project:
+            # Feature 101: VS Code title matching is now informational only
+            # Don't update marks based on title - I3PM environment is authoritative
+            if title_project and False:  # Disabled - keeping code for reference
                 # Get current project mark
                 current_marks = container.marks or []
                 # Get project marks (format: SCOPE:PROJECT:WINDOW_ID)
@@ -1759,20 +1778,9 @@ async def on_window_title(
                 ]
 
                 if current_project_marks:
-                    # Extract current project from mark
-                    # Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
-                    # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
+                    # Feature 101: Use centralized mark parser
                     old_mark = current_project_marks[0]
-                    mark_parts = old_mark.split(":")
-                    # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
-                    if len(mark_parts) >= 4:
-                        # Worktree format: scope:account/repo:branch:window_id
-                        current_project = ":".join(mark_parts[1:-1])
-                    elif len(mark_parts) >= 3:
-                        # Legacy format: scope:project:window_id
-                        current_project = mark_parts[1]
-                    else:
-                        current_project = None
+                    current_project = extract_project_from_mark(old_mark, window_id)
 
                     # Update mark if project changed
                     if current_project != title_project:

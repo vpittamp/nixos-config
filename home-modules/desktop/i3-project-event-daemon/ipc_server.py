@@ -21,6 +21,8 @@ from .window_rules import WindowRule
 from .pattern_resolver import classify_window
 from .models import EventEntry
 from . import window_filtering  # Feature 037: Window filtering utilities
+from .worktree_utils import parse_mark, parse_qualified_name, is_qualified_name  # Feature 101
+from .constants import ConfigPaths  # Feature 101
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +449,9 @@ class IPCServer:
             elif method == "worktree.switch":
                 # Feature 101: Switch to worktree by qualified name
                 result = await self._worktree_switch(params)
+            elif method == "worktree.clear":
+                # Feature 101: Clear active project (return to global mode)
+                result = await self._worktree_clear(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -779,7 +784,7 @@ class IPCServer:
 
         try:
             # Feature 101: Load from repos.json
-            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            repos_file = ConfigPaths.REPOS_FILE
             if not repos_file.exists():
                 return {"projects": {}}
 
@@ -892,41 +897,52 @@ class IPCServer:
                 raise ValueError("project_name parameter is required")
 
             # Feature 101: Load from repos.json
-            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            repos_file = ConfigPaths.REPOS_FILE
             if not repos_file.exists():
                 raise ValueError("repos.json not found. Run 'i3pm discover' first.")
 
             with open(repos_file) as f:
                 repos_data = json.load(f)
 
-            # Parse qualified name: account/repo:branch
-            worktree_data = None
-            if ":" in project_name:
-                repo_name, branch = project_name.rsplit(":", 1)
-            else:
-                # No branch specified, try to find main worktree
-                repo_name = project_name
-                branch = None
+            # Parse qualified name: account/repo:branch - DETERMINISTIC, branch required
+            # Feature 101: No implicit main/fallback selection
+            if ":" not in project_name:
+                raise ValueError(
+                    f"Branch is required in project name. "
+                    f"Use 'account/repo:branch' format (e.g., '{project_name}:main')"
+                )
 
-            # Find the repository and worktree
+            repo_name, branch = project_name.rsplit(":", 1)
+
+            # Find the repository - exact match only, no fallbacks
+            worktree_data = None
             for repo in repos_data.get("repositories", []):
                 r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-                if r_qualified == repo_name or repo.get("name") == repo_name:
-                    # Found the repository
+                if r_qualified == repo_name:
+                    # Found the repository - now find exact branch
                     for wt in repo.get("worktrees", []):
-                        if branch and wt.get("branch") == branch:
+                        if wt.get("branch") == branch:
                             worktree_data = {"repo": repo, "worktree": wt}
                             break
-                        elif not branch and wt.get("is_main", False):
-                            worktree_data = {"repo": repo, "worktree": wt}
-                            branch = wt.get("branch")
-                            project_name = f"{r_qualified}:{branch}"
-                            break
-                    if worktree_data:
-                        break
+                    break
 
             if not worktree_data:
-                raise ValueError(f"Project not found: {project_name}")
+                # Provide helpful error message
+                repo_found = None
+                for repo in repos_data.get("repositories", []):
+                    r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+                    if r_qualified == repo_name:
+                        repo_found = repo
+                        break
+
+                if not repo_found:
+                    raise ValueError(f"Repository not found: {repo_name}")
+                else:
+                    available_branches = [wt.get("branch") for wt in repo_found.get("worktrees", [])]
+                    raise ValueError(
+                        f"Worktree '{branch}' not found in {repo_name}. "
+                        f"Available branches: {', '.join(available_branches)}"
+                    )
 
             wt = worktree_data["worktree"]
             repo = worktree_data["repo"]
@@ -2185,17 +2201,19 @@ class IPCServer:
                         scope = None
                         for mark in window.marks:
                             if mark.startswith("scoped:") or mark.startswith("global:"):
-                                mark_parts = mark.split(":")
-                                scope = mark_parts[0] if len(mark_parts) >= 1 else None
-                                project = mark_parts[1] if len(mark_parts) >= 2 else None
+                                # Feature 101: Use centralized mark parser
+                                parsed = parse_mark(mark, window.id)
+                                if parsed:
+                                    scope = parsed.scope
+                                    project = parsed.project_name
                                 break
                         if not project:
                             project = i3pm_env.get("I3PM_PROJECT_NAME")
 
                         # Build marks list (include project mark for consistency)
-                        # Feature 062: Don't add synthetic marks to scratchpad terminals
+                        # Feature 101: Unified mark format - scratchpad terminals also use scoped: prefix
                         marks = list(window.marks)
-                        has_project_mark = any(m.startswith("scoped:") or m.startswith("global:") or m.startswith("scratchpad:") for m in marks)
+                        has_project_mark = any(m.startswith("scoped:") or m.startswith("global:") for m in marks)
                         if project and not has_project_mark:
                             # Default to scoped if we don't have scope info
                             marks.append(f"{scope or 'scoped'}:{project}")
@@ -2213,9 +2231,12 @@ class IPCServer:
                         # Read I3PM_APP_ID from environment
                         app_id = i3pm_env.get("I3PM_APP_ID")
 
-                        # Format workspace field - only show tracked workspace if valid (> 0)
+                        # Feature 101: Format workspace field - include workspace 0 for scratchpad home
                         if tracked_workspace is not None and tracked_workspace > 0:
                             workspace_str = f"scratchpad (tracked: WS {tracked_workspace})"
+                        elif tracked_workspace == 0:
+                            # Feature 101: Workspace 0 = scratchpad home (deterministic)
+                            workspace_str = "scratchpad (home: WS 0)"
                         else:
                             workspace_str = "scratchpad"
 
@@ -2307,24 +2328,15 @@ class IPCServer:
 
             if is_x11_window or is_wayland_window:
                 # Get project from marks (format: SCOPE:PROJECT:WINDOW_ID)
-                # Note: PROJECT may contain colons for worktree qualified names
-                # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
-                # Parts: [scope, account/repo, branch, window_id]
                 project = None
                 scope_from_mark = None
                 for mark in node.marks:
                     if mark.startswith("scoped:") or mark.startswith("global:"):
-                        mark_parts = mark.split(":")
-                        scope_from_mark = mark_parts[0] if len(mark_parts) >= 1 else None
-                        # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
-                        # e.g., ["scoped", "vpittamp/nixos-config", "101-worktree-click-switch", "21"]
-                        # becomes "vpittamp/nixos-config:101-worktree-click-switch"
-                        if len(mark_parts) >= 4:
-                            # Worktree format: scope:account/repo:branch:window_id
-                            project = ":".join(mark_parts[1:-1])
-                        elif len(mark_parts) >= 3:
-                            # Legacy format: scope:project:window_id
-                            project = mark_parts[1]
+                        # Feature 101: Use centralized mark parser
+                        parsed = parse_mark(mark, node.id if hasattr(node, 'id') else node.window)
+                        if parsed:
+                            scope_from_mark = parsed.scope
+                            project = parsed.project_name
                         break
 
                 # Get window class (X11 uses window_class, Wayland uses app_id)
@@ -3564,10 +3576,9 @@ class IPCServer:
                         )
 
                     # Check for project mark matching this project (Feature 061: Unified format)
-                    # Also check for scratchpad marks (Feature 062: Project-scoped scratchpads)
-                    # FIX: Use "scoped:" prefix to match actual mark format (not "project:")
+                    # Feature 101: Unified mark format - scratchpad terminals also use scoped: prefix
+                    # Format: scoped:PROJECT:WINDOW_ID (e.g., scoped:vpittamp/nixos-config:main:25)
                     scoped_mark_prefix = f"scoped:{project_name}:"
-                    scratchpad_mark = f"scratchpad:{project_name}"
                     for mark in con.marks:
                         if mark.startswith(scoped_mark_prefix):
                             logger.info(
@@ -3576,13 +3587,6 @@ class IPCServer:
                             )
                             window_ids_to_hide.append(con.id)
                             break  # Found matching project mark
-                        elif mark == scratchpad_mark:
-                            logger.info(
-                                f"Will hide scratchpad terminal {con.id} "
-                                f"(mark: {mark}, project: {project_name})"
-                            )
-                            window_ids_to_hide.append(con.id)
-                            break  # Found matching scratchpad mark
 
                 for child in con.nodes:
                     await collect_project_windows(child)
@@ -5295,10 +5299,15 @@ class IPCServer:
 
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)
+    # Feature 101: DEPRECATED - These methods work with legacy project JSON files
+    #              Use worktree.* methods instead for repos.json-based project management
     # ======================
 
     async def _project_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new project.
+
+        DEPRECATED (Feature 101): Use 'i3pm worktree create' instead.
+        This method creates legacy ~/.config/i3/projects/*.json files.
 
         Args:
             params: {
@@ -5315,6 +5324,7 @@ class IPCServer:
             VALIDATION_ERROR (1003): Invalid parameters or directory
             FILE_IO_ERROR (1004): Project already exists
         """
+        logger.warning("[Feature 101] _project_create is deprecated. Use worktree.create instead.")
         start_time = time.perf_counter()
 
         try:
@@ -5769,6 +5779,32 @@ class IPCServer:
             # Set active project
             result = await service.set_active(name)
 
+            # Feature 101: Also update/clear active-worktree.json
+            worktree_context_file = config_dir / "active-worktree.json"
+            if name is None:
+                # Clear context file when going to global mode
+                if worktree_context_file.exists():
+                    worktree_context_file.unlink()
+                    logger.info("Cleared active-worktree.json (global mode)")
+            elif "/" in name and ":" in name:
+                # Worktree qualified name - also update active-worktree.json
+                from .repos_loader import find_worktree, ReposLoader
+                worktree = find_worktree(name)
+                if worktree:
+                    # Parse qualified name parts
+                    from .worktree_utils import parse_qualified_name
+                    parsed = parse_qualified_name(name)
+                    with open(worktree_context_file, "w") as f:
+                        json.dump({
+                            "qualified_name": name,
+                            "repo_qualified_name": parsed.repo_qualified_name,
+                            "branch": parsed.branch,
+                            "directory": worktree.get("path", ""),
+                            "account": parsed.account,
+                            "repo_name": parsed.repo,  # Note: attribute is 'repo', not 'repo_name'
+                        }, f, indent=2)
+                    logger.info(f"[Feature 101] Updated active-worktree.json for {name}")
+
             # Trigger window filtering (Feature 037 integration)
             filtering_applied = False
             if self.workspace_tracker:
@@ -5870,7 +5906,7 @@ class IPCServer:
                 raise ValueError("parent_project parameter is required")
 
             # Feature 101: Load from repos.json
-            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            repos_file = ConfigPaths.REPOS_FILE
             if not repos_file.exists():
                 raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
 
@@ -7086,24 +7122,58 @@ class IPCServer:
 
     async def _get_project_working_dir(self, project_name: str) -> Path:
         """Get working directory for project.
-        
+
+        Feature 101: Uses active-worktree.json as single source of truth.
+
         Args:
-            project_name: Project name or "global"
-            
+            project_name: Project qualified name (account/repo:branch) or "global"
+
         Returns:
             Path to working directory
         """
         from pathlib import Path
-        
+
         if project_name == "global":
             return Path.home()
-            
-        # Look up project in state
-        projects = self.state_manager.state.projects
-        if project_name in projects:
-            return Path(projects[project_name].directory)
+
+        # Feature 101: Read from active-worktree.json first (single source of truth)
+        worktree_context_file = ConfigPaths.ACTIVE_WORKTREE_FILE
+        if worktree_context_file.exists():
+            try:
+                with open(worktree_context_file) as f:
+                    worktree_data = json.load(f)
+                    # If the active worktree matches the requested project, use its directory
+                    if worktree_data.get("qualified_name") == project_name:
+                        directory = worktree_data.get("directory")
+                        if directory and Path(directory).exists():
+                            logger.debug(f"[Feature 101] Got working dir from active-worktree.json: {directory}")
+                            return Path(directory)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[Feature 101] Failed to read active-worktree.json: {e}")
+
+        # Feature 101: Look up in repos.json for non-active projects
+        repos_file = ConfigPaths.REPOS_FILE
+        if repos_file.exists() and ":" in project_name:
+            try:
+                with open(repos_file) as f:
+                    repos_data = json.load(f)
+
+                repo_name, branch = project_name.rsplit(":", 1)
+                for repo in repos_data.get("repositories", []):
+                    r_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
+                    if r_qualified == repo_name:
+                        for wt in repo.get("worktrees", []):
+                            if wt.get("branch") == branch:
+                                directory = wt.get("path")
+                                if directory and Path(directory).exists():
+                                    logger.debug(f"[Feature 101] Got working dir from repos.json: {directory}")
+                                    return Path(directory)
+                        break
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[Feature 101] Failed to read repos.json: {e}")
 
         # Fallback to home directory
+        logger.warning(f"[Feature 101] Could not find working dir for '{project_name}', using $HOME")
         return Path.home()
 
     # Feature 095: Visual notification badge management methods
@@ -7507,7 +7577,7 @@ class IPCServer:
 
         start_time = time.perf_counter()
         accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
-        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+        repos_file = ConfigPaths.REPOS_FILE
 
         try:
             # Load accounts
@@ -7631,7 +7701,7 @@ class IPCServer:
         import json
         from pathlib import Path
 
-        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+        repos_file = ConfigPaths.REPOS_FILE
 
         try:
             if not repos_file.exists():
@@ -7668,7 +7738,7 @@ class IPCServer:
         import json
         from pathlib import Path
 
-        repos_file = Path.home() / ".config" / "i3" / "repos.json"
+        repos_file = ConfigPaths.REPOS_FILE
 
         try:
             account = params.get("account")
@@ -7868,7 +7938,7 @@ class IPCServer:
             logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
 
             # Parse qualified name and find worktree from repos.json
-            repos_file = Path.home() / ".config" / "i3" / "repos.json"
+            repos_file = ConfigPaths.REPOS_FILE
             if not repos_file.exists():
                 raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
 
@@ -7895,26 +7965,27 @@ class IPCServer:
             if not repo:
                 raise FileNotFoundError(f"Repository not found: {repo_name}")
 
-            # Find the worktree
+            # Find the worktree - DETERMINISTIC: branch is required
+            # Feature 101: No implicit main/fallback selection
+            if not branch:
+                raise ValueError(
+                    f"Branch is required in qualified name. "
+                    f"Use 'account/repo:branch' format (e.g., '{repo_name}:main')"
+                )
+
             worktree = None
             worktrees = repo.get("worktrees", [])
-            if branch:
-                for wt in worktrees:
-                    if wt.get("branch") == branch:
-                        worktree = wt
-                        break
-            else:
-                # No branch specified - find main worktree
-                for wt in worktrees:
-                    if wt.get("is_main", False):
-                        worktree = wt
-                        break
-                # Fallback to first worktree
-                if not worktree and worktrees:
-                    worktree = worktrees[0]
+            for wt in worktrees:
+                if wt.get("branch") == branch:
+                    worktree = wt
+                    break
 
             if not worktree:
-                raise FileNotFoundError(f"Worktree not found: {branch or 'main'} in {repo_name}")
+                available_branches = [wt.get("branch") for wt in worktrees]
+                raise FileNotFoundError(
+                    f"Worktree '{branch}' not found in {repo_name}. "
+                    f"Available branches: {', '.join(available_branches)}"
+                )
 
             # Determine the full qualified name (ensure it includes branch)
             full_qualified_name = f"{repo_name}:{worktree['branch']}"
@@ -7994,4 +8065,88 @@ class IPCServer:
             raise
         except Exception as e:
             logger.error(f"[Feature 101] worktree.switch error: {e}")
+            raise
+
+    async def _worktree_clear(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clear active project (return to global mode).
+
+        Feature 101: Unified project management via worktree architecture.
+
+        This method:
+        1. Clears active project state
+        2. Removes active-worktree.json context file
+        3. Shows all scoped windows (global mode behavior)
+        4. Broadcasts project change event
+
+        Args:
+            params: {} (no parameters required)
+
+        Returns:
+            {
+                "success": bool,
+                "previous_project": str | None
+            }
+        """
+        from pathlib import Path
+
+        start_time = time.perf_counter()
+
+        try:
+            # Get previous project
+            previous_project = self.state_manager.state.active_project
+
+            logger.info(f"[Feature 101] Clearing active project (was: {previous_project})")
+
+            # Clear active project in state manager
+            await self.state_manager.set_active_project(None)
+
+            # Remove context files
+            config_dir = Path.home() / ".config" / "i3"
+
+            # Remove active-project.json
+            active_project_file = config_dir / "active-project.json"
+            if active_project_file.exists():
+                active_project_file.unlink()
+
+            # Remove active-worktree.json
+            worktree_context_file = config_dir / "active-worktree.json"
+            if worktree_context_file.exists():
+                worktree_context_file.unlink()
+
+            logger.info("[Feature 101] Cleared active project context files")
+
+            # Apply window filtering for global mode (show all scoped windows)
+            if self.i3_connection and self.i3_connection.conn:
+                logger.info("[Feature 101] Applying window filtering for global mode")
+                from .services.window_filter import filter_windows_by_project
+                filter_result = await filter_windows_by_project(
+                    self.i3_connection.conn,
+                    None,  # None = global mode
+                    self.workspace_tracker
+                )
+                logger.info(
+                    f"[Feature 101] Window filtering: {filter_result.get('visible', 0)} visible, "
+                    f"{filter_result.get('hidden', 0)} hidden"
+                )
+            else:
+                logger.warning("[Feature 101] Cannot apply filtering - i3 connection not available")
+
+            # Broadcast project change event
+            await self.broadcast_event({
+                "type": "project",
+                "action": "clear",
+                "project": None
+            })
+
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(f"[Feature 101] Cleared active project in {duration_ms:.2f}ms")
+
+            return {
+                "success": True,
+                "previous_project": previous_project,
+                "duration_ms": duration_ms
+            }
+
+        except Exception as e:
+            logger.error(f"[Feature 101] worktree.clear error: {e}")
             raise

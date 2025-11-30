@@ -3,6 +3,7 @@ Scratchpad Terminal Models
 
 Pydantic models for project-scoped scratchpad terminal state management.
 Feature 062 - Project-Scoped Scratchpad Terminal
+Feature 101 - Unified mark format with scoped: prefix
 """
 
 from pydantic import BaseModel, Field, field_validator
@@ -20,7 +21,7 @@ class ScratchpadTerminal(BaseModel):
         project_name: Project identifier or 'global' for global terminal
         pid: Process ID of the terminal emulator (Ghostty or Alacritty)
         window_id: Sway window container ID
-        mark: Sway window mark in format 'scratchpad:{project_name}'
+        mark: Sway window mark in format 'scoped:{project_name}:{window_id}' (unified format)
         working_dir: Initial working directory (project root)
         created_at: Unix timestamp of terminal creation
         last_shown_at: Unix timestamp of last show operation (None if never shown)
@@ -47,8 +48,9 @@ class ScratchpadTerminal(BaseModel):
 
     mark: str = Field(
         ...,
-        description="Sway window mark in format 'scratchpad:{project_name}'",
-        pattern=r"^scratchpad:.+$",
+        description="Sway window mark in format 'scoped:{project_name}:{window_id}' (unified with regular scoped marks)",
+        # Feature 101: Unified mark format - scoped:ACCOUNT/REPO:BRANCH:WINDOW_ID
+        pattern=r"^scoped:[a-zA-Z0-9\-_/:]+:\d+$",
     )
 
     working_dir: Path = Field(
@@ -69,9 +71,25 @@ class ScratchpadTerminal(BaseModel):
     @field_validator("project_name")
     @classmethod
     def validate_project_name(cls, v: str) -> str:
-        """Validate project name contains only alphanumeric characters and hyphens."""
+        """Validate project name format.
+
+        Feature 101: Support qualified names (account/repo:branch) in addition to
+        simple alphanumeric names with hyphens/underscores.
+        """
+        # Allow "global" as a special case
+        if v == "global":
+            return v
+
+        # Feature 101: Accept qualified names (account/repo:branch)
+        if "/" in v or ":" in v:
+            allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/:")
+            if set(v).issubset(allowed_chars) and len(v) > 0:
+                return v
+            raise ValueError("Qualified name contains invalid characters")
+
+        # Legacy: simple alphanumeric names with hyphens/underscores
         if not v.replace("-", "").replace("_", "").isalnum():
-            raise ValueError("Project name must be alphanumeric with optional hyphens/underscores")
+            raise ValueError("Project name must be alphanumeric with optional hyphens/underscores, or a qualified name (account/repo:branch)")
         return v
 
     @field_validator("working_dir")
@@ -96,17 +114,21 @@ class ScratchpadTerminal(BaseModel):
         self.last_shown_at = time.time()
 
     @classmethod
-    def create_mark(cls, project_name: str) -> str:
+    def create_mark(cls, project_name: str, window_id: int) -> str:
         """
         Generate Sway mark for project scratchpad terminal.
 
+        Feature 101: Unified mark format - scratchpad terminals now use scoped: prefix
+        with window_id, same as regular scoped windows.
+
         Args:
             project_name: Project identifier
+            window_id: Sway window container ID
 
         Returns:
-            Mark string in format 'scratchpad:{project_name}'
+            Mark string in format 'scoped:{project_name}:{window_id}'
         """
-        return f"scratchpad:{project_name}"
+        return f"scoped:{project_name}:{window_id}"
 
     def to_dict(self) -> dict:
         """

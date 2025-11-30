@@ -96,6 +96,9 @@ let
       # Feature 001 US4: Add normalized floating size (T049, T050)
       floating = if attrs ? floating then attrs.floating else false;
       floating_size = floatingSize;
+      # Feature 101: Scratchpad flag - apps with scratchpad=true use workspace 0
+      # and are managed by the scratchpad system (one per worktree)
+      scratchpad = if attrs ? scratchpad then attrs.scratchpad else false;
     };
 
   # Helper to convert PWA site definition → app registry entry (Feature 056)
@@ -373,10 +376,12 @@ let
       description = "Remote desktop client for VNC, RDP, SSH connections";
     })
 
-    # Scratchpad Terminal (Feature 062)
+    # Scratchpad Terminal (Feature 062, Feature 101)
     # Special floating terminal for quick project access
     # NOTE: Launched by daemon via Sway IPC, not through wrapper
     # Parameters shown here are for documentation/reference only
+    # Feature 101: Uses workspace 0 as marker for scratchpad windows
+    # One scratchpad terminal per worktree - toggle focuses existing if present
     (mkApp {
       name = "scratchpad-terminal";
       display_name = "Scratchpad Terminal";
@@ -386,10 +391,13 @@ let
       parameters = "-e bash -c 'tmux new-session -A -s scratchpad-PROJECT -c PROJECT_DIR'";
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
-      preferred_workspace = 1;  # Default to workspace 1, but managed dynamically
+      # Feature 101: Workspace 0 = scratchpad home (not a real workspace)
+      # Used for deterministic tracking - scratchpad windows always have workspace_number=0
+      preferred_workspace = 0;
+      scratchpad = true;  # Feature 101: Mark as scratchpad-managed app
       icon = "com.mitchellh.ghostty";
       nix_package = "pkgs.ghostty";
-      multi_instance = true;
+      multi_instance = false;  # Feature 101: One per worktree, toggle focuses existing
       fallback_behavior = "use_home";
       description = "Project-scoped floating scratchpad terminal with tmux session (scratchpad-{project})";
     })
@@ -425,15 +433,19 @@ let
   ) (lib.unique appNames);
 
   # Additional validation: check workspace range
+  # Scratchpad apps: 0 (special marker for scratchpad home)
   # Regular apps (non-PWA): 1-50
   # PWA apps (name ends with -pwa): 50+ (no upper bound)
   invalidWorkspaces = lib.filter (app:
     if app ? preferred_workspace then
       let
         isPWA = lib.hasSuffix "-pwa" app.name;
+        isScratchpad = if app ? scratchpad then app.scratchpad else false;
         ws = app.preferred_workspace;
       in
-        if isPWA then
+        if isScratchpad then
+          ws != 0  # Scratchpad apps must use workspace 0
+        else if isPWA then
           ws < 50  # PWAs must be >= 50, no upper limit
         else
           ws < 1 || ws > 50  # Regular apps must be 1-50
@@ -456,9 +468,14 @@ let
         invalidList = map (app:
           let
             isPWA = lib.hasSuffix "-pwa" app.name;
+            isScratchpad = if app ? scratchpad then app.scratchpad else false;
             ws = if app ? preferred_workspace then app.preferred_workspace else 0;
+            reason =
+              if isScratchpad then "scratchpad app must be 0"
+              else if isPWA then "PWA must be >=50"
+              else "regular app must be 1-50";
           in
-            "${app.name} (WS ${toString ws}, ${if isPWA then "PWA must be >=50" else "regular app must be 1-50"})"
+            "${app.name} (WS ${toString ws}, ${reason})"
         ) invalidWorkspaces;
       in
         throw "Invalid workspace numbers:\n  ${builtins.concatStringsSep "\n  " invalidList}"

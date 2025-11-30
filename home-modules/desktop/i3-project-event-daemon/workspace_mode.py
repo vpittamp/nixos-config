@@ -337,7 +337,11 @@ class WorkspaceModeManager:
             raise
 
     async def _execute_project_switch(self) -> Dict[str, any]:
-        """Execute project switch with accumulated characters (NEW)."""
+        """Execute project switch with accumulated characters.
+
+        Feature 101: Uses worktree.switch IPC method as single source of truth.
+        All project switching now goes through the unified worktree.switch path.
+        """
         # Feature 079: If no chars typed, use selected project from filter state
         if not self._state.accumulated_chars and self._filter_state.projects:
             # User navigated with arrows without typing - use selected project
@@ -360,9 +364,17 @@ class WorkspaceModeManager:
 
         start_time = time.time()
         try:
-            # Switch project directly (Sway doesn't send tick events for nop commands)
-            from .handlers import _switch_project
-            await _switch_project(matched_project, self._state_manager, self._i3, self._config_dir, self._workspace_tracker)
+            # Feature 101: Use worktree.switch IPC method as single source of truth
+            # This ensures consistent behavior with all other switching paths
+            if not self._ipc_server:
+                raise RuntimeError("IPC server not available for project switching")
+
+            result = await self._ipc_server._worktree_switch({
+                "qualified_name": matched_project
+            })
+
+            if not result.get("success"):
+                raise ValueError(f"worktree.switch failed: {result}")
 
             # Exit mode in Sway (return to default mode)
             logger.info(f"Project switch complete, exiting workspace mode...")
@@ -370,7 +382,7 @@ class WorkspaceModeManager:
             logger.info(f"Mode default command executed: {mode_result}")
 
             total_elapsed_ms = (time.time() - start_time) * 1000
-            logger.info(f"Project switch successful: {matched_project} (took {total_elapsed_ms:.2f}ms)")
+            logger.info(f"[Feature 101] Project switch via worktree.switch: {matched_project} (took {total_elapsed_ms:.2f}ms)")
 
             # Emit execute event BEFORE reset (so daemon can close preview with current state)
             await self._emit_project_mode_event("execute")

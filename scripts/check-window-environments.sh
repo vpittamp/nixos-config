@@ -127,7 +127,7 @@ if [[ $windows_with_env -eq 0 ]] && [[ $window_count -gt 0 ]]; then
     echo "To test environment injection:"
     echo ""
     echo "  1. Switch to a project:"
-    echo "     i3pm project switch nixos"
+    echo "     i3pm worktree switch vpittamp/nixos-config:main"
     echo ""
     echo "  2. Launch an app via app-launcher-wrapper:"
     echo "     ~/.local/bin/app-launcher-wrapper.sh terminal"

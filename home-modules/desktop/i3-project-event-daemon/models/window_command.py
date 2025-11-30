@@ -17,6 +17,7 @@ class CommandType(str, Enum):
 
     MOVE_WORKSPACE = "move_workspace"
     MOVE_SCRATCHPAD = "move_scratchpad"
+    SCRATCHPAD_SHOW = "scratchpad_show"  # Feature 101: Show window from scratchpad
     FLOATING_ENABLE = "floating_enable"
     FLOATING_DISABLE = "floating_disable"
     RESIZE = "resize"
@@ -73,6 +74,10 @@ class WindowCommand(BaseModel):
 
             case CommandType.MOVE_SCRATCHPAD:
                 return f"{selector} move scratchpad"
+
+            case CommandType.SCRATCHPAD_SHOW:
+                # Feature 101: Show scratchpad window (toggles visibility on current workspace)
+                return f"{selector} scratchpad show"
 
             case CommandType.FLOATING_ENABLE:
                 return f"{selector} floating enable"
@@ -180,24 +185,31 @@ class CommandBatch(BaseModel):
         original state after being hidden to scratchpad. Commands are ordered to
         ensure proper restoration sequence.
 
+        Feature 101: Workspace 0 indicates a scratchpad window. These windows
+        use SCRATCHPAD_SHOW instead of MOVE_WORKSPACE and are always floating.
+
         Args:
             window_id: Sway container ID
-            workspace_num: Target workspace number
+            workspace_num: Target workspace number (0 = scratchpad home)
             is_floating: Whether window should be floating
             geometry: Optional geometry dict with x, y, width, height
 
         Returns:
             A CommandBatch configured for window restoration
         """
-        commands: list[WindowCommand] = [
-            WindowCommand(
-                window_id=window_id,
-                command_type=CommandType.MOVE_WORKSPACE,
-                params={"workspace_number": workspace_num},
-            )
-        ]
+        commands: list[WindowCommand] = []
 
-        if is_floating:
+        # Feature 101: Workspace 0 = scratchpad home
+        # Use scratchpad show instead of move to workspace
+        if workspace_num == 0:
+            commands.append(
+                WindowCommand(
+                    window_id=window_id,
+                    command_type=CommandType.SCRATCHPAD_SHOW,
+                    params={},
+                )
+            )
+            # Scratchpad windows are always floating
             commands.append(
                 WindowCommand(
                     window_id=window_id,
@@ -205,7 +217,6 @@ class CommandBatch(BaseModel):
                     params={},
                 )
             )
-
             if geometry:
                 commands.append(
                     WindowCommand(
@@ -225,12 +236,49 @@ class CommandBatch(BaseModel):
                     )
                 )
         else:
+            # Regular workspace restoration
             commands.append(
                 WindowCommand(
                     window_id=window_id,
-                    command_type=CommandType.FLOATING_DISABLE,
-                    params={},
+                    command_type=CommandType.MOVE_WORKSPACE,
+                    params={"workspace_number": workspace_num},
                 )
             )
+
+            if is_floating:
+                commands.append(
+                    WindowCommand(
+                        window_id=window_id,
+                        command_type=CommandType.FLOATING_ENABLE,
+                        params={},
+                    )
+                )
+
+                if geometry:
+                    commands.append(
+                        WindowCommand(
+                            window_id=window_id,
+                            command_type=CommandType.RESIZE,
+                            params={
+                                "width": geometry["width"],
+                                "height": geometry["height"],
+                            },
+                        )
+                    )
+                    commands.append(
+                        WindowCommand(
+                            window_id=window_id,
+                            command_type=CommandType.MOVE_POSITION,
+                            params={"x": geometry["x"], "y": geometry["y"]},
+                        )
+                    )
+            else:
+                commands.append(
+                    WindowCommand(
+                        window_id=window_id,
+                        command_type=CommandType.FLOATING_DISABLE,
+                        params={},
+                    )
+                )
 
         return cls(window_id=window_id, commands=commands, can_batch=True)

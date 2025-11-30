@@ -1620,12 +1620,12 @@ print(json.dumps(result))
     touch "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
-    # Get current project (T012)
-    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+    # Get current project (T012) - Read from active-worktree.json (Feature 101 single source of truth)
+    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
     # Conditional project switch (T013)
     if [[ "$PROJECT_NAME" != "$CURRENT_PROJECT" ]]; then
-        if ! i3pm project switch "$PROJECT_NAME"; then
+        if ! i3pm worktree switch "$PROJECT_NAME"; then
             EXIT_CODE=$?
             ${pkgs.libnotify}/bin/notify-send -u critical "Project Switch Failed" \
                 "Failed to switch to project $PROJECT_NAME (exit code: $EXIT_CODE)"
@@ -1673,8 +1673,8 @@ print(json.dumps(result))
     touch "$LOCK_FILE"
     trap "rm -f $LOCK_FILE" EXIT
 
-    # Get current project (T019)
-    CURRENT_PROJECT=$(i3pm project current --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.project_name // "global"' || echo "global")
+    # Get current project (T019) - Read from active-worktree.json (Feature 101 single source of truth)
+    CURRENT_PROJECT=$(${pkgs.jq}/bin/jq -r '.qualified_name // "global"' "$HOME/.config/i3/active-worktree.json" 2>/dev/null || echo "global")
 
     # Check if already in target project
     if [[ "$PROJECT_NAME" == "$CURRENT_PROJECT" ]]; then
@@ -1685,7 +1685,7 @@ print(json.dumps(result))
     fi
 
     # Execute project switch (T020)
-    if i3pm project switch "$PROJECT_NAME"; then
+    if i3pm worktree switch "$PROJECT_NAME"; then
         ${pkgs.libnotify}/bin/notify-send -u normal "Switched to project $PROJECT_NAME"
         ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="$PROJECT_NAME"
         (sleep 2 && ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update clicked_project="") &
@@ -1894,7 +1894,7 @@ print(json.dumps(result))
         if [ "$current_index" -ge 0 ] && [ "$current_index" -lt "$max_items" ]; then
           project_name=$(echo "$all_items" | ${pkgs.jq}/bin/jq -r --argjson idx "$current_index" '.[$idx].name')
           if [ -n "$project_name" ] && [ "$project_name" != "null" ]; then
-            i3pm project switch "$project_name"
+            i3pm worktree switch "$project_name"
             # Exit panel mode after switching
             exit-monitor-mode
           fi
@@ -3438,7 +3438,7 @@ in
               (eventbox
                 :cursor "pointer"
                 :hexpand true
-                :onclick "i3pm project switch ''${project.name}"
+                :onclick "i3pm worktree switch ''${project.name}"
                 (box
                   :class "project-main-content"
                   :orientation "h"

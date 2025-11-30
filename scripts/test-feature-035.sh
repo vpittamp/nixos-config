@@ -1,7 +1,25 @@
 #!/usr/bin/env bash
 #
-# Feature 035: Comprehensive Test Runner
+# DEPRECATED: Feature 035 Test Runner
 #
+# This script tests the legacy project system which has been replaced by
+# Feature 100/101's worktree-based project management using repos.json.
+#
+# The old project system used:
+#   - i3pm project create/switch/list/current/delete
+#   - ~/.config/i3/projects/*.json files
+#
+# The new system uses:
+#   - i3pm worktree switch/list/create/remove
+#   - ~/.config/i3/repos.json (single source of truth)
+#   - ~/.config/i3/active-worktree.json (current context)
+#
+# This script is kept for historical reference but should NOT be run.
+# For testing the new system, see:
+#   - tests/100-automate-project-and/
+#   - tests/101-worktree-click-switch/
+#
+# Original description:
 # This script runs all polish phase tests (T094-T100) in an isolated environment
 # Safe to run remotely via SSH + tmux without disrupting active RDP session
 #
@@ -13,6 +31,11 @@
 #   --dry-run   Show what would be tested without executing
 #   --quick     Run quick validation tests only (T094-T095)
 #   --full      Run full test suite including performance tests (default)
+
+echo "ERROR: This test script is DEPRECATED."
+echo "The legacy project system has been replaced by worktree-based management."
+echo "Use 'i3pm worktree' commands instead of 'i3pm project'."
+exit 1
 
 set -euo pipefail
 

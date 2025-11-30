@@ -239,10 +239,10 @@
       project-delete = "~/.config/i3/scripts/project-delete.sh";
 
       # Short aliases for common commands (Feature 027: Using Deno CLI)
-      pswitch = "i3pm project switch";
-      pclear = "i3pm project clear";
-      plist = "i3pm project list";
-      pcurrent = "i3pm project current";
+      pswitch = "i3pm worktree switch";
+      pclear = "i3pm project clear";  # Still uses project clear to return to global mode
+      plist = "i3pm worktree list";
+      pcurrent = "jq -r '.qualified_name // \"global\"' ~/.config/i3/active-worktree.json 2>/dev/null || echo global";
 
       # Additional i3pm aliases
       iwin = "i3pm windows";

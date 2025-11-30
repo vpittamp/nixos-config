@@ -59,8 +59,8 @@ COMMANDS:
 Run 'i3pm <command> --help' for more information on a specific command.
 
 EXAMPLES:
-  i3pm project list                    List all projects
-  i3pm project switch nixos            Switch to nixos project
+  i3pm worktree list                   List all worktrees
+  i3pm worktree switch account/repo:branch   Switch to worktree
   i3pm run firefox                     Toggle Firefox (launch/focus/summon)
   i3pm run alacritty --hide            Toggle terminal visibility
   i3pm scratchpad toggle               Toggle project terminal

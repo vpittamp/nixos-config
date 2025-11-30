@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Active i3pm project monitoring for Eww top bar widgets
 
-Reads active project from i3pm state file and outputs JSON for deflisten consumption.
+Feature 101: Reads active project from active-worktree.json (single source of truth).
 
 Output format:
 {
-  "project": "my-project",  // or "Global" if no active project
+  "project": "vpittamp/nixos-config:main",  // qualified name or "Global"
   "active": true,           // true if project is active, false if in global mode
   "branch_number": "079",   // extracted numeric prefix (or null)
   "icon": "🌿",             // project icon
-  "is_worktree": true,      // true if worktree project
-  "formatted_label": "079 - my-project"  // formatted display name
+  "is_worktree": true,      // true if worktree project (always true in Feature 101)
+  "formatted_label": "079 - nixos-config"  // formatted display name
 }
 
 Usage:
@@ -19,6 +19,7 @@ Usage:
 Exits with code 0 on normal termination, 1 on errors.
 
 Feature 079: US7 - Top Bar Enhancement (T050, T051)
+Feature 101: Migrate to active-worktree.json as single source of truth
 """
 
 import json
@@ -28,10 +29,8 @@ from pathlib import Path
 from typing import Optional
 
 
-# i3pm active project state file
-ACTIVE_PROJECT_FILE = Path.home() / ".config" / "i3" / "active-project.json"
-# i3pm project configuration directory
-PROJECT_CONFIG_DIR = Path.home() / ".config" / "i3" / "projects"
+# Feature 101: active-worktree.json is the single source of truth
+ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
 
 
 class ActiveProjectMonitor:
@@ -45,16 +44,16 @@ class ActiveProjectMonitor:
         self.is_worktree = False
         self.formatted_label = "Global"
 
-    def _read_project_file(self) -> Optional[dict]:
-        """Read active project from state file"""
+    def _read_worktree_file(self) -> Optional[dict]:
+        """Read active worktree from state file (Feature 101)"""
         try:
-            if not ACTIVE_PROJECT_FILE.exists():
+            if not ACTIVE_WORKTREE_FILE.exists():
                 return None
 
-            with open(ACTIVE_PROJECT_FILE, "r") as f:
+            with open(ACTIVE_WORKTREE_FILE, "r") as f:
                 data = json.load(f)
 
-            if not data or "project_name" not in data:
+            if not data or "qualified_name" not in data:
                 return None
 
             return data
@@ -62,25 +61,11 @@ class ActiveProjectMonitor:
         except (json.JSONDecodeError, Exception):
             return None
 
-    def _read_project_metadata(self, project_name: str) -> Optional[dict]:
-        """Read project JSON file for metadata (T051)"""
-        try:
-            project_file = PROJECT_CONFIG_DIR / f"{project_name}.json"
-            if not project_file.exists():
-                return None
-
-            with open(project_file, "r") as f:
-                return json.load(f)
-
-        except (json.JSONDecodeError, Exception):
-            return None
-
-    def _extract_branch_number(self, worktree_data: dict) -> Optional[str]:
+    def _extract_branch_number(self, branch: str) -> Optional[str]:
         """Extract numeric prefix from branch name (T051)"""
-        if not worktree_data:
+        if not branch:
             return None
 
-        branch = worktree_data.get("branch", "")
         match = re.match(r'^(\d+)-', branch)
         if match:
             return match.group(1)
@@ -88,37 +73,33 @@ class ActiveProjectMonitor:
 
     def _update_state(self):
         """Update active project state from file"""
-        result = self._read_project_file()
+        worktree_data = self._read_worktree_file()
 
-        if result and result.get("project_name"):
-            project_name = result["project_name"]
-            self.project = project_name
+        if worktree_data and worktree_data.get("qualified_name"):
+            qualified_name = worktree_data["qualified_name"]
+            self.project = qualified_name
             self.active = True
 
-            # Feature 079: T051 - Extract branch metadata from project JSON
-            metadata = self._read_project_metadata(project_name)
-            if metadata:
-                self.icon = metadata.get("icon", "📁")
-                self.is_worktree = "worktree" in metadata
+            # Feature 101: All projects are worktrees
+            self.is_worktree = True
 
-                if self.is_worktree:
-                    worktree_data = metadata.get("worktree", {})
-                    self.branch_number = self._extract_branch_number(worktree_data)
-                else:
-                    self.branch_number = None
+            # Extract branch info from worktree data
+            branch = worktree_data.get("branch", "")
+            self.branch_number = self._extract_branch_number(branch)
 
-                # T053: Formatted label "{icon} {branch_number} - {display_name}"
-                display_name = metadata.get("display_name", project_name)
-                if self.branch_number:
-                    self.formatted_label = f"{self.branch_number} - {display_name}"
-                else:
-                    self.formatted_label = display_name
+            # Use repo name as display name, branch for context
+            repo_name = worktree_data.get("repo_name", "")
+            if self.branch_number:
+                self.formatted_label = f"{self.branch_number} - {repo_name}"
             else:
-                # Fallback if metadata not available
-                self.icon = "📁"
-                self.is_worktree = False
-                self.branch_number = None
-                self.formatted_label = project_name
+                # For main branch, just show repo name
+                self.formatted_label = repo_name if repo_name else branch
+
+            # Icon based on branch type
+            if branch == "main" or branch == "master":
+                self.icon = "📦"  # Main/master branch
+            else:
+                self.icon = "🌿"  # Feature/worktree branch
         else:
             # No active project - global mode
             self.project = "Global"

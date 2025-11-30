@@ -100,7 +100,7 @@ if [ -n "$WINDOW_ID" ]; then
                     "i3pm daemon not running - focusing terminal without project switch" 2>/dev/null || true
             else
                 # Feature 090: T021 - Try project switch with error handling
-                if ! i3pm project switch "$PROJECT_NAME" 2>/dev/null; then
+                if ! i3pm worktree switch "$PROJECT_NAME" 2>/dev/null; then
                     # Project switch failed - show warning but continue to focus
                     notify-send -u low "Project Switch Failed" \
                         "Could not switch to project '$PROJECT_NAME' - focusing terminal anyway" 2>/dev/null || true

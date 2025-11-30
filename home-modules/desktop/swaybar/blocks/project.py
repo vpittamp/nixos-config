@@ -1,7 +1,11 @@
-"""i3pm project indicator status block."""
+"""i3pm project indicator status block.
+
+Feature 101: Uses active-worktree.json as single source of truth.
+"""
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -11,38 +15,42 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 
-def get_active_project() -> Optional[dict]:
-    """Get active project from i3pm daemon state.
+def get_active_worktree() -> Optional[dict]:
+    """Get active worktree from i3pm state file.
+
+    Feature 101: Uses active-worktree.json as single source of truth.
 
     Returns:
-        Dict with project_name or None if no active project
+        Dict with worktree data or None if no active project
     """
-    active_project_file = Path.home() / ".config" / "i3" / "active-project.json"
+    active_worktree_file = Path.home() / ".config" / "i3" / "active-worktree.json"
 
     try:
-        if not active_project_file.exists():
-            logger.debug("No active project file found")
+        if not active_worktree_file.exists():
+            logger.debug("No active worktree file found")
             return None
 
-        with open(active_project_file, "r") as f:
+        with open(active_worktree_file, "r") as f:
             data = json.load(f)
 
-        if not data or "project_name" not in data:
-            logger.debug("No project_name in active project file")
+        if not data or "qualified_name" not in data:
+            logger.debug("No qualified_name in active worktree file")
             return None
 
         return data
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse active project JSON: {e}")
+        logger.error(f"Failed to parse active worktree JSON: {e}")
         return None
     except Exception as e:
-        logger.error(f"Failed to read active project: {e}")
+        logger.error(f"Failed to read active worktree: {e}")
         return None
 
 
 def create_project_block(config: Config) -> Optional[StatusBlock]:
     """Create project indicator status block.
+
+    Feature 101: Uses active-worktree.json for project display.
 
     Args:
         config: Status generator configuration
@@ -50,25 +58,36 @@ def create_project_block(config: Config) -> Optional[StatusBlock]:
     Returns:
         StatusBlock or None if no active project
     """
-    project_data = get_active_project()
+    worktree_data = get_active_worktree()
 
-    if not project_data:
+    if not worktree_data:
         # No active project - don't show the block
         return None
 
-    project_name = project_data.get("project_name", "unknown")
+    # Extract display info from worktree data
+    branch = worktree_data.get("branch", "")
+    repo_name = worktree_data.get("repo_name", "")
 
-    # Icon for project indicator (folder/project icon)
-    icon = "📁"  # Fallback emoji
+    # Extract branch number if present (e.g., "101-feature" -> "101")
+    branch_number = None
+    match = re.match(r'^(\d+)-', branch)
+    if match:
+        branch_number = match.group(1)
 
-    # Try to use Nerd Font icon if available
-    try:
-        icon = ""  # Nerd Font project icon
-    except:
-        pass
+    # Format display name: "101 - repo_name" or just "repo_name" for main
+    if branch_number:
+        display_name = f"{branch_number} - {repo_name}"
+    else:
+        display_name = repo_name if repo_name else branch
 
-    # Format: icon + project name
-    full_text = f"{icon} {project_name}"
+    # Icon based on branch type
+    if branch == "main" or branch == "master":
+        icon = "📦"  # Main/master branch
+    else:
+        icon = "🌿"  # Feature/worktree branch
+
+    # Format: icon + display name
+    full_text = f"{icon} {display_name}"
 
     # Color scheme - use accent color for active project
     color = "#89b4fa"  # Catppuccin Mocha blue

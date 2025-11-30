@@ -21,6 +21,7 @@ from datetime import datetime
 # Feature 091: Import performance optimization services
 from ..models.window_command import WindowCommand, CommandBatch, CommandType
 from ..models.performance_metrics import OperationMetrics, ProjectSwitchMetrics
+from ..worktree_utils import parse_mark  # Feature 101
 from .command_batch import CommandBatchService
 from .tree_cache import TreeCacheService, get_tree_cache
 from .performance_tracker import PerformanceTrackerService, get_performance_tracker
@@ -332,6 +333,21 @@ async def filter_windows_by_project(
 
     windows = tree.leaves()
 
+    # Feature 101: Include floating windows from all workspaces
+    # tree.leaves() only returns tiled windows, not floating_con nodes
+    floating_windows = []
+    for output in tree.nodes:
+        if output.name == "__i3":
+            continue  # Skip scratchpad container, handled below
+        for ws in output.nodes:
+            if hasattr(ws, "floating_nodes"):
+                for floating in ws.floating_nodes:
+                    if hasattr(floating, "pid") and floating.pid:
+                        floating_windows.append(floating)
+    if floating_windows:
+        logger.debug(f"[Feature 101] Found {len(floating_windows)} floating windows on workspaces")
+        windows.extend(floating_windows)
+
     # Feature 046: Include scratchpad windows for restoration
     scratchpad = tree.scratchpad()
     scratchpad_windows = []
@@ -342,7 +358,8 @@ async def filter_windows_by_project(
 
     logger.info(
         f"[Feature 091] Filtering {len(windows)} windows "
-        f"({len(windows) - len(scratchpad_windows)} visible + {len(scratchpad_windows)} scratchpad) "
+        f"({len(windows) - len(scratchpad_windows) - len(floating_windows)} tiled + "
+        f"{len(floating_windows)} floating + {len(scratchpad_windows)} scratchpad) "
         f"for project '{active_project or 'none'}'"
     )
 
@@ -360,33 +377,18 @@ async def filter_windows_by_project(
         window_id = window.id
 
         # Get project and scope from window marks
-        # Note: PROJECT may contain colons for worktree qualified names
-        # e.g., "scratchpad:vpittamp/nixos-config:101-worktree-click-switch"
+        # Feature 101: Unified mark format - all scoped windows (including scratchpad terminals)
+        # use scoped:PROJECT:WINDOW_ID format
         # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
         window_project = None
         window_scope = None
         for mark in window.marks:
-            if mark.startswith("scratchpad:"):
-                # Feature 062: Scratchpad terminals are project-scoped
-                # Format: scratchpad:PROJECT where PROJECT may contain colons
-                # e.g., "scratchpad:vpittamp/nixos-config:main"
-                # Feature 101: Extract full qualified name after "scratchpad:"
-                window_project = mark[len("scratchpad:"):]
-                window_scope = "scoped"
-                logger.debug(f"Window {window_id} is scratchpad terminal for project: {window_project}")
-                break
-            elif mark.startswith("scoped:") or mark.startswith("global:"):
-                # Format: SCOPE:PROJECT:WINDOW_ID where PROJECT may contain colons
-                # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
-                mark_parts = mark.split(":")
-                window_scope = mark_parts[0]
-                # Feature 101: Join parts 1 through n-1 to preserve worktree qualified name
-                if len(mark_parts) >= 4:
-                    # Worktree format: scope:account/repo:branch:window_id
-                    window_project = ":".join(mark_parts[1:-1])
-                elif len(mark_parts) >= 3:
-                    # Legacy format: scope:project:window_id
-                    window_project = mark_parts[1]
+            if mark.startswith("scoped:") or mark.startswith("global:"):
+                # Feature 101: Use centralized mark parser for unified format
+                parsed = parse_mark(mark, window_id)
+                if parsed:
+                    window_scope = parsed.scope
+                    window_project = parsed.project_name
                 break
 
         # Determine visibility
@@ -422,18 +424,40 @@ async def filter_windows_by_project(
                     # Feature 091: Build restore command batch
                     logger.info(f"Building restore commands for window {window_id} ({window.window_class})")
 
+                    # Feature 101: Detect scratchpad terminals via I3PM_APP_NAME or saved workspace_number=0
+                    # Unified mark format means we can't use mark prefix anymore
+                    is_scratchpad_terminal = False
+                    if window.pid:
+                        try:
+                            from .scratchpad_manager import read_process_environ
+                            env = read_process_environ(window.pid)
+                            is_scratchpad_terminal = env.get("I3PM_APP_NAME") == "scratchpad-terminal"
+                        except (ProcessLookupError, PermissionError):
+                            pass  # Can't read env, will rely on saved state
+
                     # Load saved state if workspace_tracker available
                     saved_state = None
                     if workspace_tracker:
                         saved_state = await workspace_tracker.get_window_workspace(window_id)
 
                     if saved_state:
-                        workspace_num = saved_state.get("workspace_number", 1)
-                        is_floating = saved_state.get("floating", False)
+                        # Feature 101: Detect scratchpad via workspace_number=0 in saved state
+                        saved_ws = saved_state.get("workspace_number", 1)
+                        if saved_ws == 0 or is_scratchpad_terminal:
+                            workspace_num = 0
+                            is_floating = True  # Scratchpad terminals are always floating
+                            is_scratchpad_terminal = True  # Mark as scratchpad for skip logic
+                            logger.debug(
+                                f"[Feature 101] Restoring scratchpad window {window_id} with workspace 0"
+                            )
+                        else:
+                            workspace_num = saved_ws
+                            is_floating = saved_state.get("floating", False)
+
                         original_scratchpad = saved_state.get("original_scratchpad", False)
 
-                        # Feature 038 P3: Skip windows originally in scratchpad
-                        if original_scratchpad:
+                        # Feature 038 P3: Skip windows originally in scratchpad (but not scratchpad terminals)
+                        if original_scratchpad and not is_scratchpad_terminal:
                             logger.debug(f"Window {window_id} was originally in scratchpad, skipping")
                             continue
 
@@ -452,14 +476,24 @@ async def filter_windows_by_project(
                             f"floating={is_floating}, has_geometry={geometry is not None}"
                         )
                     else:
-                        # Fallback: restore to workspace 1
-                        logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
-                        batch = CommandBatch.from_window_state(
-                            window_id=window_id,
-                            workspace_num=1,
-                            is_floating=False,
-                            geometry=None,
-                        )
+                        # Feature 101: Scratchpad terminals use workspace 0 even without saved state
+                        if is_scratchpad_terminal:
+                            logger.debug(f"[Feature 101] Restoring scratchpad window {window_id} with workspace 0 (no saved state)")
+                            batch = CommandBatch.from_window_state(
+                                window_id=window_id,
+                                workspace_num=0,
+                                is_floating=True,
+                                geometry=None,
+                            )
+                        else:
+                            # Fallback: restore to workspace 1
+                            logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
+                            batch = CommandBatch.from_window_state(
+                                window_id=window_id,
+                                workspace_num=1,
+                                is_floating=False,
+                                geometry=None,
+                            )
                         restore_batches.append(batch)
                 else:
                     logger.debug(f"Window {window_id} already visible")
@@ -471,14 +505,40 @@ async def filter_windows_by_project(
 
                 # Capture state for Feature 038
                 if workspace_tracker and workspace:
-                    workspace_num = workspace.num if workspace.num is not None else 1
-
                     # Feature 062: Scratchpad terminals should NEVER be marked as original_scratchpad
                     has_scratchpad_mark = any(mark.startswith("scratchpad:") for mark in window.marks)
                     is_original_scratchpad = (workspace.name == "__i3_scratch") and not has_scratchpad_mark
+                    is_in_scratchpad = workspace.name == "__i3_scratch"
 
                     # Feature 038 FIX: Preserve original state if already tracked
                     saved_state = await workspace_tracker.get_window_workspace(window_id)
+
+                    # Feature 101: Deterministic workspace tracking
+                    # Scratchpad-marked windows ALWAYS use workspace 0 (scratchpad home)
+                    # This is deterministic - no fallbacks or null values
+                    if has_scratchpad_mark:
+                        # Scratchpad terminals always use workspace 0
+                        workspace_num = 0
+                        logger.debug(
+                            f"[Feature 101] Scratchpad window {window_id} uses workspace 0 (scratchpad home)"
+                        )
+                    elif workspace.num is not None:
+                        # Window is on a real workspace - use current workspace
+                        workspace_num = workspace.num
+                    elif saved_state and saved_state.get("workspace_number") is not None:
+                        # Window is in scratchpad but has saved state - preserve it
+                        workspace_num = saved_state.get("workspace_number")
+                        logger.debug(
+                            f"[Feature 101] Preserving saved workspace {workspace_num} for window {window_id}"
+                        )
+                    else:
+                        # No valid workspace available - use workspace 1 as deterministic default
+                        # This handles edge cases where windows appear without proper workspace context
+                        workspace_num = 1
+                        logger.warning(
+                            f"[Feature 101] Window {window_id} has no valid workspace, using default workspace 1"
+                        )
+
                     if saved_state and not is_original_scratchpad:
                         is_floating = saved_state.get("floating", False)
                         geometry = saved_state.get("geometry", None)
@@ -497,6 +557,7 @@ async def filter_windows_by_project(
                     window_project_name = window_project or "unknown"
 
                     # Queue state tracking (will be executed before hide commands)
+                    # Feature 101: workspace_num is always valid (0 for scratchpad, real number for others)
                     windows_to_track.append((
                         window_id,
                         workspace_num,

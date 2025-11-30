@@ -18,7 +18,17 @@ class DaemonError(Exception):
 
 
 def get_default_socket_path() -> Path:
-    """Get default daemon socket path (systemd runtime directory)."""
+    """Get default daemon socket path.
+
+    The daemon runs as a system service with socket activation at /run/i3-project-daemon/ipc.sock.
+    Falls back to XDG_RUNTIME_DIR for user-level daemon instances (testing/development).
+    """
+    # System socket (primary - daemon runs as system service with socket activation)
+    system_socket = Path("/run/i3-project-daemon/ipc.sock")
+    if system_socket.exists():
+        return system_socket
+
+    # Fallback to user runtime directory (for development/testing)
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
     return Path(runtime_dir) / "i3-project-daemon" / "ipc.sock"
 

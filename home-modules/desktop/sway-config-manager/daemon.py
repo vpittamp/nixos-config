@@ -197,46 +197,44 @@ class SwayConfigDaemon:
 
     async def load_active_project(self):
         """
-        Load active project from i3pm active-project.json.
+        Load active project from i3pm active-worktree.json.
 
         Feature 047 User Story 3: Query active project and apply project-specific rules
+        Feature 101: Migrated to active-worktree.json as single source of truth
         """
         try:
             import json
             from sway_config_manager.models import Project
 
-            # Read active project file from i3pm
-            active_project_file = self.config_dir.parent / "i3" / "active-project.json"
+            # Feature 101: Read from active-worktree.json (single source of truth)
+            active_worktree_file = self.config_dir.parent / "i3" / "active-worktree.json"
 
-            if not active_project_file.exists():
-                logger.debug("No active project file found")
+            if not active_worktree_file.exists():
+                logger.debug("No active worktree file found")
                 self.active_project = None
                 self.window_rule_engine.set_active_project(None)
                 self.keybinding_manager.set_active_project(None)
                 return
 
-            with open(active_project_file, 'r') as f:
-                active_data = json.load(f)
+            with open(active_worktree_file, 'r') as f:
+                worktree_data = json.load(f)
 
-            project_name = active_data.get("name")
-            if not project_name:
-                logger.debug("Active project file is empty")
+            qualified_name = worktree_data.get("qualified_name")
+            if not qualified_name:
+                logger.debug("Active worktree file has no qualified_name")
                 self.active_project = None
                 self.window_rule_engine.set_active_project(None)
                 self.keybinding_manager.set_active_project(None)
                 return
 
-            # Load project configuration
-            project_file = self.projects_dir / f"{project_name}.json"
-            if not project_file.exists():
-                logger.warning(f"Project file not found: {project_file}")
-                self.active_project = None
-                self.window_rule_engine.set_active_project(None)
-                self.keybinding_manager.set_active_project(None)
-                return
-
-            with open(project_file, 'r') as f:
-                project_data = json.load(f)
+            # Feature 101: Create a minimal Project object from worktree data
+            # Note: Per-project window rules are deprecated; using global rules only
+            project_data = {
+                "name": qualified_name,
+                "display_name": worktree_data.get("repo_name", qualified_name),
+                "directory": worktree_data.get("directory", ""),
+                "icon": "🌿" if worktree_data.get("branch") not in ["main", "master"] else "📦",
+            }
 
             # Parse project with Pydantic
             self.active_project = Project(**project_data)

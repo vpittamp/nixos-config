@@ -49,8 +49,8 @@ WALKER_BIN="@walker@"
 WALKER_PROJECT_LIST_BIN="@walker_project_list@"
 WALKER_PROJECT_SWITCH_BIN="@walker_project_switch@"
 
-ACTIVE_PROJECT_FILE="${USER_HOME}/.config/i3/active-project.json"
-PROJECTS_DIR="${USER_HOME}/.config/i3/projects"
+# Feature 101: active-worktree.json is the single source of truth
+ACTIVE_WORKTREE_FILE="${USER_HOME}/.config/i3/active-worktree.json"
 
 # Colors (Catppuccin Mocha)
 COLOR_LAVENDER="#b4befe"
@@ -63,17 +63,22 @@ COLOR_SUBTEXT="#bac2de"
 COLOR_SURFACE0="#313244"
 
 # Build project block
+# Feature 101: Uses active-worktree.json as single source of truth
 build_project_block() {
-    local current icon display_name project_file icon_value full_text
+    local qualified_name branch repo_name branch_number icon display_name full_text
 
-    # Determine current project from daemon state file (no CLI call)
-    if [ -f "$ACTIVE_PROJECT_FILE" ]; then
-        current=$("$JQ_BIN" -r '.project_name // empty' "$ACTIVE_PROJECT_FILE" 2>/dev/null || echo "")
+    # Determine current worktree from active-worktree.json (Feature 101)
+    if [ -f "$ACTIVE_WORKTREE_FILE" ]; then
+        qualified_name=$("$JQ_BIN" -r '.qualified_name // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+        branch=$("$JQ_BIN" -r '.branch // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
+        repo_name=$("$JQ_BIN" -r '.repo_name // empty' "$ACTIVE_WORKTREE_FILE" 2>/dev/null || echo "")
     else
-        current=""
+        qualified_name=""
+        branch=""
+        repo_name=""
     fi
 
-    if [ -z "$current" ]; then
+    if [ -z "$qualified_name" ]; then
         # No active project - global mode
         "$JQ_BIN" -n --arg text "∅ Global" \
             '{
@@ -89,20 +94,25 @@ build_project_block() {
         return
     fi
 
-    icon="📁"
-    display_name="$current"
-    project_file="${PROJECTS_DIR}/${current}.json"
-    if [ -f "$project_file" ]; then
-        display_name=$("$JQ_BIN" -r '.display_name // empty' "$project_file" 2>/dev/null || echo "$display_name")
-        icon_value=$("$JQ_BIN" -r '.icon // empty' "$project_file" 2>/dev/null || echo "")
-        if [ -n "$icon_value" ] && [ "$icon_value" != "null" ]; then
-            icon="$icon_value"
+    # Extract branch number if present (e.g., "101-feature" -> "101")
+    branch_number=$(echo "$branch" | grep -oE '^[0-9]+' || echo "")
+
+    # Format display name: "101 - repo_name" or just "repo_name" for main
+    if [ -n "$branch_number" ]; then
+        display_name="${branch_number} - ${repo_name}"
+        icon="🌿"  # Feature/worktree branch
+    else
+        display_name="${repo_name:-$branch}"
+        if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+            icon="📦"  # Main/master branch
+        else
+            icon="🌿"
         fi
     fi
 
     full_text=$(printf "%s %s" "$icon" "$display_name")
 
-    "$JQ_BIN" -n --arg text "$full_text" --arg instance "$current" \
+    "$JQ_BIN" -n --arg text "$full_text" --arg instance "$qualified_name" \
         '{
             full_text: $text,
             color: "'"$COLOR_LAVENDER"'",
