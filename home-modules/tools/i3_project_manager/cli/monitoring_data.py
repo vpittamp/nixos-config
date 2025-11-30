@@ -9,6 +9,7 @@ Usage:
     python3 -m i3_project_manager.cli.monitoring_data --mode apps       # Apps view
     python3 -m i3_project_manager.cli.monitoring_data --mode events     # Events view
     python3 -m i3_project_manager.cli.monitoring_data --mode health     # Health view
+    python3 -m i3_project_manager.cli.monitoring_data --mode traces     # Window traces view (Feature 101)
     python3 -m i3_project_manager.cli.monitoring_data --listen          # Stream mode (deflisten)
 
 Output: Single-line JSON to stdout (see contracts/eww-defpoll.md)
@@ -2232,6 +2233,93 @@ async def query_health_data() -> Dict[str, Any]:
         }
 
 
+async def query_traces_data() -> Dict[str, Any]:
+    """
+    Query window traces view data (Feature 101).
+
+    Returns list of active and stopped traces from the daemon's WindowTracer.
+    Each trace contains:
+    - trace_id: Unique identifier
+    - window_id: Sway window ID being traced
+    - matcher: Pattern used to match windows
+    - is_active: Whether trace is still running
+    - event_count: Number of events recorded
+    - duration_seconds: Time since trace started
+    - started_at: ISO timestamp
+
+    Returns:
+        Dict with status, traces list, and metadata
+    """
+    current_timestamp = time.time()
+    socket_path = os.environ.get("I3PM_DAEMON_SOCKET", "/run/i3-project-daemon/ipc.sock")
+
+    try:
+        logging.info("Feature 101: Starting traces query")
+
+        # Connect to daemon and query traces
+        client = DaemonClient(socket_path=socket_path, timeout=2.0)
+        await client.connect()
+
+        try:
+            result = await client.call("trace.list", {})
+            traces = result.get("traces", [])
+            count = result.get("count", len(traces))
+        finally:
+            await client.close()
+
+        # Format each trace for display
+        formatted_traces = []
+        for trace in traces:
+            formatted_traces.append({
+                "trace_id": trace.get("trace_id", ""),
+                "window_id": trace.get("window_id"),
+                "matcher": trace.get("matcher", {}),
+                "matcher_display": " ".join(f"{k}={v}" for k, v in trace.get("matcher", {}).items()),
+                "is_active": trace.get("is_active", False),
+                "event_count": trace.get("event_count", 0),
+                "duration_seconds": trace.get("duration_seconds", 0.0),
+                "duration_display": f"{trace.get('duration_seconds', 0.0):.1f}s",
+                "started_at": trace.get("started_at", ""),
+                "status_icon": "🔴" if trace.get("is_active") else "⏹",
+                "status_label": "ACTIVE" if trace.get("is_active") else "STOPPED"
+            })
+
+        return {
+            "status": "ok",
+            "traces": formatted_traces,
+            "trace_count": count,
+            "active_count": sum(1 for t in formatted_traces if t["is_active"]),
+            "stopped_count": sum(1 for t in formatted_traces if not t["is_active"]),
+            "timestamp": current_timestamp,
+            "timestamp_friendly": format_friendly_timestamp(current_timestamp)
+        }
+
+    except DaemonError as e:
+        logging.error(f"Feature 101: Daemon error querying traces: {e}")
+        return {
+            "status": "error",
+            "traces": [],
+            "trace_count": 0,
+            "active_count": 0,
+            "stopped_count": 0,
+            "timestamp": current_timestamp,
+            "timestamp_friendly": format_friendly_timestamp(current_timestamp),
+            "error": f"Daemon error: {e}"
+        }
+    except Exception as e:
+        logging.exception(f"Feature 101: Failed to query traces: {e}")
+        return {
+            "status": "error",
+            "traces": [],
+            "trace_count": 0,
+            "active_count": 0,
+            "stopped_count": 0,
+            "timestamp": current_timestamp,
+            "timestamp_friendly": format_friendly_timestamp(current_timestamp),
+            "error": f"Query failed: {type(e).__name__}: {e}"
+        }
+
+
 async def stream_monitoring_data():
     """
     Stream monitoring data to stdout on Sway events (deflisten mode).
@@ -2614,6 +2702,7 @@ async def main():
     - apps: Application registry view
     - health: System health view
     - events: Sway IPC event log view (Feature 092)
+    - traces: Window traces view (Feature 101)
     - Stream (--listen): Continuous event stream (deflisten mode)
 
     Exit codes:
@@ -2624,7 +2713,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Monitoring panel data backend")
     parser.add_argument(
         "--mode",
-        choices=["windows", "projects", "apps", "health", "events"],
+        choices=["windows", "projects", "apps", "health", "events", "traces"],
         default="windows",
         help="View mode (default: windows)"
     )
@@ -2659,6 +2748,8 @@ async def main():
             data = await query_health_data()
         elif args.mode == "events":
             data = await query_events_data()
+        elif args.mode == "traces":
+            data = await query_traces_data()
         else:
             raise ValueError(f"Unknown mode: {args.mode}")
 

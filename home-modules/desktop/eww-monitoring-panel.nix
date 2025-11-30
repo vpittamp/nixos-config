@@ -104,11 +104,17 @@ let
 
     EWW="${pkgs.eww}/bin/eww"
     CONFIG="$HOME/.config/eww-monitoring-panel"
+    # eww socket path is based on hash of config path
+    SOCKET="/run/user/$(id -u)/eww-server_58b4a301d946d189"
 
-    # Ensure systemd service is running (daemon managed by systemd, not eww auto-spawn)
-    if ! systemctl --user is-active --quiet eww-monitoring-panel.service; then
-      systemctl --user start eww-monitoring-panel.service
-      sleep 1
+    # Check if eww daemon socket exists and service is running
+    # If socket missing or stale, restart the service
+    if [[ ! -S "$SOCKET" ]] || ! systemctl --user is-active --quiet eww-monitoring-panel.service; then
+      # Kill any orphan eww processes for this config
+      ${pkgs.procps}/bin/pkill -9 -f "eww.*eww-monitoring-panel" 2>/dev/null || true
+      rm -f "$SOCKET" 2>/dev/null || true
+      systemctl --user restart eww-monitoring-panel.service
+      sleep 2
     fi
 
     # Now safely toggle using the service-managed daemon
@@ -2118,6 +2124,7 @@ print(json.dumps(result))
       3|Alt+3) $EWW_CMD update current_view=apps ;;
       4|Alt+4) $EWW_CMD update current_view=health ;;
       5|Alt+5) $EWW_CMD update current_view=events ;;
+      6|Alt+6) $EWW_CMD update current_view=traces ;;
       Escape|q) $EWW_CMD close monitoring-panel ;;
     esac
   '';
@@ -2218,6 +2225,13 @@ in
         :interval "5s"
         :initial "{\"status\":\"loading\",\"health\":{}}"
         `${monitoringDataScript}/bin/monitoring-data-backend --mode health`)
+
+      ;; Feature 101: Defpoll: Window traces view data (2s refresh)
+      ;; Lists active and stopped traces from daemon's WindowTracer
+      (defpoll traces_data
+        :interval "2s"
+        :initial "{\"status\":\"loading\",\"traces\":[],\"trace_count\":0,\"active_count\":0,\"stopped_count\":0}"
+        `${monitoringDataScript}/bin/monitoring-data-backend --mode traces`)
 
       ;; Feature 095 Enhancement: Animated spinner is embedded in monitoring_data.spinner_frame
       ;; The Python backend (monitoring_data.py) generates spinner frames at 120ms intervals
@@ -2515,6 +2529,14 @@ in
                 :class "tab ''${current_view == 'events' ? 'active' : ""}"
                 :tooltip "Logs (Alt+5)"
                 "󰌱"))
+            ;; Feature 101: Traces tab (6th tab)
+            (eventbox
+              :cursor "pointer"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update current_view=traces"
+              (button
+                :class "tab ''${current_view == 'traces' ? 'active' : ""}"
+                :tooltip "Traces (Alt+6)"
+                "󱂛"))
             ;; Feature 086: Focus mode indicator badge
             (label
               :class "focus-indicator"
@@ -2569,7 +2591,8 @@ in
             (box :class "view-container" :visible {current_view == "projects"} :vexpand true (projects-view))
             (box :class "view-container" :visible {current_view == "apps"} :vexpand true (apps-view))
             (box :class "view-container" :visible {current_view == "health"} :vexpand true (health-view))
-            (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view)))))
+            (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view))
+            (box :class "view-container" :visible {current_view == "traces"} :vexpand true (traces-view)))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
@@ -5671,6 +5694,142 @@ in
             (label
               :class "filter-checkbox-label"
               :text label))))
+
+      ;; Feature 101: Traces View - Window tracing for debugging
+      (defwidget traces-view []
+        (scroll
+          :vscroll true
+          :hscroll false
+          :vexpand true
+          (box
+            :class "content-container"
+            :orientation "v"
+            :space-evenly false
+            ;; Error state
+            (box
+              :class "error-message"
+              :visible {traces_data.status == "error"}
+              (label :text "⚠ ''${traces_data.error ?: 'Unknown error'}"))
+            ;; Summary header
+            (box
+              :class "traces-summary"
+              :orientation "h"
+              :space-evenly false
+              :visible {traces_data.status == "ok"}
+              (label
+                :class "traces-count"
+                :halign "start"
+                :hexpand true
+                :text "''${traces_data.trace_count ?: 0} trace(s) (''${traces_data.active_count ?: 0} active)")
+              (label
+                :class "traces-help"
+                :halign "end"
+                :tooltip "Start a trace with: i3pm trace start --class <pattern>"
+                :text "ℹ"))
+            ;; Empty state
+            (box
+              :class "traces-empty"
+              :visible {traces_data.status == "ok" && (traces_data.trace_count ?: 0) == 0}
+              :orientation "v"
+              :space-evenly false
+              (label
+                :class "empty-icon"
+                :text "󱂛")
+              (label
+                :class "empty-title"
+                :text "No active traces")
+              (label
+                :class "empty-hint"
+                :text "Start a trace with:")
+              (label
+                :class "empty-command"
+                :text "i3pm trace start --class <pattern>"))
+            ;; Traces list
+            (box
+              :class "traces-list"
+              :orientation "v"
+              :space-evenly false
+              :visible {traces_data.status == "ok" && (traces_data.trace_count ?: 0) > 0}
+              (for trace in {traces_data.traces ?: []}
+                (trace-card :trace trace))))))
+
+      ;; Feature 101: Trace card widget - displays single trace info
+      (defwidget trace-card [trace]
+        (box
+          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped")}
+          :orientation "h"
+          :space-evenly false
+          ;; Status icon
+          (label
+            :class "trace-status-icon"
+            :text "''${trace.status_icon}")
+          ;; Trace details
+          (box
+            :class "trace-details"
+            :orientation "v"
+            :space-evenly false
+            :hexpand true
+            ;; Trace ID and status
+            (box
+              :class "trace-header"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "trace-id"
+                :halign "start"
+                :hexpand true
+                :limit-width 30
+                :text "''${trace.trace_id}")
+              (label
+                :class "trace-status-label"
+                :halign "end"
+                :text "''${trace.status_label}"))
+            ;; Matcher info
+            (label
+              :class "trace-matcher"
+              :halign "start"
+              :limit-width 40
+              :text "''${trace.matcher_display}")
+            ;; Stats line
+            (box
+              :class "trace-stats"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "trace-events"
+                :text "''${trace.event_count} events")
+              (label
+                :class "trace-separator"
+                :text " · ")
+              (label
+                :class "trace-duration"
+                :text "''${trace.duration_display}")
+              (label
+                :class "trace-separator"
+                :visible {trace.window_id != "null" && trace.window_id != ""}
+                :text " · ")
+              (label
+                :class "trace-window-id"
+                :visible {trace.window_id != "null" && trace.window_id != ""}
+                :text "win:''${trace.window_id}")))
+          ;; Action buttons
+          (box
+            :class "trace-actions"
+            :orientation "v"
+            :space-evenly true
+            :halign "end"
+            ;; Show timeline button
+            (button
+              :class "trace-action-btn"
+              :tooltip "Show timeline in terminal"
+              :onclick "ghostty -e i3pm trace show ''${trace.trace_id} &"
+              "󰋽")
+            ;; Stop/Remove button
+            (button
+              :class "trace-action-btn trace-stop-btn"
+              :tooltip "''${trace.is_active ? 'Stop trace' : 'Remove trace'}"
+              :onclick "i3pm trace stop ''${trace.trace_id} &"
+              "''${trace.is_active ? '⏹' : '🗑'}"))))
 
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
@@ -8874,6 +9033,175 @@ in
         font-size: 9px;
         color: ${mocha.text};
         font-family: monospace;
+      }
+
+      /* Feature 101: Traces View Styling */
+      .traces-summary {
+        padding: 8px 12px;
+        background-color: ${mocha.surface0};
+        border-radius: 6px;
+        margin-bottom: 8px;
+      }
+
+      .traces-count {
+        font-size: 12px;
+        font-weight: 600;
+        color: ${mocha.teal};
+      }
+
+      .traces-help {
+        font-size: 12px;
+        color: ${mocha.subtext0};
+      }
+
+      .traces-empty {
+        padding: 40px 20px;
+        text-align: center;
+      }
+
+      .traces-empty .empty-icon {
+        font-size: 48px;
+        color: ${mocha.overlay0};
+        margin-bottom: 12px;
+      }
+
+      .traces-empty .empty-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: ${mocha.subtext0};
+        margin-bottom: 8px;
+      }
+
+      .traces-empty .empty-hint {
+        font-size: 11px;
+        color: ${mocha.subtext0};
+        margin-bottom: 4px;
+      }
+
+      .traces-empty .empty-command {
+        font-size: 11px;
+        color: ${mocha.peach};
+        font-family: monospace;
+        background-color: ${mocha.surface0};
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+
+      .traces-list {
+        padding: 0 4px;
+      }
+
+      .trace-card {
+        background-color: ${mocha.surface0};
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 6px;
+        border-left: 3px solid ${mocha.overlay0};
+      }
+
+      .trace-card:hover {
+        background-color: ${mocha.surface1};
+      }
+
+      .trace-card.trace-active {
+        border-left-color: ${mocha.red};
+        background-color: rgba(243, 139, 168, 0.1);
+      }
+
+      .trace-card.trace-stopped {
+        border-left-color: ${mocha.overlay0};
+        opacity: 0.8;
+      }
+
+      .trace-status-icon {
+        font-size: 18px;
+        margin-right: 10px;
+        min-width: 24px;
+      }
+
+      .trace-header {
+        margin-bottom: 4px;
+      }
+
+      .trace-id {
+        font-size: 11px;
+        font-family: monospace;
+        color: ${mocha.blue};
+        font-weight: 600;
+      }
+
+      .trace-status-label {
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 3px;
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+      }
+
+      .trace-active .trace-status-label {
+        background-color: ${mocha.red};
+        color: ${mocha.base};
+      }
+
+      .trace-stopped .trace-status-label {
+        background-color: ${mocha.surface1};
+        color: ${mocha.subtext0};
+      }
+
+      .trace-matcher {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        font-family: monospace;
+        margin-bottom: 4px;
+      }
+
+      .trace-stats {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+      }
+
+      .trace-events {
+        color: ${mocha.green};
+      }
+
+      .trace-separator {
+        color: ${mocha.overlay0};
+      }
+
+      .trace-duration {
+        color: ${mocha.yellow};
+      }
+
+      .trace-window-id {
+        color: ${mocha.mauve};
+        font-family: monospace;
+      }
+
+      .trace-actions {
+        margin-left: 10px;
+      }
+
+      .trace-action-btn {
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        margin-bottom: 4px;
+        min-width: 28px;
+      }
+
+      .trace-action-btn:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.blue};
+      }
+
+      .trace-stop-btn:hover {
+        background-color: ${mocha.red};
+        border-color: ${mocha.red};
+        color: ${mocha.base};
       }
     '';
 
