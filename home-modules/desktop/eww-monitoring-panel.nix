@@ -2146,6 +2146,75 @@ print(json.dumps(result))
     $EWW_CMD update current_view=traces
   '';
 
+  # Feature 101: Fetch trace events for expanded trace card
+  # Toggles expansion and fetches events via IPC
+  fetchTraceEventsScript = pkgs.writeShellScript "fetch-trace-events" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TRACE_ID="''${1:-}"
+
+    if [[ -z "$TRACE_ID" ]]; then
+      exit 1
+    fi
+
+    # Check if already expanded - if so, collapse
+    CURRENT_EXPANDED=$($EWW_CMD get expanded_trace_id 2>/dev/null || echo "")
+    if [[ "$CURRENT_EXPANDED" == "$TRACE_ID" ]]; then
+      # Collapse: clear expanded state
+      $EWW_CMD update expanded_trace_id=""
+      $EWW_CMD update trace_events="[]"
+      exit 0
+    fi
+
+    # Expand: set loading state and fetch events
+    $EWW_CMD update expanded_trace_id="$TRACE_ID"
+    $EWW_CMD update trace_events_loading=true
+    $EWW_CMD update trace_events="[]"
+
+    # Query daemon for trace events
+    SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [[ ! -S "$SOCKET" ]]; then
+      $EWW_CMD update trace_events_loading=false
+      $EWW_CMD update trace_events='[{"time_display":"Error","event_type":"error","description":"Daemon not running"}]'
+      exit 0
+    fi
+
+    # Send JSON-RPC request
+    RESPONSE=$(${pkgs.coreutils}/bin/printf '{"jsonrpc":"2.0","method":"trace.get","params":{"trace_id":"%s"},"id":1}\n' "$TRACE_ID" \
+      | ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$SOCKET" 2>/dev/null || echo '{"error":"Connection failed"}')
+
+    # Extract and format events using jq
+    EVENTS=$(${pkgs.jq}/bin/jq -c '[.result.trace.events[] | {
+      time_display: (.time_iso | split("T")[1] | split(".")[0]),
+      event_type: .event_type,
+      description: .description,
+      changes: (
+        if .state_before and .state_after then
+          (
+            (if .state_before.floating != .state_after.floating then ["floating: \(.state_before.floating) → \(.state_after.floating)"] else [] end) +
+            (if .state_before.focused != .state_after.focused then ["focused: \(.state_before.focused) → \(.state_after.focused)"] else [] end) +
+            (if .state_before.hidden != .state_after.hidden then ["hidden: \(.state_before.hidden) → \(.state_after.hidden)"] else [] end) +
+            (if .state_before.workspace_num != .state_after.workspace_num then ["workspace: \(.state_before.workspace_num) → \(.state_after.workspace_num)"] else [] end) +
+            (if .state_before.output != .state_after.output then ["output: \(.state_before.output) → \(.state_after.output)"] else [] end)
+          ) | join(", ")
+        else
+          ""
+        end
+      )
+    }]' <<< "$RESPONSE" 2>/dev/null || echo '[]')
+
+    # Handle empty/error response
+    if [[ "$EVENTS" == "[]" ]] || [[ "$EVENTS" == "null" ]]; then
+      EVENTS='[{"time_display":"--:--:--","event_type":"info","description":"No events recorded","changes":""}]'
+    fi
+
+    # Update Eww state
+    $EWW_CMD update trace_events_loading=false
+    $EWW_CMD update trace_events="$EVENTS"
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -2474,6 +2543,11 @@ in
       (defvar edit_workspace "")
       (defvar edit_icon "")
       (defvar edit_start_url "")
+
+      ;; Feature 101: Trace expansion state for inline event timeline
+      (defvar expanded_trace_id "")           ;; Trace ID currently expanded (empty = none)
+      (defvar trace_events "[]")              ;; JSON array of events for expanded trace
+      (defvar trace_events_loading false)     ;; True while fetching events
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -5793,83 +5867,156 @@ in
               (for trace in {traces_data.traces ?: []}
                 (trace-card :trace trace))))))
 
-      ;; Feature 101: Trace card widget - displays single trace info
+      ;; Feature 101: Trace card widget - displays single trace info with expandable events
       (defwidget trace-card [trace]
         (box
-          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped")}
+          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped") + (expanded_trace_id == trace.trace_id ? " trace-expanded" : "")}
+          :orientation "v"
+          :space-evenly false
+          ;; Main trace info row (clickable to expand)
+          (eventbox
+            :cursor "pointer"
+            :onclick "${fetchTraceEventsScript} ''${trace.trace_id} &"
+            :tooltip "Click to expand/collapse events"
+            (box
+              :class "trace-card-header"
+              :orientation "h"
+              :space-evenly false
+              ;; Expand/collapse indicator
+              (label
+                :class "trace-expand-icon"
+                :text {expanded_trace_id == trace.trace_id ? "󰅀" : "󰅂"})
+              ;; Status icon
+              (label
+                :class "trace-status-icon"
+                :text "''${trace.status_icon}")
+              ;; Trace details
+              (box
+                :class "trace-details"
+                :orientation "v"
+                :space-evenly false
+                :hexpand true
+                ;; Trace ID and status
+                (box
+                  :class "trace-header"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "trace-id"
+                    :halign "start"
+                    :hexpand true
+                    :limit-width 30
+                    :text "''${trace.trace_id}")
+                  (label
+                    :class "trace-status-label"
+                    :halign "end"
+                    :text "''${trace.status_label}"))
+                ;; Matcher info
+                (label
+                  :class "trace-matcher"
+                  :halign "start"
+                  :limit-width 40
+                  :text "''${trace.matcher_display}")
+                ;; Stats line
+                (box
+                  :class "trace-stats"
+                  :orientation "h"
+                  :space-evenly false
+                  (label
+                    :class "trace-events"
+                    :text "''${trace.event_count} events")
+                  (label
+                    :class "trace-separator"
+                    :text " · ")
+                  (label
+                    :class "trace-duration"
+                    :text "''${trace.duration_display}")
+                  (label
+                    :class "trace-separator"
+                    :visible {trace.window_id != "null" && trace.window_id != ""}
+                    :text " · ")
+                  (label
+                    :class "trace-window-id"
+                    :visible {trace.window_id != "null" && trace.window_id != ""}
+                    :text "win:''${trace.window_id}")))
+              ;; Action buttons
+              (box
+                :class "trace-actions"
+                :orientation "h"
+                :space-evenly false
+                :halign "end"
+                ;; Open in terminal button
+                (button
+                  :class "trace-action-btn"
+                  :tooltip "Show full timeline in terminal"
+                  :onclick "ghostty -e i3pm trace show ''${trace.trace_id} &"
+                  "󰋽")
+                ;; Stop/Remove button
+                (button
+                  :class "trace-action-btn trace-stop-btn"
+                  :tooltip "''${trace.is_active ? 'Stop trace' : 'Remove trace'}"
+                  :onclick "i3pm trace stop ''${trace.trace_id} &"
+                  "''${trace.is_active ? '⏹' : '🗑'}"))))
+          ;; Expandable events timeline
+          (revealer
+            :reveal {expanded_trace_id == trace.trace_id}
+            :transition "slidedown"
+            :duration "150ms"
+            (box
+              :class "trace-events-panel"
+              :orientation "v"
+              :space-evenly false
+              ;; Loading state
+              (box
+                :class "trace-events-loading"
+                :visible {trace_events_loading}
+                :halign "center"
+                (label :text "Loading events..."))
+              ;; Events list
+              (scroll
+                :vscroll true
+                :hscroll false
+                :height 200
+                :visible {!trace_events_loading}
+                (box
+                  :class "trace-events-list"
+                  :orientation "v"
+                  :space-evenly false
+                  (for event in {trace_events}
+                    (trace-event-row :event event))))))))
+
+      ;; Feature 101: Single event row in expanded trace timeline
+      (defwidget trace-event-row [event]
+        (box
+          :class {"trace-event-row " + (event.event_type ?: "unknown")}
           :orientation "h"
           :space-evenly false
-          ;; Status icon
+          ;; Timestamp
           (label
-            :class "trace-status-icon"
-            :text "''${trace.status_icon}")
-          ;; Trace details
+            :class "event-time"
+            :text "''${event.time_display ?: '--:--:--'}")
+          ;; Event type badge
+          (label
+            :class {"event-type-badge " + (event.event_type ?: "unknown")}
+            :text "''${event.event_type ?: 'unknown'}")
+          ;; Description and changes
           (box
-            :class "trace-details"
+            :class "event-content"
             :orientation "v"
             :space-evenly false
             :hexpand true
-            ;; Trace ID and status
-            (box
-              :class "trace-header"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "trace-id"
-                :halign "start"
-                :hexpand true
-                :limit-width 30
-                :text "''${trace.trace_id}")
-              (label
-                :class "trace-status-label"
-                :halign "end"
-                :text "''${trace.status_label}"))
-            ;; Matcher info
             (label
-              :class "trace-matcher"
+              :class "event-description"
               :halign "start"
-              :limit-width 40
-              :text "''${trace.matcher_display}")
-            ;; Stats line
-            (box
-              :class "trace-stats"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "trace-events"
-                :text "''${trace.event_count} events")
-              (label
-                :class "trace-separator"
-                :text " · ")
-              (label
-                :class "trace-duration"
-                :text "''${trace.duration_display}")
-              (label
-                :class "trace-separator"
-                :visible {trace.window_id != "null" && trace.window_id != ""}
-                :text " · ")
-              (label
-                :class "trace-window-id"
-                :visible {trace.window_id != "null" && trace.window_id != ""}
-                :text "win:''${trace.window_id}")))
-          ;; Action buttons
-          (box
-            :class "trace-actions"
-            :orientation "v"
-            :space-evenly true
-            :halign "end"
-            ;; Show timeline button
-            (button
-              :class "trace-action-btn"
-              :tooltip "Show timeline in terminal"
-              :onclick "ghostty -e i3pm trace show ''${trace.trace_id} &"
-              "󰋽")
-            ;; Stop/Remove button
-            (button
-              :class "trace-action-btn trace-stop-btn"
-              :tooltip "''${trace.is_active ? 'Stop trace' : 'Remove trace'}"
-              :onclick "i3pm trace stop ''${trace.trace_id} &"
-              "''${trace.is_active ? '⏹' : '🗑'}"))))
+              :wrap true
+              :limit-width 50
+              :text {event.description ?: ""})
+            (label
+              :class "event-changes"
+              :halign "start"
+              :wrap true
+              :visible {(event.changes ?: "") != ""}
+              :text {event.changes ?: ""}))))
 
       ;; Panel footer with friendly timestamp
       (defwidget panel-footer []
@@ -9252,6 +9399,148 @@ in
         background-color: ${mocha.red};
         border-color: ${mocha.red};
         color: ${mocha.base};
+      }
+
+      /* Feature 101: Expanded trace card styles */
+      .trace-card.trace-expanded {
+        border-left-color: ${mocha.lavender};
+        background-color: rgba(180, 190, 254, 0.1);
+      }
+
+      .trace-card-header {
+        padding: 4px 0;
+      }
+
+      .trace-expand-icon {
+        font-size: 12px;
+        color: ${mocha.overlay0};
+        margin-right: 6px;
+        min-width: 16px;
+      }
+
+      .trace-expanded .trace-expand-icon {
+        color: ${mocha.lavender};
+      }
+
+      .trace-events-panel {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid ${mocha.surface1};
+      }
+
+      .trace-events-loading {
+        padding: 12px;
+        color: ${mocha.subtext0};
+        font-size: 11px;
+        font-style: italic;
+      }
+
+      .trace-events-list {
+        padding: 0;
+      }
+
+      .trace-event-row {
+        padding: 6px 8px;
+        margin-bottom: 2px;
+        background-color: ${mocha.base};
+        border-radius: 4px;
+        border-left: 2px solid ${mocha.overlay0};
+      }
+
+      .trace-event-row:hover {
+        background-color: ${mocha.surface0};
+      }
+
+      /* Event type specific colors */
+      .trace-event-row.trace\:\:start {
+        border-left-color: ${mocha.green};
+      }
+
+      .trace-event-row.trace\:\:stop {
+        border-left-color: ${mocha.red};
+      }
+
+      .trace-event-row.window\:\:new {
+        border-left-color: ${mocha.blue};
+      }
+
+      .trace-event-row.window\:\:focus {
+        border-left-color: ${mocha.yellow};
+      }
+
+      .trace-event-row.window\:\:move {
+        border-left-color: ${mocha.peach};
+      }
+
+      .trace-event-row.mark\:\:added {
+        border-left-color: ${mocha.mauve};
+      }
+
+      .event-time {
+        font-family: monospace;
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        min-width: 60px;
+        margin-right: 8px;
+      }
+
+      .event-type-badge {
+        font-size: 9px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 3px;
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+        margin-right: 8px;
+        min-width: 80px;
+        /* text-align not supported in GTK CSS - use :halign in yuck widget instead */
+      }
+
+      /* Event type badge colors */
+      .event-type-badge.trace\:\:start {
+        background-color: rgba(166, 227, 161, 0.2);
+        color: ${mocha.green};
+      }
+
+      .event-type-badge.trace\:\:stop {
+        background-color: rgba(243, 139, 168, 0.2);
+        color: ${mocha.red};
+      }
+
+      .event-type-badge.window\:\:new {
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.blue};
+      }
+
+      .event-type-badge.window\:\:focus {
+        background-color: rgba(249, 226, 175, 0.2);
+        color: ${mocha.yellow};
+      }
+
+      .event-type-badge.window\:\:move {
+        background-color: rgba(250, 179, 135, 0.2);
+        color: ${mocha.peach};
+      }
+
+      .event-type-badge.mark\:\:added {
+        background-color: rgba(203, 166, 247, 0.2);
+        color: ${mocha.mauve};
+      }
+
+      .event-content {
+        padding-left: 4px;
+      }
+
+      .event-description {
+        font-size: 10px;
+        color: ${mocha.text};
+      }
+
+      .event-changes {
+        font-size: 9px;
+        color: ${mocha.subtext0};
+        font-family: monospace;
+        margin-top: 2px;
       }
     '';
 
