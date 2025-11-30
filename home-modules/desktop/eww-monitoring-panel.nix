@@ -97,15 +97,27 @@ let
 
   # Toggle script for panel visibility
   # Use eww active-windows to check if panel is actually open (not just defined)
+  # Feature 101: Fixed to prevent spawning duplicate daemons
   toggleScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
     #!${pkgs.bash}/bin/bash
-    # Check if panel is in active windows (actually open, not just defined)
-    if ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel active-windows | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
+    set -euo pipefail
+
+    EWW="${pkgs.eww}/bin/eww"
+    CONFIG="$HOME/.config/eww-monitoring-panel"
+
+    # Ensure systemd service is running (daemon managed by systemd, not eww auto-spawn)
+    if ! systemctl --user is-active --quiet eww-monitoring-panel.service; then
+      systemctl --user start eww-monitoring-panel.service
+      sleep 1
+    fi
+
+    # Now safely toggle using the service-managed daemon
+    if $EWW --config "$CONFIG" active-windows 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "monitoring-panel"; then
       # Panel is open - close it
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel close monitoring-panel
+      $EWW --config "$CONFIG" close monitoring-panel
     else
       # Panel is closed - open it
-      ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel open monitoring-panel
+      $EWW --config "$CONFIG" open monitoring-panel
     fi
   '';
 
@@ -8880,8 +8892,12 @@ in
         # Open the monitoring panel window after daemon starts
         # This is required for deflisten to start streaming window data
         ExecStartPost = "${pkgs.bash}/bin/bash -c 'sleep 1 && ${pkgs.eww}/bin/eww --config %h/.config/eww-monitoring-panel open monitoring-panel'";
+        # Feature 101: Clean shutdown to prevent stale sockets
+        ExecStopPost = "${pkgs.bash}/bin/bash -c 'rm -f /run/user/1000/eww-server_*'";
         Restart = "on-failure";
         RestartSec = "3s";
+        # Ensure all child processes are killed when service stops
+        KillMode = "control-group";
       };
 
       Install = {
