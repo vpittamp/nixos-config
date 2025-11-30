@@ -2061,6 +2061,40 @@ print(json.dumps(result))
     (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_project_name="") &
   '';
 
+  # Feature 101: Copy trace data to clipboard for LLM analysis
+  # Formats trace with timeline, timing analysis, and context for easy analysis
+  copyTraceDataScript = pkgs.writeShellScript "copy-trace-data" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TRACE_ID="''${1:-}"
+
+    if [[ -z "$TRACE_ID" ]]; then
+      echo "Usage: copy-trace-data <trace-id>" >&2
+      exit 1
+    fi
+
+    # Query daemon for full trace data in timeline format
+    SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [[ ! -S "$SOCKET" ]]; then
+      echo "Daemon not running" >&2
+      exit 1
+    fi
+
+    # Request trace with timeline format for LLM-friendly output
+    RESPONSE=$(${pkgs.coreutils}/bin/printf '{"jsonrpc":"2.0","method":"trace.get","params":{"trace_id":"%s","format":"timeline"},"id":1}\n' "$TRACE_ID" \
+      | ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$SOCKET" 2>/dev/null || echo '{"error":"Connection failed"}')
+
+    # Extract timeline text and copy to clipboard
+    TIMELINE=$(${pkgs.jq}/bin/jq -r '.result.timeline // "Error: Could not fetch trace"' <<< "$RESPONSE")
+    ${pkgs.coreutils}/bin/printf '%s' "$TIMELINE" | ${pkgs.wl-clipboard}/bin/wl-copy
+
+    # Toggle copied state for visual feedback
+    $EWW_CMD update copied_trace_id="$TRACE_ID"
+    (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update copied_trace_id="") &
+  '';
+
   # Feature 099: Fetch window environment variables via IPC
   # This script queries the daemon for environment variables and updates Eww state
   fetchWindowEnvScript = pkgs.writeShellScript "fetch-window-env" ''
@@ -2548,6 +2582,7 @@ in
       (defvar expanded_trace_id "")           ;; Trace ID currently expanded (empty = none)
       (defvar trace_events "[]")              ;; JSON array of events for expanded trace
       (defvar trace_events_loading false)     ;; True while fetching events
+      (defvar copied_trace_id "")             ;; Trace ID just copied (for visual feedback)
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -5945,6 +5980,14 @@ in
                 :orientation "h"
                 :space-evenly false
                 :halign "end"
+                ;; Copy to clipboard button (for LLM analysis)
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "${copyTraceDataScript} ''${trace.trace_id} &"
+                  :tooltip "Copy trace timeline to clipboard"
+                  (label
+                    :class {"trace-copy-btn" + (copied_trace_id == trace.trace_id ? " copied" : "")}
+                    :text {copied_trace_id == trace.trace_id ? "󰄬" : "󰆏"}))
                 ;; Open in terminal button
                 (button
                   :class "trace-action-btn"
@@ -9399,6 +9442,42 @@ in
         background-color: ${mocha.red};
         border-color: ${mocha.red};
         color: ${mocha.base};
+      }
+
+      /* Feature 101: Trace copy button - matches json-copy-btn pattern */
+      .trace-copy-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        background-color: rgba(137, 180, 250, 0.2);
+        color: ${mocha.blue};
+        border: 1px solid ${mocha.blue};
+        border-radius: 4px;
+        min-width: 28px;
+        margin-right: 4px;
+      }
+
+      .trace-copy-btn:hover {
+        background-color: rgba(137, 180, 250, 0.3);
+        box-shadow: 0 0 8px rgba(137, 180, 250, 0.4);
+      }
+
+      .trace-copy-btn:active {
+        background-color: rgba(137, 180, 250, 0.5);
+        box-shadow: 0 0 12px rgba(137, 180, 250, 0.6);
+      }
+
+      .trace-copy-btn.copied {
+        background-color: rgba(166, 227, 161, 0.3);
+        color: ${mocha.green};
+        border: 1px solid ${mocha.green};
+        box-shadow: 0 0 12px rgba(166, 227, 161, 0.5),
+                    inset 0 0 8px rgba(166, 227, 161, 0.2);
+        font-weight: bold;
+      }
+
+      .trace-copy-btn.copied:hover {
+        background-color: rgba(166, 227, 161, 0.4);
+        box-shadow: 0 0 16px rgba(166, 227, 161, 0.6);
       }
 
       /* Feature 101: Expanded trace card styles */

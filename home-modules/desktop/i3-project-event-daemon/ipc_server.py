@@ -456,6 +456,8 @@ class IPCServer:
             # Feature 101: Window tracing for debugging
             elif method == "trace.start":
                 result = await self._trace_start(params)
+            elif method == "trace.start_app":
+                result = await self._trace_start_app(params)
             elif method == "trace.stop":
                 result = await self._trace_stop(params)
             elif method == "trace.get":
@@ -4834,6 +4836,38 @@ class IPCServer:
                 "data": {"validation_error": str(e)}
             }))
 
+        # Feature 101: Check for pending app trace and record launch notification
+        from .services.window_tracer import get_tracer
+        tracer = get_tracer()
+        trace_id = None
+        if tracer:
+            trace_id = await tracer.get_pending_trace_for_app(app_name)
+            if trace_id:
+                # Associate trace with this pending launch
+                pending_launch.trace_id = trace_id
+
+                # Build environment variables that will be injected
+                env_vars = {
+                    "I3PM_APP_NAME": app_name,
+                    "I3PM_PROJECT_NAME": project_name,
+                    "I3PM_PROJECT_DIR": str(project_directory),
+                    "I3PM_TARGET_WORKSPACE": str(workspace_number),
+                    "I3PM_EXPECTED_CLASS": expected_class,
+                    "I3PM_LAUNCHER_PID": str(launcher_pid),
+                }
+
+                # Record the launch notification in the trace
+                await tracer.record_launch_notification(
+                    trace_id=trace_id,
+                    app_name=app_name,
+                    project_name=project_name,
+                    workspace_number=workspace_number,
+                    expected_class=expected_class,
+                    launcher_pid=launcher_pid,
+                    env_vars=env_vars,
+                )
+                logger.info(f"[Feature 101] Associated launch with trace {trace_id}")
+
         # Add to launch registry
         if not hasattr(self.state_manager, 'launch_registry'):
             raise RuntimeError(json.dumps({
@@ -4860,12 +4894,18 @@ class IPCServer:
             f"(expected_class={expected_class}, workspace={workspace_number})"
         )
 
-        return {
+        result = {
             "status": "success",
             "launch_id": launch_id,
             "expected_class": expected_class,
             "pending_count": stats.total_pending
         }
+
+        # Feature 101: Include trace_id if pre-launch tracing is active
+        if trace_id:
+            result["trace_id"] = trace_id
+
+        return result
 
     async def _get_launch_stats(self) -> Dict[str, Any]:
         """
@@ -8248,6 +8288,61 @@ class IPCServer:
             "matcher": matcher,
             "window_id": window_id,
             "window_found": initial_container is not None,
+        }
+
+    async def _trace_start_app(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start tracing for next launch of an app.
+
+        Feature 101: Pre-launch tracing - create a pending trace that activates
+        when the specified app is launched. This allows profiling the complete
+        window lifecycle from launch intent to window appearance.
+
+        Args:
+            params: {
+                "app_name": str - Application registry name (e.g., "terminal", "code")
+                "timeout": float (optional, default 30.0) - Seconds before pending trace expires
+            }
+
+        Returns:
+            {
+                "success": bool,
+                "trace_id": str,
+                "app_name": str,
+                "status": "pending",
+                "timeout": float
+            }
+
+        Raises:
+            RuntimeError: If tracer not initialized
+            ValueError: If app_name not provided or max traces reached
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        app_name = params.get("app_name")
+        if not app_name:
+            raise ValueError("app_name parameter is required")
+
+        timeout = params.get("timeout", 30.0)
+        if not isinstance(timeout, (int, float)) or timeout <= 0:
+            raise ValueError("timeout must be a positive number")
+
+        trace_id = await tracer.start_app_trace(
+            app_name=app_name,
+            timeout=float(timeout),
+        )
+
+        logger.info(f"[Feature 101] Started app trace {trace_id} for '{app_name}' (timeout={timeout}s)")
+
+        return {
+            "success": True,
+            "trace_id": trace_id,
+            "app_name": app_name,
+            "status": "pending",
+            "timeout": timeout,
         }
 
     async def _trace_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:

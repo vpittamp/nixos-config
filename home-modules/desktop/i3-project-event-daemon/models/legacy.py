@@ -1010,6 +1010,12 @@ class PendingLaunch(BaseModel):
         description="True if this launch has been matched to a window"
     )
 
+    # Feature 101: Pre-launch tracing integration
+    trace_id: Optional[str] = Field(
+        default=None,
+        description="Associated trace ID if pre-launch tracing is active for this app"
+    )
+
     @field_validator('project_directory')
     @classmethod
     def validate_directory_exists(cls, v: Path) -> Path:

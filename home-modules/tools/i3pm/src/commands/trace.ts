@@ -6,6 +6,7 @@
  *   i3pm trace start --class ghostty     Start tracing windows matching class
  *   i3pm trace start --id 42             Start tracing specific window
  *   i3pm trace start --title "Terminal"  Start tracing by title pattern
+ *   i3pm trace start --app terminal      Start pre-launch trace for next app launch
  *   i3pm trace list                      List active traces
  *   i3pm trace show <trace_id>           Show trace timeline
  *   i3pm trace stop <trace_id>           Stop a trace
@@ -20,6 +21,14 @@ interface TraceStartResult {
   matcher: Record<string, string>;
   window_id: number | null;
   window_found: boolean;
+}
+
+interface TraceStartAppResult {
+  success: boolean;
+  trace_id: string;
+  app_name: string;
+  status: "pending";
+  timeout: number;
 }
 
 interface TraceStopResult {
@@ -59,7 +68,7 @@ USAGE:
   i3pm trace <command> [options]
 
 COMMANDS:
-  start       Start tracing a window
+  start       Start tracing a window (or pre-launch trace with --app)
   stop        Stop a trace
   list        List all traces
   show        Show trace timeline
@@ -71,6 +80,8 @@ START OPTIONS:
   --title <pattern> Window title pattern (regex)
   --pid <pid>       Process ID
   --app-id <pattern> Wayland app_id pattern (regex)
+  --app <name>      Pre-launch trace: wait for app to launch, trace from intent
+  --timeout <secs>  Timeout for --app mode (default: 30s, auto-stops if no launch)
 
 EXAMPLES:
   # Start tracing all Ghostty windows
@@ -81,6 +92,9 @@ EXAMPLES:
 
   # Start tracing by title
   i3pm trace start --title "Scratchpad"
+
+  # Pre-launch trace: wait for terminal to launch, capture full lifecycle
+  i3pm trace start --app terminal --timeout 60
 
   # List active traces
   i3pm trace list
@@ -96,7 +110,7 @@ EXAMPLES:
 
 async function startTrace(args: string[]): Promise<number> {
   const parsed = parseArgs(args, {
-    string: ["id", "class", "title", "pid", "app-id"],
+    string: ["id", "class", "title", "pid", "app-id", "app", "timeout"],
     boolean: ["json"],
     alias: { h: "help" },
   });
@@ -105,21 +119,51 @@ async function startTrace(args: string[]): Promise<number> {
     showHelp();
   }
 
-  // Build matcher from args
-  const matcher: Record<string, string> = {};
-  if (parsed.id) matcher.id = parsed.id;
-  if (parsed.class) matcher.class = parsed.class;
-  if (parsed.title) matcher.title = parsed.title;
-  if (parsed.pid) matcher.pid = parsed.pid;
-  if (parsed["app-id"]) matcher.app_id = parsed["app-id"];
-
-  if (Object.keys(matcher).length === 0) {
-    console.error("Error: At least one matcher required (--id, --class, --title, --pid, --app-id)");
-    return 1;
-  }
-
   const client = new DaemonClient();
+
   try {
+    // Feature 101: Pre-launch trace with --app option
+    if (parsed.app) {
+      const timeout = parsed.timeout ? parseFloat(parsed.timeout) : 30.0;
+      if (isNaN(timeout) || timeout <= 0) {
+        console.error("Error: --timeout must be a positive number");
+        return 1;
+      }
+
+      const result = await client.request<TraceStartAppResult>("trace.start_app", {
+        app_name: parsed.app,
+        timeout,
+      });
+
+      if (parsed.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Started pre-launch trace: ${result.trace_id}`);
+        console.log(`  App: ${result.app_name}`);
+        console.log(`  Status: ${result.status}`);
+        console.log(`  Timeout: ${result.timeout}s`);
+        console.log();
+        console.log(`  Waiting for '${result.app_name}' to launch...`);
+        console.log(`  Launch the app, then run: i3pm trace show ${result.trace_id}`);
+        console.log();
+      }
+
+      return 0;
+    }
+
+    // Standard matcher-based trace
+    const matcher: Record<string, string> = {};
+    if (parsed.id) matcher.id = parsed.id;
+    if (parsed.class) matcher.class = parsed.class;
+    if (parsed.title) matcher.title = parsed.title;
+    if (parsed.pid) matcher.pid = parsed.pid;
+    if (parsed["app-id"]) matcher.app_id = parsed["app-id"];
+
+    if (Object.keys(matcher).length === 0) {
+      console.error("Error: At least one matcher required (--id, --class, --title, --pid, --app-id, --app)");
+      return 1;
+    }
+
     const result = await client.request<TraceStartResult>("trace.start", matcher);
 
     if (parsed.json) {

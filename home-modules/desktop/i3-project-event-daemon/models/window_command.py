@@ -158,18 +158,18 @@ class CommandBatch(BaseModel):
         if not all(cmd.window_id == self.window_id for cmd in self.commands):
             raise ValueError("All commands in batch must target same window")
 
-        # Generate commands without selector (we'll add it once)
+        # Feature 101 FIX: Sway requires selector on EACH command in a semicolon chain
+        # When commands are chained with ';', the selector only applies to the first command.
+        # Each subsequent command needs its own selector to target the window.
         cmd_parts: list[str] = []
-        selector = f"[con_id={self.window_id}]"
 
         for cmd in self.commands:
+            # Each command gets its full selector
             sway_cmd = cmd.to_sway_command()
-            # Remove selector prefix if present
-            cmd_text = sway_cmd.replace(selector, "").strip()
-            cmd_parts.append(cmd_text)
+            cmd_parts.append(sway_cmd)
 
-        # Join with semicolons and add selector once
-        return f"{selector} {'; '.join(cmd_parts)}"
+        # Join with semicolons - each part has its own selector
+        return "; ".join(cmd_parts)
 
     @classmethod
     def from_window_state(

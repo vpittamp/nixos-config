@@ -3,6 +3,8 @@ Command batching service for Feature 091: Optimize i3pm Project Switching Perfor
 
 This service provides async execution of window commands in parallel batches to reduce
 project switch latency from 5.3s to under 200ms.
+
+Feature 101 Enhancement: Command execution tracing for debugging.
 """
 
 from __future__ import annotations
@@ -19,6 +21,41 @@ if TYPE_CHECKING:
     from i3ipc.aio import Connection
 
 logger = logging.getLogger(__name__)
+
+
+async def _trace_command_event(
+    window_id: int,
+    event_type: str,
+    description: str,
+    context: dict,
+) -> None:
+    """Record a command-related trace event.
+
+    Feature 101 Enhancement: Provides visibility into command execution.
+    Uses record_window_event to target only traces watching this specific window.
+    """
+    try:
+        from .window_tracer import get_tracer, TraceEventType
+
+        tracer = get_tracer()
+        if not tracer:
+            return
+
+        type_map = {
+            "command::queued": TraceEventType.COMMAND_QUEUED,
+            "command::executed": TraceEventType.COMMAND_EXECUTED,
+            "command::result": TraceEventType.COMMAND_RESULT,
+            "command::batch": TraceEventType.COMMAND_BATCH,
+        }
+        trace_type = type_map.get(event_type)
+        if not trace_type:
+            return
+
+        # Record event only for traces watching this window
+        await tracer.record_window_event(window_id, trace_type, description, context)
+    except Exception as e:
+        # Never let tracing break command execution
+        logger.debug(f"[Feature 101] Trace error (non-fatal): {e}")
 
 
 class CommandResult:
@@ -221,6 +258,18 @@ class CommandBatchService:
         start_time = datetime.now()
         start_perf = asyncio.get_event_loop().time()
 
+        # Feature 101 Enhancement: Trace batch start with full command list
+        command_types = [cmd.command_type.value for cmd in batch.commands]
+        await _trace_command_event(
+            batch.window_id,
+            "command::batch",
+            f"Batch: {len(batch.commands)} commands ({', '.join(command_types)})",
+            {
+                "commands": [cmd.to_sway_command() for cmd in batch.commands],
+                "command_types": command_types,
+            }
+        )
+
         # Execute commands sequentially (separate IPC calls)
         command_results: list[CommandResult] = []
         all_success = True
@@ -286,6 +335,14 @@ class CommandBatchService:
         command_str = cmd.to_sway_command()
         start_perf = asyncio.get_event_loop().time()
 
+        # Feature 101 Enhancement: Trace command execution
+        await _trace_command_event(
+            cmd.window_id,
+            "command::executed",
+            f"Executing: {cmd.command_type.value}",
+            {"command": command_str, "command_type": cmd.command_type.value}
+        )
+
         try:
             await self.conn.command(command_str)
             success = True
@@ -299,6 +356,19 @@ class CommandBatchService:
 
         end_perf = asyncio.get_event_loop().time()
         duration_ms = (end_perf - start_perf) * 1000
+
+        # Feature 101 Enhancement: Trace command result
+        await _trace_command_event(
+            cmd.window_id,
+            "command::result",
+            f"{'✓' if success else '✗'} {cmd.command_type.value} ({duration_ms:.1f}ms)",
+            {
+                "command": command_str,
+                "success": success,
+                "error": error,
+                "duration_ms": duration_ms,
+            }
+        )
 
         return CommandResult(
             success=success,

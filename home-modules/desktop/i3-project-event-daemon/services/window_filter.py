@@ -25,6 +25,8 @@ from ..worktree_utils import parse_mark  # Feature 101
 from .command_batch import CommandBatchService
 from .tree_cache import TreeCacheService, get_tree_cache
 from .performance_tracker import PerformanceTrackerService, get_performance_tracker
+# Feature 101: Import window tracer for visibility events
+from .window_tracer import get_tracer, TraceEventType
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +295,77 @@ async def get_window_environment(window_id: int) -> Optional[WindowEnvironment]:
     return window_env
 
 
+async def _record_visibility_trace(
+    window,
+    event_type: TraceEventType,
+    description: str,
+    context: Optional[Dict] = None
+) -> None:
+    """Record visibility change for window tracing.
+
+    Feature 101: Non-blocking trace event recording for project switch visibility changes.
+    Silently fails if tracer not initialized or no matching traces.
+
+    Args:
+        window: i3ipc container/node from tree traversal
+        event_type: TraceEventType.VISIBILITY_HIDDEN or VISIBILITY_SHOWN
+        description: Human-readable description
+        context: Additional context data
+    """
+    try:
+        tracer = get_tracer()
+        if tracer:
+            affected = await tracer.record_event(window, event_type, description, context)
+            if affected:
+                logger.debug(f"[Trace] Recorded {event_type.value} for {len(affected)} trace(s)")
+    except Exception as e:
+        # Never let tracing break normal event handling
+        logger.debug(f"[Trace] Error recording visibility event: {e}")
+
+
+async def _record_command_queued(
+    window_id: int,
+    command: WindowCommand,
+    phase: str,
+    batch_size: int = 1,
+) -> None:
+    """Record COMMAND_QUEUED trace event when a command is created.
+
+    Feature 101: Track command creation for debugging command execution flow.
+    Silently fails if tracer not initialized or no matching traces.
+
+    Args:
+        window_id: Target window ID
+        command: WindowCommand being queued
+        phase: Command phase (e.g., "hide", "restore", "restore_scratchpad", "restore_fallback")
+        batch_size: Number of commands in the batch (for restore batches)
+    """
+    try:
+        tracer = get_tracer()
+        if tracer:
+            context = {
+                "command_type": command.command_type.value,
+                "command": command.to_sway_command(),
+                "params": dict(command.params),
+                "phase": phase,
+                "batch_size": batch_size,
+            }
+
+            affected = await tracer.record_window_event(
+                window_id,
+                TraceEventType.COMMAND_QUEUED,
+                f"Command queued ({phase}): {command.command_type.value}",
+                context,
+            )
+            if affected:
+                logger.debug(
+                    f"[Feature 101] Recorded COMMAND_QUEUED for window {window_id}"
+                )
+    except Exception as e:
+        # Never let tracing break normal event handling
+        logger.debug(f"[Feature 101] Error recording COMMAND_QUEUED: {e}")
+
+
 async def filter_windows_by_project(
     conn,  # i3ipc.aio.Connection
     active_project: Optional[str],
@@ -318,6 +391,18 @@ async def filter_windows_by_project(
     # Feature 091: Performance measurement with high precision
     operation_start = time.perf_counter()
     operation_start_dt = datetime.now()
+
+    # Feature 101: Broadcast project switch event to all active traces
+    try:
+        tracer = get_tracer()
+        if tracer:
+            await tracer.broadcast_event(
+                TraceEventType.PROJECT_SWITCH,
+                f"Project switch to '{active_project or 'global mode'}'",
+                {"target_project": active_project}
+            )
+    except Exception as e:
+        logger.debug(f"[Trace] Error broadcasting project switch: {e}")
 
     # Feature 091: Use tree cache to eliminate duplicate queries
     tree_cache = get_tree_cache()
@@ -367,6 +452,8 @@ async def filter_windows_by_project(
     hide_commands: list[WindowCommand] = []
     restore_batches: list[CommandBatch] = []
     windows_to_track: list[tuple] = []  # (window_id, workspace_num, is_floating, geometry, window_project, window_class, is_original_scratchpad)
+    # Feature 101: Track windows for post-restore trace events (record AFTER commands execute)
+    windows_for_shown_trace: list[tuple] = []  # (window_id, description, context)
 
     visible_count = 0
     hidden_count = 0
@@ -440,6 +527,36 @@ async def filter_windows_by_project(
                     if workspace_tracker:
                         saved_state = await workspace_tracker.get_window_workspace(window_id)
 
+                        # Feature 101 Enhancement: Trace state loading with source attribution
+                        if saved_state:
+                            live_floating = window.floating in ["user_on", "auto_on"]
+                            saved_floating = saved_state.get("floating", False)
+
+                            # Detect state conflict (saved differs from current live state)
+                            if live_floating != saved_floating:
+                                await _record_visibility_trace(
+                                    window,
+                                    TraceEventType.STATE_LOADED,
+                                    f"State loaded (CONFLICT: live={live_floating}, saved={saved_floating})",
+                                    {
+                                        "source": "workspace_tracker",
+                                        "saved_state": saved_state,
+                                        "live_floating": live_floating,
+                                        "conflict": True,
+                                    }
+                                )
+                            else:
+                                await _record_visibility_trace(
+                                    window,
+                                    TraceEventType.STATE_LOADED,
+                                    f"State loaded (floating={saved_floating}, workspace={saved_state.get('workspace_number')})",
+                                    {
+                                        "source": "workspace_tracker",
+                                        "saved_state": saved_state,
+                                        "conflict": False,
+                                    }
+                                )
+
                     if saved_state:
                         # Feature 101: Detect scratchpad via workspace_number=0 in saved state
                         saved_ws = saved_state.get("workspace_number", 1)
@@ -475,6 +592,20 @@ async def filter_windows_by_project(
                             f"Queued restore batch for window {window_id}: workspace={workspace_num}, "
                             f"floating={is_floating}, has_geometry={geometry is not None}"
                         )
+
+                        # Feature 101: Record COMMAND_QUEUED for each command in batch
+                        for cmd in batch.commands:
+                            await _record_command_queued(
+                                window_id, cmd, phase="restore", batch_size=len(batch.commands)
+                            )
+
+                        # Feature 101: Queue trace event for AFTER restore commands execute
+                        # This captures the actual post-restore state instead of pre-restore state
+                        windows_for_shown_trace.append((
+                            window_id,
+                            f"Shown by project switch to '{active_project}' (restore to WS {workspace_num})",
+                            {"target_project": active_project, "window_project": window_project, "workspace": workspace_num, "is_floating": is_floating}
+                        ))
                     else:
                         # Feature 101: Scratchpad terminals use workspace 0 even without saved state
                         if is_scratchpad_terminal:
@@ -485,6 +616,7 @@ async def filter_windows_by_project(
                                 is_floating=True,
                                 geometry=None,
                             )
+                            phase = "restore_scratchpad"
                         else:
                             # Fallback: restore to workspace 1
                             logger.warning(f"No saved state for window {window_id}, restoring to workspace 1")
@@ -494,7 +626,22 @@ async def filter_windows_by_project(
                                 is_floating=False,
                                 geometry=None,
                             )
+                            phase = "restore_fallback"
                         restore_batches.append(batch)
+
+                        # Feature 101: Record COMMAND_QUEUED for each command in batch
+                        for cmd in batch.commands:
+                            await _record_command_queued(
+                                window_id, cmd, phase=phase, batch_size=len(batch.commands)
+                            )
+
+                        # Feature 101: Queue trace event for AFTER restore commands execute
+                        fallback_ws = 0 if is_scratchpad_terminal else 1
+                        windows_for_shown_trace.append((
+                            window_id,
+                            f"Shown by project switch to '{active_project}' (fallback restore to WS {fallback_ws})",
+                            {"target_project": active_project, "window_project": window_project, "workspace": fallback_ws, "is_floating": is_scratchpad_terminal}
+                        ))
                 else:
                     logger.debug(f"Window {window_id} already visible")
 
@@ -577,6 +724,17 @@ async def filter_windows_by_project(
                 hide_commands.append(hide_cmd)
                 hidden_count += 1
                 logger.debug(f"Queued hide command for window {window_id}")
+
+                # Feature 101: Record COMMAND_QUEUED trace event
+                await _record_command_queued(window_id, hide_cmd, phase="hide")
+
+                # Feature 101: Record trace event for visibility change
+                await _record_visibility_trace(
+                    window,
+                    TraceEventType.VISIBILITY_HIDDEN,
+                    f"Hidden by project switch to '{active_project}'",
+                    {"target_project": active_project, "window_project": window_project}
+                )
         except Exception as e:
             logger.error(f"Failed to process window {window_id}: {e}")
             error_count += 1
@@ -665,6 +823,40 @@ async def filter_windows_by_project(
         if restore_failures > 0:
             error_count += restore_failures
             logger.warning(f"[Feature 091] {restore_failures}/{len(restore_batches)} restore batches failed")
+
+    # Feature 101: Record visibility::shown trace events AFTER restore commands complete
+    # This captures the actual post-restore state instead of pre-restore state
+    if windows_for_shown_trace:
+        try:
+            tracer = get_tracer()
+            if tracer:
+                # Re-fetch the tree to get updated window states
+                tree_cache = get_tree_cache()
+                if tree_cache:
+                    # Invalidate cache to get fresh state
+                    tree_cache.invalidate("post-restore trace")
+                    updated_tree = await tree_cache.get_tree()
+                else:
+                    updated_tree = await conn.get_tree()
+
+                # Build a map of window_id to container for quick lookup
+                window_map = {w.id: w for w in updated_tree.leaves()}
+
+                for window_id, description, context in windows_for_shown_trace:
+                    window = window_map.get(window_id)
+                    if window:
+                        affected = await tracer.record_event(
+                            window,
+                            TraceEventType.VISIBILITY_SHOWN,
+                            description,
+                            context
+                        )
+                        if affected:
+                            logger.debug(f"[Feature 101] Recorded post-restore trace for window {window_id}")
+                    else:
+                        logger.debug(f"[Feature 101] Window {window_id} not found for post-restore trace")
+        except Exception as e:
+            logger.debug(f"[Feature 101] Error recording post-restore traces: {e}")
 
     # Calculate total performance
     operation_duration_ms = (time.perf_counter() - operation_start) * 1000

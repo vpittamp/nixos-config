@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.18.0";  # Feature 101: Add centralized utilities (constants.py, worktree_utils.py, repos_loader.py)
+    version = "1.19.0";  # Feature 101: Pre-launch tracing, causality tracking, timing analysis
     src = daemonSrc;
 
     installPhase = ''

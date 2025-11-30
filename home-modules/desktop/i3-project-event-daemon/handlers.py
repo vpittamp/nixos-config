@@ -982,6 +982,19 @@ async def on_window_new(
                 f"with confidence {correlation_confidence:.2f} [{confidence_level}] "
                 f"(app={matched_launch.app_name}{workspace_match_str})"
             )
+
+            # Feature 101: Record launch correlation if pre-launch tracing is active
+            if matched_launch.trace_id:
+                from .services.window_tracer import get_tracer
+                tracer = get_tracer()
+                if tracer:
+                    await tracer.record_launch_correlation(
+                        trace_id=matched_launch.trace_id,
+                        window_id=window_id,
+                        container=container,
+                        correlation_confidence=correlation_confidence,
+                    )
+                    logger.info(f"[Feature 101] Recorded launch correlation for trace {matched_launch.trace_id}")
         else:
             # No matching launch found - explicit failure (FR-008, FR-009)
             logger.warning(
@@ -2162,11 +2175,26 @@ async def on_window_move(
             project_name = i3pm_env.get("I3PM_PROJECT_NAME", "")
             app_name = i3pm_env.get("I3PM_APP_NAME", "unknown")
 
+            # Feature 101: Preserve existing floating state when window is being restored from scratchpad
+            # When restoring from scratchpad, the window is temporarily floating even if it should be tiled.
+            # The move command happens before the floating disable, so we should preserve the saved state.
+            existing_state = await workspace_tracker.get_window_workspace(window_id)
+            if existing_state:
+                # Preserve the saved floating state - don't overwrite with current (possibly transient) state
+                tracked_floating = existing_state.get("floating", is_floating)
+                logger.debug(
+                    f"[Feature 101] Preserving tracked floating state for window {window_id}: "
+                    f"current={is_floating}, tracked={tracked_floating}"
+                )
+            else:
+                # No existing state - use current state
+                tracked_floating = is_floating
+
             # Track the new workspace assignment
             await workspace_tracker.track_window(
                 window_id=window_id,
                 workspace_number=workspace_num,
-                floating=is_floating,
+                floating=tracked_floating,
                 project_name=project_name,
                 app_name=app_name,
                 window_class=window_class,
@@ -2177,7 +2205,7 @@ async def on_window_move(
 
             logger.debug(
                 f"Tracked window move: {window_id} ({window_class}) → workspace {workspace_num}, "
-                f"floating={is_floating}, project={project_name}"
+                f"floating={tracked_floating} (current={is_floating}), project={project_name}"
             )
 
     except Exception as e:
