@@ -45,6 +45,7 @@ COMMANDS:
   windows          Window state visualization
   daemon           Daemon status and event monitoring
   tree-monitor     Real-time window state event monitoring (Feature 065)
+  trace            Window tracing for debugging (Feature 101)
   layout           Workspace layout persistence (save/restore)
   rules            Window classification rules
   monitors         Workspace-to-monitor mapping configuration
@@ -74,6 +75,8 @@ EXAMPLES:
   i3pm monitor                         Launch monitoring dashboard
   i3pm apps list                       List all applications
   i3pm apps launch vscode              Launch VS Code with project context
+  i3pm trace start --class ghostty     Start tracing Ghostty windows
+  i3pm trace list                      List active traces
 
 For detailed documentation, see:
   /etc/nixos/specs/027-update-the-spec/quickstart.md
@@ -173,6 +176,14 @@ async function main(): Promise<void> {
       {
         const { treeMonitorCommand } = await import("./commands/tree-monitor.ts");
         await treeMonitorCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
+      }
+      break;
+
+    case "trace":
+      {
+        const { traceCommand } = await import("./commands/trace.ts");
+        const exitCode = await traceCommand(commandArgs.map(String));
+        Deno.exit(exitCode);
       }
       break;
 

@@ -2,6 +2,7 @@
 
 This module contains all event handlers that process i3 IPC events.
 Feature 061: Unified mark format (project:NAME:ID).
+Feature 101: Window tracing integration.
 """
 
 import asyncio
@@ -24,6 +25,55 @@ if TYPE_CHECKING:
     from .event_buffer import EventBuffer
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Feature 101: Window Tracing Integration
+# ============================================================================
+
+async def _record_trace_event(
+    container,
+    event_type: str,
+    description: str,
+    context: Optional[Dict[str, Any]] = None
+) -> None:
+    """Record event for any active window traces.
+
+    Feature 101: Non-blocking trace event recording.
+    Silently fails if tracer not initialized or no matching traces.
+
+    Args:
+        container: i3ipc container that triggered the event
+        event_type: Event type string (e.g., "window::new")
+        description: Human-readable description
+        context: Additional context data
+    """
+    try:
+        from .services.window_tracer import get_tracer, TraceEventType
+        tracer = get_tracer()
+        if tracer:
+            # Map event type string to enum
+            type_map = {
+                "window::new": TraceEventType.WINDOW_NEW,
+                "window::close": TraceEventType.WINDOW_CLOSE,
+                "window::focus": TraceEventType.WINDOW_FOCUS,
+                "window::blur": TraceEventType.WINDOW_BLUR,
+                "window::move": TraceEventType.WINDOW_MOVE,
+                "window::floating": TraceEventType.WINDOW_FLOATING,
+                "window::fullscreen": TraceEventType.WINDOW_FULLSCREEN,
+                "window::mark": TraceEventType.MARK_ADDED,
+                "project::switch": TraceEventType.PROJECT_SWITCH,
+                "visibility::hidden": TraceEventType.VISIBILITY_HIDDEN,
+                "visibility::shown": TraceEventType.VISIBILITY_SHOWN,
+                "scratchpad::move": TraceEventType.SCRATCHPAD_MOVE,
+            }
+            trace_type = type_map.get(event_type, TraceEventType.WINDOW_MOVE)
+            affected = await tracer.record_event(container, trace_type, description, context)
+            if affected:
+                logger.debug(f"[Trace] Recorded {event_type} for {len(affected)} trace(s)")
+    except Exception as e:
+        # Never let tracing break normal event handling
+        logger.debug(f"[Trace] Error recording event: {e}")
 
 
 # ============================================================================
@@ -736,6 +786,14 @@ async def on_window_new(
             "x11_window": container.window,
         },
         level="INFO"
+    )
+
+    # Feature 101: Record trace event for window creation
+    await _record_trace_event(
+        container,
+        "window::new",
+        f"Window created: {window_class} - {window_title[:30]}",
+        {"pid": getattr(container, 'pid', None)}
     )
 
     try:
@@ -1608,6 +1666,15 @@ async def on_window_mark(
         level="DEBUG"
     )
 
+    # Feature 101: Record trace event for mark changes
+    marks_str = ', '.join(container.marks) if container.marks else "none"
+    await _record_trace_event(
+        container,
+        "window::mark",
+        f"Marks changed: {marks_str}",
+        {"marks": list(container.marks) if container.marks else []}
+    )
+
     try:
         # Skip processing if performing startup scan (prevents race conditions)
         if resilient_connection and resilient_connection.is_performing_startup_scan:
@@ -1881,6 +1948,13 @@ async def on_window_close(
         level="DEBUG"
     )
 
+    # Feature 101: Record trace event for window close
+    await _record_trace_event(
+        container,
+        "window::close",
+        f"Window closed: {window_class}",
+    )
+
     try:
         # Feature 076 T033-T034: Clean up marks before removing window from tracking
         if mark_manager:
@@ -1964,6 +2038,14 @@ async def on_window_focus(
             "workspace_name": current_ws.name if current_ws else "?",
         },
         level="DEBUG"
+    )
+
+    # Feature 101: Record trace event for window focus
+    await _record_trace_event(
+        container,
+        "window::focus",
+        f"Window focused: {window_class}",
+        {"workspace": current_ws.num if current_ws else None}
     )
 
     try:
@@ -2061,6 +2143,14 @@ async def on_window_move(
                 "floating": is_floating,
             },
             level="DEBUG"
+        )
+
+        # Feature 101: Record trace event for window move
+        await _record_trace_event(
+            container,
+            "window::move",
+            f"Window moved to workspace {workspace_num}",
+            {"workspace": workspace_num, "floating": is_floating}
         )
 
         # Feature 037 T020: Update workspace tracker with new location

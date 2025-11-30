@@ -453,6 +453,18 @@ class IPCServer:
                 # Feature 101: Clear active project (return to global mode)
                 result = await self._worktree_clear(params)
 
+            # Feature 101: Window tracing for debugging
+            elif method == "trace.start":
+                result = await self._trace_start(params)
+            elif method == "trace.stop":
+                result = await self._trace_stop(params)
+            elif method == "trace.get":
+                result = await self._trace_get(params)
+            elif method == "trace.list":
+                result = await self._trace_list(params)
+            elif method == "trace.snapshot":
+                result = await self._trace_snapshot(params)
+
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
                 # Convert Project objects to array format for CLI (Feature 030)
@@ -8150,3 +8162,237 @@ class IPCServer:
         except Exception as e:
             logger.error(f"[Feature 101] worktree.clear error: {e}")
             raise
+
+    # =========================================================================
+    # Feature 101: Window Tracing for Debugging
+    # =========================================================================
+
+    async def _trace_start(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Start tracing a window.
+
+        Feature 101: Window tracing for debugging state changes.
+
+        Args:
+            params: {
+                "id": int (optional) - Window ID to trace
+                "class": str (optional) - Window class pattern (regex)
+                "title": str (optional) - Window title pattern (regex)
+                "pid": int (optional) - Process ID
+                "app_id": str (optional) - Wayland app_id pattern (regex)
+            }
+
+        Returns:
+            {
+                "success": bool,
+                "trace_id": str,
+                "matcher": dict,
+                "window_id": int (if window already found)
+            }
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        # Build matcher from params
+        matcher = {}
+        for key in ["id", "class", "title", "pid", "app_id"]:
+            if key in params and params[key] is not None:
+                matcher[key] = str(params[key])
+
+        if not matcher:
+            raise ValueError("At least one matcher criterion required (id, class, title, pid, app_id)")
+
+        # Try to find the window now if we have the tree
+        initial_container = None
+        window_id = None
+        if self.i3_connection and self.i3_connection.conn:
+            tree = await self.i3_connection.conn.get_tree()
+            for window in tree.leaves():
+                # Check if window matches
+                if "id" in matcher and window.id == int(matcher["id"]):
+                    initial_container = window
+                    window_id = window.id
+                    break
+                elif "class" in matcher:
+                    import re
+                    window_class = getattr(window, 'app_id', None) or getattr(window, 'window_class', None) or ""
+                    if re.search(matcher["class"], window_class, re.IGNORECASE):
+                        initial_container = window
+                        window_id = window.id
+                        break
+                elif "title" in matcher:
+                    import re
+                    title = window.name or ""
+                    if re.search(matcher["title"], title, re.IGNORECASE):
+                        initial_container = window
+                        window_id = window.id
+                        break
+                elif "pid" in matcher and window.pid == int(matcher["pid"]):
+                    initial_container = window
+                    window_id = window.id
+                    break
+
+        trace_id = await tracer.start_trace(
+            matcher=matcher,
+            window_id=window_id,
+            initial_container=initial_container,
+        )
+
+        logger.info(f"[Feature 101] Started trace {trace_id} with matcher {matcher}")
+
+        return {
+            "success": True,
+            "trace_id": trace_id,
+            "matcher": matcher,
+            "window_id": window_id,
+            "window_found": initial_container is not None,
+        }
+
+    async def _trace_stop(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop a window trace.
+
+        Args:
+            params: {"trace_id": str}
+
+        Returns:
+            {
+                "success": bool,
+                "trace_id": str,
+                "event_count": int,
+                "duration_seconds": float
+            }
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        trace_id = params.get("trace_id")
+        if not trace_id:
+            raise ValueError("trace_id parameter is required")
+
+        trace = await tracer.stop_trace(trace_id)
+        if not trace:
+            raise ValueError(f"Trace not found: {trace_id}")
+
+        logger.info(f"[Feature 101] Stopped trace {trace_id} ({len(trace.events)} events)")
+
+        return {
+            "success": True,
+            "trace_id": trace_id,
+            "event_count": len(trace.events),
+            "duration_seconds": trace.duration_seconds,
+        }
+
+    async def _trace_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get trace data.
+
+        Args:
+            params: {
+                "trace_id": str,
+                "format": "json" | "timeline" (default: "json"),
+                "limit": int (optional, default 50 for timeline)
+            }
+
+        Returns:
+            Full trace data or formatted timeline
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        trace_id = params.get("trace_id")
+        if not trace_id:
+            raise ValueError("trace_id parameter is required")
+
+        trace = await tracer.get_trace(trace_id)
+        if not trace:
+            raise ValueError(f"Trace not found: {trace_id}")
+
+        output_format = params.get("format", "json")
+        limit = params.get("limit", 50)
+
+        if output_format == "timeline":
+            return {
+                "success": True,
+                "trace_id": trace_id,
+                "format": "timeline",
+                "timeline": trace.format_timeline(limit=limit),
+            }
+        else:
+            return {
+                "success": True,
+                "trace_id": trace_id,
+                "format": "json",
+                "trace": trace.to_dict(),
+            }
+
+    async def _trace_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all traces.
+
+        Args:
+            params: {} (no parameters)
+
+        Returns:
+            {"traces": List of trace summaries}
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        traces = await tracer.list_traces()
+
+        return {
+            "success": True,
+            "traces": traces,
+            "count": len(traces),
+        }
+
+    async def _trace_snapshot(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Take a manual snapshot of a traced window's state.
+
+        Args:
+            params: {"trace_id": str}
+
+        Returns:
+            {"success": bool}
+        """
+        from .services.window_tracer import get_tracer
+
+        tracer = get_tracer()
+        if not tracer:
+            raise RuntimeError("Window tracer not initialized")
+
+        trace_id = params.get("trace_id")
+        if not trace_id:
+            raise ValueError("trace_id parameter is required")
+
+        trace = await tracer.get_trace(trace_id)
+        if not trace:
+            raise ValueError(f"Trace not found: {trace_id}")
+
+        if not trace.window_id or trace.window_id == 0:
+            raise ValueError("Trace has no associated window yet")
+
+        # Find the window in the tree
+        if not self.i3_connection or not self.i3_connection.conn:
+            raise RuntimeError("i3 connection not available")
+
+        tree = await self.i3_connection.conn.get_tree()
+        container = tree.find_by_id(trace.window_id)
+        if not container:
+            raise ValueError(f"Window {trace.window_id} not found in tree")
+
+        success = await tracer.take_snapshot(trace_id, container)
+
+        return {
+            "success": success,
+            "trace_id": trace_id,
+        }

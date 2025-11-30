@@ -5,8 +5,6 @@
  * JSON-RPC 2.0 client for communicating with the Python i3pm daemon
  */
 
-import * as path from "@std/path";
-
 export class DaemonError extends Error {
   constructor(message: string, public code?: number, public override cause?: Error) {
     super(message);
@@ -64,7 +62,7 @@ export class DaemonClient {
   private conn: Deno.UnixConn | null = null;
 
   constructor(socketPath?: string) {
-    // Feature 037: System service socket location (not user runtime dir)
+    // Daemon socket path at /run/i3-project-daemon/ipc.sock (system service location)
     this.socketPath = socketPath || "/run/i3-project-daemon/ipc.sock";
   }
 

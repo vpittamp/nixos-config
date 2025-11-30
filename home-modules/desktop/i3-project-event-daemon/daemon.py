@@ -337,6 +337,11 @@ class I3ProjectDaemon:
         self.ipc_server.mark_manager = self.mark_manager
         logger.info("Mark manager initialized")
 
+        # Feature 101: Initialize window tracer for debugging
+        from .services.window_tracer import init_tracer
+        self.window_tracer = init_tracer(max_traces=10)
+        logger.info("[Feature 101] Window tracer initialized (max 10 traces)")
+
         # Feature 083/084: Initialize EwwPublisher and MonitorProfileService
         self.eww_publisher = EwwPublisher()
         self.monitor_profile_service = MonitorProfileService(self.eww_publisher)
