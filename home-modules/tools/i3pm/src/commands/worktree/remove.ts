@@ -128,6 +128,22 @@ export async function worktreeRemove(args: string[]): Promise<number> {
 
   console.log(`Removed worktree: ${worktreePath}`);
 
+  // Feature 102: Auto-discover after worktree removal to update repos.json
+  // This ensures the monitoring panel and other tools reflect the removal
+  const discoverCmd = new Deno.Command("i3pm", {
+    args: ["discover"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const discoverOutput = await discoverCmd.output();
+  if (!discoverOutput.success) {
+    const stderr = new TextDecoder().decode(discoverOutput.stderr);
+    console.error("");
+    console.error("Warning: Failed to update repos.json (worktree still removed)");
+    console.error(stderr);
+  }
+
   return 0;
 }
 

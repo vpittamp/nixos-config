@@ -97,6 +97,23 @@ export async function worktreeCreate(args: string[]): Promise<number> {
   }
 
   console.log(`Created worktree at: ${worktreePath}`);
+
+  // Feature 102: Auto-discover after worktree creation to update repos.json
+  // This ensures the monitoring panel and other tools see the new worktree immediately
+  const discoverCmd = new Deno.Command("i3pm", {
+    args: ["discover"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const discoverOutput = await discoverCmd.output();
+  if (!discoverOutput.success) {
+    const stderr = new TextDecoder().decode(discoverOutput.stderr);
+    console.error("");
+    console.error("Warning: Failed to update repos.json (worktree still created)");
+    console.error(stderr);
+  }
+
   console.log("");
   console.log(`To switch to this worktree:`);
   console.log(`  cd ${worktreePath}`);
