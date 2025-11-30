@@ -6354,7 +6354,7 @@ in
         padding: 2px 6px;
         margin: 0 2px;
         border-radius: 4px;
-        transition: all 150ms ease;
+        /* transition not supported in GTK CSS */
         background-color: transparent;
       }
 
@@ -6369,7 +6369,7 @@ in
       .env-expand-icon {
         font-size: 12px;
         color: ${mocha.teal};
-        transition: transform 150ms ease;
+        /* transition not supported in GTK CSS */
       }
 
       .env-expand-trigger:hover .env-expand-icon {
@@ -9056,7 +9056,7 @@ in
 
       .traces-empty {
         padding: 40px 20px;
-        text-align: center;
+        /* text-align not supported in GTK CSS - use :halign in yuck instead */
       }
 
       .traces-empty .empty-icon {
