@@ -3087,7 +3087,7 @@ in
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
-      (defvar hover_worktree_name "")              ;; Feature 102: Currently hovered worktree qualified name
+      ;; Feature 102: Removed hover_worktree_name - now using CSS :hover for stability in nested for loops
       ;; Feature 102: Worktree delete dialog state
       (defvar worktree_delete_dialog_visible false)
       (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
@@ -4184,19 +4184,18 @@ in
       ;; Feature 100: Discovered worktree card (nested under repo)
       ;; Feature 101: Click to switch to worktree context for app launching
       ;; Feature 102: Discovered worktree card with hover actions for delete
+      ;; Note: Uses CSS :hover instead of onhover/onhoverlost for stability in nested for loops
       (defwidget discovered-worktree-card [worktree]
-        (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
-          (box
-            :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
-            :orientation "h"
-            :space-evenly false
-            ;; Main content - clickable to switch
-            (eventbox
-              :cursor "pointer"
-              :hexpand true
-              :onclick "i3pm worktree switch ''${worktree.qualified_name}"
+        (box
+          :class {"worktree-card-wrapper" + (worktree.is_main ? " is-main-worktree" : "")}
+          (eventbox
+            :cursor "pointer"
+            :onclick "i3pm worktree switch ''${worktree.qualified_name}"
+            (box
+              :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
+              :orientation "h"
+              :space-evenly false
+              ;; Main content
               (box
                 :orientation "h"
                 :space-evenly false
@@ -4238,34 +4237,33 @@ in
                     :limit-width 30
                     :truncate true
                     :text "''${worktree.directory_display}"
-                    :tooltip "''${worktree.path}"))))
-            ;; Feature 102: Action buttons (visible on hover, not for main worktree)
-            (box
-              :class "worktree-action-bar"
-              :orientation "h"
-              :space-evenly false
-              :visible {hover_worktree_name == worktree.qualified_name && !worktree.is_main}
-              ;; Delete button with confirmation
-              (eventbox
-                :cursor "pointer"
-                :onclick "worktree-delete-open ''${worktree.qualified_name} ''${worktree.branch} ''${worktree.git_is_dirty}"
-                :tooltip "Delete worktree"
-                (label :class "action-btn action-delete" :text "󰆴")))
-            ;; Status badges
-            (box
-              :class "worktree-badges"
-              :orientation "h"
-              :space-evenly false
-              (label
-                :class "badge badge-active"
-                :visible {worktree.is_active}
-                :text "●"
-                :tooltip "Active worktree")
-              (label
-                :class "badge badge-main"
-                :visible {worktree.is_main}
-                :text "M"
-                :tooltip "Main worktree")))))
+                    :tooltip "''${worktree.path}")))
+              ;; Feature 102: Action buttons (CSS hover, hidden for main worktree via wrapper class)
+              (box
+                :class "worktree-action-bar"
+                :orientation "h"
+                :space-evenly false
+                ;; Delete button with confirmation
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "worktree-delete-open ''${worktree.qualified_name} ''${worktree.branch} ''${worktree.git_is_dirty}"
+                  :tooltip "Delete worktree"
+                  (label :class "action-btn action-delete" :text "󰆴")))
+              ;; Status badges
+              (box
+                :class "worktree-badges"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "badge badge-active"
+                  :visible {worktree.is_active}
+                  :text "●"
+                  :tooltip "Active worktree")
+                (label
+                  :class "badge badge-main"
+                  :visible {worktree.is_main}
+                  :text "M"
+                  :tooltip "Main worktree"))))))
 
       ;; Feature 099 T012: Repository project card with expand/collapse toggle, worktree count badge
       (defwidget repository-project-card [project]
@@ -8383,6 +8381,25 @@ in
       }
 
       /* Worktree Card Styles */
+      /* Feature 102: CSS-based hover for action buttons (more stable than Eww onhover in nested for loops) */
+      .worktree-card-wrapper {
+        /* Wrapper for CSS hover detection */
+      }
+
+      .worktree-card-wrapper .worktree-action-bar {
+        opacity: 0;
+        transition: opacity 150ms ease-in-out;
+      }
+
+      .worktree-card-wrapper:hover .worktree-action-bar {
+        opacity: 1;
+      }
+
+      /* Hide action bar for main worktree (cannot delete) */
+      .worktree-card-wrapper.is-main-worktree .worktree-action-bar {
+        display: none;
+      }
+
       .worktree-card {
         background-color: rgba(49, 50, 68, 0.3);
         border: 1px solid ${mocha.overlay0};
