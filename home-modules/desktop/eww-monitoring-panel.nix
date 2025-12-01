@@ -3087,7 +3087,8 @@ in
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
-      ;; Feature 102: Removed hover_worktree_name - now using CSS :hover for stability in nested for loops
+      ;; Feature 102: Worktree hover state (using Eww events instead of CSS :hover for nested for loop compatibility)
+      (defvar hover_worktree_name "")           ;; Qualified name of currently hovered worktree
       ;; Feature 102: Worktree delete dialog state
       (defvar worktree_delete_dialog_visible false)
       (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
@@ -4184,13 +4185,15 @@ in
       ;; Feature 100: Discovered worktree card (nested under repo)
       ;; Feature 101: Click to switch to worktree context for app launching
       ;; Feature 102: Discovered worktree card with hover actions for delete
-      ;; Note: Uses CSS :hover instead of onhover/onhoverlost for stability in nested for loops
+      ;; Note: Using Eww onhover/onhoverlost because CSS :hover doesn't work with nested eventbox
       (defwidget discovered-worktree-card [worktree]
         (box
           :class {"worktree-card-wrapper" + (worktree.is_main ? " is-main-worktree" : "")}
           (eventbox
             :cursor "pointer"
             :onclick "i3pm worktree switch ''${worktree.qualified_name}"
+            :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
+            :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
             (box
               :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
               :orientation "h"
@@ -4238,11 +4241,12 @@ in
                     :truncate true
                     :text "''${worktree.directory_display}"
                     :tooltip "''${worktree.path}")))
-              ;; Feature 102: Action buttons (CSS hover, hidden for main worktree via wrapper class)
+              ;; Feature 102: Action buttons (visible on hover, hidden for main worktree)
               (box
-                :class "worktree-action-bar"
+                :class {"worktree-action-bar" + (hover_worktree_name == worktree.qualified_name && !worktree.is_main ? " visible" : "")}
                 :orientation "h"
                 :space-evenly false
+                :halign "end"
                 ;; Delete button with confirmation
                 (eventbox
                   :cursor "pointer"
@@ -8381,32 +8385,40 @@ in
       }
 
       /* Worktree Card Styles */
-      /* Feature 102: CSS-based hover for action buttons (more stable than Eww onhover in nested for loops) */
+      /* Feature 102: Eww-based hover for action buttons (CSS :hover doesn't work with nested eventbox) */
       .worktree-card-wrapper {
-        /* Wrapper for CSS hover detection */
+        /* Wrapper for worktree card styling */
       }
 
-      .worktree-card-wrapper .worktree-action-bar {
+      /* Worktree action bar - hidden by default, visible on hover via Eww variable */
+      .worktree-action-bar {
         opacity: 0;
         transition: opacity 150ms ease-in-out;
+        padding-left: 8px;
       }
 
-      .worktree-card-wrapper:hover .worktree-action-bar {
+      .worktree-action-bar.visible {
         opacity: 1;
       }
 
-      /* Hide action bar for main worktree (cannot delete) */
-      /* Note: GTK CSS doesn't support display:none, use opacity+size instead */
-      .worktree-card-wrapper.is-main-worktree .worktree-action-bar {
-        opacity: 0;
-        min-width: 0;
-        min-height: 0;
-        padding: 0;
-        margin: 0;
+      .worktree-action-bar .action-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        margin: 0 2px;
+        border-radius: 4px;
+        transition: background-color 0.15s ease;
       }
 
-      .worktree-card-wrapper.is-main-worktree:hover .worktree-action-bar {
-        opacity: 0; /* Keep hidden even on hover for main worktree */
+      .worktree-action-bar .action-btn:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .worktree-action-bar .action-delete {
+        color: ${mocha.red};
+      }
+
+      .worktree-action-bar .action-delete:hover {
+        background-color: rgba(243, 139, 168, 0.2);
       }
 
       .worktree-card {
