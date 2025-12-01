@@ -656,11 +656,23 @@ async def filter_windows_by_project(
                     # Feature 103: Scratchpad terminals identified by unified mark app_name
                     # Mark format: scoped:scratchpad-terminal:PROJECT:WINDOW_ID
                     is_scratchpad_terminal_hide = window_app_name == "scratchpad-terminal"
-                    is_original_scratchpad = (workspace.name == "__i3_scratch") and not is_scratchpad_terminal_hide
                     is_in_scratchpad = workspace.name == "__i3_scratch"
 
                     # Feature 038 FIX: Preserve original state if already tracked
                     saved_state = await workspace_tracker.get_window_workspace(window_id)
+
+                    # Feature 103: Preserve original_scratchpad from saved state if exists
+                    # IMPORTANT: Only mark as original_scratchpad if:
+                    # 1. Window is currently in scratchpad AND
+                    # 2. No saved state exists (first time seeing this window in scratchpad) AND
+                    # 3. It's not a scratchpad-terminal (those are managed separately)
+                    # This prevents corruption when windows are hidden due to project switch
+                    if saved_state:
+                        # Preserve existing original_scratchpad value
+                        is_original_scratchpad = saved_state.get("original_scratchpad", False)
+                    else:
+                        # First time tracking - set based on current location
+                        is_original_scratchpad = is_in_scratchpad and not is_scratchpad_terminal_hide
 
                     # Feature 103: Deterministic workspace tracking
                     # Scratchpad-terminal windows ALWAYS use workspace 0 (scratchpad home)
