@@ -4187,7 +4187,7 @@ in
       (defwidget discovered-worktree-card [worktree]
         (eventbox
           :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='''"
           (box
             :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
             :orientation "h"
