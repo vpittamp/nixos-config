@@ -6127,11 +6127,11 @@ in
       ;; Feature 102: Added source indicator (T015-T016), trace indicator (T028), causality visualization (T036-T038)
       (defwidget event-card [event]
         (box
-          :class {"event-card event-category-''${event.category}" + (event.source == "i3pm" ? " event-source-i3pm" : " event-source-sway") + ((event.trace_id ?: "") != "" ? " event-has-trace" : "") + ((event.correlation_id ?: "") != "" ? " event-in-chain" : "") + ((event.causality_depth ?: 0) > 0 ? " event-child-depth-''${event.causality_depth ?: 0}" : "")}
+          :class {"event-card event-category-" + event.category + (event.source == "i3pm" ? " event-source-i3pm" : " event-source-sway") + ((event.trace_id ?: "") != "" ? " event-has-trace" : "") + ((event.correlation_id ?: "") != "" ? " event-in-chain" : "") + ((event.causality_depth ?: 0) > 0 ? " event-child-depth-" + (event.causality_depth ?: 0) : "")}
           :orientation "h"
           :space-evenly false
           ;; Feature 102 (T037): Indentation for causality depth
-          :style "margin-left: ''${(event.causality_depth ?: 0) * 16}px;"
+          :style {"margin-left: " + ((event.causality_depth ?: 0) * 16) + "px;"}
           ;; Feature 102 (T036): Causality chain indicator
           (box
             :class "event-chain-indicator"
@@ -6141,18 +6141,18 @@ in
           ;; Feature 102: Source indicator badge (T016)
           (label
             :class {"event-source-badge " + (event.source == "i3pm" ? "source-i3pm" : "source-sway")}
-            :tooltip "''${event.source == 'i3pm' ? 'i3pm internal event' : 'Sway IPC event'}"
-            :text "''${event.source == 'i3pm' ? '󱂬' : '󰌪'}")
+            :tooltip {event.source == 'i3pm' ? 'i3pm internal event' : 'Sway IPC event'}
+            :text {event.source == 'i3pm' ? '󱂬' : '󰌪'})
           ;; Feature 102 (T028-T030): Trace indicator icon - click to navigate to Traces tab
           ;; Feature 102 T066: Show evicted indicator if trace no longer in buffer
           (eventbox
             :visible {(event.trace_id ?: "") != ""}
             :cursor "pointer"
-            :onclick "${navigateToTraceScript} ''${event.trace_id ?: \"\"} &"
-            :tooltip {"''${(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: \"\")}"}
+            :onclick {"${navigateToTraceScript} " + (event.trace_id ?: "") + " &"}
+            :tooltip {(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: "")}
             (label
               :class {"event-trace-indicator" + ((event.trace_evicted ?: false) ? " trace-evicted" : "")}
-              :text {"''${(event.trace_evicted ?: false) ? '󰈄' : '󰈙'}"}))
+              :text {(event.trace_evicted ?: false) ? '󰈄' : '󰈙'}))
           ;; Feature 102 T067: Orphaned event indicator (child without visible parent)
           (label
             :class "event-orphaned-indicator"
@@ -6865,7 +6865,7 @@ in
         box-shadow: 0 0 8px rgba(250, 179, 135, 0.6),
                     0 0 16px rgba(250, 179, 135, 0.3),
                     inset 0 1px 0 rgba(255, 255, 255, 0.2);
-        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+        /* GTK CSS doesn't support text-shadow */
       }
 
       /* Feature 095: Working state - animated spinner with cool teal glow */
@@ -6877,9 +6877,8 @@ in
                     0 0 20px rgba(148, 226, 213, 0.4),
                     0 0 30px rgba(148, 226, 213, 0.2),
                     inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+        /* GTK CSS doesn't support text-shadow or letter-spacing */
         font-size: 11px;
-        letter-spacing: 1px;
       }
 
       /* JSON Expand Trigger Icon - Intentional hover target */
@@ -9112,7 +9111,7 @@ in
         font-size: 12px;
         font-weight: bold;
         color: ${mocha.subtext0};
-        letter-spacing: 0.5px;
+        /* GTK CSS doesn't support letter-spacing */
         margin-bottom: 8px;
         margin-left: 4px;
       }
@@ -9516,8 +9515,8 @@ in
         padding: 6px 12px;
         margin: 4px 8px;
         border-radius: 4px;
-        background-color: alpha(${mocha.yellow}, 0.1);
-        border: 1px solid alpha(${mocha.yellow}, 0.3);
+        background-color: rgba(249, 226, 175, 0.1);
+        border: 1px solid rgba(249, 226, 175, 0.3);
       }
 
       .burst-badge {
@@ -9613,21 +9612,21 @@ in
 
       .event-source-badge.source-i3pm {
         color: ${mocha.peach};
-        background-color: alpha(${mocha.peach}, 0.15);
+        background-color: rgba(250, 179, 135, 0.15);
       }
 
       .event-source-badge.source-sway {
         color: ${mocha.blue};
-        background-color: alpha(${mocha.blue}, 0.1);
+        background-color: rgba(137, 180, 250, 0.1);
       }
 
       /* Feature 102: i3pm event card distinction (T015) */
       .event-card.event-source-i3pm {
-        background-color: alpha(${mocha.peach}, 0.05);
+        background-color: rgba(250, 179, 135, 0.05);
       }
 
       .event-card.event-source-i3pm:hover {
-        background-color: alpha(${mocha.peach}, 0.1);
+        background-color: rgba(250, 179, 135, 0.1);
       }
 
       /* Feature 102 (T028): Trace indicator icon styles */
@@ -9665,12 +9664,12 @@ in
 
       .event-duration-badge.duration-slow {
         color: ${mocha.yellow};
-        background-color: alpha(${mocha.yellow}, 0.2);
+        background-color: rgba(249, 226, 175, 0.2);
       }
 
       .event-duration-badge.duration-critical {
         color: ${mocha.red};
-        background-color: alpha(${mocha.red}, 0.2);
+        background-color: rgba(243, 139, 168, 0.2);
       }
 
       /* Highlight events that are part of a trace */
@@ -9683,18 +9682,19 @@ in
         background-color: ${mocha.lavender};
         border-radius: 1px;
         margin-right: 8px;
-        min-height: 100%;
+        /* GTK CSS doesn't support min-height: 100% - use fixed height */
+        min-height: 20px;
       }
 
       /* Feature 102 (T037): Causality chain event styling */
       .event-card.event-in-chain {
         border-left: 2px solid ${mocha.lavender};
-        transition: background-color 0.2s ease;
+        /* GTK CSS doesn't support transition */
       }
 
       /* Feature 102 (T038): Hover highlighting for causality chain */
       .event-card.event-in-chain:hover {
-        background-color: alpha(${mocha.lavender}, 0.15);
+        background-color: rgba(180, 190, 254, 0.15);
       }
 
       /* Feature 102 (T037): Child event depth indicators */
@@ -9804,7 +9804,7 @@ in
 
       /* Feature 102 T053: Sort controls */
       .sort-controls {
-        margin-left: auto;
+        /* GTK CSS doesn't support margin-left: auto; use hexpand on sibling instead */
         padding-left: 12px;
       }
 
@@ -9882,7 +9882,7 @@ in
       /* Feature 102: i3pm filter category styling (T014) */
       .i3pm-events-category {
         border-color: ${mocha.peach};
-        background-color: alpha(${mocha.peach}, 0.05);
+        background-color: rgba(250, 179, 135, 0.05);
       }
 
       .i3pm-title {
@@ -9924,7 +9924,7 @@ in
 
       /* Feature 102 T059: Template selector dropdown */
       .template-selector-container {
-        position: relative;
+        /* GTK CSS doesn't support position: relative */
         margin-right: 8px;
       }
 
@@ -9950,9 +9950,7 @@ in
       }
 
       .template-dropdown {
-        position: absolute;
-        top: 100%;
-        right: 0;
+        /* GTK CSS doesn't support position: absolute, top, right, z-index */
         margin-top: 4px;
         background-color: ${mocha.surface0};
         border: 1px solid ${mocha.overlay0};
@@ -9960,7 +9958,6 @@ in
         padding: 4px;
         min-width: 250px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        z-index: 100;
       }
 
       .template-item {
@@ -10199,17 +10196,10 @@ in
         color: ${mocha.lavender};
       }
 
-      /* Feature 102 (T031): Highlight animation for navigation */
+      /* Feature 102 (T031): Highlight for navigation (GTK CSS doesn't support keyframes) */
       .trace-card.trace-highlight {
-        animation: highlight-pulse 2s ease-out;
         border: 2px solid ${mocha.mauve};
-        background-color: alpha(${mocha.mauve}, 0.15);
-      }
-
-      @keyframes highlight-pulse {
-        0% { background-color: alpha(${mocha.mauve}, 0.3); }
-        50% { background-color: alpha(${mocha.mauve}, 0.15); }
-        100% { background-color: alpha(${mocha.mauve}, 0.05); }
+        background-color: rgba(203, 166, 247, 0.15);
       }
 
       .trace-events-panel {
