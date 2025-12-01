@@ -3087,7 +3087,7 @@ in
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
       (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
-      (defvar hover_worktree_name "\"\"")         ;; Feature 102: Currently hovered worktree qualified name
+      (defvar hover_worktree_name "")              ;; Feature 102: Currently hovered worktree qualified name
       ;; Feature 102: Worktree delete dialog state
       (defvar worktree_delete_dialog_visible false)
       (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
@@ -4186,8 +4186,8 @@ in
       ;; Feature 102: Discovered worktree card with hover actions for delete
       (defwidget discovered-worktree-card [worktree]
         (eventbox
-          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='\\\"''${worktree.qualified_name}\\\"'"
-          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='\\\"\\\"'"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''${worktree.qualified_name}"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name=''"
           (box
             :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
             :orientation "h"
@@ -4244,7 +4244,7 @@ in
               :class "worktree-action-bar"
               :orientation "h"
               :space-evenly false
-              :visible {hover_worktree_name == "\"" + worktree.qualified_name + "\"" && !worktree.is_main}
+              :visible {hover_worktree_name == worktree.qualified_name && !worktree.is_main}
               ;; Delete button with confirmation
               (eventbox
                 :cursor "pointer"
