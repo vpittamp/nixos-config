@@ -342,6 +342,56 @@ class I3ProjectDaemon:
         self.window_tracer = init_tracer(max_traces=10)
         logger.info("[Feature 101] Window tracer initialized (max 10 traces)")
 
+        # Feature 102: Set tracer reference on event buffer for copy-on-evict
+        if self.event_buffer and self.window_tracer:
+            self.event_buffer.set_tracer(self.window_tracer)
+            logger.info("[Feature 102] Event buffer linked to window tracer for copy-on-evict")
+
+        # Feature 102: Initialize correlation service for causality tracking
+        from .services.correlation_service import init_correlation_service
+        self.correlation_service = init_correlation_service()
+        logger.info("[Feature 102] Correlation service initialized for causality tracking")
+
+        # Feature 102: Initialize output event service for state diffing
+        from .services.output_event_service import init_output_event_service
+        self.output_event_service = init_output_event_service()
+        # Initialize with current output state
+        await self.output_event_service.initialize(self.connection.conn)
+        logger.info("[Feature 102] Output event service initialized with current output state")
+
+        # Feature 102: Set up command event callback for Log tab visibility (T018-T021)
+        from .services.command_batch import set_event_callback
+        async def _publish_command_event(event_type: str, context: dict) -> None:
+            """Publish command events to EventBuffer for Log tab display."""
+            if not self.event_buffer:
+                return
+            try:
+                from .models import EventEntry
+                from datetime import datetime
+
+                entry = EventEntry(
+                    event_id=self.event_buffer.event_counter,
+                    event_type=event_type,
+                    timestamp=datetime.now(),
+                    source="i3pm",
+                    window_id=context.get("window_id"),
+                    correlation_id=context.get("correlation_id"),
+                    causality_depth=context.get("causality_depth", 0),
+                    command_text=context.get("command"),
+                    command_duration_ms=context.get("duration_ms"),
+                    command_success=context.get("success"),
+                    command_error_msg=context.get("error"),
+                    command_batch_count=context.get("batch_count"),
+                    payload=context,
+                )
+                await self.event_buffer.add_event(entry)
+                logger.debug(f"[Feature 102] Published {event_type} to EventBuffer")
+            except Exception as e:
+                logger.warning(f"[Feature 102] Failed to publish command event: {e}")
+
+        set_event_callback(_publish_command_event)
+        logger.info("[Feature 102] Command event callback set for EventBuffer publishing")
+
         # Feature 083/084: Initialize EwwPublisher and MonitorProfileService
         self.eww_publisher = EwwPublisher()
         self.monitor_profile_service = MonitorProfileService(self.eww_publisher)

@@ -390,8 +390,24 @@ class Event(BaseModel):
     icon: str  # Nerd Font icon for event type
     color: str  # Catppuccin Mocha color hex code
 
-    # Categorization
-    category: Literal["window", "workspace", "output", "binding", "mode", "system"]
+    # Feature 102: Event source indicator (T017)
+    source: Literal["sway", "i3pm"] = "sway"  # Event source (sway IPC or i3pm internal)
+
+    # Categorization - Feature 102: Added i3pm categories (T017)
+    category: Literal["window", "workspace", "output", "binding", "mode", "system",
+                      "project", "visibility", "scratchpad", "launch", "state", "command", "trace"]
+
+    # Feature 102 (T028): Trace cross-reference
+    trace_id: Optional[str] = None  # Active trace ID if event is part of a trace
+    correlation_id: Optional[str] = None  # Causality chain identifier
+    causality_depth: int = 0  # Nesting depth in causality chain
+
+    # Feature 102 T066-T067: Cross-reference validity indicators
+    trace_evicted: bool = False  # True if trace_id references a trace no longer in buffer
+    parent_missing: bool = False  # True if correlation_id set but parent event not in current view
+
+    # Feature 102 T052: Event performance metrics
+    processing_duration_ms: float = 0.0  # Event handler processing time (daemon events only)
 
     # Filtering support
     searchable_text: str  # Concatenated text for search
@@ -410,11 +426,25 @@ class EventsViewData(BaseModel):
     # Event data
     events: List[Event] = Field(default_factory=list)
 
+    # Feature 102 T053: Events sorted by duration (slowest first) for sort-by-duration UI
+    events_by_duration: List[Event] = Field(default_factory=list)
+
     # Metadata
     event_count: int = 0  # Total events in buffer
     filtered_count: Optional[int] = None  # Count after filtering
     oldest_timestamp: Optional[float] = None
     newest_timestamp: Optional[float] = None
+
+    # Feature 102 T054: Aggregate performance statistics
+    avg_duration_ms: float = 0.0  # Average processing time across events
+    slow_event_count: int = 0  # Events with duration > 100ms
+    critical_event_count: int = 0  # Events with duration > 500ms
+
+    # Feature 102 T064-T065: Burst handling statistics (from daemon EventBuffer)
+    burst_active: bool = False  # Currently in burst mode (>100 events/sec)
+    burst_collapsed_current: int = 0  # Events collapsed in current burst
+    total_bursts: int = 0  # Total burst periods detected
+    total_collapsed: int = 0  # Total events collapsed across all bursts
 
     # System state
     daemon_available: bool = True  # i3pm daemon reachability
@@ -484,39 +514,119 @@ class EventBuffer:
         """Get maximum buffer capacity."""
         return self._max_size
 
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get aggregate performance statistics for events in buffer.
+
+        Feature 102 T054: Calculate average duration and count slow events.
+
+        Returns:
+            Dict with avg_duration_ms, slow_event_count, critical_event_count
+        """
+        events = list(self._buffer)
+        if not events:
+            return {
+                "avg_duration_ms": 0.0,
+                "slow_event_count": 0,
+                "critical_event_count": 0,
+            }
+
+        # Calculate average duration (only for events with non-zero duration)
+        durations = [e.processing_duration_ms for e in events if e.processing_duration_ms > 0]
+        avg_duration = sum(durations) / len(durations) if durations else 0.0
+
+        # Count slow events (>100ms) and critical events (>500ms)
+        slow_count = sum(1 for e in events if e.processing_duration_ms > 100)
+        critical_count = sum(1 for e in events if e.processing_duration_ms > 500)
+
+        return {
+            "avg_duration_ms": round(avg_duration, 2),
+            "slow_event_count": slow_count,
+            "critical_event_count": critical_count,
+        }
+
 
 # Event icon mapping with Nerd Font icons and Catppuccin Mocha colors
+# Feature 102: Added i3pm internal events with distinct source indicator
 EVENT_ICONS = {
-    # Window events
-    "window::new": {"icon": "󰖲", "color": "#89b4fa"},  # Blue
-    "window::close": {"icon": "󰖶", "color": "#f38ba8"},  # Red
-    "window::focus": {"icon": "󰋁", "color": "#74c7ec"},  # Sapphire
-    "window::move": {"icon": "󰁔", "color": "#fab387"},  # Peach
-    "window::floating": {"icon": "󰉈", "color": "#f9e2af"},  # Yellow
-    "window::fullscreen_mode": {"icon": "󰊓", "color": "#cba6f7"},  # Mauve
-    "window::title": {"icon": "󰓹", "color": "#a6adc8"},  # Subtext
-    "window::mark": {"icon": "󰃀", "color": "#94e2d5"},  # Teal
-    "window::urgent": {"icon": "󰀪", "color": "#f38ba8"},  # Red
+    # Window events (Sway)
+    "window::new": {"icon": "󰖲", "color": "#89b4fa", "source": "sway"},  # Blue
+    "window::close": {"icon": "󰖶", "color": "#f38ba8", "source": "sway"},  # Red
+    "window::focus": {"icon": "󰋁", "color": "#74c7ec", "source": "sway"},  # Sapphire
+    "window::blur": {"icon": "󰋀", "color": "#6c7086", "source": "sway"},  # Overlay - Feature 102
+    "window::move": {"icon": "󰁔", "color": "#fab387", "source": "sway"},  # Peach
+    "window::floating": {"icon": "󰉈", "color": "#f9e2af", "source": "sway"},  # Yellow
+    "window::fullscreen_mode": {"icon": "󰊓", "color": "#cba6f7", "source": "sway"},  # Mauve
+    "window::title": {"icon": "󰓹", "color": "#a6adc8", "source": "sway"},  # Subtext
+    "window::mark": {"icon": "󰃀", "color": "#94e2d5", "source": "sway"},  # Teal
+    "window::urgent": {"icon": "󰀪", "color": "#f38ba8", "source": "sway"},  # Red
 
-    # Workspace events
-    "workspace::focus": {"icon": "󱂬", "color": "#94e2d5"},  # Teal
-    "workspace::init": {"icon": "󰐭", "color": "#a6e3a1"},  # Green
-    "workspace::empty": {"icon": "󰭀", "color": "#6c7086"},  # Overlay
-    "workspace::move": {"icon": "󰁔", "color": "#fab387"},  # Peach
-    "workspace::rename": {"icon": "󰑕", "color": "#89dceb"},  # Sky
-    "workspace::urgent": {"icon": "󰀪", "color": "#f38ba8"},  # Red
-    "workspace::reload": {"icon": "󰑓", "color": "#a6e3a1"},  # Green
+    # Workspace events (Sway)
+    "workspace::focus": {"icon": "󱂬", "color": "#94e2d5", "source": "sway"},  # Teal
+    "workspace::init": {"icon": "󰐭", "color": "#a6e3a1", "source": "sway"},  # Green
+    "workspace::empty": {"icon": "󰭀", "color": "#6c7086", "source": "sway"},  # Overlay
+    "workspace::move": {"icon": "󰁔", "color": "#fab387", "source": "sway"},  # Peach
+    "workspace::rename": {"icon": "󰑕", "color": "#89dceb", "source": "sway"},  # Sky
+    "workspace::urgent": {"icon": "󰀪", "color": "#f38ba8", "source": "sway"},  # Red
+    "workspace::reload": {"icon": "󰑓", "color": "#a6e3a1", "source": "sway"},  # Green
 
-    # Output events
-    "output::unspecified": {"icon": "󰍹", "color": "#cba6f7"},  # Mauve
+    # Output events (Sway - enhanced with Feature 102)
+    "output::unspecified": {"icon": "󰍹", "color": "#cba6f7", "source": "sway"},  # Mauve
+    "output::connected": {"icon": "󰍹", "color": "#a6e3a1", "source": "sway"},  # Green - Feature 102
+    "output::disconnected": {"icon": "󰍺", "color": "#f38ba8", "source": "sway"},  # Red - Feature 102
+    "output::profile_changed": {"icon": "󰄫", "color": "#89dceb", "source": "sway"},  # Sky - Feature 102
 
-    # Binding/mode events
-    "binding::run": {"icon": "󰌌", "color": "#f9e2af"},  # Yellow
-    "mode::change": {"icon": "󰘧", "color": "#89dceb"},  # Sky
+    # Binding/mode events (Sway)
+    "binding::run": {"icon": "󰌌", "color": "#f9e2af", "source": "sway"},  # Yellow
+    "mode::change": {"icon": "󰘧", "color": "#89dceb", "source": "sway"},  # Sky
 
-    # System events
-    "shutdown::exit": {"icon": "󰚌", "color": "#f38ba8"},  # Red
-    "tick::manual": {"icon": "󰥔", "color": "#6c7086"},  # Overlay
+    # System events (Sway)
+    "shutdown::exit": {"icon": "󰚌", "color": "#f38ba8", "source": "sway"},  # Red
+    "tick::manual": {"icon": "󰥔", "color": "#6c7086", "source": "sway"},  # Overlay
+
+    # =========================================================================
+    # Feature 102: i3pm Internal Events
+    # These events are generated by the i3pm daemon, not raw Sway IPC
+    # All use Peach (#fab387) or Mauve (#cba6f7) for i3pm distinction
+    # =========================================================================
+
+    # Project events (i3pm)
+    "project::switch": {"icon": "󰒍", "color": "#fab387", "source": "i3pm"},  # Peach - project switch
+    "project::clear": {"icon": "󰆴", "color": "#fab387", "source": "i3pm"},  # Peach - clear project
+
+    # Visibility events (i3pm)
+    "visibility::hidden": {"icon": "󰈈", "color": "#cba6f7", "source": "i3pm"},  # Mauve - window hidden
+    "visibility::shown": {"icon": "󰈉", "color": "#a6e3a1", "source": "i3pm"},  # Green - window shown
+    "scratchpad::move": {"icon": "󰘓", "color": "#cba6f7", "source": "i3pm"},  # Mauve - scratchpad move
+
+    # Command events (i3pm - Feature 102)
+    "command::queued": {"icon": "󰒲", "color": "#89dceb", "source": "i3pm"},  # Sky - queued
+    "command::executed": {"icon": "󰑮", "color": "#a6e3a1", "source": "i3pm"},  # Green - executed
+    "command::result": {"icon": "󰄬", "color": "#94e2d5", "source": "i3pm"},  # Teal - result
+    "command::batch": {"icon": "󱁤", "color": "#f9e2af", "source": "i3pm"},  # Yellow - batch
+
+    # Launch events (i3pm)
+    "launch::intent": {"icon": "󰐊", "color": "#89b4fa", "source": "i3pm"},  # Blue - intent
+    "launch::notification": {"icon": "󰗗", "color": "#89dceb", "source": "i3pm"},  # Sky - notification
+    "launch::env_injected": {"icon": "󰆼", "color": "#94e2d5", "source": "i3pm"},  # Teal - env injected
+    "launch::correlated": {"icon": "󰄾", "color": "#a6e3a1", "source": "i3pm"},  # Green - correlated
+
+    # State events (i3pm)
+    "state::saved": {"icon": "󰆓", "color": "#a6e3a1", "source": "i3pm"},  # Green - saved
+    "state::loaded": {"icon": "󰈔", "color": "#89b4fa", "source": "i3pm"},  # Blue - loaded
+    "state::conflict": {"icon": "󰆘", "color": "#f38ba8", "source": "i3pm"},  # Red - conflict
+
+    # Mark events (i3pm)
+    "mark::added": {"icon": "󰃀", "color": "#94e2d5", "source": "i3pm"},  # Teal - added
+    "mark::removed": {"icon": "󰃁", "color": "#6c7086", "source": "i3pm"},  # Overlay - removed
+
+    # Environment events (i3pm)
+    "env::detected": {"icon": "󰆼", "color": "#89dceb", "source": "i3pm"},  # Sky - detected
+    "env::changed": {"icon": "󰆻", "color": "#f9e2af", "source": "i3pm"},  # Yellow - changed
+
+    # Trace events (i3pm)
+    "trace::start": {"icon": "󰙨", "color": "#a6e3a1", "source": "i3pm"},  # Green - start
+    "trace::stop": {"icon": "󰙧", "color": "#f38ba8", "source": "i3pm"},  # Red - stop
+    "trace::snapshot": {"icon": "󰄄", "color": "#89dceb", "source": "i3pm"},  # Sky - snapshot
 }
 
 
@@ -2496,9 +2606,41 @@ async def query_events_data() -> Dict[str, Any]:
     # Get all events from buffer (refresh timestamps for accurate display)
     events = _event_buffer.get_all(refresh_timestamps=True)
 
+    # Feature 102 T066-T067: Compute cross-reference validity
+    # Build sets of valid trace_ids and correlation_ids (root events only)
+    valid_trace_ids: set = set()
+    root_correlation_ids: set = set()
+    for event in events:
+        if event.trace_id:
+            valid_trace_ids.add(event.trace_id)
+        # Root events have correlation_id but causality_depth == 0
+        if event.correlation_id and event.causality_depth == 0:
+            root_correlation_ids.add(event.correlation_id)
+
+    # Mark events with evicted traces or missing parents
+    for event in events:
+        # T066: Check if trace_id references a trace not in current view
+        # (This is a simplified check - ideally we'd query daemon for trace existence)
+        # For now, we mark as evicted if trace_id is set but not in valid_trace_ids
+        # Actually, all events with trace_id should be in valid_trace_ids by construction
+        # So we skip this for now - the trace_evicted field is for future daemon integration
+
+        # T067: Check if event has parent correlation but parent is missing
+        if event.correlation_id and event.causality_depth > 0:
+            if event.correlation_id not in root_correlation_ids:
+                event.parent_missing = True
+
+    # Feature 102 T053: Create duration-sorted list (slowest first)
+    events_by_duration = sorted(
+        events,
+        key=lambda e: e.processing_duration_ms,
+        reverse=True  # Slowest first
+    )
+
     view_data = EventsViewData(
         status="ok",
         events=events,
+        events_by_duration=events_by_duration,
         event_count=len(events),
         oldest_timestamp=events[0].timestamp if events else None,
         newest_timestamp=events[-1].timestamp if events else None,
@@ -2558,12 +2700,13 @@ async def stream_events():
         """Helper to create Event from Sway IPC event."""
         current_time = time.time()
 
-        # Get icon and color
-        icon_data = EVENT_ICONS.get(event_type, {"icon": "󰀄", "color": "#a6adc8"})
+        # Get icon, color, and source from EVENT_ICONS (Feature 102: T017)
+        icon_data = EVENT_ICONS.get(event_type, {"icon": "󰀄", "color": "#a6adc8", "source": "sway"})
         icon = icon_data["icon"]
         color = icon_data["color"]
+        source = icon_data.get("source", "sway")  # Default to "sway" for backwards compatibility
 
-        # Determine category
+        # Determine category - Feature 102: Added i3pm categories (T017)
         if event_type.startswith("window::"):
             category = "window"
         elif event_type.startswith("workspace::"):
@@ -2574,6 +2717,20 @@ async def stream_events():
             category = "binding"
         elif event_type.startswith("mode::"):
             category = "mode"
+        elif event_type.startswith("project::"):
+            category = "project"
+        elif event_type.startswith("visibility::"):
+            category = "visibility"
+        elif event_type.startswith("scratchpad::"):
+            category = "scratchpad"
+        elif event_type.startswith("launch::"):
+            category = "launch"
+        elif event_type.startswith("state::"):
+            category = "state"
+        elif event_type.startswith("command::"):
+            category = "command"
+        elif event_type.startswith("trace::"):
+            category = "trace"
         else:
             category = "system"
 
@@ -2591,6 +2748,14 @@ async def stream_events():
         # Create payload model
         payload = SwayEventPayload(**sway_payload)
 
+        # Feature 102 (T028): Extract trace cross-reference fields
+        trace_id = sway_payload.get("trace_id")
+        correlation_id = sway_payload.get("correlation_id")
+        causality_depth = sway_payload.get("causality_depth", 0)
+
+        # Feature 102 T052: Extract processing duration from daemon events
+        processing_duration_ms = sway_payload.get("processing_duration_ms", 0.0)
+
         return Event(
             timestamp=current_time,
             timestamp_friendly=format_friendly_timestamp(current_time),
@@ -2600,7 +2765,12 @@ async def stream_events():
             enrichment=None,  # TODO: Add daemon enrichment in future iteration
             icon=icon,
             color=color,
+            source=source,  # Feature 102: T017
             category=category,
+            trace_id=trace_id,  # Feature 102: T028
+            correlation_id=correlation_id,  # Feature 102: T028
+            causality_depth=causality_depth,  # Feature 102: T028
+            processing_duration_ms=processing_duration_ms,  # Feature 102: T052
             searchable_text=searchable_text,
         )
 
@@ -2623,12 +2793,16 @@ async def stream_events():
             # Output immediately (refresh timestamps for accurate display)
             current_output_time = time.time()
             events_with_fresh_timestamps = _event_buffer.get_all(refresh_timestamps=True)
+            perf_stats = _event_buffer.get_performance_stats()  # Feature 102 T054
             view_data = EventsViewData(
                 status="ok",
                 events=events_with_fresh_timestamps,
                 event_count=_event_buffer.size(),
                 oldest_timestamp=events_with_fresh_timestamps[0].timestamp if _event_buffer.size() > 0 else None,
                 newest_timestamp=events_with_fresh_timestamps[-1].timestamp if _event_buffer.size() > 0 else None,
+                avg_duration_ms=perf_stats["avg_duration_ms"],
+                slow_event_count=perf_stats["slow_event_count"],
+                critical_event_count=perf_stats["critical_event_count"],
                 daemon_available=True,
                 ipc_connected=True,
                 timestamp=current_output_time,
@@ -2659,12 +2833,16 @@ async def stream_events():
             # Output immediately (refresh timestamps for accurate display)
             current_output_time = time.time()
             events_with_fresh_timestamps = _event_buffer.get_all(refresh_timestamps=True)
+            perf_stats = _event_buffer.get_performance_stats()  # Feature 102 T054
             view_data = EventsViewData(
                 status="ok",
                 events=events_with_fresh_timestamps,
                 event_count=_event_buffer.size(),
                 oldest_timestamp=events_with_fresh_timestamps[0].timestamp if _event_buffer.size() > 0 else None,
                 newest_timestamp=events_with_fresh_timestamps[-1].timestamp if _event_buffer.size() > 0 else None,
+                avg_duration_ms=perf_stats["avg_duration_ms"],
+                slow_event_count=perf_stats["slow_event_count"],
+                critical_event_count=perf_stats["critical_event_count"],
                 daemon_available=True,
                 ipc_connected=True,
                 timestamp=current_output_time,

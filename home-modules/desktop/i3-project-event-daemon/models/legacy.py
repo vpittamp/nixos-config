@@ -232,14 +232,39 @@ class EventEntry:
     process_parent_pid: Optional[int] = None    # Parent process ID from /proc/{pid}/stat
     process_start_time: Optional[int] = None    # Process start time from /proc/{pid}/stat (for correlation)
 
+    # ===== FEATURE 102: UNIFIED EVENT TRACING =====
+    # Correlation and causality tracking
+    correlation_id: Optional[str] = None        # UUID linking related events in a causality chain
+    causality_depth: int = 0                    # Nesting depth in chain (0 = root, 1+ = child)
+    trace_id: Optional[str] = None              # Active trace ID if event is part of a trace
+
+    # Command execution events (command::*)
+    command_text: Optional[str] = None          # Full Sway command text (e.g., "[con_id=123] move scratchpad")
+    command_duration_ms: Optional[float] = None # Execution time in milliseconds
+    command_success: Optional[bool] = None      # True if command succeeded
+    command_error_msg: Optional[str] = None     # Error message if command failed
+    command_batch_count: Optional[int] = None   # Number of commands in batch (for command::batch)
+    command_batch_id: Optional[str] = None      # Batch identifier for grouping
+
+    # Enhanced output events (output::*)
+    output_event_type: Optional[str] = None     # "connected" | "disconnected" | "profile_changed" | "unspecified"
+    output_old_profile: Optional[str] = None    # Previous profile name (for profile_changed)
+    output_new_profile: Optional[str] = None    # New profile name (for profile_changed)
+    output_changed_props: Optional[Dict[str, Any]] = None  # Properties that changed
+
+    # Feature 102 T043-T045: Output state details
+    output_state: Optional[Dict[str, Any]] = None       # Current output state (for connected/profile_changed)
+    output_old_state: Optional[Dict[str, Any]] = None   # Previous output state (for disconnected/profile_changed)
+    output_changed_properties: Optional[Dict[str, Any]] = None  # Detailed property changes
+
     def __post_init__(self) -> None:
         """Validate event entry."""
         if self.event_id < 0:
             raise ValueError(f"Invalid event_id: {self.event_id}")
         if not self.event_type:
             raise ValueError("event_type cannot be empty")
-        if self.source not in ("i3", "ipc", "daemon", "systemd", "proc"):
-            raise ValueError(f"Invalid source: {self.source} (must be 'i3', 'ipc', 'daemon', 'systemd', or 'proc')")
+        if self.source not in ("i3", "ipc", "daemon", "systemd", "proc", "i3pm", "sway"):
+            raise ValueError(f"Invalid source: {self.source} (must be 'i3', 'ipc', 'daemon', 'systemd', 'proc', 'i3pm', or 'sway')")
         if self.processing_duration_ms < 0:
             raise ValueError(f"Invalid processing_duration_ms: {self.processing_duration_ms}")
 
@@ -332,6 +357,9 @@ class DaemonState:
     # Feature 074: Session Management - Focus tracking (T016-T020, US1, US4)
     project_focused_workspace: Dict[str, int] = field(default_factory=dict)  # project → workspace_num (T016, US1)
     workspace_focused_window: Dict[int, int] = field(default_factory=dict)  # workspace_num → window_id (T060, US4)
+
+    # Feature 102 T048: Window blur event tracking - track currently focused window globally
+    currently_focused_window: Optional[int] = None  # Currently focused window ID (for blur event generation)
 
     def __post_init__(self) -> None:
         """Initialize daemon state."""

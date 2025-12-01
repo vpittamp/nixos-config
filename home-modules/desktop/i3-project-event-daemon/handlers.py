@@ -1968,6 +1968,20 @@ async def on_window_close(
         f"Window closed: {window_class}",
     )
 
+    # Feature 102 T068: Auto-stop traces when traced window closes
+    try:
+        from .services.window_tracer import get_tracer
+        tracer = get_tracer()
+        if tracer:
+            auto_stopped = await tracer.handle_window_close(window_id)
+            if auto_stopped:
+                logger.debug(
+                    f"[Feature 102 T068] Auto-stopped {len(auto_stopped)} trace(s) "
+                    f"for closed window {window_id}"
+                )
+    except Exception as e:
+        logger.debug(f"[Feature 102 T068] Error auto-stopping traces: {e}")
+
     try:
         # Feature 076 T033-T034: Clean up marks before removing window from tracking
         if mark_manager:
@@ -2024,6 +2038,8 @@ async def on_window_focus(
 ) -> None:
     """Handle window::focus events - update focus timestamp (T017).
 
+    Feature 102 T048: Also emits window::blur events for the previously focused window.
+
     Args:
         conn: i3 async connection
         event: Window event
@@ -2052,6 +2068,39 @@ async def on_window_focus(
         },
         level="DEBUG"
     )
+
+    # Feature 102 T048: Emit blur event for previously focused window
+    prev_focused_window = state_manager.state.currently_focused_window
+    if event_buffer and prev_focused_window and prev_focused_window != window_id:
+        # Get info about the previously focused window
+        prev_window_info = await state_manager.get_window(prev_focused_window)
+        prev_class = prev_window_info.window_class if prev_window_info else "unknown"
+
+        # Record blur event with timestamp slightly before focus event (T050: proper ordering)
+        blur_timestamp = datetime.now()
+        blur_entry = EventEntry(
+            event_id=event_buffer.event_counter,
+            event_type="window::blur",
+            timestamp=blur_timestamp,
+            source="i3",
+            window_id=prev_focused_window,
+            window_class=prev_class,
+            project_name=await state_manager.get_active_project(),
+            processing_duration_ms=0.0,  # Synthetic event, no processing time
+        )
+        await event_buffer.add_event(blur_entry)
+        logger.debug(f"[Feature 102] Emitted window::blur for window {prev_focused_window} ({prev_class})")
+
+        # Feature 101: Record trace event for window blur
+        await _record_trace_event(
+            None,  # No container for blur (synthetic event)
+            "window::blur",
+            f"Window blurred: {prev_class}",
+            {"window_id": prev_focused_window}
+        )
+
+    # Update currently focused window tracking
+    state_manager.state.currently_focused_window = window_id
 
     # Feature 101: Record trace event for window focus
     await _record_trace_event(
@@ -2553,6 +2602,9 @@ async def on_output(
     Detects when monitors are connected or disconnected and triggers debounced
     workspace reassignment using Feature 001's monitor role system.
 
+    Feature 102 T043-T045: Uses OutputEventService to detect specific output
+    change types (connected/disconnected/profile_changed) and publishes distinct events.
+
     Args:
         conn: i3 async connection
         event: Output event (mode change, connect, disconnect)
@@ -2566,6 +2618,20 @@ async def on_output(
     error_msg: Optional[str] = None
 
     try:
+        # Feature 102 T043-T045: Detect specific output change types
+        from .services.output_event_service import get_output_event_service, OutputEventType
+        output_service = get_output_event_service()
+        output_diffs = []
+        if output_service:
+            output_diffs = await output_service.detect_change(conn)
+            for diff in output_diffs:
+                if diff.event_type == OutputEventType.CONNECTED:
+                    logger.info(f"[Feature 102] Output {diff.output_name} connected")
+                elif diff.event_type == OutputEventType.DISCONNECTED:
+                    logger.info(f"[Feature 102] Output {diff.output_name} disconnected")
+                elif diff.event_type == OutputEventType.PROFILE_CHANGED:
+                    logger.info(f"[Feature 102] Output {diff.output_name} profile changed: {diff.changed_properties}")
+
         # Re-query monitor/output configuration
         outputs = await conn.get_outputs()
 
@@ -2636,19 +2702,66 @@ async def on_output(
         await state_manager.increment_error_count()
 
     finally:
-        # Record event in buffer (Feature 017)
+        # Feature 102 T043-T045: Record specific output events in buffer
         if event_buffer:
             duration_ms = (time.perf_counter() - start_time) * 1000
-            entry = EventEntry(
-                event_id=event_buffer.event_counter,
-                event_type="output",
-                timestamp=datetime.now(),
-                source="i3",
-                project_name=await state_manager.get_active_project(),
-                processing_duration_ms=duration_ms,
-                error=error_msg,
-            )
-            await event_buffer.add_event(entry)
+            project_name = await state_manager.get_active_project()
+
+            # Publish specific event type for each detected change
+            for diff in output_diffs:
+                if diff.event_type == OutputEventType.CONNECTED:
+                    entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="output::connected",
+                        timestamp=datetime.now(),
+                        source="sway",
+                        project_name=project_name,
+                        processing_duration_ms=duration_ms,
+                        output_name=diff.output_name,
+                        output_state=diff.new_state.to_dict() if diff.new_state else None,
+                        error=error_msg,
+                    )
+                    await event_buffer.add_event(entry)
+                elif diff.event_type == OutputEventType.DISCONNECTED:
+                    entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="output::disconnected",
+                        timestamp=datetime.now(),
+                        source="sway",
+                        project_name=project_name,
+                        processing_duration_ms=duration_ms,
+                        output_name=diff.output_name,
+                        output_old_state=diff.old_state.to_dict() if diff.old_state else None,
+                        error=error_msg,
+                    )
+                    await event_buffer.add_event(entry)
+                elif diff.event_type == OutputEventType.PROFILE_CHANGED:
+                    entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="output::profile_changed",
+                        timestamp=datetime.now(),
+                        source="sway",
+                        project_name=project_name,
+                        processing_duration_ms=duration_ms,
+                        output_name=diff.output_name,
+                        output_old_state=diff.old_state.to_dict() if diff.old_state else None,
+                        output_state=diff.new_state.to_dict() if diff.new_state else None,
+                        output_changed_properties=diff.changed_properties,
+                        error=error_msg,
+                    )
+                    await event_buffer.add_event(entry)
+                else:
+                    # Fallback for unspecified
+                    entry = EventEntry(
+                        event_id=event_buffer.event_counter,
+                        event_type="output::unspecified",
+                        timestamp=datetime.now(),
+                        source="sway",
+                        project_name=project_name,
+                        processing_duration_ms=duration_ms,
+                        error=error_msg,
+                    )
+                    await event_buffer.add_event(entry)
 
 
 async def on_mode(

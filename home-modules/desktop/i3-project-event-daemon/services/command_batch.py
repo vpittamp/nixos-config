@@ -5,13 +5,15 @@ This service provides async execution of window commands in parallel batches to 
 project switch latency from 5.3s to under 200ms.
 
 Feature 101 Enhancement: Command execution tracing for debugging.
+Feature 102 Enhancement: Publish command events to EventBuffer for Log tab visibility.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+import uuid
+from typing import TYPE_CHECKING, Optional, Callable, Awaitable, Any
 
 from ..models.window_command import WindowCommand, CommandBatch, CommandType
 from ..models.performance_metrics import OperationMetrics
@@ -22,18 +24,57 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Feature 102: Type alias for event publishing callback
+EventCallback = Callable[[str, dict], Awaitable[None]]
+
+# Feature 102: Module-level event callback for publishing to EventBuffer
+_event_callback: Optional[EventCallback] = None
+
+
+def set_event_callback(callback: EventCallback) -> None:
+    """Set the event publishing callback for Feature 102.
+
+    This callback will be invoked for each command event (queued, executed, result, batch)
+    to publish events to the EventBuffer for display in the Log tab.
+
+    Args:
+        callback: Async function that accepts (event_type: str, context: dict)
+    """
+    global _event_callback
+    _event_callback = callback
+    logger.debug("[Feature 102] Event callback set for command events")
+
 
 async def _trace_command_event(
     window_id: int,
     event_type: str,
     description: str,
     context: dict,
+    *,
+    correlation_id: Optional[str] = None,
+    causality_depth: int = 0,
 ) -> None:
     """Record a command-related trace event.
 
     Feature 101 Enhancement: Provides visibility into command execution.
     Uses record_window_event to target only traces watching this specific window.
+
+    Feature 102 Enhancement: Also publishes to EventBuffer for Log tab visibility.
     """
+    # Feature 102: Publish to EventBuffer for Log tab (T018-T021)
+    if _event_callback:
+        try:
+            await _event_callback(event_type, {
+                "window_id": window_id,
+                "description": description,
+                "correlation_id": correlation_id,
+                "causality_depth": causality_depth,
+                **context,
+            })
+        except Exception as e:
+            logger.debug(f"[Feature 102] Event callback error (non-fatal): {e}")
+
+    # Feature 101: Record to window tracer
     try:
         from .window_tracer import get_tracer, TraceEventType
 
@@ -115,7 +156,12 @@ class CommandBatchService:
         self._total_duration_ms = 0.0
 
     async def execute_parallel(
-        self, commands: list[WindowCommand], operation_type: str = "parallel"
+        self,
+        commands: list[WindowCommand],
+        operation_type: str = "parallel",
+        *,
+        correlation_id: Optional[str] = None,
+        causality_depth: int = 0,
     ) -> tuple[list[CommandResult], OperationMetrics]:
         """Execute independent commands in parallel using asyncio.gather().
 
@@ -125,9 +171,13 @@ class CommandBatchService:
         Feature 091 US2 (T028): For large window counts (>30), uses chunked execution
         to prevent IPC congestion while maintaining parallel performance.
 
+        Feature 102: Added correlation_id and causality_depth for event tracing.
+
         Args:
             commands: List of WindowCommand instances to execute
             operation_type: Type of operation for metrics (hide/restore/switch)
+            correlation_id: Optional correlation ID for causality tracking
+            causality_depth: Current depth in causality chain (default: 0)
 
         Returns:
             Tuple of (results list, operation metrics)
@@ -143,6 +193,21 @@ class CommandBatchService:
 
         start_time = datetime.now()
         start_perf = asyncio.get_event_loop().time()
+
+        # Feature 102: Log command::queued events for each command (T018)
+        for cmd in commands:
+            await _trace_command_event(
+                cmd.window_id,
+                "command::queued",
+                f"Queued: {cmd.command_type.value}",
+                {
+                    "command": cmd.to_sway_command(),
+                    "command_type": cmd.command_type.value,
+                    "operation_type": operation_type,
+                },
+                correlation_id=correlation_id,
+                causality_depth=causality_depth,
+            )
 
         # Feature 091 US2 T028: Adaptive batching for large window counts
         # For >30 windows, execute in chunks to prevent IPC congestion
@@ -161,14 +226,28 @@ class CommandBatchService:
                     f"({len(chunk)} commands)"
                 )
 
-                tasks = [self._execute_single_command(cmd) for cmd in chunk]
+                tasks = [
+                    self._execute_single_command(
+                        cmd,
+                        correlation_id=correlation_id,
+                        causality_depth=causality_depth + 1,
+                    )
+                    for cmd in chunk
+                ]
                 chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
                 all_results.extend(chunk_results)
 
             results = all_results
         else:
             # Small/medium batches: execute all at once
-            tasks = [self._execute_single_command(cmd) for cmd in commands]
+            tasks = [
+                self._execute_single_command(
+                    cmd,
+                    correlation_id=correlation_id,
+                    causality_depth=causality_depth + 1,
+                )
+                for cmd in commands
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Convert exceptions to failed results
@@ -217,7 +296,11 @@ class CommandBatchService:
         return processed_results, metrics
 
     async def execute_batch(
-        self, batch: CommandBatch
+        self,
+        batch: CommandBatch,
+        *,
+        correlation_id: Optional[str] = None,
+        causality_depth: int = 0,
     ) -> tuple[CommandResult, OperationMetrics]:
         """Execute a command batch as sequential separate IPC calls.
 
@@ -236,8 +319,12 @@ class CommandBatchService:
         Solution: Execute each command as a separate IPC call with proper sequencing.
         Performance impact: +10-20ms per window (still meets <200ms target across all windows).
 
+        Feature 102: Added correlation_id and causality_depth for event tracing.
+
         Args:
             batch: CommandBatch instance with commands to execute
+            correlation_id: Optional correlation ID for causality tracking
+            causality_depth: Current depth in causality chain
 
         Returns:
             Tuple of (result, operation metrics)
@@ -258,7 +345,7 @@ class CommandBatchService:
         start_time = datetime.now()
         start_perf = asyncio.get_event_loop().time()
 
-        # Feature 101 Enhancement: Trace batch start with full command list
+        # Feature 101/102 Enhancement: Trace batch start with full command list
         command_types = [cmd.command_type.value for cmd in batch.commands]
         await _trace_command_event(
             batch.window_id,
@@ -267,7 +354,10 @@ class CommandBatchService:
             {
                 "commands": [cmd.to_sway_command() for cmd in batch.commands],
                 "command_types": command_types,
-            }
+                "batch_count": len(batch.commands),
+            },
+            correlation_id=correlation_id,
+            causality_depth=causality_depth,
         )
 
         # Execute commands sequentially (separate IPC calls)
@@ -276,7 +366,11 @@ class CommandBatchService:
         combined_error = None
 
         for cmd in batch.commands:
-            cmd_result = await self._execute_single_command(cmd)
+            cmd_result = await self._execute_single_command(
+                cmd,
+                correlation_id=correlation_id,
+                causality_depth=causality_depth + 1,
+            )
             command_results.append(cmd_result)
 
             if not cmd_result.success:
@@ -323,11 +417,19 @@ class CommandBatchService:
 
         return result, metrics
 
-    async def _execute_single_command(self, cmd: WindowCommand) -> CommandResult:
+    async def _execute_single_command(
+        self,
+        cmd: WindowCommand,
+        *,
+        correlation_id: Optional[str] = None,
+        causality_depth: int = 0,
+    ) -> CommandResult:
         """Execute a single window command.
 
         Args:
             cmd: WindowCommand to execute
+            correlation_id: Optional correlation ID for causality tracking (Feature 102)
+            causality_depth: Current depth in causality chain (Feature 102)
 
         Returns:
             CommandResult with execution status
@@ -335,12 +437,14 @@ class CommandBatchService:
         command_str = cmd.to_sway_command()
         start_perf = asyncio.get_event_loop().time()
 
-        # Feature 101 Enhancement: Trace command execution
+        # Feature 101/102 Enhancement: Trace command execution
         await _trace_command_event(
             cmd.window_id,
             "command::executed",
             f"Executing: {cmd.command_type.value}",
-            {"command": command_str, "command_type": cmd.command_type.value}
+            {"command": command_str, "command_type": cmd.command_type.value},
+            correlation_id=correlation_id,
+            causality_depth=causality_depth,
         )
 
         try:
@@ -357,7 +461,7 @@ class CommandBatchService:
         end_perf = asyncio.get_event_loop().time()
         duration_ms = (end_perf - start_perf) * 1000
 
-        # Feature 101 Enhancement: Trace command result
+        # Feature 101/102 Enhancement: Trace command result
         await _trace_command_event(
             cmd.window_id,
             "command::result",
@@ -367,7 +471,9 @@ class CommandBatchService:
                 "success": success,
                 "error": error,
                 "duration_ms": duration_ms,
-            }
+            },
+            correlation_id=correlation_id,
+            causality_depth=causality_depth,
         )
 
         return CommandResult(
