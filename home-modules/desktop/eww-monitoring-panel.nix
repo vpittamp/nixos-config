@@ -416,6 +416,7 @@ asyncio.run(stream.run())
     #!${pkgs.bash}/bin/bash
     # Open worktree create form for a given parent project
     # Usage: worktree-create-open <parent_project_name>
+    # Feature 102: Auto-populate fields and suggest next branch number
 
     PARENT_PROJECT="$1"
     EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
@@ -425,14 +426,34 @@ asyncio.run(stream.run())
       exit 1
     fi
 
+    # Feature 102: Get repo path from repos.json
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    REPO_PATH=""
+
+    if [[ -f "$REPOS_FILE" ]]; then
+      # Parse qualified name: account/repo
+      REPO_ACCOUNT=$(echo "$PARENT_PROJECT" | cut -d'/' -f1)
+      REPO_NAME=$(echo "$PARENT_PROJECT" | cut -d'/' -f2)
+
+      # Get repo path for auto-populating worktree path
+      REPO_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+        '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+    fi
+
     # Clear form fields and set parent project
     $EWW_CMD update worktree_creating=true
-    $EWW_CMD update worktree_form_branch_name=""
-    $EWW_CMD update worktree_form_path=""
     $EWW_CMD update worktree_form_parent_project="$PARENT_PROJECT"
-    $EWW_CMD update edit_form_display_name=""
     $EWW_CMD update edit_form_icon="🌿"
     $EWW_CMD update edit_form_error=""
+
+    # Feature 102: Store repo path for path auto-generation and description-to-branch conversion
+    $EWW_CMD update worktree_form_repo_path="$REPO_PATH"
+
+    # Clear fields - user enters description, branch name auto-generated
+    $EWW_CMD update worktree_form_branch_name=""
+    $EWW_CMD update worktree_form_description=""
+    $EWW_CMD update worktree_form_path=""
+    $EWW_CMD update edit_form_display_name=""
 
     # Also expand the parent project to show the form in context
     CURRENT=$($EWW_CMD get expanded_projects)
@@ -440,6 +461,280 @@ asyncio.run(stream.run())
       NEW=$(echo "$CURRENT" | ${pkgs.jq}/bin/jq -c ". + [\"$PARENT_PROJECT\"]")
       $EWW_CMD update "expanded_projects=$NEW"
     fi
+  '';
+
+  # Feature 102: Auto-populate worktree form fields based on description
+  # Uses the same branch naming logic as .specify/scripts/bash/create-new-feature.sh
+  worktreeAutoPopulateScript = pkgs.writeShellScriptBin "worktree-auto-populate" ''
+    #!${pkgs.bash}/bin/bash
+    # Auto-populate worktree form fields when description changes
+    # Usage: worktree-auto-populate <description>
+
+    DESCRIPTION="$1"
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$DESCRIPTION" ]]; then
+      exit 0
+    fi
+
+    # Get stored repo path and parent project
+    REPO_PATH=$($EWW_CMD get worktree_form_repo_path 2>/dev/null || echo "")
+    PARENT_PROJECT=$($EWW_CMD get worktree_form_parent_project 2>/dev/null || echo "")
+
+    # Function to generate branch suffix from description (same logic as create-new-feature.sh)
+    generate_branch_suffix() {
+      local description="$1"
+
+      # Common stop words to filter out
+      local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
+
+      # Convert to lowercase and split into words
+      local clean_name=$(echo "$description" | tr '[:upper:]' '[:lower:]' | ${pkgs.gnused}/bin/sed 's/[^a-z0-9]/ /g')
+
+      # Filter words: remove stop words and words shorter than 3 chars
+      local meaningful_words=()
+      for word in $clean_name; do
+        [ -z "$word" ] && continue
+        if ! echo "$word" | ${pkgs.gnugrep}/bin/grep -qiE "$stop_words"; then
+          if [ ''${#word} -ge 3 ]; then
+            meaningful_words+=("$word")
+          fi
+        fi
+      done
+
+      # Use first 3-4 meaningful words
+      if [ ''${#meaningful_words[@]} -gt 0 ]; then
+        local max_words=3
+        if [ ''${#meaningful_words[@]} -eq 4 ]; then max_words=4; fi
+
+        local result=""
+        local count=0
+        for word in "''${meaningful_words[@]}"; do
+          if [ $count -ge $max_words ]; then break; fi
+          if [ -n "$result" ]; then result="$result-"; fi
+          result="$result$word"
+          count=$((count + 1))
+        done
+        echo "$result"
+      else
+        # Fallback
+        echo "$description" | tr '[:upper:]' '[:lower:]' | ${pkgs.gnused}/bin/sed 's/[^a-z0-9]/-/g' | ${pkgs.gnused}/bin/sed 's/-\+/-/g' | ${pkgs.gnused}/bin/sed 's/^-//' | ${pkgs.gnused}/bin/sed 's/-$//' | tr '-' '\n' | ${pkgs.gnugrep}/bin/grep -v '^$' | head -3 | tr '\n' '-' | ${pkgs.gnused}/bin/sed 's/-$//'
+      fi
+    }
+
+    # Get next branch number from repos.json
+    get_next_branch_number() {
+      local repo_path="$1"
+      local parent_project="$2"
+      local repos_file="$HOME/.config/i3/repos.json"
+
+      if [[ ! -f "$repos_file" ]]; then
+        echo "100"
+        return
+      fi
+
+      local repo_account=$(echo "$parent_project" | cut -d'/' -f1)
+      local repo_name=$(echo "$parent_project" | cut -d'/' -f2)
+
+      # Get max branch number from existing worktrees
+      local max_number=$(${pkgs.jq}/bin/jq -r --arg acc "$repo_account" --arg name "$repo_name" \
+        '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[]?.branch // empty' "$repos_file" \
+        | ${pkgs.gnugrep}/bin/grep -oE '^[0-9]+' | sort -n | tail -1)
+
+      # Also check local branches in the repo
+      if [[ -n "$repo_path" && -d "$repo_path" ]]; then
+        local local_max=$(cd "$repo_path" && git branch 2>/dev/null | ${pkgs.gnugrep}/bin/grep -oE '^[* ]*[0-9]+' | ${pkgs.gnused}/bin/sed 's/[* ]*//' | sort -n | tail -1)
+        if [[ -n "$local_max" && "$local_max" -gt "''${max_number:-0}" ]]; then
+          max_number="$local_max"
+        fi
+      fi
+
+      if [[ -n "$max_number" ]]; then
+        echo $((max_number + 1))
+      else
+        echo "100"
+      fi
+    }
+
+    # Generate branch suffix from description
+    BRANCH_SUFFIX=$(generate_branch_suffix "$DESCRIPTION")
+
+    # Get next available branch number
+    NEXT_NUMBER=$(get_next_branch_number "$REPO_PATH" "$PARENT_PROJECT")
+    FEATURE_NUM=$(printf "%03d" "$NEXT_NUMBER")
+
+    # Construct full branch name
+    BRANCH_NAME="''${FEATURE_NUM}-''${BRANCH_SUFFIX}"
+
+    # Update branch name field
+    $EWW_CMD update "worktree_form_branch_name=$BRANCH_NAME"
+
+    # Auto-generate worktree path: <repo_path>/<branch_name>
+    if [[ -n "$REPO_PATH" && -n "$BRANCH_NAME" ]]; then
+      WORKTREE_PATH="''${REPO_PATH}/''${BRANCH_NAME}"
+      $EWW_CMD update "worktree_form_path=$WORKTREE_PATH"
+    fi
+
+    # Auto-generate display name: NNN - Description (Title Case of original)
+    TITLE_CASE=$(echo "$DESCRIPTION" | ${pkgs.gnused}/bin/sed 's/\b\(.\)/\u\1/g')
+    DISPLAY_NAME="$FEATURE_NUM - $TITLE_CASE"
+    $EWW_CMD update "edit_form_display_name=$DISPLAY_NAME"
+  '';
+
+  # Feature 102: Open worktree delete confirmation dialog
+  worktreeDeleteOpenScript = pkgs.writeShellScriptBin "worktree-delete-open" ''
+    #!${pkgs.bash}/bin/bash
+    # Open worktree delete confirmation dialog
+    # Usage: worktree-delete-open <qualified_name> <branch_name> <is_dirty>
+
+    QUALIFIED_NAME="$1"
+    BRANCH_NAME="$2"
+    IS_DIRTY="$3"
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    if [[ -z "$QUALIFIED_NAME" ]]; then
+      echo "Usage: worktree-delete-open <qualified_name> <branch_name> <is_dirty>" >&2
+      exit 1
+    fi
+
+    # Set dialog state
+    $EWW_CMD update worktree_delete_name="$QUALIFIED_NAME"
+    $EWW_CMD update worktree_delete_branch="$BRANCH_NAME"
+    $EWW_CMD update worktree_delete_is_dirty="$IS_DIRTY"
+    $EWW_CMD update worktree_delete_dialog_visible=true
+  '';
+
+  # Feature 102: Confirm and execute worktree deletion
+  worktreeDeleteConfirmScript = pkgs.writeShellScriptBin "worktree-delete-confirm" ''
+    #!${pkgs.bash}/bin/bash
+    # Execute worktree deletion after confirmation
+    # Usage: worktree-delete-confirm
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    # Get worktree to delete from dialog state
+    QUALIFIED_NAME=$($EWW_CMD get worktree_delete_name)
+
+    if [[ -z "$QUALIFIED_NAME" ]]; then
+      echo "No worktree selected for deletion" >&2
+      exit 1
+    fi
+
+    # Parse qualified name: account/repo:branch
+    # e.g., vpittamp/nixos-config:101-worktree-click-switch
+    REPO_QUALIFIED=$(echo "$QUALIFIED_NAME" | cut -d':' -f1)
+    BRANCH_NAME=$(echo "$QUALIFIED_NAME" | cut -d':' -f2)
+    REPO_ACCOUNT=$(echo "$REPO_QUALIFIED" | cut -d'/' -f1)
+    REPO_NAME=$(echo "$REPO_QUALIFIED" | cut -d'/' -f2)
+
+    # Get repo path from repos.json
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+    if [[ ! -f "$REPOS_FILE" ]]; then
+      $EWW_CMD update error_notification="repos.json not found"
+      $EWW_CMD update error_notification_visible=true
+      $EWW_CMD update worktree_delete_dialog_visible=false
+      exit 1
+    fi
+
+    REPO_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .path // empty' "$REPOS_FILE")
+
+    if [[ -z "$REPO_PATH" ]]; then
+      $EWW_CMD update error_notification="Repository not found: $REPO_QUALIFIED"
+      $EWW_CMD update error_notification_visible=true
+      $EWW_CMD update worktree_delete_dialog_visible=false
+      exit 1
+    fi
+
+    # Get worktree path
+    WORKTREE_PATH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[]? | select(.branch == $branch) | .path // empty' "$REPOS_FILE")
+
+    if [[ -z "$WORKTREE_PATH" ]]; then
+      $EWW_CMD update error_notification="Worktree not found: $BRANCH_NAME"
+      $EWW_CMD update error_notification_visible=true
+      $EWW_CMD update worktree_delete_dialog_visible=false
+      exit 1
+    fi
+
+    # Execute git worktree remove
+    cd "$REPO_PATH" || {
+      $EWW_CMD update error_notification="Cannot access repo: $REPO_PATH"
+      $EWW_CMD update error_notification_visible=true
+      $EWW_CMD update worktree_delete_dialog_visible=false
+      exit 1
+    }
+
+    # Force remove the worktree (--force handles dirty worktrees after user confirmation)
+    if ! git worktree remove --force "$WORKTREE_PATH" 2>&1; then
+      $EWW_CMD update error_notification="Failed to remove worktree: $BRANCH_NAME"
+      $EWW_CMD update error_notification_visible=true
+      $EWW_CMD update worktree_delete_dialog_visible=false
+      exit 1
+    fi
+
+    # Trigger rediscovery to update repos.json
+    i3pm discover >/dev/null 2>&1 || true
+
+    # Close dialog and show success
+    $EWW_CMD update worktree_delete_dialog_visible=false
+    $EWW_CMD update worktree_delete_name=""
+    $EWW_CMD update worktree_delete_branch=""
+    $EWW_CMD update worktree_delete_is_dirty=false
+    $EWW_CMD update success_notification="Worktree '$BRANCH_NAME' deleted successfully"
+    $EWW_CMD update success_notification_visible=true
+    (sleep 3 && $EWW_CMD update success_notification_visible=false success_notification="") &
+
+    echo "Worktree deleted: $QUALIFIED_NAME"
+  '';
+
+  # Feature 102: Cancel worktree deletion
+  worktreeDeleteCancelScript = pkgs.writeShellScriptBin "worktree-delete-cancel" ''
+    #!${pkgs.bash}/bin/bash
+    # Cancel worktree delete dialog
+    # Usage: worktree-delete-cancel
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+
+    $EWW_CMD update worktree_delete_dialog_visible=false
+    $EWW_CMD update worktree_delete_name=""
+    $EWW_CMD update worktree_delete_branch=""
+    $EWW_CMD update worktree_delete_is_dirty=false
+  '';
+
+  # Feature 102: Validate branch name and check for duplicates
+  worktreeValidateBranchScript = pkgs.writeShellScriptBin "worktree-validate-branch" ''
+    #!${pkgs.bash}/bin/bash
+    # Validate branch name for worktree creation
+    # Usage: worktree-validate-branch <branch_name> <parent_project>
+    # Returns: JSON with validation result
+
+    BRANCH_NAME="$1"
+    PARENT_PROJECT="$2"
+    REPOS_FILE="$HOME/.config/i3/repos.json"
+
+    # Validate branch name pattern (should be NNN-description)
+    if [[ ! "$BRANCH_NAME" =~ ^[0-9]+-[a-z0-9-]+$ ]]; then
+      echo '{"valid": false, "error": "Branch name must match pattern: NNN-description (e.g., 103-new-feature)"}'
+      exit 0
+    fi
+
+    # Check for existing branch with same name
+    if [[ -f "$REPOS_FILE" ]]; then
+      REPO_ACCOUNT=$(echo "$PARENT_PROJECT" | cut -d'/' -f1)
+      REPO_NAME=$(echo "$PARENT_PROJECT" | cut -d'/' -f2)
+
+      EXISTING=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+        '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[]? | select(.branch == $branch) | .branch' "$REPOS_FILE")
+
+      if [[ -n "$EXISTING" ]]; then
+        echo "{\"valid\": false, \"error\": \"Branch '$BRANCH_NAME' already exists as a worktree\"}"
+        exit 0
+      fi
+    fi
+
+    echo '{"valid": true, "error": ""}'
   '';
 
   # Feature 094 US5: Worktree edit form opener (T059)
@@ -512,6 +807,15 @@ asyncio.run(stream.run())
       exit 1
     fi
 
+    # Feature 102: Validate branch name format (NNN-description pattern)
+    if [[ ! "$BRANCH_NAME" =~ ^[0-9]+-[a-z0-9-]+$ ]]; then
+      $EWW update edit_form_error="Branch name must match pattern: NNN-description (e.g., 103-new-feature)"
+      $EWW update error_notification="Invalid branch name format"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
+      exit 1
+    fi
+
     # Feature 101: Get parent project directory from repos.json
     # PARENT_PROJECT is now a qualified name: account/repo (e.g., vpittamp/nixos-config)
     REPOS_FILE="$HOME/.config/i3/repos.json"
@@ -534,6 +838,17 @@ asyncio.run(stream.run())
       $EWW update edit_form_error="Repository not found: $PARENT_PROJECT"
       # Feature 096 T024: Show error notification
       $EWW update error_notification="Repository not found: $PARENT_PROJECT"
+      $EWW update error_notification_visible=true
+      $EWW update save_in_progress=false
+      exit 1
+    fi
+
+    # Feature 102: Check for duplicate branch name (worktree already exists)
+    EXISTING_BRANCH=$(${pkgs.jq}/bin/jq -r --arg acc "$REPO_ACCOUNT" --arg name "$REPO_NAME" --arg branch "$BRANCH_NAME" \
+      '.repositories[] | select(.account == $acc and .name == $name) | .worktrees[]? | select(.branch == $branch) | .branch // empty' "$REPOS_FILE")
+    if [[ -n "$EXISTING_BRANCH" ]]; then
+      $EWW update edit_form_error="Branch '$BRANCH_NAME' already exists as a worktree"
+      $EWW update error_notification="Worktree already exists: $BRANCH_NAME"
       $EWW update error_notification_visible=true
       $EWW update save_in_progress=false
       exit 1
@@ -603,9 +918,11 @@ asyncio.run(stream.run())
 
     # Success: clear form state and refresh
     $EWW update worktree_creating=false
+    $EWW update worktree_form_description=""
     $EWW update worktree_form_branch_name=""
     $EWW update worktree_form_path=""
     $EWW update worktree_form_parent_project=""
+    $EWW update worktree_form_repo_path=""
     $EWW update edit_form_display_name=""
     $EWW update edit_form_icon=""
     $EWW update edit_form_error=""
@@ -2510,6 +2827,11 @@ in
       toggleExpandAllScript       # Feature 099 UX3: Expand/collapse all projects
       projectsNavScript           # Feature 099 UX2: Projects tab keyboard navigation
       worktreeCreateOpenScript    # Feature 099 T021: Worktree create form opener
+      worktreeAutoPopulateScript  # Feature 102: Auto-populate form fields from branch name
+      worktreeValidateBranchScript # Feature 102: Validate branch name and check duplicates
+      worktreeDeleteOpenScript    # Feature 102: Open worktree delete confirmation dialog
+      worktreeDeleteConfirmScript # Feature 102: Confirm and execute worktree deletion
+      worktreeDeleteCancelScript  # Feature 102: Cancel worktree deletion
       projectCreateOpenScript   # Feature 094 US3: Project create form opener (T066)
       projectCreateSaveScript   # Feature 094 US3: Project create save handler (T069)
       projectCreateCancelScript # Feature 094 US3: Project create cancel handler (T066)
@@ -2759,10 +3081,18 @@ in
 
       ;; Feature 094 US5: Worktree form state (T057-T061)
       (defvar worktree_creating false)            ;; True when create worktree form is visible
-      (defvar worktree_form_branch_name "")       ;; Branch name (editable in create, read-only in edit)
-      (defvar worktree_form_path "")              ;; Worktree path (editable in create, read-only in edit)
+      (defvar worktree_form_description "")       ;; Feature 102: Primary input - feature description
+      (defvar worktree_form_branch_name "")       ;; Branch name (auto-generated from description, editable)
+      (defvar worktree_form_path "")              ;; Worktree path (auto-generated, editable)
       (defvar worktree_form_parent_project "")    ;; Parent project name (required for worktrees)
+      (defvar worktree_form_repo_path "")         ;; Feature 102: Repo path for auto-populating worktree path
       (defvar worktree_delete_confirm "")         ;; Project name to confirm deletion (click-to-confirm)
+      (defvar hover_worktree_name "\"\"")         ;; Feature 102: Currently hovered worktree qualified name
+      ;; Feature 102: Worktree delete dialog state
+      (defvar worktree_delete_dialog_visible false)
+      (defvar worktree_delete_name "")            ;; Worktree qualified name to delete
+      (defvar worktree_delete_branch "")          ;; Branch name for display
+      (defvar worktree_delete_is_dirty false)     ;; Whether worktree has uncommitted changes
 
       ;; Feature 099 T008: Expanded projects state (list of expanded project names as JSON array)
       (defvar expanded_projects "[]")             ;; JSON array of expanded project names
@@ -3722,6 +4052,8 @@ in
               (worktree-create-form :parent_project worktree_form_parent_project))
             ;; Feature 094 US4: Delete confirmation dialog (T088)
             (project-delete-confirmation)
+            ;; Feature 102: Worktree delete confirmation dialog
+            (worktree-delete-confirmation)
             ;; Error state
             (box
               :class "error-message"
@@ -3851,52 +4183,75 @@ in
 
       ;; Feature 100: Discovered worktree card (nested under repo)
       ;; Feature 101: Click to switch to worktree context for app launching
+      ;; Feature 102: Discovered worktree card with hover actions for delete
       (defwidget discovered-worktree-card [worktree]
         (eventbox
-          :cursor "pointer"
-          :onclick "i3pm worktree switch ''${worktree.qualified_name}"
+          :onhover "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='\\\"''${worktree.qualified_name}\\\"'"
+          :onhoverlost "eww --config $HOME/.config/eww-monitoring-panel update hover_worktree_name='\\\"\\\"'"
           (box
             :class {"worktree-card" + (worktree.is_active ? " active-worktree" : "") + (worktree.git_is_dirty ? " dirty-worktree" : "")}
             :orientation "h"
             :space-evenly false
-            (label
-              :class "worktree-indent"
-              :text "  ")
-            (label
-              :class "worktree-icon"
-              :text "🌿")
-            (box
-              :class "worktree-info"
-              :orientation "v"
-              :space-evenly false
+            ;; Main content - clickable to switch
+            (eventbox
+              :cursor "pointer"
               :hexpand true
+              :onclick "i3pm worktree switch ''${worktree.qualified_name}"
               (box
                 :orientation "h"
                 :space-evenly false
+                :hexpand true
                 (label
-                  :class "worktree-branch"
-                  :halign "start"
-                  :text "''${worktree.branch}")
+                  :class "worktree-indent"
+                  :text "  ")
                 (label
-                  :class "worktree-commit"
-                  :halign "start"
-                  :limit-width 10
-                  :text {" @ " + (worktree.commit ?: "unknown")})
-                (label
-                  :class "git-dirty"
-                  :visible {worktree.git_is_dirty}
-                  :text " ''${worktree.git_dirty_indicator}")
-                (label
-                  :class "git-sync"
-                  :visible {(worktree.git_sync_indicator ?: "") != ""}
-                  :text " ''${worktree.git_sync_indicator}"))
-              (label
-                :class "worktree-path"
-                :halign "start"
-                :limit-width 30
-                :truncate true
-                :text "''${worktree.directory_display}"
-                :tooltip "''${worktree.path}"))
+                  :class "worktree-icon"
+                  :text "🌿")
+                (box
+                  :class "worktree-info"
+                  :orientation "v"
+                  :space-evenly false
+                  :hexpand true
+                  (box
+                    :orientation "h"
+                    :space-evenly false
+                    (label
+                      :class "worktree-branch"
+                      :halign "start"
+                      :text "''${worktree.branch}")
+                    (label
+                      :class "worktree-commit"
+                      :halign "start"
+                      :limit-width 10
+                      :text {" @ " + (worktree.commit ?: "unknown")})
+                    (label
+                      :class "git-dirty"
+                      :visible {worktree.git_is_dirty}
+                      :text " ''${worktree.git_dirty_indicator}")
+                    (label
+                      :class "git-sync"
+                      :visible {(worktree.git_sync_indicator ?: "") != ""}
+                      :text " ''${worktree.git_sync_indicator}"))
+                  (label
+                    :class "worktree-path"
+                    :halign "start"
+                    :limit-width 30
+                    :truncate true
+                    :text "''${worktree.directory_display}"
+                    :tooltip "''${worktree.path}"))))
+            ;; Feature 102: Action buttons (visible on hover, not for main worktree)
+            (box
+              :class "worktree-action-bar"
+              :orientation "h"
+              :space-evenly false
+              :visible {hover_worktree_name == "\"" + worktree.qualified_name + "\"" && !worktree.is_main}
+              ;; Delete button with confirmation
+              (eventbox
+                :cursor "pointer"
+                :onclick "worktree-delete-open ''${worktree.qualified_name} ''${worktree.branch} ''${worktree.git_is_dirty}"
+                :tooltip "Delete worktree"
+                (label :class "action-btn action-delete" :text "󰆴")))
+            ;; Status badges
             (box
               :class "worktree-badges"
               :orientation "h"
@@ -4719,6 +5074,7 @@ in
 
       ;; Feature 094 US5 T057-T058: Worktree create form widget
       ;; Shown when worktree_creating is true
+      ;; Feature 102: Description is primary input, other fields auto-populate
       (defwidget worktree-create-form [parent_project]
         (box
           :class "edit-form worktree-create-form"
@@ -4742,7 +5098,7 @@ in
               :class "field-readonly"
               :halign "start"
               :text parent_project))
-          ;; Branch name field (required)
+          ;; Feature 102: Description field (PRIMARY INPUT)
           (box
             :class "form-field"
             :orientation "v"
@@ -4750,16 +5106,17 @@ in
             (label
               :class "field-label"
               :halign "start"
-              :text "Branch Name *")
+              :text "Feature Description *")
             (input
               :class "field-input"
-              :value worktree_form_branch_name
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name={}")
+              :value worktree_form_description
+              ;; Feature 102: Auto-populate all other fields from description
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description='{}' && worktree-auto-populate '{}' &")
             (label
               :class "field-hint"
               :halign "start"
-              :text "Use existing branch or create new"))
-          ;; Worktree path field (required)
+              :text "e.g., Add user authentication system"))
+          ;; Branch name field (auto-generated, editable)
           (box
             :class "form-field"
             :orientation "v"
@@ -4767,12 +5124,35 @@ in
             (label
               :class "field-label"
               :halign "start"
-              :text "Worktree Path *")
+              :text "Branch Name")
+            (input
+              :class "field-input"
+              :value worktree_form_branch_name
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name='{}'"
+              :tooltip "Auto-generated from description, editable")
+            (label
+              :class "field-hint"
+              :halign "start"
+              :text "Auto-generated: NNN-short-name"))
+          ;; Worktree path field (auto-populated, editable)
+          (box
+            :class "form-field"
+            :orientation "v"
+            :space-evenly false
+            (label
+              :class "field-label"
+              :halign "start"
+              :text "Worktree Path")
             (input
               :class "field-input"
               :value worktree_form_path
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path={}"))
-          ;; Display name field (optional)
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path='{}'"
+              :tooltip "Auto-generated from branch name, editable")
+            (label
+              :class "field-hint"
+              :halign "start"
+              :text "Auto-filled from branch name"))
+          ;; Display name field (auto-populated, editable)
           (box
             :class "form-field"
             :orientation "v"
@@ -4784,7 +5164,12 @@ in
             (input
               :class "field-input"
               :value edit_form_display_name
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_display_name='{}'"
+              :tooltip "Auto-generated from description, editable")
+            (label
+              :class "field-hint"
+              :halign "start"
+              :text "Auto-filled: NNN - Description"))
           ;; Icon field (optional)
           (box
             :class "form-field"
@@ -4797,7 +5182,7 @@ in
             (input
               :class "field-input"
               :value edit_form_icon
-              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon={}"))
+              :onchange "eww --config $HOME/.config/eww-monitoring-panel update edit_form_icon='{}'"))
           ;; Error message display
           (revealer
             :reveal {edit_form_error != ""}
@@ -4816,7 +5201,7 @@ in
             :halign "end"
             (button
               :class "cancel-button"
-              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
+              :onclick "eww --config $HOME/.config/eww-monitoring-panel update worktree_creating=false && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_description=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_branch_name=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_path=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_parent_project=''' && eww --config $HOME/.config/eww-monitoring-panel update worktree_form_repo_path=''' && eww --config $HOME/.config/eww-monitoring-panel update edit_form_error='''"
               "Cancel")
             ;; Run in background (&) to avoid eww onclick timeout (2s default)
             (button
@@ -5113,6 +5498,74 @@ in
                 :class "confirm-delete-button ''${delete_project_has_worktrees && !delete_force ? 'disabled' : '''}"
                 :onclick {delete_project_has_worktrees && !delete_force ? "" : "project-delete-confirm &"}
                 :tooltip "''${delete_project_has_worktrees && !delete_force ? 'Check force delete to proceed' : 'Permanently delete project'}"
+                "🗑 Delete")))))
+
+      ;; Feature 102: Worktree delete confirmation dialog
+      (defwidget worktree-delete-confirmation []
+        (revealer
+          :reveal worktree_delete_dialog_visible
+          :transition "slidedown"
+          :duration "200ms"
+          (box
+            :class "delete-confirmation-dialog worktree-delete-dialog"
+            :orientation "v"
+            :space-evenly false
+            ;; Dialog header
+            (box
+              :class "dialog-header"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "dialog-icon warning"
+                :text "⚠️")
+              (label
+                :class "dialog-title"
+                :halign "start"
+                :text "Delete Worktree"))
+            ;; Worktree name display
+            (label
+              :class "project-name-display"
+              :halign "start"
+              :text "🌿 ''${worktree_delete_branch}")
+            ;; Warning message
+            (label
+              :class "warning-message"
+              :halign "start"
+              :wrap true
+              :text "This will remove the worktree directory and its contents. The branch will remain in git.")
+            ;; Dirty worktree warning (shown only if worktree has uncommitted changes)
+            (revealer
+              :reveal worktree_delete_is_dirty
+              :transition "slidedown"
+              :duration "150ms"
+              (box
+                :class "worktree-warning dirty-warning"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "warning-icon"
+                  :halign "start"
+                  :text "⚠ This worktree has uncommitted changes")
+                (label
+                  :class "warning-detail"
+                  :halign "start"
+                  :wrap true
+                  :text "Any uncommitted work will be lost. Consider committing or stashing changes first.")))
+            ;; Action buttons
+            (box
+              :class "dialog-actions"
+              :orientation "h"
+              :space-evenly false
+              :halign "end"
+              (button
+                :class "cancel-delete-button"
+                :onclick "worktree-delete-cancel"
+                "Cancel")
+              ;; Run in background (&) to avoid eww onclick timeout (2s default)
+              (button
+                :class "confirm-delete-button"
+                :onclick "worktree-delete-confirm &"
+                :tooltip "Permanently delete worktree"
                 "🗑 Delete")))))
 
       ;; Feature 094 US9: Application delete confirmation dialog (T093-T096)
