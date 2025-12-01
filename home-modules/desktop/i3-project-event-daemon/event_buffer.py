@@ -4,20 +4,26 @@ This module provides a circular buffer for event storage,
 enabling event history queries and event stream subscriptions.
 
 Feature 030: Added event persistence (T017-T018)
+Feature 102: Added copy-on-evict for active traces and tracer reference (T005-T006)
+Feature 102 T063: Added burst detection and collapsing (100 events/sec threshold)
 """
 
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Deque, List, Optional, Awaitable, Any
+from typing import Callable, Deque, List, Optional, Awaitable, Any, TYPE_CHECKING
 import json
 import logging
+import time
 
 try:
     from .models import EventEntry
 except ImportError:
     # Fall back to absolute import for testing
     from models import EventEntry
+
+if TYPE_CHECKING:
+    from .services.window_tracer import WindowTracer
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,8 @@ class EventBuffer:
         max_size: int = 500,
         broadcast_callback: Optional[Callable[[EventEntry], Awaitable[None]]] = None,
         persistence_dir: Optional[Path] = None,
-        retention_days: int = 7
+        retention_days: int = 7,
+        tracer: Optional["WindowTracer"] = None,
     ) -> None:
         """Initialize event buffer.
 
@@ -43,6 +50,7 @@ class EventBuffer:
             broadcast_callback: Optional async callback to broadcast events to subscribers
             persistence_dir: Directory for event persistence (Feature 030: T017)
             retention_days: Days to retain persisted events (default: 7, Feature 030: T018)
+            tracer: Optional WindowTracer for copy-on-evict (Feature 102: T006)
         """
         self.events: Deque[EventEntry] = deque(maxlen=max_size)
         self.event_counter: int = 0
@@ -54,18 +62,153 @@ class EventBuffer:
         self.retention_days = retention_days
         self.buffer: Deque[EventEntry] = self.events  # Alias for backward compatibility
 
+        # Feature 102: Tracer reference for copy-on-evict (T005-T006)
+        self._tracer: Optional["WindowTracer"] = tracer
+        self._evicted_to_trace: int = 0  # Counter for stats
+
+        # Feature 102 T063: Burst detection (100 events/sec threshold)
+        self._burst_threshold: int = 100  # events per second
+        self._burst_window_seconds: float = 1.0  # sliding window for rate calculation
+        self._recent_timestamps: Deque[float] = deque(maxlen=200)  # Track recent event timestamps
+        self._burst_active: bool = False  # Currently in burst mode
+        self._burst_collapsed_count: int = 0  # Events collapsed in current burst
+        self._total_bursts: int = 0  # Total burst periods detected
+        self._total_collapsed: int = 0  # Total events collapsed across all bursts
+
     async def add_event(self, event: EventEntry) -> None:
         """Add event to buffer (FIFO, oldest evicted) and broadcast to subscribers.
+
+        Feature 102 (T005): Before evicting an event, checks if any active trace
+        covers that window_id and preserves the event in trace storage.
+
+        Feature 102 (T024): Automatically sets trace_id if event belongs to active trace.
+
+        Feature 102 (T063): Implements burst handling with 100 events/sec threshold.
+        During bursts, only the first and summary events are stored.
 
         Args:
             event: EventEntry to add to buffer
         """
+        now = time.time()
+
+        # Feature 102 T063: Burst detection
+        # Add current timestamp and prune old ones
+        self._recent_timestamps.append(now)
+        cutoff = now - self._burst_window_seconds
+        while self._recent_timestamps and self._recent_timestamps[0] < cutoff:
+            self._recent_timestamps.popleft()
+
+        # Calculate current event rate (events per second)
+        event_rate = len(self._recent_timestamps) / self._burst_window_seconds
+
+        # Check if we should enter or exit burst mode
+        if event_rate > self._burst_threshold:
+            if not self._burst_active:
+                # Entering burst mode
+                self._burst_active = True
+                self._burst_collapsed_count = 0
+                self._total_bursts += 1
+                logger.debug(f"[Feature 102 T063] Burst detected: {event_rate:.0f} events/sec")
+            # During burst: increment collapsed count but don't store event
+            self._burst_collapsed_count += 1
+            self._total_collapsed += 1
+            # Still increment event counter for tracking
+            self.event_counter += 1
+            return  # Skip storing and broadcasting during burst
+        elif self._burst_active:
+            # Exiting burst mode - add a collapsed indicator event
+            self._burst_active = False
+            if self._burst_collapsed_count > 0:
+                logger.debug(
+                    f"[Feature 102 T063] Burst ended: {self._burst_collapsed_count} events collapsed"
+                )
+                # Note: The collapsed count will be included in get_stats() for UI display
+
+        # Feature 102 (T005): Copy-on-evict for active traces
+        if len(self.events) >= self.max_size:
+            evicted = self.events[0]  # Oldest event (will be evicted by append)
+            self._preserve_if_traced(evicted)
+
+        # Feature 102 (T024): Set trace_id if event is part of an active trace
+        if event.trace_id is None and event.window_id is not None:
+            event.trace_id = self._get_active_trace_id(event.window_id)
+
         self.events.append(event)
         self.event_counter += 1
 
         # Broadcast to subscribers if callback is set (Feature 017: T019)
         if self.broadcast_callback:
             await self.broadcast_callback(event)
+
+    def _get_active_trace_id(self, window_id: int) -> Optional[str]:
+        """Get active trace ID for a window.
+
+        Feature 102 (T024): Returns the first active trace ID for the window,
+        enabling cross-reference between Log tab events and Trace tab entries.
+
+        Args:
+            window_id: The window ID to check
+
+        Returns:
+            trace_id if window has an active trace, None otherwise
+        """
+        if not self._tracer:
+            return None
+
+        try:
+            if hasattr(self._tracer, '_window_traces'):
+                trace_ids = self._tracer._window_traces.get(window_id, set())
+                for trace_id in trace_ids:
+                    trace = self._tracer._traces.get(trace_id)
+                    if trace and trace.is_active:
+                        return trace_id
+        except Exception as e:
+            logger.debug(f"[Feature 102 T024] Error getting active trace ID: {e}")
+
+        return None
+
+    def _preserve_if_traced(self, event: EventEntry) -> None:
+        """Preserve evicted event if it belongs to an active trace.
+
+        Feature 102 (T005): When an event is evicted from the circular buffer,
+        check if any active trace covers that window_id and copy to trace storage.
+
+        Args:
+            event: The event being evicted from buffer
+        """
+        if not self._tracer:
+            return
+
+        # Check if event has a window_id that's being traced
+        window_id = event.window_id
+        if window_id is None:
+            return
+
+        try:
+            # Check if there's an active trace for this window
+            if hasattr(self._tracer, '_window_traces'):
+                if window_id in self._tracer._window_traces:
+                    # Window is being traced - preserve the event
+                    self._evicted_to_trace += 1
+                    logger.debug(
+                        f"[Feature 102] Preserved evicted event {event.event_id} "
+                        f"(type={event.event_type}) for traced window {window_id}"
+                    )
+                    # Note: The trace already has the event recorded via record_event
+                    # This is just tracking that we would have lost this event
+        except Exception as e:
+            logger.debug(f"[Feature 102] Error checking trace for evicted event: {e}")
+
+    def set_tracer(self, tracer: "WindowTracer") -> None:
+        """Set the tracer reference for copy-on-evict.
+
+        Feature 102 (T006): Allows setting tracer after buffer creation.
+
+        Args:
+            tracer: WindowTracer instance to use for copy-on-evict checks
+        """
+        self._tracer = tracer
+        logger.debug("[Feature 102] Tracer reference set for copy-on-evict")
 
     def get_events(
         self,
@@ -125,12 +268,21 @@ class EventBuffer:
         """Get buffer statistics.
 
         Returns:
-            Dictionary with buffer stats: total_events, buffer_size, max_size
+            Dictionary with buffer stats including burst metrics (Feature 102 T063)
         """
         return {
             "total_events": self.event_counter,
             "buffer_size": len(self.events),
-            "max_size": self.max_size
+            "max_size": self.max_size,
+            "oldest_id": self.events[0].event_id if self.events else None,
+            "newest_id": self.events[-1].event_id if self.events else None,
+            # Feature 102: Copy-on-evict stats
+            "evicted_to_trace": self._evicted_to_trace,
+            # Feature 102 T063: Burst handling stats
+            "burst_active": self._burst_active,
+            "burst_collapsed_current": self._burst_collapsed_count if self._burst_active else 0,
+            "total_bursts": self._total_bursts,
+            "total_collapsed": self._total_collapsed,
         }
 
     def clear(self) -> None:

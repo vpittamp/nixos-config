@@ -65,6 +65,14 @@ from .project_filter import (
     FilterState,
 )
 
+# Feature 102: Unified Event Tracing System
+from .events import (
+    EventSource,
+    EventCategory,
+    UnifiedEventType,
+    FILTER_CATEGORIES,
+)
+
 # Legacy models - import everything EXCEPT the ones we're replacing
 from .legacy import (
     WindowInfo,
@@ -130,6 +138,11 @@ __all__ = [
     "ProjectListItem",
     "ScoredMatch",
     "FilterState",
+    # Feature 102: Unified Event Tracing System
+    "EventSource",
+    "EventCategory",
+    "UnifiedEventType",
+    "FILTER_CATEGORIES",
     # Feature 001: Monitor role and floating window models
     "MonitorRoleV2",
     "OutputInfoV2",

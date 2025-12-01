@@ -90,6 +90,49 @@ class TraceEventType(str, Enum):
 
 
 @dataclass
+class CausalityChain:
+    """Represents a chain of causally-related events.
+
+    Feature 102 (T032): Events linked by correlation_id form a causality chain
+    showing root cause → effects relationships.
+
+    Example: project::switch → visibility::hidden (×N) → command::batch → command::result
+    """
+    correlation_id: str
+    root_event_id: Optional[int] = None
+    event_count: int = 0
+    duration_ms: float = 0.0
+    max_depth: int = 0
+    summary: str = ""
+    events: List[Dict[str, Any]] = field(default_factory=list)
+
+    def add_event(self, event_data: Dict[str, Any]) -> None:
+        """Add an event to the chain."""
+        self.events.append(event_data)
+        self.event_count = len(self.events)
+        depth = event_data.get("causality_depth", 0)
+        if depth > self.max_depth:
+            self.max_depth = depth
+        if depth == 0 and self.root_event_id is None:
+            self.root_event_id = event_data.get("event_id")
+
+    def compute_duration(self) -> float:
+        """Compute chain duration from first to last event."""
+        if len(self.events) < 2:
+            return 0.0
+        timestamps = [e.get("timestamp", 0) for e in self.events]
+        first = min(timestamps)
+        last = max(timestamps)
+        # Handle ISO format strings
+        if isinstance(first, str):
+            from datetime import datetime
+            first = datetime.fromisoformat(first).timestamp()
+            last = datetime.fromisoformat(last).timestamp()
+        self.duration_ms = (last - first) * 1000
+        return self.duration_ms
+
+
+@dataclass
 class WindowState:
     """Snapshot of window state at a point in time."""
     window_id: int
@@ -582,6 +625,105 @@ class WindowTrace:
         return "\n".join(lines)
 
 
+# Feature 102 T055-T062: Trace Templates
+@dataclass
+class TraceTemplate:
+    """Pre-configured trace template for common debugging scenarios.
+
+    Feature 102 T055: Trace templates provide quick-start configurations
+    for common debugging tasks without manual configuration.
+    """
+    id: str  # Unique template identifier
+    name: str  # Display name
+    description: str  # What this template is for
+    icon: str  # Nerd Font icon for UI
+
+    # Matcher configuration (at least one required)
+    match_class: Optional[str] = None  # Window class pattern
+    match_title: Optional[str] = None  # Window title pattern
+    match_app_name: Optional[str] = None  # i3pm app name (for pre-launch)
+
+    # Event type filter (None = all events)
+    event_types: Optional[List[TraceEventType]] = None
+
+    # Trace options
+    timeout_seconds: int = 60  # Auto-stop after this duration (0 = manual)
+    pre_launch: bool = False  # Wait for app launch before tracing
+    trace_all_scoped: bool = False  # Trace all scoped windows (for project switch)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to dictionary for IPC response."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "icon": self.icon,
+            "match_class": self.match_class,
+            "match_title": self.match_title,
+            "match_app_name": self.match_app_name,
+            "event_types": [e.value for e in self.event_types] if self.event_types else None,
+            "timeout_seconds": self.timeout_seconds,
+            "pre_launch": self.pre_launch,
+            "trace_all_scoped": self.trace_all_scoped,
+        }
+
+
+# Feature 102 T056: Pre-defined trace templates
+TRACE_TEMPLATES = [
+    # T060: Debug App Launch - trace complete app launch lifecycle
+    TraceTemplate(
+        id="debug-app-launch",
+        name="Debug App Launch",
+        description="Trace app from launch notification to window appearance",
+        icon="󰀚",
+        pre_launch=True,
+        timeout_seconds=60,
+        event_types=[
+            TraceEventType.LAUNCH_INTENT,
+            TraceEventType.LAUNCH_NOTIFICATION,
+            TraceEventType.LAUNCH_ENV_INJECTED,
+            TraceEventType.LAUNCH_CORRELATED,
+            TraceEventType.WINDOW_NEW,
+            TraceEventType.WINDOW_FOCUS,
+            TraceEventType.WINDOW_MOVE,
+            TraceEventType.VISIBILITY_HIDDEN,
+            TraceEventType.VISIBILITY_SHOWN,
+        ],
+    ),
+    # T061: Debug Project Switch - trace scoped window visibility changes
+    TraceTemplate(
+        id="debug-project-switch",
+        name="Debug Project Switch",
+        description="Trace visibility changes for all scoped windows during project switch",
+        icon="󱂬",
+        trace_all_scoped=True,
+        timeout_seconds=30,
+        event_types=[
+            TraceEventType.PROJECT_SWITCH,
+            TraceEventType.VISIBILITY_HIDDEN,
+            TraceEventType.VISIBILITY_SHOWN,
+            TraceEventType.SCRATCHPAD_MOVE,
+            TraceEventType.SCRATCHPAD_SHOW,
+            TraceEventType.COMMAND_QUEUED,
+            TraceEventType.COMMAND_EXECUTED,
+            TraceEventType.COMMAND_RESULT,
+        ],
+    ),
+    # T062: Debug Focus Chain - trace focus/blur events for focused window
+    TraceTemplate(
+        id="debug-focus-chain",
+        name="Debug Focus Chain",
+        description="Trace focus/blur events for the currently focused window",
+        icon="󰋁",
+        timeout_seconds=120,
+        event_types=[
+            TraceEventType.WINDOW_FOCUS,
+            TraceEventType.WINDOW_BLUR,
+        ],
+    ),
+]
+
+
 class WindowTracer:
     """Manages window traces and captures state changes.
 
@@ -851,6 +993,68 @@ class WindowTracer:
                 affected_traces.append(trace_id)
 
         return affected_traces
+
+    async def handle_window_close(self, window_id: int) -> List[str]:
+        """Handle window close - auto-stop traces for the closed window.
+
+        Feature 102 T068: When a traced window closes, automatically stop
+        the trace and record a completion summary.
+
+        Args:
+            window_id: The ID of the closed window
+
+        Returns:
+            List of trace_ids that were auto-stopped
+        """
+        auto_stopped = []
+
+        async with self._lock:
+            trace_ids = self._window_traces.get(window_id, set()).copy()
+
+            for trace_id in trace_ids:
+                trace = self._traces.get(trace_id)
+                if not trace or not trace.is_active:
+                    continue
+
+                # Record window close event before stopping
+                trace.add_event(TraceEvent(
+                    timestamp=time.time(),
+                    event_type=TraceEventType.WINDOW_CLOSE,
+                    description=f"Window {window_id} closed - auto-stopping trace",
+                    state_before=trace.current_state,
+                    context={"auto_stopped": True, "reason": "window_close"},
+                ))
+
+                # Stop the trace
+                trace.stopped_at = time.time()
+                trace.add_event(TraceEvent(
+                    timestamp=time.time(),
+                    event_type=TraceEventType.TRACE_STOP,
+                    description=f"Trace auto-stopped: window closed",
+                    state_before=trace.current_state,
+                    context={
+                        "auto_stopped": True,
+                        "reason": "window_close",
+                        "event_count": len(trace.events),
+                        "duration_seconds": trace.duration_seconds,
+                    },
+                ))
+
+                # Remove from window mapping
+                self._window_traces[window_id].discard(trace_id)
+                if not self._window_traces[window_id]:
+                    del self._window_traces[window_id]
+
+                # Remove from matchers
+                self._matchers.pop(trace_id, None)
+
+                auto_stopped.append(trace_id)
+                logger.info(
+                    f"[Feature 102 T068] Auto-stopped trace {trace_id} "
+                    f"(window {window_id} closed, {len(trace.events)} events)"
+                )
+
+        return auto_stopped
 
     async def get_trace(self, trace_id: str) -> Optional[WindowTrace]:
         """Get a trace by ID."""
@@ -1200,6 +1404,134 @@ class WindowTracer:
             ))
 
             logger.info(f"[WindowTracer] Trace {trace_id} matched window {window_id}")
+
+
+    # =========================================================================
+    # Feature 102: Cross-Reference Methods (T025, T027)
+    # =========================================================================
+
+    async def get_cross_reference(self, event_id: int, event_buffer) -> Dict[str, Any]:
+        """Get trace reference for a specific log event.
+
+        Feature 102 (T025): Enables click-to-navigate from Log tab to Traces tab.
+
+        Args:
+            event_id: The event ID from the Log tab
+            event_buffer: Reference to EventBuffer for event lookup
+
+        Returns:
+            Dict with has_trace, trace_id, trace_event_index, trace_active, window_id
+        """
+        # Find the event in the buffer
+        event = None
+        for e in event_buffer.events:
+            if e.event_id == event_id:
+                event = e
+                break
+
+        if not event:
+            return {
+                "has_trace": False,
+                "error": "Event not found in buffer",
+            }
+
+        # Check if event has a trace_id set
+        if event.trace_id:
+            trace = self._traces.get(event.trace_id)
+            if trace:
+                # Find the index of the corresponding trace event
+                trace_event_index = None
+                for i, te in enumerate(trace.events):
+                    # Match by timestamp (within 10ms tolerance)
+                    if abs(te.timestamp - event.timestamp.timestamp()) < 0.01:
+                        trace_event_index = i
+                        break
+
+                return {
+                    "has_trace": True,
+                    "trace_id": event.trace_id,
+                    "trace_event_index": trace_event_index,
+                    "trace_active": trace.is_active,
+                    "window_id": trace.window_id,
+                }
+
+        # Check if window_id has an active trace
+        if event.window_id:
+            trace_ids = self._window_traces.get(event.window_id, set())
+            for trace_id in trace_ids:
+                trace = self._traces.get(trace_id)
+                if trace:
+                    # Find matching event in trace
+                    trace_event_index = None
+                    for i, te in enumerate(trace.events):
+                        if abs(te.timestamp - event.timestamp.timestamp()) < 0.01:
+                            trace_event_index = i
+                            break
+
+                    return {
+                        "has_trace": True,
+                        "trace_id": trace_id,
+                        "trace_event_index": trace_event_index,
+                        "trace_active": trace.is_active,
+                        "window_id": trace.window_id,
+                    }
+
+        return {
+            "has_trace": False,
+        }
+
+    async def query_window_traces_with_log_refs(
+        self,
+        active_only: bool = False,
+        event_buffer=None,
+    ) -> List[Dict[str, Any]]:
+        """List traces with log event references.
+
+        Feature 102 (T027): Enhanced query_window_traces with include_log_refs support.
+
+        Args:
+            active_only: If True, only return active traces
+            event_buffer: Reference to EventBuffer for log_event_id lookup
+
+        Returns:
+            List of trace dicts with optional log_event_id in each event
+        """
+        result = []
+        for trace in self._traces.values():
+            if active_only and not trace.is_active:
+                continue
+
+            trace_dict = {
+                "trace_id": trace.trace_id,
+                "window_id": trace.window_id,
+                "matcher": trace.matcher,
+                "is_active": trace.is_active,
+                "event_count": len(trace.events),
+                "duration_seconds": trace.duration_seconds,
+                "started_at": datetime.fromtimestamp(trace.started_at).isoformat(),
+            }
+
+            # Add log event references if buffer provided
+            if event_buffer is not None:
+                events_with_refs = []
+                for te in trace.events:
+                    event_dict = {
+                        "event_type": te.event_type.value,
+                        "timestamp": datetime.fromtimestamp(te.timestamp).isoformat(),
+                        "description": te.description,
+                    }
+                    # Find matching log event
+                    for e in event_buffer.events:
+                        if (e.window_id == trace.window_id and
+                            abs(e.timestamp.timestamp() - te.timestamp) < 0.01):
+                            event_dict["log_event_id"] = e.event_id
+                            break
+                    events_with_refs.append(event_dict)
+                trace_dict["events"] = events_with_refs
+
+            result.append(trace_dict)
+
+        return result
 
 
 # Global tracer instance (initialized by daemon)

@@ -2249,6 +2249,89 @@ print(json.dumps(result))
     $EWW_CMD update trace_events="$EVENTS"
   '';
 
+  # Feature 102 (T029-T031): Navigate between Log and Traces tabs with highlight
+  # Used for click-to-navigate from trace indicator to Traces tab, and vice versa
+  navigateToTraceScript = pkgs.writeShellScript "navigate-to-trace" ''
+    #!/usr/bin/env bash
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TRACE_ID="''${1:-}"
+
+    if [[ -z "$TRACE_ID" ]]; then
+      exit 0
+    fi
+
+    # Set highlight state and switch to traces tab
+    $EWW_CMD update highlight_trace_id="$TRACE_ID"
+    $EWW_CMD update current_view=traces
+
+    # Clear highlight after 2 seconds
+    (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update highlight_trace_id="") &
+  '';
+
+  # Feature 102 (T029-T031): Navigate from Traces tab to Log tab and highlight event
+  navigateToEventScript = pkgs.writeShellScript "navigate-to-event" ''
+    #!/usr/bin/env bash
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    EVENT_ID="''${1:-}"
+
+    if [[ -z "$EVENT_ID" ]]; then
+      exit 0
+    fi
+
+    # Set highlight state and switch to events tab
+    $EWW_CMD update highlight_event_id="$EVENT_ID"
+    $EWW_CMD update current_view=events
+
+    # Clear highlight after 2 seconds
+    (${pkgs.coreutils}/bin/sleep 2 && $EWW_CMD update highlight_event_id="") &
+  '';
+
+  # Feature 102 T059: Start trace from template
+  startTraceFromTemplateScript = pkgs.writeShellScript "start-trace-from-template" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    EWW_CMD="${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel"
+    TEMPLATE_ID="''${1:-}"
+
+    if [[ -z "$TEMPLATE_ID" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Error" "No template ID provided"
+      exit 1
+    fi
+
+    # Close the dropdown
+    $EWW_CMD update template_dropdown_open=false
+
+    # Query daemon to start trace from template
+    SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [[ ! -S "$SOCKET" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Error" "i3pm daemon not running"
+      exit 1
+    fi
+
+    # Send JSON-RPC request
+    RESPONSE=$(${pkgs.coreutils}/bin/printf '{"jsonrpc":"2.0","method":"traces.start_from_template","params":{"template_id":"%s"},"id":1}\n' "$TEMPLATE_ID" \
+      | ${pkgs.socat}/bin/socat - UNIX-CONNECT:"$SOCKET" 2>/dev/null || echo '{"error":"Connection failed"}')
+
+    # Check for error
+    ERROR=$(${pkgs.jq}/bin/jq -r '.error.message // .result.error // empty' <<< "$RESPONSE" 2>/dev/null)
+    if [[ -n "$ERROR" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Error" "$ERROR"
+      exit 1
+    fi
+
+    # Extract trace ID
+    TRACE_ID=$(${pkgs.jq}/bin/jq -r '.result.trace_id // empty' <<< "$RESPONSE" 2>/dev/null)
+    if [[ -z "$TRACE_ID" ]]; then
+      ${pkgs.libnotify}/bin/notify-send -u critical "Trace Error" "Failed to start trace"
+      exit 1
+    fi
+
+    # Show success notification
+    TEMPLATE_NAME=$(${pkgs.jq}/bin/jq -r '.result.template_name // "Template"' <<< "$RESPONSE" 2>/dev/null)
+    ${pkgs.libnotify}/bin/notify-send -t 3000 "Trace Started" "Template: $TEMPLATE_NAME\nTrace ID: $TRACE_ID"
+  '';
+
   # Keyboard handler script for view switching (Alt+1-4 or just 1-4)
   handleKeyScript = pkgs.writeShellScript "monitoring-panel-keyhandler" ''
     KEY="$1"
@@ -2451,6 +2534,8 @@ in
       (defvar filter_window_title true)
       (defvar filter_window_mark true)
       (defvar filter_window_urgent true)
+      ;; Feature 102 T049: Window blur filter
+      (defvar filter_window_blur true)
       (defvar filter_workspace_focus true)
       (defvar filter_workspace_init true)
       (defvar filter_workspace_empty true)
@@ -2458,14 +2543,49 @@ in
       (defvar filter_workspace_rename true)
       (defvar filter_workspace_urgent true)
       (defvar filter_workspace_reload true)
+      ;; Feature 102 T047: Output event type filters
+      (defvar filter_output_connected true)
+      (defvar filter_output_disconnected true)
+      (defvar filter_output_profile_changed true)
       (defvar filter_output_unspecified true)
       (defvar filter_binding_run true)
       (defvar filter_mode_change true)
       (defvar filter_shutdown_exit true)
       (defvar filter_tick_manual true)
 
+      ;; Feature 102: i3pm internal event filters (T014)
+      ;; Project events
+      (defvar filter_i3pm_project_switch true)
+      (defvar filter_i3pm_project_clear true)
+      ;; Visibility events
+      (defvar filter_i3pm_visibility_hidden true)
+      (defvar filter_i3pm_visibility_shown true)
+      ;; Scratchpad events
+      (defvar filter_i3pm_scratchpad_move true)
+      (defvar filter_i3pm_scratchpad_show true)
+      ;; Launch events
+      (defvar filter_i3pm_launch_intent true)
+      (defvar filter_i3pm_launch_queued true)
+      (defvar filter_i3pm_launch_complete true)
+      (defvar filter_i3pm_launch_failed true)
+      ;; State events
+      (defvar filter_i3pm_state_cached true)
+      (defvar filter_i3pm_state_restored true)
+      ;; Command events (placeholder for US2)
+      (defvar filter_i3pm_command_queued true)
+      (defvar filter_i3pm_command_executed true)
+      (defvar filter_i3pm_command_result true)
+      (defvar filter_i3pm_command_batch true)
+      ;; Trace events
+      (defvar filter_i3pm_trace_started true)
+      (defvar filter_i3pm_trace_stopped true)
+      (defvar filter_i3pm_trace_event true)
+
       ;; Filter panel visibility (false = collapsed, true = expanded)
       (defvar filter_panel_expanded false)
+
+      ;; Feature 102 T053: Sort mode for events log (time = chronological, duration = slowest first)
+      (defvar events_sort_mode "time")
 
       ;; Feature 094: Project hover and copy state
       (defvar hover_project_name "")
@@ -2583,6 +2703,15 @@ in
       (defvar trace_events "[]")              ;; JSON array of events for expanded trace
       (defvar trace_events_loading false)     ;; True while fetching events
       (defvar copied_trace_id "")             ;; Trace ID just copied (for visual feedback)
+
+      ;; Feature 102 (T029-T031): Cross-navigation between Log and Traces tabs
+      (defvar highlight_event_id "")          ;; Event ID to highlight after navigation
+      (defvar highlight_trace_id "")          ;; Trace ID to highlight after navigation
+      (defvar navigate_to_tab "")             ;; Tab to navigate to (triggers via revealer animation)
+
+      ;; Feature 102 T059: Trace template selector state
+      (defvar template_dropdown_open false)   ;; True when template dropdown is visible
+      (defvar trace_templates "[{\"id\":\"debug-app-launch\",\"name\":\"Debug App Launch\",\"icon\":\"󰘳\",\"description\":\"Pre-launch trace for debugging app startup\"},{\"id\":\"debug-project-switch\",\"name\":\"Debug Project Switch\",\"icon\":\"󰓩\",\"description\":\"Trace all scoped windows during project switch\"},{\"id\":\"debug-focus-chain\",\"name\":\"Debug Focus Chain\",\"icon\":\"󰋴\",\"description\":\"Track focus and blur events for the currently focused window\"}]")
 
       ;; Main monitoring panel window - Sidebar layout
       ;; Non-focusable overlay: stays visible but allows interaction with apps underneath
@@ -5657,12 +5786,32 @@ in
                 :space-evenly false
                 (button
                   :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=true filter_window_close=true filter_window_focus=true filter_window_move=true filter_window_floating=true filter_window_fullscreen_mode=true filter_window_title=true filter_window_mark=true filter_window_urgent=true filter_workspace_focus=true filter_workspace_init=true filter_workspace_empty=true filter_workspace_move=true filter_workspace_rename=true filter_workspace_urgent=true filter_workspace_reload=true filter_output_unspecified=true filter_binding_run=true filter_mode_change=true filter_shutdown_exit=true filter_tick_manual=true"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=true filter_window_close=true filter_window_focus=true filter_window_blur=true filter_window_move=true filter_window_floating=true filter_window_fullscreen_mode=true filter_window_title=true filter_window_mark=true filter_window_urgent=true filter_workspace_focus=true filter_workspace_init=true filter_workspace_empty=true filter_workspace_move=true filter_workspace_rename=true filter_workspace_urgent=true filter_workspace_reload=true filter_output_connected=true filter_output_disconnected=true filter_output_profile_changed=true filter_output_unspecified=true filter_binding_run=true filter_mode_change=true filter_shutdown_exit=true filter_tick_manual=true filter_i3pm_project_switch=true filter_i3pm_project_clear=true filter_i3pm_visibility_hidden=true filter_i3pm_visibility_shown=true filter_i3pm_scratchpad_move=true filter_i3pm_scratchpad_show=true filter_i3pm_launch_intent=true filter_i3pm_launch_queued=true filter_i3pm_launch_complete=true filter_i3pm_launch_failed=true filter_i3pm_state_cached=true filter_i3pm_state_restored=true filter_i3pm_command_queued=true filter_i3pm_command_executed=true filter_i3pm_command_result=true filter_i3pm_command_batch=true filter_i3pm_trace_started=true filter_i3pm_trace_stopped=true filter_i3pm_trace_event=true"
                   "Select All")
                 (button
                   :class "filter-button"
-                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false"
-                  "Clear All"))
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update filter_window_new=false filter_window_close=false filter_window_focus=false filter_window_blur=false filter_window_move=false filter_window_floating=false filter_window_fullscreen_mode=false filter_window_title=false filter_window_mark=false filter_window_urgent=false filter_workspace_focus=false filter_workspace_init=false filter_workspace_empty=false filter_workspace_move=false filter_workspace_rename=false filter_workspace_urgent=false filter_workspace_reload=false filter_output_connected=false filter_output_disconnected=false filter_output_profile_changed=false filter_output_unspecified=false filter_binding_run=false filter_mode_change=false filter_shutdown_exit=false filter_tick_manual=false filter_i3pm_project_switch=false filter_i3pm_project_clear=false filter_i3pm_visibility_hidden=false filter_i3pm_visibility_shown=false filter_i3pm_scratchpad_move=false filter_i3pm_scratchpad_show=false filter_i3pm_launch_intent=false filter_i3pm_launch_queued=false filter_i3pm_launch_complete=false filter_i3pm_launch_failed=false filter_i3pm_state_cached=false filter_i3pm_state_restored=false filter_i3pm_command_queued=false filter_i3pm_command_executed=false filter_i3pm_command_result=false filter_i3pm_command_batch=false filter_i3pm_trace_started=false filter_i3pm_trace_stopped=false filter_i3pm_trace_event=false"
+                  "Clear All")
+                ;; Feature 102 T053: Sort-by-duration toggle
+                (box
+                  :class "sort-controls"
+                  :orientation "h"
+                  :space-evenly false
+                  :hexpand true
+                  :halign "end"
+                  (label
+                    :class "sort-label"
+                    :text "Sort: ")
+                  (button
+                    :class {"sort-button" + (events_sort_mode == "time" ? " active" : "")}
+                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update events_sort_mode=time"
+                    :tooltip "Sort by time (most recent first)"
+                    "󰃰 Time")
+                  (button
+                    :class {"sort-button" + (events_sort_mode == "duration" ? " active" : "")}
+                    :onclick "eww --config $HOME/.config/eww-monitoring-panel update events_sort_mode=duration"
+                    :tooltip "Sort by duration (slowest first)"
+                    "󱎫 Duration")))
               ;; Window events category
               (box
                 :class "filter-category-group"
@@ -5671,7 +5820,7 @@ in
                 (label
                   :class "filter-category-title"
                   :halign "start"
-                  :text "Window Events (9)")
+                  :text "Window Events (10)")
                 (box
                   :class "filter-checkboxes"
                   :orientation "h"
@@ -5679,6 +5828,7 @@ in
                   (filter-checkbox :label "new" :var "filter_window_new" :value filter_window_new)
                   (filter-checkbox :label "close" :var "filter_window_close" :value filter_window_close)
                   (filter-checkbox :label "focus" :var "filter_window_focus" :value filter_window_focus)
+                  (filter-checkbox :label "blur" :var "filter_window_blur" :value filter_window_blur)
                   (filter-checkbox :label "move" :var "filter_window_move" :value filter_window_move)
                   (filter-checkbox :label "floating" :var "filter_window_floating" :value filter_window_floating)
                   (filter-checkbox :label "fullscreen" :var "filter_window_fullscreen_mode" :value filter_window_fullscreen_mode)
@@ -5705,7 +5855,7 @@ in
                   (filter-checkbox :label "rename" :var "filter_workspace_rename" :value filter_workspace_rename)
                   (filter-checkbox :label "urgent" :var "filter_workspace_urgent" :value filter_workspace_urgent)
                   (filter-checkbox :label "reload" :var "filter_workspace_reload" :value filter_workspace_reload)))
-              ;; Output/Binding/Mode/System events
+              ;; Feature 102 T047: Output events category (connected/disconnected/profile_changed)
               (box
                 :class "filter-category-group"
                 :orientation "v"
@@ -5713,16 +5863,151 @@ in
                 (label
                   :class "filter-category-title"
                   :halign "start"
-                  :text "Other Events (5)")
+                  :text "Output Events (4)")
                 (box
                   :class "filter-checkboxes"
                   :orientation "h"
                   :space-evenly false
-                  (filter-checkbox :label "output" :var "filter_output_unspecified" :value filter_output_unspecified)
+                  (filter-checkbox :label "connected" :var "filter_output_connected" :value filter_output_connected)
+                  (filter-checkbox :label "disconnected" :var "filter_output_disconnected" :value filter_output_disconnected)
+                  (filter-checkbox :label "profile" :var "filter_output_profile_changed" :value filter_output_profile_changed)
+                  (filter-checkbox :label "other" :var "filter_output_unspecified" :value filter_output_unspecified)))
+              ;; Binding/Mode/System events
+              (box
+                :class "filter-category-group"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title"
+                  :halign "start"
+                  :text "System Events (4)")
+                (box
+                  :class "filter-checkboxes"
+                  :orientation "h"
+                  :space-evenly false
                   (filter-checkbox :label "binding" :var "filter_binding_run" :value filter_binding_run)
                   (filter-checkbox :label "mode" :var "filter_mode_change" :value filter_mode_change)
                   (filter-checkbox :label "shutdown" :var "filter_shutdown_exit" :value filter_shutdown_exit)
-                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))))
+                  (filter-checkbox :label "tick" :var "filter_tick_manual" :value filter_tick_manual)))
+              ;; Feature 102: i3pm Events category (T014)
+              (box
+                :class "filter-category-group i3pm-events-category"
+                :orientation "v"
+                :space-evenly false
+                (label
+                  :class "filter-category-title i3pm-title"
+                  :halign "start"
+                  :text "󱂬 i3pm Events (19)")
+                ;; Project events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Project")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "switch" :var "filter_i3pm_project_switch" :value filter_i3pm_project_switch)
+                    (filter-checkbox :label "clear" :var "filter_i3pm_project_clear" :value filter_i3pm_project_clear)))
+                ;; Visibility events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Visibility")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "hidden" :var "filter_i3pm_visibility_hidden" :value filter_i3pm_visibility_hidden)
+                    (filter-checkbox :label "shown" :var "filter_i3pm_visibility_shown" :value filter_i3pm_visibility_shown)))
+                ;; Scratchpad events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Scratchpad")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "move" :var "filter_i3pm_scratchpad_move" :value filter_i3pm_scratchpad_move)
+                    (filter-checkbox :label "show" :var "filter_i3pm_scratchpad_show" :value filter_i3pm_scratchpad_show)))
+                ;; Launch events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Launch")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "intent" :var "filter_i3pm_launch_intent" :value filter_i3pm_launch_intent)
+                    (filter-checkbox :label "queued" :var "filter_i3pm_launch_queued" :value filter_i3pm_launch_queued)
+                    (filter-checkbox :label "complete" :var "filter_i3pm_launch_complete" :value filter_i3pm_launch_complete)
+                    (filter-checkbox :label "failed" :var "filter_i3pm_launch_failed" :value filter_i3pm_launch_failed)))
+                ;; State events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "State")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "cached" :var "filter_i3pm_state_cached" :value filter_i3pm_state_cached)
+                    (filter-checkbox :label "restored" :var "filter_i3pm_state_restored" :value filter_i3pm_state_restored)))
+                ;; Command events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Command")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "queued" :var "filter_i3pm_command_queued" :value filter_i3pm_command_queued)
+                    (filter-checkbox :label "executed" :var "filter_i3pm_command_executed" :value filter_i3pm_command_executed)
+                    (filter-checkbox :label "result" :var "filter_i3pm_command_result" :value filter_i3pm_command_result)
+                    (filter-checkbox :label "batch" :var "filter_i3pm_command_batch" :value filter_i3pm_command_batch)))
+                ;; Trace events sub-category
+                (box
+                  :class "filter-subcategory"
+                  :orientation "v"
+                  :space-evenly false
+                  (label
+                    :class "filter-subcategory-title"
+                    :halign "start"
+                    :text "Trace")
+                  (box
+                    :class "filter-checkboxes"
+                    :orientation "h"
+                    :space-evenly false
+                    (filter-checkbox :label "started" :var "filter_i3pm_trace_started" :value filter_i3pm_trace_started)
+                    (filter-checkbox :label "stopped" :var "filter_i3pm_trace_stopped" :value filter_i3pm_trace_stopped)
+                    (filter-checkbox :label "event" :var "filter_i3pm_trace_event" :value filter_i3pm_trace_event))))))
           ;; Error state
           (box
             :visible {events_data.status == "error"}
@@ -5751,6 +6036,17 @@ in
             (label
               :class "empty-help"
               :text "Waiting for Sway window/workspace events..."))
+          ;; Feature 102 T065: Burst indicator - show when events are being collapsed due to high event rate
+          (box
+            :visible {(events_data.burst_active ?: false) || (events_data.total_collapsed ?: 0) > 0}
+            :class "burst-indicator"
+            :orientation "h"
+            :space-evenly false
+            :halign "center"
+            (label
+              :class {"burst-badge" + ((events_data.burst_active ?: false) ? " burst-active" : " burst-inactive")}
+              :tooltip "High event rate detected (>100/sec). Events are being collapsed to prevent UI overload."
+              :text {"󰈐 " + ((events_data.burst_active ?: false) ? "Burst: " + (events_data.burst_collapsed_current ?: 0) + " events collapsing..." : (events_data.total_collapsed ?: 0) + " events collapsed")}))
           ;; Events list (scroll container) with filtering
           (scroll
             :vscroll true
@@ -5761,10 +6057,12 @@ in
               :class "events-list"
               :orientation "v"
               :space-evenly false
-              ;; Iterate through events with filter logic
-              (for event in {events_data.events ?: []}
+              ;; Feature 102 T053: Iterate through events with sort mode selection
+              ;; time = chronological (events), duration = slowest first (events_by_duration)
+              (for event in {events_sort_mode == "duration" ? (events_data.events_by_duration ?: []) : (events_data.events ?: [])}
                 (box
                   :visible {
+                    ;; Sway window events
                     event.event_type == "window::new" ? filter_window_new :
                     event.event_type == "window::close" ? filter_window_close :
                     event.event_type == "window::focus" ? filter_window_focus :
@@ -5774,6 +6072,9 @@ in
                     event.event_type == "window::title" ? filter_window_title :
                     event.event_type == "window::mark" ? filter_window_mark :
                     event.event_type == "window::urgent" ? filter_window_urgent :
+                    ;; Feature 102 T049: Window blur filter
+                    event.event_type == "window::blur" ? filter_window_blur :
+                    ;; Sway workspace events
                     event.event_type == "workspace::focus" ? filter_workspace_focus :
                     event.event_type == "workspace::init" ? filter_workspace_init :
                     event.event_type == "workspace::empty" ? filter_workspace_empty :
@@ -5781,21 +6082,88 @@ in
                     event.event_type == "workspace::rename" ? filter_workspace_rename :
                     event.event_type == "workspace::urgent" ? filter_workspace_urgent :
                     event.event_type == "workspace::reload" ? filter_workspace_reload :
+                    ;; Feature 102 T047: Sway output events (connected/disconnected/profile_changed)
+                    event.event_type == "output::connected" ? filter_output_connected :
+                    event.event_type == "output::disconnected" ? filter_output_disconnected :
+                    event.event_type == "output::profile_changed" ? filter_output_profile_changed :
                     event.event_type == "output::unspecified" ? filter_output_unspecified :
+                    ;; Sway other events
                     event.event_type == "binding::run" ? filter_binding_run :
                     event.event_type == "mode::change" ? filter_mode_change :
                     event.event_type == "shutdown::exit" ? filter_shutdown_exit :
                     event.event_type == "tick::manual" ? filter_tick_manual :
+                    ;; Feature 102: i3pm project events (T014)
+                    event.event_type == "project::switch" ? filter_i3pm_project_switch :
+                    event.event_type == "project::clear" ? filter_i3pm_project_clear :
+                    ;; Feature 102: i3pm visibility events
+                    event.event_type == "visibility::hidden" ? filter_i3pm_visibility_hidden :
+                    event.event_type == "visibility::shown" ? filter_i3pm_visibility_shown :
+                    ;; Feature 102: i3pm scratchpad events
+                    event.event_type == "scratchpad::move" ? filter_i3pm_scratchpad_move :
+                    event.event_type == "scratchpad::show" ? filter_i3pm_scratchpad_show :
+                    ;; Feature 102: i3pm launch events
+                    event.event_type == "launch::intent" ? filter_i3pm_launch_intent :
+                    event.event_type == "launch::queued" ? filter_i3pm_launch_queued :
+                    event.event_type == "launch::complete" ? filter_i3pm_launch_complete :
+                    event.event_type == "launch::failed" ? filter_i3pm_launch_failed :
+                    ;; Feature 102: i3pm state events
+                    event.event_type == "state::cached" ? filter_i3pm_state_cached :
+                    event.event_type == "state::restored" ? filter_i3pm_state_restored :
+                    ;; Feature 102: i3pm command events (US2)
+                    event.event_type == "command::queued" ? filter_i3pm_command_queued :
+                    event.event_type == "command::executed" ? filter_i3pm_command_executed :
+                    event.event_type == "command::result" ? filter_i3pm_command_result :
+                    event.event_type == "command::batch" ? filter_i3pm_command_batch :
+                    ;; Feature 102: i3pm trace events
+                    event.event_type == "trace::started" ? filter_i3pm_trace_started :
+                    event.event_type == "trace::stopped" ? filter_i3pm_trace_stopped :
+                    event.event_type == "trace::event" ? filter_i3pm_trace_event :
                     true
                   }
                   (event-card :event event)))))))
 
       ;; Feature 092: Event card widget - Single event display (T025)
+      ;; Feature 102: Added source indicator (T015-T016), trace indicator (T028), causality visualization (T036-T038)
       (defwidget event-card [event]
         (box
-          :class "event-card event-category-''${event.category}"
+          :class {"event-card event-category-''${event.category}" + (event.source == "i3pm" ? " event-source-i3pm" : " event-source-sway") + ((event.trace_id ?: "") != "" ? " event-has-trace" : "") + ((event.correlation_id ?: "") != "" ? " event-in-chain" : "") + ((event.causality_depth ?: 0) > 0 ? " event-child-depth-''${event.causality_depth ?: 0}" : "")}
           :orientation "h"
           :space-evenly false
+          ;; Feature 102 (T037): Indentation for causality depth
+          :style "margin-left: ''${(event.causality_depth ?: 0) * 16}px;"
+          ;; Feature 102 (T036): Causality chain indicator
+          (box
+            :class "event-chain-indicator"
+            :visible {(event.correlation_id ?: "") != ""}
+            :width 3
+            :vexpand true)
+          ;; Feature 102: Source indicator badge (T016)
+          (label
+            :class {"event-source-badge " + (event.source == "i3pm" ? "source-i3pm" : "source-sway")}
+            :tooltip "''${event.source == 'i3pm' ? 'i3pm internal event' : 'Sway IPC event'}"
+            :text "''${event.source == 'i3pm' ? '󱂬' : '󰌪'}")
+          ;; Feature 102 (T028-T030): Trace indicator icon - click to navigate to Traces tab
+          ;; Feature 102 T066: Show evicted indicator if trace no longer in buffer
+          (eventbox
+            :visible {(event.trace_id ?: "") != ""}
+            :cursor "pointer"
+            :onclick "${navigateToTraceScript} ''${event.trace_id ?: ''} &"
+            :tooltip {"''${(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: '')}"}
+            (label
+              :class {"event-trace-indicator" + ((event.trace_evicted ?: false) ? " trace-evicted" : "")}
+              :text {"''${(event.trace_evicted ?: false) ? '󰈄' : '󰈙'}"}))
+          ;; Feature 102 T067: Orphaned event indicator (child without visible parent)
+          (label
+            :class "event-orphaned-indicator"
+            :visible {(event.parent_missing ?: false)}
+            :tooltip "Parent event not in current view (may have been evicted)"
+            :text "󰋇")
+          ;; Feature 102 T052: Duration badge for slow events (>100ms)
+          (label
+            :class {"event-duration-badge" + ((event.processing_duration_ms ?: 0) > 500 ? " duration-critical" : (event.processing_duration_ms ?: 0) > 100 ? " duration-slow" : "")}
+            :visible {(event.processing_duration_ms ?: 0) > 100}
+            :tooltip "Processing took ''${event.processing_duration_ms ?: 0}ms - slow event (>100ms)"
+            :text "''${event.processing_duration_ms ?: 0}ms")
           ;; Event icon with category color
           (label
             :class "event-icon"
@@ -5859,7 +6227,7 @@ in
               :class "error-message"
               :visible {traces_data.status == "error"}
               (label :text "⚠ ''${traces_data.error ?: 'Unknown error'}"))
-            ;; Summary header
+            ;; Summary header with template selector dropdown
             (box
               :class "traces-summary"
               :orientation "h"
@@ -5870,6 +6238,48 @@ in
                 :halign "start"
                 :hexpand true
                 :text "''${traces_data.trace_count ?: 0} trace(s) (''${traces_data.active_count ?: 0} active)")
+              ;; Feature 102 T059: Template selector dropdown button
+              (box
+                :class "template-selector-container"
+                :orientation "v"
+                :space-evenly false
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "eww --config $HOME/.config/eww-monitoring-panel update template_dropdown_open=''${!template_dropdown_open}"
+                  (box
+                    :class {"template-add-button" + (template_dropdown_open ? " active" : "")}
+                    :tooltip "Start trace from template"
+                    (label :text "󰐕 New")))
+                ;; Dropdown menu
+                (box
+                  :class "template-dropdown"
+                  :visible template_dropdown_open
+                  :orientation "v"
+                  :space-evenly false
+                  (for template in {trace_templates}
+                    (eventbox
+                      :cursor "pointer"
+                      :onclick "${startTraceFromTemplateScript} ''${template.id} &"
+                      (box
+                        :class "template-item"
+                        :orientation "h"
+                        :space-evenly false
+                        (label
+                          :class "template-icon"
+                          :text "''${template.icon}")
+                        (box
+                          :orientation "v"
+                          :space-evenly false
+                          :hexpand true
+                          (label
+                            :class "template-name"
+                            :halign "start"
+                            :text "''${template.name}")
+                          (label
+                            :class "template-description"
+                            :halign "start"
+                            :limit-width 40
+                            :text "''${template.description}")))))))
               (label
                 :class "traces-help"
                 :halign "end"
@@ -5903,9 +6313,10 @@ in
                 (trace-card :trace trace))))))
 
       ;; Feature 101: Trace card widget - displays single trace info with expandable events
+      ;; Feature 102 (T031): Added highlight class for navigation animation
       (defwidget trace-card [trace]
         (box
-          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped") + (expanded_trace_id == trace.trace_id ? " trace-expanded" : "")}
+          :class {"trace-card " + (trace.is_active ? "trace-active" : "trace-stopped") + (expanded_trace_id == trace.trace_id ? " trace-expanded" : "") + (highlight_trace_id == trace.trace_id ? " trace-highlight" : "")}
           :orientation "v"
           :space-evenly false
           ;; Main trace info row (clickable to expand)
@@ -9099,6 +9510,30 @@ in
         margin-top: 4px;
       }
 
+      /* Feature 102 T065: Burst indicator styles */
+      .burst-indicator {
+        padding: 6px 12px;
+        margin: 4px 8px;
+        border-radius: 4px;
+        background-color: alpha(${mocha.yellow}, 0.1);
+        border: 1px solid alpha(${mocha.yellow}, 0.3);
+      }
+
+      .burst-badge {
+        font-size: 12px;
+        color: ${mocha.yellow};
+        font-weight: bold;
+      }
+
+      .burst-badge.burst-active {
+        color: ${mocha.red};
+        /* Animated pulse effect for active burst */
+      }
+
+      .burst-badge.burst-inactive {
+        color: ${mocha.subtext0};
+      }
+
       .event-card {
         background-color: ${mocha.surface0};
         border-left: 3px solid ${mocha.overlay0};
@@ -9135,6 +9570,141 @@ in
 
       .event-card.event-category-system {
         border-left-color: ${mocha.red};
+      }
+
+      /* Feature 102: i3pm event category styles (T015) */
+      .event-card.event-category-project {
+        border-left-color: ${mocha.peach};
+      }
+
+      .event-card.event-category-visibility {
+        border-left-color: ${mocha.mauve};
+      }
+
+      .event-card.event-category-scratchpad {
+        border-left-color: ${mocha.pink};
+      }
+
+      .event-card.event-category-launch {
+        border-left-color: ${mocha.green};
+      }
+
+      .event-card.event-category-state {
+        border-left-color: ${mocha.sapphire};
+      }
+
+      .event-card.event-category-command {
+        border-left-color: ${mocha.sky};
+      }
+
+      .event-card.event-category-trace {
+        border-left-color: ${mocha.lavender};
+      }
+
+      /* Feature 102: Source indicator styles (T015-T016) */
+      .event-source-badge {
+        font-size: 14px;
+        margin-right: 8px;
+        min-width: 18px;
+        padding: 2px;
+        border-radius: 3px;
+      }
+
+      .event-source-badge.source-i3pm {
+        color: ${mocha.peach};
+        background-color: alpha(${mocha.peach}, 0.15);
+      }
+
+      .event-source-badge.source-sway {
+        color: ${mocha.blue};
+        background-color: alpha(${mocha.blue}, 0.1);
+      }
+
+      /* Feature 102: i3pm event card distinction (T015) */
+      .event-card.event-source-i3pm {
+        background-color: alpha(${mocha.peach}, 0.05);
+      }
+
+      .event-card.event-source-i3pm:hover {
+        background-color: alpha(${mocha.peach}, 0.1);
+      }
+
+      /* Feature 102 (T028): Trace indicator icon styles */
+      .event-trace-indicator {
+        font-size: 14px;
+        margin-right: 6px;
+        color: ${mocha.mauve};
+        min-width: 16px;
+        opacity: 0.9;
+      }
+
+      /* Feature 102 T066: Evicted trace indicator */
+      .event-trace-indicator.trace-evicted {
+        color: ${mocha.overlay0};
+        opacity: 0.6;
+      }
+
+      /* Feature 102 T067: Orphaned event indicator */
+      .event-orphaned-indicator {
+        font-size: 12px;
+        margin-right: 6px;
+        color: ${mocha.yellow};
+        opacity: 0.8;
+      }
+
+      /* Feature 102 T052: Duration badge styles for slow events */
+      .event-duration-badge {
+        font-size: 10px;
+        font-weight: 600;
+        margin-right: 6px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        min-width: 40px;
+      }
+
+      .event-duration-badge.duration-slow {
+        color: ${mocha.yellow};
+        background-color: alpha(${mocha.yellow}, 0.2);
+      }
+
+      .event-duration-badge.duration-critical {
+        color: ${mocha.red};
+        background-color: alpha(${mocha.red}, 0.2);
+      }
+
+      /* Highlight events that are part of a trace */
+      .event-card.event-has-trace {
+        border-left: 2px solid ${mocha.mauve};
+      }
+
+      /* Feature 102 (T036): Causality chain indicator */
+      .event-chain-indicator {
+        background-color: ${mocha.lavender};
+        border-radius: 1px;
+        margin-right: 8px;
+        min-height: 100%;
+      }
+
+      /* Feature 102 (T037): Causality chain event styling */
+      .event-card.event-in-chain {
+        border-left: 2px solid ${mocha.lavender};
+        transition: background-color 0.2s ease;
+      }
+
+      /* Feature 102 (T038): Hover highlighting for causality chain */
+      .event-card.event-in-chain:hover {
+        background-color: alpha(${mocha.lavender}, 0.15);
+      }
+
+      /* Feature 102 (T037): Child event depth indicators */
+      .event-card.event-child-depth-1 {
+        border-left-color: ${mocha.sapphire};
+      }
+      .event-card.event-child-depth-2 {
+        border-left-color: ${mocha.sky};
+      }
+      .event-card.event-child-depth-3 {
+        border-left-color: ${mocha.teal};
       }
 
       .event-icon {
@@ -9231,6 +9801,39 @@ in
         border-color: ${mocha.blue};
       }
 
+      /* Feature 102 T053: Sort controls */
+      .sort-controls {
+        margin-left: auto;
+        padding-left: 12px;
+      }
+
+      .sort-label {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        margin-right: 6px;
+      }
+
+      .sort-button {
+        background-color: ${mocha.surface0};
+        color: ${mocha.subtext0};
+        border: 1px solid ${mocha.surface1};
+        border-radius: 3px;
+        padding: 3px 8px;
+        margin-left: 4px;
+        font-size: 10px;
+      }
+
+      .sort-button:hover {
+        background-color: ${mocha.surface1};
+        color: ${mocha.text};
+      }
+
+      .sort-button.active {
+        background-color: ${mocha.blue};
+        color: ${mocha.base};
+        border-color: ${mocha.blue};
+      }
+
       .filter-category-group {
         background-color: ${mocha.base};
         border-radius: 4px;
@@ -9275,6 +9878,30 @@ in
         font-family: monospace;
       }
 
+      /* Feature 102: i3pm filter category styling (T014) */
+      .i3pm-events-category {
+        border-color: ${mocha.peach};
+        background-color: alpha(${mocha.peach}, 0.05);
+      }
+
+      .i3pm-title {
+        color: ${mocha.peach};
+      }
+
+      .filter-subcategory {
+        padding-left: 8px;
+        margin-top: 4px;
+        border-left: 2px solid ${mocha.surface1};
+      }
+
+      .filter-subcategory-title {
+        font-size: 9px;
+        font-weight: 500;
+        color: ${mocha.subtext0};
+        margin-bottom: 2px;
+        margin-top: 4px;
+      }
+
       /* Feature 101: Traces View Styling */
       .traces-summary {
         padding: 8px 12px;
@@ -9291,6 +9918,76 @@ in
 
       .traces-help {
         font-size: 12px;
+        color: ${mocha.subtext0};
+      }
+
+      /* Feature 102 T059: Template selector dropdown */
+      .template-selector-container {
+        position: relative;
+        margin-right: 8px;
+      }
+
+      .template-add-button {
+        background-color: ${mocha.surface0};
+        color: ${mocha.text};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 4px;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .template-add-button:hover {
+        background-color: ${mocha.surface1};
+        border-color: ${mocha.blue};
+      }
+
+      .template-add-button.active {
+        background-color: ${mocha.blue};
+        color: ${mocha.base};
+        border-color: ${mocha.blue};
+      }
+
+      .template-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 4px;
+        background-color: ${mocha.surface0};
+        border: 1px solid ${mocha.overlay0};
+        border-radius: 6px;
+        padding: 4px;
+        min-width: 250px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 100;
+      }
+
+      .template-item {
+        padding: 8px 10px;
+        border-radius: 4px;
+        margin: 2px 0;
+      }
+
+      .template-item:hover {
+        background-color: ${mocha.surface1};
+      }
+
+      .template-icon {
+        font-size: 18px;
+        color: ${mocha.teal};
+        margin-right: 10px;
+        min-width: 24px;
+      }
+
+      .template-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: ${mocha.text};
+        margin-bottom: 2px;
+      }
+
+      .template-description {
+        font-size: 10px;
         color: ${mocha.subtext0};
       }
 
@@ -9499,6 +10196,19 @@ in
 
       .trace-expanded .trace-expand-icon {
         color: ${mocha.lavender};
+      }
+
+      /* Feature 102 (T031): Highlight animation for navigation */
+      .trace-card.trace-highlight {
+        animation: highlight-pulse 2s ease-out;
+        border: 2px solid ${mocha.mauve};
+        background-color: alpha(${mocha.mauve}, 0.15);
+      }
+
+      @keyframes highlight-pulse {
+        0% { background-color: alpha(${mocha.mauve}, 0.3); }
+        50% { background-color: alpha(${mocha.mauve}, 0.15); }
+        100% { background-color: alpha(${mocha.mauve}, 0.05); }
       }
 
       .trace-events-panel {
