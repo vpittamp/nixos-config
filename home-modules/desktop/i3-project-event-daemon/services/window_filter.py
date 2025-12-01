@@ -514,11 +514,14 @@ async def filter_windows_by_project(
 
                     # Feature 103: Detect scratchpad terminals via unified mark app_name
                     # Mark format: scoped:scratchpad-terminal:PROJECT:WINDOW_ID
+                    # Scratchpad terminals should NEVER be auto-restored on project switch
+                    # They stay hidden until user explicitly toggles them
                     is_scratchpad_terminal = window_app_name == "scratchpad-terminal"
                     if is_scratchpad_terminal:
-                        logger.debug(
-                            f"[Feature 103] Window {window_id} is scratchpad-terminal (app_name from mark)"
+                        logger.info(
+                            f"[Feature 103] Skipping scratchpad-terminal {window_id} (stays hidden on project switch)"
                         )
+                        continue  # Skip to next window - don't restore scratchpad terminals
 
                     # Load saved state if workspace_tracker available
                     saved_state = None
