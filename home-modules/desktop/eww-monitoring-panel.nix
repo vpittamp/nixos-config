@@ -8396,8 +8396,17 @@ in
       }
 
       /* Hide action bar for main worktree (cannot delete) */
+      /* Note: GTK CSS doesn't support display:none, use opacity+size instead */
       .worktree-card-wrapper.is-main-worktree .worktree-action-bar {
-        display: none;
+        opacity: 0;
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        margin: 0;
+      }
+
+      .worktree-card-wrapper.is-main-worktree:hover .worktree-action-bar {
+        opacity: 0; /* Keep hidden even on hover for main worktree */
       }
 
       .worktree-card {
