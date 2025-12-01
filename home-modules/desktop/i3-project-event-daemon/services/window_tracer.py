@@ -51,6 +51,9 @@ class TraceEventType(str, Enum):
     # Marks
     MARK_ADDED = "mark::added"
     MARK_REMOVED = "mark::removed"
+    # Feature 103: Mark decision tracing
+    MARK_CLASSIFIED = "mark::classified"    # Window classification decision (scope, app, project)
+    MARK_INJECTED = "mark::injected"        # Mark actually applied to window
 
     # Project/Visibility
     PROJECT_SWITCH = "project::switch"
@@ -58,6 +61,10 @@ class TraceEventType(str, Enum):
     VISIBILITY_SHOWN = "visibility::shown"
     SCRATCHPAD_MOVE = "scratchpad::move"
     SCRATCHPAD_SHOW = "scratchpad::show"
+    # Feature 103: Filter decision tracing
+    FILTER_DECISION = "filter::decision"    # Why window was hidden/shown
+    FILTER_SKIP = "filter::skip"            # Why window was skipped (e.g., scratchpad-terminal)
+    SCRATCHPAD_SKIP = "scratchpad::skip"    # Scratchpad-terminal restore skipped
 
     # Environment
     ENV_DETECTED = "env::detected"

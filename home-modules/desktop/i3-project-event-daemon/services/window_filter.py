@@ -25,7 +25,7 @@ from ..worktree_utils import parse_mark  # Feature 101
 from .command_batch import CommandBatchService
 from .tree_cache import TreeCacheService, get_tree_cache
 from .performance_tracker import PerformanceTrackerService, get_performance_tracker
-# Feature 101: Import window tracer for visibility events
+# Feature 101/103: Import window tracer for visibility and filter decision events
 from .window_tracer import get_tracer, TraceEventType
 
 logger = logging.getLogger(__name__)
@@ -420,6 +420,102 @@ async def _record_mark_trace(
         logger.debug(f"[Feature 103] Error recording mark trace: {e}")
 
 
+async def _record_filter_decision(
+    window,
+    should_show: bool,
+    reason: str,
+    window_scope: Optional[str],
+    window_project: Optional[str],
+    window_app: Optional[str],
+    active_project: Optional[str],
+) -> None:
+    """Record filter decision for window tracing.
+
+    Feature 103: Explains WHY a window was hidden or shown during project switch.
+    This is the key debugging event that answers "why did this happen?"
+
+    Args:
+        window: i3ipc container/node from tree traversal
+        should_show: True if window should be shown, False if hidden
+        reason: Human-readable explanation of the decision
+        window_scope: Window's mark scope ("scoped" or "global")
+        window_project: Window's project from mark
+        window_app: Window's app name from mark
+        active_project: Currently active project
+    """
+    try:
+        tracer = get_tracer()
+        if tracer:
+            decision = "SHOW" if should_show else "HIDE"
+            context = {
+                "decision": decision,
+                "reason": reason,
+                "window_scope": window_scope,
+                "window_project": window_project,
+                "window_app": window_app,
+                "active_project": active_project,
+            }
+
+            description = f"Filter decision: {decision} - {reason}"
+
+            affected = await tracer.record_event(
+                window,
+                TraceEventType.FILTER_DECISION,
+                description,
+                context,
+            )
+            if affected:
+                logger.debug(f"[Feature 103] Recorded filter decision for window {window.id}")
+    except Exception as e:
+        logger.debug(f"[Feature 103] Error recording filter decision: {e}")
+
+
+async def _record_filter_skip(
+    window,
+    skip_reason: str,
+    window_app: Optional[str],
+    context_data: Optional[Dict] = None,
+) -> None:
+    """Record when a window is skipped from restore.
+
+    Feature 103: Explains WHY a window was skipped (e.g., scratchpad-terminal).
+    Critical for debugging "why didn't my window restore?"
+
+    Args:
+        window: i3ipc container/node from tree traversal
+        skip_reason: Human-readable explanation of why skipped
+        window_app: Window's app name from mark
+        context_data: Additional context data
+    """
+    try:
+        tracer = get_tracer()
+        if tracer:
+            context = {
+                "skip_reason": skip_reason,
+                "window_app": window_app,
+                **(context_data or {}),
+            }
+
+            # Use SCRATCHPAD_SKIP for scratchpad-terminal, FILTER_SKIP for others
+            if window_app == "scratchpad-terminal":
+                event_type = TraceEventType.SCRATCHPAD_SKIP
+                description = f"Scratchpad-terminal skipped: {skip_reason}"
+            else:
+                event_type = TraceEventType.FILTER_SKIP
+                description = f"Window skipped: {skip_reason}"
+
+            affected = await tracer.record_event(
+                window,
+                event_type,
+                description,
+                context,
+            )
+            if affected:
+                logger.debug(f"[Feature 103] Recorded filter skip for window {window.id}")
+    except Exception as e:
+        logger.debug(f"[Feature 103] Error recording filter skip: {e}")
+
+
 async def filter_windows_by_project(
     conn,  # i3ipc.aio.Connection
     active_project: Optional[str],
@@ -538,26 +634,44 @@ async def filter_windows_by_project(
                 break
 
         # Determine visibility
+        # Feature 103: Track reason for filter decision tracing
         should_show = False
+        filter_reason = ""
         if window_project is None:
             # No project mark → global scope → always visible
             should_show = True
+            filter_reason = "no project mark (global scope)"
             logger.debug(f"Window {window_id} ({window.window_class}): global (no project mark)")
         elif window_scope == "global":
             should_show = True
+            filter_reason = "explicit global scope in mark"
             logger.debug(f"Window {window_id} ({window.window_class}): global (explicit scope)")
         elif active_project is None:
             should_show = False
+            filter_reason = "no active project (global mode)"
             logger.debug(f"Window {window_id} ({window.window_class}): hide (no active project)")
         elif window_project == active_project:
             should_show = True
+            filter_reason = f"project match ({window_project})"
             logger.debug(f"Window {window_id} ({window.window_class}): show (project match: {window_project})")
         else:
             should_show = False
+            filter_reason = f"project mismatch ({window_project} != {active_project})"
             logger.debug(
                 f"Window {window_id} ({window.window_class}): hide "
                 f"(project mismatch: {window_project} != {active_project})"
             )
+
+        # Feature 103: Record filter decision for debugging
+        await _record_filter_decision(
+            window=window,
+            should_show=should_show,
+            reason=filter_reason,
+            window_scope=window_scope,
+            window_project=window_project,
+            window_app=window_app_name,
+            active_project=active_project,
+        )
 
         # Build commands (Feature 091: defer execution for parallel batch)
         try:
@@ -578,6 +692,17 @@ async def filter_windows_by_project(
                     if is_scratchpad_terminal:
                         logger.info(
                             f"[Feature 103] Skipping scratchpad-terminal {window_id} (stays hidden on project switch)"
+                        )
+                        # Feature 103: Record why scratchpad-terminal was skipped for tracing
+                        await _record_filter_skip(
+                            window=window,
+                            skip_reason="scratchpad-terminals stay hidden on project switch (user-controlled toggle)",
+                            window_app=window_app_name,
+                            context_data={
+                                "active_project": active_project,
+                                "window_project": window_project,
+                                "window_id": window_id,
+                            },
                         )
                         continue  # Skip to next window - don't restore scratchpad terminals
 
@@ -635,6 +760,17 @@ async def filter_windows_by_project(
                         # Feature 038 P3: Skip windows originally in scratchpad (but not scratchpad terminals)
                         if original_scratchpad and not is_scratchpad_terminal:
                             logger.debug(f"Window {window_id} was originally in scratchpad, skipping")
+                            # Feature 103: Record why window was skipped for tracing
+                            await _record_filter_skip(
+                                window=window,
+                                skip_reason="window was originally in scratchpad (user placed there manually)",
+                                window_app=window_app_name,
+                                context_data={
+                                    "original_scratchpad": True,
+                                    "active_project": active_project,
+                                    "window_project": window_project,
+                                },
+                            )
                             continue
 
                         geometry = saved_state.get("geometry") if is_floating else None

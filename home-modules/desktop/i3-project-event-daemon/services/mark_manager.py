@@ -20,6 +20,8 @@ from typing import Optional, Callable, Awaitable, TYPE_CHECKING
 from i3ipc.aio import Connection
 
 from ..worktree_utils import build_mark, parse_mark, ParsedMark
+# Feature 103: Import window tracer for mark injection trace events
+from .window_tracer import get_tracer, TraceEventType
 
 if TYPE_CHECKING:
     from ..event_buffer import EventBuffer
@@ -145,6 +147,63 @@ class MarkManager:
         except Exception as e:
             logger.warning(f"[Feature 103] Failed to record mark event: {e}")
 
+    async def _record_mark_trace(
+        self,
+        window_id: int,
+        event_type: TraceEventType,
+        description: str,
+        mark_text: str,
+        mark_scope: str,
+        mark_app: str,
+        mark_project: str,
+        trigger: str,
+        duration_ms: float = 0.0,
+        error: Optional[str] = None,
+    ) -> None:
+        """Record mark event to window tracer for tracing visualization.
+
+        Feature 103: Records mark injection/classification events to active window traces.
+        This is separate from _record_mark_event which records to the event buffer.
+        Tracer events only record for windows being actively traced.
+
+        Args:
+            window_id: Sway container ID
+            event_type: TraceEventType.MARK_INJECTED or MARK_CLASSIFIED
+            description: Human-readable description
+            mark_text: Full mark string
+            mark_scope: Mark scope ("scoped" or "global")
+            mark_app: Application name
+            mark_project: Project name
+            trigger: What triggered this operation
+            duration_ms: Operation duration
+            error: Error message if failed
+        """
+        try:
+            tracer = get_tracer()
+            if tracer:
+                context = {
+                    "mark_text": mark_text,
+                    "mark_scope": mark_scope,
+                    "mark_app": mark_app,
+                    "mark_project": mark_project,
+                    "trigger": trigger,
+                    "duration_ms": duration_ms,
+                }
+                if error:
+                    context["error"] = error
+
+                affected = await tracer.record_window_event(
+                    window_id,
+                    event_type,
+                    description,
+                    context,
+                )
+                if affected:
+                    logger.debug(f"[Feature 103] Recorded {event_type.value} trace for window {window_id}")
+        except Exception as e:
+            # Never let tracing break normal mark operations
+            logger.debug(f"[Feature 103] Error recording mark trace: {e}")
+
     async def inject_mark(
         self,
         window_id: int,
@@ -217,7 +276,7 @@ class MarkManager:
             f"({elapsed_ms:.2f}ms)"
         )
 
-        # Feature 103: Record successful injection event
+        # Feature 103: Record successful injection event to event buffer
         await self._record_mark_event(
             event_type="mark::injection",
             window_id=window_id,
@@ -227,6 +286,37 @@ class MarkManager:
             mark_project=project,
             mark_operation="injection",
             mark_trigger=trigger,
+            duration_ms=elapsed_ms,
+        )
+
+        # Feature 103: Record mark classification + injection to window tracer
+        # MARK_CLASSIFIED: Why we chose this scope/app/project
+        classification_reason = (
+            f"Classified as {scope}:{app_name} for project '{project}' "
+            f"(trigger: {trigger})"
+        )
+        await self._record_mark_trace(
+            window_id=window_id,
+            event_type=TraceEventType.MARK_CLASSIFIED,
+            description=classification_reason,
+            mark_text=mark,
+            mark_scope=scope,
+            mark_app=app_name,
+            mark_project=project,
+            trigger=trigger,
+            duration_ms=0,  # Classification is instant
+        )
+
+        # MARK_INJECTED: The actual mark that was applied
+        await self._record_mark_trace(
+            window_id=window_id,
+            event_type=TraceEventType.MARK_INJECTED,
+            description=f"Mark injected: {mark}",
+            mark_text=mark,
+            mark_scope=scope,
+            mark_app=app_name,
+            mark_project=project,
+            trigger=trigger,
             duration_ms=elapsed_ms,
         )
 
