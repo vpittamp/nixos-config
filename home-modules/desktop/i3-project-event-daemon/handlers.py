@@ -884,6 +884,7 @@ async def on_window_new(
         from .services.window_filter import read_process_environ, parse_window_environment
         window_env = None
         is_scratchpad_terminal = False
+        mark_already_injected = False  # Feature 103: Track if mark was injected via mark_manager
         if window_pid:
             try:
                 env = read_process_environ(window_pid)
@@ -926,14 +927,15 @@ async def on_window_new(
                         try:
                             # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
                             project = window_env.project_name if window_env.scope == "scoped" else "global"
-                            mark = await mark_manager.inject_mark(
+                            injected_mark = await mark_manager.inject_mark(
                                 window_id=window_id,
                                 app_name=window_env.app_name,
                                 project=project,
                                 scope=window_env.scope,
                             )
+                            mark_already_injected = True
                             logger.info(
-                                f"[Feature 103] Injected unified mark for window {window_id} ({window_env.app_name}): {mark}"
+                                f"[Feature 103] Injected unified mark for window {window_id} ({window_env.app_name}): {injected_mark}"
                             )
                         except Exception as e:
                             # Graceful degradation - log error but don't fail window creation
@@ -941,6 +943,7 @@ async def on_window_new(
                                 f"[Feature 103] Failed to inject mark for window {window_id} ({window_env.app_name}): {e}"
                             )
                     elif is_scratchpad_terminal and mark_manager and window_env and window_env.app_name:
+                        mark_already_injected = True  # Will be marked by scratchpad manager
                         logger.info(
                             f"[Feature 103] Skipping mark injection for scratchpad terminal {window_id} "
                             f"(will be marked by scratchpad manager with 'scoped:scratchpad-terminal:{window_env.project_name}:{window_id}')"
@@ -1117,54 +1120,41 @@ async def on_window_new(
 
         # Feature 062: Skip marking for scratchpad terminals
         # They will be marked by the scratchpad manager with "scratchpad:PROJECT" format
+        # Feature 103: Also skip if mark was already injected via mark_manager
         if is_scratchpad_terminal:
             logger.info(f"Skipping project mark for scratchpad terminal {window_id} (will be marked by scratchpad manager)")
             marks_list = []
             mark = None  # No mark applied yet
+        elif mark_already_injected:
+            # Feature 103: Mark already injected via mark_manager.inject_mark() above
+            logger.debug(f"[Feature 103] Skipping duplicate mark for window {window_id} (already injected via mark_manager)")
+            # Get the injected mark from the window for tracking
+            marks_list = [m for m in container.marks if m.startswith("scoped:") or m.startswith("global:")]
+            mark = marks_list[0] if marks_list else None
         else:
-            # Apply project mark if we have a project assignment
-            # Note: i3 marks must be UNIQUE - use format SCOPE:PROJECT:WINDOW_ID
-            # Feature 041 T020: Mark windows from launch correlation
-            # Feature 035: Mark windows from I3PM environment
-            # Feature 061: Unified mark format - all windows use "project:" prefix
-            should_mark = False
-            mark_source = None
-
-            if correlated_project and actual_project:
-                # Project assigned via launch correlation
-                should_mark = True
-                mark_source = "launch correlation"
-            elif window_env and actual_project:
-                # Project assigned via I3PM environment (both scoped and global apps)
-                should_mark = True
-                mark_source = "I3PM environment"
-            elif actual_project and classification.scope == "scoped":
-                # Project assigned via active project (user intent) for scoped windows
-                # This handles windows opened without launch notification or I3PM environment
-                should_mark = True
-                mark_source = "active project"
-
-            # ALWAYS mark windows for consistency and debugging
-            # Updated format: SCOPE:PROJECT:WINDOW_ID (includes scope for filtering)
+            # Fallback: Apply unified mark for windows without I3PM environment (e.g., manually launched apps)
+            # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
             # - SCOPE: "scoped" or "global" from app registry (via I3PM_SCOPE env var)
-            # - PROJECT: project name or "none" if no active project
+            # - APP: application name from registry or window class as fallback
+            # - PROJECT: project name or "global" if no active project
             # - WINDOW_ID: unique window identifier (container.id)
-            # This allows window_filter.py to correctly identify global apps
 
             # Feature 035/057 - Environment Variable-Based Scope:
             # Use I3PM_SCOPE from app registry as single source of truth
             # All apps launched via registry wrapper have this variable set
             scope_for_mark = window_env.scope if window_env else "global"  # Default to global if no I3PM environment
-            project_for_mark = actual_project or "none"
-            mark = f"{scope_for_mark}:{project_for_mark}:{window_id}"
+            # Feature 103: Use app_name from environment, or derive from window class
+            app_for_mark = window_env.app_name if window_env and window_env.app_name else window_class.lower().replace(" ", "-")
+            project_for_mark = actual_project or "global"
+
+            # Feature 103: Build unified mark
+            from .worktree_utils import build_mark
+            mark = build_mark(scope_for_mark, app_for_mark, project_for_mark, window_id)
 
             # Feature 046: Use con_id for Sway/Wayland compatibility (window_id is now container.id)
             await conn.command(f'[con_id={window_id}] mark --add "{mark}"')
 
-            if actual_project:
-                logger.info(f"Marked window {window_id} with {mark} (project from {mark_source or 'active project'})")
-            else:
-                logger.info(f"Marked window {window_id} with {mark} (no active project)")
+            logger.info(f"[Feature 103] Marked window {window_id} with {mark} (fallback for manually launched app)")
 
             marks_list = [mark]
 

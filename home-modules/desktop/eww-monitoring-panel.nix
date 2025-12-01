@@ -1718,6 +1718,114 @@ print(json.dumps(result))
     fi
   '';
 
+  # Close worktree action script - closes all windows for a specific project/worktree
+  closeWorktreeScript = pkgs.writeShellScriptBin "close-worktree-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Close all windows belonging to a specific worktree/project
+    set -euo pipefail
+
+    PROJECT_NAME="''${1:-}"
+
+    # Validate input
+    if [[ -z "$PROJECT_NAME" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u critical "Close Worktree Failed" "No project name provided"
+        exit 1
+    fi
+
+    # Lock file for debouncing
+    LOCK_FILE="/tmp/eww-close-worktree-''${PROJECT_NAME//\//_}.lock"
+    if [[ -f "$LOCK_FILE" ]]; then
+        exit 1
+    fi
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get all window IDs with marks matching this project
+    # Marks are in format: scoped:<project_name>:<window_id>
+    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r --arg proj "$PROJECT_NAME" '
+      .. | objects | select(.marks? != null) |
+      select(.marks | map(test("^scoped:" + $proj + ":")) | any) |
+      .id
+    ' 2>/dev/null || echo "")
+
+    if [[ -z "$WINDOW_IDS" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Close Worktree" "No windows found for $PROJECT_NAME"
+        exit 0
+    fi
+
+    # Count windows to close
+    WINDOW_COUNT=$(echo "$WINDOW_IDS" | wc -l)
+
+    # Close each window
+    CLOSED=0
+    for WID in $WINDOW_IDS; do
+        if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
+            ((CLOSED++)) || true
+        fi
+    done
+
+    ${pkgs.libnotify}/bin/notify-send -u normal "Worktree Closed" "Closed $CLOSED/$WINDOW_COUNT windows for $PROJECT_NAME"
+  '';
+
+  # Close all windows action script - closes all windows across all projects
+  closeAllWindowsScript = pkgs.writeShellScriptBin "close-all-windows-action" ''
+    #!${pkgs.bash}/bin/bash
+    # Close all windows tracked by the monitoring panel
+    set -euo pipefail
+
+    # Lock file for debouncing
+    LOCK_FILE="/tmp/eww-close-all-windows.lock"
+    if [[ -f "$LOCK_FILE" ]]; then
+        exit 1
+    fi
+    touch "$LOCK_FILE"
+    trap "rm -f $LOCK_FILE" EXIT
+
+    # Get all window IDs with i3pm marks (scoped windows)
+    WINDOW_IDS=$(${pkgs.sway}/bin/swaymsg -t get_tree | ${pkgs.jq}/bin/jq -r '
+      .. | objects | select(.marks? != null) |
+      select(.marks | map(startswith("scoped:")) | any) |
+      .id
+    ' 2>/dev/null || echo "")
+
+    if [[ -z "$WINDOW_IDS" ]]; then
+        ${pkgs.libnotify}/bin/notify-send -u low "Close All" "No scoped windows to close"
+        exit 0
+    fi
+
+    # Count windows to close
+    WINDOW_COUNT=$(echo "$WINDOW_IDS" | wc -l)
+
+    # Close each window
+    CLOSED=0
+    for WID in $WINDOW_IDS; do
+        if ${pkgs.sway}/bin/swaymsg "[con_id=$WID] kill" 2>/dev/null; then
+            ((CLOSED++)) || true
+        fi
+    done
+
+    ${pkgs.libnotify}/bin/notify-send -u normal "All Windows Closed" "Closed $CLOSED/$WINDOW_COUNT scoped windows"
+  '';
+
+  # Toggle context menu for project in Windows view
+  toggleProjectContextScript = pkgs.writeShellScriptBin "toggle-project-context" ''
+    #!${pkgs.bash}/bin/bash
+    # Toggle the project context menu in monitoring panel
+    PROJECT_NAME="''${1:-}"
+    if [[ -z "$PROJECT_NAME" ]]; then
+        exit 1
+    fi
+
+    # Get current value
+    CURRENT=$(${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel get context_menu_project 2>/dev/null || echo "")
+
+    if [[ "$CURRENT" == "$PROJECT_NAME" ]]; then
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update context_menu_project='''
+    else
+        ${pkgs.eww}/bin/eww --config $HOME/.config/eww-monitoring-panel update "context_menu_project=$PROJECT_NAME"
+    fi
+  '';
+
   # SwayNC toggle wrapper
   swayNCToggleScript = pkgs.writeShellScriptBin "toggle-swaync" ''
     #!${pkgs.bash}/bin/bash
@@ -2388,6 +2496,9 @@ in
       restartServiceScript  # Feature 088 US3: Service restart script
       focusWindowScript     # Feature 093: Focus window action
       switchProjectScript   # Feature 093: Switch project action
+      closeWorktreeScript     # Close all windows for a worktree
+      closeAllWindowsScript   # Close all scoped windows
+      toggleProjectContextScript # Toggle project context menu in Windows view
       projectCrudScript     # Feature 094: Project CRUD handler (T037)
       projectEditOpenScript # Feature 094: Project edit form opener (T038)
       projectEditSaveScript # Feature 094: Project edit save handler (T038)
@@ -2492,6 +2603,9 @@ in
 
       ;; UX Enhancement: Inline action bar state - tracks which window has action bar visible
       (defvar context_menu_window_id 0)
+
+      ;; Project context menu state - Project name for action bar ("" = none)
+      (defvar context_menu_project "")
 
       ;; Copy state - Window ID that was just copied (0 = none)
       ;; Set when copy button clicked, auto-resets after 2 seconds
@@ -2903,33 +3017,92 @@ in
                 :visible {monitoring_data.status != "error" && (monitoring_data.window_count ?: 0) > 0}
                 :orientation "v"
                 :space-evenly false
+                ;; Close All button row at top
+                (box
+                  :class "windows-actions-row"
+                  :orientation "h"
+                  :space-evenly false
+                  :halign "end"
+                  :spacing 8
+                  (eventbox
+                    :cursor "pointer"
+                    :onclick "close-all-windows-action &"
+                    :tooltip "Close all scoped windows"
+                    (box
+                      :class "close-all-btn"
+                      :orientation "h"
+                      :space-evenly false
+                      :spacing 4
+                      (label :class "close-all-icon" :text "󰅖")
+                      (label :class "close-all-text" :text "Close All"))))
+                ;; Projects list
                 (for project in {monitoring_data.projects ?: []}
                   (project-widget :project project)))))))
 
       ;; Project display widget
       ;; UX Enhancement: Active project gets highlighted
+      ;; Click header to switch to project, right-click reveals actions
       (defwidget project-widget [project]
         (box
           :class {"project " + (project.scope == "scoped" ? "scoped-project" : "global-project") + (project.is_active ? " project-active" : "")}
           :orientation "v"
           :space-evenly false
-          ; Project header
-          (box
-            :class "project-header"
-            :orientation "h"
-            :space-evenly false
-            (label
-              :class "project-name"
-              :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
-            ;; UX Enhancement: Active indicator (filled circle)
-            (label
-              :class "active-indicator"
-              :visible {project.is_active}
-              :tooltip "Active project"
-              :text "●")
-            (label
-              :class "window-count-badge"
-              :text "''${project.window_count}"))
+          ; Project header - clickable to switch, right-click for actions
+          (eventbox
+            :onclick {project.scope == "scoped" ? "switch-project-action ''${project.name} &" : ""}
+            :onrightclick "toggle-project-context ''${project.name} &"
+            :cursor {project.scope == "scoped" ? "pointer" : "default"}
+            :tooltip {project.scope == "scoped" ? "Click to switch to this worktree" : "Global windows (always visible)"}
+            (box
+              :class "project-header"
+              :orientation "h"
+              :space-evenly false
+              (label
+                :class "project-name"
+                :text "''${project.scope == 'scoped' ? '󱂬' : '󰞇'} ''${project.name}")
+              ;; UX Enhancement: Active indicator (filled circle)
+              (label
+                :class "active-indicator"
+                :visible {project.is_active}
+                :tooltip "Active project"
+                :text "●")
+              (box
+                :hexpand true
+                :halign "end"
+                :orientation "h"
+                :space-evenly false
+                (label
+                  :class "window-count-badge"
+                  :text "''${project.window_count}"))))
+          ;; Project action bar (reveals on right-click)
+          (revealer
+            :reveal {context_menu_project == project.name}
+            :transition "slidedown"
+            :duration "100ms"
+            (box
+              :class "project-action-bar"
+              :orientation "h"
+              :space-evenly false
+              :halign "end"
+              ;; Switch to project button (only for scoped projects)
+              (eventbox
+                :visible {project.scope == "scoped"}
+                :cursor "pointer"
+                :onclick "switch-project-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+                :tooltip "Switch to this worktree"
+                (label :class "action-btn action-switch" :text "󰌑"))
+              ;; Close all windows for this project
+              (eventbox
+                :cursor "pointer"
+                :onclick "close-worktree-action ''${project.name}; eww --config $HOME/.config/eww-monitoring-panel update context_menu_project= &"
+                :tooltip "Close all windows for this project"
+                (label :class "action-btn action-close-project" :text "󰅖"))
+              ;; Dismiss action bar
+              (eventbox
+                :cursor "pointer"
+                :onclick "eww --config $HOME/.config/eww-monitoring-panel update context_menu_project="
+                :tooltip "Close menu"
+                (label :class "action-btn action-dismiss" :text "󰅙"))))
           ; Windows list
           (box
             :class "windows-container"
@@ -6729,6 +6902,74 @@ in
         padding: 6px 8px;
         border-bottom: 1px solid ${mocha.overlay0};
         margin-bottom: 6px;
+        border-radius: 4px 4px 0 0;
+        transition: background-color 0.15s ease;
+      }
+
+      .project-header:hover {
+        background-color: rgba(137, 180, 250, 0.1);
+      }
+
+      /* Project action bar (right-click menu) */
+      .project-action-bar {
+        padding: 4px 8px;
+        background-color: rgba(24, 24, 37, 0.95);
+        border-radius: 4px;
+        margin-top: 4px;
+        margin-bottom: 4px;
+      }
+
+      .project-action-bar .action-btn {
+        font-size: 14px;
+        padding: 4px 8px;
+        margin: 0 2px;
+        border-radius: 4px;
+        transition: background-color 0.15s ease;
+      }
+
+      .project-action-bar .action-btn:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .action-switch {
+        color: ${mocha.teal};
+      }
+
+      .action-close-project {
+        color: ${mocha.red};
+      }
+
+      .action-dismiss {
+        color: ${mocha.subtext0};
+      }
+
+      /* Close All button */
+      .windows-actions-row {
+        padding: 4px 8px;
+        margin-bottom: 8px;
+      }
+
+      .close-all-btn {
+        padding: 4px 10px;
+        background-color: rgba(243, 139, 168, 0.15);
+        border: 1px solid ${mocha.red};
+        border-radius: 4px;
+        transition: background-color 0.15s ease;
+      }
+
+      .close-all-btn:hover {
+        background-color: rgba(243, 139, 168, 0.3);
+      }
+
+      .close-all-icon {
+        color: ${mocha.red};
+        font-size: 12px;
+      }
+
+      .close-all-text {
+        color: ${mocha.text};
+        font-size: 11px;
+        font-weight: 500;
       }
 
       .project-name {
