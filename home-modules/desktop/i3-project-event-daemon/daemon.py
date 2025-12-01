@@ -333,9 +333,13 @@ class I3ProjectDaemon:
         logger.info("Run-raise manager initialized")
 
         # Feature 076: Initialize mark manager
-        self.mark_manager = MarkManager(self.connection.conn)
+        # Feature 103: Pass event_buffer for mark event tracing
+        self.mark_manager = MarkManager(
+            sway_connection=self.connection.conn,
+            event_buffer=self.event_buffer,
+        )
         self.ipc_server.mark_manager = self.mark_manager
-        logger.info("Mark manager initialized")
+        logger.info("Mark manager initialized with event buffer for tracing")
 
         # Feature 101: Initialize window tracer for debugging
         from .services.window_tracer import init_tracer

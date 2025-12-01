@@ -15,12 +15,21 @@ Examples:
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime
+from typing import Optional, Callable, Awaitable, TYPE_CHECKING
 from i3ipc.aio import Connection
 
 from ..worktree_utils import build_mark, parse_mark, ParsedMark
 
+if TYPE_CHECKING:
+    from ..event_buffer import EventBuffer
+    from ..models.legacy import EventEntry
+
 logger = logging.getLogger(__name__)
+
+
+# Type for event recording callback
+EventRecordCallback = Callable[["EventEntry"], Awaitable[None]]
 
 
 @dataclass
@@ -46,14 +55,95 @@ class MarkManager:
     Single mark format: SCOPE:APP_NAME:PROJECT:WINDOW_ID
     """
 
-    def __init__(self, sway_connection: Connection):
+    def __init__(
+        self,
+        sway_connection: Connection,
+        event_buffer: Optional["EventBuffer"] = None,
+    ):
         """Initialize MarkManager with Sway IPC connection.
 
         Args:
             sway_connection: i3ipc.aio Connection instance for Sway IPC
+            event_buffer: Optional EventBuffer for recording mark events (Feature 103)
         """
         self.sway = sway_connection
+        self._event_buffer = event_buffer
+        self._event_counter = 0  # Local counter for events when buffer not available
         logger.info("[Feature 103] MarkManager initialized with unified mark format")
+
+    def set_event_buffer(self, event_buffer: "EventBuffer") -> None:
+        """Set event buffer for recording mark events.
+
+        Feature 103: Allows setting buffer after MarkManager creation.
+
+        Args:
+            event_buffer: EventBuffer instance for event recording
+        """
+        self._event_buffer = event_buffer
+        logger.debug("[Feature 103] Event buffer set for mark event recording")
+
+    async def _record_mark_event(
+        self,
+        event_type: str,
+        window_id: int,
+        mark_text: str,
+        mark_scope: str,
+        mark_app: str,
+        mark_project: str,
+        mark_operation: str,
+        mark_trigger: str,
+        duration_ms: float,
+        error: Optional[str] = None,
+        mark_previous: Optional[str] = None,
+    ) -> None:
+        """Record a mark-related event to the event buffer.
+
+        Feature 103: Unified mark event tracing.
+
+        Args:
+            event_type: Type of event (e.g., "mark::injection", "mark::cleanup")
+            window_id: Window ID the mark operation was performed on
+            mark_text: Full mark string
+            mark_scope: Mark scope ("scoped" or "global")
+            mark_app: Application name from mark
+            mark_project: Project name from mark
+            mark_operation: Operation type ("injection", "cleanup", "modified", "query")
+            mark_trigger: What triggered this operation
+            duration_ms: Operation duration in milliseconds
+            error: Optional error message if operation failed
+            mark_previous: Previous mark value (for modified operations)
+        """
+        if not self._event_buffer:
+            return
+
+        try:
+            from ..models.legacy import EventEntry
+
+            event_id = self._event_buffer.event_counter
+            entry = EventEntry(
+                event_id=event_id,
+                event_type=event_type,
+                timestamp=datetime.now(),
+                source="i3pm",
+                window_id=window_id,
+                processing_duration_ms=duration_ms,
+                error=error,
+                # Feature 103: Mark-specific fields
+                mark_text=mark_text,
+                mark_scope=mark_scope,
+                mark_app=mark_app,
+                mark_project=mark_project,
+                mark_window_id=window_id,
+                mark_operation=mark_operation,
+                mark_trigger=mark_trigger,
+                mark_previous=mark_previous,
+            )
+            await self._event_buffer.add_event(entry)
+            logger.debug(
+                f"[Feature 103] Recorded {event_type} event for window {window_id}: {mark_text}"
+            )
+        except Exception as e:
+            logger.warning(f"[Feature 103] Failed to record mark event: {e}")
 
     async def inject_mark(
         self,
@@ -61,6 +151,7 @@ class MarkManager:
         app_name: str,
         project: str,
         scope: str = "scoped",
+        trigger: str = "window_new",
     ) -> str:
         """Inject unified mark onto window via Sway IPC.
 
@@ -71,6 +162,7 @@ class MarkManager:
             app_name: Application name from app-registry (e.g., "terminal", "code")
             project: Project name (simple or qualified, e.g., "vpittamp/nixos-config:main")
             scope: "scoped" or "global" (default: "scoped")
+            trigger: What triggered this injection (default: "window_new")
 
         Returns:
             The injected mark string
@@ -92,6 +184,7 @@ class MarkManager:
         mark = build_mark(scope, app_name, project, window_id)
 
         start_time = time.perf_counter()
+        error_msg = None
 
         try:
             cmd = f'[con_id={window_id}] mark --add "{mark}"'
@@ -100,13 +193,41 @@ class MarkManager:
                 error_msg = result[0].error if result else "Unknown error"
                 raise Exception(f"Failed to inject mark '{mark}': {error_msg}")
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"[Feature 103] Failed to inject mark '{mark}' on window {window_id}: {e}")
+            # Record failed injection event
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            await self._record_mark_event(
+                event_type="mark::injection",
+                window_id=window_id,
+                mark_text=mark,
+                mark_scope=scope,
+                mark_app=app_name,
+                mark_project=project,
+                mark_operation="injection",
+                mark_trigger=trigger,
+                duration_ms=elapsed_ms,
+                error=error_msg,
+            )
             raise
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         logger.info(
             f"[Feature 103] Injected unified mark on window {window_id}: {mark} "
             f"({elapsed_ms:.2f}ms)"
+        )
+
+        # Feature 103: Record successful injection event
+        await self._record_mark_event(
+            event_type="mark::injection",
+            window_id=window_id,
+            mark_text=mark,
+            mark_scope=scope,
+            mark_app=app_name,
+            mark_project=project,
+            mark_operation="injection",
+            mark_trigger=trigger,
+            duration_ms=elapsed_ms,
         )
 
         return mark
@@ -209,11 +330,12 @@ class MarkManager:
 
         return matching_windows
 
-    async def cleanup_mark(self, window_id: int) -> bool:
+    async def cleanup_mark(self, window_id: int, trigger: str = "window_close") -> bool:
         """Remove unified mark from window.
 
         Args:
             window_id: Sway container ID
+            trigger: What triggered this cleanup (default: "window_close")
 
         Returns:
             True if mark was removed, False if no mark found
@@ -233,17 +355,75 @@ class MarkManager:
         try:
             cmd = f'[con_id={window_id}] unmark "{mark}"'
             result = await self.sway.command(cmd)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+
             if result and result[0].success:
-                elapsed_ms = (time.perf_counter() - start_time) * 1000
                 logger.debug(f"[Feature 103] Removed mark from window {window_id} in {elapsed_ms:.2f}ms")
+
+                # Feature 103: Record cleanup event
+                await self._record_mark_event(
+                    event_type="mark::cleanup",
+                    window_id=window_id,
+                    mark_text=mark,
+                    mark_scope=parsed.scope,
+                    mark_app=parsed.app_name,
+                    mark_project=parsed.project_name,
+                    mark_operation="cleanup",
+                    mark_trigger=trigger,
+                    duration_ms=elapsed_ms,
+                )
                 return True
             else:
                 error_msg = result[0].error if result else "Unknown error"
                 logger.warning(f"[Feature 103] Failed to remove mark from window {window_id}: {error_msg}")
+
+                # Record failed cleanup event
+                await self._record_mark_event(
+                    event_type="mark::cleanup",
+                    window_id=window_id,
+                    mark_text=mark,
+                    mark_scope=parsed.scope,
+                    mark_app=parsed.app_name,
+                    mark_project=parsed.project_name,
+                    mark_operation="cleanup",
+                    mark_trigger=trigger,
+                    duration_ms=elapsed_ms,
+                    error=error_msg,
+                )
                 return False
         except Exception as e:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
             logger.warning(f"[Feature 103] Error removing mark from window {window_id}: {e}")
+
+            # Record error cleanup event
+            await self._record_mark_event(
+                event_type="mark::cleanup",
+                window_id=window_id,
+                mark_text=mark,
+                mark_scope=parsed.scope,
+                mark_app=parsed.app_name,
+                mark_project=parsed.project_name,
+                mark_operation="cleanup",
+                mark_trigger=trigger,
+                duration_ms=elapsed_ms,
+                error=str(e),
+            )
             return False
+
+    async def cleanup_marks(self, window_id: int, trigger: str = "window_close") -> int:
+        """Remove all unified marks from window (wrapper for handler compatibility).
+
+        Feature 076/103: Called by handlers.py on_window_close.
+
+        Args:
+            window_id: Sway container ID
+            trigger: What triggered this cleanup (default: "window_close")
+
+        Returns:
+            Number of marks removed (0 or 1 for unified mark system)
+        """
+        removed = await self.cleanup_mark(window_id, trigger=trigger)
+        return 1 if removed else 0
 
     async def count_instances(
         self,

@@ -366,6 +366,60 @@ async def _record_command_queued(
         logger.debug(f"[Feature 101] Error recording COMMAND_QUEUED: {e}")
 
 
+async def _record_mark_trace(
+    window,
+    mark_text: str,
+    parsed_scope: Optional[str],
+    parsed_app: Optional[str],
+    parsed_project: Optional[str],
+    context_type: str = "filter",
+) -> None:
+    """Record mark query/detection for window tracing.
+
+    Feature 103: Non-blocking trace event recording for mark operations during filtering.
+    Only records for windows with active traces (not every window).
+
+    Args:
+        window: i3ipc container/node from tree traversal
+        mark_text: Full mark string that was parsed
+        parsed_scope: Parsed scope ("scoped" or "global") or None if parse failed
+        parsed_app: Parsed app name or None if parse failed
+        parsed_project: Parsed project name or None if parse failed
+        context_type: Context where mark was queried ("filter", "restore", etc.)
+    """
+    try:
+        tracer = get_tracer()
+        if tracer:
+            event_type = TraceEventType.MARK_ADDED if parsed_scope else TraceEventType.MARK_REMOVED
+            success = parsed_scope is not None
+
+            context = {
+                "mark_text": mark_text,
+                "mark_scope": parsed_scope,
+                "mark_app": parsed_app,
+                "mark_project": parsed_project,
+                "parse_success": success,
+                "context_type": context_type,
+            }
+
+            if success:
+                description = f"Mark parsed: {parsed_scope}:{parsed_app}:{parsed_project}"
+            else:
+                description = f"Mark parse failed: {mark_text}"
+
+            affected = await tracer.record_event(
+                window,
+                event_type,
+                description,
+                context,
+            )
+            if affected:
+                logger.debug(f"[Feature 103] Recorded mark trace for window {window.id}")
+    except Exception as e:
+        # Never let tracing break normal event handling
+        logger.debug(f"[Feature 103] Error recording mark trace: {e}")
+
+
 async def filter_windows_by_project(
     conn,  # i3ipc.aio.Connection
     active_project: Optional[str],
@@ -477,6 +531,10 @@ async def filter_windows_by_project(
                     window_scope = parsed.scope
                     window_project = parsed.project_name
                     window_app_name = parsed.app_name
+                    # Feature 103: Record mark trace for traced windows
+                    await _record_mark_trace(
+                        window, mark, window_scope, window_app_name, window_project, "filter"
+                    )
                 break
 
         # Determine visibility

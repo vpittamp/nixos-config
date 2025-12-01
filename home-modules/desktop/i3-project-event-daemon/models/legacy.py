@@ -246,6 +246,16 @@ class EventEntry:
     command_batch_count: Optional[int] = None   # Number of commands in batch (for command::batch)
     command_batch_id: Optional[str] = None      # Batch identifier for grouping
 
+    # Feature 103: Mark operation events (mark::*)
+    mark_text: Optional[str] = None             # Full mark string (e.g., "scoped:terminal:project:123")
+    mark_scope: Optional[str] = None            # Mark scope: "scoped" | "global"
+    mark_app: Optional[str] = None              # Application name from mark
+    mark_project: Optional[str] = None          # Project name from mark
+    mark_window_id: Optional[int] = None        # Window ID the mark was applied to
+    mark_operation: Optional[str] = None        # Operation: "injection" | "cleanup" | "modified" | "query"
+    mark_previous: Optional[str] = None         # Previous mark (for modified operations)
+    mark_trigger: Optional[str] = None          # What triggered mark operation: "window_new" | "project_switch" | "window_close" | "manual"
+
     # Enhanced output events (output::*)
     output_event_type: Optional[str] = None     # "connected" | "disconnected" | "profile_changed" | "unspecified"
     output_old_profile: Optional[str] = None    # Previous profile name (for profile_changed)

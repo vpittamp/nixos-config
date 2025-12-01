@@ -89,9 +89,14 @@ class UnifiedEventType(str, Enum):
     STATE_LOADED = "state::loaded"
     STATE_CONFLICT = "state::conflict"
 
-    # Mark Events (i3pm)
+    # Mark Events (i3pm) - Feature 103: Unified Mark System
     MARK_ADDED = "mark::added"
     MARK_REMOVED = "mark::removed"
+    MARK_INJECTION = "mark::injection"      # Mark injected on window::new
+    MARK_CLEANUP = "mark::cleanup"          # Mark cleaned up on window::close
+    MARK_MODIFIED = "mark::modified"        # Mark format changed (e.g., project switch)
+    MARK_QUERY = "mark::query"              # Mark parsed/queried for window info
+    MARK_CONFLICT = "mark::conflict"        # Mark validation failed or conflict detected
 
     # Environment Events (i3pm)
     ENV_DETECTED = "env::detected"
@@ -178,8 +183,9 @@ class UnifiedEventType(str, Enum):
             },
             EventCategory.TRACE: {
                 cls.TRACE_START, cls.TRACE_STOP, cls.TRACE_SNAPSHOT,
-                cls.MARK_ADDED, cls.MARK_REMOVED, cls.ENV_DETECTED,
-                cls.ENV_CHANGED
+                cls.MARK_ADDED, cls.MARK_REMOVED, cls.MARK_INJECTION,
+                cls.MARK_CLEANUP, cls.MARK_MODIFIED, cls.MARK_QUERY,
+                cls.MARK_CONFLICT, cls.ENV_DETECTED, cls.ENV_CHANGED
             },
             EventCategory.SYSTEM: {
                 cls.BINDING_RUN, cls.MODE_CHANGE, cls.SHUTDOWN_EXIT,
@@ -274,6 +280,11 @@ FILTER_CATEGORIES = {
         UnifiedEventType.STATE_CONFLICT,
         UnifiedEventType.MARK_ADDED,
         UnifiedEventType.MARK_REMOVED,
+        UnifiedEventType.MARK_INJECTION,
+        UnifiedEventType.MARK_CLEANUP,
+        UnifiedEventType.MARK_MODIFIED,
+        UnifiedEventType.MARK_QUERY,
+        UnifiedEventType.MARK_CONFLICT,
         UnifiedEventType.ENV_DETECTED,
         UnifiedEventType.ENV_CHANGED,
         UnifiedEventType.TRACE_START,
