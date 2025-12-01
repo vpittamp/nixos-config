@@ -40,6 +40,7 @@ let
     red = "#f38ba8";       # Urgent/critical
     mauve = "#cba6f7";     # Border accent
     lavender = "#b4befe";  # Lavender accent (input focus)
+    pink = "#f5c2e7";      # Pink accent (scratchpad events)
   };
 
   # Clipboard sync script - fully parameterized with nix store paths
@@ -6147,8 +6148,8 @@ in
           (eventbox
             :visible {(event.trace_id ?: "") != ""}
             :cursor "pointer"
-            :onclick "${navigateToTraceScript} ''${event.trace_id ?: ''} &"
-            :tooltip {"''${(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: '')}"}
+            :onclick "${navigateToTraceScript} ''${event.trace_id ?: \"\"} &"
+            :tooltip {"''${(event.trace_evicted ?: false) ? 'Trace evicted from buffer' : 'Click to view trace: ' + (event.trace_id ?: \"\")}"}
             (label
               :class {"event-trace-indicator" + ((event.trace_evicted ?: false) ? " trace-evicted" : "")}
               :text {"''${(event.trace_evicted ?: false) ? '󰈄' : '󰈙'}"}))
