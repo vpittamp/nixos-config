@@ -3815,6 +3815,24 @@ in
                     :truncate true
                     :text "''${repo.directory_display ?: repo.directory}"
                     :tooltip "''${repo.directory}")))
+              ;; Action buttons (visible on hover) - Feature 102: Added to discovered-repo-card
+              (box
+                :class "project-action-bar"
+                :orientation "h"
+                :space-evenly false
+                :visible {hover_project_name == repo.qualified_name && !project_deleting}
+                ;; Copy directory path to clipboard
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "echo -n ''\'''${repo.directory}' | wl-copy && eww --config $HOME/.config/eww-monitoring-panel update success_notification='Copied: ''${repo.directory}' success_notification_visible=true && (sleep 2 && eww --config $HOME/.config/eww-monitoring-panel update success_notification_visible=false) &"
+                  :tooltip "Copy directory path"
+                  (label :class "action-btn action-copy" :text "󰆏"))
+                ;; [+ New Worktree] button
+                (eventbox
+                  :cursor "pointer"
+                  :onclick "worktree-create-open ''${repo.qualified_name}"
+                  :tooltip "Create new worktree"
+                  (label :class "action-btn action-add" :text "󰐕")))
               ;; Status badges
               (box
                 :class "project-badges"
