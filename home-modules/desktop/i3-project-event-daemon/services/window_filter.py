@@ -661,18 +661,40 @@ async def filter_windows_by_project(
                     # Feature 038 FIX: Preserve original state if already tracked
                     saved_state = await workspace_tracker.get_window_workspace(window_id)
 
-                    # Feature 103: Preserve original_scratchpad from saved state if exists
-                    # IMPORTANT: Only mark as original_scratchpad if:
-                    # 1. Window is currently in scratchpad AND
-                    # 2. No saved state exists (first time seeing this window in scratchpad) AND
-                    # 3. It's not a scratchpad-terminal (those are managed separately)
-                    # This prevents corruption when windows are hidden due to project switch
+                    # Feature 103: Determine original_scratchpad flag
+                    # IMPORTANT: original_scratchpad should ONLY be true for windows that the
+                    # USER manually placed in scratchpad (not managed by project system).
+                    #
+                    # Rules:
+                    # 1. Scoped windows (have scoped: mark) are NEVER original_scratchpad
+                    #    because they're managed by the project system
+                    # 2. Scratchpad-terminals are NEVER original_scratchpad (managed separately)
+                    # 3. Global windows in scratchpad without saved state ARE original_scratchpad
+                    # 4. Preserve saved_state value if it exists
+
+                    # Check if this is a scoped window (managed by project system)
+                    is_scoped_window = window_scope == "scoped"
+
                     if saved_state:
-                        # Preserve existing original_scratchpad value
-                        is_original_scratchpad = saved_state.get("original_scratchpad", False)
+                        # Preserve existing original_scratchpad value, BUT
+                        # correct it if this is a scoped window that was incorrectly flagged
+                        saved_original = saved_state.get("original_scratchpad", False)
+                        if is_scoped_window and saved_original:
+                            # Fix: scoped windows should never be original_scratchpad
+                            is_original_scratchpad = False
+                            logger.debug(
+                                f"[Feature 103] Correcting original_scratchpad=False for scoped window {window_id}"
+                            )
+                        else:
+                            is_original_scratchpad = saved_original
                     else:
-                        # First time tracking - set based on current location
-                        is_original_scratchpad = is_in_scratchpad and not is_scratchpad_terminal_hide
+                        # First time tracking
+                        # Scoped windows and scratchpad-terminals are never original_scratchpad
+                        if is_scoped_window or is_scratchpad_terminal_hide:
+                            is_original_scratchpad = False
+                        else:
+                            # Global window in scratchpad without saved state
+                            is_original_scratchpad = is_in_scratchpad
 
                     # Feature 103: Deterministic workspace tracking
                     # Scratchpad-terminal windows ALWAYS use workspace 0 (scratchpad home)
