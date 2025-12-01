@@ -31,6 +31,26 @@ logger = logging.getLogger(__name__)
 # Feature 101: Window Tracing Integration
 # ============================================================================
 
+def _get_trace_type_map():
+    """Get mapping from event type strings to TraceEventType enums."""
+    from .services.window_tracer import TraceEventType
+    return {
+        "window::new": TraceEventType.WINDOW_NEW,
+        "window::close": TraceEventType.WINDOW_CLOSE,
+        "window::focus": TraceEventType.WINDOW_FOCUS,
+        "window::blur": TraceEventType.WINDOW_BLUR,
+        "window::move": TraceEventType.WINDOW_MOVE,
+        "window::floating": TraceEventType.WINDOW_FLOATING,
+        "window::fullscreen": TraceEventType.WINDOW_FULLSCREEN,
+        "window::mark": TraceEventType.MARK_ADDED,
+        "project::switch": TraceEventType.PROJECT_SWITCH,
+        "visibility::hidden": TraceEventType.VISIBILITY_HIDDEN,
+        "visibility::shown": TraceEventType.VISIBILITY_SHOWN,
+        "scratchpad::move": TraceEventType.SCRATCHPAD_MOVE,
+        "scratchpad::show": TraceEventType.SCRATCHPAD_SHOW,
+    }
+
+
 async def _record_trace_event(
     container,
     event_type: str,
@@ -52,21 +72,7 @@ async def _record_trace_event(
         from .services.window_tracer import get_tracer, TraceEventType
         tracer = get_tracer()
         if tracer:
-            # Map event type string to enum
-            type_map = {
-                "window::new": TraceEventType.WINDOW_NEW,
-                "window::close": TraceEventType.WINDOW_CLOSE,
-                "window::focus": TraceEventType.WINDOW_FOCUS,
-                "window::blur": TraceEventType.WINDOW_BLUR,
-                "window::move": TraceEventType.WINDOW_MOVE,
-                "window::floating": TraceEventType.WINDOW_FLOATING,
-                "window::fullscreen": TraceEventType.WINDOW_FULLSCREEN,
-                "window::mark": TraceEventType.MARK_ADDED,
-                "project::switch": TraceEventType.PROJECT_SWITCH,
-                "visibility::hidden": TraceEventType.VISIBILITY_HIDDEN,
-                "visibility::shown": TraceEventType.VISIBILITY_SHOWN,
-                "scratchpad::move": TraceEventType.SCRATCHPAD_MOVE,
-            }
+            type_map = _get_trace_type_map()
             trace_type = type_map.get(event_type, TraceEventType.WINDOW_MOVE)
             affected = await tracer.record_event(container, trace_type, description, context)
             if affected:
@@ -74,6 +80,37 @@ async def _record_trace_event(
     except Exception as e:
         # Never let tracing break normal event handling
         logger.debug(f"[Trace] Error recording event: {e}")
+
+
+async def _record_trace_event_by_id(
+    window_id: int,
+    event_type: str,
+    description: str,
+    context: Optional[Dict[str, Any]] = None
+) -> None:
+    """Record event for traces watching a specific window ID.
+
+    Feature 102 Fix: For synthetic events (like blur) where container is not available,
+    use window_id directly to record the event.
+
+    Args:
+        window_id: The window ID this event affects
+        event_type: Event type string (e.g., "window::blur")
+        description: Human-readable description
+        context: Additional context data
+    """
+    try:
+        from .services.window_tracer import get_tracer, TraceEventType
+        tracer = get_tracer()
+        if tracer:
+            type_map = _get_trace_type_map()
+            trace_type = type_map.get(event_type, TraceEventType.WINDOW_MOVE)
+            affected = await tracer.record_window_event(window_id, trace_type, description, context)
+            if affected:
+                logger.debug(f"[Trace] Recorded {event_type} for window {window_id} in {len(affected)} trace(s)")
+    except Exception as e:
+        # Never let tracing break normal event handling
+        logger.debug(f"[Trace] Error recording event by ID: {e}")
 
 
 # ============================================================================
@@ -2092,11 +2129,12 @@ async def on_window_focus(
         logger.debug(f"[Feature 102] Emitted window::blur for window {prev_focused_window} ({prev_class})")
 
         # Feature 101: Record trace event for window blur
-        await _record_trace_event(
-            None,  # No container for blur (synthetic event)
+        # Feature 102 Fix: Use _record_trace_event_by_id since blur is synthetic (no container)
+        await _record_trace_event_by_id(
+            prev_focused_window,
             "window::blur",
             f"Window blurred: {prev_class}",
-            {"window_id": prev_focused_window}
+            {"prev_class": prev_class}
         )
 
     # Update currently focused window tracking
@@ -2187,12 +2225,23 @@ async def on_window_move(
     try:
         # Get workspace information
         workspace = container.workspace()
+        is_floating = container.floating == "user_on" or container.floating == "auto_on"
+
+        # Feature 102 Fix: Record trace event BEFORE early return for scratchpad windows
+        # This ensures windows moving to __i3_scratch are still traced
         if not workspace:
-            logger.debug(f"Window {window_id} has no workspace, skipping tracking")
+            logger.debug(f"Window {window_id} has no workspace (likely scratchpad), recording trace and skipping tracking")
+            # Record scratchpad move event
+            await _record_trace_event(
+                container,
+                "scratchpad::move",
+                f"Window moved to scratchpad",
+                {"window_class": window_class, "floating": is_floating}
+            )
             return
 
         workspace_num = workspace.num
-        is_floating = container.floating == "user_on" or container.floating == "auto_on"
+        workspace_name = workspace.name
 
         # Feature 053 Phase 6: Comprehensive window::move event logging
         log_event_entry(
@@ -2201,18 +2250,19 @@ async def on_window_move(
                 "window_id": window_id,
                 "window_class": window_class,
                 "target_workspace_num": workspace_num,
-                "target_workspace_name": workspace.name,
+                "target_workspace_name": workspace_name,
                 "floating": is_floating,
             },
             level="DEBUG"
         )
 
         # Feature 101: Record trace event for window move
+        # Feature 102 Fix: Include workspace name for better context
         await _record_trace_event(
             container,
             "window::move",
-            f"Window moved to workspace {workspace_num}",
-            {"workspace": workspace_num, "floating": is_floating}
+            f"Window moved to workspace {workspace_num} ({workspace_name})",
+            {"workspace": workspace_num, "workspace_name": workspace_name, "floating": is_floating}
         )
 
         # Feature 037 T020: Update workspace tracker with new location

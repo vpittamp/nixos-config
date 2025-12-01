@@ -566,15 +566,35 @@ class WindowTrace:
                     f"({breakdown.event_count} events, avg {breakdown.avg_ms:.1f}ms)"
                 )
 
-            # Show slow operations
+            # Feature 102 Fix: Show actual command execution times (from duration_ms in context)
+            # These are real operation durations, not gaps between events
+            command_results = [
+                e for e in self.events
+                if e.event_type == TraceEventType.COMMAND_RESULT
+                and e.context.get("duration_ms", 0) > 0.5
+            ]
+            if command_results:
+                lines.extend([
+                    "",
+                    "Command Execution Times:",
+                ])
+                for event in sorted(command_results, key=lambda e: e.context.get("duration_ms", 0), reverse=True)[:5]:
+                    dur = event.context.get("duration_ms", 0)
+                    success = event.context.get("success", True)
+                    cmd_type = event.description.split()[1] if len(event.description.split()) > 1 else "cmd"
+                    status = "✓" if success else "✗"
+                    lines.append(f"  {status} {cmd_type}: {dur:.1f}ms")
+
+            # Show slow gaps between events (not slow operations - these are idle times)
+            # Feature 102 Fix: Clarify that these are gaps, not operation durations
             if timing.slow_operations:
                 lines.extend([
                     "",
-                    "Slow Operations (>100ms):",
+                    "Long Gaps (>100ms since previous event):",
                 ])
                 for event in timing.slow_operations[:5]:
                     ts = datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S.%f")[:-3]
-                    lines.append(f"  [{ts}] {event.event_type.value} ({event.delta_ms:.0f}ms)")
+                    lines.append(f"  [{ts}] {event.event_type.value} (gap: {event.delta_ms:.0f}ms)")
 
             # Show causality chains
             if timing.causality_chains:

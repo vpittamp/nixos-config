@@ -37,7 +37,7 @@ let
 
   daemonPackage = pkgs.stdenv.mkDerivation {
     name = "i3-project-event-daemon-fixed";
-    version = "1.19.0";  # Feature 101: Pre-launch tracing, causality tracking, timing analysis
+    version = "1.20.0";  # Feature 102 Fix: Event tracing gaps for blur, scratchpad, timing
     src = daemonSrc;
 
     installPhase = ''

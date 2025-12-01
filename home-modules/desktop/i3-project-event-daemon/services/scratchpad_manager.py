@@ -386,6 +386,14 @@ class ScratchpadManager:
         # Get current state
         state = await self.get_terminal_state(project_name)
 
+        # Feature 102 Fix: Record scratchpad toggle trace events
+        await self._record_scratchpad_trace_event(
+            terminal.window_id,
+            f"scratchpad::{'hide' if state == 'visible' else 'show'}",
+            f"Scratchpad toggle: {'hiding' if state == 'visible' else 'showing'} for project {project_name}",
+            {"project_name": project_name, "prev_state": state}
+        )
+
         if state == "visible":
             # Hide to scratchpad
             await self.sway.command(f'[con_mark="{terminal.mark}"] move scratchpad')
@@ -397,6 +405,35 @@ class ScratchpadManager:
             terminal.mark_shown()
             self.logger.debug(f"Showed terminal for project '{project_name}'")
             return "shown"
+
+    async def _record_scratchpad_trace_event(
+        self,
+        window_id: int,
+        event_type: str,
+        description: str,
+        context: dict
+    ) -> None:
+        """Record trace event for scratchpad operations.
+
+        Feature 102 Fix: Enables tracing of scratchpad toggle operations.
+
+        Args:
+            window_id: Scratchpad window ID
+            event_type: Event type string
+            description: Human-readable description
+            context: Additional context data
+        """
+        try:
+            from .window_tracer import get_tracer, TraceEventType
+            tracer = get_tracer()
+            if tracer:
+                # Map to appropriate trace event type
+                trace_type = TraceEventType.SCRATCHPAD_SHOW if "show" in event_type else TraceEventType.SCRATCHPAD_MOVE
+                affected = await tracer.record_window_event(window_id, trace_type, description, context)
+                if affected:
+                    self.logger.debug(f"[Trace] Recorded {event_type} for scratchpad in {len(affected)} trace(s)")
+        except Exception as e:
+            self.logger.debug(f"[Trace] Error recording scratchpad event: {e}")
 
     def get_terminal(self, project_name: str) -> Optional[ScratchpadTerminal]:
         """
