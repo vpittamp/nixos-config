@@ -2851,21 +2851,21 @@ in
                     :text "''${ws.name}")))))))
 
       ;; Panel body with multi-view container
-      ;; Uses overlay - all views stacked, only visible one shows
-      ;; Each child box has view-container class for solid background to prevent bleed-through
+      ;; Uses stacked boxes with visibility - only one view visible at a time
+      ;; Removed overlay widget which caused bleed-through rendering issues
       (defwidget panel-body []
         (box
           :class "panel-body"
           :orientation "v"
           :vexpand true
-          (overlay
-            :vexpand true
-            (box :class "view-container" :visible {current_view == "windows"} :vexpand true (windows-view))
-            (box :class "view-container" :visible {current_view == "projects"} :vexpand true (projects-view))
-            (box :class "view-container" :visible {current_view == "apps"} :vexpand true (apps-view))
-            (box :class "view-container" :visible {current_view == "health"} :vexpand true (health-view))
-            (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view))
-            (box :class "view-container" :visible {current_view == "traces"} :vexpand true (traces-view)))))
+          ;; Use stacked boxes with visibility instead of overlay to prevent bleed-through
+          ;; Each view is rendered but only one is visible at a time
+          (box :class "view-container" :visible {current_view == "windows"} :vexpand true (windows-view))
+          (box :class "view-container" :visible {current_view == "projects"} :vexpand true (projects-view))
+          (box :class "view-container" :visible {current_view == "apps"} :vexpand true (apps-view))
+          (box :class "view-container" :visible {current_view == "health"} :vexpand true (health-view))
+          (box :class "view-container" :visible {current_view == "events"} :vexpand true (events-view))
+          (box :class "view-container" :visible {current_view == "traces"} :vexpand true (traces-view))))
 
       ;; Windows View - Project-based hierarchy with real-time updates
       ;; Shows detail view when a window is selected, otherwise shows list
