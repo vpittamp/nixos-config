@@ -35,10 +35,10 @@ class ScratchpadTerminal(BaseModel):
 
     mark: str = Field(
         ...,
-        description="Sway window mark in format 'scoped:{project_name}:{window_id}' (unified with regular scoped marks)",
-        # Feature 101: Unified mark format - scratchpad terminals now use scoped: prefix
-        # Pattern: scoped:ACCOUNT/REPO:BRANCH:WINDOW_ID (qualified name may contain colons)
-        pattern=r"^scoped:[a-zA-Z0-9\-_/:]+:\d+$",
+        description="Sway window mark in unified format 'scoped:scratchpad-terminal:{project_name}:{window_id}'",
+        # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+        # Pattern: scoped:scratchpad-terminal:ACCOUNT/REPO:BRANCH:WINDOW_ID
+        pattern=r"^scoped:scratchpad-terminal:[a-zA-Z0-9\-_/:]+:\d+$",
     )
 
     working_dir: Path = Field(
@@ -102,13 +102,13 @@ class ScratchpadTerminal(BaseModel):
 
     @classmethod
     def create_mark(cls, project_name: str, window_id: int) -> str:
-        """Generate Sway mark for project scratchpad terminal.
+        """Generate unified Sway mark for project scratchpad terminal.
 
-        Feature 101: Unified mark format - scratchpad terminals now use scoped: prefix
-        with window_id, same as regular scoped windows. This enables consistent parsing
-        and identification via I3PM_APP_NAME=scratchpad-terminal instead of mark prefix.
+        Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+        Scratchpad terminals use app_name='scratchpad-terminal' which enables
+        per-app behavior customization (e.g., excluded from auto-restore on project switch).
         """
-        return f"scoped:{project_name}:{window_id}"
+        return f"scoped:scratchpad-terminal:{project_name}:{window_id}"
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""

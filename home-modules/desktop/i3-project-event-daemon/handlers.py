@@ -920,30 +920,30 @@ async def on_window_new(
                         f"scope={window_env.scope}"
                     )
 
-                    # Feature 076 T014-T015: Inject marks for app identification
+                    # Feature 103: Inject unified mark for app identification
                     # Feature 062: Skip mark injection for scratchpad terminals (managed by ScratchpadManager)
                     if mark_manager and window_env.app_name and not is_scratchpad_terminal:
                         try:
-                            mark_metadata = await mark_manager.inject_marks(
+                            # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+                            project = window_env.project_name if window_env.scope == "scoped" else "global"
+                            mark = await mark_manager.inject_mark(
                                 window_id=window_id,
                                 app_name=window_env.app_name,
-                                project=window_env.project_name if window_env.scope == "scoped" else None,
-                                workspace=workspace_number,
+                                project=project,
                                 scope=window_env.scope,
                             )
                             logger.info(
-                                f"Injected marks for window {window_id} ({window_env.app_name}): "
-                                f"{', '.join(mark_metadata.to_sway_marks())}"
+                                f"[Feature 103] Injected unified mark for window {window_id} ({window_env.app_name}): {mark}"
                             )
                         except Exception as e:
-                            # T015: Graceful degradation - log error but don't fail window creation
+                            # Graceful degradation - log error but don't fail window creation
                             logger.warning(
-                                f"Failed to inject marks for window {window_id} ({window_env.app_name}): {e}"
+                                f"[Feature 103] Failed to inject mark for window {window_id} ({window_env.app_name}): {e}"
                             )
                     elif is_scratchpad_terminal and mark_manager and window_env and window_env.app_name:
                         logger.info(
-                            f"Skipping Feature 076 mark injection for scratchpad terminal {window_id} "
-                            f"(will be marked by scratchpad manager with 'scoped:{window_env.project_name}:<window_id>')"
+                            f"[Feature 103] Skipping mark injection for scratchpad terminal {window_id} "
+                            f"(will be marked by scratchpad manager with 'scoped:scratchpad-terminal:{window_env.project_name}:{window_id}')"
                         )
             except (PermissionError, FileNotFoundError):
                 logger.debug(f"Cannot read environment for PID {window_pid}, assuming global scope")
@@ -1885,17 +1885,18 @@ async def on_window_title(
 
             # Feature 101: VS Code title matching is now informational only
             # Don't update marks based on title - I3PM environment is authoritative
+            # Feature 103: Code disabled but kept for reference (uses unified mark format)
             if title_project and False:  # Disabled - keeping code for reference
                 # Get current project mark
                 current_marks = container.marks or []
-                # Get project marks (format: SCOPE:PROJECT:WINDOW_ID)
+                # Get project marks (format: SCOPE:APP:PROJECT:WINDOW_ID)
                 current_project_marks = [
                     m for m in current_marks
                     if m.startswith("scoped:") or m.startswith("global:")
                 ]
 
                 if current_project_marks:
-                    # Feature 101: Use centralized mark parser
+                    # Feature 103: Use centralized mark parser
                     old_mark = current_project_marks[0]
                     current_project = extract_project_from_mark(old_mark, window_id)
 
@@ -1904,12 +1905,13 @@ async def on_window_title(
                         # Remove old mark
                         await conn.command(f'[con_id={window_id}] unmark "{old_mark}"')
 
-                        # Add new mark with updated format (VSCode is always scoped)
-                        new_mark = f"scoped:{title_project}:{window_id}"
+                        # Feature 103: Add new mark with unified format (VSCode is always scoped)
+                        from .worktree_utils import build_mark
+                        new_mark = build_mark("scoped", "code", title_project, window_id)
                         await conn.command(f'[con_id={window_id}] mark --add "{new_mark}"')
 
                         logger.info(
-                            f"VSCode window {window_id}: Updated project mark from "
+                            f"[Feature 103] VSCode window {window_id}: Updated project mark from "
                             f"{current_project} to {title_project} (title-based detection)"
                         )
 

@@ -582,7 +582,10 @@ class MarkMetadata(BaseModel):
     """Structured mark metadata for window classification.
 
     Feature 076: Mark-Based App Identification (T001)
-    Stores app-registry metadata as Sway marks for deterministic window identification.
+    Feature 103: Updated to use unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+
+    Stores app-registry metadata for deterministic window identification.
+    Used in layout file persistence and mark generation.
     """
     app: str = Field(
         ...,
@@ -610,7 +613,7 @@ class MarkMetadata(BaseModel):
 
     custom: Optional[dict[str, str]] = Field(
         default=None,
-        description="Custom metadata for extensibility"
+        description="Custom metadata for extensibility (deprecated in Feature 103)"
     )
 
     @field_validator('custom')
@@ -623,8 +626,31 @@ class MarkMetadata(BaseModel):
                     raise ValueError(f"Custom key '{key}' must be snake_case identifier")
         return v
 
+    def to_unified_mark(self, window_id: int) -> str:
+        """Convert to unified Sway mark string.
+
+        Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+
+        Args:
+            window_id: Sway container ID
+
+        Returns:
+            Unified mark string
+        """
+        scope = self.scope or "scoped"
+        project = self.project or "global"
+        return f"{scope}:{self.app}:{project}:{window_id}"
+
     def to_sway_marks(self) -> list[str]:
-        """Convert to Sway mark strings (i3pm_<key>:<value>)."""
+        """Convert to Sway mark strings.
+
+        Feature 103: DEPRECATED - Use to_unified_mark() with window_id instead.
+        This method is kept for backward compatibility during migration.
+
+        Note: This returns the legacy format for existing code that doesn't have window_id.
+        New code should use to_unified_mark().
+        """
+        # Legacy format for backward compatibility
         marks = [f"i3pm_app:{self.app}"]
 
         if self.project:
@@ -640,8 +666,58 @@ class MarkMetadata(BaseModel):
         return marks
 
     @classmethod
+    def from_unified_mark(cls, mark: str) -> Optional['MarkMetadata']:
+        """Parse from unified Sway mark string.
+
+        Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+
+        Args:
+            mark: Unified mark string
+
+        Returns:
+            MarkMetadata or None if not a valid unified mark
+        """
+        if not mark.startswith("scoped:") and not mark.startswith("global:"):
+            return None
+
+        parts = mark.split(":")
+        if len(parts) < 4:
+            return None  # Invalid unified format
+
+        scope = parts[0]
+        app = parts[1]
+        window_id = parts[-1]
+        project = ":".join(parts[2:-1])  # Everything between app and window_id
+
+        if not window_id.isdigit():
+            return None
+
+        return cls(
+            app=app,
+            project=project if project != "global" else None,
+            scope=scope
+        )
+
+    @classmethod
     def from_sway_marks(cls, marks: list[str]) -> 'MarkMetadata':
-        """Parse from Sway mark strings."""
+        """Parse from Sway mark strings.
+
+        Feature 103: Updated to handle both unified and legacy formats.
+
+        Args:
+            marks: List of Sway mark strings
+
+        Returns:
+            MarkMetadata parsed from marks
+        """
+        # First try to find unified format mark
+        for mark in marks:
+            if mark.startswith("scoped:") or mark.startswith("global:"):
+                parsed = cls.from_unified_mark(mark)
+                if parsed:
+                    return parsed
+
+        # Fall back to legacy format parsing
         data: dict[str, Any] = {}
         custom: dict[str, str] = {}
 

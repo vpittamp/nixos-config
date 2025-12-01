@@ -3716,29 +3716,39 @@ class IPCServer:
                 # For Wayland: con.window is None, but con.id exists
                 # For X11: both con.window and con.id exist
                 if hasattr(con, 'id') and (con.window is not None or (hasattr(con, 'app_id') and con.app_id)):
-                    # NEW: Use scope prefix in marks to determine filtering
-                    # Format: SCOPE:PROJECT:WINDOW_ID
-                    # Only hide windows with "scoped:" prefix matching the old project
-                    # Global windows (with "global:" prefix) are never hidden
+                    # Feature 103: Use unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+                    # Only hide windows with scope="scoped" matching the project
+                    # Skip scratchpad-terminal (managed by ScratchpadManager)
 
                     # DEBUG: Log all windows with marks
                     if con.marks:
                         logger.debug(
-                            f"Scanning window {con.id} for hiding: "
+                            f"[Feature 103] Scanning window {con.id} for hiding: "
                             f"marks={con.marks}, "
                             f"app_id={getattr(con, 'app_id', None)}, "
                             f"name={getattr(con, 'name', '')[:30]}"
                         )
 
-                    # Check for project mark matching this project (Feature 061: Unified format)
-                    # Feature 101: Unified mark format - scratchpad terminals also use scoped: prefix
-                    # Format: scoped:PROJECT:WINDOW_ID (e.g., scoped:vpittamp/nixos-config:main:25)
-                    scoped_mark_prefix = f"scoped:{project_name}:"
+                    # Feature 103: Parse unified marks
+                    from .worktree_utils import parse_mark
                     for mark in con.marks:
-                        if mark.startswith(scoped_mark_prefix):
+                        parsed = parse_mark(mark, con.id)
+                        if not parsed:
+                            continue
+
+                        # Only hide scoped windows matching this project
+                        if parsed.scope == "scoped" and parsed.project_name == project_name:
+                            # Feature 103: Skip scratchpad terminals (managed by ScratchpadManager)
+                            if parsed.app_name == "scratchpad-terminal":
+                                logger.debug(
+                                    f"[Feature 103] Skipping scratchpad terminal {con.id} "
+                                    f"(managed by ScratchpadManager)"
+                                )
+                                continue
+
                             logger.info(
-                                f"Will hide scoped window {con.id} "
-                                f"(mark: {mark}, project: {project_name})"
+                                f"[Feature 103] Will hide scoped window {con.id} "
+                                f"(app: {parsed.app_name}, project: {project_name})"
                             )
                             window_ids_to_hide.append(con.id)
                             # Feature 102: Store window info for visibility event
@@ -3746,6 +3756,7 @@ class IPCServer:
                                 "window_id": con.id,
                                 "window_class": getattr(con, 'app_id', None) or getattr(con, 'window_class', None),
                                 "window_title": getattr(con, 'name', None),
+                                "app_name": parsed.app_name,
                             })
                             break  # Found matching project mark
 
@@ -3844,44 +3855,44 @@ class IPCServer:
                 self.i3_connection.conn
             )
 
-            # Find windows matching project
-            # Only restore windows marked with project (Feature 061: Unified format)
-            # Also restore scratchpad terminals (Feature 062: Project-scoped scratchpads)
-            # Format: SCOPE:PROJECT:WINDOW_ID or scratchpad:PROJECT
+            # Feature 103: Find windows matching project using unified mark format
+            # Format: SCOPE:APP:PROJECT:WINDOW_ID
+            # Skip scratchpad-terminal (should stay hidden on project switch)
             window_ids_to_restore = []
             # Feature 102: Collect window info for visibility events
             windows_info: List[Dict[str, Any]] = []
-            scoped_mark_prefix = f"scoped:{project_name}:"
-            global_mark_prefix = f"global:{project_name}:"
-            scratchpad_mark = f"scratchpad:{project_name}"
+
+            from .worktree_utils import parse_mark
             for window in scratchpad_windows:
                 for mark in window.marks:
-                    if mark.startswith(scoped_mark_prefix) or mark.startswith(global_mark_prefix):
+                    parsed = parse_mark(mark, window.id)
+                    if not parsed:
+                        continue
+
+                    # Only restore windows matching this project
+                    if parsed.project_name == project_name:
+                        # Feature 103: Skip scratchpad terminals
+                        # They should remain hidden on project switch (toggle to show manually)
+                        if parsed.app_name == "scratchpad-terminal":
+                            logger.debug(
+                                f"[Feature 103] Skipping scratchpad terminal {window.id} "
+                                f"(stays hidden on project switch)"
+                            )
+                            continue
+
                         window_ids_to_restore.append(window.id)
                         # Feature 102: Store window info for visibility event
                         windows_info.append({
                             "window_id": window.id,
                             "window_class": getattr(window, 'app_id', None) or getattr(window, 'window_class', None),
                             "window_title": getattr(window, 'name', None),
+                            "app_name": parsed.app_name,
                         })
                         logger.debug(
-                            f"Will restore project window {window.id} "
-                            f"(mark: {mark}, project: {project_name})"
+                            f"[Feature 103] Will restore window {window.id} "
+                            f"(app: {parsed.app_name}, project: {project_name})"
                         )
                         break  # Found matching project mark
-                    elif mark == scratchpad_mark:
-                        window_ids_to_restore.append(window.id)
-                        # Feature 102: Store window info for visibility event
-                        windows_info.append({
-                            "window_id": window.id,
-                            "window_class": getattr(window, 'app_id', None) or getattr(window, 'window_class', None),
-                            "window_title": getattr(window, 'name', None),
-                        })
-                        logger.debug(
-                            f"Will restore scratchpad terminal {window.id} "
-                            f"(mark: {mark}, project: {project_name})"
-                        )
-                        break  # Found matching scratchpad mark
 
             # Restore windows in batch
             restored_count, errors, fallback_warnings = await window_filtering.restore_windows_batch(

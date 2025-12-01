@@ -516,22 +516,21 @@ class LayoutRestore:
             results["windows_failed"] += 1
             return
 
-        # Feature 076 T021-T022, T025, T026: Check for existing window with saved marks (idempotent restore)
+        # Feature 103: Check for existing window with unified marks (idempotent restore)
         if self.mark_manager and hasattr(window, 'marks_metadata') and window.marks_metadata:
             try:
-                # Query for existing windows with matching app name
-                from .models import WindowMarkQuery
-                query = WindowMarkQuery(
-                    app=window.marks_metadata.app,
+                # Feature 103: Use MarkQuery from mark_manager for unified mark format
+                from ..services.mark_manager import MarkQuery
+                query = MarkQuery(
+                    app_name=window.marks_metadata.app,
                     project=window.marks_metadata.project,
-                    workspace=int(window.marks_metadata.workspace) if window.marks_metadata.workspace else None
                 )
                 existing_windows = await self.mark_manager.find_windows(query)
 
                 if existing_windows:
-                    # Window already exists - skip launching (T026: logging for mark-based detection)
+                    # Window already exists - skip launching (idempotent restore)
                     logger.info(
-                        f"Feature 076: Window already exists with marks "
+                        f"[Feature 103] Window already exists with unified marks "
                         f"(app={window.marks_metadata.app}, project={window.marks_metadata.project}) "
                         f"- skipping launch (idempotent restore)"
                     )
@@ -541,19 +540,19 @@ class LayoutRestore:
                     results["windows_already_present"] += 1
                     return
                 else:
-                    # No existing window - proceed with launch (T026: logging)
+                    # No existing window - proceed with launch
                     logger.debug(
-                        f"Feature 076: No existing window found with marks "
+                        f"[Feature 103] No existing window found with unified marks "
                         f"(app={window.marks_metadata.app}, project={window.marks_metadata.project}) "
                         f"- proceeding with launch"
                     )
             except Exception as e:
-                # T024: Graceful fallback if mark detection fails
-                logger.warning(f"Feature 076: Mark-based detection failed, falling back to launch: {e}")
+                # Graceful fallback if mark detection fails
+                logger.warning(f"[Feature 103] Mark-based detection failed, falling back to launch: {e}")
         elif not hasattr(window, 'marks_metadata') or not window.marks_metadata:
-            # T024, T026, T045: Backward compatibility - no marks saved, use old behavior
+            # Backward compatibility - no marks saved, use old behavior
             logger.warning(
-                f"Feature 076: No mark metadata in saved layout for {window.window_class}. "
+                f"[Feature 103] No mark metadata in saved layout for {window.window_class}. "
                 f"Layout restoration may be slower and less reliable. "
                 f"Consider re-saving this layout with: i3pm layout save <name>"
             )

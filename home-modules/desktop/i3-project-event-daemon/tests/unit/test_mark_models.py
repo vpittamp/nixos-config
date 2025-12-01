@@ -283,5 +283,83 @@ class TestWindowMarkQuery:
         assert "i3pm_custom:session_id:" in marks  # Match any value for this key
 
 
+class TestUnifiedMarkFormat:
+    """Test Feature 103 unified mark format SCOPE:APP:PROJECT:WINDOW_ID."""
+
+    def test_to_unified_mark_basic(self):
+        """Test converting to unified mark string."""
+        mark = MarkMetadata(app="terminal", project="nixos", scope="scoped")
+        unified = mark.to_unified_mark(12345)
+        assert unified == "scoped:terminal:nixos:12345"
+
+    def test_to_unified_mark_global(self):
+        """Test converting global scope to unified mark."""
+        mark = MarkMetadata(app="firefox", scope="global")
+        unified = mark.to_unified_mark(99999)
+        assert unified == "global:firefox:global:99999"
+
+    def test_to_unified_mark_defaults(self):
+        """Test unified mark with default scope and project."""
+        mark = MarkMetadata(app="code")
+        unified = mark.to_unified_mark(54321)
+        assert unified == "scoped:code:global:54321"
+
+    def test_from_unified_mark_basic(self):
+        """Test parsing unified mark string."""
+        mark = MarkMetadata.from_unified_mark("scoped:terminal:nixos:12345")
+        assert mark is not None
+        assert mark.app == "terminal"
+        assert mark.project == "nixos"
+        assert mark.scope == "scoped"
+
+    def test_from_unified_mark_global_project(self):
+        """Test parsing unified mark with 'global' project."""
+        mark = MarkMetadata.from_unified_mark("global:firefox:global:99999")
+        assert mark is not None
+        assert mark.app == "firefox"
+        assert mark.project is None  # "global" becomes None
+        assert mark.scope == "global"
+
+    def test_from_unified_mark_qualified_project(self):
+        """Test parsing unified mark with qualified project name (contains colon)."""
+        mark = MarkMetadata.from_unified_mark("scoped:terminal:vpittamp/nixos-config:main:12345")
+        assert mark is not None
+        assert mark.app == "terminal"
+        assert mark.project == "vpittamp/nixos-config:main"
+        assert mark.scope == "scoped"
+
+    def test_from_unified_mark_invalid_format(self):
+        """Test that invalid formats return None."""
+        # Wrong prefix
+        assert MarkMetadata.from_unified_mark("invalid:terminal:nixos:12345") is None
+        # Too few parts
+        assert MarkMetadata.from_unified_mark("scoped:terminal:12345") is None
+        # Non-numeric window_id
+        assert MarkMetadata.from_unified_mark("scoped:terminal:nixos:notanumber") is None
+
+    def test_from_sway_marks_prefers_unified(self):
+        """Test that from_sway_marks prefers unified format over legacy."""
+        marks = [
+            "i3pm_app:oldapp",
+            "i3pm_project:oldproject",
+            "scoped:newapp:newproject:12345"
+        ]
+        mark = MarkMetadata.from_sway_marks(marks)
+        assert mark.app == "newapp"
+        assert mark.project == "newproject"
+
+    def test_unified_roundtrip(self):
+        """Test roundtrip: metadata -> unified mark -> metadata."""
+        original = MarkMetadata(app="code", project="nixos", scope="scoped")
+        window_id = 54321
+        unified = original.to_unified_mark(window_id)
+        restored = MarkMetadata.from_unified_mark(unified)
+
+        assert restored is not None
+        assert restored.app == original.app
+        assert restored.project == original.project
+        assert restored.scope == original.scope
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

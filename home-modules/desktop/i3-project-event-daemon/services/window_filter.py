@@ -463,19 +463,20 @@ async def filter_windows_by_project(
     for window in windows:
         window_id = window.id
 
-        # Get project and scope from window marks
-        # Feature 101: Unified mark format - all scoped windows (including scratchpad terminals)
-        # use scoped:PROJECT:WINDOW_ID format
-        # e.g., "scoped:vpittamp/nixos-config:101-worktree-click-switch:21"
+        # Get project, scope, and app_name from window marks
+        # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+        # e.g., "scoped:terminal:vpittamp/nixos-config:main:12345"
         window_project = None
         window_scope = None
+        window_app_name = None
         for mark in window.marks:
             if mark.startswith("scoped:") or mark.startswith("global:"):
-                # Feature 101: Use centralized mark parser for unified format
+                # Feature 103: Use centralized mark parser for unified format
                 parsed = parse_mark(mark, window_id)
                 if parsed:
                     window_scope = parsed.scope
                     window_project = parsed.project_name
+                    window_app_name = parsed.app_name
                 break
 
         # Determine visibility
@@ -511,16 +512,13 @@ async def filter_windows_by_project(
                     # Feature 091: Build restore command batch
                     logger.info(f"Building restore commands for window {window_id} ({window.window_class})")
 
-                    # Feature 101: Detect scratchpad terminals via I3PM_APP_NAME or saved workspace_number=0
-                    # Unified mark format means we can't use mark prefix anymore
-                    is_scratchpad_terminal = False
-                    if window.pid:
-                        try:
-                            from .scratchpad_manager import read_process_environ
-                            env = read_process_environ(window.pid)
-                            is_scratchpad_terminal = env.get("I3PM_APP_NAME") == "scratchpad-terminal"
-                        except (ProcessLookupError, PermissionError):
-                            pass  # Can't read env, will rely on saved state
+                    # Feature 103: Detect scratchpad terminals via unified mark app_name
+                    # Mark format: scoped:scratchpad-terminal:PROJECT:WINDOW_ID
+                    is_scratchpad_terminal = window_app_name == "scratchpad-terminal"
+                    if is_scratchpad_terminal:
+                        logger.debug(
+                            f"[Feature 103] Window {window_id} is scratchpad-terminal (app_name from mark)"
+                        )
 
                     # Load saved state if workspace_tracker available
                     saved_state = None
@@ -652,22 +650,23 @@ async def filter_windows_by_project(
 
                 # Capture state for Feature 038
                 if workspace_tracker and workspace:
-                    # Feature 062: Scratchpad terminals should NEVER be marked as original_scratchpad
-                    has_scratchpad_mark = any(mark.startswith("scratchpad:") for mark in window.marks)
-                    is_original_scratchpad = (workspace.name == "__i3_scratch") and not has_scratchpad_mark
+                    # Feature 103: Scratchpad terminals identified by unified mark app_name
+                    # Mark format: scoped:scratchpad-terminal:PROJECT:WINDOW_ID
+                    is_scratchpad_terminal_hide = window_app_name == "scratchpad-terminal"
+                    is_original_scratchpad = (workspace.name == "__i3_scratch") and not is_scratchpad_terminal_hide
                     is_in_scratchpad = workspace.name == "__i3_scratch"
 
                     # Feature 038 FIX: Preserve original state if already tracked
                     saved_state = await workspace_tracker.get_window_workspace(window_id)
 
-                    # Feature 101: Deterministic workspace tracking
-                    # Scratchpad-marked windows ALWAYS use workspace 0 (scratchpad home)
+                    # Feature 103: Deterministic workspace tracking
+                    # Scratchpad-terminal windows ALWAYS use workspace 0 (scratchpad home)
                     # This is deterministic - no fallbacks or null values
-                    if has_scratchpad_mark:
+                    if is_scratchpad_terminal_hide:
                         # Scratchpad terminals always use workspace 0
                         workspace_num = 0
                         logger.debug(
-                            f"[Feature 101] Scratchpad window {window_id} uses workspace 0 (scratchpad home)"
+                            f"[Feature 103] Scratchpad window {window_id} uses workspace 0 (scratchpad home)"
                         )
                     elif workspace.num is not None:
                         # Window is on a real workspace - use current workspace

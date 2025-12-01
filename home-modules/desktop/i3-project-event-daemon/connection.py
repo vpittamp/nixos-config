@@ -375,9 +375,11 @@ class ResilientI3Connection:
                     container.id, pid, window_xid
                 )
 
-                # If window has I3PM_PROJECT_NAME, collect it for marking
+                # Feature 103: If window has I3PM_PROJECT_NAME and I3PM_APP_NAME, collect for marking
                 project_name = i3pm_env.get('I3PM_PROJECT_NAME')
-                if project_name:
+                app_name = i3pm_env.get('I3PM_APP_NAME')
+                scope = i3pm_env.get('I3PM_SCOPE', 'scoped')
+                if project_name and app_name:
                     # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
                     # VSCode windows share a single process, so I3PM environment doesn't distinguish
                     # between multiple workspaces. Parse title to get the actual project directory.
@@ -401,7 +403,7 @@ class ResilientI3Connection:
                         else:
                             logger.debug(f"VSCode title '{container.name}' didn't match regex pattern")
 
-                    windows_to_mark.append((container, project_name))
+                    windows_to_mark.append((container, project_name, app_name, scope))
 
             # Recursively scan children
             for child in container.nodes + container.floating_nodes:
@@ -415,16 +417,16 @@ class ResilientI3Connection:
         windows_to_mark.sort(key=lambda x: 1 if get_window_class(x[0]) == "Code" else 0)
 
         # Mark windows in the sorted order
-        for container, project_name in windows_to_mark:
+        for container, project_name, app_name, scope in windows_to_mark:
             window_class = get_window_class(container)  # Feature 045: Sway-compatible
             # Feature 046: Use container.id (node ID) for both i3 and Sway compatibility
             window_id = container.id
-            logger.info(f"Marking pre-existing window {window_id} ({window_class}) with scoped:{project_name}:{window_id}")
 
-            # Mark the window in i3/Sway using node ID (container.id)
-            # Note: i3 marks must be UNIQUE - cannot use same mark for multiple windows
-            # Format: SCOPE:PROJECT:WINDOW_ID (defaulting to "scoped" for startup scan)
-            mark = f"scoped:{project_name}:{window_id}"
+            # Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
+            from .worktree_utils import build_mark
+            mark = build_mark(scope, app_name, project_name, window_id)
+            logger.info(f"[Feature 103] Marking pre-existing window {window_id} ({window_class}) with {mark}")
+
             # Feature 046: Use con_id for Sway/Wayland compatibility
             command_str = f'[con_id={window_id}] mark --add "{mark}"'
             logger.debug(f"Executing mark command: {command_str}")

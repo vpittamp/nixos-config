@@ -41,20 +41,22 @@ class ParsedQualifiedName:
 
 @dataclass
 class ParsedMark:
-    """Parsed components of a Sway window mark.
+    """Parsed components of a unified Sway window mark.
 
-    Mark formats:
-    - Legacy: SCOPE:PROJECT:WINDOW_ID
-    - Worktree (Feature 101): SCOPE:ACCOUNT/REPO:BRANCH:WINDOW_ID
+    Feature 103: Unified mark format
+    Format: SCOPE:APP_NAME:PROJECT:WINDOW_ID
 
     Example marks:
-    - scoped:myproject:12345 (legacy)
-    - scoped:vpittamp/nixos-config:main:12345 (worktree)
+    - scoped:terminal:vpittamp/nixos-config:main:12345
+    - scoped:scratchpad-terminal:myproject:67890
+    - global:firefox:nixos:99999
+    - scoped:code:102-unified-event-tracing:54321
     """
 
     scope: str  # "scoped" or "global"
-    project_name: str  # Simple name or qualified name
-    window_id: Optional[str]  # May be absent in some contexts
+    app_name: str  # Application name from app-registry (e.g., "terminal", "code", "scratchpad-terminal")
+    project_name: str  # Simple name or qualified name (may contain colons)
+    window_id: str  # Window ID (required in unified format)
 
 
 def parse_qualified_name(qualified_name: str) -> ParsedQualifiedName:
@@ -130,64 +132,63 @@ def is_qualified_name(name: str) -> bool:
 
 
 def parse_mark(mark: str, window_id_hint: Optional[int] = None) -> Optional[ParsedMark]:
-    """Parse a Sway window mark into components.
+    """Parse a unified Sway window mark into components.
 
-    Handles both legacy format (SCOPE:PROJECT:WINDOW_ID) and
-    Feature 101 worktree format (SCOPE:ACCOUNT/REPO:BRANCH:WINDOW_ID).
+    Feature 103: Only handles unified format SCOPE:APP:PROJECT:WINDOW_ID
+    Legacy 3-part marks are ignored (return None).
 
     Args:
         mark: Sway mark string
         window_id_hint: Optional window ID for debug logging
 
     Returns:
-        ParsedMark with scope, project_name, and window_id, or None if invalid
+        ParsedMark with scope, app_name, project_name, and window_id, or None if invalid
 
     Example:
-        >>> parse_mark("scoped:vpittamp/nixos-config:main:12345")
-        ParsedMark(scope='scoped', project_name='vpittamp/nixos-config:main', window_id='12345')
+        >>> parse_mark("scoped:terminal:vpittamp/nixos-config:main:12345")
+        ParsedMark(scope='scoped', app_name='terminal', project_name='vpittamp/nixos-config:main', window_id='12345')
 
-        >>> parse_mark("scoped:myproject:12345")
-        ParsedMark(scope='scoped', project_name='myproject', window_id='12345')
+        >>> parse_mark("scoped:code:myproject:67890")
+        ParsedMark(scope='scoped', app_name='code', project_name='myproject', window_id='67890')
+
+        >>> parse_mark("scoped:myproject:12345")  # Legacy format
+        None  # Not supported
     """
+    # Must start with valid scope
+    if not mark.startswith("scoped:") and not mark.startswith("global:"):
+        return None
+
     parts = mark.split(":")
 
-    if len(parts) < 2:
-        logger.warning(
-            f"[Feature 101] Invalid mark format (window {window_id_hint}): "
-            f"'{mark}' has less than 2 parts"
+    # Feature 103: Unified format requires at least 4 parts: SCOPE:APP:PROJECT:WINDOW_ID
+    # Project names may contain colons (e.g., vpittamp/nixos-config:main)
+    if len(parts) < 4:
+        logger.debug(
+            f"[Feature 103] Ignoring non-unified mark (window {window_id_hint}): "
+            f"'{mark}' has {len(parts)} parts (need 4+)"
         )
         return None
 
     scope = parts[0]
+    app_name = parts[1]
+    window_id = parts[-1]
+    # Project is everything between app_name and window_id
+    project_name = ":".join(parts[2:-1])
 
-    if len(parts) >= 4:
-        # Feature 101 worktree format: SCOPE:ACCOUNT/REPO:BRANCH:WINDOW_ID
-        # Join parts 1 through n-1 to preserve qualified name with colons
-        project_name = ":".join(parts[1:-1])
-        window_id = parts[-1]
-        logger.debug(
-            f"[Feature 101] Parsed worktree mark (window {window_id_hint}): "
-            f"scope={scope}, project={project_name}, window_id={window_id}"
-        )
-    elif len(parts) == 3:
-        # Legacy format: SCOPE:PROJECT:WINDOW_ID
-        project_name = parts[1]
-        window_id = parts[2]
-        logger.debug(
-            f"[Feature 101] Parsed legacy mark (window {window_id_hint}): "
-            f"scope={scope}, project={project_name}, window_id={window_id}"
-        )
-    elif len(parts) == 2:
-        # Minimal format: SCOPE:PROJECT (no window ID)
-        project_name = parts[1]
-        window_id = None
-    else:
+    # Validate window_id is numeric
+    if not window_id.isdigit():
         logger.warning(
-            f"[Feature 101] Unexpected mark format (window {window_id_hint}): '{mark}'"
+            f"[Feature 103] Invalid window_id in mark (window {window_id_hint}): "
+            f"'{mark}' - window_id '{window_id}' is not numeric"
         )
         return None
 
-    return ParsedMark(scope=scope, project_name=project_name, window_id=window_id)
+    logger.debug(
+        f"[Feature 103] Parsed unified mark (window {window_id_hint}): "
+        f"scope={scope}, app={app_name}, project={project_name}, window_id={window_id}"
+    )
+
+    return ParsedMark(scope=scope, app_name=app_name, project_name=project_name, window_id=window_id)
 
 
 def extract_project_from_mark(mark: str, window_id_hint: Optional[int] = None) -> Optional[str]:
@@ -206,22 +207,28 @@ def extract_project_from_mark(mark: str, window_id_hint: Optional[int] = None) -
     return parsed.project_name if parsed else None
 
 
-def build_mark(scope: str, project_name: str, window_id: int) -> str:
-    """Build a Sway mark string from components.
+def build_mark(scope: str, app_name: str, project_name: str, window_id: int) -> str:
+    """Build a unified Sway mark string from components.
+
+    Feature 103: Unified mark format SCOPE:APP:PROJECT:WINDOW_ID
 
     Args:
         scope: "scoped" or "global"
+        app_name: Application name from app-registry (e.g., "terminal", "code")
         project_name: Project name (simple or qualified)
         window_id: Window ID
 
     Returns:
-        Mark string in format SCOPE:PROJECT:WINDOW_ID
+        Mark string in unified format SCOPE:APP:PROJECT:WINDOW_ID
 
     Example:
-        >>> build_mark("scoped", "vpittamp/nixos-config:main", 12345)
-        'scoped:vpittamp/nixos-config:main:12345'
+        >>> build_mark("scoped", "terminal", "vpittamp/nixos-config:main", 12345)
+        'scoped:terminal:vpittamp/nixos-config:main:12345'
+
+        >>> build_mark("global", "firefox", "nixos", 99999)
+        'global:firefox:nixos:99999'
     """
-    return f"{scope}:{project_name}:{window_id}"
+    return f"{scope}:{app_name}:{project_name}:{window_id}"
 
 
 def validate_worktree_path(path: Optional[str]) -> Tuple[bool, str]:
