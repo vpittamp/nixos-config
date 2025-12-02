@@ -2804,6 +2804,7 @@ in
     # Add required packages
     home.packages = [
       pkgs.eww              # Widget framework
+      pkgs.inotify-tools    # Feature 107: inotifywait for badge file watching
       monitoringDataScript  # Python backend script wrapper
       toggleScript          # Toggle visibility script
       toggleFocusScript     # Feature 086: Toggle focus script
