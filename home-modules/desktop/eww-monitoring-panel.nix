@@ -8649,6 +8649,47 @@ in
         background-color: rgba(243, 139, 168, 0.2);
       }
 
+      /* Feature 109: Worktree action button colors */
+      .worktree-action-bar .action-terminal {
+        color: ${mocha.green};
+      }
+
+      .worktree-action-bar .action-terminal:hover {
+        background-color: rgba(166, 227, 161, 0.2);
+      }
+
+      .worktree-action-bar .action-editor {
+        color: ${mocha.blue};
+      }
+
+      .worktree-action-bar .action-editor:hover {
+        background-color: rgba(137, 180, 250, 0.2);
+      }
+
+      .worktree-action-bar .action-files {
+        color: ${mocha.yellow};
+      }
+
+      .worktree-action-bar .action-files:hover {
+        background-color: rgba(249, 226, 175, 0.2);
+      }
+
+      .worktree-action-bar .action-git {
+        color: ${mocha.peach};
+      }
+
+      .worktree-action-bar .action-git:hover {
+        background-color: rgba(250, 179, 135, 0.2);
+      }
+
+      .worktree-action-bar .action-copy {
+        color: ${mocha.lavender};
+      }
+
+      .worktree-action-bar .action-copy:hover {
+        background-color: rgba(180, 190, 254, 0.2);
+      }
+
       .worktree-card {
         background-color: rgba(49, 50, 68, 0.3);
         border: 1px solid ${mocha.overlay0};
