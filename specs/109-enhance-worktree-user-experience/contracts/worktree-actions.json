@@ -1,0 +1,266 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Worktree Actions Contract",
+  "description": "Contract for worktree CRUD operations from the Eww monitoring panel",
+  "version": "1.0.0",
+  "feature": "109-enhance-worktree-user-experience",
+
+  "definitions": {
+    "WorktreeActionType": {
+      "type": "string",
+      "enum": [
+        "switch",
+        "create",
+        "delete",
+        "open-terminal",
+        "open-editor",
+        "open-lazygit",
+        "open-file-manager",
+        "copy-path",
+        "refresh"
+      ],
+      "description": "Available worktree actions"
+    },
+
+    "WorktreeActionRequest": {
+      "type": "object",
+      "required": ["action_type", "worktree_qualified_name"],
+      "properties": {
+        "action_type": {
+          "$ref": "#/definitions/WorktreeActionType"
+        },
+        "worktree_qualified_name": {
+          "type": "string",
+          "description": "Qualified name of the target worktree"
+        },
+        "params": {
+          "type": "object",
+          "description": "Action-specific parameters",
+          "properties": {
+            "lazygit_view": {
+              "type": "string",
+              "enum": ["status", "branch", "log", "stash"],
+              "description": "For open-lazygit: which view to open"
+            },
+            "branch_name": {
+              "type": "string",
+              "description": "For create: new branch name"
+            },
+            "force": {
+              "type": "boolean",
+              "default": false,
+              "description": "For delete: force delete even if dirty"
+            }
+          }
+        }
+      }
+    },
+
+    "WorktreeActionResponse": {
+      "type": "object",
+      "required": ["success", "action_type"],
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "action_type": {
+          "$ref": "#/definitions/WorktreeActionType"
+        },
+        "worktree_qualified_name": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "description": "Success message for user feedback"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if success is false"
+        },
+        "data": {
+          "type": "object",
+          "description": "Action-specific response data"
+        }
+      }
+    }
+  },
+
+  "actions": {
+    "switch": {
+      "description": "Switch to a different worktree (change i3pm project context)",
+      "request_example": {
+        "action_type": "switch",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "switch",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience",
+        "message": "Switched to 109-enhance-worktree-user-experience"
+      },
+      "performance_target": "<500ms"
+    },
+
+    "create": {
+      "description": "Create a new worktree for a branch",
+      "request_example": {
+        "action_type": "create",
+        "worktree_qualified_name": "vpittamp/nixos-config",
+        "params": {
+          "branch_name": "110-new-feature"
+        }
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "create",
+        "worktree_qualified_name": "vpittamp/nixos-config:110-new-feature",
+        "message": "Created worktree for 110-new-feature",
+        "data": {
+          "path": "/home/vpittamp/repos/vpittamp/nixos-config/110-new-feature"
+        }
+      },
+      "validation": [
+        "Branch name must be valid git branch format",
+        "Branch must not already exist as worktree",
+        "Target path must not conflict with existing directory"
+      ],
+      "performance_target": "<5s"
+    },
+
+    "delete": {
+      "description": "Delete a worktree",
+      "request_example": {
+        "action_type": "delete",
+        "worktree_qualified_name": "vpittamp/nixos-config:110-new-feature",
+        "params": {
+          "force": false
+        }
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "delete",
+        "worktree_qualified_name": "vpittamp/nixos-config:110-new-feature",
+        "message": "Deleted worktree 110-new-feature"
+      },
+      "confirmation_required": true,
+      "enhanced_warning_if": "worktree has uncommitted changes",
+      "performance_target": "<2s"
+    },
+
+    "open-terminal": {
+      "description": "Open a new terminal in the worktree directory",
+      "request_example": {
+        "action_type": "open-terminal",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "open-terminal",
+        "data": {
+          "pid": 12345
+        }
+      },
+      "implementation": "Uses scratchpad terminal with I3PM env vars"
+    },
+
+    "open-editor": {
+      "description": "Open VS Code in the worktree directory",
+      "request_example": {
+        "action_type": "open-editor",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "open-editor",
+        "data": {
+          "pid": 12346
+        }
+      },
+      "implementation": "Launches code with --folder-uri"
+    },
+
+    "open-lazygit": {
+      "description": "Open lazygit for the worktree",
+      "request_example": {
+        "action_type": "open-lazygit",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience",
+        "params": {
+          "lazygit_view": "status"
+        }
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "open-lazygit",
+        "data": {
+          "pid": 12347,
+          "command": "ghostty -e lazygit --path /home/vpittamp/repos/vpittamp/nixos-config/109-enhance-worktree-user-experience status"
+        }
+      },
+      "see_also": "lazygit-context.json for detailed contract"
+    },
+
+    "open-file-manager": {
+      "description": "Open file manager in the worktree directory",
+      "request_example": {
+        "action_type": "open-file-manager",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "open-file-manager",
+        "data": {
+          "pid": 12348
+        }
+      },
+      "implementation": "Uses xdg-open or yazi"
+    },
+
+    "copy-path": {
+      "description": "Copy worktree path to clipboard",
+      "request_example": {
+        "action_type": "copy-path",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "copy-path",
+        "message": "Copied path to clipboard",
+        "data": {
+          "path": "/home/vpittamp/repos/vpittamp/nixos-config/109-enhance-worktree-user-experience"
+        }
+      },
+      "implementation": "Uses wl-copy (Wayland clipboard)"
+    },
+
+    "refresh": {
+      "description": "Refresh git metadata for the worktree",
+      "request_example": {
+        "action_type": "refresh",
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience"
+      },
+      "response_example": {
+        "success": true,
+        "action_type": "refresh",
+        "message": "Refreshed git status"
+      },
+      "implementation": "Re-runs git status and updates daemon state"
+    }
+  },
+
+  "keyboard_shortcuts": {
+    "description": "Keyboard shortcuts for focus mode in the monitoring panel",
+    "shortcuts": {
+      "j": "Navigate down",
+      "k": "Navigate up",
+      "Return": "Select/switch to worktree",
+      "c": "Create new worktree",
+      "d": "Delete worktree",
+      "g": "Open lazygit",
+      "t": "Open terminal",
+      "e": "Open editor",
+      "r": "Refresh status",
+      "space": "Toggle expand/collapse",
+      "Escape": "Exit focus mode"
+    }
+  }
+}

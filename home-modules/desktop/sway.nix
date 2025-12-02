@@ -998,6 +998,18 @@ in
           bindsym y exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav copy'
           bindsym n exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav new'
 
+          # Feature 109 T028: Launch lazygit for selected worktree (Shift+L for Lazygit)
+          bindsym Shift+l exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav git'
+
+          # Feature 109 T035: Open worktree create form (c for Create worktree)
+          bindsym c exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav create-worktree'
+
+          # Feature 109 T059-T061: Additional action shortcuts for worktrees
+          bindsym t exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav terminal'
+          bindsym Shift+e exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav editor'
+          bindsym Shift+f exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav files'
+          bindsym r exec sh -c 'view=$(eww --config $HOME/.config/eww-monitoring-panel get current_view 2>/dev/null); [ "$view" = "projects" ] && projects-nav refresh'
+
           # Exit panel mode - multiple options
           bindsym Escape exec sh -c 'exit-monitor-mode'
           bindsym q exec sh -c 'exit-monitor-mode'
