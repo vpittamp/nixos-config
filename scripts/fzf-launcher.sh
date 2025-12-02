@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # fzf-based application launcher for i3
 # Based on: https://fearby.com/article/using-fzf-as-a-dmenu-replacement/
+# Feature 106: Portable paths via FLAKE_ROOT
+
+# Source flake root discovery
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/lib/flake-root.sh" ]]; then
+    source "$SCRIPT_DIR/lib/flake-root.sh"
+else
+    # Fallback: try to find via git or use default
+    FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
+fi
 
 # Keybindings:
 # - Enter: Execute command normally in foreground
@@ -41,7 +51,7 @@ fi
 # Execute based on key pressed
 if [ "$KEY" = "ctrl-b" ]; then
     # Background execution with notification
-    /etc/nixos/scripts/run-background-command.sh "$COMMAND"
+    "$FLAKE_ROOT/scripts/run-background-command.sh" "$COMMAND"
 else
     # Normal foreground execution
     exec i3-msg -q "exec --no-startup-id $COMMAND"

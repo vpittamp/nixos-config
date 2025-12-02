@@ -1,6 +1,7 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, assetsPackage, ... }:
 
 # Feature 034: Unified Application Launcher - Application Registry
+# Feature 106: Portable icon paths via assetsPackage
 #
 # This module defines all launchable applications with project context support.
 # Applications are defined declaratively and generate:
@@ -10,10 +11,12 @@
 
 let
   # Import validated application definitions from shared data file
-  validated = import ./app-registry-data.nix { inherit lib; };
+  # Feature 106: Pass assetsPackage for portable icon paths
+  validated = import ./app-registry-data.nix { inherit lib assetsPackage; };
 
   # Import PWA sites configuration
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Feature 106: Pass assetsPackage for portable icon paths
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage; };
 
   # Transform PWA sites to simplified PWA registry format
   # Only include fields needed by sway-test framework and workspace panel

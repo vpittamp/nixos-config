@@ -4,8 +4,18 @@
 #
 # Run this script from your RDP session to get instructions
 # for setting up a safe testing environment via SSH
+# Feature 106: Portable paths via FLAKE_ROOT
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/lib/flake-root.sh" ]]; then
+    source "$SCRIPT_DIR/lib/flake-root.sh"
+else
+    # Fallback: try to find via git or use default
+    FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
+fi
 
 # Colors
 BLUE='\033[0;34m'
@@ -39,7 +49,7 @@ if [[ -n "${TMUX:-}" ]]; then
     echo -e "${YELLOW}Ready to run tests!${NC}"
     echo ""
     echo "Run:"
-    echo "  cd /etc/nixos"
+    echo "  cd $FLAKE_ROOT"
     echo "  ./scripts/test-feature-035.sh --quick"
     exit 0
 fi
@@ -57,7 +67,7 @@ if [[ -n "${SSH_CONNECTION:-}" ]]; then
     echo "   export DISPLAY=$CURRENT_DISPLAY"
     echo ""
     echo -e "${YELLOW}3. Run tests:${NC}"
-    echo "   cd /etc/nixos"
+    echo "   cd $FLAKE_ROOT"
     echo "   ./scripts/test-feature-035.sh --quick"
     exit 0
 fi
@@ -74,7 +84,7 @@ echo ""
 echo "  ssh $CURRENT_USER@$HOSTNAME"
 echo "  tmux new-session -s i3pm-tests"
 echo "  export DISPLAY=$CURRENT_DISPLAY"
-echo "  cd /etc/nixos"
+echo "  cd $FLAKE_ROOT"
 echo "  ./scripts/test-feature-035.sh --quick"
 echo ""
 echo "To detach from tmux: Ctrl+b, then d"
@@ -85,7 +95,7 @@ echo -e "${GREEN}Option 2: Run in this RDP session (Will create test windows)${N
 echo "----------------------------------------"
 echo "Run tests directly (windows will be visible):"
 echo ""
-echo "  cd /etc/nixos"
+echo "  cd $FLAKE_ROOT"
 echo "  ./scripts/test-feature-035.sh --quick"
 echo ""
 
@@ -93,11 +103,11 @@ echo -e "${GREEN}Option 3: Dry-run mode (Safest for RDP)${NC}"
 echo "----------------------------------------"
 echo "Test without creating windows:"
 echo ""
-echo "  cd /etc/nixos"
+echo "  cd $FLAKE_ROOT"
 echo "  ./scripts/test-feature-035.sh --quick --dry-run"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "For detailed instructions, see:"
-echo "  /etc/nixos/specs/035-now-that-we/TESTING_GUIDE.md"
+echo "  $FLAKE_ROOT/specs/035-now-that-we/TESTING_GUIDE.md"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

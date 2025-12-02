@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Run integration tests with live VNC viewing
 # This script sets up everything needed to watch tests live
+# Feature 106: Portable paths via FLAKE_ROOT
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
 
 DISPLAY_NUM=99
 export DISPLAY=":${DISPLAY_NUM}"
@@ -33,7 +37,7 @@ sleep 1
 echo "Step 1: Starting test environment (Xvfb + i3)..."
 echo ""
 
-cd /etc/nixos
+cd "$FLAKE_ROOT"  # Feature 106: Portable path
 
 # Start test in background with longer timeout to keep environment alive
 nix-shell \
