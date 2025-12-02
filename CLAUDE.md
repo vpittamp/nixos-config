@@ -236,6 +236,55 @@ journalctl --user -u eww-monitoring-panel --since "5 minutes ago"
 
 **Docs**: `/etc/nixos/specs/099-revise-projects-tab/quickstart.md`
 
+### Enhanced Worktree User Experience (Feature 109)
+
+**Status**: ✅ COMPLETE (2025-12-02)
+
+Power-user keyboard shortcuts and action buttons for efficient worktree management directly from the monitoring panel.
+
+**Keyboard Shortcuts** (in 📊 Panel focus mode - `Mod+Shift+M`):
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` | Navigate down/up |
+| `g`/`G` | Jump to first/last |
+| `Enter`/`l` | Switch to worktree |
+| `Space` | Expand/collapse repository |
+| `c` | Create new worktree |
+| `d` | Delete worktree |
+| `y` | Copy path to clipboard |
+| `t` | Open terminal |
+| `Shift+E` | Open VS Code |
+| `Shift+F` | Open file manager (yazi) |
+| `Shift+L` | Open lazygit |
+| `r` | Refresh project list |
+| `n` | Create new project |
+| `e` | Edit project/worktree |
+
+**Action Buttons** (visible on hover over worktree card):
+- **** - Open terminal in worktree directory
+- **󰨞** - Open VS Code in worktree
+- **󰉋** - Open yazi file manager
+- **** - Open lazygit (context-aware view selection)
+- **󰆏** - Copy worktree path
+- **󰆴** - Delete worktree
+
+**Lazygit Context-Aware View Selection**:
+- Dirty worktree → opens `status` view
+- Behind remote → opens `branch` view
+- Default → opens `status` view
+
+**Status Indicators**:
+| Indicator | Meaning |
+|-----------|---------|
+| ● (red) | Uncommitted changes |
+| ↑3 / ↓2 | Ahead/behind remote |
+| 💤 | Stale (no activity 30+ days) |
+| ✓ | Merged to main |
+| ⚠ | Merge conflicts |
+
+**Docs**: `/etc/nixos/specs/109-enhance-worktree-user-experience/quickstart.md`
+
 ## 🎨 Unified Bar System (Feature 057)
 
 Centralized theming with Catppuccin Mocha across top bar (Eww), bottom bar (Eww), and notification center (SwayNC).
@@ -1164,6 +1213,8 @@ gh auth status               # Auto-uses 1Password token
 - In-memory daemon state (BadgeState in badge_service.py), file-based fallback (107-fix-progress-indicator)
 - Python 3.11+ (monitoring_data.py backend), Yuck/GTK (Eww widgets), Nix (home-manager module) + i3ipc.aio (Sway IPC), Pydantic 2.x (data models), Eww 0.4+ (GTK3 widgets), asyncio (108-show-worktree-card-detail)
 - In-memory daemon state, JSON project files (`~/.config/i3/projects/*.json`) (108-show-worktree-card-detail)
+- Python 3.11+ (daemon/backend), Yuck/GTK3 (Eww widgets), Bash 5.0+ (scripts), Nix (module configuration) + i3ipc.aio (Sway IPC), Pydantic 2.x (data models), Eww 0.4+ (GTK3 widgets), asyncio (event handling), lazygit 0.40+ (git TUI) (109-enhance-worktree-user-experience)
+- JSON files (`~/.config/i3/projects/*.json`), in-memory daemon state (109-enhance-worktree-user-experience)
 
 ## Recent Changes
 - 108-show-worktree-card-detail: Enhanced worktree card status display with at-a-glance indicators (dirty ●, sync ↑↓, merged ✓, stale 💤, conflict ⚠), tooltips with file count breakdown and commit info, 30-day staleness threshold, hover-visible last commit message, git_utils.py format_relative_time() helper, is_merged/is_stale/has_conflicts detection, Catppuccin Mocha styling (teal merged, red conflict/dirty, gray stale)
