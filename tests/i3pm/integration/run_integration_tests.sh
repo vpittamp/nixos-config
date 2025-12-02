@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Integration test runner with proper process management
+# Feature 106: Portable paths via FLAKE_ROOT
 #
 # Usage:
 #   ./run_integration_tests.sh [test_file]
@@ -11,6 +12,10 @@
 # - Returns detailed test results
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
 
 # Configuration
 DISPLAY_NUM=99
@@ -123,7 +128,7 @@ export DISPLAY=":${DISPLAY_NUM}"
 # - Capture output
 # - Timeout for safety
 # - Append to log file
-cd /etc/nixos
+cd "$FLAKE_ROOT"  # Feature 106: Portable path
 
 nix-shell -p \
     python3Packages.pytest \

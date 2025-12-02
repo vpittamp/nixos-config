@@ -14,6 +14,14 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLUSTER_NAME="localdev"
 
+# Feature 106: FLAKE_ROOT discovery for portable paths
+if [[ -f "$SCRIPT_DIR/lib/flake-root.sh" ]]; then
+    source "$SCRIPT_DIR/lib/flake-root.sh"
+else
+    # Fallback: try to find via git or use default
+    FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
+fi
+
 # Show help if requested
 if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
     echo -e "${BLUE}Usage: $0 [additional idpbuilder arguments]${NC}"
@@ -77,7 +85,7 @@ echo -e "${GREEN}Creating Kind cluster with SSH NodePort support...${NC}"
 echo -e "${BLUE}Using config: ${SCRIPT_DIR}/kind-config-nixos-ssh.yaml${NC}"
 
 # Check if the SSH config exists, fall back to regular nixos config
-CONFIG_FILE="/etc/nixos/scripts/kind-config-nixos-ssh.yaml"
+CONFIG_FILE="$FLAKE_ROOT/scripts/kind-config-nixos-ssh.yaml"  # Feature 106: Portable path
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${YELLOW}SSH config not found, using regular NixOS config${NC}"
     CONFIG_FILE="${SCRIPT_DIR}/kind-config-nixos.yaml"
@@ -180,11 +188,11 @@ if [ -d "/home/vpittamp/stacks/cdk8s/dist" ]; then
 fi
 
 # Step 12: Sync JWKS to Azure (if script exists and Azure CLI is authenticated)
-if [ -f "/etc/nixos/scripts/sync-jwks-to-azure.sh" ]; then
+if [ -f "$FLAKE_ROOT/scripts/sync-jwks-to-azure.sh" ]; then  # Feature 106: Portable path
     echo -e "${GREEN}Syncing JWKS to Azure...${NC}"
     # Check if Azure CLI is authenticated first
     if az account show &>/dev/null; then
-        /etc/nixos/scripts/sync-jwks-to-azure.sh || echo -e "${YELLOW}⚠️  JWKS sync failed but continuing...${NC}"
+        "$FLAKE_ROOT/scripts/sync-jwks-to-azure.sh" || echo -e "${YELLOW}⚠️  JWKS sync failed but continuing...${NC}"  # Feature 106: Portable path
     else
         echo -e "${YELLOW}⚠️  Azure CLI not authenticated. Skipping JWKS sync.${NC}"
         echo -e "${YELLOW}   Run 'az login' to authenticate if you need JWKS sync.${NC}"

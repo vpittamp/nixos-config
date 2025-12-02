@@ -15,11 +15,30 @@ Output:
 
 import ast
 import json
+import os
+import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Set
+
+# Feature 106: Import portable path utilities
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+try:
+    from python_path_utils import get_flake_root
+except ImportError:
+    # Fallback if module not available
+    def get_flake_root() -> Path:
+        flake_root = os.environ.get("FLAKE_ROOT")
+        if flake_root:
+            return Path(flake_root)
+        try:
+            result = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                                    capture_output=True, text=True, check=True)
+            return Path(result.stdout.strip())
+        except:
+            return Path("/etc/nixos")
 
 
 @dataclass
@@ -317,11 +336,14 @@ class APIAnalyzer:
 
 def main():
     """Main entry point."""
+    # Feature 106: Use portable flake root discovery
+    flake_root = get_flake_root()
+
     if len(sys.argv) > 1:
         target_dir = Path(sys.argv[1])
     else:
         # Default to i3-project-event-daemon directory
-        target_dir = Path("/etc/nixos/home-modules/desktop/i3-project-event-daemon")
+        target_dir = flake_root / "home-modules/desktop/i3-project-event-daemon"
 
     if not target_dir.exists():
         print(f"Error: Directory {target_dir} does not exist", file=sys.stderr)
@@ -336,7 +358,7 @@ def main():
 
     # Save JSON report
     report = analyzer.generate_report()
-    output_file = Path("/etc/nixos/specs/039-create-a-new/audit-conflicts.json")
+    output_file = flake_root / "specs/039-create-a-new/audit-conflicts.json"  # Feature 106: Portable path
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, 'w') as f:

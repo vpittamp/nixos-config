@@ -24,6 +24,14 @@ readonly BUILD_LOG_JSON="${LOG_DIR}/last-build.json"
 readonly BUILD_LOG_TEXT="${LOG_DIR}/last-build.log"
 readonly BUILD_HISTORY_JSON="${LOG_DIR}/build-history.json"
 
+# Feature 106: FLAKE_ROOT discovery for portable paths
+if [[ -f "$SCRIPT_DIR/lib/flake-root.sh" ]]; then
+    source "$SCRIPT_DIR/lib/flake-root.sh"
+else
+    # Fallback: try to find via git or use default
+    FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
+fi
+
 # Color codes
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -38,7 +46,7 @@ TARGET="os"  # os or home
 ACTION="switch"  # switch, build, test, boot
 USE_NH=1
 OUTPUT_FORMAT="auto"  # auto, human, json
-FLAKE_PATH="/etc/nixos"
+FLAKE_PATH="$FLAKE_ROOT"  # Feature 106: Use discovered flake root
 EXTRA_ARGS=()
 
 usage() {

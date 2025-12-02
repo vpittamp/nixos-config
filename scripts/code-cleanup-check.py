@@ -21,10 +21,30 @@ import subprocess
 from pathlib import Path
 from typing import List, Tuple
 
+# Feature 106: Import portable path utilities
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+try:
+    from python_path_utils import get_flake_root, get_home_modules_dir
+except ImportError:
+    # Fallback if module not available
+    def get_flake_root() -> Path:
+        flake_root = os.environ.get("FLAKE_ROOT")
+        if flake_root:
+            return Path(flake_root)
+        try:
+            result = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                                    capture_output=True, text=True, check=True)
+            return Path(result.stdout.strip())
+        except:
+            return Path("/etc/nixos")
+    def get_home_modules_dir() -> Path:
+        return get_flake_root() / "home-modules"
 
-# Paths to check
-DAEMON_DIR = Path("/etc/nixos/home-modules/desktop/i3-project-event-daemon")
-DIAGNOSTIC_CLI_DIR = Path("/etc/nixos/home-modules/tools/i3pm-diagnostic")
+
+# Feature 106: Paths to check - use portable path discovery
+FLAKE_ROOT = get_flake_root()
+DAEMON_DIR = FLAKE_ROOT / "home-modules/desktop/i3-project-event-daemon"
+DIAGNOSTIC_CLI_DIR = FLAKE_ROOT / "home-modules/tools/i3pm-diagnostic"
 SERVICES_DIR = DAEMON_DIR / "services"
 
 

@@ -5,6 +5,10 @@
 let
   inherit (inputs) nixpkgs nixpkgs-bleeding home-manager;
 
+  # Feature 106: Assets package factory for portable builds
+  # Creates a package that copies assets to the Nix store
+  mkAssetsPackage = pkgs: import ./assets.nix { inherit pkgs; };
+
   # Internal helper: Create build metadata configuration
   # Provides git commit info and build details in /etc/nixos-metadata
   mkBuildMetadata = { hostname, system }:
@@ -75,14 +79,24 @@ in
 {
   # Export monitor configuration for use in home-manager modules
   inherit monitorConfig;
+
+  # Feature 106: Export assets package factory for portable builds
+  # Usage: assetsPackage = helpers.mkAssetsPackage pkgs;
+  inherit mkAssetsPackage;
   # Create a standardized Home Manager configuration for NixOS modules
   # This ensures consistency across all NixOS configurations
   mkHomeManagerConfig = { system, user, modules, osConfig ? null }:
     let
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
       pkgs-unstable = import nixpkgs-bleeding {
         inherit system;
         config.allowUnfree = true;
       };
+      # Feature 106: Create assets package for this system
+      assetsPackage = mkAssetsPackage pkgs;
     in
     {
       home-manager = {
@@ -91,7 +105,7 @@ in
         useGlobalPkgs = true;
         useUserPackages = true;
         extraSpecialArgs = {
-          inherit inputs self pkgs-unstable monitorConfig;
+          inherit inputs self pkgs-unstable monitorConfig assetsPackage;
         } // (if osConfig != null then { inherit osConfig; } else { });
         users.${user} = {
           imports = modules;
@@ -121,11 +135,13 @@ in
     let
       pkgs = mkPkgs system;
       pkgs-unstable = mkPkgsUnstable system;
+      # Feature 106: Create assets package for this system
+      assetsPackage = mkAssetsPackage pkgs;
     in
     home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
       extraSpecialArgs = {
-        inherit inputs self pkgs-unstable monitorConfig;
+        inherit inputs self pkgs-unstable monitorConfig assetsPackage;
         # Note: osConfig intentionally omitted for standalone configs
         # to avoid circular dependencies
       };

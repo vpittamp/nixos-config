@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Claude Code Stop Notification Script
 # Feature 090: Enhanced Notification Callback (SwayNC Edition)
+# Feature 106: Portable paths via FLAKE_ROOT
 #
 # This script sends a notification when Claude Code stops and waits for input.
 # The notification includes an action button that, when clicked, focuses the
@@ -15,6 +16,15 @@
 # This approach is simpler and more reliable than using SwayNC's script system.
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../lib/flake-root.sh" ]]; then
+    source "$SCRIPT_DIR/../lib/flake-root.sh"
+else
+    # Fallback: try to find via git or use default
+    FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
+fi
 
 # Get window ID of the terminal running this hook
 # BUG FIX: Previously used focused window, but hook may fire when user has switched
@@ -124,8 +134,8 @@ if [ "$RESPONSE" = "focus" ]; then
     export CALLBACK_TMUX_SESSION="$TMUX_SESSION"
     export CALLBACK_TMUX_WINDOW="$TMUX_WINDOW"
 
-    # Execute callback script
-    /etc/nixos/scripts/claude-hooks/swaync-action-callback.sh
+    # Execute callback script (Feature 106: Use FLAKE_ROOT for portable path)
+    "$FLAKE_ROOT/scripts/claude-hooks/swaync-action-callback.sh"
 fi
 
 exit 0
