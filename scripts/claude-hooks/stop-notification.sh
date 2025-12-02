@@ -71,15 +71,28 @@ get_terminal_window_id() {
 
 WINDOW_ID=$(get_terminal_window_id)
 
-# Feature 095: Update badge to "stopped" state using file-based state
+# Feature 107: Update badge to "stopped" state using IPC-first with file fallback
 # This changes the spinner to a bell icon indicating Claude is waiting for input
-BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
-mkdir -p "$BADGE_STATE_DIR"
+# Primary path: IPC to daemon for <100ms latency
+# Fallback path: File-based for reliability when daemon unavailable
 
+IPC_SUCCESS=false
 if [ -n "$WINDOW_ID" ]; then
-    # Write badge state as JSON file keyed by window ID
-    BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
-    cat > "$BADGE_FILE" <<EOF
+    # Try IPC first (fast path)
+    IPC_SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [ -S "$IPC_SOCKET" ]; then
+        # Use badge-ipc-client.sh for IPC communication
+        if /etc/nixos/scripts/claude-hooks/badge-ipc-client.sh create "$WINDOW_ID" "claude-code" --state stopped >/dev/null 2>&1; then
+            IPC_SUCCESS=true
+        fi
+    fi
+
+    # Fallback to file-based (reliability path) if IPC failed
+    if [ "$IPC_SUCCESS" = false ]; then
+        BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
+        mkdir -p "$BADGE_STATE_DIR"
+        BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
+        cat > "$BADGE_FILE" <<EOF
 {
   "window_id": $WINDOW_ID,
   "state": "stopped",
@@ -88,6 +101,7 @@ if [ -n "$WINDOW_ID" ]; then
   "timestamp": $(date +%s)
 }
 EOF
+    fi
 fi
 
 # Get project name from environment
