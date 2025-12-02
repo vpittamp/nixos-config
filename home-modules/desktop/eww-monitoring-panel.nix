@@ -4430,7 +4430,7 @@ in
                   :cursor "pointer"
                   :onclick "worktree-lazygit ''${worktree.path} ''${worktree.git_is_dirty ? \"status\" : (worktree.git_behind > 0 ? \"branch\" : \"status\")}"
                   :tooltip "Open lazygit (Shift+L)"
-                  (label :class "action-btn action-git" :text ""))
+                  (label :class "action-btn action-git" :text "󰊢"))
                 ;; Feature 109 T056: Copy Path button
                 (eventbox
                   :cursor "pointer"
