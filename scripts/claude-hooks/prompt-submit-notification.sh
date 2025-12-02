@@ -58,14 +58,14 @@ get_terminal_window_id() {
 
 WINDOW_ID=$(get_terminal_window_id)
 
-# Feature 095: Create "working" badge using file-based state
-# This shows a spinner animation indicating Claude Code is processing
-# Uses a simple JSON file instead of daemon IPC for reliability
-BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
-mkdir -p "$BADGE_STATE_DIR"
+# Feature 107: Create "working" badge using file-based approach
+# monitoring_data.py reads badge state from filesystem, so we must write files
+# IPC is used for fast daemon notification but files are the source of truth
 
 if [ -n "$WINDOW_ID" ]; then
-    # Write badge state as JSON file keyed by window ID
+    # Always write badge file (monitoring_data.py reads from filesystem)
+    BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
+    mkdir -p "$BADGE_STATE_DIR"
     BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
     cat > "$BADGE_FILE" <<EOF
 {
@@ -75,6 +75,12 @@ if [ -n "$WINDOW_ID" ]; then
   "timestamp": $(date +%s)
 }
 EOF
+
+    # Also notify daemon via IPC (for fast update, but file is source of truth)
+    IPC_SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [ -S "$IPC_SOCKET" ]; then
+        /etc/nixos/scripts/claude-hooks/badge-ipc-client.sh create "$WINDOW_ID" "claude-code" --state working >/dev/null 2>&1 || true
+    fi
 fi
 
 exit 0

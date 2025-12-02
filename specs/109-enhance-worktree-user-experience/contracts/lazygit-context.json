@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LazyGit Context Contract",
+  "description": "Contract for launching lazygit with worktree context from the Eww monitoring panel",
+  "version": "1.0.0",
+  "feature": "109-enhance-worktree-user-experience",
+
+  "definitions": {
+    "LazyGitView": {
+      "type": "string",
+      "enum": ["status", "branch", "log", "stash"],
+      "description": "Available lazygit views/panels"
+    },
+
+    "LazyGitContext": {
+      "type": "object",
+      "description": "Configuration for launching lazygit in a specific context",
+      "required": ["working_directory"],
+      "properties": {
+        "working_directory": {
+          "type": "string",
+          "description": "Absolute path to the worktree directory",
+          "pattern": "^/.*$",
+          "examples": [
+            "/home/vpittamp/repos/vpittamp/nixos-config/109-enhance-worktree-user-experience"
+          ]
+        },
+        "initial_view": {
+          "$ref": "#/definitions/LazyGitView",
+          "default": "status",
+          "description": "Which lazygit panel to focus on launch"
+        },
+        "filter_path": {
+          "type": "string",
+          "description": "Optional path filter for commits (--filter argument)",
+          "examples": ["src/models/worktree.py"]
+        }
+      }
+    },
+
+    "LazyGitLaunchRequest": {
+      "type": "object",
+      "description": "Request to launch lazygit for a worktree",
+      "required": ["worktree_qualified_name"],
+      "properties": {
+        "worktree_qualified_name": {
+          "type": "string",
+          "description": "Qualified name of the worktree (account/repo:branch)",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+:[a-z0-9-]+$",
+          "examples": ["vpittamp/nixos-config:109-enhance-worktree-user-experience"]
+        },
+        "view": {
+          "$ref": "#/definitions/LazyGitView",
+          "default": "status"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["user_action", "dirty_indicator", "sync_indicator", "conflict_indicator"],
+          "description": "Why lazygit is being launched (affects default view)",
+          "default": "user_action"
+        }
+      }
+    },
+
+    "LazyGitLaunchResponse": {
+      "type": "object",
+      "description": "Response from lazygit launch request",
+      "required": ["success", "pid"],
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "pid": {
+          "type": "integer",
+          "description": "Process ID of launched lazygit terminal"
+        },
+        "command": {
+          "type": "string",
+          "description": "Actual command executed",
+          "examples": ["ghostty -e lazygit --path /home/user/repo status"]
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if success is false"
+        }
+      }
+    }
+  },
+
+  "endpoints": {
+    "launch_lazygit": {
+      "description": "Launch lazygit for a specific worktree",
+      "request": { "$ref": "#/definitions/LazyGitLaunchRequest" },
+      "response": { "$ref": "#/definitions/LazyGitLaunchResponse" },
+      "implementation_notes": [
+        "Shell script wrapper: scripts/worktree-lazygit.sh",
+        "Uses ghostty terminal with -e flag",
+        "Always spawns new instance (per clarification: parallel instances)",
+        "Sets I3PM_* environment variables for project context"
+      ]
+    }
+  },
+
+  "view_selection_rules": {
+    "description": "Rules for selecting initial lazygit view based on context",
+    "rules": [
+      {
+        "condition": "reason == 'dirty_indicator' OR worktree has uncommitted changes",
+        "view": "status",
+        "rationale": "User wants to see/stage changes"
+      },
+      {
+        "condition": "reason == 'sync_indicator' OR worktree is behind remote",
+        "view": "branch",
+        "rationale": "User wants to sync with remote"
+      },
+      {
+        "condition": "reason == 'conflict_indicator' OR worktree has merge conflicts",
+        "view": "status",
+        "rationale": "Conflict resolution starts from status view"
+      },
+      {
+        "condition": "reason == 'user_action' (default)",
+        "view": "status",
+        "rationale": "General purpose starting point"
+      }
+    ]
+  },
+
+  "examples": {
+    "launch_for_dirty_worktree": {
+      "request": {
+        "worktree_qualified_name": "vpittamp/nixos-config:109-enhance-worktree-user-experience",
+        "view": "status",
+        "reason": "dirty_indicator"
+      },
+      "expected_command": "ghostty -e lazygit --path /home/vpittamp/repos/vpittamp/nixos-config/109-enhance-worktree-user-experience status",
+      "response": {
+        "success": true,
+        "pid": 12345,
+        "command": "ghostty -e lazygit --path /home/vpittamp/repos/vpittamp/nixos-config/109-enhance-worktree-user-experience status"
+      }
+    },
+    "launch_for_sync": {
+      "request": {
+        "worktree_qualified_name": "vpittamp/nixos-config:main",
+        "view": "branch",
+        "reason": "sync_indicator"
+      },
+      "expected_command": "ghostty -e lazygit --path /home/vpittamp/repos/vpittamp/nixos-config branch",
+      "response": {
+        "success": true,
+        "pid": 12346,
+        "command": "ghostty -e lazygit --path /home/vpittamp/repos/vpittamp/nixos-config branch"
+      }
+    }
+  }
+}

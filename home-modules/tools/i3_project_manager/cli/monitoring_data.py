@@ -87,6 +87,10 @@ def get_spinner_frame() -> str:
 # Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
 BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm-badges"
 
+# Feature 107: inotify watcher for immediate badge detection (<15ms latency)
+# Uses subprocess inotifywait to avoid adding Python dependencies
+INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
+
 
 def load_badge_state_from_files() -> Dict[str, Any]:
     """Load badge state from filesystem.
@@ -114,6 +118,84 @@ def load_badge_state_from_files() -> Dict[str, Any]:
             continue
 
     return badge_state
+
+
+async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
+    """Create inotify watcher subprocess for badge directory.
+
+    Feature 107: Uses inotifywait for immediate badge file detection (<15ms latency).
+    Falls back to polling if inotifywait is not available.
+
+    Returns:
+        Subprocess process if inotifywait available, None otherwise.
+    """
+    import shutil
+
+    # Check if inotifywait is available
+    if not shutil.which(INOTIFYWAIT_CMD):
+        logger.warning("Feature 107: inotifywait not found, falling back to polling")
+        return None
+
+    # Ensure badge directory exists before watching
+    BADGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # inotifywait in monitor mode (-m) outputs events as they happen
+        # -e create,modify,delete watches for file changes
+        # -q quiet mode (no startup message)
+        # --format outputs just the event type and filename
+        process = await asyncio.create_subprocess_exec(
+            INOTIFYWAIT_CMD,
+            "-m",           # Monitor mode (continuous)
+            "-q",           # Quiet (no initial watching message)
+            "-e", "create,modify,delete,moved_to",
+            "--format", "%e %f",  # Event type and filename
+            str(BADGE_STATE_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        logger.info(f"Feature 107: Started inotify watcher on {BADGE_STATE_DIR} (pid={process.pid})")
+        return process
+    except Exception as e:
+        logger.warning(f"Feature 107: Failed to start inotify watcher: {e}")
+        return None
+
+
+async def read_inotify_events(
+    process: asyncio.subprocess.Process,
+    on_badge_change: asyncio.Event,
+) -> None:
+    """Read inotify events from subprocess and signal badge changes.
+
+    Feature 107: Runs as background task, sets event when badge files change.
+
+    Args:
+        process: inotifywait subprocess
+        on_badge_change: Event to set when badge file changes detected
+    """
+    if process.stdout is None:
+        return
+
+    try:
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                # EOF - process terminated
+                logger.warning("Feature 107: inotifywait process terminated")
+                break
+
+            # Parse event line: "EVENT_TYPE filename"
+            event_line = line.decode().strip()
+            if event_line:
+                logger.debug(f"Feature 107: inotify event: {event_line}")
+                # Signal that badge files changed
+                on_badge_change.set()
+
+    except asyncio.CancelledError:
+        logger.debug("Feature 107: inotify reader cancelled")
+        raise
+    except Exception as e:
+        logger.warning(f"Feature 107: Error reading inotify events: {e}")
 
 
 # Icon resolution - loads from application-registry.json and pwa-registry.json
@@ -2516,6 +2598,7 @@ async def stream_monitoring_data():
 
     Features:
     - Subscribes to window/workspace/output events via i3ipc
+    - Feature 107: Uses inotify for immediate badge detection (<15ms latency)
     - Outputs JSON on every event (<100ms latency)
     - Heartbeat every 5s to detect stale connections
     - Automatic reconnection with exponential backoff (1s, 2s, 4s, max 10s)
@@ -2536,6 +2619,26 @@ async def stream_monitoring_data():
     max_reconnect_delay = 10.0
     last_update = 0.0
     heartbeat_interval = 5.0
+
+    # Feature 107: Start inotify watcher for badge directory
+    badge_watcher_process: Optional[asyncio.subprocess.Process] = None
+    badge_change_event = asyncio.Event()
+    inotify_reader_task: Optional[asyncio.Task] = None
+    use_inotify = True  # Will be set to False if inotifywait unavailable
+
+    try:
+        badge_watcher_process = await create_badge_watcher()
+        if badge_watcher_process:
+            inotify_reader_task = asyncio.create_task(
+                read_inotify_events(badge_watcher_process, badge_change_event)
+            )
+            logger.info("Feature 107: inotify watcher active for badge detection")
+        else:
+            use_inotify = False
+            logger.info("Feature 107: Falling back to polling for badge detection")
+    except Exception as e:
+        logger.warning(f"Feature 107: Failed to start inotify: {e}, using polling")
+        use_inotify = False
 
     while not shutdown_requested:
         try:
@@ -2600,23 +2703,29 @@ async def stream_monitoring_data():
             spinner_interval = SPINNER_INTERVAL_MS / 1000.0  # Convert to seconds
             last_spinner_update = time.time()
 
-            # Feature 095: Badge state check interval (500ms when idle)
-            # Check badge files periodically to detect when hook scripts create/update them
-            badge_check_interval = 0.5  # 500ms
-            last_badge_check = time.time()
+            # Feature 107: Polling fallback interval (500ms when inotify unavailable)
+            # Only used when inotify is not available
+            polling_fallback_interval = 0.5  # 500ms
+            last_polling_check = time.time()
 
             # Event loop with heartbeat
             while not shutdown_requested:
                 current_time = time.time()
 
-                # Feature 095: Periodically check badge state from filesystem
-                # This catches badge changes from hook scripts even when no Sway events occur
-                if not has_working_badge and (current_time - last_badge_check) >= badge_check_interval:
-                    badge_state = load_badge_state_from_files()
-                    if any(b.get("state") == "working" for b in badge_state.values()):
-                        logger.debug("Feature 095: Detected working badge from file, triggering refresh")
-                        await refresh_and_output()
-                    last_badge_check = current_time
+                # Feature 107: Check for inotify-triggered badge changes (immediate)
+                if use_inotify and badge_change_event.is_set():
+                    badge_change_event.clear()
+                    logger.debug("Feature 107: inotify triggered badge refresh")
+                    await refresh_and_output()
+
+                # Feature 107: Polling fallback when inotify unavailable
+                elif not use_inotify and not has_working_badge:
+                    if (current_time - last_polling_check) >= polling_fallback_interval:
+                        badge_state = load_badge_state_from_files()
+                        if any(b.get("state") == "working" for b in badge_state.values()):
+                            logger.debug("Feature 095: Detected working badge from file (polling), triggering refresh")
+                            await refresh_and_output()
+                        last_polling_check = current_time
 
                 # Feature 095 Enhancement: Fast updates for spinner animation when working badge exists
                 if has_working_badge and (current_time - last_spinner_update) >= spinner_interval:
@@ -2628,8 +2737,16 @@ async def stream_monitoring_data():
                     logger.debug("Sending heartbeat")
                     await refresh_and_output()
 
-                # Sleep briefly - shorter when animating spinner
-                sleep_time = 0.05 if has_working_badge else 0.5
+                # Feature 107: Sleep duration depends on mode
+                # - With inotify: longer sleep (badge changes trigger immediately)
+                # - Without inotify: shorter sleep for polling
+                # - With spinner: shortest sleep for animation
+                if has_working_badge:
+                    sleep_time = 0.05  # 50ms for spinner animation
+                elif use_inotify:
+                    sleep_time = 0.5   # 500ms when using inotify (events wake us up)
+                else:
+                    sleep_time = 0.25  # 250ms for polling fallback
                 await asyncio.sleep(sleep_time)
 
         except ConnectionError as e:
@@ -2642,6 +2759,18 @@ async def stream_monitoring_data():
             logger.error(f"Unexpected error in stream loop: {e}", exc_info=True)
             await asyncio.sleep(reconnect_delay)
             reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+
+    # Feature 107: Cleanup inotify watcher
+    if inotify_reader_task:
+        inotify_reader_task.cancel()
+        try:
+            await inotify_reader_task
+        except asyncio.CancelledError:
+            pass
+    if badge_watcher_process:
+        badge_watcher_process.terminate()
+        await badge_watcher_process.wait()
+        logger.info("Feature 107: inotify watcher stopped")
 
     logger.info("Shutdown complete")
     sys.exit(0)

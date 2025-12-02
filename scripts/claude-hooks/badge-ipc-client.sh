@@ -47,8 +47,10 @@ send_jsonrpc() {
         '{jsonrpc: "2.0", method: $method, params: $params, id: 1}')
 
     # Send request and capture response
+    # Feature 107: Added -w 1 to prevent nc from hanging indefinitely
+    # The daemon sends response but doesn't close connection; -w 1 adds 1s timeout
     local response
-    if ! response=$(echo "$request" | nc -U "$SOCKET_PATH" 2>&1); then
+    if ! response=$(echo "$request" | nc -w 1 -U "$SOCKET_PATH" 2>&1); then
         echo "Error: Failed to communicate with daemon" >&2
         exit 1
     fi
@@ -66,13 +68,33 @@ send_jsonrpc() {
 }
 
 # Create badge or increment existing
+# Feature 107: Added --state parameter for working/stopped state
 cmd_create() {
-    local window_id="${1:-}"
-    local source="${2:-generic}"
+    local window_id=""
+    local source="generic"
+    local state="stopped"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --state)
+                state="${2:-stopped}"
+                shift 2
+                ;;
+            *)
+                if [ -z "$window_id" ]; then
+                    window_id="$1"
+                else
+                    source="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
 
     if [ -z "$window_id" ]; then
         echo "Error: window_id required" >&2
-        echo "Usage: badge-ipc create <window_id> [source]" >&2
+        echo "Usage: badge-ipc create <window_id> [source] [--state working|stopped]" >&2
         exit 1
     fi
 
@@ -82,11 +104,18 @@ cmd_create() {
         exit 1
     fi
 
+    # Validate state
+    if [[ "$state" != "working" && "$state" != "stopped" ]]; then
+        echo "Error: state must be 'working' or 'stopped'" >&2
+        exit 1
+    fi
+
     local params
     params=$(jq -nc \
         --argjson window_id "$window_id" \
         --arg source "$source" \
-        '{window_id: $window_id, source: $source}')
+        --arg state "$state" \
+        '{window_id: $window_id, source: $source, state: $state}')
 
     local result
     result=$(send_jsonrpc "create_badge" "$params")
