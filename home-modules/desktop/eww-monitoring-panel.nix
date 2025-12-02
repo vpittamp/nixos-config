@@ -4226,21 +4226,60 @@ in
                       :halign "start"
                       :limit-width 10
                       :text {" @ " + (worktree.commit ?: "unknown")})
+                    ;; Feature 108 T019: Conflict indicator (highest priority)
+                    (label
+                      :class "git-conflict"
+                      :visible {worktree.git_has_conflicts ?: false}
+                      :text " ''${worktree.git_conflict_indicator}"
+                      :tooltip "Has unresolved merge conflicts")
+                    ;; Dirty indicator (T027: with tooltip showing file breakdown)
                     (label
                       :class "git-dirty"
                       :visible {worktree.git_is_dirty}
-                      :text " ''${worktree.git_dirty_indicator}")
+                      :text " ''${worktree.git_dirty_indicator}"
+                      :tooltip {(worktree.git_staged_count ?: 0) > 0 || (worktree.git_modified_count ?: 0) > 0 || (worktree.git_untracked_count ?: 0) > 0 ?
+                        ((worktree.git_staged_count ?: 0) > 0 ? "''${worktree.git_staged_count} staged" : "") +
+                        ((worktree.git_staged_count ?: 0) > 0 && ((worktree.git_modified_count ?: 0) > 0 || (worktree.git_untracked_count ?: 0) > 0) ? ", " : "") +
+                        ((worktree.git_modified_count ?: 0) > 0 ? "''${worktree.git_modified_count} modified" : "") +
+                        ((worktree.git_modified_count ?: 0) > 0 && (worktree.git_untracked_count ?: 0) > 0 ? ", " : "") +
+                        ((worktree.git_untracked_count ?: 0) > 0 ? "''${worktree.git_untracked_count} untracked" : "")
+                        : "Uncommitted changes"})
+                    ;; T028: Sync indicator with tooltip showing commit counts
                     (label
                       :class "git-sync"
                       :visible {(worktree.git_sync_indicator ?: "") != ""}
-                      :text " ''${worktree.git_sync_indicator}"))
+                      :text " ''${worktree.git_sync_indicator}"
+                      :tooltip {((worktree.git_ahead ?: 0) > 0 ? "''${worktree.git_ahead} commits to push" : "") +
+                        ((worktree.git_ahead ?: 0) > 0 && (worktree.git_behind ?: 0) > 0 ? ", " : "") +
+                        ((worktree.git_behind ?: 0) > 0 ? "''${worktree.git_behind} commits to pull" : "")})
+                    ;; Feature 108 T018/T037: Merge badge with tooltip
+                    (label
+                      :class "badge-merged"
+                      :visible {worktree.git_is_merged ?: false}
+                      :text " ✓"
+                      :tooltip "Branch merged into main")
+                    ;; Feature 108 T032/T034: Stale indicator with tooltip
+                    (label
+                      :class "badge-stale"
+                      :visible {worktree.git_is_stale ?: false}
+                      :text " 💤"
+                      :tooltip "No activity in 30+ days"))
                   (label
                     :class "worktree-path"
                     :halign "start"
                     :limit-width 30
                     :truncate true
                     :text "''${worktree.directory_display}"
-                    :tooltip "''${worktree.path}")))
+                    :tooltip "''${worktree.path}")
+                  ;; Feature 108 T029: Last commit info (visible on hover)
+                  (label
+                    :class "worktree-last-commit"
+                    :halign "start"
+                    :visible {hover_worktree_name == worktree.qualified_name && (worktree.git_last_commit_relative ?: "") != ""}
+                    :limit-width 50
+                    :truncate true
+                    :text {(worktree.git_last_commit_relative ?: "") + (worktree.git_last_commit_message != "" ? " - " + (worktree.git_last_commit_message ?: "") : "")}
+                    :tooltip {worktree.git_status_tooltip ?: ""})))
               ;; Feature 102: Action buttons (visible on hover, hidden for main worktree)
               (box
                 :class {"worktree-action-bar" + (hover_worktree_name == worktree.qualified_name && !worktree.is_main ? " visible" : "")}
@@ -8039,8 +8078,9 @@ in
         min-width: 0;
       }
 
+      /* Feature 108 T022: Dirty indicator uses red per spec */
       .git-dirty {
-        color: ${mocha.peach};
+        color: ${mocha.red};
         font-size: 11px;
         margin-left: 4px;
       }
@@ -8059,6 +8099,33 @@ in
         margin-left: 4px;
         font-weight: bold;
       }
+
+      /* Feature 108 T020: Merge badge (teal) */
+      .badge-merged {
+        color: ${mocha.teal};
+        font-size: 10px;
+        margin-left: 4px;
+        font-weight: bold;
+      }
+
+      /* Feature 108 T021: Conflict indicator (red) */
+      .git-conflict {
+        color: ${mocha.red};
+        font-size: 11px;
+        margin-left: 4px;
+        font-weight: bold;
+      }
+
+      /* Feature 108 T033: Stale indicator (gray/faded) */
+      .badge-stale {
+        color: ${mocha.overlay0};
+        font-size: 10px;
+        margin-left: 4px;
+        opacity: 0.8;
+      }
+
+      /* Feature 108 T022: Verify dirty indicator uses red */
+      /* Note: .git-dirty already defined above with peach color - changing to red per spec */
 
       .project-icon-container {
         background-color: rgba(137, 180, 250, 0.1);
@@ -8554,6 +8621,14 @@ in
       .worktree-path {
         font-size: 9px;
         color: ${mocha.subtext0};
+      }
+
+      /* Feature 108 T029: Last commit info styling (shown on hover) */
+      .worktree-last-commit {
+        font-size: 9px;
+        font-style: italic;
+        color: ${mocha.overlay0};
+        margin-top: 2px;
       }
 
       .active-worktree {
