@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Simple integration test runner for systemd
 # Minimal dependencies, reliable execution
+# Feature 106: Portable paths via FLAKE_ROOT
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
 
 DISPLAY_NUM=99
 export DISPLAY=":${DISPLAY_NUM}"
@@ -37,7 +41,7 @@ sleep 1
 echo "Running tests..."
 echo ""
 
-cd /etc/nixos
+cd "$FLAKE_ROOT"  # Feature 106: Portable path
 
 python -m pytest \
     tests/i3pm/integration/test_quick_validation.py::test_integration_framework_setup_only \

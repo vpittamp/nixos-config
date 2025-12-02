@@ -1,6 +1,7 @@
-{ lib, ... }:
+{ lib, assetsPackage ? null, ... }:
 
 # Feature 034/035: Application Registry Data
+# Feature 106: Portable icon paths via assetsPackage
 # Feature 057: Environment Variable-Based Window Matching
 #
 # This file contains the validated application definitions that can be imported
@@ -28,8 +29,16 @@
 #    - Result: 15-27x faster, 100% deterministic, zero race conditions
 
 let
+  # Feature 106: Helper to get icon path from Nix store or fallback to legacy path
+  # When assetsPackage is provided, use store paths; otherwise fall back to /etc/nixos
+  iconPath = name:
+    if assetsPackage != null
+    then "${assetsPackage}/icons/${name}"
+    else "/etc/nixos/assets/icons/${name}";
+
   # Import centralized PWA site definitions (Feature 056)
-  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib; };
+  # Pass assetsPackage for portable icon paths
+  pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage; };
   pwas = pwaSitesConfig.pwaSites;
   # Validation helper: check for dangerous characters
   validateParameters = params:
@@ -139,7 +148,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       preferred_monitor_role = "primary";
-      icon = "/etc/nixos/assets/icons/tmux-original.svg";
+      icon = iconPath "tmux-original.svg";
       nix_package = "pkgs.ghostty";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -191,7 +200,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 4;
       preferred_monitor_role = "secondary";
-      icon = "/etc/nixos/assets/icons/neovim.svg";
+      icon = iconPath "neovim.svg";
       nix_package = "pkgs.neovim";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -241,7 +250,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       preferred_monitor_role = "tertiary";
-      icon = "/etc/nixos/assets/icons/lazygit.svg";
+      icon = iconPath "lazygit.svg";
       nix_package = "pkgs.lazygit";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -257,7 +266,7 @@ let
       scope = "scoped";
       expected_class = "Thunar";
       preferred_workspace = 6;
-      icon = "/etc/nixos/assets/icons/thunar.svg";  # Use Walker icon
+      icon = iconPath "thunar.svg";
       nix_package = "pkgs.xfce.thunar";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -304,7 +313,7 @@ let
       scope = "scoped";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
-      icon = "/etc/nixos/assets/icons/yazi.png";
+      icon = iconPath "yazi.png";
       nix_package = "pkgs.yazi";
       multi_instance = true;
       fallback_behavior = "use_home";
@@ -320,7 +329,7 @@ let
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 9;
-      icon = "/etc/nixos/assets/icons/k9s.png";
+      icon = iconPath "k9s.png";
       nix_package = "pkgs.k9s";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -336,7 +345,7 @@ let
       scope = "global";
       expected_class = "Headlamp";
       preferred_workspace = 10;
-      icon = "/etc/nixos/assets/icons/headlamp.svg";
+      icon = iconPath "headlamp.svg";
       nix_package = "pkgs.headlamp";
       multi_instance = false;
       fallback_behavior = "skip";
@@ -353,7 +362,7 @@ let
       expected_class = "goose";  # Electron app class
       preferred_workspace = 11;
       preferred_monitor_role = "primary";  # Always on HEADLESS-1
-      icon = "/etc/nixos/assets/icons/goose.svg";
+      icon = iconPath "goose.svg";
       nix_package = "pkgs.goose-desktop";
       multi_instance = false;
       fallback_behavior = "skip";

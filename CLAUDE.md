@@ -6,12 +6,17 @@
 
 ```bash
 # Test configuration changes (ALWAYS RUN BEFORE APPLYING)
+# Feature 106: Can build from ANY directory (worktrees, main repo, etc.)
 sudo nixos-rebuild dry-build --flake .#wsl    # For WSL
 sudo nixos-rebuild dry-build --flake .#hetzner-sway # For Hetzner Cloud
 sudo nixos-rebuild dry-build --flake .#m1 --impure  # For M1 Mac
 
 # Apply configuration changes
 sudo nixos-rebuild switch --flake .#<target>
+
+# Building from git worktrees (Feature 106)
+cd ~/repos/nixos-config/my-feature-branch
+sudo nixos-rebuild dry-build --flake .#hetzner-sway  # Works from any directory!
 ```
 
 ### M1 MacBook Pro (Apple Silicon)
@@ -1153,6 +1158,8 @@ gh auth status               # Auto-uses 1Password token
 - JSON files at `~/.config/i3/repos.json` and `~/.config/i3/accounts.json` (100-automate-project-and)
 - Python 3.11+ (i3pm daemon, monitoring data backend), Yuck/GTK3 (Eww widgets), Nix (module configuration) + i3ipc.aio (async Sway IPC), Pydantic 2.x (data models), asyncio (event handling), contextvars (correlation propagation), Eww 0.4+ (GTK3 widgets) (102-unified-event-tracing)
 - In-memory circular buffer (500 events), JSON files for trace persistence (~/.local/share/i3pm/event-history/) (102-unified-event-tracing)
+- Nix (flakes), Bash 5.0+, Python 3.11+ (existing daemon standard per Constitution Principle X) + NixOS/nixpkgs, home-manager, flake-parts (106-make-nixos-config-portable)
+- N/A (configuration management, not data storage) (106-make-nixos-config-portable)
 - Python 3.11+ (monitoring_data.py backend), Yuck/GTK (Eww widgets), Nix (home-manager module) + i3ipc.aio (Sway IPC), Pydantic 2.x (data models), Eww 0.4+ (GTK3 widgets), asyncio (108-show-worktree-card-detail)
 - In-memory daemon state, JSON project files (`~/.config/i3/projects/*.json`) (108-show-worktree-card-detail)
 

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Standalone quick validation test with all dependencies
 # Can be run directly without any setup
+# Feature 106: Portable paths via FLAKE_ROOT
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
 
 DISPLAY_NUM=99
 export DISPLAY=":${DISPLAY_NUM}"
@@ -30,7 +34,7 @@ sleep 1
 echo "Loading nix-shell with all dependencies..."
 echo ""
 
-cd /etc/nixos
+cd "$FLAKE_ROOT"  # Feature 106: Portable path
 
 # Run test in nix-shell with all required dependencies
 nix-shell \

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Comprehensive integration test runner for systemd
 # Runs full user workflow tests
+# Feature 106: Portable paths via FLAKE_ROOT
 
 set -euo pipefail
+
+# Feature 106: FLAKE_ROOT discovery for portable paths
+FLAKE_ROOT="${FLAKE_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/etc/nixos")}"
 
 DISPLAY_NUM=99
 export DISPLAY=":${DISPLAY_NUM}"
@@ -44,7 +48,7 @@ echo "  - Multi-project workflows"
 echo "  - Full user session simulation"
 echo ""
 
-cd /etc/nixos
+cd "$FLAKE_ROOT"  # Feature 106: Portable path
 
 # Run all workflow tests with nix-shell to ensure dependencies
 nix-shell \
