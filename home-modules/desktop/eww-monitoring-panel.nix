@@ -4203,12 +4203,23 @@ in
                 :orientation "h"
                 :space-evenly false
                 :hexpand true
+                ;; Active indicator dot - valign start to prevent stretching on hover
                 (label
-                  :class "worktree-indent"
-                  :text "  ")
-                (label
-                  :class "worktree-icon"
-                  :text "🌿")
+                  :class {worktree.is_active ? "active-indicator" : "active-indicator-placeholder"}
+                  :valign "start"
+                  :text "●"
+                  :tooltip {worktree.is_active ? "Active worktree" : ""})
+                ;; Feature 109: Branch number badge, main icon, or feature branch icon - valign start to prevent stretching
+                (box
+                  :class "branch-number-badge-container"
+                  :valign "start"
+                  (eventbox
+                    :cursor {(worktree.branch_number ?: "") != "" ? "pointer" : "default"}
+                    :onclick {(worktree.branch_number ?: "") != "" ? "echo -n '#''${worktree.branch_number}' | wl-copy && notify-send -t 1500 'Copied' '#''${worktree.branch_number}'" : ""}
+                    :tooltip {(worktree.branch_number ?: "") != "" ? "Click to copy #''${worktree.branch_number}" : (worktree.is_main ? "Main branch" : "Feature branch")}
+                    (label
+                      :class {(worktree.branch_number ?: "") != "" ? "branch-number-badge" : (worktree.is_main ? "branch-main-badge" : "branch-feature-badge")}
+                      :text {(worktree.branch_number ?: "") != "" ? worktree.branch_number : (worktree.is_main ? "⚑" : "🌿")})))
                 (box
                   :class "worktree-info"
                   :orientation "v"
@@ -4217,10 +4228,11 @@ in
                   (box
                     :orientation "h"
                     :space-evenly false
+                    ;; Feature 109: Show description for numbered branches, full name otherwise
                     (label
                       :class "worktree-branch"
                       :halign "start"
-                      :text "''${worktree.branch}")
+                      :text {(worktree.has_branch_number ?: false) ? (worktree.branch_description ?: worktree.branch) : worktree.branch})
                     (label
                       :class "worktree-commit"
                       :halign "start"
@@ -4264,13 +4276,27 @@ in
                       :visible {worktree.git_is_stale ?: false}
                       :text " 💤"
                       :tooltip "No activity in 30+ days"))
-                  (label
-                    :class "worktree-path"
-                    :halign "start"
-                    :limit-width 30
-                    :truncate true
-                    :text "''${worktree.directory_display}"
-                    :tooltip "''${worktree.path}")
+                  ;; Feature 109: Path row with copy button on hover
+                  (box
+                    :class "worktree-path-row"
+                    :orientation "h"
+                    :space-evenly false
+                    (label
+                      :class "worktree-path"
+                      :halign "start"
+                      :limit-width 28
+                      :truncate true
+                      :text "''${worktree.directory_display}"
+                      :tooltip "''${worktree.path}")
+                    ;; Copy directory button (visible on hover)
+                    (eventbox
+                      :class {"copy-btn-container" + (hover_worktree_name == worktree.qualified_name ? " visible" : "")}
+                      :cursor "pointer"
+                      :onclick "echo -n '#{worktree.path}' | wl-copy && notify-send -t 1500 'Copied' '#{worktree.directory_display}'"
+                      :tooltip "Copy directory path"
+                      (label
+                        :class "copy-btn"
+                        :text "")))
                   ;; Feature 108 T029: Last commit info (visible on hover)
                   (label
                     :class "worktree-last-commit"
@@ -8454,7 +8480,10 @@ in
       /* Worktree Card Styles */
       /* Feature 102: Eww-based hover for action buttons (CSS :hover doesn't work with nested eventbox) */
       .worktree-card-wrapper {
-        /* Wrapper for worktree card styling */
+        /* Wrapper owns spacing - eventbox covers full clickable area */
+        margin-left: 16px;
+        margin-bottom: 2px;
+        padding-bottom: 2px;
       }
 
       /* Worktree action bar - hidden by default, visible on hover via Eww variable */
@@ -8493,9 +8522,7 @@ in
         border: 1px solid ${mocha.overlay0};
         border-radius: 6px;
         padding: 6px 8px;
-        margin-left: 16px;
-        margin-bottom: 4px;
-        margin-top: 2px;
+        /* margins moved to wrapper for better hover continuity */
       }
 
       .worktree-tree {
@@ -8517,6 +8544,78 @@ in
 
       .worktree-badges {
         margin-left: 4px;
+      }
+
+      /* Feature 109: Branch number badge - prominent, clickable */
+      .branch-number-badge-container {
+        margin-right: 6px;
+      }
+
+      .branch-number-badge {
+        font-size: 9px;
+        font-weight: bold;
+        font-family: monospace;
+        color: ${mocha.mantle};
+        background: linear-gradient(135deg, ${mocha.mauve} 0%, ${mocha.pink} 100%);
+        padding: 1px 4px;
+        border-radius: 3px;
+        min-width: 20px;
+        /* text-align not supported in GTK CSS - use :halign in yuck widget instead */
+      }
+
+      .branch-number-badge:hover {
+        background: linear-gradient(135deg, ${mocha.pink} 0%, ${mocha.mauve} 100%);
+        opacity: 0.9;
+      }
+
+      /* Main branch badge - styled container like feature number badge */
+      .branch-main-badge {
+        font-size: 10px;
+        font-weight: bold;
+        padding: 1px 4px;
+        border-radius: 3px;
+        min-width: 20px;
+        color: ${mocha.mantle};
+        background: linear-gradient(135deg, ${mocha.blue} 0%, ${mocha.sapphire} 100%);
+      }
+
+      /* Feature branch badge (without number) - styled container like feature number badge */
+      .branch-feature-badge {
+        font-size: 10px;
+        font-weight: bold;
+        padding: 1px 4px;
+        border-radius: 3px;
+        min-width: 20px;
+        color: ${mocha.mantle};
+        background: linear-gradient(135deg, ${mocha.green} 0%, ${mocha.teal} 100%);
+      }
+
+      /* Feature 109: Path row with copy button */
+      .worktree-path-row {
+        margin-top: 2px;
+      }
+
+      .copy-btn-container {
+        opacity: 0;
+        transition: opacity 150ms ease-in-out;
+        margin-left: 4px;
+      }
+
+      .copy-btn-container.visible {
+        opacity: 1;
+      }
+
+      .copy-btn {
+        font-size: 10px;
+        color: ${mocha.subtext0};
+        padding: 2px 4px;
+        border-radius: 3px;
+        /* transition: all not reliable in GTK CSS */
+      }
+
+      .copy-btn:hover {
+        color: ${mocha.teal};
+        background-color: rgba(148, 226, 213, 0.15);
       }
 
       /* Feature 094 US5: Branch indicator badge */
@@ -8632,8 +8731,21 @@ in
       }
 
       .active-worktree {
-        border-left: 3px solid ${mocha.teal};
-        background-color: rgba(148, 226, 213, 0.1);
+        background-color: rgba(148, 226, 213, 0.15);
+        border: 1px solid ${mocha.teal};
+      }
+
+      /* Active indicator dot */
+      .active-indicator {
+        color: ${mocha.teal};
+        font-size: 8px;
+        margin-right: 4px;
+      }
+
+      .active-indicator-placeholder {
+        color: transparent;
+        font-size: 8px;
+        margin-right: 4px;
       }
 
       .dirty-worktree {
@@ -8751,17 +8863,7 @@ in
         border-radius: 4px;
       }
 
-      /* Feature 099 UX5: Branch number badge */
-      .branch-number-badge {
-        background-color: rgba(203, 166, 247, 0.2);
-        color: ${mocha.mauve};
-        font-size: 10px;
-        font-weight: bold;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-right: 6px;
-        min-width: 24px;
-      }
+      /* Feature 099 UX5: Branch number badge - superseded by Feature 109 styling above */
 
       /* Feature 099 UX4: Copy button */
       .action-copy {
