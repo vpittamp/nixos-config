@@ -17,6 +17,15 @@ export const WorktreeSchema = z.object({
   ahead: z.number().default(0),
   behind: z.number().default(0),
   is_main: z.boolean().default(false),
+  // Feature 108: Enhanced status fields
+  is_merged: z.boolean().default(false),
+  is_stale: z.boolean().default(false),
+  has_conflicts: z.boolean().default(false),
+  staged_count: z.number().default(0),
+  modified_count: z.number().default(0),
+  untracked_count: z.number().default(0),
+  last_commit_timestamp: z.number().default(0),
+  last_commit_message: z.string().default(""),
 });
 
 export type Worktree = z.infer<typeof WorktreeSchema>;

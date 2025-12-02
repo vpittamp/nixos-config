@@ -173,6 +173,7 @@ async def extract_git_metadata(repo_path: Path) -> GitMetadata:
         GitMetadata object with extracted information
 
     Per research.md: Uses git plumbing commands for reliable parsing.
+    Feature 108: Enhanced with merge/stale/conflict detection.
     """
     # Run all git commands in parallel
     branch_task = _run_git_command(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
@@ -182,7 +183,8 @@ async def extract_git_metadata(repo_path: Path) -> GitMetadata:
     ahead_behind_task = _run_git_command(
         repo_path, "rev-list", "--left-right", "--count", "@{u}...HEAD"
     )
-    last_commit_task = _run_git_command(repo_path, "log", "-1", "--format=%cI")
+    # Feature 108: Get commit timestamp and message
+    last_commit_task = _run_git_command(repo_path, "log", "-1", "--format=%ct|%s")
 
     results = await asyncio.gather(
         branch_task,
@@ -206,10 +208,32 @@ async def extract_git_metadata(repo_path: Path) -> GitMetadata:
     current_branch = branch_result[1] if branch_result[0] == 0 else "HEAD"
     commit_hash = commit_result[1][:7] if commit_result[0] == 0 and commit_result[1] else "0000000"
 
-    # Parse status
-    status_lines = status_result[1].split("\n") if status_result[1] else []
-    is_clean = len(status_lines) == 0 or (len(status_lines) == 1 and status_lines[0] == "")
+    # Parse status - Feature 108: Enhanced with counts and conflict detection
+    status_lines = [line for line in (status_result[1].split("\n") if status_result[1] else []) if line.strip()]
+    is_clean = len(status_lines) == 0
     has_untracked = any(line.startswith("??") for line in status_lines)
+
+    # Feature 108: Parse detailed status counts
+    staged_count = 0
+    modified_count = 0
+    untracked_count = 0
+    has_conflicts = False
+
+    for line in status_lines:
+        if len(line) >= 2:
+            x, y = line[0], line[1]
+            # Conflict detection: UU (both modified), AA (both added), DD (both deleted)
+            if x == 'U' or y == 'U' or (x == 'A' and y == 'A') or (x == 'D' and y == 'D'):
+                has_conflicts = True
+            # Staged changes (first column not space/?)
+            if x not in (' ', '?'):
+                staged_count += 1
+            # Unstaged modifications (second column M)
+            if y == 'M':
+                modified_count += 1
+            # Untracked files
+            if x == '?' and y == '?':
+                untracked_count += 1
 
     # Remote URL
     remote_url = remote_result[1] if remote_result[0] == 0 else None
@@ -226,13 +250,41 @@ async def extract_git_metadata(repo_path: Path) -> GitMetadata:
         except (ValueError, IndexError):
             pass
 
-    # Last commit date
+    # Feature 108: Last commit timestamp and message
     last_commit_date = None
+    last_commit_timestamp = 0
+    last_commit_message = ""
     if last_commit_result[0] == 0 and last_commit_result[1]:
         try:
-            last_commit_date = datetime.fromisoformat(last_commit_result[1].replace("Z", "+00:00"))
-        except ValueError:
+            parts = last_commit_result[1].split("|", 1)
+            if parts:
+                last_commit_timestamp = int(parts[0])
+                last_commit_date = datetime.fromtimestamp(last_commit_timestamp)
+                if len(parts) > 1:
+                    last_commit_message = parts[1][:50]  # Truncate to 50 chars
+        except (ValueError, IndexError):
             pass
+
+    # Feature 108: Stale detection (30+ days since last commit)
+    is_stale = False
+    if last_commit_timestamp > 0:
+        import time
+        days_since = (int(time.time()) - last_commit_timestamp) // 86400
+        is_stale = days_since >= 30
+
+    # Feature 108: Merge detection (check if branch merged into main)
+    # Skip for main/master branches themselves
+    is_merged = False
+    if current_branch not in ("main", "master", "HEAD"):
+        for default_branch in ["main", "master"]:
+            merged_result = await _run_git_command(
+                repo_path, "branch", "--merged", default_branch
+            )
+            if merged_result[0] == 0:
+                merged_branches = [b.strip().lstrip("* ") for b in merged_result[1].split("\n")]
+                if current_branch in merged_branches:
+                    is_merged = True
+                    break
 
     return GitMetadata(
         current_branch=current_branch,
@@ -244,6 +296,15 @@ async def extract_git_metadata(repo_path: Path) -> GitMetadata:
         remote_url=remote_url,
         primary_language=None,  # Inferred separately
         last_commit_date=last_commit_date,
+        # Feature 108: Enhanced fields
+        is_merged=is_merged,
+        is_stale=is_stale,
+        has_conflicts=has_conflicts,
+        staged_count=staged_count,
+        modified_count=modified_count,
+        untracked_count=untracked_count,
+        last_commit_timestamp=last_commit_timestamp,
+        last_commit_message=last_commit_message,
     )
 
 

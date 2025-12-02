@@ -78,6 +78,44 @@ class GitMetadata(BaseModel):
         description="Most recent commit timestamp"
     )
 
+    # Feature 108: Enhanced status fields
+    is_merged: bool = Field(
+        default=False,
+        description="Branch merged into main"
+    )
+    is_stale: bool = Field(
+        default=False,
+        description="No commits in 30+ days"
+    )
+    has_conflicts: bool = Field(
+        default=False,
+        description="Has unresolved merge conflicts"
+    )
+    staged_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of staged files"
+    )
+    modified_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of modified files"
+    )
+    untracked_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of untracked files"
+    )
+    last_commit_timestamp: int = Field(
+        default=0,
+        ge=0,
+        description="Unix timestamp of last commit"
+    )
+    last_commit_message: str = Field(
+        default="",
+        description="Last commit message (truncated)"
+    )
+
     @field_validator('commit_hash', mode='before')
     @classmethod
     def validate_commit_hash(cls, v: str) -> str:

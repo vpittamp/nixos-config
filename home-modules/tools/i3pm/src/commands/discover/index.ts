@@ -225,6 +225,15 @@ async function getWorktrees(barePath: string, repoPath: string, defaultBranch: s
       behind: 0,
       is_clean: true,
       is_main: false,
+      // Feature 108: Enhanced status fields
+      is_merged: false,
+      is_stale: false,
+      has_conflicts: false,
+      staged_count: 0,
+      modified_count: 0,
+      untracked_count: 0,
+      last_commit_timestamp: 0,
+      last_commit_message: "",
     };
 
     for (const line of lines) {
@@ -250,10 +259,126 @@ async function getWorktrees(barePath: string, repoPath: string, defaultBranch: s
       wt.is_main = true;
     }
 
+    // Feature 108: Get detailed git status for worktree
+    const statusOutput = await getWorktreeStatus(wt.path);
+    if (statusOutput) {
+      wt.staged_count = statusOutput.staged_count;
+      wt.modified_count = statusOutput.modified_count;
+      wt.untracked_count = statusOutput.untracked_count;
+      wt.has_conflicts = statusOutput.has_conflicts;
+      wt.is_clean = statusOutput.staged_count === 0 && statusOutput.modified_count === 0;
+    }
+
+    // Feature 108: Get last commit info
+    const commitInfo = await getLastCommitInfo(wt.path);
+    if (commitInfo) {
+      wt.last_commit_timestamp = commitInfo.timestamp;
+      wt.last_commit_message = commitInfo.message;
+
+      // Stale detection (30+ days since last commit)
+      const daysSince = (Date.now() / 1000 - commitInfo.timestamp) / 86400;
+      wt.is_stale = daysSince >= 30;
+    }
+
+    // Feature 108: Merge detection
+    if (wt.branch && !["main", "master", "HEAD"].includes(wt.branch)) {
+      wt.is_merged = await checkBranchMerged(barePath, wt.branch, defaultBranch);
+    }
+
     if (wt.path && wt.branch) {
       worktrees.push(wt as Worktree);
     }
   }
 
   return worktrees;
+}
+
+// Feature 108: Get detailed git status
+async function getWorktreeStatus(wtPath: string): Promise<{
+  staged_count: number;
+  modified_count: number;
+  untracked_count: number;
+  has_conflicts: boolean;
+} | null> {
+  const cmd = new Deno.Command("git", {
+    args: ["-C", wtPath, "status", "--porcelain=v1"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await cmd.output();
+  if (!output.success) return null;
+
+  const stdout = new TextDecoder().decode(output.stdout);
+  let staged_count = 0;
+  let modified_count = 0;
+  let untracked_count = 0;
+  let has_conflicts = false;
+
+  for (const line of stdout.split("\n")) {
+    if (line.length < 2) continue;
+    const x = line[0];
+    const y = line[1];
+
+    // Conflict detection: UU (both modified), AA (both added), DD (both deleted)
+    if (x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D")) {
+      has_conflicts = true;
+    }
+    if (x !== " " && x !== "?") {
+      staged_count++;
+    }
+    if (y === "M") {
+      modified_count++;
+    }
+    if (x === "?" && y === "?") {
+      untracked_count++;
+    }
+  }
+
+  return { staged_count, modified_count, untracked_count, has_conflicts };
+}
+
+// Feature 108: Get last commit info
+async function getLastCommitInfo(wtPath: string): Promise<{
+  timestamp: number;
+  message: string;
+} | null> {
+  const cmd = new Deno.Command("git", {
+    args: ["-C", wtPath, "log", "-1", "--format=%ct|%s"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await cmd.output();
+  if (!output.success) return null;
+
+  const stdout = new TextDecoder().decode(output.stdout).trim();
+  if (!stdout) return null;
+
+  const parts = stdout.split("|");
+  const timestamp = parseInt(parts[0], 10) || 0;
+  const message = parts.slice(1).join("|").substring(0, 80);
+
+  return { timestamp, message };
+}
+
+// Feature 108: Check if branch is merged into default branch
+async function checkBranchMerged(barePath: string, branch: string, defaultBranch: string): Promise<boolean> {
+  for (const checkBranch of [defaultBranch, "main", "master"]) {
+    const cmd = new Deno.Command("git", {
+      args: ["-C", barePath, "branch", "--merged", checkBranch],
+      stdout: "piped",
+      stderr: "piped",
+    });
+
+    const output = await cmd.output();
+    if (output.success) {
+      const stdout = new TextDecoder().decode(output.stdout);
+      const mergedBranches = stdout.split("\n").map(b => b.trim().replace(/^\* /, ""));
+      if (mergedBranches.includes(branch)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

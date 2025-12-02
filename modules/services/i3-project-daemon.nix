@@ -36,8 +36,8 @@ let
   daemonSrc = ../../home-modules/desktop/i3-project-event-daemon;
 
   daemonPackage = pkgs.stdenv.mkDerivation {
-    name = "i3-project-event-daemon-v120";  # Renamed to force rebuild
-    version = "1.20.0";  # Feature 102 Fix: Event tracing gaps for blur, scratchpad, timing
+    name = "i3-project-event-daemon-v121";  # Bumped for Feature 108
+    version = "1.21.0";  # Feature 108: Enhanced worktree status fields
     src = daemonSrc;
 
     installPhase = ''

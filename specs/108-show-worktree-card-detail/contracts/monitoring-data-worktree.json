@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Enhanced Worktree Data Schema",
+  "description": "JSON schema for worktree objects in monitoring_data.py Projects view (Feature 108)",
+  "type": "object",
+  "required": [
+    "qualified_name",
+    "branch",
+    "path",
+    "is_active",
+    "is_main",
+    "git_is_dirty"
+  ],
+  "properties": {
+    "qualified_name": {
+      "type": "string",
+      "description": "Fully qualified worktree identifier (account/repo:branch)",
+      "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+:[a-zA-Z0-9_/-]+$",
+      "examples": ["vpittamp/nixos:099-feature", "vpittamp/nixos:main"]
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch name",
+      "minLength": 1,
+      "examples": ["main", "099-feature-name", "develop"]
+    },
+    "path": {
+      "type": "string",
+      "description": "Absolute filesystem path to worktree",
+      "pattern": "^/",
+      "examples": ["/home/vpittamp/nixos-099-feature", "/etc/nixos"]
+    },
+    "directory_display": {
+      "type": "string",
+      "description": "Display-friendly path with ~ substitution",
+      "examples": ["~/nixos-099-feature", "/etc/nixos"]
+    },
+    "commit": {
+      "type": "string",
+      "description": "Short commit hash (7 chars)",
+      "pattern": "^[a-f0-9]{7}$|^unknown$",
+      "examples": ["abc1234", "def5678"]
+    },
+    "is_active": {
+      "type": "boolean",
+      "description": "Whether this worktree is the current active project"
+    },
+    "is_main": {
+      "type": "boolean",
+      "description": "Whether this is the main/default worktree"
+    },
+
+    "git_is_dirty": {
+      "type": "boolean",
+      "description": "Has uncommitted changes (staged, modified, or untracked)"
+    },
+    "git_dirty_indicator": {
+      "type": "string",
+      "description": "Visual indicator for dirty state",
+      "enum": ["●", ""],
+      "default": ""
+    },
+    "git_ahead": {
+      "type": "integer",
+      "description": "Number of commits ahead of upstream",
+      "minimum": 0,
+      "default": 0
+    },
+    "git_behind": {
+      "type": "integer",
+      "description": "Number of commits behind upstream",
+      "minimum": 0,
+      "default": 0
+    },
+    "git_sync_indicator": {
+      "type": "string",
+      "description": "Visual indicator for ahead/behind status",
+      "pattern": "^(↑\\d+)?( ↓\\d+)?$|^$",
+      "examples": ["↑5 ↓2", "↑3", "↓1", ""]
+    },
+
+    "git_is_merged": {
+      "type": "boolean",
+      "description": "Whether branch has been merged into main",
+      "default": false
+    },
+    "git_merged_indicator": {
+      "type": "string",
+      "description": "Visual indicator for merge status",
+      "enum": ["✓", ""],
+      "default": ""
+    },
+
+    "git_is_stale": {
+      "type": "boolean",
+      "description": "No commits in 30+ days",
+      "default": false
+    },
+    "git_stale_indicator": {
+      "type": "string",
+      "description": "Visual indicator for stale status",
+      "enum": ["💤", ""],
+      "default": ""
+    },
+
+    "git_has_conflicts": {
+      "type": "boolean",
+      "description": "Has unresolved merge conflicts",
+      "default": false
+    },
+    "git_conflict_indicator": {
+      "type": "string",
+      "description": "Visual indicator for conflict status",
+      "enum": ["⚠", ""],
+      "default": ""
+    },
+
+    "git_staged_count": {
+      "type": "integer",
+      "description": "Number of staged files",
+      "minimum": 0,
+      "default": 0
+    },
+    "git_modified_count": {
+      "type": "integer",
+      "description": "Number of modified (unstaged) files",
+      "minimum": 0,
+      "default": 0
+    },
+    "git_untracked_count": {
+      "type": "integer",
+      "description": "Number of untracked files",
+      "minimum": 0,
+      "default": 0
+    },
+
+    "git_last_commit_relative": {
+      "type": "string",
+      "description": "Human-readable relative time since last commit",
+      "examples": ["2h ago", "3 days ago", "2 weeks ago", "1 month ago"]
+    },
+    "git_last_commit_message": {
+      "type": "string",
+      "description": "Last commit subject line (truncated to 50 chars)",
+      "maxLength": 50
+    },
+
+    "git_status_tooltip": {
+      "type": "string",
+      "description": "Multi-line tooltip content with full status breakdown"
+    }
+  },
+  "additionalProperties": true
+}

@@ -6247,13 +6247,22 @@ class IPCServer:
                         "full_name": branch_metadata.full_name,
                     }
 
-                # Include git_metadata from worktree entry
+                # Include git_metadata from worktree entry (Feature 108: enhanced fields)
                 worktree_data["git_metadata"] = {
                     "branch": branch,
                     "commit": wt.get("commit", ""),
                     "is_clean": wt.get("is_clean", True),
                     "ahead": wt.get("ahead", 0),
                     "behind": wt.get("behind", 0),
+                    # Feature 108: Enhanced status fields
+                    "is_merged": wt.get("is_merged", False),
+                    "is_stale": wt.get("is_stale", False),
+                    "has_conflicts": wt.get("has_conflicts", False),
+                    "staged_count": wt.get("staged_count", 0),
+                    "modified_count": wt.get("modified_count", 0),
+                    "untracked_count": wt.get("untracked_count", 0),
+                    "last_commit_timestamp": wt.get("last_commit_timestamp", 0),
+                    "last_commit_message": wt.get("last_commit_message", ""),
                 }
 
                 worktrees.append(worktree_data)
@@ -7936,9 +7945,83 @@ class IPCServer:
                                 if not wt.get("branch"):
                                     wt["branch"] = "HEAD"
                                 wt["is_main"] = wt.get("branch") in (default_branch, "main", "master")
-                                wt["is_clean"] = True
                                 wt["ahead"] = 0
                                 wt["behind"] = 0
+
+                                # Feature 108: Get detailed git status for worktree
+                                wt_path = wt["path"]
+                                status_result = subprocess.run(
+                                    ["git", "-C", wt_path, "status", "--porcelain=v1"],
+                                    capture_output=True, text=True
+                                )
+                                staged_count = 0
+                                modified_count = 0
+                                untracked_count = 0
+                                has_conflicts = False
+                                if status_result.returncode == 0:
+                                    for line in status_result.stdout.splitlines():
+                                        if len(line) >= 2:
+                                            x, y = line[0], line[1]
+                                            # Conflict detection
+                                            if x == 'U' or y == 'U' or (x == 'A' and y == 'A') or (x == 'D' and y == 'D'):
+                                                has_conflicts = True
+                                            if x not in (' ', '?'):
+                                                staged_count += 1
+                                            if y == 'M':
+                                                modified_count += 1
+                                            if x == '?' and y == '?':
+                                                untracked_count += 1
+
+                                wt["is_clean"] = staged_count == 0 and modified_count == 0
+                                wt["staged_count"] = staged_count
+                                wt["modified_count"] = modified_count
+                                wt["untracked_count"] = untracked_count
+                                wt["has_conflicts"] = has_conflicts
+
+                                # Feature 108: Get last commit info
+                                log_result = subprocess.run(
+                                    ["git", "-C", wt_path, "log", "-1", "--format=%ct|%s"],
+                                    capture_output=True, text=True
+                                )
+                                last_commit_timestamp = 0
+                                last_commit_message = ""
+                                if log_result.returncode == 0 and log_result.stdout.strip():
+                                    parts = log_result.stdout.strip().split("|", 1)
+                                    if len(parts) >= 1:
+                                        try:
+                                            last_commit_timestamp = int(parts[0])
+                                        except ValueError:
+                                            pass
+                                    if len(parts) >= 2:
+                                        last_commit_message = parts[1][:80]
+
+                                wt["last_commit_timestamp"] = last_commit_timestamp
+                                wt["last_commit_message"] = last_commit_message
+
+                                # Feature 108: Stale detection (30+ days since last commit)
+                                import time as time_module
+                                is_stale = False
+                                if last_commit_timestamp > 0:
+                                    days_since = (int(time_module.time()) - last_commit_timestamp) // 86400
+                                    is_stale = days_since >= 30
+                                wt["is_stale"] = is_stale
+
+                                # Feature 108: Merge detection
+                                is_merged = False
+                                current_branch = wt.get("branch", "")
+                                if current_branch not in ("main", "master", "HEAD"):
+                                    for check_branch in [default_branch, "main", "master"]:
+                                        merged_result = subprocess.run(
+                                            ["git", "-C", str(bare_path), "branch", "--merged", check_branch],
+                                            capture_output=True, text=True
+                                        )
+                                        if merged_result.returncode == 0:
+                                            merged_branches = [b.strip().lstrip("* ") for b in merged_result.stdout.splitlines()]
+                                            if current_branch in merged_branches:
+                                                is_merged = True
+                                                break
+                                wt["is_merged"] = is_merged
+
                                 worktrees.append(wt)
                                 total_worktrees += 1
 

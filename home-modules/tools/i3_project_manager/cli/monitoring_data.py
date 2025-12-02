@@ -55,6 +55,7 @@ from i3_project_manager.models.project_config import (
 from i3_project_manager.services.git_utils import (
     detect_orphaned_worktrees,
     get_bare_repository_path,
+    format_relative_time,
 )
 
 # Import i3ipc for event subscriptions in listen mode
@@ -1645,6 +1646,70 @@ async def query_projects_data() -> Dict[str, Any]:
                 if wt["git_behind"] > 0:
                     sync_parts.append(f"↓{wt['git_behind']}")
                 wt["git_sync_indicator"] = " ".join(sync_parts)
+
+                # Feature 108 T015-T017: Enhanced status indicators
+                # T016: Merge status (skip for main/master branches)
+                wt["git_is_merged"] = wt.get("is_merged", False)
+                wt["git_merged_indicator"] = "✓" if wt["git_is_merged"] else ""
+
+                # T017: Conflict status
+                wt["git_has_conflicts"] = wt.get("has_conflicts", False)
+                wt["git_conflict_indicator"] = "⚠" if wt["git_has_conflicts"] else ""
+
+                # Feature 108 T024-T026 (US2): Detailed status for tooltips
+                wt["git_staged_count"] = wt.get("staged_count", 0)
+                wt["git_modified_count"] = wt.get("modified_count", 0)
+                wt["git_untracked_count"] = wt.get("untracked_count", 0)
+
+                # Feature 108 T025: Last commit info
+                last_ts = wt.get("last_commit_timestamp", 0)
+                wt["git_last_commit_relative"] = format_relative_time(last_ts) if last_ts > 0 else ""
+                wt["git_last_commit_message"] = wt.get("last_commit_message", "")[:50]
+
+                # Feature 108 T031: Stale status
+                wt["git_is_stale"] = wt.get("is_stale", False)
+                wt["git_stale_indicator"] = "💤" if wt["git_is_stale"] else ""
+
+                # Feature 108 T026: Build comprehensive tooltip
+                tooltip_parts = []
+                tooltip_parts.append(f"Branch: {wt['branch']}")
+                tooltip_parts.append(f"Commit: {wt.get('commit', 'unknown')}")
+                if wt["git_last_commit_relative"]:
+                    tooltip_parts[-1] += f" ({wt['git_last_commit_relative']})"
+                if wt["git_last_commit_message"]:
+                    tooltip_parts.append(f"Message: {wt['git_last_commit_message']}")
+
+                # Status breakdown
+                status_parts = []
+                if wt["git_staged_count"] > 0:
+                    status_parts.append(f"{wt['git_staged_count']} staged")
+                if wt["git_modified_count"] > 0:
+                    status_parts.append(f"{wt['git_modified_count']} modified")
+                if wt["git_untracked_count"] > 0:
+                    status_parts.append(f"{wt['git_untracked_count']} untracked")
+                if status_parts:
+                    tooltip_parts.append(f"Status: {', '.join(status_parts)}")
+                elif wt.get("is_clean", True):
+                    tooltip_parts.append("Status: clean")
+
+                # Sync info
+                if wt["git_ahead"] > 0 or wt["git_behind"] > 0:
+                    sync_desc = []
+                    if wt["git_ahead"] > 0:
+                        sync_desc.append(f"{wt['git_ahead']} to push")
+                    if wt["git_behind"] > 0:
+                        sync_desc.append(f"{wt['git_behind']} to pull")
+                    tooltip_parts.append(f"Sync: {', '.join(sync_desc)}")
+
+                # Merge/stale/conflict status
+                if wt["git_is_merged"]:
+                    tooltip_parts.append("Merged: ✓ merged into main")
+                if wt["git_is_stale"]:
+                    tooltip_parts.append("Stale: no activity in 30+ days")
+                if wt["git_has_conflicts"]:
+                    tooltip_parts.append("⚠ Has unresolved merge conflicts")
+
+                wt["git_status_tooltip"] = "\\n".join(tooltip_parts)
 
         # Count totals
         total_worktrees = sum(len(r.get("worktrees", [])) for r in repositories)

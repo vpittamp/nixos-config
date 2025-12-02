@@ -16,14 +16,60 @@ Feature 100 additions:
 
 import subprocess
 import re
+import time
 from pathlib import Path
 from typing import Optional, List, Set, Tuple
 
 from ..models.project_config import ProjectConfig, SourceType, ProjectStatus
 
 
+# Feature 108: Staleness threshold for worktree detection
+STALE_THRESHOLD_DAYS = 30
+SECONDS_PER_DAY = 86400
+
+
 # Feature 100: GitHub URL parsing patterns
 SSH_PATTERN = re.compile(r'^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$')
+
+
+def format_relative_time(timestamp: int) -> str:
+    """
+    Feature 108 T009: Format Unix timestamp as human-readable relative time.
+
+    Returns strings like "2h ago", "3 days ago", "2 weeks ago", "1 month ago".
+
+    Args:
+        timestamp: Unix epoch timestamp
+
+    Returns:
+        Human-readable relative time string
+    """
+    now = int(time.time())
+    diff_seconds = now - timestamp
+
+    if diff_seconds < 0:
+        return "in the future"
+
+    minutes = diff_seconds // 60
+    hours = diff_seconds // 3600
+    days = diff_seconds // SECONDS_PER_DAY
+    weeks = days // 7
+    months = days // 30
+
+    if minutes < 1:
+        return "just now"
+    elif minutes < 60:
+        return f"{minutes}m ago"
+    elif hours < 24:
+        return f"{hours}h ago"
+    elif days < 7:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    elif weeks < 4:
+        return f"{weeks} week{'s' if weeks != 1 else ''} ago"
+    else:
+        return f"{months} month{'s' if months != 1 else ''} ago"
+
+
 HTTPS_PATTERN = re.compile(r'^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?$')
 
 
@@ -349,6 +395,9 @@ def get_git_metadata(directory: str) -> Optional[dict]:
     """
     Extract git metadata for a repository/worktree.
 
+    Feature 108: Enhanced to include merge status, staleness, detailed status counts,
+    conflict detection, and last commit info.
+
     Args:
         directory: Path to the git repository
 
@@ -379,7 +428,7 @@ def get_git_metadata(directory: str) -> Optional[dict]:
         )
         commit_hash = hash_result.stdout.strip()[:7] if hash_result.returncode == 0 else "0000000"
 
-        # Get status (clean/dirty)
+        # Get status (clean/dirty) with porcelain output
         status_result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=directory,
@@ -390,6 +439,34 @@ def get_git_metadata(directory: str) -> Optional[dict]:
         status_lines = status_result.stdout.strip().split("\n") if status_result.stdout.strip() else []
         is_clean = len(status_lines) == 0
         has_untracked = any(line.startswith("??") for line in status_lines)
+
+        # Feature 108 T007: Parse detailed status counts from porcelain output
+        staged_count = 0
+        modified_count = 0
+        untracked_count = 0
+        has_conflicts = False
+
+        for line in status_lines:
+            if len(line) < 2:
+                continue
+            x_status = line[0]  # Staged status
+            y_status = line[1]  # Working tree status
+
+            # Feature 108 T008: Detect conflicts (UU, AA, DD codes)
+            if x_status == 'U' or y_status == 'U' or (x_status == 'A' and y_status == 'A') or (x_status == 'D' and y_status == 'D'):
+                has_conflicts = True
+
+            # Count staged files (first column has change)
+            if x_status in 'MADRC':
+                staged_count += 1
+
+            # Count modified (unstaged) files (second column has change)
+            if y_status in 'MD':
+                modified_count += 1
+
+            # Count untracked files
+            if line.startswith("??"):
+                untracked_count += 1
 
         # Get ahead/behind counts (may fail if no upstream)
         ahead_count = 0
@@ -420,6 +497,53 @@ def get_git_metadata(directory: str) -> Optional[dict]:
         )
         remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else None
 
+        # Feature 108 T006: Get last commit timestamp and message
+        last_commit_timestamp = 0
+        last_commit_message = ""
+        try:
+            log_result = subprocess.run(
+                ["git", "log", "-1", "--format=%ct|%s"],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if log_result.returncode == 0:
+                parts = log_result.stdout.strip().split("|", 1)
+                if len(parts) >= 1 and parts[0]:
+                    last_commit_timestamp = int(parts[0])
+                if len(parts) >= 2:
+                    last_commit_message = parts[1][:50]  # Truncate to 50 chars
+        except (ValueError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        # Feature 108 T005: Calculate staleness (30+ days since last commit)
+        is_stale = False
+        if last_commit_timestamp > 0:
+            days_since_commit = (int(time.time()) - last_commit_timestamp) // SECONDS_PER_DAY
+            is_stale = days_since_commit >= STALE_THRESHOLD_DAYS
+
+        # Feature 108 T004: Check if branch is merged into main
+        is_merged = False
+        if current_branch not in ("main", "master", "HEAD"):
+            try:
+                # Check both main and master as potential default branches
+                for default_branch in ["main", "master"]:
+                    merged_result = subprocess.run(
+                        ["git", "branch", "--merged", default_branch],
+                        cwd=directory,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if merged_result.returncode == 0:
+                        merged_branches = [b.strip().lstrip("* ") for b in merged_result.stdout.strip().split("\n")]
+                        if current_branch in merged_branches:
+                            is_merged = True
+                            break
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+
         return {
             "current_branch": current_branch,
             "commit_hash": commit_hash,
@@ -428,6 +552,15 @@ def get_git_metadata(directory: str) -> Optional[dict]:
             "ahead_count": ahead_count,
             "behind_count": behind_count,
             "remote_url": remote_url,
+            # Feature 108 enhancements
+            "is_merged": is_merged,
+            "is_stale": is_stale,
+            "last_commit_timestamp": last_commit_timestamp,
+            "last_commit_message": last_commit_message,
+            "staged_count": staged_count,
+            "modified_count": modified_count,
+            "untracked_count": untracked_count,
+            "has_conflicts": has_conflicts,
         }
     except (subprocess.TimeoutExpired, OSError):
         return None
