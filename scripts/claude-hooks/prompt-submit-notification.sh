@@ -58,22 +58,12 @@ get_terminal_window_id() {
 
 WINDOW_ID=$(get_terminal_window_id)
 
-# Feature 107: Create "working" badge using IPC-first with file fallback
-# This shows a spinner animation indicating Claude Code is processing
-# Primary path: IPC to daemon for <100ms latency
-# Fallback path: File-based for reliability when daemon unavailable
+# Feature 107: Create "working" badge using file-based approach
+# monitoring_data.py reads badge state from filesystem, so we must write files
+# IPC is used for fast daemon notification but files are the source of truth
 
 if [ -n "$WINDOW_ID" ]; then
-    # Try IPC first (fast path)
-    IPC_SOCKET="/run/i3-project-daemon/ipc.sock"
-    if [ -S "$IPC_SOCKET" ]; then
-        # Use badge-ipc-client.sh for IPC communication
-        if /etc/nixos/scripts/claude-hooks/badge-ipc-client.sh create "$WINDOW_ID" "claude-code" --state working >/dev/null 2>&1; then
-            exit 0  # Success via IPC
-        fi
-    fi
-
-    # Fallback to file-based (reliability path)
+    # Always write badge file (monitoring_data.py reads from filesystem)
     BADGE_STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/i3pm-badges"
     mkdir -p "$BADGE_STATE_DIR"
     BADGE_FILE="$BADGE_STATE_DIR/$WINDOW_ID.json"
@@ -85,6 +75,12 @@ if [ -n "$WINDOW_ID" ]; then
   "timestamp": $(date +%s)
 }
 EOF
+
+    # Also notify daemon via IPC (for fast update, but file is source of truth)
+    IPC_SOCKET="/run/i3-project-daemon/ipc.sock"
+    if [ -S "$IPC_SOCKET" ]; then
+        /etc/nixos/scripts/claude-hooks/badge-ipc-client.sh create "$WINDOW_ID" "claude-code" --state working >/dev/null 2>&1 || true
+    fi
 fi
 
 exit 0

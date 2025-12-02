@@ -47,8 +47,10 @@ send_jsonrpc() {
         '{jsonrpc: "2.0", method: $method, params: $params, id: 1}')
 
     # Send request and capture response
+    # Feature 107: Added -w 1 to prevent nc from hanging indefinitely
+    # The daemon sends response but doesn't close connection; -w 1 adds 1s timeout
     local response
-    if ! response=$(echo "$request" | nc -U "$SOCKET_PATH" 2>&1); then
+    if ! response=$(echo "$request" | nc -w 1 -U "$SOCKET_PATH" 2>&1); then
         echo "Error: Failed to communicate with daemon" >&2
         exit 1
     fi
