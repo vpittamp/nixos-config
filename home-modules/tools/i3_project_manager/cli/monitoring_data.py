@@ -29,6 +29,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -1714,6 +1715,20 @@ async def query_projects_data() -> Dict[str, Any]:
                 wt["is_active"] = (active_project == wt_qualified)
                 wt["display_name"] = wt["branch"]
                 wt["directory_display"] = wt.get("path", "").replace(str(Path.home()), "~")
+
+                # Feature 109: Parse branch number from branch name (e.g., "108-show-worktree" -> "108")
+                branch = wt.get("branch", "")
+                branch_number = ""
+                branch_description = branch
+                # Pattern: number-description (e.g., 108-show-worktree-card-detail)
+                match = re.match(r'^(\d{2,4})[-_](.+)$', branch)
+                if match:
+                    branch_number = match.group(1)
+                    # Convert description: "show-worktree-card" -> "Show Worktree Card"
+                    branch_description = match.group(2).replace('-', ' ').replace('_', ' ').title()
+                wt["branch_number"] = branch_number
+                wt["branch_description"] = branch_description
+                wt["has_branch_number"] = bool(branch_number)
 
                 # Git status indicators
                 wt["git_is_dirty"] = not wt.get("is_clean", True)
