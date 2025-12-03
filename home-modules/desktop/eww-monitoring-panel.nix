@@ -3054,7 +3054,7 @@ in
       ;; Feature 111 T031: Defpoll for worktree map SVG path (10s refresh, only when map view active)
       (defpoll worktree_map_data
         :interval "10s"
-        :initial "{\"status\":\"loading\",\"svg_path\":null,\"map_data\":null,\"repository\":null}"
+        :initial "{\"status\":\"loading\",\"svg_path\":\"\",\"map_data\":null,\"repository\":\"\",\"overlay_nodes\":[]}"
         :run-while {projects_view_mode == "map"}
         `${monitoringDataScript}/bin/monitoring-data-backend --mode worktree_map`)
 
