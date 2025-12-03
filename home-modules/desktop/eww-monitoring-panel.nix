@@ -4361,7 +4361,7 @@ in
               :class "map-error"
               (label :text {worktree_map_data.error ?: "Error loading map"}))
             (box
-              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != null}
+              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != ""}
               :class "map-svg-container"
               :orientation "v"
               :space-evenly false
@@ -4466,7 +4466,7 @@ in
               :class "map-error"
               (label :text {worktree_map_data.error ?: "Error loading map"}))
             (box
-              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != null}
+              :visible {worktree_map_data.status == "ok" && worktree_map_data.svg_path != ""}
               :class "expanded-svg-container"
               :orientation "v"
               :space-evenly false
